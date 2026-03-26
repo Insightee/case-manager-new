@@ -3,6 +3,7 @@ export interface Employee {
   employeeId: string;
   name: string;
   email: string;
+  role?: 'Consultant' | 'Employee';
 }
 
 export interface PayslipRecord {
