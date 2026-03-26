@@ -1,0 +1,5 @@
+{
+  "name": "Insighte Payout Generator",
+  "description": "An application for therapists to securely view their earnings reports. Users select their Staff / Consultant Name or ID and verify their identity via an OTP sent to their registered email address to access their detailed earnings statement.",
+  "requestFramePermissions": []
+}
