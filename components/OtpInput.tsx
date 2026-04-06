@@ -65,24 +65,26 @@ const OtpInput: React.FC<OtpInputProps> = ({ employeeName, onVerify, onGoBack, e
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
-            <button
-                type="button"
-                onClick={onGoBack}
-                className="py-4.5 px-6 rounded-2.5xl font-black text-slate-400 bg-white/5 border border-white/10 hover:bg-white/10 active:scale-95 transition-all outline-none text-[10px] uppercase tracking-widest"
-            >
-                Change
-            </button>
+        <div className="flex flex-col space-y-4">
             <button
                 type="submit"
                 disabled={!staffId}
-                className="py-4.5 px-6 rounded-2.5xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-black shadow-lg shadow-indigo-600/10 disabled:opacity-30 disabled:grayscale transform transition-all active:scale-95 flex items-center justify-center space-x-2 text-[10px] uppercase tracking-widest border border-white/5"
+                className="w-full py-6 relative px-10 rounded-[2rem] text-white font-black text-lg overflow-hidden transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] disabled:scale-100 disabled:opacity-30 disabled:grayscale group shadow-[0_20px_50px_-10px_rgba(99,102,241,0.5)]"
             >
-                <span>Authorize</span>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                  <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                </svg>
+                <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 group-hover:scale-110 transition-transform duration-700"></div>
+                <div className="relative flex items-center justify-center space-x-4">
+                    <span className="uppercase tracking-[0.3em] text-xs">Authorize Access</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 group-hover:translate-x-1.5 transition-transform duration-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944a11.954 11.954 0 007.834 3.055.75.75 0 01.584.73 11.72 11.72 0 01-5.333 9.776c-.67.44-1.552.44-2.222 0A11.72 11.72 0 012.166 4.999zM10 9.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" clipRule="evenodd" />
+                    </svg>
+                </div>
+            </button>
+            <button
+                type="button"
+                onClick={onGoBack}
+                className="w-full py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] hover:text-indigo-400 transition-colors duration-300"
+            >
+                ← Use a different profile
             </button>
         </div>
       </form>
