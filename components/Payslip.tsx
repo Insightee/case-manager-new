@@ -115,24 +115,27 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
       const safeYear = String(record.year).replace(/[^a-z0-9]/gi, '_');
       const fileName = `insighte_statement_${safeEmployeeId}_${safeMonth}_${safeYear}.pdf`;
       
-      // Use Blob-based download for better cross-browser compatibility and extension forcing
+      // Use Reinforced Blob-based download to force application/pdf MIME type
       const pdfBlob = pdf.output('blob');
-      const blobUrl = URL.createObjectURL(pdfBlob);
+      const reinforcedBlob = new Blob([pdfBlob], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(reinforcedBlob);
       
       const downloadLink = document.createElement('a');
       downloadLink.href = blobUrl;
-      downloadLink.download = fileName;
+      downloadLink.setAttribute('download', fileName);
       downloadLink.style.display = 'none';
       document.body.appendChild(downloadLink);
       
       // Trigger download
       downloadLink.click();
       
-      // Cleanup
+      // Cleanup with slightly longer delay for browser stability
       setTimeout(() => {
-          document.body.removeChild(downloadLink);
+          if (document.body.contains(downloadLink)) {
+              document.body.removeChild(downloadLink);
+          }
           URL.revokeObjectURL(blobUrl);
-      }, 100);
+      }, 500);
 
     }).catch((err: Error) => {
         console.error("Error generating PDF:", err);
