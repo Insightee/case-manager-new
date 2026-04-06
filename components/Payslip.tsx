@@ -157,12 +157,10 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
     }, 2000);
   };
 
-  // Improved TDS logic: 
-  // 1. Check role (Consultant = 2%)
-  // 2. Otherwise trust the calculated rate if it's 2 or 10
-  // 3. Robust fallback
-  const tdsRateRaw = record.grossPay > 0 ? Math.round((record.tds / record.grossPay) * 100) : 10;
-  const displayTdsRate = (employee.role === 'Consultant' || (employee as any).role === 'Consultant') ? 2 : (tdsRateRaw === 2 || tdsRateRaw === 10 ? tdsRateRaw : (tdsRateRaw > 5 ? 10 : 2));
+  // Financial Values from Record (Direct Mirror of Source Sheet)
+  const displayTds = record.tds || 0;
+  const displayNetPay = record.netPay || (record.grossPay - displayTds);
+  const displayGrossPay = record.grossPay || 0;
 
 
   return (
@@ -189,10 +187,10 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
             </div>
 
             {/* Document Meta Section */}
-            <div className="flex flex-col sm:flex-row justify-between items-baseline mb-12 gap-4">
-                <div>
-                  <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-1 font-heading">Statement</h1>
-                  <p className="text-indigo-600 font-black tracking-widest uppercase text-xs">{payPeriod} CYCLE</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-8">
+                <div className="flex flex-col gap-2">
+                  <h1 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter mb-1 font-heading leading-snug underline decoration-indigo-200 underline-offset-8">Statement</h1>
+                  <p className="text-indigo-600 font-black tracking-[0.3em] uppercase text-[10px] sm:text-[11px] mt-3 block">{payPeriod} CYCLE</p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <div className="bg-slate-50 px-6 py-3 rounded-2xl border border-slate-100">
@@ -271,18 +269,20 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
                         </tr>
 
                         <tr>
-                            <td className="py-6 font-bold text-rose-500 text-sm italic">TDS (Tax Deducted at Source {displayTdsRate}%)</td>
-                            <td className="py-6 text-right font-bold text-rose-600 text-lg">({record.tds.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</td>
+                            <td className="py-6 font-bold text-rose-500 text-sm italic">
+                                TDS Deducted
+                            </td>
+                            <td className="py-6 text-right font-bold text-rose-600 text-lg">({displayTds.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</td>
                         </tr>
                     </tbody>
                     <tfoot>
                         <tr className="border-t-8 border-double border-slate-900 bg-indigo-50/20">
-                            <td className="py-10 pl-6">
-                                <span className="text-3xl font-black text-slate-900 tracking-tighter uppercase font-heading">Net Payable</span>
+                            <td className="py-10 pl-6 text-left">
+                                <span className="text-3xl font-black text-slate-900 tracking-tighter uppercase font-heading block">Net Payable</span>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Final Settlement Credited to Account</p>
                             </td>
-                            <td className="py-10 pr-6 text-right">
-                                <span className="text-5xl font-black text-indigo-600 tracking-tighter">{record.netPay.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}</span>
+                            <td className="py-10 pr-6 text-right align-middle">
+                                <span className="text-5xl font-black text-indigo-600 tracking-tighter">{displayNetPay.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}</span>
                             </td>
                         </tr>
                     </tfoot>
@@ -290,43 +290,23 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
             </div>
 
             {/* Footer Summary & Compliance */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-end pt-12 border-t border-slate-100">
-                <div className="space-y-6">
-                  <div 
-                    className={`flex items-center space-x-5 p-5 rounded-[2rem] border-2 transition-all overflow-hidden relative cursor-pointer ${verificationResult ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-indigo-300 hover:bg-white hover:shadow-xl hover:shadow-indigo-100'}`}
-                    onClick={!verificationResult ? handleVerify : undefined}
-                  >
-                    <div className={`w-16 h-16 rounded-2xl border-2 flex items-center justify-center transition-all duration-500 shadow-sm ${isVerifying ? 'bg-indigo-500 border-indigo-500 animate-pulse' : (verificationResult ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-slate-200')}`}>
-                       {isVerifying ? (
-                          <svg className="animate-spin h-7 w-7 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                       ) : verificationResult ? (
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-white" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M2.166 4.9L9.03 1.151a1.125 1.125 0 011.08 0L17 4.9a1.125 1.125 0 01.62 1.01V11c0 4.14-2.67 7.98-6.62 9.61a1.125 1.125 0 01-.88 0C6.17 19.04 3.5 15.2 3.5 11V5.91c0-.44.26-.84.66-1.01zm8.34 9.58l3-3a.75.75 0 00-1.06-1.06L10 12.94l-1.47-1.47a.75.75 0 10-1.06 1.06l2 2a.75.75 0 001.06 0z" clipRule="evenodd" />
-                          </svg>
-                       ) : (
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-slate-300 group-hover:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04m18.236 0a11.958 11.958 0 00-2.015-1.165M12 2.944a11.952 11.952 0 00-5.45 1.31m4.043 1.971c.585.145 1.17.269 1.767.368a11.955 11.955 0 01-1.767-.368zm0 0c-.585.145-1.13.35-1.667.601m1.667-.601L12 2.944m-1.333 3.601a11.959 11.959 0 01-1.667.601" />
-                          </svg>
-                       )}
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest leading-tight">Digital Document Validation</p>
-                      <p className={`text-sm font-bold mt-1 ${verificationResult ? 'text-emerald-600' : 'text-slate-400'}`}>
-                        {isVerifying ? 'Authenticating Document...' : (verificationResult ? 'Doc-ID: Verified Authentic' : 'Certify This Document')}
-                      </p>
-                    </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start pt-12 border-t border-slate-100">
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2 text-indigo-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M2.166 4.9L9.03 1.151a1.125 1.125 0 011.08 0L17 4.9a1.125 1.125 0 01.62 1.01V11c0 4.14-2.67 7.98-6.62 9.61a1.125 1.125 0 01-.88 0C6.17 19.04 3.5 15.2 3.5 11V5.91c0-.44.26-.84.66-1.01zm8.34 9.58l3-3a.75.75 0 00-1.06-1.06L10 12.94l-1.47-1.47a.75.75 0 10-1.06 1.06l2 2a.75.75 0 001.06 0z" clipRule="evenodd" />
+                    </svg>
+                    <p className="text-[10px] font-black uppercase tracking-widest">Digitally Signed Document</p>
                   </div>
-                  <p className="text-[9px] text-slate-400 font-bold italic leading-relaxed px-2">This document is digitally signed and encrypted. No physical signature is required under section 1.2 of the IT Act 2000 regarding digital disclosures.</p>
+                  <p className="text-[9px] text-slate-400 leading-relaxed italic pr-6">Encrypted and electronically validated. No physical signature required per IT Act 2000.</p>
                 </div>
-                <div className="text-left md:text-right space-y-2 pr-6">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Support Channel</p>
-                   <p className="text-[13px] text-slate-900 font-black tracking-tight">accounts@insighte.in</p>
+                <div className="text-left md:text-right space-y-2">
+                   <div>
+                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-0.5">Support Channel</p>
+                     <p className="text-base text-indigo-600 font-bold tracking-tight">accounts@insighte.in</p>
+                   </div>
                    <div className="pt-2">
-                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Direct Support</p>
-                       <p className="text-xs text-indigo-600 font-bold">Verification Team</p>
+                     <p className="text-[8px] text-slate-300 uppercase font-black tracking-widest">System Validation Timestamp: {generatedAt}</p>
                    </div>
                 </div>
             </div>

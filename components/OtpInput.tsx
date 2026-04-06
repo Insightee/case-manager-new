@@ -21,27 +21,27 @@ const OtpInput: React.FC<OtpInputProps> = ({ employeeName, onVerify, onGoBack, e
   return (
     <div className="space-y-8 animate-fade-in max-w-sm mx-auto">
       <div className="text-center space-y-4">
-        <div className="inline-flex items-center justify-center p-4 bg-indigo-50 text-indigo-600 rounded-full mb-2">
+        <div className="inline-flex items-center justify-center p-5 bg-indigo-500/10 text-indigo-400 rounded-[2rem] mb-2 border border-indigo-500/20 shadow-[0_0_50px_rgba(99,102,241,0.1)]">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04c0 4.833 1.89 9.223 5.035 12.454a.434.434 0 00.612 0a11.955 11.955 0 005.035-12.454z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04c0 4.833 1.89 9.223 5.035 12.454a.434.434 0 00.612 0a11.955 11.955 0 005.035-12.454z" />
           </svg>
         </div>
-        <h2 className="text-3xl font-bold text-slate-900 font-heading leading-tight">Identity Check</h2>
-        <div className="p-3 bg-white rounded-2xl border border-slate-100 shadow-sm inline-block">
-          <p className="text-slate-500 text-sm font-medium">Verifying profile for</p>
-          <p className="text-indigo-600 font-bold text-lg">{employeeName}</p>
+        <h2 className="text-3xl font-black text-white font-heading leading-tight uppercase tracking-tighter">Identity Check</h2>
+        <div className="px-6 py-3 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-md inline-block shadow-xl">
+          <p className="text-indigo-200/50 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Verifying profile for</p>
+          <p className="text-white font-black text-xl italic tracking-tight">{employeeName}</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="space-y-2">
-          <label htmlFor="staff-id-input" className="block text-sm font-semibold text-slate-700 ml-1">
+        <div className="space-y-3">
+          <label htmlFor="staff-id-input" className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-1">
             Access Key (Staff ID)
           </label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+            <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
               </svg>
             </div>
             <input
@@ -49,7 +49,7 @@ const OtpInput: React.FC<OtpInputProps> = ({ employeeName, onVerify, onGoBack, e
               type="password"
               value={staffId}
               onChange={(e) => setStaffId(e.target.value)}
-              className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all"
+              className="block w-full pl-14 pr-6 py-5 bg-white/5 border border-white/10 rounded-2.5xl text-white font-black placeholder-white/5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500/50 transition-all shadow-2xl"
               placeholder="••••••••"
               autoFocus
             />
@@ -57,11 +57,11 @@ const OtpInput: React.FC<OtpInputProps> = ({ employeeName, onVerify, onGoBack, e
         </div>
 
         {error && (
-          <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-center space-x-3 animate-fade-in">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-rose-500 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+          <div className="p-5 bg-rose-500/10 border border-rose-500/20 rounded-2.5xl flex items-center space-x-4 animate-shake">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-rose-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
-            <p className="text-sm text-rose-700 font-medium leading-tight">{error}</p>
+            <p className="text-xs text-rose-300 font-bold leading-tight uppercase tracking-widest">{error}</p>
           </div>
         )}
 
@@ -69,17 +69,17 @@ const OtpInput: React.FC<OtpInputProps> = ({ employeeName, onVerify, onGoBack, e
             <button
                 type="button"
                 onClick={onGoBack}
-                className="py-4 px-6 rounded-2xl font-bold text-slate-600 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 active:scale-95 transition-all outline-none focus:ring-4 focus:ring-slate-100"
+                className="py-4.5 px-6 rounded-2.5xl font-black text-slate-400 bg-white/5 border border-white/10 hover:bg-white/10 active:scale-95 transition-all outline-none text-[10px] uppercase tracking-widest"
             >
                 Change
             </button>
             <button
                 type="submit"
                 disabled={!staffId}
-                className="btn-gradient py-4 px-6 rounded-2xl text-white font-bold shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transform transition-all active:scale-95 flex items-center justify-center space-x-2"
+                className="py-4.5 px-6 rounded-2.5xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-black shadow-lg shadow-indigo-600/10 disabled:opacity-30 disabled:grayscale transform transition-all active:scale-95 flex items-center justify-center space-x-2 text-[10px] uppercase tracking-widest border border-white/5"
             >
                 <span>Authorize</span>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
                   <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
                 </svg>
