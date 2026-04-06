@@ -39,7 +39,7 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
 
     // High quality options for PDF
     const options = {
-      scale: 3, // Higher scale for better clarity
+      scale: 2, // Better stability across browsers
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',

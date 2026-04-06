@@ -11,9 +11,9 @@
  * 5. Click Save
  * 6. Reload the spreadsheet — a new "Insighte" menu will appear
  */
-
-var SUPABASE_URL = "https://dhlxkzvgdkytcyguxvxr.supabase.co";
-var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRobHhrenZnZGt5dGN5Z3V4dnhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1ODM0NzYsImV4cCI6MjA4OTE1OTQ3Nn0.GQybPpaAFMiePAneZhoVejM0SLVEPYW7W5gLeOiUY1A";
+// spreadsheet: https://docs.google.com/spreadsheets/d/11ABJe6Hvno0AjOxXgOxmlg-waCkpTixzSH8qUdsCOPo/edit?usp=sharing
+var SUPABASE_URL = "https://riukjenrqfdsbvsessmk.supabase.co";
+var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpdWtqZW5ycWZkc2J2c2Vzc21rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4OTAyMzgsImV4cCI6MjA5MDQ2NjIzOH0.3gndRl_qYo7BERiDQvb7V0PSCnsaNw2DZ93Vp-uCpPA";
 
 var VALID_MONTHS = [
   "january","february","march","april","may","june",

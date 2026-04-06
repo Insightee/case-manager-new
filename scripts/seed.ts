@@ -6,8 +6,8 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const employeesFilePath = path.join(__dirname, '../data/employees.ts');
 
-const supabaseUrl = 'https://dhlxkzvgdkytcyguxvxr.supabase.co';
-const supabaseKey = 'sb_publishable_lgLh8C3JOzvYoyYg8ymmEQ_x-v2mGH2'; 
+const supabaseUrl = 'https://riukjenrqfdsbvsessmk.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpdWtqZW5ycWZkc2J2c2Vzc21rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4OTAyMzgsImV4cCI6MjA5MDQ2NjIzOH0.3gndRl_qYo7BERiDQvb7V0PSCnsaNw2DZ93Vp-uCpPA'; 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Use a simple regex to extract the employee array
