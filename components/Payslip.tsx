@@ -78,6 +78,16 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4',
+        compress: true,
+      });
+
+      // Set Document Metadata for Adobe PDF Compatibility
+      pdf.setProperties({
+        title: `Payslip - ${employee.name} - ${record.month} ${record.year}`,
+        subject: 'Official Earnings Statement',
+        author: 'Insighte Childcare Pvt Ltd',
+        keywords: 'payslip, insighte, earnings',
+        creator: 'Insighte Pay Portal'
       });
 
       const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -99,7 +109,10 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
 
       pdf.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight, undefined, 'FAST');
       
-      const fileName = `Insighte_Statement_${employee.employeeId}_${record.month}_${record.year}.pdf`;
+      // Sanitize Filename to ensure .pdf extension is always preserved correctly
+      const safeEmployeeId = employee.employeeId.replace(/[^a-z0-9]/gi, '_');
+      const safeMonth = record.month.replace(/[^a-z0-9]/gi, '_');
+      const fileName = `Insighte_Statement_${safeEmployeeId}_${safeMonth}_${record.year}.pdf`;
       
       // Execute save directly
       pdf.save(fileName);
