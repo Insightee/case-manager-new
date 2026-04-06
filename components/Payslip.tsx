@@ -24,6 +24,16 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
   const monthNum = (getMonthNumber(record.month) + 1).toString().padStart(2, '0');
   const statementNo = `INS-${record.year}${monthNum}-${employee.employeeId}`;
 
+  const generatedAt = new Date().toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata'
+  });
+
   const hasBreakdown = (record.baseSalary && record.baseSalary > 0) || (record.allowance && record.allowance > 0);
 
   const handleSaveAsPdf = () => {
@@ -151,9 +161,15 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
                   <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-1 font-heading">Statement</h1>
                   <p className="text-indigo-600 font-black tracking-widest uppercase text-xs">{payPeriod} CYCLE</p>
                 </div>
-                <div className="bg-slate-50 px-6 py-3 rounded-2xl border border-slate-100">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Reference ID</p>
-                  <p className="text-sm font-bold text-slate-700 font-mono tracking-tight">{statementNo}</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="bg-slate-50 px-6 py-3 rounded-2xl border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Reference ID</p>
+                    <p className="text-sm font-bold text-slate-700 font-mono tracking-tight">{statementNo}</p>
+                  </div>
+                  <div className="bg-indigo-50/30 px-6 py-3 rounded-2xl border border-indigo-100/50">
+                    <p className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">Generated On</p>
+                    <p className="text-sm font-bold text-indigo-700 font-mono tracking-tight">{generatedAt}</p>
+                  </div>
                 </div>
             </div>
 
@@ -174,10 +190,6 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
                   </div>
                 </div>
                 <div className="space-y-6">
-                  <div className="flex flex-col">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1.5 leading-none">Email Address</label>
-                    <p className="text-base font-bold text-slate-600 leading-tight break-all">{employee.email}</p>
-                  </div>
                   <div className="flex flex-col">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1.5 leading-none text-nowrap">Payment Method</label>
                     <p className="text-base font-bold text-slate-600 leading-tight">Bank Transfer (IMPS/NEFT)</p>
