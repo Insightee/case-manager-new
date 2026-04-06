@@ -109,13 +109,30 @@ const Payslip: React.FC<PayslipProps> = ({ employee, record, onGoBack }) => {
 
       pdf.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight, undefined, 'FAST');
       
-      // Sanitize Filename to ensure .pdf extension is always preserved correctly
-      const safeEmployeeId = employee.employeeId.replace(/[^a-z0-9]/gi, '_');
-      const safeMonth = record.month.replace(/[^a-z0-9]/gi, '_');
-      const fileName = `Insighte_Statement_${safeEmployeeId}_${safeMonth}_${record.year}.pdf`;
+      // Sanitize Filename with extra strictness: strictly alphanumeric and forced extension
+      const safeEmployeeId = String(employee.employeeId).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const safeMonth = String(record.month).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const safeYear = String(record.year).replace(/[^a-z0-9]/gi, '_');
+      const fileName = `insighte_statement_${safeEmployeeId}_${safeMonth}_${safeYear}.pdf`;
       
-      // Execute save directly
-      pdf.save(fileName);
+      // Use Blob-based download for better cross-browser compatibility and extension forcing
+      const pdfBlob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      
+      const downloadLink = document.createElement('a');
+      downloadLink.href = blobUrl;
+      downloadLink.download = fileName;
+      downloadLink.style.display = 'none';
+      document.body.appendChild(downloadLink);
+      
+      // Trigger download
+      downloadLink.click();
+      
+      // Cleanup
+      setTimeout(() => {
+          document.body.removeChild(downloadLink);
+          URL.revokeObjectURL(blobUrl);
+      }, 100);
 
     }).catch((err: Error) => {
         console.error("Error generating PDF:", err);
