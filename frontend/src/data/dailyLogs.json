@@ -1,0 +1,117 @@
+{
+  "activityTags": [
+    "Sensory play",
+    "Communication drills",
+    "Motor skills",
+    "Social interaction",
+    "Behavior shaping",
+    "Parent coaching",
+    "Academic support",
+    "Group activity"
+  ],
+  "cases": [
+    { "caseId": "IC-2026-041", "child": "Aarav M." },
+    { "caseId": "IC-2026-053", "child": "Ira K." },
+    { "caseId": "IC-2026-067", "child": "Vihaan R." },
+    { "caseId": "IC-2026-028", "child": "Mira S." },
+    { "caseId": "IC-2026-035", "child": "Rudra J." },
+    { "caseId": "IC-2026-091", "child": "Kavya P." }
+  ],
+  "lastSessionByCase": {
+    "IC-2026-041": {
+      "durationMinutes": 45,
+      "activities": ["Communication drills", "Sensory play"],
+      "observations": "Strong eye contact during structured play; responded to two-step prompts."
+    },
+    "IC-2026-053": {
+      "durationMinutes": 60,
+      "activities": ["Parent coaching", "Behavior shaping"],
+      "observations": "Reviewed home strategies; parent practiced reinforcement timing."
+    },
+    "IC-2026-067": {
+      "durationMinutes": 50,
+      "activities": ["Motor skills", "Social interaction"],
+      "observations": "Cooperative play with peer for 12 minutes; needed one redirection."
+    },
+    "IC-2026-028": {
+      "durationMinutes": 40,
+      "activities": ["Academic support"],
+      "observations": "Focused on numeracy; used visual schedule successfully."
+    },
+    "IC-2026-035": {
+      "durationMinutes": 55,
+      "activities": ["Group activity", "Communication drills"],
+      "observations": "Participated in circle time; used AAC for 3 requests."
+    },
+    "IC-2026-091": {
+      "durationMinutes": 50,
+      "activities": ["Sensory play", "Motor skills"],
+      "observations": "Calming routine effective; 2 transitions with support."
+    }
+  },
+  "attentionRequired": [
+    {
+      "id": "att-1",
+      "caseId": "IC-2026-053",
+      "child": "Ira K.",
+      "dueLabel": "Due today 6 PM",
+      "kind": "missing"
+    },
+    {
+      "id": "att-2",
+      "caseId": "IC-2026-028",
+      "child": "Mira S.",
+      "dueLabel": "Due today 8 PM",
+      "kind": "pending"
+    },
+    {
+      "id": "att-3",
+      "caseId": "IC-2026-091",
+      "child": "Kavya P.",
+      "dueLabel": "Missing — due yesterday",
+      "kind": "missing"
+    }
+  ],
+  "recentLogs": [
+    {
+      "id": "log-1",
+      "caseId": "IC-2026-041",
+      "child": "Aarav M.",
+      "date": "21 Apr 2026",
+      "durationMinutes": 45,
+      "status": "submitted",
+      "activities": ["Communication drills", "Sensory play"],
+      "observations": "Strong engagement; followed visual schedule."
+    },
+    {
+      "id": "log-2",
+      "caseId": "IC-2026-067",
+      "child": "Vihaan R.",
+      "date": "21 Apr 2026",
+      "durationMinutes": 50,
+      "status": "pending"
+    },
+    {
+      "id": "log-3",
+      "caseId": "IC-2026-035",
+      "child": "Rudra J.",
+      "date": "20 Apr 2026",
+      "durationMinutes": 55,
+      "status": "approved"
+    },
+    {
+      "id": "log-4",
+      "caseId": "IC-2026-012",
+      "child": "Neha D.",
+      "date": "20 Apr 2026",
+      "durationMinutes": 0,
+      "status": "missing"
+    }
+  ],
+  "checklist": [
+    { "id": "goals", "label": "Session goals added", "done": true },
+    { "id": "activities", "label": "Activities documented", "done": true },
+    { "id": "attendance", "label": "Attendance marked", "done": false },
+    { "id": "parent", "label": "Parent note completed", "done": false }
+  ]
+}

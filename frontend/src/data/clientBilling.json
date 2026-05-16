@@ -1,0 +1,21 @@
+{
+  "parentId": "parent-001",
+  "items": [
+    {
+      "id": "bill-041-apr",
+      "caseId": "IC-2026-041",
+      "month": "Apr 2026",
+      "amountINR": 42000,
+      "status": "paid",
+      "updatedAt": "2026-05-04T10:20:00.000Z"
+    },
+    {
+      "id": "bill-053-mar",
+      "caseId": "IC-2026-053",
+      "month": "Mar 2026",
+      "amountINR": 36000,
+      "status": "queried",
+      "updatedAt": "2026-04-10T12:10:00.000Z"
+    }
+  ]
+}

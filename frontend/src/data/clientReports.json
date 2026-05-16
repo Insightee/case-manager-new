@@ -1,0 +1,25 @@
+{
+  "parentId": "parent-001",
+  "reports": [
+    {
+      "id": "report-041-2026-04",
+      "caseId": "IC-2026-041",
+      "childName": "Aarav M.",
+      "month": "Apr 2026",
+      "status": "approved",
+      "publishedAt": "2026-05-02T10:00:00.000Z",
+      "summary": "Improved peer participation, task completion up from 62% to 78%, and better transition handling.",
+      "goalsCovered": ["Instruction following", "Classroom transitions", "Peer interaction"]
+    },
+    {
+      "id": "report-053-2026-03",
+      "caseId": "IC-2026-053",
+      "childName": "Ira K.",
+      "month": "Mar 2026",
+      "status": "approved",
+      "publishedAt": "2026-04-04T09:30:00.000Z",
+      "summary": "Home routine consistency improved and language prompts reduced by 20% during activities.",
+      "goalsCovered": ["Routine adaptation", "Expressive language", "Fine motor tasks"]
+    }
+  ]
+}

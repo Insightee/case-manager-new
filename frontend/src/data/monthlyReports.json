@@ -1,0 +1,98 @@
+{
+  "pipeline": {
+    "draft": 3,
+    "underReview": 2,
+    "published": 8,
+    "overdue": 2
+  },
+  "attention": [
+    {
+      "id": "att-1",
+      "caseId": "IC-2026-028",
+      "child": "Mira S.",
+      "month": "Apr 2026",
+      "attentionType": "overdue",
+      "statusLabel": "Overdue",
+      "dueInfo": "Overdue by 2 days"
+    },
+    {
+      "id": "att-2",
+      "caseId": "IC-2026-091",
+      "child": "Kavya P.",
+      "month": "Apr 2026",
+      "attentionType": "not_started",
+      "statusLabel": "Not started",
+      "dueInfo": "Due in 1 day"
+    },
+    {
+      "id": "att-3",
+      "caseId": "IC-2026-053",
+      "child": "Ira K.",
+      "month": "Mar 2026",
+      "attentionType": "rejected",
+      "statusLabel": "Rejected",
+      "dueInfo": "Resubmit by Fri 6 PM"
+    }
+  ],
+  "inProgress": [
+    {
+      "id": "ip-1",
+      "caseId": "IC-2026-041",
+      "child": "Aarav M.",
+      "month": "Apr 2026",
+      "status": "draft",
+      "lastUpdated": "2 hours ago"
+    },
+    {
+      "id": "ip-2",
+      "caseId": "IC-2026-067",
+      "child": "Vihaan R.",
+      "month": "Apr 2026",
+      "status": "under_review",
+      "lastUpdated": "Yesterday"
+    },
+    {
+      "id": "ip-3",
+      "caseId": "IC-2026-012",
+      "child": "Neha D.",
+      "month": "Apr 2026",
+      "status": "draft",
+      "lastUpdated": "Today · 9:14 AM"
+    }
+  ],
+  "published": [
+    {
+      "id": "pub-1",
+      "caseId": "IC-2026-035",
+      "child": "Rudra J.",
+      "month": "Mar 2026",
+      "status": "published"
+    },
+    {
+      "id": "pub-2",
+      "caseId": "IC-2026-019",
+      "child": "Dev K.",
+      "month": "Mar 2026",
+      "status": "published"
+    },
+    {
+      "id": "pub-3",
+      "caseId": "IC-2026-044",
+      "child": "Saanvi L.",
+      "month": "Feb 2026",
+      "status": "published"
+    }
+  ],
+  "calendarEvents": [
+    { "date": "2026-04-22", "title": "Report due", "caseId": "IC-2026-028", "child": "Mira S.", "kind": "deadline" },
+    { "date": "2026-04-24", "title": "Submit for review", "caseId": "IC-2026-041", "child": "Aarav M.", "kind": "submission" },
+    { "date": "2026-04-26", "title": "Manager review", "caseId": "IC-2026-067", "child": "Vihaan R.", "kind": "review" },
+    { "date": "2026-04-28", "title": "Publish window closes", "caseId": "IC-2026-012", "child": "Neha D.", "kind": "deadline" }
+  ],
+  "checklist": [
+    { "id": "logs", "label": "All daily logs completed", "done": true },
+    { "id": "observations", "label": "Observations added", "done": true },
+    { "id": "goals", "label": "Goals updated", "done": false },
+    { "id": "parent", "label": "Parent summary written", "done": false }
+  ]
+}

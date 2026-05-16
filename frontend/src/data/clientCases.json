@@ -1,0 +1,25 @@
+{
+  "parentId": "parent-001",
+  "cases": [
+    {
+      "caseId": "IC-2026-041",
+      "childName": "Aarav M.",
+      "serviceType": "Shadow Support",
+      "caseManager": "Ritika S.",
+      "therapist": "Neha R.",
+      "status": "Active",
+      "latestApprovedReportMonth": "Apr 2026",
+      "iepAcknowledgementStatus": "pending"
+    },
+    {
+      "caseId": "IC-2026-053",
+      "childName": "Ira K.",
+      "serviceType": "Homecare Therapy",
+      "caseManager": "Nivedita B.",
+      "therapist": "Karan P.",
+      "status": "Active",
+      "latestApprovedReportMonth": "Mar 2026",
+      "iepAcknowledgementStatus": "acknowledged"
+    }
+  ]
+}

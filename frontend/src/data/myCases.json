@@ -1,0 +1,99 @@
+{
+  "stats": [
+    { "id": "total", "label": "Total Cases", "value": 42, "variant": "indigo" },
+    { "id": "observation", "label": "Observation Stage", "value": 7, "variant": "yellow" },
+    { "id": "iep", "label": "IEP Pending", "value": 3, "variant": "purple" },
+    { "id": "reports", "label": "Reports Due", "value": 2, "variant": "teal" }
+  ],
+  "sections": [
+    {
+      "id": "attention",
+      "title": "Attention Required",
+      "tone": "danger",
+      "count": 2,
+      "cases": [
+        {
+          "layout": "standard",
+          "caseId": "IC-2026-041",
+          "child": "Aarav M.",
+          "service": "Shadow Support",
+          "stage": "Observation",
+          "badgeVariant": "observation",
+          "borderAccent": "yellow",
+          "due": "IEP in 2 days",
+          "critical": true,
+          "showSubmitReport": true
+        },
+        {
+          "layout": "split",
+          "caseId": "IC-2026-011",
+          "child": "Ira K.",
+          "borderAccent": "yellow",
+          "critical": true,
+          "left": {
+            "tag": "Observation",
+            "badgeVariant": "observation",
+            "service": "Homecare"
+          },
+          "right": {
+            "title": "IEP Draft",
+            "badgeVariant": "iep",
+            "note": "Parent ack pending"
+          },
+          "showSubmitReport": false,
+          "showSetReminder": true
+        }
+      ]
+    },
+    {
+      "id": "in_progress",
+      "title": "In Progress",
+      "tone": "warning",
+      "count": 2,
+      "cases": [
+        {
+          "layout": "dual",
+          "borderAccent": "blue",
+          "left": {
+            "caseId": "IC-2026-010",
+            "child": "Mira S.",
+            "service": "Shadow Support",
+            "stage": "Observation",
+            "badgeVariant": "observation",
+            "due": "Report in 3 days",
+            "critical": false
+          },
+          "right": {
+            "caseId": "IC-2026-067",
+            "child": "Vihaan R.",
+            "service": "Homecare",
+            "stage": "Observation",
+            "badgeVariant": "active",
+            "due": "Sessions active",
+            "critical": false
+          },
+          "showSubmitReport": true
+        }
+      ]
+    },
+    {
+      "id": "completed",
+      "title": "Completed",
+      "tone": "success",
+      "count": 1,
+      "cases": [
+        {
+          "layout": "completed",
+          "caseId": "IC-2025-987",
+          "child": "Arya J.",
+          "service": "Shadow Support",
+          "borderAccent": "teal",
+          "panels": [
+            { "label": "Closed & Archived", "check": false },
+            { "label": "All reports submitted", "check": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

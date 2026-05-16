@@ -1,0 +1,109 @@
+{
+  "summary": {
+    "totalEarningsThisMonthINR": 42500,
+    "pendingINR": 18200,
+    "paidINR": 128400,
+    "queriedINR": 8400,
+    "trends": {
+      "totalVsLastMonthPct": 8.2,
+      "pendingVsLastMonthPct": -3.1,
+      "paidVsLastMonthPct": 4.5,
+      "queriedVsLastMonthPct": -12.0
+    }
+  },
+  "attention": [
+    {
+      "id": "att-1",
+      "month": "Feb 2026",
+      "amountINR": 41300,
+      "sessions": 31,
+      "status": "queried",
+      "message": "Fix required",
+      "detail": "Two session logs missing validation signatures."
+    },
+    {
+      "id": "att-2",
+      "month": "Jan 2026",
+      "amountINR": 22100,
+      "sessions": 18,
+      "status": "rejected",
+      "message": "Fix required",
+      "detail": "Finance rejected: rate mismatch on homecare block."
+    }
+  ],
+  "inProgress": [
+    {
+      "id": "ip-1",
+      "month": "Apr 2026",
+      "amountINR": 42500,
+      "sessions": 32,
+      "status": "in_review",
+      "subtitle": "Recently generated · under finance review"
+    },
+    {
+      "id": "ip-2",
+      "month": "Mar 2026",
+      "amountINR": 12000,
+      "sessions": 9,
+      "status": "in_review",
+      "subtitle": "Supplemental batch · submitted yesterday"
+    }
+  ],
+  "paid": [
+    {
+      "id": "pd-1",
+      "month": "Mar 2026",
+      "amountINR": 39200,
+      "paidDate": "12 Apr 2026",
+      "status": "paid"
+    },
+    {
+      "id": "pd-2",
+      "month": "Feb 2026",
+      "amountINR": 40100,
+      "paidDate": "8 Mar 2026",
+      "status": "paid"
+    },
+    {
+      "id": "pd-3",
+      "month": "Jan 2026",
+      "amountINR": 37800,
+      "paidDate": "5 Feb 2026",
+      "status": "paid"
+    }
+  ],
+  "checklist": [
+    { "id": "logs", "label": "Logs completed", "done": true },
+    { "id": "sessions", "label": "Sessions validated", "done": true },
+    { "id": "invoice", "label": "Invoice generated", "done": true },
+    { "id": "finance", "label": "Submitted to finance", "done": false }
+  ],
+  "earningsTrend": [
+    { "month": "Nov 2025", "amountINR": 35200 },
+    { "month": "Dec 2025", "amountINR": 36800 },
+    { "month": "Jan 2026", "amountINR": 37800 },
+    { "month": "Feb 2026", "amountINR": 40100 },
+    { "month": "Mar 2026", "amountINR": 39200 },
+    { "month": "Apr 2026", "amountINR": 42500 }
+  ],
+  "generateOptions": [
+    {
+      "id": "2026-05",
+      "label": "May 2026",
+      "sessions": 24,
+      "payoutINR": 31800
+    },
+    {
+      "id": "2026-04",
+      "label": "Apr 2026",
+      "sessions": 32,
+      "payoutINR": 42500
+    },
+    {
+      "id": "2026-03",
+      "label": "Mar 2026",
+      "sessions": 29,
+      "payoutINR": 39200
+    }
+  ]
+}
