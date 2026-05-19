@@ -6,15 +6,12 @@ function FilterIcon() {
   )
 }
 
-/**
- * My Cases top area: title, subtitle, search, filter icon, CTA.
- */
-export function CasesPageHeader() {
+export function CasesPageHeader({ search = '', onSearchChange }) {
   return (
     <header className="ic-page-head">
       <div className="ic-page-head__text">
         <h1 className="ic-page-head__title">My Cases</h1>
-        <p className="ic-page-head__sub">Track case stages, pending actions, and deadlines.</p>
+        <p className="ic-page-head__sub">Client files — sessions, reports, bookings, and deadlines in one place.</p>
       </div>
       <div className="ic-page-head__actions">
         <input
@@ -22,12 +19,11 @@ export function CasesPageHeader() {
           className="ic-search"
           placeholder="Search child, case ID..."
           aria-label="Search cases"
+          value={search}
+          onChange={(e) => onSearchChange?.(e.target.value)}
         />
-        <button type="button" className="ic-btn-icon" aria-label="Filters">
+        <button type="button" className="ic-btn-icon" aria-label="Filters" disabled title="Filters coming soon">
           <FilterIcon />
-        </button>
-        <button type="button" className="ic-btn-cta">
-          + Add Note
         </button>
       </div>
     </header>

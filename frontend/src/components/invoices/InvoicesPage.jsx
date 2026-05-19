@@ -1,11 +1,15 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { apiFetch } from '../../lib/apiClient.js'
 import invoiceData from '../../data/invoices.json'
 import { ChecklistPanel } from './ChecklistPanel.jsx'
 import { EarningsTrendChart } from './EarningsTrendChart.jsx'
 import { GenerateInvoiceModal } from './GenerateInvoiceModal.jsx'
+import { InvoiceBreakdownModal } from './InvoiceBreakdownModal.jsx'
 import { InvoiceCard } from './InvoiceCard.jsx'
+import { InvoicePreviewDrawer } from './InvoicePreviewDrawer.jsx'
 import { SectionHeader } from './SectionHeader.jsx'
 import { SummaryCard } from './SummaryCard.jsx'
+import { computeSummaryFromInvoices, formatInr, mapInvoiceForCard } from './invoiceUtils.js'
 
 function Toast({ message, visible, onDismiss }) {
   if (!visible) return null
@@ -36,11 +40,7 @@ function Toast({ message, visible, onDismiss }) {
 function matchesSearch(item, q) {
   if (!q.trim()) return true
   const s = q.toLowerCase()
-  return (
-    item.month?.toLowerCase().includes(s) ||
-    item.detail?.toLowerCase().includes(s) ||
-    item.subtitle?.toLowerCase().includes(s)
-  )
+  return item.month?.toLowerCase().includes(s) || item.detail?.toLowerCase().includes(s) || item.subtitle?.toLowerCase().includes(s)
 }
 
 function SectionBlock({ id, title, subtitle, dotClass, children }) {
@@ -61,8 +61,29 @@ function SectionBlock({ id, title, subtitle, dotClass, children }) {
 export function InvoicesPage() {
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
+  const [previewMonth, setPreviewMonth] = useState(null)
+  const [previewData, setPreviewData] = useState(null)
+  const [breakdownId, setBreakdownId] = useState(null)
+  const [invoices, setInvoices] = useState([])
+  const [loading, setLoading] = useState(true)
   const [checklist, setChecklist] = useState(invoiceData.checklist.map((c) => ({ ...c })))
   const [toast, setToast] = useState({ visible: false, message: '' })
+
+  const loadInvoices = useCallback(async () => {
+    setLoading(true)
+    try {
+      const rows = await apiFetch('/api/v1/invoices')
+      setInvoices(rows)
+    } catch {
+      setInvoices([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadInvoices()
+  }, [loadInvoices])
 
   const showToast = useCallback((message) => {
     setToast({ visible: true, message })
@@ -70,29 +91,40 @@ export function InvoicesPage() {
   }, [])
 
   const q = search.trim()
+  const cards = useMemo(() => invoices.map(mapInvoiceForCard), [invoices])
 
   const filteredAttention = useMemo(
-    () => invoiceData.attention.filter((x) => matchesSearch(x, q)),
-    [q],
+    () => cards.filter((x) => x.status === 'rejected' || x.status === 'queried').filter((x) => matchesSearch(x, q)),
+    [cards, q],
   )
   const filteredProgress = useMemo(
-    () => invoiceData.inProgress.filter((x) => matchesSearch(x, q)),
-    [q],
+    () => cards.filter((x) => !x.status && (x.apiStatus === 'IN_REVIEW' || x.apiStatus === 'DRAFT' || x.apiStatus === 'APPROVED')).filter((x) => matchesSearch(x, q)),
+    [cards, q],
   )
-  const filteredPaid = useMemo(() => invoiceData.paid.filter((x) => matchesSearch(x, q)), [q])
+  const filteredPaid = useMemo(
+    () => cards.filter((x) => x.apiStatus === 'PAID' || (!x.status && x.apiStatus === 'PAID')).filter((x) => matchesSearch(x, q)),
+    [cards, q],
+  )
 
   const totalVisible = filteredAttention.length + filteredProgress.length + filteredPaid.length
+  const summary = useMemo(() => computeSummaryFromInvoices(invoices), [invoices])
 
   const openGenerate = useCallback(() => setModalOpen(true), [])
 
-  const handleGenerateFromModal = useCallback(
-    (opt) => {
-      setModalOpen(false)
-      showToast(
-        `Invoice for ${opt.label} generated from ${opt.sessions} validated logs · ${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(opt.payoutINR)}.`,
-      )
+  const handlePreviewReady = useCallback((month, preview) => {
+    setModalOpen(false)
+    setPreviewMonth(month)
+    setPreviewData(preview)
+  }, [])
+
+  const handleSubmitted = useCallback(
+    (inv) => {
+      setPreviewData(null)
+      setPreviewMonth(null)
+      loadInvoices()
+      showToast(`Invoice for ${inv.month} submitted · ${formatInr(inv.amount_inr)}.`)
     },
-    [showToast],
+    [loadInvoices, showToast],
   )
 
   const handleCheckToggle = (id) => {
@@ -112,8 +144,24 @@ export function InvoicesPage() {
       <GenerateInvoiceModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        options={invoiceData.generateOptions}
-        onGenerate={handleGenerateFromModal}
+        onPreviewReady={handlePreviewReady}
+      />
+
+      <InvoicePreviewDrawer
+        open={Boolean(previewData)}
+        month={previewMonth}
+        preview={previewData}
+        onClose={() => {
+          setPreviewData(null)
+          setPreviewMonth(null)
+        }}
+        onSubmitted={handleSubmitted}
+      />
+
+      <InvoiceBreakdownModal
+        invoiceId={breakdownId}
+        open={Boolean(breakdownId)}
+        onClose={() => setBreakdownId(null)}
       />
 
       <SectionHeader
@@ -125,13 +173,15 @@ export function InvoicesPage() {
         onPrimaryAction={openGenerate}
       />
 
-      <SummaryCard summary={invoiceData.summary} />
+      <SummaryCard summary={summary} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-8">
           <EarningsTrendChart data={invoiceData.earningsTrend} />
 
-          {totalVisible === 0 ? (
+          {loading ? (
+            <p className="text-center text-sm text-slate-500">Loading invoices…</p>
+          ) : totalVisible === 0 ? (
             <div className="rounded-2xl border border-dashed border-[#E2E8F0] bg-white px-6 py-16 text-center shadow-sm">
               <p className="text-lg font-semibold text-slate-800">
                 {q ? 'No invoices match your search' : 'No invoices yet — generate your first invoice from logs'}
@@ -166,8 +216,8 @@ export function InvoicesPage() {
                         key={inv.id}
                         variant="attention"
                         invoice={inv}
-                        onResolve={(i) => showToast(`Opening resolution for ${i.month}…`)}
-                        onViewDetails={(i) => showToast(`Details: ${i.month} (demo)`)}
+                        onResolve={() => setBreakdownId(inv.id)}
+                        onViewDetails={() => setBreakdownId(inv.id)}
                       />
                     ))}
                   </div>
@@ -191,8 +241,8 @@ export function InvoicesPage() {
                         key={inv.id}
                         variant="progress"
                         invoice={inv}
-                        onViewDetails={(i) => showToast(`Opening ${i.month} invoice…`)}
-                        onDownloadCsv={(i) => showToast(`Downloading CSV for ${i.month}…`)}
+                        onViewDetails={() => setBreakdownId(inv.id)}
+                        onDownloadCsv={() => showToast(`CSV export for ${inv.month} coming soon`)}
                       />
                     ))}
                   </div>
@@ -216,8 +266,8 @@ export function InvoicesPage() {
                         key={inv.id}
                         variant="paid"
                         invoice={inv}
-                        onView={(i) => showToast(`Viewing ${i.month} payment record…`)}
-                        onDownloadPdf={(i) => showToast(`Downloading PDF for ${i.month}…`)}
+                        onView={() => setBreakdownId(inv.id)}
+                        onDownloadPdf={() => showToast(`PDF for ${inv.month} coming soon`)}
                       />
                     ))}
                   </div>

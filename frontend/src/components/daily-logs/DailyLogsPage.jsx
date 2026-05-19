@@ -1,294 +1,276 @@
-import { useCallback, useMemo, useState } from 'react'
-import dailyLogsData from '../../data/dailyLogs.json'
-import { ChecklistPanel } from './ChecklistPanel.jsx'
-import { FilterBar } from './FilterBar.jsx'
-import { LogCard } from './LogCard.jsx'
-import { QuickLogCard } from './QuickLogCard.jsx'
+import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { apiFetch } from '../../lib/apiClient.js'
+import { ForgotSessionForm } from './ForgotSessionForm.jsx'
+import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
 
-function Toast({ message, visible, onDismiss }) {
-  if (!visible) return null
-  return (
-    <div
-      role="status"
-      className="fixed right-4 top-4 z-[100] flex max-w-sm items-start gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.12)]"
-    >
-      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-        ✓
-      </span>
-      <div>
-        <p className="font-semibold text-slate-900">Log saved</p>
-        <p className="text-sm text-slate-600">{message}</p>
-      </div>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="ml-2 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-        aria-label="Dismiss"
-      >
-        ×
-      </button>
-    </div>
-  )
+function formatTime(t) {
+  if (!t) return '—'
+  return String(t).slice(0, 5)
 }
 
-function PageHeader({ search, onSearchChange, onNewLog }) {
-  return (
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Daily Logs</h2>
-        <p className="mt-1 text-sm text-slate-500 sm:text-base">
-          Submit and track your service logs for each session
-        </p>
-      </div>
-      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end lg:w-auto">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search child, case ID…"
-          className="min-h-[44px] w-full min-w-0 rounded-xl border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm outline-none ring-indigo-500/0 transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 sm:w-64"
-          aria-label="Search logs"
-        />
-        <button
-          type="button"
-          onClick={onNewLog}
-          className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-xl bg-[#F97316] px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-orange-600 hover:shadow-lg active:scale-[0.99]"
-        >
-          + New Daily Log
-        </button>
-      </div>
-    </header>
-  )
-}
-
-function AttentionCard({ item, onCompleteLog }) {
-  const isMissing = item.kind === 'missing'
-  return (
-    <article
-      className={`rounded-2xl border p-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition-transform duration-200 hover:scale-[1.01] hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] ${
-        isMissing
-          ? 'border-red-200 bg-gradient-to-br from-red-50/90 to-white'
-          : 'border-amber-200 bg-gradient-to-br from-amber-50/90 to-white'
-      }`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
-              isMissing ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'
-            }`}
-          >
-            {isMissing ? 'Missing' : 'Pending'}
-          </span>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">{item.caseId}</p>
-          <p className="text-lg font-semibold text-slate-900">{item.child}</p>
-          <p className="mt-1 text-sm font-medium text-slate-600">{item.dueLabel}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => onCompleteLog(item.caseId)}
-          className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
-        >
-          Complete log
-        </button>
-      </div>
-    </article>
-  )
+function formatDuration(startIso, tick) {
+  if (!startIso) return '00:00:00'
+  const start = new Date(startIso).getTime()
+  const secs = Math.max(0, Math.floor((tick - start) / 1000))
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 export function DailyLogsPage() {
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [selectedCaseId, setSelectedCaseId] = useState(dailyLogsData.cases[0]?.caseId ?? '')
-  const [logs, setLogs] = useState(dailyLogsData.recentLogs)
-  const [checklist, setChecklist] = useState(
-    dailyLogsData.checklist.map((c) => ({ ...c })),
-  )
-  const [toast, setToast] = useState({ visible: false, message: '' })
-  const [formSeed, setFormSeed] = useState(null)
+  const [upcoming, setUpcoming] = useState([])
+  const [active, setActive] = useState(null)
+  const [logs, setLogs] = useState([])
+  const [needsLog, setNeedsLog] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [tick, setTick] = useState(Date.now())
+  const [logSession, setLogSession] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [showManual, setShowManual] = useState(false)
 
-  const clearFormSeed = useCallback(() => {
-    setFormSeed(null)
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [up, act, allLogs, allSessions] = await Promise.all([
+        apiFetch('/api/v1/sessions/upcoming?days=14'),
+        apiFetch('/api/v1/sessions/active').catch(() => null),
+        apiFetch('/api/v1/daily-logs'),
+        apiFetch('/api/v1/sessions'),
+      ])
+      setUpcoming(up || [])
+      setActive(act || null)
+      setLogs(allLogs || [])
+      const completedNoLog = (allSessions || []).filter(
+        (s) => s.status === 'COMPLETED' && !s.has_daily_log,
+      )
+      setNeedsLog(completedNoLog)
+    } catch (err) {
+      setError(err.message || 'Could not load sessions')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const showToast = useCallback((message) => {
-    setToast({ visible: true, message })
-    window.setTimeout(() => setToast((t) => ({ ...t, visible: false })), 4200)
-  }, [])
+  useEffect(() => {
+    loadAll()
+  }, [loadAll])
 
-  const scrollToQuickLog = () => {
-    document.getElementById('quick-log-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  useEffect(() => {
+    if (!active?.actual_start_at) return undefined
+    const id = setInterval(() => setTick(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [active?.actual_start_at, active?.id])
+
+  async function handleStart(sessionId) {
+    setError('')
+    try {
+      await apiFetch(`/api/v1/sessions/${sessionId}/start`, { method: 'POST' })
+      await loadAll()
+    } catch (err) {
+      setError(err.message || 'Could not start session')
+    }
   }
 
-  const handleNewLog = () => {
-    scrollToQuickLog()
+  async function handleEnd(sessionId) {
+    setError('')
+    try {
+      const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, { method: 'POST' })
+      await loadAll()
+      setLogSession(ended)
+    } catch (err) {
+      setError(err.message || 'Could not end session')
+    }
   }
 
-  const handleCompleteAttention = (caseId) => {
-    setSelectedCaseId(caseId)
-    scrollToQuickLog()
-  }
-
-  const handleQuickSubmit = useCallback(
-    ({ caseId, durationMinutes, activities, observations }) => {
-      const child = dailyLogsData.cases.find((c) => c.caseId === caseId)?.child ?? '—'
-      const today = new Date().toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
+  async function handleManualSession(payload) {
+    setSubmitting(true)
+    setError('')
+    try {
+      const session = await apiFetch('/api/v1/sessions/manual', {
+        method: 'POST',
+        body: JSON.stringify({
+          case_id: payload.case_id,
+          scheduled_date: payload.scheduled_date,
+          actual_start_at: payload.actual_start_at,
+          actual_end_at: payload.actual_end_at,
+          mode: payload.mode,
+        }),
       })
-      const newLog = {
-        id: `log-${Date.now()}`,
-        caseId,
-        child,
-        date: today.replace(/ /g, ' '),
-        durationMinutes,
-        status: 'submitted',
-        activities,
-        observations,
+      setShowManual(false)
+      setLogSession(session)
+      if (payload.isPastDay) {
+        setSuccess('Session added. Submit the log and include a late reason for admin review.')
       }
-      setLogs((prev) => [newLog, ...prev])
-      showToast(`Session for ${child} (${caseId}) submitted.`)
-    },
-    [showToast],
-  )
-
-  const filteredLogs = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return logs.filter((log) => {
-      const match =
-        !q ||
-        log.caseId.toLowerCase().includes(q) ||
-        (log.child && log.child.toLowerCase().includes(q))
-      const st = statusFilter === 'all' || log.status === statusFilter
-      return match && st
-    })
-  }, [logs, search, statusFilter])
-
-  const handleDuplicate = useCallback((log) => {
-    setSelectedCaseId(log.caseId)
-    const last = dailyLogsData.lastSessionByCase[log.caseId]
-    setFormSeed({
-      id: `seed-${Date.now()}`,
-      durationMinutes: log.durationMinutes ?? last?.durationMinutes ?? 45,
-      activities:
-        log.activities?.length ? log.activities : last?.activities ?? [],
-      observations: log.observations ?? last?.observations ?? '',
-    })
-    scrollToQuickLog()
-  }, [])
-
-  const handleCheckToggle = (id) => {
-    setChecklist((prev) => prev.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
+      await loadAll()
+    } catch (err) {
+      setError(err.message || 'Could not add session')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const noLogsAtAll = logs.length === 0
-  const emptyFiltered = filteredLogs.length === 0
+  if (loading) {
+    return <p style={{ padding: 24, color: '#6b7280' }}>Loading session logs…</p>
+  }
 
   return (
-    <div className="relative flex min-h-full flex-col gap-6 rounded-2xl bg-[#F8FAFC] px-1 py-2 pb-24 sm:px-3 sm:py-4 lg:pb-8">
-      <Toast
-        message={toast.message}
-        visible={toast.visible}
-        onDismiss={() => setToast((t) => ({ ...t, visible: false }))}
-      />
+    <div className="daily-logs-page" style={{ maxWidth: 960, margin: '0 auto', padding: '1rem' }}>
+      <header style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: '1.75rem', fontWeight: 700, margin: 0 }}>Session Logs</h2>
+        <p style={{ color: '#6b7280', marginTop: 4 }}>Start sessions, track time, and submit comprehensive logs.</p>
+      </header>
 
-      <PageHeader search={search} onSearchChange={setSearch} onNewLog={handleNewLog} />
+      {error ? (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: 12, marginBottom: 16, color: '#b91c1c' }}>
+          {error}
+        </div>
+      ) : null}
+      {success ? (
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: 12, marginBottom: 16, color: '#15803d' }}>
+          {success}
+        </div>
+      ) : null}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex min-w-0 flex-col gap-6">
-          <QuickLogCard
-            cases={dailyLogsData.cases}
-            activityTags={dailyLogsData.activityTags}
-            lastSessionByCase={dailyLogsData.lastSessionByCase}
-            selectedCaseId={selectedCaseId}
-            onCaseIdChange={setSelectedCaseId}
-            onSubmitSuccess={handleQuickSubmit}
-            formSeed={formSeed}
-            onFormSeedConsumed={clearFormSeed}
+      {active ? (
+        <section className="attendance-card" style={{ background: '#eef2ff', border: '2px solid #6366f1', borderRadius: 16, padding: 20, marginBottom: 24 }}>
+          <p style={{ fontWeight: 600, margin: '0 0 4px', color: '#3730a3' }}>Session in progress</p>
+          <p style={{ margin: '0 0 12px', fontSize: '0.875rem' }}>
+            {active.child_name || active.case_code} · {active.scheduled_date}
+            {active.auto_ended ? ' (auto-ended at 2h — start a new session to continue)' : ''}
+            {active.case_id ? (
+              <>
+                {' · '}
+                <Link to={`/therapist/cases/${active.case_id}`}>Open case</Link>
+              </>
+            ) : null}
+          </p>
+          <p className="attendance-timer" style={{ fontSize: '2rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: '0 0 16px' }}>
+            {formatDuration(active.actual_start_at, tick)}
+          </p>
+          <button
+            type="button"
+            onClick={() => handleEnd(active.id)}
+            style={{ padding: '10px 20px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+          >
+            End session
+          </button>
+        </section>
+      ) : null}
+
+      {!active && needsLog.length > 0 ? (
+        <section style={{ marginBottom: 24 }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Submit log for completed session</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+            {needsLog.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setLogSession(s)}
+                style={{ textAlign: 'left', padding: 12, borderRadius: 8, border: '1px solid #fde047', background: '#fefce8', cursor: 'pointer' }}
+              >
+                {s.child_name || s.case_code} — {s.scheduled_date} · needs log
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Upcoming sessions</h3>
+          {!active ? (
+            <button
+              type="button"
+              onClick={() => setShowManual((v) => !v)}
+              style={{ fontSize: '0.8rem', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+            >
+              + Log a session I missed
+            </button>
+          ) : null}
+        </div>
+        {showManual && !active ? (
+          <ForgotSessionForm
+            fallbackCases={[...upcoming, ...needsLog]}
+            submitting={submitting}
+            onSubmit={handleManualSession}
+            onCancel={() => setShowManual(false)}
           />
-
-          <section aria-labelledby="attention-heading">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />
-              <h3 id="attention-heading" className="text-lg font-semibold text-slate-900">
-                Attention required
-              </h3>
-            </div>
-            <p className="mb-4 text-sm text-slate-500">Missing and pending logs that need action first.</p>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {dailyLogsData.attentionRequired.map((item) => (
-                <AttentionCard key={item.id} item={item} onCompleteLog={handleCompleteAttention} />
-              ))}
-            </div>
-          </section>
-
-          <section aria-labelledby="recent-heading">
-            <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden />
-                  <h3 id="recent-heading" className="text-lg font-semibold text-slate-900">
-                    Recent logs
-                  </h3>
+        ) : null}
+        {upcoming.length === 0 ? (
+          <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>No scheduled sessions in the next two weeks.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {upcoming.map((s) => (
+              <article key={s.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <strong>{s.child_name || s.case_code}</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#6b7280' }}>
+                    {s.scheduled_date} · {formatTime(s.start_time)}–{formatTime(s.end_time)} · {s.mode}
+                    {s.case_id ? (
+                      <>
+                        {' · '}
+                        <Link to={`/therapist/cases/${s.case_id}`}>Open case</Link>
+                      </>
+                    ) : null}
+                  </p>
                 </div>
-                <p className="mt-1 text-sm text-slate-500">Card view — fastest to scan on mobile.</p>
-              </div>
-              <FilterBar value={statusFilter} onChange={setStatusFilter} />
-            </div>
+                {!active ? (
+                  <button
+                    type="button"
+                    onClick={() => handleStart(s.id)}
+                    style={{ padding: '8px 16px', borderRadius: 8, background: '#6366f1', color: '#fff', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+                  >
+                    Start session
+                  </button>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
-            {emptyFiltered ? (
-              <div className="rounded-2xl border border-dashed border-[#E2E8F0] bg-white px-6 py-16 text-center shadow-sm">
-                <p className="text-lg font-semibold text-slate-800">
-                  {noLogsAtAll && !search.trim() && statusFilter === 'all'
-                    ? 'No logs yet today — start your first session'
-                    : 'No logs match your filters'}
-                </p>
-                <p className="mt-2 text-sm text-slate-500">
-                  {noLogsAtAll && !search.trim() && statusFilter === 'all'
-                    ? 'Use Quick log above or the floating button on your phone.'
-                    : 'Try clearing search or switching status.'}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleNewLog}
-                  className="mt-6 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
-                >
-                  Start Quick log
-                </button>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {filteredLogs.map((log) => (
-                  <LogCard
-                    key={log.id}
-                    log={log}
-                    onView={() => showToast(`Opening ${log.caseId} (demo)`)}
-                    onEdit={() => {
-                      setSelectedCaseId(log.caseId)
-                      scrollToQuickLog()
-                    }}
-                    onDuplicate={handleDuplicate}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
+      {logSession ? (
+        <section style={{ background: '#fff', border: '2px solid #6366f1', borderRadius: 16, padding: 20, marginBottom: 24 }}>
+          <SubmitSessionLogForm
+            session={logSession}
+            caseCode={logSession.case_code}
+            childName={logSession.child_name}
+            onSuccess={async () => {
+              setSuccess('Session log submitted for review.')
+              setLogSession(null)
+              await loadAll()
+            }}
+            onCancel={() => setLogSession(null)}
+          />
+        </section>
+      ) : null}
 
-        <div className="min-w-0 xl:sticky xl:top-4 xl:self-start">
-          <ChecklistPanel items={checklist} onToggle={handleCheckToggle} />
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={handleNewLog}
-        className="fixed bottom-6 right-5 z-50 flex h-14 items-center gap-2 rounded-full bg-indigo-600 px-5 text-sm font-bold text-white shadow-[0_8px_30px_rgba(79,70,229,0.45)] transition hover:scale-[1.03] hover:bg-indigo-700 xl:hidden"
-        aria-label="Quick log"
-      >
-        + Quick log
-      </button>
+      <section>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Recent logs</h3>
+        {logs.length === 0 ? (
+          <p style={{ color: '#9ca3af' }}>No logs submitted yet.</p>
+        ) : (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {logs.slice(0, 10).map((l) => (
+              <div key={l.id} style={{ padding: 12, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: '0.875rem' }}>
+                <strong>{l.case_code}</strong> · {l.attendance_status} · <span style={{ color: '#6b7280' }}>{l.approval_status}</span>
+                {l.late_addition ? <span style={{ marginLeft: 8, color: '#a16207' }}>Late</span> : null}
+                {l.case_id ? (
+                  <>
+                    {' · '}
+                    <Link to={`/therapist/cases/${l.case_id}`}>Open case</Link>
+                  </>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }

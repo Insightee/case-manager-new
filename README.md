@@ -6,6 +6,39 @@ This repository will be built incrementally from the Product Requirements Docume
 
 ---
 
+## Local development
+
+**Backend** (from `backend/`):
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m app.seed.demo_seed
+uvicorn app.main:app --reload --port 8000
+```
+
+**Frontend** (from `frontend/`):
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 and sign in with demo accounts (e.g. `superadmin@demo.com` / `demo123`, `therapist@demo.com` / `demo123`).
+
+**E2E tests** (from `frontend/`, starts Vite + API if not already running):
+
+```bash
+npm install
+npx playwright install chromium
+npm run test:e2e
+```
+
+API-only smoke (backend must be on `:8000`): `python3 scripts/therapist_flow_smoke.py`
+
+See [backend/README.md](backend/README.md) for API details and role matrix. System architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
 ## Product Overview
 
 InsightCase replaces spreadsheet-led operations with a case-centric system where every converted engagement becomes a unique `Case ID`.

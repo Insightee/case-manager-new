@@ -1,0 +1,505 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { apiFetch } from '../../lib/apiClient.js'
+
+const LEAVE_TYPES = ['ANNUAL', 'SICK', 'CASUAL', 'UNPAID']
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+
+const STATUS_COLORS = {
+  PENDING: { bg: '#fefce8', color: '#a16207', border: '#fde047' },
+  APPROVED: { bg: '#f0fdf4', color: '#15803d', border: '#86efac' },
+  REJECTED: { bg: '#fef2f2', color: '#b91c1c', border: '#fca5a5' },
+  CANCELLED: { bg: '#f4f4f5', color: '#71717a', border: '#d4d4d8' },
+}
+
+const TYPE_COLORS = {
+  ANNUAL: '#dbeafe',
+  SICK: '#fce7f3',
+  CASUAL: '#d1fae5',
+  UNPAID: '#fde8d8',
+}
+
+function daysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate()
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+function toDateStr(year, month, day) {
+  return `${year}-${pad2(month + 1)}-${pad2(day)}`
+}
+
+function leaveOnDate(dateStr, leaves) {
+  return leaves.find((l) => l.status !== 'CANCELLED' && dateStr >= l.start_date && dateStr <= l.end_date)
+}
+
+function dayStyle(dateStr, leaves, isToday, isSelected, isRange) {
+  const entry = leaveOnDate(dateStr, leaves)
+  if (isSelected || isRange) {
+    return {
+      background: '#e0e7ff',
+      color: '#3730a3',
+      border: '2px solid #6366f1',
+      fontWeight: 700,
+    }
+  }
+  if (entry?.status === 'APPROVED') {
+    return { background: '#bbf7d0', color: '#15803d', border: '2px solid transparent', fontWeight: 500 }
+  }
+  if (entry?.status === 'PENDING') {
+    return { background: '#fef9c3', color: '#a16207', border: '2px solid transparent', fontWeight: 500 }
+  }
+  if (entry?.status === 'REJECTED') {
+    return { background: '#fee2e2', color: '#b91c1c', border: '2px solid transparent', fontWeight: 500 }
+  }
+  if (isToday) {
+    return { background: '#fff', color: '#6366f1', border: '2px solid #6366f1', fontWeight: 700 }
+  }
+  return { background: '#fff', color: '#374151', border: '2px solid #f3f4f6', fontWeight: 400 }
+}
+
+export function TherapistLeavePage() {
+  const { user, loading: authLoading } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const now = useMemo(() => new Date(), [])
+
+  const [calYear, setCalYear] = useState(now.getFullYear())
+  const [calMonth, setCalMonth] = useState(now.getMonth())
+  const [leaves, setLeaves] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ leave_type: 'ANNUAL', start_date: '', end_date: '', reason: '' })
+  const [pickStart, setPickStart] = useState(null)
+  const [pickEnd, setPickEnd] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const loadLeaves = useCallback(async () => {
+    setLoading(true)
+    setLoadError('')
+    try {
+      const data = await apiFetch('/api/v1/leave')
+      setLeaves(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setLeaves([])
+      setLoadError(err.message || 'Could not load leave requests')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (authLoading || !user) return
+    loadLeaves()
+  }, [authLoading, user, loadLeaves])
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowForm(true)
+      searchParams.delete('new')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
+  function openRequestForm(start, end) {
+    setForm((f) => ({
+      ...f,
+      start_date: start || f.start_date,
+      end_date: end || start || f.end_date,
+    }))
+    setShowForm(true)
+    setError('')
+    setSuccess('')
+  }
+
+  function handleDayClick(day) {
+    const ds = toDateStr(calYear, calMonth, day)
+    if (!pickStart || (pickStart && pickEnd)) {
+      setPickStart(ds)
+      setPickEnd(null)
+      return
+    }
+    if (ds < pickStart) {
+      setPickEnd(pickStart)
+      setPickStart(ds)
+      openRequestForm(ds, pickStart)
+      setPickStart(null)
+      setPickEnd(null)
+      return
+    }
+    setPickEnd(ds)
+    openRequestForm(pickStart, ds)
+    setPickStart(null)
+    setPickEnd(null)
+  }
+
+  function isInPickRange(ds) {
+    if (!pickStart) return false
+    if (!pickEnd) return ds === pickStart
+    return ds >= pickStart && ds <= pickEnd
+  }
+
+  async function submitLeave(e) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError('')
+    setSuccess('')
+    try {
+      await apiFetch('/api/v1/leave', {
+        method: 'POST',
+        body: JSON.stringify({
+          leave_type: form.leave_type,
+          start_date: form.start_date,
+          end_date: form.end_date,
+          reason: form.reason || null,
+        }),
+      })
+      setForm({ leave_type: 'ANNUAL', start_date: '', end_date: '', reason: '' })
+      setShowForm(false)
+      setSuccess('Leave request submitted.')
+      await loadLeaves()
+    } catch (err) {
+      setError(err.message || 'Could not submit leave')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function cancelLeave(id) {
+    try {
+      await apiFetch(`/api/v1/leave/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      })
+      await loadLeaves()
+    } catch (err) {
+      setError(err.message || 'Could not cancel leave')
+    }
+  }
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay()
+  const totalDays = daysInMonth(calYear, calMonth)
+  const cells = []
+  for (let i = 0; i < firstDay; i++) cells.push(null)
+  for (let d = 1; d <= totalDays; d++) cells.push(d)
+
+  const todayStr = toDateStr(now.getFullYear(), now.getMonth(), now.getDate())
+
+  const pendingCount = leaves.filter((l) => l.status === 'PENDING').length
+  const approvedDays = leaves
+    .filter((l) => l.status === 'APPROVED')
+    .reduce((acc, l) => {
+      const start = new Date(l.start_date)
+      const end = new Date(l.end_date)
+      return acc + Math.round((end - start) / 86400000) + 1
+    }, 0)
+
+  const monthLeaves = leaves.filter(
+    (l) =>
+      l.status !== 'CANCELLED' &&
+      l.start_date <= toDateStr(calYear, calMonth, totalDays) &&
+      l.end_date >= toDateStr(calYear, calMonth, 1),
+  )
+
+  return (
+    <div style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+            Leave management
+          </p>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>My Leave</h1>
+          <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>
+            Click dates on the calendar to request leave, or use the button below.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setShowForm(!showForm)
+            setError('')
+            setSuccess('')
+          }}
+          style={{
+            padding: '8px 18px',
+            background: '#6366f1',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            fontWeight: 600,
+            fontSize: '0.875rem',
+            cursor: 'pointer',
+          }}
+        >
+          {showForm ? 'Close form' : '+ Request leave'}
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending requests</p>
+          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a16207' }}>{loading ? '…' : pendingCount}</p>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Approved days (all time)</p>
+          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : approvedDays}</p>
+        </div>
+      </div>
+
+      {loadError ? (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#b91c1c', fontSize: '0.875rem' }}>
+          {loadError}
+          <button type="button" onClick={loadLeaves} style={{ marginLeft: 12, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c' }}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {error ? (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#b91c1c', fontSize: '0.875rem' }}>{error}</div>
+      ) : null}
+      {success ? (
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#15803d', fontSize: '0.875rem' }}>{success}</div>
+      ) : null}
+
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (calMonth === 0) {
+                setCalYear(calYear - 1)
+                setCalMonth(11)
+              } else setCalMonth(calMonth - 1)
+            }}
+            aria-label="Previous month"
+            style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '1rem' }}
+          >
+            ‹
+          </button>
+          <p style={{ fontWeight: 600, flex: 1, textAlign: 'center', margin: 0 }}>
+            {MONTHS[calMonth]} {calYear}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (calMonth === 11) {
+                setCalYear(calYear + 1)
+                setCalMonth(0)
+              } else setCalMonth(calMonth + 1)
+            }}
+            aria-label="Next month"
+            style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '1rem' }}
+          >
+            ›
+          </button>
+        </div>
+        <p style={{ fontSize: '0.75rem', color: '#6b7280', textAlign: 'center', marginBottom: 16 }}>
+          {pickStart && !pickEnd
+            ? `Start: ${pickStart} — click end date`
+            : 'Click a start date, then an end date, to open the request form'}
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, textAlign: 'center' }}>
+          {WEEKDAYS.map((d) => (
+            <div key={d} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9ca3af', padding: '4px 0' }}>
+              {d}
+            </div>
+          ))}
+          {cells.map((day, i) => {
+            if (!day) {
+              return <div key={`empty-${i}`} style={{ minHeight: 36 }} aria-hidden />
+            }
+            const ds = toDateStr(calYear, calMonth, day)
+            const entry = leaveOnDate(ds, leaves)
+            const styles = dayStyle(ds, leaves, ds === todayStr, pickStart === ds, isInPickRange(ds))
+            return (
+              <button
+                key={ds}
+                type="button"
+                onClick={() => handleDayClick(day)}
+                title={entry ? `${entry.leave_type} (${entry.status})` : 'Select for leave request'}
+                style={{
+                  minHeight: 36,
+                  padding: '6px 0',
+                  borderRadius: 8,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  ...styles,
+                }}
+              >
+                {day}
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 16, fontSize: '0.75rem', color: '#6b7280' }}>
+          <span>
+            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#bbf7d0', borderRadius: 2, marginRight: 4 }} />
+            Approved
+          </span>
+          <span>
+            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#fef9c3', borderRadius: 2, marginRight: 4 }} />
+            Pending
+          </span>
+          <span>
+            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#fee2e2', borderRadius: 2, marginRight: 4 }} />
+            Rejected
+          </span>
+        </div>
+
+        {!loading && monthLeaves.length === 0 ? (
+          <p style={{ marginTop: 16, marginBottom: 0, fontSize: '0.875rem', color: '#6b7280', textAlign: 'center' }}>
+            No leave this month. Click dates above or{' '}
+            <button type="button" onClick={() => openRequestForm()} style={{ color: '#6366f1', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+              request leave
+            </button>
+            .
+          </p>
+        ) : null}
+      </div>
+
+      {showForm ? (
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
+          <p style={{ fontWeight: 600, marginBottom: 16 }}>New leave request</p>
+          <form onSubmit={submitLeave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+              Leave type
+              <select
+                value={form.leave_type}
+                onChange={(e) => setForm({ ...form, leave_type: e.target.value })}
+                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+              >
+                {LEAVE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+                From date
+                <input
+                  type="date"
+                  value={form.start_date}
+                  onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                  required
+                  style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+                To date
+                <input
+                  type="date"
+                  value={form.end_date}
+                  onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                  required
+                  style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+                />
+              </label>
+            </div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+              Reason (optional)
+              <textarea
+                value={form.reason}
+                onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                rows={3}
+                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', resize: 'vertical' }}
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{
+                padding: '10px',
+                background: '#6366f1',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: submitting ? 'not-allowed' : 'pointer',
+                opacity: submitting ? 0.7 : 1,
+              }}
+            >
+              {submitting ? 'Submitting…' : 'Submit request'}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', minHeight: 120 }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <p style={{ fontWeight: 600, margin: 0 }}>All requests</p>
+          <button type="button" onClick={loadLeaves} style={{ fontSize: '0.75rem', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer' }}>
+            Refresh
+          </button>
+        </div>
+        {loading ? (
+          <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>Loading leave requests…</div>
+        ) : leaves.length === 0 ? (
+          <div style={{ padding: 32, textAlign: 'center', color: '#6b7280' }}>
+            <p style={{ margin: '0 0 8px' }}>No leave requests yet.</p>
+            <button
+              type="button"
+              onClick={() => openRequestForm()}
+              style={{ color: '#6366f1', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Submit your first request
+            </button>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb' }}>
+                  {['Type', 'From', 'To', 'Reason', 'Status', ''].map((h) => (
+                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {leaves.map((l) => {
+                  const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
+                  const tc = TYPE_COLORS[l.leave_type] || '#f3f4f6'
+                  return (
+                    <tr key={l.id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '10px 16px' }}>
+                        <span style={{ background: tc, color: '#374151', fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>{l.leave_type}</span>
+                      </td>
+                      <td style={{ padding: '10px 16px' }}>{l.start_date}</td>
+                      <td style={{ padding: '10px 16px' }}>{l.end_date}</td>
+                      <td style={{ padding: '10px 16px', color: '#6b7280' }}>{l.reason || '—'}</td>
+                      <td style={{ padding: '10px 16px' }}>
+                        <span style={{ background: sc.bg, color: sc.color, fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, border: `1px solid ${sc.border}` }}>{l.status}</span>
+                      </td>
+                      <td style={{ padding: '10px 16px' }}>
+                        {l.status === 'PENDING' ? (
+                          <button
+                            type="button"
+                            onClick={() => cancelLeave(l.id)}
+                            style={{ fontSize: '0.75rem', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                          >
+                            Cancel
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  )
+                })}
+                </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

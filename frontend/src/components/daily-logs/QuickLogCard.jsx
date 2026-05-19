@@ -11,6 +11,9 @@ export function QuickLogCard({
   lastSessionByCase,
   selectedCaseId,
   onCaseIdChange,
+  sessions = [],
+  selectedSessionId,
+  onSessionIdChange,
   onSubmitSuccess,
   formSeed,
   onFormSeedConsumed,
@@ -59,10 +62,13 @@ export function QuickLogCard({
     return c ? `${c.caseId} · ${c.child}` : 'Select a case'
   }, [cases, selectedCaseId])
 
+  const caseSessions = sessions.filter((s) => s.case_code === selectedCaseId || String(s.case_id) === String(selectedCaseId))
+
   const handleSubmit = (e) => {
     e.preventDefault()
     onSubmitSuccess?.({
       caseId: selectedCaseId,
+      sessionId: selectedSessionId,
       durationMinutes: duration,
       activities,
       observations,
@@ -105,6 +111,26 @@ export function QuickLogCard({
           </select>
           <p className="mt-1.5 text-xs text-slate-500">{caseLabel}</p>
         </div>
+
+        {caseSessions.length > 0 && onSessionIdChange ? (
+          <div>
+            <label htmlFor="quick-session" className="mb-2 block text-sm font-medium text-slate-700">
+              Session
+            </label>
+            <select
+              id="quick-session"
+              value={selectedSessionId || ''}
+              onChange={(e) => onSessionIdChange(e.target.value)}
+              className="w-full min-h-[48px] rounded-xl border border-[#E2E8F0] bg-slate-50/80 px-4 py-3 text-base text-slate-900"
+            >
+              {caseSessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.scheduled_date} — {s.status}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         <div>
           <label htmlFor="quick-duration" className="mb-2 block text-sm font-medium text-slate-700">
