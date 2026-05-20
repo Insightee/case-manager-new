@@ -25,6 +25,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[Optional[str]] = mapped_column(String(32))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     employment_status: Mapped[EmploymentStatus] = mapped_column(
         Enum(EmploymentStatus), default=EmploymentStatus.ACTIVE, nullable=False
@@ -70,3 +71,5 @@ class InviteToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[Optional[datetime ]] = mapped_column(DateTime(timezone=True))
     created_by_user_id: Mapped[Optional[int ]] = mapped_column(ForeignKey("users.id"))
+    linked_child_id: Mapped[Optional[int]] = mapped_column(ForeignKey("children.id"), nullable=True)
+    invite_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

@@ -1,12 +1,23 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
+from app.api.deps import get_db
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.database import ensure_sqlite_schema_patches
+from app.db.bootstrap import bootstrap_schema
 
 app = FastAPI(title="InsightCase API", version="0.1.0")
+
+
+@app.on_event("startup")
+def _on_startup() -> None:
+    bootstrap_schema()
+    ensure_sqlite_schema_patches()
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,5 +42,11 @@ def root():
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(db: Session = Depends(get_db)):
+    revision = None
+    try:
+        row = db.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).first()
+        revision = row[0] if row else None
+    except Exception:
+        revision = None
+    return {"status": "ok", "db_migration": revision}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.pagination import paginate_query, paginated_response
 from app.core.module_access import user_has_feature
 from app.core.permissions import case_scope_check, require_permission
 from app.models.incident import Incident, IncidentStatus
@@ -33,16 +34,26 @@ class IncidentUpdate(BaseModel):
 
 @router.get("")
 def list_incidents(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(require_permission("incident.read_sensitive")),
     db: Session = Depends(get_db),
 ):
     if not user_has_feature(user, "incidents"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Incidents module access required")
 
-    incidents = db.scalars(select(Incident).order_by(Incident.created_at.desc())).all()
+    stmt = select(Incident).order_by(Incident.created_at.desc())
+    incidents, total = paginate_query(db, stmt, page=page, page_size=page_size)
+    case_ids = {i.case_id for i in incidents if i.case_id}
+    cases_by_id = {}
+    if case_ids:
+        from app.models.case import Case
+
+        cases = db.scalars(select(Case).where(Case.id.in_(case_ids))).all()
+        cases_by_id = {c.id: c for c in cases}
     result = []
     for i in incidents:
-        case = case_service.get_case(db, i.case_id) if i.case_id else None
+        case = cases_by_id.get(i.case_id) if i.case_id else None
         if case and not case_scope_check(db, user, case):
             continue
         result.append(
@@ -55,7 +66,7 @@ def list_incidents(
                 "product_module": case.product_module if case else None,
             }
         )
-    return result
+    return paginated_response(result, total, page, page_size)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

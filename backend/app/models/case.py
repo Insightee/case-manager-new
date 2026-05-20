@@ -28,16 +28,21 @@ class CompensationMode(str, enum.Enum):
     FIXED_LUMP = "FIXED_LUMP"
 
 
+class ClientBillingMode(str, enum.Enum):
+    PREPAID = "PREPAID"
+    POSTPAID = "POSTPAID"
+
+
 class Case(Base):
     __tablename__ = "cases"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
-    child_id: Mapped[int] = mapped_column(ForeignKey("children.id"), nullable=False)
+    child_id: Mapped[int] = mapped_column(ForeignKey("children.id"), nullable=False, index=True)
     service_type: Mapped[str] = mapped_column(String(128), nullable=False)
-    product_module: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[CaseStatus] = mapped_column(Enum(CaseStatus), default=CaseStatus.PENDING_ALLOTMENT)
-    case_manager_user_id: Mapped[Optional[int ]] = mapped_column(ForeignKey("users.id"))
+    product_module: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[CaseStatus] = mapped_column(Enum(CaseStatus), default=CaseStatus.PENDING_ALLOTMENT, index=True)
+    case_manager_user_id: Mapped[Optional[int ]] = mapped_column(ForeignKey("users.id"), index=True)
     region: Mapped[Optional[str ]] = mapped_column(String(64))
     operational_stage: Mapped[Optional[str ]] = mapped_column(String(64))
     notes: Mapped[Optional[str]] = mapped_column(Text)
@@ -49,6 +54,7 @@ class Case(Base):
     pay_share_pct: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
     therapist_fixed_pay_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     billing_notes: Mapped[Optional[str]] = mapped_column(Text)
+    client_billing_mode: Mapped[Optional[ClientBillingMode]] = mapped_column(Enum(ClientBillingMode))
     billing_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     billing_updated_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     service_address_line1: Mapped[Optional[str]] = mapped_column(String(255))

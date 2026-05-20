@@ -20,6 +20,12 @@ class ReportStatus(str, enum.Enum):
     PUBLISHED = "PUBLISHED"
 
 
+class ParentReviewStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    CHANGES_REQUESTED = "CHANGES_REQUESTED"
+
+
 class MonthlyReport(Base):
     __tablename__ = "monthly_reports"
 
@@ -31,6 +37,9 @@ class MonthlyReport(Base):
     summary: Mapped[Optional[str ]] = mapped_column(Text)
     reviewer_comment: Mapped[Optional[str ]] = mapped_column(Text)
     visibility_status: Mapped[VisibilityStatus] = mapped_column(Enum(VisibilityStatus), default=VisibilityStatus.INTERNAL_ONLY)
+    parent_review_status: Mapped[Optional[str]] = mapped_column(String(32))
+    parent_feedback: Mapped[Optional[str]] = mapped_column(Text)
+    parent_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -123,7 +123,7 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
       {form.product_module === 'homecare' ? (
         <div style={{ gridColumn: '1 / -1' }}>
           <p className="admin-drawer__subtitle">Service address</p>
-          <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="create-svc" />
+          <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="create-svc" showLocationButton={false} />
         </div>
       ) : null}
       {form.billing_type === 'PER_SESSION' ? (

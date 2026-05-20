@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/apiClient.js'
+import { unwrapList } from '../lib/listApi.js'
 
 export function useTherapistDashboardStats() {
   const [stats, setStats] = useState(null)
@@ -9,17 +10,21 @@ export function useTherapistDashboardStats() {
     setLoading(true)
     try {
       const [cases, sessions, logs, reports] = await Promise.all([
-        apiFetch('/api/v1/cases?assigned=true'),
-        apiFetch('/api/v1/sessions'),
+        apiFetch('/api/v1/cases?assigned=true&page_size=100'),
+        apiFetch('/api/v1/sessions?page_size=100'),
         apiFetch('/api/v1/daily-logs'),
-        apiFetch('/api/v1/reports/monthly'),
+        apiFetch('/api/v1/reports/monthly?page_size=100'),
       ])
-      const needsLog = (sessions || []).filter((s) => s.status === 'COMPLETED' && !s.has_daily_log).length
-      const pendingLogs = (logs || []).filter((l) => l.approval_status === 'PENDING').length
-      const draftReports = (reports || []).filter((r) => r.status === 'DRAFT' || r.status === 'REJECTED').length
-      const underReview = (reports || []).filter((r) => r.status === 'UNDER_REVIEW').length
+      const caseRows = unwrapList(cases)
+      const sessionRows = unwrapList(sessions)
+      const logRows = unwrapList(logs)
+      const reportRows = unwrapList(reports)
+      const needsLog = sessionRows.filter((s) => s.status === 'COMPLETED' && !s.has_daily_log).length
+      const pendingLogs = logRows.filter((l) => l.approval_status === 'PENDING').length
+      const draftReports = reportRows.filter((r) => r.status === 'DRAFT' || r.status === 'REJECTED').length
+      const underReview = reportRows.filter((r) => r.status === 'UNDER_REVIEW').length
       setStats({
-        caseCount: (cases || []).length,
+        caseCount: caseRows.length,
         needsLog,
         pendingLogs,
         draftReports,

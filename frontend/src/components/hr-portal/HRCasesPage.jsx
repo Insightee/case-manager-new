@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
+import { ErrorBanner } from '../shared/ErrorBanner.jsx'
 
 const STATUS_COLORS = {
   ACTIVE: { bg: '#f0fdf4', color: '#15803d' },
@@ -12,15 +14,18 @@ export function HRCasesPage() {
   const [cases, setCases] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     async function load() {
       setLoading(true)
+      setError('')
       try {
-        const data = await apiFetch('/api/v1/cases')
-        setCases(data)
-      } catch {
+        const data = await apiFetch('/api/v1/cases?page_size=100')
+        setCases(unwrapList(data))
+      } catch (err) {
         setCases([])
+        setError(err.message || 'Could not load cases')
       } finally {
         setLoading(false)
       }
@@ -35,6 +40,7 @@ export function HRCasesPage() {
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem 1rem' }}>
+      <ErrorBanner message={error} />
       <header style={{ marginBottom: 24 }}>
         <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>HR</p>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Cases</h1>

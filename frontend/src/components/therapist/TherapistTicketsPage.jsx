@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
+import { createStaffTicket } from '../../lib/ticketFormUtils.js'
+import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
+import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
+import { TicketFileInput } from '../support/TicketFileInput.jsx'
+import '../support/support-tickets.css'
 
 const CATEGORIES = ['FINANCE', 'HR', 'SERVICE', 'POSH', 'CPP', 'OTHER']
 
@@ -23,18 +29,18 @@ export function TherapistTicketsPage() {
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTicket, setActiveTicket] = useState(null)
-  const [messages, setMessages] = useState([])
-  const [newMsg, setNewMsg] = useState('')
+  const [detailLoading, setDetailLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ subject: '', body: '', category: 'OTHER' })
+  const [formFiles, setFormFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   async function loadTickets() {
     setLoading(true)
     try {
-      const data = await apiFetch('/api/v1/tickets')
-      setTickets(data)
+      const data = await apiFetch('/api/v1/tickets?page_size=100')
+      setTickets(unwrapList(data))
     } catch {
       setTickets([])
     } finally {
@@ -42,18 +48,40 @@ export function TherapistTicketsPage() {
     }
   }
 
-  useEffect(() => { loadTickets() }, [])
+  useEffect(() => {
+    loadTickets()
+  }, [])
+
+  async function openTicket(t) {
+    if (activeTicket?.id === t.id) {
+      setActiveTicket(null)
+      return
+    }
+    setDetailLoading(true)
+    setActiveTicket({ id: t.id })
+    try {
+      const detail = await loadStaffTicketDetail(t.id)
+      setActiveTicket(detail)
+    } catch {
+      setActiveTicket(t)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
 
   async function createTicket(e) {
     e.preventDefault()
     setSubmitting(true)
     setError('')
     try {
-      await apiFetch('/api/v1/tickets', {
-        method: 'POST',
-        body: JSON.stringify({ subject: form.subject, body: form.body, category: form.category }),
+      await createStaffTicket({
+        subject: form.subject,
+        body: form.body,
+        category: form.category,
+        files: formFiles,
       })
       setForm({ subject: '', body: '', category: 'OTHER' })
+      setFormFiles([])
       setShowForm(false)
       loadTickets()
     } catch (err) {
@@ -62,20 +90,6 @@ export function TherapistTicketsPage() {
       setSubmitting(false)
     }
   }
-
-  async function sendMessage(e) {
-    e.preventDefault()
-    if (!newMsg.trim() || !activeTicket) return
-    try {
-      await apiFetch(`/api/v1/tickets/${activeTicket.id}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ body: newMsg }),
-      })
-      setNewMsg('')
-    } catch {}
-  }
-
-  const s = (key) => ({ ...panelStyle })
 
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: '2rem 1rem' }}>
@@ -87,13 +101,16 @@ export function TherapistTicketsPage() {
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>My Tickets</h1>
           <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>Raise and track support requests.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowForm(!showForm)}
-          style={{ padding: '8px 18px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}
-        >
-          {showForm ? 'Cancel' : '+ New ticket'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <PoliciesBotButton />
+          <button
+            type="button"
+            onClick={() => setShowForm(!showForm)}
+            style={{ padding: '8px 18px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}
+          >
+            {showForm ? 'Cancel' : '+ New ticket'}
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -102,7 +119,7 @@ export function TherapistTicketsPage() {
         </div>
       ) : null}
 
-      {showForm && (
+      {showForm ? (
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
           <p style={{ fontWeight: 600, marginBottom: 16 }}>New support ticket</p>
           <form onSubmit={createTicket} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -113,7 +130,11 @@ export function TherapistTicketsPage() {
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
                 style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
               >
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
               </select>
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
@@ -135,6 +156,7 @@ export function TherapistTicketsPage() {
                 style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', resize: 'vertical' }}
               />
             </label>
+            <TicketFileInput files={formFiles} onChange={setFormFiles} disabled={submitting} />
             <button
               type="submit"
               disabled={submitting}
@@ -144,7 +166,7 @@ export function TherapistTicketsPage() {
             </button>
           </form>
         </div>
-      )}
+      ) : null}
 
       {loading ? (
         <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>Loading…</div>
@@ -158,46 +180,55 @@ export function TherapistTicketsPage() {
           {tickets.map((t) => {
             const sc = STATUS_COLORS[t.status] || STATUS_COLORS.OPEN
             const cc = CAT_COLORS[t.category] || CAT_COLORS.OTHER
+            const expanded = activeTicket?.id === t.id
             return (
               <div
                 key={t.id}
-                onClick={() => setActiveTicket(activeTicket?.id === t.id ? null : t)}
-                style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px', cursor: 'pointer', transition: 'box-shadow 0.15s', boxShadow: activeTicket?.id === t.id ? '0 0 0 2px #6366f1' : 'none' }}
+                style={{
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 12,
+                  padding: '16px 20px',
+                  boxShadow: expanded ? '0 0 0 2px #6366f1' : 'none',
+                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ background: cc, color: '#374151', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
-                    {t.category}
-                  </span>
-                  <span style={{ background: sc.bg, color: sc.color, fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
-                    {t.status}
-                  </span>
-                  <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#9ca3af' }}>
-                    {new Date(t.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                <p style={{ fontWeight: 600, marginBottom: 4 }}>{t.subject}</p>
-                <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: 0 }}>{t.body?.slice(0, 120)}{t.body?.length > 120 ? '…' : ''}</p>
-
-                {activeTicket?.id === t.id && (
-                  <div style={{ marginTop: 16, borderTop: '1px solid #e5e7eb', paddingTop: 14 }}>
-                    <form onSubmit={sendMessage} style={{ display: 'flex', gap: 8 }}>
-                      <input
-                        value={newMsg}
-                        onChange={(e) => setNewMsg(e.target.value)}
-                        placeholder="Add a message…"
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
-                      />
-                      <button
-                        type="submit"
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ padding: '7px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}
-                      >
-                        Send
-                      </button>
-                    </form>
+                <button
+                  type="button"
+                  onClick={() => openTicket(t)}
+                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: cc, color: '#374151', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
+                      {t.category}
+                    </span>
+                    <span style={{ background: sc.bg, color: sc.color, fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
+                      {t.status}
+                    </span>
+                    {t.attachment_count > 0 ? (
+                      <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>{t.attachment_count} file{t.attachment_count !== 1 ? 's' : ''}</span>
+                    ) : null}
+                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#9ca3af' }}>
+                      {new Date(t.created_at).toLocaleDateString()}
+                    </span>
                   </div>
-                )}
+                  <p style={{ fontWeight: 600, marginBottom: 4 }}>{t.subject}</p>
+                  <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: 0 }}>{t.body?.slice(0, 120)}{t.body?.length > 120 ? '…' : ''}</p>
+                </button>
+                {expanded ? (
+                  <div className="ticket-detail-panel">
+                    {detailLoading ? (
+                      <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>Loading thread…</p>
+                    ) : (
+                      <TicketDetailPanel
+                        ticket={activeTicket}
+                        onUpdated={(updated) => {
+                          setActiveTicket(updated)
+                          loadTickets()
+                        }}
+                      />
+                    )}
+                  </div>
+                ) : null}
               </div>
             )
           })}

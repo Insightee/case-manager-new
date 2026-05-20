@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { ServiceCategoryPicker } from '../shared/ServiceCategoryPicker.jsx'
+import { TherapistReviewsSection } from '../therapist/TherapistReviewsSection.jsx'
 import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
 
 const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT']
@@ -272,6 +273,12 @@ export function AdminTherapistProfilesPage() {
           <p style={{ fontSize: '0.8rem' }}>
             <strong>Services:</strong> {(selected.services_offered || []).join(', ')}
           </p>
+          <div style={{ marginTop: 16 }}>
+            <TherapistReviewsSection
+              apiPath={`/api/v1/admin/therapist-profiles/${selected.user_id}/reviews`}
+              title="Client session reviews"
+            />
+          </div>
           <label style={{ display: 'block', marginTop: 12 }}>
             Admin note
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="admin-search__input" style={{ width: '100%', marginTop: 4 }} />

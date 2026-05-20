@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -94,7 +94,7 @@ def is_day_on_leave(db: Session, therapist_user_id: int, day: date) -> bool:
 
 
 def is_slot_bookable(db: Session, slot: TherapistSlot) -> bool:
-    if slot.status != SlotStatus.AVAILABLE:
+    if slot.status not in (SlotStatus.AVAILABLE,):
         return False
     if is_day_on_leave(db, slot.therapist_user_id, slot.slot_date):
         return False
@@ -234,7 +234,12 @@ def _slot_to_dict(slot: TherapistSlot, case: Case | None = None) -> dict[str, An
         "booking_source": slot.booking_source.value if slot.booking_source else None,
         "recurrence_group_id": slot.recurrence_group_id,
         "slot_duration_minutes": slot.slot_duration_minutes,
+        "session_id": slot.session_id,
+        "rescheduled_to_slot_id": slot.rescheduled_to_slot_id,
+        "approval_status": getattr(slot, "approval_status", None) or "CONFIRMED",
+        "leave_block_leave_id": getattr(slot, "leave_block_leave_id", None),
         "created_at": slot.created_at.isoformat() if slot.created_at else None,
+        "updated_at": slot.updated_at.isoformat() if slot.updated_at else None,
     }
 
 
@@ -290,6 +295,7 @@ def book_slot(
     slot.case_id = case_id
     slot.booked_by_user_id = booked_by_user_id
     slot.booking_source = booking_source
+    slot.approval_status = "CONFIRMED"
     db.flush()
     return slot
 
@@ -302,10 +308,11 @@ def cancel_booking(db: Session, slot_id: int, therapist_user_id: int | None = No
         raise ValueError("Access denied")
     if slot.status != SlotStatus.BOOKED:
         raise ValueError("Slot is not booked")
-    slot.status = SlotStatus.AVAILABLE
+    slot.status = SlotStatus.CANCELLED
     slot.case_id = None
     slot.booked_by_user_id = None
     slot.booking_source = None
+    slot.cancelled_at = datetime.now(timezone.utc)
     db.flush()
     return slot
 

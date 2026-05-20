@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 
 const MODES = [
   { value: 'HOME', label: 'Home' },
@@ -96,8 +97,8 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
   const [localError, setLocalError] = useState('')
 
   useEffect(() => {
-    apiFetch('/api/v1/cases?assigned=true')
-      .then((rows) => setCases(rows || []))
+    apiFetch('/api/v1/cases?assigned=true&page_size=100')
+      .then((data) => setCases(unwrapList(data)))
       .catch(() => setCases([]))
   }, [])
 

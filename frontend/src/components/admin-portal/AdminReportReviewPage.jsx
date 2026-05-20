@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, StatusBadge } from './ui/index.js'
 
 export function AdminReportReviewPage() {
@@ -14,10 +15,18 @@ export function AdminReportReviewPage() {
   async function load() {
     setLoading(true)
     try {
-      const rows = await apiFetch('/api/v1/reports/monthly?status=UNDER_REVIEW').catch(() =>
-        apiFetch('/api/v1/reports/monthly'),
+      const rows = unwrapList(
+        await apiFetch('/api/v1/reports/monthly?status=UNDER_REVIEW&page_size=100').catch(() =>
+          apiFetch('/api/v1/reports/monthly?page_size=100'),
+        ),
       )
-      setReports(rows.filter((r) => String(r.status).toUpperCase() === 'UNDER_REVIEW'))
+      setReports(
+        rows.filter(
+          (r) =>
+            String(r.status).toUpperCase() === 'UNDER_REVIEW' ||
+            r.parent_review_status === 'CHANGES_REQUESTED',
+        ),
+      )
     } catch {
       setReports([])
     } finally {
@@ -35,6 +44,21 @@ export function AdminReportReviewPage() {
       setViewReport(detail)
     } catch (err) {
       setMessage(err.message || 'Could not load report')
+    }
+  }
+
+  async function resendToParent(id) {
+    setActing(true)
+    setMessage('')
+    try {
+      await apiFetch(`/api/v1/reports/monthly/${id}/resend-to-parent`, { method: 'POST' })
+      setMessage('Report resent to parent for approval.')
+      setViewReport(null)
+      load()
+    } catch (err) {
+      setMessage(err.message || 'Resend failed')
+    } finally {
+      setActing(false)
     }
   }
 
@@ -112,6 +136,7 @@ export function AdminReportReviewPage() {
                   </p>
                   <p className="admin-queue__meta">
                     {r.case_code}
+                    {r.parent_review_status === 'CHANGES_REQUESTED' ? ' · Parent requested changes' : ''}
                     {r.summary ? ` · ${r.summary.slice(0, 80)}${r.summary.length > 80 ? '…' : ''}` : ''}
                   </p>
                 </div>
@@ -160,11 +185,36 @@ export function AdminReportReviewPage() {
               {viewReport.child_name} — {viewReport.month}
             </h2>
             <p style={{ color: '#64748b' }}>{viewReport.case_code}</p>
+            {viewReport.parent_review_status === 'CHANGES_REQUESTED' && viewReport.parent_feedback ? (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: 12,
+                  background: '#fff7ed',
+                  borderRadius: 8,
+                  border: '1px solid #fed7aa',
+                }}
+              >
+                <p style={{ margin: 0, fontWeight: 600, fontSize: 13 }}>Parent feedback</p>
+                <p style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{viewReport.parent_feedback}</p>
+              </div>
+            ) : null}
             <p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{viewReport.summary || 'No summary provided.'}</p>
             <div className="admin-btn-group" style={{ marginTop: 16 }}>
-              <button type="button" className="admin-btn admin-btn--primary" disabled={acting} onClick={() => approve(viewReport.id)}>
-                Approve for parents
-              </button>
+              {viewReport.parent_review_status === 'CHANGES_REQUESTED' ? (
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--primary"
+                  disabled={acting}
+                  onClick={() => resendToParent(viewReport.id)}
+                >
+                  Update and resend to parent
+                </button>
+              ) : (
+                <button type="button" className="admin-btn admin-btn--primary" disabled={acting} onClick={() => approve(viewReport.id)}>
+                  Approve for parents
+                </button>
+              )}
               <button type="button" className="admin-btn admin-btn--secondary" onClick={() => setViewReport(null)}>
                 Close
               </button>

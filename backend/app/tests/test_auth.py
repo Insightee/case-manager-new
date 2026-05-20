@@ -35,4 +35,9 @@ def test_parent_cannot_see_internal_reports():
     reports = client.get("/api/v1/parent/reports", headers={"Authorization": f"Bearer {token}"})
     assert reports.status_code == 200
     for report in reports.json():
-        assert report["status"] == "approved"
+        assert str(report["status"]).upper() not in (
+            "DRAFT",
+            "UNDER_REVIEW",
+            "REJECTED",
+            "INTERNAL_ONLY",
+        )

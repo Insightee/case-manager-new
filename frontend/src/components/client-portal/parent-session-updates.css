@@ -1,0 +1,130 @@
+.session-updates__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.session-updates__select {
+  min-width: 220px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.875rem;
+  background: #fff;
+}
+
+.session-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+.session-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.session-card__title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #0f172a;
+  margin: 0;
+}
+
+.session-card__meta {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin: 4px 0 0;
+}
+
+.session-card__badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #eef2ff;
+  color: #4338ca;
+  white-space: nowrap;
+}
+
+.session-card__block {
+  font-size: 0.875rem;
+  color: #334155;
+  margin: 8px 0;
+  line-height: 1.5;
+}
+
+.session-card__therapist-note {
+  background: #f8fafc;
+  border-left: 3px solid #6366f1;
+  padding: 10px 12px;
+  border-radius: 0 8px 8px 0;
+  margin: 12px 0;
+  font-size: 0.875rem;
+}
+
+.session-card__feedback {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.session-card__stars {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.session-card__star {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.session-card__star.is-active {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
+.session-card__textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.875rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.session-card__save {
+  margin-top: 10px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.session-card__saved {
+  font-size: 0.8rem;
+  color: #15803d;
+  margin-top: 8px;
+}

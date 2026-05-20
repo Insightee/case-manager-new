@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 
 export function TherapistAssignedCasesPanel() {
   const [cases, setCases] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiFetch('/api/v1/cases?assigned=true')
-      .then(setCases)
+    apiFetch('/api/v1/cases?assigned=true&page_size=100')
+      .then((data) => setCases(unwrapList(data)))
       .catch(() => setCases([]))
       .finally(() => setLoading(false))
   }, [])

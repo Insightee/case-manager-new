@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+
+LOG_EDIT_WINDOW = timedelta(hours=24)
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -22,6 +24,22 @@ def _normalize_attendance(value: str | AttendanceStatus) -> str:
     if raw == "PRESENT" or raw == "present":
         return AttendanceStatus.PRESENT.value
     return raw or AttendanceStatus.PRESENT.value
+
+
+def log_editable_until(log: DailyLog) -> datetime | None:
+    if log.approval_status != LogApprovalStatus.PENDING or not log.submitted_at:
+        return None
+    submitted = log.submitted_at
+    if submitted.tzinfo is None:
+        submitted = submitted.replace(tzinfo=timezone.utc)
+    return submitted + LOG_EDIT_WINDOW
+
+
+def is_log_editable(log: DailyLog) -> bool:
+    until = log_editable_until(log)
+    if until is None:
+        return False
+    return datetime.now(timezone.utc) <= until
 
 
 def get_log(db: Session, log_id: int) -> DailyLog | None:
@@ -96,11 +114,8 @@ def update_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwarg
         raise ValueError("Access denied")
     if log.approval_status != LogApprovalStatus.PENDING:
         raise ValueError("Only pending logs can be edited")
-    submitted = log.submitted_at
-    if submitted:
-        sub_date = submitted.date() if submitted.tzinfo else submitted.replace(tzinfo=timezone.utc).date()
-        if sub_date < date.today():
-            raise ValueError("Logs can only be edited on the day they were submitted")
+    if not is_log_editable(log):
+        raise ValueError("Logs can only be edited within 24 hours of submission")
 
     for field in ("session_notes", "activities_done", "goals_addressed", "observations", "follow_ups", "parent_notes", "late_reason"):
         if field in kwargs and kwargs[field] is not None:
@@ -127,7 +142,17 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
         "approval_status": log.approval_status,
         "late_addition": bool(log.late_addition),
         "late_reason": log.late_reason,
+        "can_edit": is_log_editable(log),
+        "editable_until": log_editable_until(log),
     }
+    if session:
+        data["scheduled_date"] = session.scheduled_date
+        data["actual_start_at"] = session.actual_start_at
+        data["actual_end_at"] = session.actual_end_at
+        if case and getattr(case, "child", None):
+            data["child_name"] = case.child.full_name
+    if session and not data.get("case_code") and getattr(session, "case", None):
+        data["case_code"] = session.case.case_code
     if include_clinical:
         data["session_notes"] = log.session_notes
         data["observations"] = log.observations

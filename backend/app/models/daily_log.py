@@ -37,11 +37,17 @@ class DailyLog(Base):
     observations: Mapped[Optional[str ]] = mapped_column(Text)
     follow_ups: Mapped[Optional[str]] = mapped_column(Text)
     parent_notes: Mapped[Optional[str ]] = mapped_column(Text)
-    submitted_at: Mapped[Optional[datetime ]] = mapped_column(DateTime(timezone=True))
+    parent_session_rating: Mapped[Optional[int]] = mapped_column(Integer)
+    parent_feedback: Mapped[Optional[str]] = mapped_column(Text)
+    parent_feedback_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    parent_feedback_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    submitted_at: Mapped[Optional[datetime ]] = mapped_column(DateTime(timezone=True), index=True)
     approval_status: Mapped[LogApprovalStatus] = mapped_column(Enum(LogApprovalStatus), default=LogApprovalStatus.PENDING)
     late_addition: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     late_reason: Mapped[Optional[str]] = mapped_column(Text)
-    visibility_status: Mapped[VisibilityStatus] = mapped_column(Enum(VisibilityStatus), default=VisibilityStatus.INTERNAL_ONLY)
+    visibility_status: Mapped[VisibilityStatus] = mapped_column(
+        Enum(VisibilityStatus), default=VisibilityStatus.INTERNAL_ONLY, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session = relationship("Session", back_populates="daily_log")

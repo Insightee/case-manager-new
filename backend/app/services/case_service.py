@@ -1,33 +1,102 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from typing import Optional
+
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.module_access import case_product_module_allowed
+from app.core.module_access import case_product_module_allowed, get_allowed_case_product_modules
+from app.core.pagination import normalize_pagination, paginate_query, paginated_response
 from app.core.permissions import case_scope_check, user_has_permission
 from app.core.billing_validation import case_billing_dict
 from app.services.address_service import case_service_address_read
-from app.models.case import Case
-from app.models.child import Child
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+from app.models.case import Case, CaseStatus
 from app.models.user import User
 
 
-def list_cases_for_user(db: Session, user: User, assigned_only: bool = False) -> list[Case]:
-    stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
-    cases = list(db.scalars(stmt).all())
-    if user_has_permission(user, "case.read.all") and not assigned_only:
-        return [c for c in cases if case_product_module_allowed(user, c.product_module)]
-    if assigned_only or user_has_permission(user, "case.read.assigned"):
-        from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+def _apply_module_filter(stmt, user: User):
+    allowed = get_allowed_case_product_modules(user)
+    if allowed is not None:
+        if not allowed:
+            return stmt.where(Case.id < 0)  # empty
+        stmt = stmt.where(Case.product_module.in_(allowed))
+    return stmt
 
-        assigned_ids = db.scalars(
-            select(CaseAssignment.case_id).where(
-                CaseAssignment.therapist_user_id == user.id,
-                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+
+def list_cases_for_user(
+    db: Session,
+    user: User,
+    *,
+    assigned_only: bool = False,
+    status: Optional[CaseStatus] = None,
+    product_module: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> dict:
+    page, page_size = normalize_pagination(page, page_size)
+    stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
+
+    if status is not None:
+        stmt = stmt.where(Case.status == status)
+    if product_module is not None:
+        stmt = stmt.where(Case.product_module == product_module)
+
+    if assigned_only or (
+        user_has_permission(user, "case.read.assigned")
+        and not user_has_permission(user, "case.read.all")
+        and not user_has_permission(user, "case.read.team")
+    ):
+        stmt = (
+            stmt.join(
+                CaseAssignment,
+                (CaseAssignment.case_id == Case.id)
+                & (CaseAssignment.therapist_user_id == user.id)
+                & (CaseAssignment.status == CaseAssignmentStatus.ACTIVE),
             )
-        ).all()
-        return [c for c in cases if c.id in assigned_ids]
-    return [c for c in cases if case_scope_check(db, user, c)]
+            .distinct()
+        )
+    elif user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all"):
+        stmt = _apply_module_filter(stmt, user)
+    elif user_has_permission(user, "case.read.team"):
+        stmt = stmt.where(
+            or_(Case.case_manager_user_id == user.id, Case.region == user.region)
+        )
+        stmt = _apply_module_filter(stmt, user)
+    elif user_has_permission(user, "case.read.scoped"):
+        stmt = _apply_module_filter(stmt, user)
+    elif user_has_permission(user, "case.read.assigned"):
+        stmt = (
+            stmt.join(
+                CaseAssignment,
+                (CaseAssignment.case_id == Case.id)
+                & (CaseAssignment.therapist_user_id == user.id)
+                & (CaseAssignment.status == CaseAssignmentStatus.ACTIVE),
+            )
+            .distinct()
+        )
+    else:
+        # Fallback: only cases user can scope-check (rare); load assigned set in SQL
+        stmt = (
+            stmt.join(
+                CaseAssignment,
+                (CaseAssignment.case_id == Case.id)
+                & (CaseAssignment.therapist_user_id == user.id)
+                & (CaseAssignment.status == CaseAssignmentStatus.ACTIVE),
+            )
+            .distinct()
+        )
+
+    rows, total = paginate_query(db, stmt, page=page, page_size=page_size)
+    # Post-filter for edge roles that need case_scope_check (school coordinator)
+    if not assigned_only and user_has_permission(user, "case.read.scoped") and not user_has_permission(
+        user, "case.read.all"
+    ):
+        rows = [c for c in rows if case_scope_check(db, user, c)]
+        total = len(rows)
+
+    items = [case_to_read(c) for c in rows]
+    return paginated_response(items, total, page, page_size)
 
 
 def get_case(db: Session, case_id: int) -> Case | None:

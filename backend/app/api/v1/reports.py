@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -14,27 +14,32 @@ from app.models.report import MonthlyReport, ReportStatus
 from app.models.review import ReviewDecision
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
+from app.schemas.pagination import PaginatedList
 from app.schemas.report import MonthlyReportCreate, MonthlyReportRead, MonthlyReportUpdate, ReviewAction
-from app.services import case_service, report_service
+from app.services import case_service, parent_reports_service, report_service
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-@router.get("/monthly", response_model=list[MonthlyReportRead])
+@router.get("/monthly", response_model=PaginatedList[MonthlyReportRead])
 def list_monthly_reports(
     status: Optional[ReportStatus] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    reports = db.scalars(select(MonthlyReport).order_by(MonthlyReport.created_at.desc())).all()
-    result = []
-    for r in reports:
-        case = case_service.get_case(db, r.case_id)
-        if case and case_scope_check(db, user, case):
-            if status and r.status != status:
-                continue
-            result.append(_report_read(db, r))
-    return result
+    reports, meta = report_service.list_monthly_reports(
+        db, user, status=status, page=page, page_size=page_size
+    )
+    items = [_report_read(db, r) for r in reports]
+    return PaginatedList[MonthlyReportRead](
+        items=items,
+        total=meta["total"],
+        page=meta["page"],
+        page_size=meta["page_size"],
+        pages=meta["pages"],
+    )
 
 
 def _report_read(db: Session, report: MonthlyReport) -> MonthlyReportRead:
@@ -50,6 +55,9 @@ def _report_read(db: Session, report: MonthlyReport) -> MonthlyReportRead:
         summary=report.summary,
         reviewer_comment=report.reviewer_comment,
         visibility_status=report.visibility_status,
+        parent_review_status=report.parent_review_status,
+        parent_feedback=report.parent_feedback,
+        parent_reviewed_at=report.parent_reviewed_at,
         created_at=report.created_at,
         updated_at=report.updated_at,
     )
@@ -169,3 +177,27 @@ def reject_report(
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="monthly_report", entity_id=report.id, **meta)
     db.commit()
     return {"status": "rejected"}
+
+
+@router.post("/monthly/{report_id}/resend-to-parent")
+def resend_report_to_parent(
+    report_id: int,
+    request: Request,
+    user: User = Depends(require_permission("monthly_report.approve")),
+    db: Session = Depends(get_db),
+):
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    parent_reports_service.resend_to_parent(db, report)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="resend_to_parent",
+        entity_type="monthly_report",
+        entity_id=report.id,
+        **meta,
+    )
+    db.commit()
+    return {"status": "pending_parent_review"}

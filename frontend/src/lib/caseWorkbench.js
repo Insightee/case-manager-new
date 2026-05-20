@@ -2,6 +2,137 @@
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
+/** Safe text for search/filter matching. */
+function norm(value) {
+  return String(value ?? '').toLowerCase().trim()
+}
+
+export function matchesCaseSearch(caseRow, query) {
+  const q = norm(query)
+  if (!q) return true
+  const hay = [
+    caseRow.caseId,
+    caseRow.child,
+    caseRow.service,
+    caseRow.productModule,
+    caseRow.stage,
+    caseRow.nextDue,
+    caseRow.status,
+  ]
+    .map(norm)
+    .join(' ')
+  return hay.includes(q)
+}
+
+function isDueSoon(caseRow) {
+  if (caseRow.critical || caseRow.needsLogCount > 0) return true
+  const next = norm(caseRow.nextDue)
+  if (!next || next === '—') return false
+  return (
+    next.includes('log') ||
+    next.includes('report') ||
+    next.includes('booking') ||
+    next.includes('due')
+  )
+}
+
+function urgencyRank(caseRow) {
+  if (caseRow.critical) return 0
+  if (caseRow.needsLogCount > 0) return 1
+  if (isDueSoon(caseRow)) return 2
+  if (caseRow.status === 'CLOSED') return 4
+  return 3
+}
+
+/**
+ * @param {object} opts
+ * @param {string} [opts.search]
+ * @param {string} [opts.stage] - all | attention | in_progress | closed | log_due
+ * @param {string} [opts.service] - all or exact service string
+ * @param {string} [opts.dueSoon] - all | yes
+ * @param {string} [opts.sort] - urgency | child | case_id
+ */
+export function filterAndSortCases(cases, opts = {}) {
+  const { search = '', stage = 'all', service = 'all', dueSoon = 'all', sort = 'urgency' } = opts
+  let list = cases.filter((c) => matchesCaseSearch(c, search))
+
+  if (stage === 'attention') {
+    list = list.filter((c) => c.critical || c.needsLogCount > 0)
+  } else if (stage === 'in_progress') {
+    list = list.filter((c) => c.status !== 'CLOSED' && !c.critical && c.needsLogCount === 0)
+  } else if (stage === 'closed') {
+    list = list.filter((c) => c.status === 'CLOSED')
+  } else if (stage === 'log_due') {
+    list = list.filter((c) => c.needsLogCount > 0)
+  }
+
+  if (service !== 'all') {
+    const s = norm(service)
+    list = list.filter((c) => norm(c.service) === s || norm(c.productModule) === s)
+  }
+
+  if (dueSoon === 'yes') {
+    list = list.filter(isDueSoon)
+  }
+
+  if (sort === 'child') {
+    list = [...list].sort((a, b) => norm(a.child).localeCompare(norm(b.child)))
+  } else if (sort === 'case_id') {
+    list = [...list].sort((a, b) => norm(a.caseId).localeCompare(norm(b.caseId)))
+  } else {
+    list = [...list].sort((a, b) => {
+      const d = urgencyRank(a) - urgencyRank(b)
+      if (d !== 0) return d
+      return norm(a.child).localeCompare(norm(b.child))
+    })
+  }
+
+  return list
+}
+
+export function buildSectionsFromCases(enriched) {
+  const attentionIds = new Set()
+  const attention = enriched.filter((c) => {
+    if (c.critical || c.needsLogCount > 0) {
+      attentionIds.add(c.id)
+      return true
+    }
+    return false
+  })
+  const inProgress = enriched.filter((c) => !attentionIds.has(c.id) && c.status !== 'CLOSED')
+  const completed = enriched.filter((c) => c.status === 'CLOSED')
+
+  return [
+    { id: 'attention', title: 'Attention required', tone: 'danger', count: attention.length, cases: attention },
+    { id: 'in_progress', title: 'In progress', tone: 'warning', count: inProgress.length, cases: inProgress },
+    { id: 'completed', title: 'Closed', tone: 'success', count: completed.length, cases: completed },
+  ]
+}
+
+export function buildStatsFromCases(enriched, bookedSlotsToday = 0) {
+  const attention = enriched.filter((c) => c.critical || c.needsLogCount > 0)
+  return [
+    { id: 'total', label: 'Total cases', value: enriched.length, variant: 'indigo' },
+    { id: 'attention', label: 'Needs attention', value: attention.length, variant: 'yellow' },
+    {
+      id: 'logs',
+      label: 'Logs due',
+      value: enriched.reduce((n, c) => n + c.needsLogCount, 0),
+      variant: 'purple',
+    },
+    { id: 'bookings', label: 'Upcoming bookings', value: bookedSlotsToday, variant: 'teal' },
+  ]
+}
+
+export function uniqueServices(cases) {
+  const set = new Set()
+  for (const c of cases) {
+    if (c.service) set.add(c.service)
+    else if (c.productModule) set.add(c.productModule)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b))
+}
+
 function stageBadge(caseRow, needsLogCount, reportPending) {
   if (needsLogCount > 0) return { variant: 'observation', label: 'Log due' }
   if (reportPending) return { variant: 'iep', label: 'Report pending' }
@@ -53,47 +184,34 @@ export function buildCaseWorkbench({ cases = [], sessions = [], logs = [], repor
       stage: badge.label,
       badgeVariant: badge.variant,
       nextDue,
+      nextBooking: nextBooking
+        ? {
+            date: nextBooking.slot_date,
+            startTime: String(nextBooking.start_time).slice(0, 5),
+            endTime: String(nextBooking.end_time).slice(0, 5),
+          }
+        : null,
       critical,
       needsLogCount: needsLog.length,
       upcomingCount: upcoming.length,
       status: c.status,
       mapsUrl: c.maps_url,
       serviceAddress: c.service_address,
-      borderAccent: critical ? 'yellow' : needsLog.length ? 'yellow' : 'blue',
+      borderAccent: critical ? 'yellow' : needsLog.length ? 'yellow' : nextBooking ? 'teal' : 'blue',
       showSubmitReport: !!draftReport || caseReports.length === 0,
+      reportStatus: draftReport?.status || (caseReports[0]?.status ?? null),
     }
   })
 
-  const attentionIds = new Set()
-  const attention = enriched.filter((c) => {
-    if (c.critical || c.needsLogCount > 0) {
-      attentionIds.add(c.id)
-      return true
-    }
-    return false
-  })
-  const inProgress = enriched.filter((c) => !attentionIds.has(c.id) && c.status !== 'CLOSED')
-  const completed = enriched.filter((c) => c.status === 'CLOSED')
-
-  const stats = [
-    { id: 'total', label: 'Total cases', value: enriched.length, variant: 'indigo' },
-    { id: 'attention', label: 'Needs attention', value: attention.length, variant: 'yellow' },
-    { id: 'logs', label: 'Logs due', value: enriched.reduce((n, c) => n + c.needsLogCount, 0), variant: 'purple' },
-    {
-      id: 'bookings',
-      label: 'Upcoming bookings',
-      value: bookedSlots.filter((sl) => sl.slot_date >= today).length,
-      variant: 'teal',
-    },
-  ]
+  const upcomingBooked = bookedSlots.filter(
+    (sl) => sl.status === 'BOOKED' && sl.case_id && sl.slot_date >= today,
+  )
+  const bookingCount = upcomingBooked.length
 
   return {
-    stats,
-    sections: [
-      { id: 'attention', title: 'Attention required', tone: 'danger', count: attention.length, cases: attention },
-      { id: 'in_progress', title: 'In progress', tone: 'warning', count: inProgress.length, cases: inProgress },
-      { id: 'completed', title: 'Closed', tone: 'success', count: completed.length, cases: completed },
-    ],
+    stats: buildStatsFromCases(enriched, bookingCount),
+    sections: buildSectionsFromCases(enriched),
     allCases: enriched,
+    upcomingBooked,
   }
 }

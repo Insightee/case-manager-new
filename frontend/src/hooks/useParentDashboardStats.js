@@ -8,13 +8,13 @@ export function useParentDashboardStats() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [cases, logs, iep, notifications] = await Promise.all([
+      const [cases, logs, hub, notifications] = await Promise.all([
         apiFetch('/api/v1/parent/cases'),
         apiFetch('/api/v1/parent/session-logs'),
-        apiFetch('/api/v1/parent/iep-status'),
+        apiFetch('/api/v1/parent/reports/hub').catch(() => ({ iep: [] })),
         apiFetch('/api/v1/parent/notifications'),
       ])
-      const pendingIep = (iep || []).filter((i) => i.status === 'pending').length
+      const pendingIep = (hub?.iep || []).filter((i) => i.status === 'pending').length
       const unread = (notifications || []).filter((n) => !n.is_read).length
       setStats({
         caseCount: (cases || []).length,

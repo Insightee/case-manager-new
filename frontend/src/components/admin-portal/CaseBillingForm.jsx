@@ -3,6 +3,7 @@ import { billingSummary } from '../invoices/invoiceUtils.js'
 
 const EMPTY = {
   billing_type: '',
+  client_billing_mode: '',
   client_rate_per_session_inr: '',
   package_session_count: '',
   package_amount_inr: '',
@@ -20,6 +21,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly }) {
     if (!caseItem) return
     setForm({
       billing_type: caseItem.billing_type || '',
+      client_billing_mode: caseItem.client_billing_mode || '',
       client_rate_per_session_inr: caseItem.client_rate_per_session_inr ?? '',
       package_session_count: caseItem.package_session_count ?? '',
       package_amount_inr: caseItem.package_amount_inr ?? '',
@@ -33,7 +35,13 @@ export function CaseBillingForm({ caseItem, onSave, readOnly }) {
   if (!caseItem) return null
 
   function setField(key, value) {
-    setForm((f) => ({ ...f, [key]: value }))
+    setForm((f) => {
+      const next = { ...f, [key]: value }
+      if (key === 'billing_type') {
+        next.client_billing_mode = value === 'PACKAGE' ? 'PREPAID' : 'POSTPAID'
+      }
+      return next
+    })
   }
 
   async function handleSubmit(e) {
@@ -43,6 +51,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly }) {
     try {
       const payload = {
         billing_type: form.billing_type || null,
+        client_billing_mode: form.client_billing_mode || null,
         client_rate_per_session_inr: form.client_rate_per_session_inr ? Number(form.client_rate_per_session_inr) : null,
         package_session_count: form.package_session_count ? Number(form.package_session_count) : null,
         package_amount_inr: form.package_amount_inr ? Number(form.package_amount_inr) : null,
@@ -80,6 +89,14 @@ export function CaseBillingForm({ caseItem, onSave, readOnly }) {
   return (
     <form className="admin-form-grid" style={{ marginBottom: 16, maxWidth: 480 }} onSubmit={handleSubmit}>
       <p className="admin-drawer__subtitle">Case billing</p>
+      <label>
+        Client billing (family invoices)
+        <select value={form.client_billing_mode} onChange={(e) => setField('client_billing_mode', e.target.value)}>
+          <option value="">Select…</option>
+          <option value="POSTPAID">Postpaid</option>
+          <option value="PREPAID">Prepaid</option>
+        </select>
+      </label>
       <label>
         Billing type
         <select value={form.billing_type} onChange={(e) => setField('billing_type', e.target.value)} required>

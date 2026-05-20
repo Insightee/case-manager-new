@@ -7,7 +7,7 @@ import io
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,8 @@ from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.pagination import paginate_query, paginated_response
+from app.schemas.pagination import PaginatedList
 from app.core.module_access import (
     get_allowed_case_product_modules,
     get_user_features,
@@ -40,8 +42,15 @@ from app.schemas.therapist_profile import (
     TherapistProfileReview,
     TherapistProfileUpdate,
 )
+from app.schemas.therapist_review import (
+    TherapistReviewSummary,
+    TherapistReviewsResponse,
+    TherapistSessionReviewRead,
+)
+from app.schemas.allotment import CaseAllotRequest, ChildCreate, FamilyCreate
 from app.schemas.user import InviteCreate, UserCreate, UserRead, UserUpdate
 from app.services import auth_service, case_service, log_service, therapist_profile_service as profile_svc
+from app.services import therapist_review_service as review_svc
 from app.core.permissions import RoleName
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -294,10 +303,16 @@ def export_session_logs(
     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=session_logs.csv"})
 
 
-@router.get("/users", response_model=list[UserRead])
-def list_users(user: User = Depends(require_permission("user.manage")), db: Session = Depends(get_db)):
-    users = db.scalars(select(User).order_by(User.email)).all()
-    return [
+@router.get("/users", response_model=PaginatedList[UserRead])
+def list_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    stmt = select(User).order_by(User.email)
+    users, total = paginate_query(db, stmt, page=page, page_size=page_size)
+    items = [
         UserRead(
             id=u.id,
             email=u.email,
@@ -309,6 +324,13 @@ def list_users(user: User = Depends(require_permission("user.manage")), db: Sess
         )
         for u in users
     ]
+    return PaginatedList[UserRead](
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=max(1, (total + page_size - 1) // page_size),
+    )
 
 
 @router.patch("/users/{user_id}", response_model=UserRead)
@@ -322,6 +344,11 @@ def update_user(
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    if payload.role_names is not None:
+        from app.models.role import Role
+
+        roles = db.scalars(select(Role).where(Role.name.in_(payload.role_names))).all()
+        target.roles = list(roles)
     if payload.module_assignments is not None:
         target.module_assignments = validate_module_assignments(target.role_names, payload.module_assignments)
     if payload.region is not None:
@@ -485,6 +512,23 @@ def admin_update_therapist_profile(
     return TherapistProfileRead(**profile_svc.profile_to_dict(profile, target))
 
 
+@router.get("/therapist-profiles/{user_id}/reviews", response_model=TherapistReviewsResponse)
+def admin_therapist_reviews(
+    user_id: int,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    target = db.get(User, user_id)
+    if not target or RoleName.THERAPIST.value not in target.role_names:
+        raise HTTPException(status_code=404, detail="Therapist not found")
+    rows = review_svc.list_therapist_reviews(db, user_id)
+    summary = review_svc.review_summary(db, user_id)
+    return TherapistReviewsResponse(
+        summary=TherapistReviewSummary(**summary),
+        reviews=[TherapistSessionReviewRead(**r) for r in rows],
+    )
+
+
 @router.post("/therapist-profiles/{profile_id}/approve", response_model=TherapistProfileRead)
 def admin_approve_profile(
     profile_id: int,
@@ -565,3 +609,204 @@ def admin_delete_therapist_profile(
     log_audit(db, actor_user_id=user.id, action="delete", entity_type="therapist_profile", entity_id=profile_id, **meta)
     db.delete(profile)
     db.commit()
+
+
+# --- Case allotment & families ---
+
+
+@router.get("/cases/next-code")
+def admin_next_case_code(
+    product_module: str,
+    user: User = Depends(require_permission("case.create")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_code_service
+
+    code = case_code_service.generate_case_code(db, product_module)
+    return {"case_code": code, "preview": case_code_service.preview_case_code(product_module)}
+
+
+@router.get("/allotment/therapists")
+def admin_allotment_therapists(
+    product_module: str,
+    search: Optional[str] = None,
+    approved_only: bool = True,
+    user: User = Depends(require_permission("case.assign")),
+    db: Session = Depends(get_db),
+):
+    from app.services import allotment_service
+
+    return allotment_service.list_allotment_therapists(db, user, product_module, search, approved_only)
+
+
+@router.get("/families")
+def admin_list_families(
+    search: Optional[str] = None,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    return family_admin_service.list_families(db, search)
+
+
+@router.post("/children", status_code=status.HTTP_201_CREATED)
+def admin_create_child(
+    payload: ChildCreate,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    child = family_admin_service.create_child(
+        db, payload.first_name, payload.last_name, payload.date_of_birth
+    )
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="create", entity_type="child", entity_id=child.id, **meta)
+    db.commit()
+    return {"id": child.id, "fullName": child.full_name}
+
+
+@router.post("/families", status_code=status.HTTP_201_CREATED)
+def admin_create_family(
+    payload: FamilyCreate,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    try:
+        result = family_admin_service.create_family(
+            db,
+            parent_email=payload.parent_email,
+            parent_full_name=payload.parent_full_name,
+            parent_phone=payload.parent_phone,
+            child_first=payload.child.first_name,
+            child_last=payload.child.last_name,
+            child_dob=payload.child.date_of_birth,
+            send_invite=payload.send_invite,
+            password=payload.password,
+            created_by_user_id=user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="create_family", entity_type="child", entity_id=result["childId"], **meta)
+    db.commit()
+    if result.get("inviteUrl"):
+        print(f"[DEV INVITE] {payload.parent_email} -> {result['inviteUrl']}")
+    return result
+
+
+@router.post("/families/{parent_user_id}/invite")
+def admin_invite_parent(
+    parent_user_id: int,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    try:
+        url = family_admin_service.issue_parent_invite(db, parent_user_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="invite", entity_type="user", entity_id=parent_user_id, **meta)
+    db.commit()
+    print(f"[DEV INVITE] parent user {parent_user_id} -> {url}")
+    return {"invite_url": url}
+
+
+@router.post("/families/link")
+def admin_link_parent_child(
+    parent_user_id: int = Query(...),
+    child_id: int = Query(...),
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.models.parent import ParentGuardian
+    from app.models.child import Child
+
+    pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == parent_user_id)).first()
+    if not pg:
+        pg = ParentGuardian(user_id=parent_user_id)
+        db.add(pg)
+        db.flush()
+    child = db.get(Child, child_id)
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+    if child not in pg.children:
+        pg.children.append(child)
+    from app.services.parent_service import dedupe_parent_child_links
+
+    dedupe_parent_child_links(db, pg.id)
+    db.commit()
+    return {"status": "linked"}
+
+
+@router.post("/cases/allot", status_code=status.HTTP_201_CREATED)
+def admin_allot_case(
+    payload: CaseAllotRequest,
+    request: Request,
+    user: User = Depends(require_permission("case.create")),
+    db: Session = Depends(get_db),
+):
+    from app.services import allotment_service
+
+    try:
+        result = allotment_service.allot_case(db, user, payload.model_dump())
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="allot",
+        entity_type="case",
+        entity_id=result["case"]["id"],
+        **meta,
+    )
+    db.commit()
+    return result
+
+
+@router.get("/invites")
+def admin_list_invites(
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    now = datetime.now(timezone.utc)
+    rows = db.scalars(
+        select(InviteToken)
+        .where(InviteToken.used_at.is_(None), InviteToken.expires_at > now)
+        .order_by(InviteToken.expires_at.desc())
+    ).all()
+    return [
+        {
+            "id": inv.id,
+            "email": inv.email,
+            "role_name": inv.role_name,
+            "module_assignments": inv.module_assignments or [],
+            "expires_at": inv.expires_at.isoformat(),
+            "invite_url": f"{settings.frontend_url}/invite/{inv.token}",
+            "pending_slot_id": (inv.invite_metadata or {}).get("pending_slot_id"),
+            "client_name": (inv.invite_metadata or {}).get("client_name"),
+            "therapist_user_id": (inv.invite_metadata or {}).get("therapist_user_id"),
+        }
+        for inv in rows
+    ]
+
+
+@router.post("/invites")
+def admin_create_invite(
+    payload: InviteCreate,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    return invite_therapist(payload, request, user, db)

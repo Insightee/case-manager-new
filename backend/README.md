@@ -39,3 +39,14 @@ python3 -m pytest app/tests -q
 
 - Health: `GET /health`
 - Swagger: `http://localhost:8000/docs`
+
+## Support tickets (attachments & policies bot)
+
+Optional environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `POLICIES_BOT_URL` | External URL for the Policies clarification bot (opened from support pages) |
+| `VITE_POLICIES_BOT_URL` | Frontend fallback if portal info is unavailable |
+
+Ticket attachments: up to **3 files**, **5 MB** each (JPEG, PNG, WebP, PDF, plain text). Stored under `uploads/tickets/`. Staff and parents download via `GET /api/v1/tickets/attachments/{id}/download` when they have access to the ticket.

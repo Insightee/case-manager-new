@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 
-export function CreateDraftModal({ open, onClose, onCreated, defaultMonth }) {
+export function CreateDraftModal({ open, onClose, onCreated, defaultMonth, defaultCaseId = null }) {
   const [cases, setCases] = useState([])
-  const [caseId, setCaseId] = useState('')
+  const [caseId, setCaseId] = useState(defaultCaseId ? String(defaultCaseId) : '')
   const [month, setMonth] = useState(defaultMonth || '')
   const [summary, setSummary] = useState('')
   const [loading, setLoading] = useState(false)
@@ -12,11 +13,12 @@ export function CreateDraftModal({ open, onClose, onCreated, defaultMonth }) {
   useEffect(() => {
     if (!open) return
     setMonth(defaultMonth || '')
+    setCaseId(defaultCaseId ? String(defaultCaseId) : '')
     setError('')
-    apiFetch('/api/v1/cases?assigned=true')
-      .then((rows) => setCases(rows || []))
+    apiFetch('/api/v1/cases?assigned=true&page_size=100')
+      .then((data) => setCases(unwrapList(data)))
       .catch(() => setCases([]))
-  }, [open, defaultMonth])
+  }, [open, defaultMonth, defaultCaseId])
 
   if (!open) return null
 
@@ -57,22 +59,31 @@ export function CreateDraftModal({ open, onClose, onCreated, defaultMonth }) {
         </h2>
         <p className="mt-1 text-sm text-slate-500">Choose a case and month. You can submit for admin review when ready.</p>
         <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
-          <label className="text-sm font-medium text-slate-700">
-            Case
-            <select
-              required
-              value={caseId}
-              onChange={(e) => setCaseId(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            >
-              <option value="">Select case…</option>
-              {cases.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.case_code} — {c.child_name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {defaultCaseId ? (
+            <p className="text-sm text-slate-600">
+              <span className="font-medium text-slate-800">Case: </span>
+              {cases.find((c) => c.id === Number(defaultCaseId))?.case_code || `#${defaultCaseId}`}
+              {' — '}
+              {cases.find((c) => c.id === Number(defaultCaseId))?.child_name || 'Client'}
+            </p>
+          ) : (
+            <label className="text-sm font-medium text-slate-700">
+              Case
+              <select
+                required
+                value={caseId}
+                onChange={(e) => setCaseId(e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              >
+                <option value="">Select case…</option>
+                {cases.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.case_code} — {c.child_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="text-sm font-medium text-slate-700">
             Month (e.g. May 2026)
             <input

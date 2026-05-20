@@ -1,11 +1,25 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 
-export function CaseReportsPanel({ caseId, caseCode, childName }) {
+const STATUS_LABELS = {
+  DRAFT: { label: 'Draft', tone: 'muted' },
+  UNDER_REVIEW: { label: 'With admin', tone: 'warn' },
+  APPROVED: { label: 'Approved', tone: 'ok' },
+  REJECTED: { label: 'Needs revision', tone: 'danger' },
+  PUBLISHED: { label: 'Shared with family', tone: 'ok' },
+}
+
+function defaultMonthLabel() {
+  const d = new Date()
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+export function CaseReportsPanel({ caseId, caseCode, childName, onUpdated }) {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [month, setMonth] = useState('')
+  const [month, setMonth] = useState(() => defaultMonthLabel())
   const [summary, setSummary] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -13,8 +27,8 @@ export function CaseReportsPanel({ caseId, caseCode, childName }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const rows = await apiFetch('/api/v1/reports/monthly')
-      setReports((rows || []).filter((r) => r.case_id === caseId))
+      const rows = await apiFetch('/api/v1/reports/monthly?page_size=100')
+      setReports(unwrapList(rows).filter((r) => r.case_id === caseId))
     } catch {
       setReports([])
     } finally {
@@ -26,11 +40,15 @@ export function CaseReportsPanel({ caseId, caseCode, childName }) {
     load()
   }, [load])
 
+  const draft = useMemo(() => reports.find((r) => r.status === 'DRAFT' || r.status === 'REJECTED'), [reports])
+  const inReview = useMemo(() => reports.find((r) => r.status === 'UNDER_REVIEW'), [reports])
+
   async function handleSubmit(reportId) {
     setError('')
     try {
       await apiFetch(`/api/v1/reports/monthly/${reportId}/submit`, { method: 'POST' })
       await load()
+      onUpdated?.()
     } catch (err) {
       setError(err.message || 'Could not submit report')
     }
@@ -46,9 +64,9 @@ export function CaseReportsPanel({ caseId, caseCode, childName }) {
         body: JSON.stringify({ case_id: caseId, month, summary }),
       })
       setShowForm(false)
-      setMonth('')
       setSummary('')
       await load()
+      onUpdated?.()
     } catch (err) {
       setError(err.message || 'Could not create report')
     } finally {
@@ -56,59 +74,101 @@ export function CaseReportsPanel({ caseId, caseCode, childName }) {
     }
   }
 
-  if (loading) return <p style={{ color: '#6b7280' }}>Loading reports…</p>
+  if (loading) return <p className="ic-case-panel__loading">Loading reports…</p>
 
   return (
-    <div>
-      <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-        Monthly reports for {childName} ({caseCode}). Submitted reports go to admin for review before parents see them.
+    <div className="ic-reports-flow">
+      <p className="ic-reports-flow__intro">
+        Monthly progress for <strong>{childName}</strong> ({caseCode}). Save a draft, then submit for admin review before
+        families can read it.
       </p>
-      <button
-        type="button"
-        onClick={() => setShowForm((v) => !v)}
-        style={{ marginBottom: 16, padding: '8px 16px', borderRadius: 8, background: '#6366f1', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer' }}
-      >
-        {showForm ? 'Cancel' : 'New monthly report'}
-      </button>
+
+      <div className="ic-reports-flow__status-row">
+        {draft ? (
+          <div className="ic-reports-flow__banner ic-reports-flow__banner--action">
+            <p>
+              <strong>{draft.month}</strong> — ready to finish ({draft.status})
+            </p>
+            <button type="button" className="ic-btn ic-btn--accent" onClick={() => handleSubmit(draft.id)}>
+              Submit for review
+            </button>
+          </div>
+        ) : inReview ? (
+          <div className="ic-reports-flow__banner ic-reports-flow__banner--wait">
+            <p>
+              <strong>{inReview.month}</strong> is with admin for review.
+            </p>
+          </div>
+        ) : (
+          <div className="ic-reports-flow__banner">
+            <p>No draft this cycle. Create a monthly report when you are ready.</p>
+            <button type="button" className="ic-btn ic-btn--primary" onClick={() => setShowForm(true)}>
+              New monthly report
+            </button>
+          </div>
+        )}
+      </div>
+
       {showForm ? (
-        <form onSubmit={handleCreate} style={{ background: '#f9fafb', padding: 16, borderRadius: 12, marginBottom: 16, display: 'grid', gap: 8 }}>
-          <label style={{ fontSize: '0.875rem' }}>
-            Month label (e.g. May 2026)
-            <input required value={month} onChange={(e) => setMonth(e.target.value)} style={{ display: 'block', width: '100%', marginTop: 4, padding: 8, borderRadius: 8, border: '1px solid #d1d5db' }} />
+        <form onSubmit={handleCreate} className="ic-reports-flow__form">
+          <h3 className="ic-reports-flow__form-title">New monthly report</h3>
+          <label className="ic-session-composer__field">
+            <span>Month</span>
+            <input
+              required
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              placeholder="e.g. May 2026"
+              className="ic-session-composer__input"
+            />
           </label>
-          <label style={{ fontSize: '0.875rem' }}>
-            Summary
-            <textarea required value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} style={{ display: 'block', width: '100%', marginTop: 4, padding: 8, borderRadius: 8, border: '1px solid #d1d5db' }} />
+          <label className="ic-session-composer__field">
+            <span>Summary</span>
+            <textarea
+              required
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              rows={5}
+              className="ic-session-composer__input"
+              placeholder="Goals worked on, progress, recommendations for family…"
+            />
           </label>
-          {error ? <p style={{ color: '#b91c1c', margin: 0 }}>{error}</p> : null}
-          <button type="submit" disabled={submitting} style={{ padding: 10, borderRadius: 8, background: '#F97316', color: '#fff', border: 'none', fontWeight: 600 }}>
-            {submitting ? 'Saving…' : 'Save draft'}
-          </button>
+          {error ? <p className="ic-session-composer__error">{error}</p> : null}
+          <div className="ic-reports-flow__form-actions">
+            <button type="submit" disabled={submitting} className="ic-btn ic-btn--accent">
+              {submitting ? 'Saving…' : 'Save draft'}
+            </button>
+            <button type="button" className="ic-btn ic-btn--ghost" onClick={() => setShowForm(false)}>
+              Cancel
+            </button>
+          </div>
         </form>
       ) : null}
-      {reports.length === 0 ? (
-        <p style={{ color: '#9ca3af' }}>No monthly reports yet.</p>
+
+      {reports.length === 0 && !showForm ? (
+        <p className="ic-case-panel__muted">No monthly reports yet for this client.</p>
       ) : (
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          {reports.map((r) => (
-            <li key={r.id} style={{ padding: 14, marginBottom: 8, border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff' }}>
-              <strong>{r.month}</strong>
-              <span style={{ marginLeft: 8, fontSize: '0.75rem', color: '#6b7280' }}>{r.status}</span>
-              <p style={{ margin: '8px 0 0', fontSize: '0.875rem', color: '#374151' }}>{r.summary}</p>
-              {r.reviewer_comment ? (
-                <p style={{ margin: '8px 0 0', fontSize: '0.8rem', color: '#b91c1c' }}>Admin: {r.reviewer_comment}</p>
-              ) : null}
-              {r.status === 'DRAFT' || r.status === 'REJECTED' ? (
-                <button
-                  type="button"
-                  onClick={() => handleSubmit(r.id)}
-                  style={{ marginTop: 8, padding: '6px 12px', borderRadius: 8, background: '#F97316', color: '#fff', border: 'none', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Submit for review
-                </button>
-              ) : null}
-            </li>
-          ))}
+        <ul className="ic-reports-flow__list">
+          {reports.map((r) => {
+            const meta = STATUS_LABELS[r.status] || { label: r.status, tone: 'muted' }
+            return (
+              <li key={r.id} className={`ic-reports-flow__card ic-reports-flow__card--${meta.tone}`}>
+                <div className="ic-reports-flow__card-head">
+                  <strong>{r.month}</strong>
+                  <span className={`ic-reports-flow__pill ic-reports-flow__pill--${meta.tone}`}>{meta.label}</span>
+                </div>
+                <p className="ic-reports-flow__summary">{r.summary}</p>
+                {r.reviewer_comment ? (
+                  <p className="ic-reports-flow__reviewer">Admin: {r.reviewer_comment}</p>
+                ) : null}
+                {r.status === 'DRAFT' || r.status === 'REJECTED' ? (
+                  <button type="button" className="ic-btn ic-btn--accent" onClick={() => handleSubmit(r.id)}>
+                    Submit for review
+                  </button>
+                ) : null}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

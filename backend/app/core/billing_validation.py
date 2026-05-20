@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from app.models.case import BillingType, Case, CompensationMode
+from app.models.case import BillingType, Case, ClientBillingMode, CompensationMode
 
 
 def validate_case_billing(case: Case) -> None:
@@ -34,6 +34,7 @@ def apply_billing_payload(case: Case, data: dict, user_id: int | None = None) ->
     from datetime import datetime, timezone
 
     billing_keys = {
+        "client_billing_mode",
         "billing_type",
         "client_rate_per_session_inr",
         "package_session_count",
@@ -47,8 +48,13 @@ def apply_billing_payload(case: Case, data: dict, user_id: int | None = None) ->
         return
     for k, v in data.items():
         if k in billing_keys and v is not None:
-            if k in ("billing_type", "compensation_mode") and isinstance(v, str):
-                setattr(case, k, BillingType(v) if k == "billing_type" else CompensationMode(v))
+            if k in ("billing_type", "compensation_mode", "client_billing_mode") and isinstance(v, str):
+                if k == "billing_type":
+                    setattr(case, k, BillingType(v))
+                elif k == "compensation_mode":
+                    setattr(case, k, CompensationMode(v))
+                else:
+                    setattr(case, k, ClientBillingMode(v))
             else:
                 setattr(case, k, v)
     case.billing_updated_at = datetime.now(timezone.utc)
@@ -67,5 +73,6 @@ def case_billing_dict(case: Case) -> dict:
         "pay_share_pct": float(case.pay_share_pct) if case.pay_share_pct else None,
         "therapist_fixed_pay_inr": float(case.therapist_fixed_pay_inr) if case.therapist_fixed_pay_inr else None,
         "billing_notes": case.billing_notes,
+        "client_billing_mode": case.client_billing_mode.value if case.client_billing_mode else None,
         "billing_updated_at": case.billing_updated_at.isoformat() if case.billing_updated_at else None,
     }

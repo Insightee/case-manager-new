@@ -1,0 +1,226 @@
+.notification-bell__btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.app-shell:not(.app-shell--admin) .notification-bell__btn {
+  background: #f1f5f9;
+}
+
+.notification-bell__icon {
+  font-size: 1.1rem;
+}
+
+.notification-bell__badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* ── Dropdown ───────────────────────────────────────── */
+/* Always fixed so it escapes any overflow:hidden parent */
+.notification-bell__dropdown {
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(70vh, 520px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+  /* position + top + right set inline via JS */
+}
+
+.notification-bell__dropdown--admin {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.notification-bell__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.notification-bell__dropdown--admin .notification-bell__head {
+  border-bottom-color: #334155;
+}
+
+.notification-bell__title {
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.notification-bell__link {
+  border: none;
+  background: none;
+  color: #6366f1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.notification-bell__dropdown--admin .notification-bell__link {
+  color: #93c5fd;
+}
+
+/* ── List ───────────────────────────────────────────── */
+.notification-bell__list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.notification-bell__item + .notification-bell__item {
+  border-top: 1px solid #f1f5f9;
+}
+
+.notification-bell__dropdown--admin .notification-bell__item + .notification-bell__item {
+  border-top-color: #1e293b;
+}
+
+.notification-bell__item.is-unread {
+  background: #eef2ff;
+}
+
+.notification-bell__dropdown--admin .notification-bell__item.is-unread {
+  background: #1e293b;
+}
+
+.notification-bell__item-btn {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  display: block;
+}
+
+.notification-bell__item-btn:hover {
+  background: #f8fafc;
+}
+
+.notification-bell__dropdown--admin .notification-bell__item-btn:hover {
+  background: #1e293b;
+}
+
+.notification-bell__item-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.notification-bell__item-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.4;
+}
+
+.notification-bell__dropdown--admin .notification-bell__item-title {
+  color: #f8fafc;
+}
+
+.notification-bell__item-time {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.notification-bell__item-body {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.45;
+  /* clamp long bodies to 2 lines */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notification-bell__dropdown--admin .notification-bell__item-body {
+  color: #94a3b8;
+}
+
+.notification-bell__item-cta {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #6366f1;
+}
+
+.notification-bell__dropdown--admin .notification-bell__item-cta {
+  color: #93c5fd;
+}
+
+.notification-bell__empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+/* ── Footer ─────────────────────────────────────────── */
+.notification-bell__foot {
+  padding: 8px 14px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.notification-bell__dropdown--admin .notification-bell__foot {
+  border-top-color: #334155;
+}
+
+.notification-bell__foot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6366f1;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.notification-bell__dropdown--admin .notification-bell__foot-link {
+  color: #93c5fd;
+}

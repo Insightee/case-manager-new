@@ -78,7 +78,28 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
         role_names=[invite.role_name],
         module_assignments=invite.module_assignments or [],
     )
+    if invite.role_name == "PARENT":
+        from app.models.child import Child
+        from app.models.parent import ParentGuardian
+        from app.services.parent_service import dedupe_parent_child_links
+
+        pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == user.id)).first()
+        if not pg:
+            pg = ParentGuardian(user_id=user.id)
+            db.add(pg)
+            db.flush()
+        if invite.linked_child_id:
+            child = db.get(Child, invite.linked_child_id)
+            if child and child not in pg.children:
+                pg.children.append(child)
+        dedupe_parent_child_links(db, pg.id)
     invite.used_at = datetime.now(timezone.utc)
+    if invite.invite_metadata and invite.invite_metadata.get("pending_slot_id"):
+        from app.services import appointment_notification_service as appt_ns
+
+        appt_ns.notify_parent_invite_accepted_admin(
+            db, user_email=user.email, full_name=user.full_name
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="accept_invite", entity_type="user", entity_id=user.id, **meta)
     db.commit()
@@ -103,6 +124,7 @@ def _user_me_response(user: User) -> UserMeResponse:
         id=user.id,
         email=user.email,
         full_name=user.full_name,
+        phone=user.phone,
         avatar_url=_avatar_url(user),
         roles=user.role_names,
         permissions=sorted(user.permission_names),
@@ -130,6 +152,9 @@ def update_me(
 ):
     if payload.full_name is not None:
         user.full_name = payload.full_name
+    if payload.phone is not None:
+        phone = payload.phone.strip() if payload.phone else None
+        user.phone = phone or None
     if payload.location is not None:
         user.location = payload.location
     home_data = address_service.home_address_from_me_update(payload.model_dump(exclude_unset=True))

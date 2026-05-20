@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
+import { formatScheduleWhen, mergeUpcomingSchedule } from '../../lib/therapistSchedule.js'
 import { CaseSessionsPanel } from './CaseSessionsPanel.jsx'
-import { CaseReportsPanel } from './CaseReportsPanel.jsx'
-import { CaseBookingsPanel } from './CaseBookingsPanel.jsx'
 import './my-cases.css'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'sessions', label: 'Sessions & logs' },
-  { id: 'reports', label: 'Reports' },
-  { id: 'bookings', label: 'Bookings' },
 ]
 
 export function CaseDetailPage() {
   const { caseId } = useParams()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
   const [caseRow, setCaseRow] = useState(null)
   const [assignments, setAssignments] = useState([])
+  const [scheduleItems, setScheduleItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -26,12 +26,26 @@ export function CaseDetailPage() {
     setLoading(true)
     setError('')
     try {
-      const [c, a] = await Promise.all([
+      const today = new Date()
+      const from = today.toISOString().slice(0, 10)
+      const toDate = new Date(today)
+      toDate.setDate(toDate.getDate() + 90)
+      const to = toDate.toISOString().slice(0, 10)
+
+      const [c, a, upcoming, slots] = await Promise.all([
         apiFetch(`/api/v1/cases/${caseId}`),
         apiFetch(`/api/v1/cases/${caseId}/assignments`),
+        apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
+        apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`).catch(() => []),
       ])
       setCaseRow(c)
-      setAssignments(a || [])
+      setAssignments(Array.isArray(a) ? a : [])
+      const upcomingList = Array.isArray(upcoming) ? upcoming : unwrapList(upcoming)
+      const slotList = unwrapList(slots)
+      const merged = mergeUpcomingSchedule({ sessions: upcomingList, slots: slotList }).filter(
+        (i) => i.caseId === Number(caseId),
+      )
+      setScheduleItems(merged)
     } catch (err) {
       setError(err.message || 'Case not found')
       setCaseRow(null)
@@ -44,120 +58,184 @@ export function CaseDetailPage() {
     load()
   }, [load])
 
+  useEffect(() => {
+    if (tab === 'reports') {
+      navigate(`/therapist/reports?case_id=${caseId}`, { replace: true })
+    }
+  }, [tab, caseId, navigate])
+
+  const nextVisit = scheduleItems[0] || null
+
   function setTab(id) {
     setSearchParams({ tab: id }, { replace: true })
   }
 
-  if (loading) return <p className="ic-my-cases" style={{ padding: 24 }}>Loading case…</p>
+  if (loading) return <p className="ic-my-cases ic-case-detail__loading">Loading case…</p>
   if (error || !caseRow) {
     return (
-      <div className="ic-my-cases" style={{ padding: 24 }}>
-        <p style={{ color: '#b91c1c' }}>{error || 'Case not found'}</p>
-        <Link to="/therapist/cases">Back to My Cases</Link>
+      <div className="ic-my-cases ic-case-detail">
+        <p className="ic-case-detail__error">{error || 'Case not found'}</p>
+        <Link to="/therapist/cases" className="ic-case-detail__back">
+          ← My Cases
+        </Link>
       </div>
     )
   }
 
   const addr = caseRow.service_address?.formatted
+  const childLabel = `${caseRow.child_name} (${caseRow.case_code})`
 
   return (
-    <div className="ic-my-cases">
-      <p style={{ marginBottom: 8 }}>
-        <Link to="/therapist/cases" style={{ fontSize: '0.875rem', color: '#6366f1', fontWeight: 600 }}>
-          ← My Cases
-        </Link>
-      </p>
-      <header style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', margin: 0 }}>
-          {caseRow.case_code}
-        </p>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 700, margin: '4px 0' }}>{caseRow.child_name}</h1>
-        <p style={{ color: '#6b7280', margin: 0 }}>
+    <div className="ic-my-cases ic-case-detail">
+      <Link to="/therapist/cases" className="ic-case-detail__back">
+        ← My Cases
+      </Link>
+
+      <header className="ic-case-detail__header">
+        <p className="ic-case-detail__code">{caseRow.case_code}</p>
+        <h1 className="ic-case-detail__name">{caseRow.child_name}</h1>
+        <p className="ic-case-detail__meta">
           {caseRow.service_type} · {caseRow.product_module} · {caseRow.status}
         </p>
       </header>
 
-      <nav style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24, borderBottom: '1px solid #e5e7eb', paddingBottom: 12 }}>
+      <nav className="ic-case-tabs" aria-label="Case sections">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
+            className={`ic-case-tabs__btn${tab === t.id ? ' is-active' : ''}`}
             onClick={() => setTab(t.id)}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 8,
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-              background: tab === t.id ? '#6366f1' : '#f3f4f6',
-              color: tab === t.id ? '#fff' : '#374151',
-            }}
           >
             {t.label}
           </button>
         ))}
-        <Link
-          to={`/therapist/tickets`}
-          style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: '0.875rem', color: '#6366f1', fontWeight: 600 }}
-        >
+        <Link to="/therapist/tickets" className="ic-case-tabs__support">
           Contact support
         </Link>
       </nav>
 
       {tab === 'overview' ? (
-        <div style={{ display: 'grid', gap: 16, maxWidth: 640 }}>
-          <section style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20 }}>
-            <h3 style={{ marginTop: 0, fontSize: '1rem' }}>Case details</h3>
-            <dl style={{ margin: 0, fontSize: '0.875rem', display: 'grid', gap: 8 }}>
+        <div className="ic-case-detail__grid">
+          {nextVisit ? (
+            <section className="ic-case-highlight ic-case-highlight--visit">
+              <p className="ic-case-highlight__eyebrow">Next visit</p>
+              <p className="ic-case-highlight__title">{formatScheduleWhen(nextVisit)}</p>
+              <p className="ic-case-highlight__sub">{nextVisit.subtitle}</p>
+              <div className="ic-case-highlight__actions">
+                <Link to={`/therapist/cases/${caseId}?tab=sessions`} className="ic-btn ic-btn--primary">
+                  Start or log session
+                </Link>
+                <Link to="/therapist/slots" className="ic-btn ic-btn--ghost">
+                  Calendar
+                </Link>
+              </div>
+            </section>
+          ) : (
+            <section className="ic-case-highlight ic-case-highlight--muted">
+              <p className="ic-case-highlight__eyebrow">Schedule</p>
+              <p className="ic-case-highlight__title">No upcoming booking</p>
+              <p className="ic-case-highlight__sub">Open your calendar to add availability or book this client.</p>
+              <Link to="/therapist/slots" className="ic-btn ic-btn--primary">
+                Open slots
+              </Link>
+            </section>
+          )}
+
+          <section className="ic-case-panel">
+            <h3>Quick actions</h3>
+            <div className="ic-case-quick">
+              <Link to={`/therapist/cases/${caseId}?tab=sessions`} className="ic-case-quick__item">
+                <strong>Session log</strong>
+                <span>Start, end, or backfill a visit</span>
+              </Link>
+              <Link to={`/therapist/reports?case_id=${caseId}`} className="ic-case-quick__item">
+                <strong>Monthly report</strong>
+                <span>Draft and submit in Monthly Reports</span>
+              </Link>
+              <Link to="/therapist/logs" className="ic-case-quick__item">
+                <strong>All session logs</strong>
+                <span>Timer across every client</span>
+              </Link>
+            </div>
+          </section>
+
+          <section className="ic-case-panel">
+            <h3>Case details</h3>
+            <dl className="ic-case-dl">
               <div>
-                <dt style={{ color: '#6b7280' }}>Operational stage</dt>
-                <dd style={{ margin: 0, fontWeight: 600 }}>{caseRow.operational_stage || '—'}</dd>
+                <dt>Operational stage</dt>
+                <dd>{caseRow.operational_stage || '—'}</dd>
               </div>
               <div>
-                <dt style={{ color: '#6b7280' }}>Region</dt>
-                <dd style={{ margin: 0 }}>{caseRow.region || '—'}</dd>
+                <dt>Region</dt>
+                <dd>{caseRow.region || '—'}</dd>
               </div>
               {addr ? (
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Service address</dt>
-                  <dd style={{ margin: 0 }}>{addr}</dd>
-                  {caseRow.maps_url ? (
-                    <a href={caseRow.maps_url} target="_blank" rel="noreferrer" style={{ fontSize: '0.8rem' }}>
-                      Open in Maps
-                    </a>
-                  ) : null}
+                  <dt>Service address</dt>
+                  <dd>
+                    {addr}
+                    {caseRow.maps_url ? (
+                      <>
+                        {' '}
+                        <a href={caseRow.maps_url} target="_blank" rel="noreferrer">
+                          Maps
+                        </a>
+                      </>
+                    ) : null}
+                  </dd>
                 </div>
               ) : null}
             </dl>
           </section>
+
           {assignments.length ? (
-            <section style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20 }}>
-              <h3 style={{ marginTop: 0, fontSize: '1rem' }}>Assignment</h3>
+            <section className="ic-case-panel">
+              <h3>Assignment</h3>
               {assignments.map((a) => (
-                <p key={a.id} style={{ margin: 0, fontSize: '0.875rem' }}>
+                <p key={a.id} className="ic-case-panel__line">
                   Therapist #{a.therapist_user_id} · {a.status} · from {a.start_date}
                 </p>
               ))}
             </section>
           ) : null}
-          <p style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
-            Prior therapist reports and escalation matrix — coming in a later update.
-          </p>
+
+          {scheduleItems.length > 1 ? (
+            <section className="ic-case-panel">
+              <h3>All upcoming</h3>
+              <ul className="ic-case-schedule-list">
+                {scheduleItems.map((item) => (
+                  <li key={item.key}>
+                    <span>{formatScheduleWhen(item)}</span>
+                    <span className="ic-case-schedule-list__sub">{item.subtitle}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </div>
       ) : null}
 
       {tab === 'sessions' ? (
-        <CaseSessionsPanel caseId={Number(caseId)} caseCode={caseRow.case_code} childName={caseRow.child_name} />
+        <CaseSessionsPanel
+          caseId={Number(caseId)}
+          caseCode={caseRow.case_code}
+          childName={caseRow.child_name}
+          childLabel={childLabel}
+          bookedSlots={scheduleItems.filter((i) => i.kind === 'booking').map((i) => ({
+            id: i.slotId,
+            case_id: i.caseId,
+            slot_date: i.date,
+            start_time: i.startTime,
+            end_time: i.endTime,
+            status: 'BOOKED',
+            booking_source: i.bookingSource,
+          }))}
+          onScheduleChange={load}
+        />
       ) : null}
 
-      {tab === 'reports' ? (
-        <CaseReportsPanel caseId={Number(caseId)} caseCode={caseRow.case_code} childName={caseRow.child_name} />
-      ) : null}
-
-      {tab === 'bookings' ? (
-        <CaseBookingsPanel caseId={Number(caseId)} />
-      ) : null}
     </div>
   )
 }

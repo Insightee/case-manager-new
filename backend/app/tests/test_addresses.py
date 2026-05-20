@@ -104,7 +104,9 @@ def test_parent_cannot_update_other_parents_case():
 
 def test_therapist_assigned_case_has_maps_url():
     token = _login("therapist@demo.com")
-    cases = client.get("/api/v1/cases?assigned=true", headers=_headers(token)).json()
+    from app.tests.conftest import api_items
+
+    cases = api_items(client.get("/api/v1/cases?assigned=true", headers=_headers(token)).json())
     homecare = next((c for c in cases if c.get("product_module") == "homecare"), None)
     assert homecare is not None
     assert homecare.get("maps_url")

@@ -51,7 +51,7 @@ export function AdminDashboardPage() {
       hint: 'Needs therapist assignment',
       tone: 'amber',
       icon: '◎',
-      to: '/admin/cases',
+      to: can('case.create') ? '/admin/cases?allot=1' : '/admin/cases',
     },
     {
       title: 'Reports in review',
@@ -97,9 +97,16 @@ export function AdminDashboardPage() {
         subtitle="Case lifecycle, reviews, billing, and support — at a glance."
         actions={
           canNavigate ? (
-            <Link to="/admin/cases" className="admin-btn admin-btn--primary">
-              Manage cases
-            </Link>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {can('case.create') ? (
+                <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary">
+                  Allot new case
+                </Link>
+              ) : null}
+              <Link to="/admin/cases" className="admin-btn admin-btn--secondary">
+                Manage cases
+              </Link>
+            </div>
           ) : null
         }
       />
@@ -129,7 +136,7 @@ export function AdminDashboardPage() {
             subtitle="Cases waiting for therapist assignment"
             actions={
               canNavigate ? (
-                <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
+                <Link to="/admin/cases?status=PENDING_ALLOTMENT" className="admin-btn admin-btn--ghost admin-btn--sm">
                   View all
                 </Link>
               ) : null

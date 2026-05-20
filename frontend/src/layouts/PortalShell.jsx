@@ -1,8 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
+import { avatarSrc } from '../components/shared/AvatarUpload.jsx'
+import { NotificationBell } from '../components/shared/NotificationBell.jsx'
+import '../components/shared/notification-bell.css'
 
 const THERAPIST_NAV = [
   { to: '/therapist', label: 'Dashboard', end: true },
@@ -25,17 +28,13 @@ const HR_NAV = [
   { to: '/hr/tickets', label: 'Tickets', icon: '🎫' },
 ]
 
-import { avatarSrc } from '../components/shared/AvatarUpload.jsx'
-
 const PARENT_NAV = [
   { to: '/parent', label: 'Dashboard', end: true },
   { to: '/parent/session-logs', label: 'Session updates' },
-  { to: '/parent/profile', label: 'My profile' },
-  { to: '/parent/address', label: 'Service address' },
-  { to: '/parent/book', label: 'Book appointment' },
-  { to: '/parent/reports', label: 'Approved Reports' },
-  { to: '/parent/iep', label: 'IEP Acknowledgement' },
+  { to: '/parent/book', label: 'Session schedule' },
+  { to: '/parent/reports', label: 'Reports' },
   { to: '/parent/billing', label: 'Billing' },
+  { to: '/parent/profile', label: 'My profile' },
   { to: '/parent/support', label: 'Support' },
 ]
 
@@ -48,13 +47,44 @@ const ADMIN_NAV = [
   { to: '/admin/iep', label: 'IEP', perm: 'attachment.manage', feature: 'iep', icon: '📎' },
   { to: '/admin/tickets', label: 'Tickets', perm: 'ticket.manage', feature: 'tickets', icon: '✉' },
   { to: '/admin/incidents', label: 'Incidents', perm: 'incident.read_sensitive', feature: 'incidents', icon: '⚠' },
-  { to: '/admin/users', label: 'Users', perm: 'user.manage', feature: null, icon: '👤' },
+  { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: '👥' },
   { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: '🩺' },
+  { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', feature: null, icon: '🗓' },
 ]
+
+function NavLinks({ items, portal, className, linkClassName, onNavigate }) {
+  return (
+    <nav className={className}>
+      {items.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.end}
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            `${linkClassName}${isActive ? ' is-active' : ''}`
+          }
+        >
+          {(portal === 'admin' || portal === 'hr') && item.icon ? (
+            <span className="app-sidebar__link-icon" aria-hidden>
+              {item.icon}
+            </span>
+          ) : null}
+          {item.label}
+        </NavLink>
+      ))}
+    </nav>
+  )
+}
 
 export function PortalShell({ portal }) {
   const { user, logout, can, hasFeature } = useAuth()
   const location = useLocation()
+  const [accountOpen, setAccountOpen] = useState(false)
+
+  useEffect(() => {
+    setAccountOpen(false)
+  }, [location.pathname])
 
   useEffect(() => {
     if (portal !== 'therapist' || !user?.id) return
@@ -85,52 +115,112 @@ export function PortalShell({ portal }) {
   useDocumentTitle(`InsightCase — ${portalTitle}`)
 
   const shellClass = portal === 'admin' || portal === 'hr' ? 'app-shell app-shell--admin' : 'app-shell'
+  const firstName = user?.full_name?.split(/\s+/)[0] || 'Account'
+  const profilePath =
+    portal === 'parent'
+      ? '/parent/profile'
+      : portal === 'therapist'
+        ? '/therapist/profile'
+        : null
 
   return (
     <div className={shellClass}>
-      <aside className="app-sidebar">
-        <div className="app-sidebar__brand">
-          <span className="app-sidebar__logo" aria-hidden />
+      <header className="app-mobile-topbar">
+        <div className="app-mobile-topbar__brand">
+          <span className="app-mobile-topbar__logo" aria-hidden />
           <div>
-            <h1 className="app-sidebar__title">InsightCase</h1>
-            <p className="app-sidebar__sub">{subtitle}</p>
+            <span className="app-mobile-topbar__title">InsightCase</span>
+            <span className="app-mobile-topbar__sub">{subtitle}</span>
           </div>
         </div>
-        <nav className="app-sidebar__nav">
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                isActive ? 'app-sidebar__link is-active' : 'app-sidebar__link'
-              }
-            >
-              {(portal === 'admin' || portal === 'hr') && item.icon ? (
-                <span className="app-sidebar__link-icon" aria-hidden>
-                  {item.icon}
-                </span>
-              ) : null}
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="app-sidebar__footer">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <div className="app-mobile-topbar__account" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <NotificationBell portal={portal} />
+          <button
+            type="button"
+            className="app-mobile-topbar__profile"
+            aria-expanded={accountOpen}
+            aria-controls="mobile-account-menu"
+            onClick={() => setAccountOpen((o) => !o)}
+          >
             {avatarSrc(user) ? (
-              <img src={avatarSrc(user)} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+              <img src={avatarSrc(user)} alt="" className="app-mobile-topbar__avatar" />
             ) : (
-              <span style={{ width: 32, height: 32, borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700 }}>
+              <span className="app-mobile-topbar__avatar app-mobile-topbar__avatar--initial">
                 {user?.full_name?.charAt(0)?.toUpperCase() || '?'}
               </span>
             )}
-            <p className="app-sidebar__help" style={{ margin: 0 }}>{user?.full_name}</p>
+            <span className="app-mobile-topbar__name">{firstName}</span>
+            <span className="app-mobile-topbar__chevron" aria-hidden>
+              {accountOpen ? '▲' : '▼'}
+            </span>
+          </button>
+          {accountOpen ? (
+            <div id="mobile-account-menu" className="app-mobile-account-menu" role="menu">
+              <p className="app-mobile-account-menu__name">{user?.full_name}</p>
+              {profilePath ? (
+                <NavLink
+                  to={profilePath}
+                  className="app-mobile-account-menu__link"
+                  role="menuitem"
+                  onClick={() => setAccountOpen(false)}
+                >
+                  My profile
+                </NavLink>
+              ) : null}
+              <button
+                type="button"
+                className="app-mobile-account-menu__logout"
+                role="menuitem"
+                onClick={logout}
+              >
+                Logout
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </header>
+
+      <NavLinks
+        items={nav}
+        portal={portal}
+        className="app-mobile-tabs"
+        linkClassName="app-mobile-tabs__link"
+      />
+
+      <aside className="app-sidebar app-sidebar--desktop">
+        <div className="app-sidebar__brand" style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <span className="app-sidebar__logo" aria-hidden />
+            <div>
+              <h1 className="app-sidebar__title">InsightCase</h1>
+              <p className="app-sidebar__sub">{subtitle}</p>
+            </div>
+          </div>
+          <NotificationBell portal={portal} />
+        </div>
+        <NavLinks
+          items={nav}
+          portal={portal}
+          className="app-sidebar__nav"
+          linkClassName="app-sidebar__link"
+        />
+        <div className="app-sidebar__footer">
+          <div className="app-sidebar__user">
+            {avatarSrc(user) ? (
+              <img src={avatarSrc(user)} alt="" className="app-sidebar__user-avatar" />
+            ) : (
+              <span className="app-sidebar__user-avatar app-sidebar__user-avatar--initial">
+                {user?.full_name?.charAt(0)?.toUpperCase() || '?'}
+              </span>
+            )}
+            <p className="app-sidebar__help">{user?.full_name}</p>
           </div>
           <button type="button" className="app-sidebar__logout" onClick={logout}>
             Logout
           </button>
         </div>
       </aside>
+
       <main className="content">
         <Outlet />
       </main>

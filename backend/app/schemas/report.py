@@ -32,6 +32,9 @@ class MonthlyReportRead(BaseModel):
     summary: Optional[str]
     reviewer_comment: Optional[str]
     visibility_status: VisibilityStatus
+    parent_review_status: Optional[str] = None
+    parent_feedback: Optional[str] = None
+    parent_reviewed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, apiUpload, getTokens } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, StatusBadge } from './ui/index.js'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -28,7 +29,9 @@ export function AdminIepPage() {
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    apiFetch('/api/v1/cases').then(setCases).catch(() => setCases([]))
+    apiFetch('/api/v1/cases?page_size=100')
+      .then((d) => setCases(unwrapList(d)))
+      .catch(() => setCases([]))
   }, [])
 
   const selectedCase = cases.find((c) => String(c.id) === String(caseId))

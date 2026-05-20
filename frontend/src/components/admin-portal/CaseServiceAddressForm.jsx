@@ -49,7 +49,7 @@ export function CaseServiceAddressForm({ caseItem, onSave, readOnly }) {
         Service address (homecare)
       </p>
       <div style={{ gridColumn: '1 / -1' }}>
-        <AddressFormFields value={addr} onChange={setAddr} idPrefix="admin-svc" />
+        <AddressFormFields value={addr} onChange={setAddr} idPrefix="admin-svc" showLocationButton={false} />
       </div>
       {caseItem?.maps_url ? (
         <p style={{ gridColumn: '1 / -1', fontSize: '0.8rem' }}>

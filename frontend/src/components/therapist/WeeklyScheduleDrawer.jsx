@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { WEEKDAY_KEYS, WEEKDAY_LABELS } from './slotCalendarUtils.js'
+import { WEEKDAY_KEYS, WEEKDAY_LABELS } from '../scheduling/slotCalendarUtils.js'
 
 export function WeeklyScheduleDrawer({ open, onClose, weekStart, weekEnd, therapistId, onApplied }) {
   const [config, setConfig] = useState(null)

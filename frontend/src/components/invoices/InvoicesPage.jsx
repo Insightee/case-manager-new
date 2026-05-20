@@ -278,7 +278,14 @@ export function InvoicesPage() {
         </div>
 
         <div className="min-w-0 xl:sticky xl:top-4 xl:self-start">
-          <ChecklistPanel items={checklist} onToggle={handleCheckToggle} />
+          <ChecklistPanel
+            items={checklist}
+            onToggle={handleCheckToggle}
+            title="Invoice progress checklist"
+            subtitle="Finance readiness"
+            completeLabel="Payout workflow complete"
+            stepLabel="step"
+          />
         </div>
       </div>
 

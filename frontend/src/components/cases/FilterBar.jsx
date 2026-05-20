@@ -1,20 +1,112 @@
-const filters = ['Stage', 'Service', 'Due Soon', 'Sort by Urgency']
+const STAGE_OPTIONS = [
+  { value: 'all', label: 'All stages' },
+  { value: 'attention', label: 'Needs attention' },
+  { value: 'log_due', label: 'Log due' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'closed', label: 'Closed' },
+]
 
-function Chevron() {
-  return <span className="ic-chev" aria-hidden />
-}
+const DUE_OPTIONS = [
+  { value: 'all', label: 'All deadlines' },
+  { value: 'yes', label: 'Due soon' },
+]
 
-export function FilterBar({ view, onViewChange }) {
+const SORT_OPTIONS = [
+  { value: 'urgency', label: 'Sort by urgency' },
+  { value: 'child', label: 'Sort by child' },
+  { value: 'case_id', label: 'Sort by case ID' },
+]
+
+export function FilterBar({
+  view,
+  onViewChange,
+  stage,
+  onStageChange,
+  service,
+  onServiceChange,
+  serviceOptions = [],
+  dueSoon,
+  onDueSoonChange,
+  sort,
+  onSortChange,
+  hasActiveFilters,
+  onClearFilters,
+}) {
   return (
     <div className="ic-filter-bar">
       <div className="ic-filter-bar__filters">
-        {filters.map((label) => (
-          <button key={label} type="button" className="ic-filter-btn">
-            {label}
-            <Chevron />
+        <label className="ic-filter-field">
+          <span className="sr-only">Stage</span>
+          <select
+            className="ic-filter-select"
+            value={stage}
+            onChange={(e) => onStageChange(e.target.value)}
+            aria-label="Filter by stage"
+          >
+            {STAGE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="ic-filter-field">
+          <span className="sr-only">Service</span>
+          <select
+            className="ic-filter-select"
+            value={service}
+            onChange={(e) => onServiceChange(e.target.value)}
+            aria-label="Filter by service"
+          >
+            <option value="all">All services</option>
+            {serviceOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="ic-filter-field">
+          <span className="sr-only">Due soon</span>
+          <select
+            className="ic-filter-select"
+            value={dueSoon}
+            onChange={(e) => onDueSoonChange(e.target.value)}
+            aria-label="Filter by deadline"
+          >
+            {DUE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.value === 'all' ? 'Due soon' : o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="ic-filter-field">
+          <span className="sr-only">Sort</span>
+          <select
+            className="ic-filter-select"
+            value={sort}
+            onChange={(e) => onSortChange(e.target.value)}
+            aria-label="Sort cases"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {hasActiveFilters ? (
+          <button type="button" className="ic-filter-clear" onClick={onClearFilters}>
+            Clear
           </button>
-        ))}
+        ) : null}
       </div>
+
       <div className="ic-filter-bar__views">
         <div className="ic-segment" role="group" aria-label="Layout">
           <button
@@ -30,19 +122,6 @@ export function FilterBar({ view, onViewChange }) {
             onClick={() => onViewChange('table')}
           >
             Table
-          </button>
-        </div>
-        <div className="ic-icon-group" role="group" aria-label="Alternate views">
-          <button type="button" className="ic-icon-btn" title="List">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
-            </svg>
-          </button>
-          <button type="button" className="ic-icon-btn" title="Calendar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="4" width="18" height="18" rx="2" />
-              <path d="M16 2v4M8 2v4M3 10h18" />
-            </svg>
           </button>
         </div>
       </div>

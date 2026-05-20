@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class CaseBillingFields(BaseModel):
+    client_billing_mode: Optional[str] = None
     billing_type: Optional[str] = None
     client_rate_per_session_inr: Optional[float] = None
     package_session_count: Optional[int] = None

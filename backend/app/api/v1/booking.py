@@ -15,6 +15,8 @@ from app.models.parent import ParentGuardian
 from app.models.slot import BookingSource
 from app.models.user import User
 from app.core.permissions import case_scope_check
+from app.services import appointment_booking_service as appt_booking
+from app.services import appointment_notification_service as appt_notify
 from app.services import case_service, slot_calendar_service as cal
 from sqlalchemy import select
 
@@ -90,17 +92,13 @@ def create_appointment(
     if payload.case_id not in allowed:
         raise HTTPException(status_code=404, detail="Case not found")
     try:
-        slot = cal.book_slot(db, payload.slot_id, payload.case_id, user.id, BookingSource.PARENT)
+        slot = appt_booking.book_with_session(
+            db, payload.slot_id, payload.case_id, user.id, BookingSource.PARENT
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    appt_notify.notify_therapist_parent_booked(db, slot, parent_name=user.full_name)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="book", entity_type="slot", entity_id=payload.slot_id, **meta)
     db.commit()
-    return {
-        "slot_id": slot.id,
-        "case_id": slot.case_id,
-        "slot_date": slot.slot_date.isoformat(),
-        "start_time": slot.start_time.strftime("%H:%M"),
-        "end_time": slot.end_time.strftime("%H:%M"),
-        "status": slot.status.value,
-    }
+    return appt_booking.serialize_parent_appointment(db, slot, payload.case_id)

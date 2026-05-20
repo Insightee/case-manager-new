@@ -1,0 +1,97 @@
+.leave-cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+}
+
+.leave-cal__weekday {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #9ca3af;
+  padding: 4px 0;
+}
+
+.leave-cal__day {
+  min-height: 36px;
+  padding: 6px 0;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 2px solid transparent;
+  background: #fff;
+  color: #374151;
+  font-weight: 400;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.leave-cal__day:hover:not(:disabled) {
+  border-color: #fca5a5;
+}
+
+.leave-cal__day--today {
+  border-color: #6366f1;
+  color: #6366f1;
+  font-weight: 700;
+}
+
+.leave-cal__day--approved {
+  background: #bbf7d0;
+  color: #15803d;
+  font-weight: 500;
+}
+
+.leave-cal__day--pending {
+  background: #fef9c3;
+  color: #a16207;
+  font-weight: 500;
+}
+
+.leave-cal__day--rejected {
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+/* Date range being selected (start → end) */
+.leave-cal__day--range-single {
+  background: #fecaca;
+  color: #991b1b;
+  border-color: #dc2626;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px #dc2626;
+}
+
+.leave-cal__day--range-start {
+  background: #fecaca;
+  color: #991b1b;
+  border-color: #dc2626;
+  font-weight: 700;
+  border-radius: 8px 0 0 8px;
+}
+
+.leave-cal__day--range-middle {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+  border-radius: 0;
+  font-weight: 600;
+}
+
+.leave-cal__day--range-end {
+  background: #fecaca;
+  color: #991b1b;
+  border-color: #dc2626;
+  font-weight: 700;
+  border-radius: 0 8px 8px 0;
+}
+
+.leave-cal__hint--selecting {
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+.leave-cal__legend-swatch--selecting {
+  background: #fecaca;
+  border: 1px solid #dc2626;
+}

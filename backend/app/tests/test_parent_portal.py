@@ -60,3 +60,89 @@ def test_parent_billing_summaries():
     headers = _login("parent@demo.com")
     rows = client.get("/api/v1/parent/billing-summaries", headers=headers).json()
     assert isinstance(rows, list)
+
+
+def test_parent_profile_get_and_update():
+    headers = _login("parent@demo.com")
+    r = client.get("/api/v1/parent/profile", headers=headers)
+    assert r.status_code == 200
+    profile = r.json()
+    assert profile["full_name"]
+    assert profile["email"]
+    assert "children" in profile
+    assert "services" in profile
+
+    patch = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"phone": "9876543210", "full_name": profile["full_name"]},
+    )
+    assert patch.status_code == 200
+    assert patch.json()["phone"] == "9876543210"
+
+
+def test_parent_reports_hub():
+    headers = _login("parent@demo.com")
+    hub = client.get("/api/v1/parent/reports/hub", headers=headers)
+    assert hub.status_code == 200
+    data = hub.json()
+    assert "monthly" in data
+    assert "iep" in data
+    assert isinstance(data["items"], list)
+
+
+def test_parent_monthly_feedback_returns_under_review():
+    admin_h = _login("superadmin@demo.com")
+    parent_h = _login("parent@demo.com")
+    hub = client.get("/api/v1/parent/reports/hub", headers=parent_h).json()
+    pending = [
+        m
+        for m in hub.get("monthly", [])
+        if m.get("parentReviewStatus") == "PENDING" or m.get("status") == "pending_review"
+    ]
+    if not pending:
+        return
+    rid = pending[0]["id"]
+    fb = client.post(
+        f"/api/v1/parent/reports/monthly/{rid}/feedback",
+        headers=parent_h,
+        json={"message": "Please update goals section"},
+    )
+    assert fb.status_code == 200
+    assert fb.json()["parentReviewStatus"] == "CHANGES_REQUESTED"
+    detail = client.get(f"/api/v1/reports/monthly/{rid}", headers=admin_h)
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "UNDER_REVIEW"
+
+
+def test_parent_monthly_approve():
+    parent_h = _login("parent@demo.com")
+    hub = client.get("/api/v1/parent/reports/hub", headers=parent_h).json()
+    pending = [
+        m
+        for m in hub.get("monthly", [])
+        if m.get("parentReviewStatus") == "PENDING" or m.get("status") == "pending_review"
+    ]
+    if not pending:
+        return
+    rid = pending[0]["id"]
+    r = client.post(f"/api/v1/parent/reports/monthly/{rid}/approve", headers=parent_h)
+    assert r.status_code == 200
+    assert r.json()["parentReviewStatus"] == "APPROVED"
+
+
+def test_parent_iep_comment_create():
+    parent_h = _login("parent@demo.com")
+    hub = client.get("/api/v1/parent/reports/hub", headers=parent_h).json()
+    if not hub.get("iep"):
+        return
+    att_id = hub["iep"][0]["id"]
+    r = client.post(
+        f"/api/v1/parent/reports/iep/{att_id}/comments",
+        headers=parent_h,
+        json={"body": "Consider adding a communication goal", "comment_type": "GOAL_SUGGESTION"},
+    )
+    assert r.status_code == 200
+    detail = client.get(f"/api/v1/parent/reports/iep/{att_id}", headers=parent_h)
+    assert detail.status_code == 200
+    assert len(detail.json().get("comments", [])) >= 1

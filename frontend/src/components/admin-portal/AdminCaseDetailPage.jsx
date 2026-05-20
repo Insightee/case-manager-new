@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { AdminScheduleSessionModal } from './AdminScheduleSessionModal.jsx'
+import { AdminAssignSchedulePanel } from './AdminAssignSchedulePage.jsx'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { StatusBadge } from './ui/index.js'
@@ -15,6 +17,7 @@ const TABS = [
   { id: 'reports', label: 'Reports' },
   { id: 'billing', label: 'Billing', perm: 'case.update' },
   { id: 'schedule', label: 'Schedule', perm: 'slot.book_any' },
+  { id: 'schedule-assign', label: 'Assign schedule', perm: 'slot.book_any' },
 ]
 
 export function AdminCaseDetailPage() {
@@ -40,12 +43,12 @@ export function AdminCaseDetailPage() {
         apiFetch(`/api/v1/cases/${caseId}`),
         apiFetch(`/api/v1/cases/${caseId}/assignments`),
         apiFetch(`/api/v1/daily-logs?case_id=${caseId}`),
-        apiFetch('/api/v1/reports/monthly'),
+        apiFetch('/api/v1/reports/monthly?page_size=100'),
       ])
       setCaseRow(c)
       setAssignments(asg || [])
-      setLogs(allLogs || [])
-      setReports((allReports || []).filter((r) => String(r.case_id) === String(caseId)))
+      setLogs(Array.isArray(allLogs) ? allLogs : unwrapList(allLogs))
+      setReports(unwrapList(allReports).filter((r) => String(r.case_id) === String(caseId)))
     } catch (err) {
       setError(err.message || 'Case not found')
       setCaseRow(null)
@@ -171,7 +174,13 @@ export function AdminCaseDetailPage() {
             <div className="admin-form-grid" style={{ maxWidth: 420, marginBottom: 16 }}>
               <label>
                 Assign therapist
-                <AdminTherapistPicker caseId={caseRow.id} value={therapistId} onChange={setTherapistId} />
+                <AdminTherapistPicker
+                  mode="allotment"
+                  productModule={caseRow.product_module}
+                  caseId={caseRow.id}
+                  value={therapistId}
+                  onChange={setTherapistId}
+                />
               </label>
               <button type="button" className="admin-btn admin-btn--primary" onClick={handleAssign} disabled={!therapistId}>
                 Assign / Reassign
@@ -289,6 +298,10 @@ export function AdminCaseDetailPage() {
             Schedule session
           </button>
         </section>
+      )}
+
+      {tab === 'schedule-assign' && can('slot.book_any') && (
+        <AdminAssignSchedulePanel caseItem={caseRow} assignments={assignments} onDone={load} />
       )}
 
       <AdminScheduleSessionModal

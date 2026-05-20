@@ -129,7 +129,7 @@ def test_approve_cancels_slot_and_confirms_parent():
     db = SessionLocal()
     try:
         slot = db.get(TherapistSlot, slot_id)
-        assert slot.status == SlotStatus.AVAILABLE
+        assert slot.status == SlotStatus.CANCELLED
         assert slot.case_id is None
     finally:
         db.close()

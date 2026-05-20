@@ -23,8 +23,9 @@ class CaseServiceAddressFields(BaseModel):
 
 
 class CaseCreate(CaseBillingFields, CaseServiceAddressFields):
-    case_code: str
+    case_code: Optional[str] = None
     child_id: int
+    client_billing_mode: Optional[str] = None
     service_type: str
     product_module: str
     case_manager_user_id: Optional[int] = None
@@ -34,6 +35,7 @@ class CaseCreate(CaseBillingFields, CaseServiceAddressFields):
 
 
 class CaseUpdate(CaseBillingFields, CaseServiceAddressFields):
+    client_billing_mode: Optional[str] = None
     service_type: Optional[str] = None
     product_module: Optional[str] = None
     status: Optional[CaseStatus] = None
@@ -69,6 +71,14 @@ class AssignmentCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class AssignmentBookingUpdate(BaseModel):
+    booking_mode: Optional[str] = None
+    fixed_weekdays: Optional[list[str]] = None
+    fixed_start_time: Optional[str] = None
+    fixed_end_time: Optional[str] = None
+    fixed_recurrence_group_id: Optional[str] = None
+
+
 class AssignmentRead(BaseModel):
     id: int
     case_id: int
@@ -80,6 +90,12 @@ class AssignmentRead(BaseModel):
     status: str
     reason_for_change: Optional[str]
     notes: Optional[str]
+    booking_mode: str = "OPEN"
+    fixed_weekdays: Optional[list[str]] = None
+    fixed_start_time: Optional[str] = None
+    fixed_end_time: Optional[str] = None
+    fixed_recurrence_group_id: Optional[str] = None
+    fixed_window_label: Optional[str] = None
     case_billing: Optional[dict] = None
 
     model_config = {"from_attributes": True}

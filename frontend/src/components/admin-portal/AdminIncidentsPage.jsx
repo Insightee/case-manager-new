@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminToolbar, AdminSearchInput, StatusBadge } from './ui/index.js'
 
 const STATUS_FLOW = ['OPEN', 'INVESTIGATING', 'RESOLVED', 'CLOSED']
@@ -16,7 +17,8 @@ export function AdminIncidentsPage() {
   async function load() {
     setLoading(true)
     try {
-      setIncidents(await apiFetch('/api/v1/incidents'))
+      const data = await apiFetch('/api/v1/incidents?page_size=100')
+      setIncidents(unwrapList(data))
     } catch {
       setIncidents([])
     } finally {

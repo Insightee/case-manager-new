@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
+import './therapist-leave.css'
 
 const LEAVE_TYPES = ['ANNUAL', 'SICK', 'CASUAL', 'UNPAID']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -37,29 +38,29 @@ function leaveOnDate(dateStr, leaves) {
   return leaves.find((l) => l.status !== 'CANCELLED' && dateStr >= l.start_date && dateStr <= l.end_date)
 }
 
-function dayStyle(dateStr, leaves, isToday, isSelected, isRange) {
+/** Role for start→end selection highlight (red range). */
+function pickRangeRole(dateStr, rangeStart, rangeEnd) {
+  if (!rangeStart) return null
+  if (!rangeEnd || rangeEnd < rangeStart) {
+    return dateStr === rangeStart ? 'single' : null
+  }
+  if (dateStr < rangeStart || dateStr > rangeEnd) return null
+  if (rangeStart === rangeEnd) return 'single'
+  if (dateStr === rangeStart) return 'start'
+  if (dateStr === rangeEnd) return 'end'
+  return 'middle'
+}
+
+function dayClassName(dateStr, leaves, isToday, rangeRole) {
   const entry = leaveOnDate(dateStr, leaves)
-  if (isSelected || isRange) {
-    return {
-      background: '#e0e7ff',
-      color: '#3730a3',
-      border: '2px solid #6366f1',
-      fontWeight: 700,
-    }
+  if (rangeRole) {
+    return `leave-cal__day leave-cal__day--range-${rangeRole}`
   }
-  if (entry?.status === 'APPROVED') {
-    return { background: '#bbf7d0', color: '#15803d', border: '2px solid transparent', fontWeight: 500 }
-  }
-  if (entry?.status === 'PENDING') {
-    return { background: '#fef9c3', color: '#a16207', border: '2px solid transparent', fontWeight: 500 }
-  }
-  if (entry?.status === 'REJECTED') {
-    return { background: '#fee2e2', color: '#b91c1c', border: '2px solid transparent', fontWeight: 500 }
-  }
-  if (isToday) {
-    return { background: '#fff', color: '#6366f1', border: '2px solid #6366f1', fontWeight: 700 }
-  }
-  return { background: '#fff', color: '#374151', border: '2px solid #f3f4f6', fontWeight: 400 }
+  if (entry?.status === 'APPROVED') return 'leave-cal__day leave-cal__day--approved'
+  if (entry?.status === 'PENDING') return 'leave-cal__day leave-cal__day--pending'
+  if (entry?.status === 'REJECTED') return 'leave-cal__day leave-cal__day--rejected'
+  if (isToday) return 'leave-cal__day leave-cal__day--today'
+  return 'leave-cal__day'
 }
 
 export function TherapistLeavePage() {
@@ -108,14 +109,23 @@ export function TherapistLeavePage() {
   }, [searchParams, setSearchParams])
 
   function openRequestForm(start, end) {
+    const from = start || form.start_date
+    const to = end || start || form.end_date
     setForm((f) => ({
       ...f,
-      start_date: start || f.start_date,
-      end_date: end || start || f.end_date,
+      start_date: from,
+      end_date: to,
     }))
+    if (from) setPickStart(from)
+    if (to) setPickEnd(to)
     setShowForm(true)
     setError('')
     setSuccess('')
+  }
+
+  function clearPickRange() {
+    setPickStart(null)
+    setPickEnd(null)
   }
 
   function handleDayClick(day) {
@@ -123,26 +133,32 @@ export function TherapistLeavePage() {
     if (!pickStart || (pickStart && pickEnd)) {
       setPickStart(ds)
       setPickEnd(null)
+      setForm((f) => ({ ...f, start_date: ds, end_date: '' }))
+      setShowForm(true)
+      setError('')
+      setSuccess('')
       return
     }
     if (ds < pickStart) {
-      setPickEnd(pickStart)
       setPickStart(ds)
-      openRequestForm(ds, pickStart)
-      setPickStart(null)
-      setPickEnd(null)
-      return
+      setPickEnd(pickStart)
+      setForm((f) => ({ ...f, start_date: ds, end_date: pickStart }))
+    } else {
+      setPickEnd(ds)
+      setForm((f) => ({ ...f, start_date: pickStart, end_date: ds }))
     }
-    setPickEnd(ds)
-    openRequestForm(pickStart, ds)
-    setPickStart(null)
-    setPickEnd(null)
+    setShowForm(true)
+    setError('')
+    setSuccess('')
   }
 
-  function isInPickRange(ds) {
-    if (!pickStart) return false
-    if (!pickEnd) return ds === pickStart
-    return ds >= pickStart && ds <= pickEnd
+  function syncRangeFromForm(start, end) {
+    if (!start) {
+      clearPickRange()
+      return
+    }
+    setPickStart(start)
+    setPickEnd(end && end >= start ? end : start)
   }
 
   async function submitLeave(e) {
@@ -162,6 +178,7 @@ export function TherapistLeavePage() {
       })
       setForm({ leave_type: 'ANNUAL', start_date: '', end_date: '', reason: '' })
       setShowForm(false)
+      clearPickRange()
       setSuccess('Leave request submitted.')
       await loadLeaves()
     } catch (err) {
@@ -207,6 +224,13 @@ export function TherapistLeavePage() {
       l.end_date >= toDateStr(calYear, calMonth, 1),
   )
 
+  const rangeStart = pickStart || (showForm ? form.start_date : null) || null
+  const rangeEnd =
+    pickEnd ||
+    (showForm && form.end_date && form.start_date && form.end_date >= form.start_date ? form.end_date : null)
+  const isSelectingRange = Boolean(rangeStart)
+  const awaitingEndDate = Boolean(pickStart && !pickEnd)
+
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
@@ -222,7 +246,9 @@ export function TherapistLeavePage() {
         <button
           type="button"
           onClick={() => {
-            setShowForm(!showForm)
+            const next = !showForm
+            setShowForm(next)
+            if (!next) clearPickRange()
             setError('')
             setSuccess('')
           }}
@@ -299,15 +325,20 @@ export function TherapistLeavePage() {
             ›
           </button>
         </div>
-        <p style={{ fontSize: '0.75rem', color: '#6b7280', textAlign: 'center', marginBottom: 16 }}>
-          {pickStart && !pickEnd
-            ? `Start: ${pickStart} — click end date`
-            : 'Click a start date, then an end date, to open the request form'}
+        <p
+          className={isSelectingRange ? 'leave-cal__hint--selecting' : ''}
+          style={{ fontSize: '0.75rem', color: isSelectingRange ? undefined : '#6b7280', textAlign: 'center', marginBottom: 16 }}
+        >
+          {awaitingEndDate
+            ? `Start: ${pickStart} — click end date (range shown in red)`
+            : rangeStart && rangeEnd
+              ? `Selected: ${rangeStart} → ${rangeEnd}`
+              : 'Click a start date, then an end date — your range appears in red'}
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, textAlign: 'center' }}>
+        <div className="leave-cal">
           {WEEKDAYS.map((d) => (
-            <div key={d} style={{ fontSize: '0.7rem', fontWeight: 700, color: '#9ca3af', padding: '4px 0' }}>
+            <div key={d} className="leave-cal__weekday">
               {d}
             </div>
           ))}
@@ -317,21 +348,15 @@ export function TherapistLeavePage() {
             }
             const ds = toDateStr(calYear, calMonth, day)
             const entry = leaveOnDate(ds, leaves)
-            const styles = dayStyle(ds, leaves, ds === todayStr, pickStart === ds, isInPickRange(ds))
+            const rangeRole = pickRangeRole(ds, rangeStart, rangeEnd)
+            const className = dayClassName(ds, leaves, ds === todayStr, rangeRole)
             return (
               <button
                 key={ds}
                 type="button"
                 onClick={() => handleDayClick(day)}
+                className={className}
                 title={entry ? `${entry.leave_type} (${entry.status})` : 'Select for leave request'}
-                style={{
-                  minHeight: 36,
-                  padding: '6px 0',
-                  borderRadius: 8,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  ...styles,
-                }}
               >
                 {day}
               </button>
@@ -340,6 +365,10 @@ export function TherapistLeavePage() {
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 16, fontSize: '0.75rem', color: '#6b7280' }}>
+          <span>
+            <span className="leave-cal__legend-swatch--selecting" style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, marginRight: 4 }} />
+            Selecting range
+          </span>
           <span>
             <span style={{ display: 'inline-block', width: 10, height: 10, background: '#bbf7d0', borderRadius: 2, marginRight: 4 }} />
             Approved
@@ -389,7 +418,12 @@ export function TherapistLeavePage() {
                 <input
                   type="date"
                   value={form.start_date}
-                  onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                  onChange={(e) => {
+                    const start = e.target.value
+                    const end = form.end_date && form.end_date >= start ? form.end_date : start
+                    setForm({ ...form, start_date: start, end_date: end })
+                    syncRangeFromForm(start, end)
+                  }}
                   required
                   style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
                 />
@@ -399,7 +433,12 @@ export function TherapistLeavePage() {
                 <input
                   type="date"
                   value={form.end_date}
-                  onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                  min={form.start_date || undefined}
+                  onChange={(e) => {
+                    const end = e.target.value
+                    setForm({ ...form, end_date: end })
+                    syncRangeFromForm(form.start_date, end)
+                  }}
                   required
                   style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
                 />

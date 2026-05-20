@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.pagination import paginate_query, paginated_response
 from app.core.permissions import case_scope_check, require_permission, user_has_permission
 from app.models.case import Case
 from app.models.session import Session as TherapySession
@@ -52,10 +53,12 @@ def _therapist_only_update(user: User, session: TherapySession) -> None:
         raise HTTPException(status_code=403, detail="Can only update your own sessions")
 
 
-@router.get("", response_model=list[SessionRead])
+@router.get("")
 def list_sessions(
     case_id: Optional[int] = None,
     therapist_user_id: Optional[int] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(require_permission("session.read")),
     db: Session = Depends(get_db),
 ):
@@ -69,7 +72,8 @@ def list_sessions(
         stmt = stmt.where(TherapySession.therapist_user_id == therapist_user_id)
     elif user_has_permission(user, "case.read.assigned") and not user_has_permission(user, "case.read.all"):
         stmt = stmt.where(TherapySession.therapist_user_id == user.id)
-    sessions = db.scalars(stmt.order_by(TherapySession.scheduled_date.desc())).all()
+    stmt = stmt.order_by(TherapySession.scheduled_date.desc())
+    sessions, total = paginate_query(db, stmt, page=page, page_size=page_size)
     result = []
     for s in sessions:
         case = s.case or db.get(Case, s.case_id)
@@ -78,7 +82,7 @@ def list_sessions(
                 s = session_service.auto_end_if_stale(db, s)
             result.append(_session_read(s, case))
     db.commit()
-    return result
+    return paginated_response([r.model_dump() for r in result], total, page, page_size)
 
 
 @router.get("/upcoming", response_model=list[SessionRead])

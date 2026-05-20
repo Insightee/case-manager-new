@@ -25,6 +25,8 @@ class SessionStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
     NO_SHOW = "NO_SHOW"
     RESCHEDULED = "RESCHEDULED"
+    CLIENT_ABSENT = "CLIENT_ABSENT"
+    THERAPIST_LEAVE = "THERAPIST_LEAVE"
 
 
 class Session(Base):
@@ -41,6 +43,7 @@ class Session(Base):
     actual_start_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     actual_end_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     auto_ended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    slot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("therapist_slots.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     case = relationship("Case", back_populates="sessions", lazy="joined")

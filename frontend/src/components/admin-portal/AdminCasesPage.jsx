@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
+import { useApiQuery } from '../../hooks/useApiQuery.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
   AdminPageHeader,
@@ -11,13 +13,14 @@ import {
   StatusBadge,
 } from './ui/index.js'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
-import { AdminCreateCaseForm } from './AdminCreateCaseForm.jsx'
+import { AdminCaseAllotmentWizard } from './AdminCaseAllotmentWizard.jsx'
 import { AdminScheduleSessionModal } from './AdminScheduleSessionModal.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { billingSummary } from '../invoices/invoiceUtils.js'
 
 export function AdminCasesPage() {
+  const [searchParams] = useSearchParams()
   const { can } = useAuth()
   const [cases, setCases] = useState([])
   const [search, setSearch] = useState('')
@@ -25,16 +28,26 @@ export function AdminCasesPage() {
   const [selected, setSelected] = useState(null)
   const [assignments, setAssignments] = useState([])
   const [therapistId, setTherapistId] = useState('')
-  const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [scheduleCase, setScheduleCase] = useState(null)
+  const [assignError, setAssignError] = useState('')
+
+  const { data: casesData, isLoading: loading, refetch: refetchCases } = useApiQuery(
+    ['admin', 'cases'],
+    '/api/v1/cases?page_size=100',
+  )
 
   useEffect(() => {
-    apiFetch('/api/v1/cases')
-      .then(setCases)
-      .catch(() => setCases([]))
-      .finally(() => setLoading(false))
-  }, [])
+    if (casesData) setCases(unwrapList(casesData))
+  }, [casesData])
+
+  useEffect(() => {
+    if (searchParams.get('allot') === '1' && can('case.create')) {
+      setShowCreate(true)
+    }
+    const status = searchParams.get('status')
+    if (status) setStatusFilter(status)
+  }, [searchParams, can])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -62,16 +75,22 @@ export function AdminCasesPage() {
 
   async function handleAssign(caseId) {
     if (!therapistId) return
-    await apiFetch(`/api/v1/cases/${caseId}/assignments`, {
-      method: 'POST',
-      body: JSON.stringify({
-        therapist_user_id: Number(therapistId),
-        start_date: new Date().toISOString().slice(0, 10),
-        reason_for_change: 'Admin reassignment',
-      }),
-    })
-    await loadAssignments(caseId)
-    setCases(await apiFetch('/api/v1/cases'))
+    setAssignError('')
+    try {
+      await apiFetch(`/api/v1/cases/${caseId}/assignments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          therapist_user_id: Number(therapistId),
+          start_date: new Date().toISOString().slice(0, 10),
+          reason_for_change: 'Admin reassignment',
+        }),
+      })
+      await loadAssignments(caseId)
+      refetchCases()
+      setTherapistId('')
+    } catch (err) {
+      setAssignError(err.message || 'Assignment failed')
+    }
   }
 
   async function updateStatus(caseItem, status) {
@@ -79,7 +98,7 @@ export function AdminCasesPage() {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     })
-    setCases(await apiFetch('/api/v1/cases'))
+    refetchCases()
   }
 
   function openCase(c) {
@@ -94,7 +113,7 @@ export function AdminCasesPage() {
       body: JSON.stringify(payload),
     })
     setSelected(updated)
-    setCases(await apiFetch('/api/v1/cases'))
+    refetchCases()
   }
 
   async function saveServiceAddress(payload) {
@@ -104,7 +123,7 @@ export function AdminCasesPage() {
       body: JSON.stringify(payload),
     })
     setSelected(updated)
-    setCases(await apiFetch('/api/v1/cases'))
+    refetchCases()
   }
 
   async function createCase(payload) {
@@ -112,7 +131,7 @@ export function AdminCasesPage() {
       method: 'POST',
       body: JSON.stringify(payload),
     })
-    setCases(await apiFetch('/api/v1/cases'))
+    refetchCases()
     setShowCreate(false)
     openCase(created)
   }
@@ -133,7 +152,15 @@ export function AdminCasesPage() {
       />
 
       {showCreate && can('case.create') ? (
-        <AdminCreateCaseForm cases={cases} onCreated={createCase} onCancel={() => setShowCreate(false)} />
+        <AdminCaseAllotmentWizard
+          onComplete={async (created) => {
+            setShowCreate(false)
+            const rows = unwrapList(await apiFetch('/api/v1/cases?page_size=100'))
+            setCases(rows)
+            if (created) openCase(created)
+          }}
+          onCancel={() => setShowCreate(false)}
+        />
       ) : null}
 
       <section className="admin-kpi-grid" aria-label="Case counts">
@@ -275,8 +302,15 @@ export function AdminCasesPage() {
             <div className="admin-form-grid" style={{ maxWidth: 420, marginBottom: 16 }}>
               <label>
                 Therapist
-                <AdminTherapistPicker caseId={selected.id} value={therapistId} onChange={setTherapistId} />
+                <AdminTherapistPicker
+                  mode="allotment"
+                  productModule={selected.product_module}
+                  caseId={selected.id}
+                  value={therapistId}
+                  onChange={setTherapistId}
+                />
               </label>
+              {assignError ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{assignError}</p> : null}
               <button type="button" className="admin-btn admin-btn--primary" onClick={() => handleAssign(selected.id)}>
                 Assign / Reassign
               </button>

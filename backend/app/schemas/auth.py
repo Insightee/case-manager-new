@@ -34,6 +34,7 @@ class UserMeResponse(BaseModel):
     id: int
     email: str
     full_name: str
+    phone: Optional[str] = None
     avatar_url: Optional[str] = None
     roles: list[str]
     permissions: list[str]
@@ -56,6 +57,7 @@ class AcceptInviteRequest(BaseModel):
 
 class MeUpdate(BaseModel):
     full_name: Optional[str] = None
+    phone: Optional[str] = None
     location: Optional[str] = None
     employment_status: Optional[str] = None
     home_address_line1: Optional[str] = None

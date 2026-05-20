@@ -8,15 +8,25 @@ import { AdminCaseDetailPage } from '../components/admin-portal/AdminCaseDetailP
 import { AdminSessionLogsPage } from '../components/admin-portal/AdminSessionLogsPage.jsx'
 import { AdminReportReviewPage } from '../components/admin-portal/AdminReportReviewPage.jsx'
 import { AdminInvoicesPage } from '../components/admin-portal/AdminInvoicesPage.jsx'
-import { AdminUsersPage } from '../components/admin-portal/AdminUsersPage.jsx'
+import { AdminPeoplePage } from '../components/admin-portal/AdminPeoplePage.jsx'
 import { AdminIepPage } from '../components/admin-portal/AdminIepPage.jsx'
 import { AdminTicketsPage } from '../components/admin-portal/AdminTicketsPage.jsx'
-import { TherapistRoutes } from './TherapistRoutes.jsx'
+import { TherapistDashboardPage } from '../pages/TherapistDashboardPage.jsx'
+import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
+import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
+import { DailyLogsPage } from '../components/daily-logs/DailyLogsPage.jsx'
+import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReportsPage.jsx'
+import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
+import { TherapistProfilePage } from '../components/therapist/TherapistProfilePage.jsx'
+import { TherapistTicketsPage } from '../components/therapist/TherapistTicketsPage.jsx'
+import { TherapistLeavePage } from '../components/therapist/TherapistLeavePage.jsx'
+import { TherapistSlotsPage } from '../components/therapist/TherapistSlotsPage.jsx'
 import { ParentRoutes } from './ParentRoutes.jsx'
 import { HRRoutes } from './HRRoutes.jsx'
 import { InvitePage } from '../pages/InvitePage.jsx'
 import { AdminIncidentsPage } from '../components/admin-portal/AdminIncidentsPage.jsx'
 import { AdminTherapistProfilesPage } from '../components/admin-portal/AdminTherapistProfilesPage.jsx'
+import { CaseManagerMeetingsPage } from '../components/admin-portal/CaseManagerMeetingsPage.jsx'
 
 function PortalRedirect() {
   const { portal, loading } = useAuth()
@@ -51,7 +61,16 @@ export function AppRoutes() {
           </Protected>
         }
       >
-        <Route path="*" element={<TherapistRoutes />} />
+        <Route index element={<TherapistDashboardPage />} />
+        <Route path="cases" element={<MyCasesPage />} />
+        <Route path="cases/:caseId" element={<CaseDetailPage />} />
+        <Route path="logs" element={<DailyLogsPage />} />
+        <Route path="reports" element={<MonthlyReportsPage />} />
+        <Route path="invoices" element={<InvoicesPage />} />
+        <Route path="tickets" element={<TherapistTicketsPage />} />
+        <Route path="leave" element={<TherapistLeavePage />} />
+        <Route path="slots" element={<TherapistSlotsPage />} />
+        <Route path="profile" element={<TherapistProfilePage />} />
       </Route>
 
       <Route
@@ -82,8 +101,10 @@ export function AppRoutes() {
         <Route path="iep" element={<AdminIepPage />} />
         <Route path="tickets" element={<AdminTicketsPage />} />
         <Route path="incidents" element={<AdminIncidentsPage />} />
-        <Route path="users" element={<AdminUsersPage />} />
+        <Route path="people" element={<AdminPeoplePage />} />
+        <Route path="users" element={<Navigate to="/admin/people?tab=staff" replace />} />
         <Route path="therapist-profiles" element={<AdminTherapistProfilesPage />} />
+        <Route path="cm-meetings" element={<CaseManagerMeetingsPage />} />
       </Route>
 
       <Route

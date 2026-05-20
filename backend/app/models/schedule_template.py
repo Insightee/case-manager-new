@@ -10,12 +10,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 DEFAULT_SCHEDULE_DAYS: dict[str, dict[str, Any]] = {
-    "mon": {"enabled": True, "start": "09:00", "end": "18:00"},
-    "tue": {"enabled": True, "start": "09:00", "end": "18:00"},
-    "wed": {"enabled": True, "start": "09:00", "end": "18:00"},
-    "thu": {"enabled": True, "start": "09:00", "end": "18:00"},
-    "fri": {"enabled": True, "start": "09:00", "end": "18:00"},
-    "sat": {"enabled": True, "start": "09:00", "end": "18:00"},
+    "mon": {"enabled": True, "start": "08:00", "end": "20:00"},
+    "tue": {"enabled": True, "start": "08:00", "end": "20:00"},
+    "wed": {"enabled": True, "start": "08:00", "end": "20:00"},
+    "thu": {"enabled": True, "start": "08:00", "end": "20:00"},
+    "fri": {"enabled": True, "start": "08:00", "end": "20:00"},
+    "sat": {"enabled": False, "start": "09:00", "end": "18:00"},
     "sun": {"enabled": False, "start": "09:00", "end": "18:00"},
 }
 
@@ -23,7 +23,7 @@ DEFAULT_SCHEDULE_DAYS: dict[str, dict[str, Any]] = {
 def default_template_config() -> dict[str, Any]:
     return {
         "timezone": "Asia/Kolkata",
-        "slot_duration_minutes": 30,
+        "slot_duration_minutes": 60,
         "days": {k: dict(v) for k, v in DEFAULT_SCHEDULE_DAYS.items()},
     }
 

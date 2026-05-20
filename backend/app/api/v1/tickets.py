@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-from typing import Optional
+import json
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.module_access import case_product_module_allowed
-from app.core.permissions import case_scope_check, require_permission, user_has_permission
-from app.models.case import Case
-from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage, TicketStatus
+from app.core.permissions import require_permission
+from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage, TicketStatus, TicketTopic
 from app.models.user import User
-from app.services import case_service
+from app.services import case_service, ticket_attachment_service as att_svc, ticket_detail_service, ticket_escalation_service as ticket_esc, ticket_list_service
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -26,6 +24,7 @@ class TicketCreate(BaseModel):
     body: str
     product_module: Optional[str] = None
     category: TicketCategory = TicketCategory.OTHER
+    topic: Optional[str] = None
 
 
 class TicketMessageCreate(BaseModel):
@@ -37,68 +36,105 @@ class TicketUpdate(BaseModel):
     assigned_to_user_id: Optional[int] = None
 
 
+def _parse_category(raw: str) -> TicketCategory:
+    try:
+        return TicketCategory(raw.upper())
+    except ValueError:
+        return TicketCategory.OTHER
+
+
 @router.get("")
 def list_tickets(
     category: Optional[TicketCategory] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    tickets = db.scalars(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
-    result = []
-    for t in tickets:
-        if t.case_id:
-            case = case_service.get_case(db, t.case_id)
-            if case and not case_scope_check(db, user, case) and not user_has_permission(user, "admin.override"):
-                continue
-        elif t.product_module and not case_product_module_allowed(user, t.product_module):
-            if not user_has_permission(user, "admin.override"):
-                continue
-        if not user_has_permission(user, "ticket.manage") and t.raised_by_user_id != user.id:
-            continue
-        if category and t.category != category:
-            continue
-        result.append({
-            "id": t.id,
-            "case_id": t.case_id,
-            "raised_by_user_id": t.raised_by_user_id,
-            "subject": t.subject,
-            "body": t.body,
-            "category": t.category.value,
-            "status": t.status.value,
-            "assigned_to_user_id": t.assigned_to_user_id,
-            "created_at": t.created_at.isoformat(),
-            "updated_at": t.updated_at.isoformat(),
-        })
-    return result
+    return ticket_list_service.list_tickets_for_user(
+        db, user, category=category, page=page, page_size=page_size
+    )
+
+
+@router.get("/attachments/{attachment_id}/download")
+def download_ticket_attachment(
+    attachment_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    att = att_svc.get_attachment_or_404(db, attachment_id)
+    if not att_svc.can_access_attachment(db, user, att):
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return att_svc.download_response(att)
+
+
+@router.get("/{ticket_id}")
+def get_ticket(
+    ticket_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return ticket_detail_service.get_ticket_detail(db, user, ticket_id)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_ticket(
-    payload: TicketCreate,
+async def create_ticket(
     request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    assigned_to = None
-    if payload.case_id:
-        case = case_service.get_case(db, payload.case_id)
-        if case:
-            assigned_to = case.case_manager_user_id
+    content_type = request.headers.get("content-type", "")
+    files: List[UploadFile] = []
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        subject = str(form.get("subject") or "").strip()
+        body = str(form.get("body") or "").strip()
+        if not subject or not body:
+            raise HTTPException(status_code=400, detail="subject and body are required")
+        category = _parse_category(str(form.get("category") or "OTHER"))
+        case_id_raw = form.get("case_id")
+        case_id = int(case_id_raw) if case_id_raw not in (None, "") else None
+        product_module = str(form.get("product_module") or "") or None
+        topic_raw = str(form.get("topic") or "") or None
+        files = att_svc.files_from_form(form)
+    else:
+        try:
+            data = await request.json()
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        payload = TicketCreate(**data)
+        subject = payload.subject.strip()
+        body = payload.body.strip()
+        category = payload.category
+        case_id = payload.case_id
+        product_module = payload.product_module
+        topic_raw = payload.topic
+
+    case = case_service.get_case(db, case_id) if case_id else None
+    topic_enum = ticket_esc.topic_from_str(topic_raw) if topic_raw else TicketTopic.OTHER
     ticket = SupportTicket(
-        case_id=payload.case_id,
+        case_id=case_id,
         raised_by_user_id=user.id,
-        assigned_to_user_id=assigned_to,
-        product_module=payload.product_module,
-        category=payload.category,
-        subject=payload.subject,
-        body=payload.body,
+        product_module=product_module or (case.product_module if case else None),
+        category=category,
+        topic=topic_enum,
+        subject=subject,
+        body=body,
     )
+    ticket_esc.assign_ticket(db, ticket, case)
     db.add(ticket)
+    db.flush()
+    msg = TicketMessage(ticket_id=ticket.id, author_user_id=user.id, body=body)
+    db.add(msg)
+    db.flush()
+    try:
+        await att_svc.save_attachments(db, ticket, user, files, message_id=None)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()
-    db.refresh(ticket)
-    return {"id": ticket.id, "status": ticket.status.value}
+    return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
 
 
 @router.patch("/{ticket_id}")
@@ -122,17 +158,41 @@ def update_ticket(
     return {"id": ticket.id, "status": ticket.status.value}
 
 
-@router.post("/{ticket_id}/messages")
-def add_message(
+@router.post("/{ticket_id}/messages", status_code=status.HTTP_201_CREATED)
+async def add_message(
     ticket_id: int,
-    payload: TicketMessageCreate,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     ticket = db.get(SupportTicket, ticket_id)
-    if not ticket:
+    if not ticket or not ticket_detail_service._can_view_ticket(db, user, ticket):
         raise HTTPException(status_code=404, detail="Ticket not found")
-    msg = TicketMessage(ticket_id=ticket_id, author_user_id=user.id, body=payload.body)
+
+    content_type = request.headers.get("content-type", "")
+    files: List[UploadFile] = []
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        body = str(form.get("body") or "").strip()
+        files = att_svc.files_from_form(form)
+    else:
+        try:
+            data = await request.json()
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        body = str(data.get("body") or "").strip()
+
+    if not body:
+        raise HTTPException(status_code=400, detail="Message body is required")
+
+    msg = TicketMessage(ticket_id=ticket_id, author_user_id=user.id, body=body)
     db.add(msg)
+    db.flush()
+    try:
+        await att_svc.save_attachments(db, ticket, user, files, message_id=msg.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="message", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()
-    return {"id": msg.id}
+    return ticket_detail_service.get_ticket_detail(db, user, ticket.id)

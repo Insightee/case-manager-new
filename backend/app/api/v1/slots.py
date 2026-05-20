@@ -14,6 +14,8 @@ from app.core.database import get_db
 from app.core.permissions import user_has_permission
 from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.user import User
+from app.services import appointment_booking_service as appt_booking
+from app.services import appointment_notification_service as appt_notify
 from app.services import slot_calendar_service as cal
 
 router = APIRouter(prefix="/slots", tags=["slots"])
@@ -206,7 +208,7 @@ def book_slot(
     else:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     try:
-        slot = cal.book_slot(db, slot_id, payload.case_id, user.id, source)
+        slot = appt_booking.book_with_session(db, slot_id, payload.case_id, user.id, source)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
@@ -228,10 +230,19 @@ def cancel_booking(
         raise HTTPException(status_code=404, detail="Slot not found")
     if slot.therapist_user_id != user.id and not user_has_permission(user, "slot.book_any"):
         raise HTTPException(status_code=403, detail="Access denied")
+    slot_snapshot = db.get(TherapistSlot, slot_id)
+    case_id_before = slot_snapshot.case_id if slot_snapshot else None
     try:
-        slot = cal.cancel_booking(db, slot_id)
+        slot = appt_booking.cancel_booking_with_session(db, slot_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if case_id_before and slot_snapshot and slot_snapshot.therapist_user_id == user.id:
+        appt_notify.notify_parents_session_cancelled(
+            db,
+            slot_snapshot,
+            cancelled_by_name=user.full_name,
+            reason="Your therapist cancelled the session",
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="cancel_booking", entity_type="slot", entity_id=slot_id, **meta)
     db.commit()

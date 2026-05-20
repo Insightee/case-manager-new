@@ -58,9 +58,6 @@ export async function apiFetch(path, options = {}) {
   }
 
   if (!res.ok) {
-    // #region agent log
-    fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3264f0'},body:JSON.stringify({sessionId:'3264f0',location:'apiClient.js:apiFetch',message:'API error',data:{path,status:res.status,method:options.method||'GET'},timestamp:Date.now(),hypothesisId:'H7',runId:'ui'})}).catch(()=>{});
-    // #endregion
     if (res.status === 502 || res.status === 503) {
       throw new Error(
         'Cannot reach the API server. Start the backend from the backend folder: uvicorn app.main:app --reload --port 8000',
@@ -98,3 +95,35 @@ export async function apiUpload(path, formData) {
   }
   return res.json()
 }
+
+/** Authenticated download; triggers browser save via temporary object URL. */
+export async function apiDownload(path, filename) {
+  const headers = {}
+  const { access } = getTokens()
+  if (access) headers.Authorization = `Bearer ${access}`
+
+  let res = await fetch(`${API_URL}${path}`, { headers })
+  if (res.status === 401 && access) {
+    const newAccess = await refreshAccess()
+    if (newAccess) {
+      headers.Authorization = `Bearer ${newAccess}`
+      res = await fetch(`${API_URL}${path}`, { headers })
+    }
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(typeof err.detail === 'string' ? err.detail : 'Download failed')
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || 'download'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+export const TICKET_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
+export const TICKET_ATTACHMENT_MAX_FILES = 3

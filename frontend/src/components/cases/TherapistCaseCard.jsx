@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { formatScheduleWhen } from '../../lib/therapistSchedule.js'
 import { StatusBadge } from './StatusBadge.jsx'
 
 function IconPlus() {
@@ -40,7 +41,15 @@ export function TherapistCaseCard({ data }) {
   const accent = data.borderAccent || 'blue'
   const detailTo = `/therapist/cases/${data.id}`
   const logTo = `/therapist/cases/${data.id}?tab=sessions`
-  const reportTo = `/therapist/cases/${data.id}?tab=reports`
+  const reportTo = `/therapist/reports?case_id=${data.id}`
+  const bookingTo = `/therapist/cases/${data.id}?tab=overview`
+  const bookingWhen = data.nextBooking
+    ? formatScheduleWhen({
+        date: data.nextBooking.date,
+        startTime: data.nextBooking.startTime,
+        endTime: data.nextBooking.endTime,
+      })
+    : null
 
   return (
     <article className={`ic-card ic-card--accent-${accent}`}>
@@ -53,6 +62,12 @@ export function TherapistCaseCard({ data }) {
       <StatusBadge variant={data.badgeVariant}>{data.stage}</StatusBadge>
       <h3 className="ic-card__name">{data.child}</h3>
       <p className="ic-card__service">{data.service}</p>
+      {bookingWhen ? (
+        <Link to={bookingTo} className="ic-card__booking">
+          <span className="ic-card__booking-label">Next visit</span>
+          <span className="ic-card__booking-when">{bookingWhen}</span>
+        </Link>
+      ) : null}
       {data.nextDue && data.nextDue !== '—' ? (
         <p className="ic-card__due">
           <IconInfo />
@@ -62,18 +77,16 @@ export function TherapistCaseCard({ data }) {
       <div className="ic-card__actions">
         <Link to={logTo} className="ic-btn ic-btn--primary">
           <IconPlus />
-          Sessions & log
+          Session log
         </Link>
         <Link to={detailTo} className="ic-btn ic-btn--ghost">
           <IconEye />
           View case
         </Link>
-        {data.showSubmitReport ? (
-          <Link to={reportTo} className="ic-btn ic-btn--accent">
-            <IconReport />
-            Reports
-          </Link>
-        ) : null}
+        <Link to={reportTo} className="ic-btn ic-btn--accent">
+          <IconReport />
+          Reports
+        </Link>
       </div>
     </article>
   )

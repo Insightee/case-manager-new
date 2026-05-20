@@ -143,7 +143,7 @@ export function ParentCaseDetailPage() {
               Book appointment
             </Link>
             {caseRow.isHomecare ? (
-              <Link to="/parent/address" style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', textDecoration: 'none' }}>
+              <Link to="/parent/profile" style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', textDecoration: 'none' }}>
                 Update service address
               </Link>
             ) : null}

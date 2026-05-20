@@ -12,11 +12,9 @@ test.describe('Parent portal smoke', () => {
     await expect(page).toHaveURL(/\/parent\/session-logs/)
     await expect(page.getByRole('heading', { name: 'Session updates' })).toBeVisible()
 
-    await sidebarLink(page, 'Approved Reports').click()
+    await sidebarLink(page, 'Reports').click()
     await expect(page).toHaveURL(/\/parent\/reports/)
-
-    await sidebarLink(page, 'IEP Acknowledgement').click()
-    await expect(page).toHaveURL(/\/parent\/iep/)
+    await expect(page.getByRole('tab', { name: 'Monthly reports' })).toBeVisible()
 
     await sidebarLink(page, 'Billing').click()
     await expect(page).toHaveURL(/\/parent\/billing/)
@@ -39,18 +37,20 @@ test.describe('Parent portal smoke', () => {
     await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible()
   })
 
-  test('monthly report modal opens', async ({ page }) => {
+  test('monthly report detail opens from Reports hub', async ({ page }) => {
     await loginParent(page)
-    await sidebarLink(page, 'Approved Reports').click()
-    const viewBtn = page.getByRole('button', { name: 'View report' }).first()
-    await expect(viewBtn).toBeVisible({ timeout: 15_000 })
-    await viewBtn.click()
-    await expect(page.getByRole('dialog')).toBeVisible()
+    await sidebarLink(page, 'Reports').click()
+    const row = page.locator('.log-list button').first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await row.click()
+    await expect(page.getByRole('dialog', { name: 'Report detail' })).toBeVisible()
   })
 
-  test('IEP page loads', async ({ page }) => {
+  test('IEP tab loads in Reports hub', async ({ page }) => {
     await loginParent(page)
-    await sidebarLink(page, 'IEP Acknowledgement').click()
-    await expect(page.getByRole('heading', { name: 'IEP Status' })).toBeVisible()
+    await sidebarLink(page, 'Reports').click()
+    await page.getByRole('tab', { name: 'IEP plans' }).click()
+    await expect(page).toHaveURL(/type=iep/)
+    await expect(page.getByRole('heading', { name: 'IEP plans', level: 3 })).toBeVisible()
   })
 })

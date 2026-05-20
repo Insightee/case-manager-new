@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 
 export function HRDashboardPage() {
@@ -15,13 +16,14 @@ export function HRDashboardPage() {
         const [therapists, leaves, tickets, memos] = await Promise.all([
           apiFetch('/api/v1/hr/therapists').catch(() => []),
           apiFetch('/api/v1/leave').catch(() => []),
-          apiFetch('/api/v1/tickets').catch(() => []),
+          apiFetch('/api/v1/tickets?page_size=100').catch(() => ({ items: [] })),
           apiFetch('/api/v1/hr/memos').catch(() => []),
         ])
+        const ticketRows = unwrapList(tickets)
         setStats({
           therapists: therapists.length,
           pending_leave: leaves.filter((l) => l.status === 'PENDING').length,
-          open_tickets: tickets.filter((t) => t.status === 'OPEN').length,
+          open_tickets: ticketRows.filter((t) => t.status === 'OPEN').length,
           memos_sent: memos.length,
         })
       } catch {

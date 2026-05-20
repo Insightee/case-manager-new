@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
+import { unwrapList } from '../../lib/listApi.js'
+import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
 
 function formatTime(t) {
@@ -9,14 +10,22 @@ function formatTime(t) {
   return String(t).slice(0, 5)
 }
 
-export function CaseSessionsPanel({ caseId, caseCode, childName }) {
+export function CaseSessionsPanel({
+  caseId,
+  caseCode,
+  childName,
+  childLabel = '',
+  bookedSlots = [],
+  onScheduleChange,
+}) {
   const [sessions, setSessions] = useState([])
   const [logs, setLogs] = useState([])
+  const [upcomingAll, setUpcomingAll] = useState([])
   const [active, setActive] = useState(null)
   const [loading, setLoading] = useState(true)
   const [logSession, setLogSession] = useState(null)
-  const [showForgot, setShowForgot] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [editingLog, setEditingLog] = useState(null)
+  const [logRequired, setLogRequired] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -24,13 +33,17 @@ export function CaseSessionsPanel({ caseId, caseCode, childName }) {
     setLoading(true)
     setError('')
     try {
-      const [sess, allLogs, act] = await Promise.all([
-        apiFetch(`/api/v1/sessions?case_id=${caseId}`),
+      const [sess, allLogs, act, upcoming] = await Promise.all([
+        apiFetch(`/api/v1/sessions?case_id=${caseId}&page_size=100`),
         apiFetch('/api/v1/daily-logs'),
         apiFetch('/api/v1/sessions/active').catch(() => null),
+        apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
       ])
-      setSessions(sess || [])
-      setLogs((allLogs || []).filter((l) => l.case_id === Number(caseId)))
+      setSessions(unwrapList(sess))
+      setLogs((Array.isArray(allLogs) ? allLogs : unwrapList(allLogs)).filter(
+        (l) => l.case_id === Number(caseId),
+      ))
+      setUpcomingAll(Array.isArray(upcoming) ? upcoming : unwrapList(upcoming))
       if (act?.case_id === Number(caseId)) setActive(act)
       else setActive(null)
     } catch (err) {
@@ -61,29 +74,31 @@ export function CaseSessionsPanel({ caseId, caseCode, childName }) {
     [sessions],
   )
 
-  async function handleStart(sessionId) {
-    setError('')
-    try {
-      await apiFetch(`/api/v1/sessions/${sessionId}/start`, { method: 'POST' })
-      await load()
-    } catch (err) {
-      setError(err.message || 'Could not start session')
-    }
+  function openLogForm(session, { required = false, log = null } = {}) {
+    setLogSession(session)
+    setEditingLog(log)
+    setLogRequired(required)
+  }
+
+  function closeLogForm() {
+    setLogSession(null)
+    setEditingLog(null)
+    setLogRequired(false)
   }
 
   async function handleEnd(sessionId) {
     setError('')
     try {
       const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, { method: 'POST' })
-      setLogSession(ended)
+      openLogForm(ended, { required: true })
       await load()
+      onScheduleChange?.()
     } catch (err) {
       setError(err.message || 'Could not end session')
     }
   }
 
   async function handleManual(payload) {
-    setSubmitting(true)
     setError('')
     try {
       const session = await apiFetch('/api/v1/sessions/manual', {
@@ -96,38 +111,36 @@ export function CaseSessionsPanel({ caseId, caseCode, childName }) {
           mode: payload.mode,
         }),
       })
-      setShowForgot(false)
-      setLogSession(session)
-      setSuccess(payload.isPastDay ? 'Session added — include a late reason when submitting the log.' : 'Session added.')
+      openLogForm(session, { required: true })
+      setSuccess(
+        payload.isPastDay
+          ? 'Session added — include a late reason when submitting the log for client approval.'
+          : 'Session added — complete the log below.',
+      )
       await load()
+      onScheduleChange?.()
     } catch (err) {
       setError(err.message || 'Could not add session')
-    } finally {
-      setSubmitting(false)
     }
   }
 
-  if (loading) return <p style={{ color: '#6b7280' }}>Loading sessions…</p>
+  if (loading) return <p className="ic-case-panel__loading">Loading sessions…</p>
 
   return (
-    <div>
-      <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 0 }}>
-        Manage sessions for this client. For today&apos;s timer across all clients, use{' '}
+    <div className="ic-case-sessions">
+      <p className="ic-case-sessions__intro">
+        Log work for <strong>{childName}</strong>. For a timer across all clients, use{' '}
         <Link to="/therapist/logs">Session Logs</Link>.
       </p>
 
-      {error ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{error}</p> : null}
-      {success ? <p style={{ color: '#15803d', fontSize: '0.875rem' }}>{success}</p> : null}
+      {error ? <p className="ic-session-composer__error">{error}</p> : null}
+      {success ? <p className="ic-case-sessions__success">{success}</p> : null}
 
       {active ? (
-        <div style={{ background: '#eef2ff', border: '2px solid #6366f1', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-          <p style={{ fontWeight: 600, margin: '0 0 8px' }}>Session in progress</p>
-          <button
-            type="button"
-            onClick={() => handleEnd(active.id)}
-            style={{ padding: '8px 16px', borderRadius: 8, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer' }}
-          >
-            End session
+        <div className="ic-case-active">
+          <p className="ic-case-active__title">Session in progress</p>
+          <button type="button" className="ic-btn ic-btn--primary" style={{ background: '#dc2626', borderColor: '#dc2626' }} onClick={() => handleEnd(active.id)}>
+            End session & write log
           </button>
         </div>
       ) : null}
@@ -135,89 +148,101 @@ export function CaseSessionsPanel({ caseId, caseCode, childName }) {
       {logSession ? (
         <SubmitSessionLogForm
           session={logSession}
+          existingLog={editingLog}
           childName={childName}
           caseCode={caseCode}
+          required={logRequired && !editingLog}
           onSuccess={() => {
-            setLogSession(null)
-            setSuccess('Log submitted.')
+            closeLogForm()
+            setSuccess(editingLog ? 'Log updated.' : 'Log submitted for review.')
             load()
           }}
-          onCancel={() => setLogSession(null)}
+          onCancel={closeLogForm}
         />
-      ) : null}
-
-      {!logSession && !active ? (
-        <div style={{ marginBottom: 16 }}>
-          <button
-            type="button"
-            onClick={() => setShowForgot((v) => !v)}
-            style={{ fontSize: '0.875rem', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-          >
-            + Log a session I missed
-          </button>
-          {showForgot ? (
-            <ForgotSessionForm
-              fallbackCases={[{ case_id: Number(caseId), child_name: childName, case_code: caseCode }]}
-              submitting={submitting}
-              initialCaseId={String(caseId)}
-              onSubmit={handleManual}
-              onCancel={() => setShowForgot(false)}
-            />
-          ) : null}
-        </div>
-      ) : null}
+      ) : (
+        <TherapistSessionComposer
+          lockCaseId={caseId}
+          lockCaseLabel={childLabel || `${childName} · ${caseCode}`}
+          upcomingSessions={upcomingAll}
+          bookedSlots={bookedSlots}
+          disabled={!!active}
+          onSessionStarted={load}
+          onManualSession={handleManual}
+          onError={setError}
+        />
+      )}
 
       {needsLog.length > 0 && !logSession ? (
-        <section style={{ marginBottom: 20 }}>
-          <h4 style={{ fontSize: '0.9375rem', fontWeight: 600 }}>Needs log</h4>
-          {needsLog.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setLogSession(s)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8, padding: 12, borderRadius: 8, border: '1px solid #fde047', background: '#fefce8', cursor: 'pointer' }}
-            >
-              {s.scheduled_date} · {formatTime(s.start_time)}–{formatTime(s.end_time)}
-            </button>
-          ))}
+        <section className="ic-case-sessions__block">
+          <h4>Needs log</h4>
+          <ul className="ic-case-sessions__list">
+            {needsLog.map((s) => (
+              <li key={s.id}>
+                <button type="button" className="ic-case-sessions__row ic-case-sessions__row--warn" onClick={() => openLogForm(s)}>
+                  {s.scheduled_date} · {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                  <span>Submit log</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
       {upcoming.length > 0 && !active ? (
-        <section style={{ marginBottom: 20 }}>
-          <h4 style={{ fontSize: '0.9375rem', fontWeight: 600 }}>Upcoming</h4>
-          {upcoming.map((s) => (
-            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, marginTop: 8, border: '1px solid #e5e7eb', borderRadius: 8 }}>
-              <span style={{ fontSize: '0.875rem' }}>
-                {s.scheduled_date} · {formatTime(s.start_time)}–{formatTime(s.end_time)} · {s.mode}
-              </span>
-              <button type="button" onClick={() => handleStart(s.id)} style={{ padding: '6px 12px', borderRadius: 8, background: '#6366f1', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer' }}>
-                Start
-              </button>
-            </div>
-          ))}
+        <section className="ic-case-sessions__block">
+          <h4>Scheduled</h4>
+          <ul className="ic-case-sessions__list">
+            {upcoming.map((s) => (
+              <li key={s.id} className="ic-case-sessions__row">
+                <span>
+                  {s.scheduled_date} · {formatTime(s.start_time)}–{formatTime(s.end_time)} · {s.mode}
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
-      <section>
-        <h4 style={{ fontSize: '0.9375rem', fontWeight: 600 }}>Session history</h4>
+      <section className="ic-case-sessions__block">
+        <h4>History</h4>
         {past.length === 0 ? (
-          <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>No completed sessions yet.</p>
+          <p className="ic-case-panel__muted">No completed sessions yet.</p>
         ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
+          <ul className="ic-case-sessions__list">
             {past.map((s) => {
               const log = logs.find((l) => l.session_id === s.id)
               return (
-                <li key={s.id} style={{ padding: '10px 0', borderBottom: '1px solid #f3f4f6', fontSize: '0.875rem' }}>
-                  <strong>{s.scheduled_date}</strong> · {formatTime(s.start_time)}–{formatTime(s.end_time)} · {s.status}
-                  {log ? (
-                    <span style={{ marginLeft: 8, color: '#6b7280' }}>
-                      Log: {log.approval_status}
-                      {log.late_addition ? ' (late)' : ''}
-                    </span>
-                  ) : s.status === 'COMPLETED' ? (
-                    <button type="button" onClick={() => setLogSession(s)} style={{ marginLeft: 8, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                <li key={s.id} className="ic-case-sessions__row">
+                  <span>
+                    <strong>{s.scheduled_date}</strong> · {formatTime(s.start_time)}–{formatTime(s.end_time)} · {s.status}
+                    {log ? (
+                      <span className="ic-case-sessions__log-meta">
+                        Log: {log.approval_status}
+                        {log.late_addition ? ' (late)' : ''}
+                      </span>
+                    ) : null}
+                  </span>
+                  {s.status === 'COMPLETED' && !log ? (
+                    <button type="button" className="ic-case-sessions__link-btn" onClick={() => openLogForm(s)}>
                       Submit log
+                    </button>
+                  ) : log && log.can_edit ? (
+                    <button
+                      type="button"
+                      className="ic-case-sessions__link-btn"
+                      onClick={() =>
+                        openLogForm(
+                          {
+                            id: s.id,
+                            scheduled_date: s.scheduled_date,
+                            actual_start_at: s.actual_start_at,
+                            actual_end_at: s.actual_end_at,
+                          },
+                          { log },
+                        )
+                      }
+                    >
+                      Edit log
                     </button>
                   ) : null}
                 </li>

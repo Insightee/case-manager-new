@@ -63,6 +63,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     RoleName.ADMIN: [
         "case.read.all",
         "case.read.scoped",
+        "case.create",
+        "case.update",
+        "case.assign",
+        "therapist.read",
         "session.read",
         "daily_log.review",
         "monthly_report.approve",
@@ -75,8 +79,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     RoleName.CASE_MANAGER: [
         "case.read.team",
         "case.read.all",
+        "case.create",
         "case.update",
         "case.assign",
+        "therapist.read",
         "session.read",
         "session.create",
         "daily_log.review",

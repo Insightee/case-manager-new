@@ -149,5 +149,8 @@ def delete_leave(
         raise HTTPException(status_code=403, detail="Access denied")
     if leave.status != LeaveStatus.PENDING:
         raise HTTPException(status_code=400, detail="Only pending leave can be deleted")
+    from app.services import leave_notification_service as leave_notify
+
+    leave_notify.unblock_slots_for_leave(db, leave.id)
     db.delete(leave)
     db.commit()

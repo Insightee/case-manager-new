@@ -37,6 +37,13 @@ test.describe('Therapist portal smoke', () => {
     await caseLink.click()
     await expect(page).toHaveURL(/\/therapist\/cases\/\d+/)
     await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible()
+
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
+    const sessionLogLink = page.locator('.ic-card').getByRole('link', { name: 'Session log', exact: true }).first()
+    await sessionLogLink.click()
+    await expect(page).toHaveURL(/\/therapist\/cases\/\d+\?tab=sessions/)
+    await expect(page.getByRole('button', { name: 'Sessions & logs' })).toBeVisible()
   })
 
   test('session log flow: start, end, and submit form', async ({ page }) => {

@@ -28,6 +28,7 @@ class UserRead(BaseModel):
 
 class UserUpdate(BaseModel):
     module_assignments: Optional[list[str]] = None
+    role_names: Optional[list[str]] = None
     region: Optional[str] = None
     is_active: Optional[bool] = None
 

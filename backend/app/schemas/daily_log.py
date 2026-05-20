@@ -4,7 +4,7 @@ from typing import Optional
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.daily_log import AttendanceStatus, LogApprovalStatus
 
@@ -37,6 +37,10 @@ class DailyLogRead(BaseModel):
     session_id: int
     case_id: Optional[int] = None
     case_code: Optional[str] = None
+    child_name: Optional[str] = None
+    scheduled_date: Optional[date] = None
+    actual_start_at: Optional[datetime] = None
+    actual_end_at: Optional[datetime] = None
     attendance_status: str
     session_notes: Optional[str] = None
     activities_done: Optional[str] = None
@@ -44,10 +48,12 @@ class DailyLogRead(BaseModel):
     observations: Optional[str] = None
     follow_ups: Optional[str] = None
     parent_notes: Optional[str] = None
-    submitted_at: Optional[datetime]
+    submitted_at: Optional[datetime] = None
     approval_status: LogApprovalStatus
     late_addition: bool = False
     late_reason: Optional[str] = None
+    can_edit: bool = False
+    editable_until: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -81,4 +87,14 @@ class ParentSessionLogRead(BaseModel):
     goals_addressed: Optional[str] = None
     follow_ups: Optional[str] = None
     parent_notes: Optional[str] = None
+    parent_session_rating: Optional[int] = None
+    parent_feedback: Optional[str] = None
+    parent_feedback_at: Optional[datetime] = None
+    parent_feedback_public: bool = False
     submitted_at: Optional[datetime] = None
+
+
+class ParentSessionFeedbackUpdate(BaseModel):
+    rating: Optional[int] = Field(default=None, ge=1, le=5)
+    feedback: Optional[str] = Field(default=None, max_length=2000)
+    share_publicly: Optional[bool] = None

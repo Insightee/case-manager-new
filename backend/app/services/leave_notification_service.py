@@ -6,6 +6,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import settings
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.child import Child
@@ -13,8 +14,9 @@ from app.models.leave import TherapistLeave
 from app.models.parent import ParentGuardian
 from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
+from app.services import appointment_booking_service as appt_booking
+from app.services import email_service
 from app.services import notification_service
-from app.services import slot_calendar_service as cal
 
 
 def _format_date_range(start: date, end: date) -> str:
@@ -48,12 +50,29 @@ def _cases_for_therapist_active(db: Session, therapist_user_id: int) -> list[Cas
 
 
 def _parents_for_therapist_cases(db: Session, therapist_user_id: int) -> dict[int, list[Case]]:
-    """Map parent user_id -> list of cases (with this therapist actively assigned)."""
     by_parent: dict[int, list[Case]] = defaultdict(list)
     for case in _cases_for_therapist_active(db, therapist_user_id):
         for parent_user_id in _parents_for_case(db, case.id):
             by_parent[parent_user_id].append(case)
     return by_parent
+
+
+def unblock_slots_for_leave(db: Session, leave_id: int) -> int:
+    slots = db.scalars(
+        select(TherapistSlot).where(
+            TherapistSlot.leave_block_leave_id == leave_id,
+            TherapistSlot.status == SlotStatus.BLOCKED,
+        )
+    ).all()
+    n = 0
+    for s in slots:
+        s.status = SlotStatus.AVAILABLE
+        s.leave_block_leave_id = None
+        if s.notes and "[blocked: leave" in s.notes:
+            s.notes = None
+        n += 1
+    db.flush()
+    return n
 
 
 def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) -> int:
@@ -78,6 +97,9 @@ def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) 
             entity_type="leave",
             entity_id=leave.id,
         )
+        u = db.get(User, parent_user_id)
+        if u:
+            email_service.send_email(to=u.email, subject="Therapist leave requested", body_text=body)
         count += 1
     return count
 
@@ -100,7 +122,7 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         if not slot.case_id:
             continue
         try:
-            cal.cancel_booking(db, slot.id)
+            appt_booking.cancel_booking_with_session(db, slot.id)
         except ValueError:
             continue
         line = (
@@ -112,8 +134,23 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         for parent_user_id in _parents_for_case(db, slot.case_id):
             cancelled_by_parent[parent_user_id].append(line)
 
+    avail_slots = db.scalars(
+        select(TherapistSlot).where(
+            TherapistSlot.therapist_user_id == leave.therapist_user_id,
+            TherapistSlot.slot_date >= leave.start_date,
+            TherapistSlot.slot_date <= leave.end_date,
+            TherapistSlot.status == SlotStatus.AVAILABLE,
+        )
+    ).all()
+    for s in avail_slots:
+        s.status = SlotStatus.BLOCKED
+        s.leave_block_leave_id = leave.id
+        s.notes = f"[blocked: leave {leave.id}]"
+    db.flush()
+
     notified_parents: set[int] = set()
     count = 0
+    portal = f"{settings.frontend_url}/parent/book"
 
     for parent_user_id, lines in cancelled_by_parent.items():
         if lines:
@@ -132,6 +169,15 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
             entity_type="leave",
             entity_id=leave.id,
         )
+        u = db.get(User, parent_user_id)
+        if u:
+            email_service.leave_sessions_cancelled_email(
+                to=u.email,
+                therapist_name=therapist.full_name,
+                date_range=date_range,
+                lines=lines,
+                portal_url=portal,
+            )
         notified_parents.add(parent_user_id)
         count += 1
 
@@ -152,14 +198,35 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
             entity_type="leave",
             entity_id=leave.id,
         )
+        u = db.get(User, parent_user_id)
+        if u:
+            email_service.send_email(to=u.email, subject="Therapist on leave", body_text=body)
         count += 1
+
+    cancel_n = sum(len(v) for v in cancelled_by_parent.values())
+    email_service.leave_approved_therapist_email(
+        to=therapist.email,
+        therapist_name=therapist.full_name,
+        date_range=date_range,
+        cancelled_count=cancel_n,
+        portal_url=f"{settings.frontend_url}/therapist/leave",
+    )
+    for admin_email in settings.admin_notification_email_list:
+        email_service.leave_admin_summary_email(
+            to=admin_email,
+            therapist_name=therapist.full_name,
+            date_range=date_range,
+            cancelled_count=cancel_n,
+        )
 
     return count
 
 
 def notify_leave_rejected(db: Session, leave: TherapistLeave, therapist: User) -> int:
+    unblock_slots_for_leave(db, leave.id)
     date_range = _format_date_range(leave.start_date, leave.end_date)
     count = 0
+    portal = f"{settings.frontend_url}/parent/book"
     for parent_user_id, cases in _parents_for_therapist_cases(db, leave.therapist_user_id).items():
         case_codes = ", ".join(c.case_code for c in cases)
         body = (
@@ -174,5 +241,13 @@ def notify_leave_rejected(db: Session, leave: TherapistLeave, therapist: User) -
             entity_type="leave",
             entity_id=leave.id,
         )
+        u = db.get(User, parent_user_id)
+        if u:
+            email_service.leave_sessions_reinstated_email(
+                to=u.email,
+                therapist_name=therapist.full_name,
+                date_range=date_range,
+                portal_url=portal,
+            )
         count += 1
     return count

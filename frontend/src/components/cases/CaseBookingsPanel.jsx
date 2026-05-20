@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 
 function formatTime(t) {
   if (!t) return ''
@@ -19,8 +20,8 @@ export function CaseBookingsPanel({ caseId }) {
       const toDate = new Date(today)
       toDate.setDate(toDate.getDate() + 60)
       const to = toDate.toISOString().slice(0, 10)
-      const rows = await apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`)
-      setSlots((rows || []).filter((sl) => sl.case_id === caseId))
+      const rows = unwrapList(await apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`))
+      setSlots(rows.filter((sl) => sl.case_id === caseId))
     } catch {
       setSlots([])
     } finally {

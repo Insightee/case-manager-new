@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
+import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
+import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
+import '../support/support-tickets.css'
 
 const CATEGORIES = ['', 'FINANCE', 'HR', 'SERVICE', 'POSH', 'CPP', 'OTHER']
 
@@ -20,15 +24,15 @@ export function HRTicketsPage() {
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('')
   const [activeId, setActiveId] = useState(null)
-  const [replyText, setReplyText] = useState('')
-  const [processing, setProcessing] = useState({})
+  const [detail, setDetail] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState('')
 
   async function load() {
     setLoading(true)
     try {
-      const data = await apiFetch('/api/v1/tickets')
-      setTickets(data)
+      const data = await apiFetch('/api/v1/tickets?page_size=100')
+      setTickets(unwrapList(data))
     } catch {
       setTickets([])
     } finally {
@@ -36,34 +40,30 @@ export function HRTicketsPage() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
-  async function resolve(id) {
-    setProcessing((p) => ({ ...p, [id]: true }))
-    setError('')
+  async function openTicket(t) {
+    if (activeId === t.id) {
+      setActiveId(null)
+      setDetail(null)
+      return
+    }
+    setActiveId(t.id)
+    setDetailLoading(true)
     try {
-      await apiFetch(`/api/v1/tickets/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'RESOLVED' }),
-      })
-      load()
-    } catch (err) {
-      setError(err.message || 'Could not resolve ticket')
+      setDetail(await loadStaffTicketDetail(t.id))
+    } catch {
+      setDetail(null)
     } finally {
-      setProcessing((p) => ({ ...p, [id]: false }))
+      setDetailLoading(false)
     }
   }
 
-  async function sendReply(id, e) {
-    e.preventDefault()
-    if (!replyText.trim()) return
-    try {
-      await apiFetch(`/api/v1/tickets/${id}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ body: replyText }),
-      })
-      setReplyText('')
-    } catch {}
+  async function onDetailUpdated(updated) {
+    setDetail(updated)
+    load()
   }
 
   const filtered = tickets.filter((t) => {
@@ -75,20 +75,36 @@ export function HRTicketsPage() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '2rem 1rem' }}>
-      <header style={{ marginBottom: 24 }}>
-        <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>HR</p>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Support Tickets</h1>
-        <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>View, clarify, and resolve support tickets.</p>
+      <header style={{ marginBottom: 24, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+        <div>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>HR</p>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Support Tickets</h1>
+          <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>View, clarify, and resolve support tickets.</p>
+        </div>
+        <PoliciesBotButton />
       </header>
 
-      {error ? <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#b91c1c', fontSize: '0.875rem' }}>{error}</div> : null}
+      {error ? (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#b91c1c', fontSize: '0.875rem' }}>{error}</div>
+      ) : null}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tickets…"
-          style={{ flex: 1, minWidth: 200, padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }} />
-        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
-          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', background: '#fff' }}>
-          {CATEGORIES.map((c) => <option key={c} value={c}>{c || 'All categories'}</option>)}
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search tickets…"
+          style={{ flex: 1, minWidth: 200, padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+        />
+        <select
+          value={catFilter}
+          onChange={(e) => setCatFilter(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', background: '#fff' }}
+        >
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c || 'All categories'}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -105,36 +121,46 @@ export function HRTicketsPage() {
             const cc = CAT_COLORS[t.category] || CAT_COLORS.OTHER
             const isActive = activeId === t.id
             return (
-              <div key={t.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', boxShadow: isActive ? '0 0 0 2px #6366f1' : 'none' }}>
-                <div onClick={() => setActiveId(isActive ? null : t.id)} style={{ padding: '16px 20px', cursor: 'pointer' }}>
+              <div
+                key={t.id}
+                style={{
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  boxShadow: isActive ? '0 0 0 2px #6366f1' : 'none',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => openTicket(t)}
+                  style={{ width: '100%', padding: '16px 20px', cursor: 'pointer', textAlign: 'left', background: 'none', border: 'none' }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <span style={{ background: cc, color: '#374151', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>{t.category}</span>
                     <span style={{ background: sc.bg, color: sc.color, fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>{t.status}</span>
+                    {t.attachment_count > 0 ? (
+                      <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>{t.attachment_count} file(s)</span>
+                    ) : null}
                     <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#9ca3af' }}>{new Date(t.created_at).toLocaleDateString()}</span>
                   </div>
                   <p style={{ fontWeight: 600, marginBottom: 4 }}>{t.subject}</p>
                   <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: 0 }}>{t.body?.slice(0, 100)}{t.body?.length > 100 ? '…' : ''}</p>
-                </div>
+                </button>
 
-                {isActive && (
+                {isActive ? (
                   <div style={{ padding: '0 20px 16px', borderTop: '1px solid #f3f4f6' }}>
-                    <p style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: 12, marginBottom: 10, whiteSpace: 'pre-wrap' }}>{t.body}</p>
-                    <form onSubmit={(e) => sendReply(t.id, e)} style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                      <input value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Add a clarification or reply…"
-                        style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }} />
-                      <button type="submit"
-                        style={{ padding: '7px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' }}>
-                        Reply
-                      </button>
-                    </form>
-                    {t.status !== 'RESOLVED' && t.status !== 'CLOSED' && (
-                      <button type="button" onClick={() => resolve(t.id)} disabled={processing[t.id]}
-                        style={{ fontSize: '0.8rem', padding: '6px 14px', background: '#f0fdf4', color: '#15803d', border: '1px solid #86efac', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}>
-                        Mark as resolved
-                      </button>
-                    )}
+                    {detailLoading ? (
+                      <p style={{ color: '#9ca3af', fontSize: '0.875rem', marginTop: 12 }}>Loading thread…</p>
+                    ) : detail ? (
+                      <TicketDetailPanel
+                        ticket={detail}
+                        showResolve={detail.status !== 'RESOLVED' && detail.status !== 'CLOSED'}
+                        onUpdated={onDetailUpdated}
+                      />
+                    ) : null}
                   </div>
-                )}
+                ) : null}
               </div>
             )
           })}

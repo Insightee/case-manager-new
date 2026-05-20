@@ -258,6 +258,94 @@ flowchart LR
 
 Local dev uses SQLite (`insightcase.db`) and Vite proxy to `:8000`.
 
+## Scheduling (Calendly-style)
+
+**Invariant:** one booked `TherapistSlot` ↔ one `TherapySession` (SCHEDULED), kept in sync via `appointment_booking_service.sync_session_for_slot` and `cancel_booking_with_session`.
+
+| Slot status | Bookable? | Session when booked |
+|-------------|-----------|---------------------|
+| AVAILABLE | Yes | — |
+| BOOKED | No | SCHEDULED |
+| BLOCKED / HOLIDAY | No | — |
+| CANCELLED / RESCHEDULED | No | CANCELLED / RESCHEDULED (old slot) |
+
+Default weekly template materializes **60-minute** slots (`therapist_schedule_templates.config_json.slot_duration_minutes`). Parent booking only surfaces slots ≥ 60 minutes.
+
+**Unified API** (`/api/v1/scheduling/*`): calendar, slot CRUD (including PATCH time), book/cancel/block, template materialize, `POST /assign-recurring` (admin bulk book + `recurring_schedule_assignments`), `POST /reschedule` (writes `appointment_reschedules`). Legacy `/api/v1/slots/*` routes remain as aliases.
+
+**Leave approval** cancels booked slots with session sync (`cancel_booking_with_session`), not slot-only cancel.
+
+## Parent appointment booking
+
+Parents use a **week calendar** at `/parent/book` via `GET /api/v1/parent/booking/calendar` (same slot DTO as therapist calendar, plus `is_mine` / policy flags). Booking creates both a `TherapistSlot` (BOOKED) and a linked `TherapySession` (SCHEDULED).
+
+| Rule | Value |
+|------|--------|
+| Cancel / reschedule window | More than **6 hours** before session start |
+| Reschedules per case per month | Max **2** (`case_appointment_usage`) |
+| Booking mode on assignment | `OPEN` (any available 1h slot) or `FIXED` (window + optional recurring pre-book) |
+
+**APIs:** `POST /api/v1/booking/appointments`, `POST /parent/appointments/{id}/cancel`, `POST /parent/appointments/{id}/reschedule`, `PATCH /cases/{id}/assignments/{aid}/booking` (admin), `POST /api/v1/scheduling/assign-recurring` (admin wizard).
+
+**Notifications:** Therapist cancel, parent book/reschedule, recurring assign (`appointment_notification_service`).
+
+## Client billing
+
+Family billing uses **`client_invoices`** (separate from therapist payout `invoices`). Parents filter by month, child, service, and payment status; view session-level lines, packages, disputes, and printable invoices.
+
+See [billing-architecture.md](billing-architecture.md) for workflows, dispute loop, package logic, and payment gateway extension points.
+
+| API | Purpose |
+|-----|---------|
+| `GET /parent/billing/dashboard` | Summary + invoices + packages + filter options |
+| `GET /parent/billing/invoices/{id}` | Line items, totals, payments, disputes |
+| `POST /parent/billing/invoices/{id}/disputes` | Raise dispute |
+| `POST /admin/client-billing/invoices/{id}/payments` | Record UPI/bank/cash payment |
+| `POST /admin/client-billing/disputes/{id}/resolve` | Resolve with optional adjustment |
+
+## Parent Reports hub
+
+Parents have a single **Reports** nav item (`/parent/reports`) combining monthly reports and IEP plans. Legacy routes redirect: `/parent/iep` → `?type=iep`, `/parent/address` → profile.
+
+```mermaid
+stateDiagram-v2
+  [*] --> InternalReview: Therapist submits
+  InternalReview --> PendingParent: CM shares to parent
+  PendingParent --> Approved: Parent approves
+  PendingParent --> ChangesRequested: Parent feedback
+  ChangesRequested --> InternalReview: CM revises
+  InternalReview --> PendingParent: Resend to parent
+  Approved --> [*]
+```
+
+| API | Purpose |
+|-----|---------|
+| `GET /parent/reports/hub` | Combined monthly + IEP list with statuses |
+| `GET /parent/reports/monthly/{id}` | Full report + comment thread |
+| `POST /parent/reports/monthly/{id}/approve` | Parent sign-off |
+| `POST /parent/reports/monthly/{id}/feedback` | Returns report to `UNDER_REVIEW` |
+| `GET /parent/reports/iep/{id}` | IEP metadata + comments |
+| `POST /parent/reports/iep/{id}/comments` | Goal suggestions / change requests |
+| `POST /reports/monthly/{id}/resend-to-parent` | Admin clears feedback, sets `PENDING` |
+
+**Schema:** `document_comments` (IEP + reports); `monthly_reports.parent_review_status`, `parent_feedback`, `parent_reviewed_at`.
+
+## Admin case allotment and People hub
+
+Operations staff create cases through a **guided allotment wizard** (`AdminCaseAllotmentWizard`) or the cases drawer. Case codes follow **`IC-{YEAR}-{MODULE}-{SEQ}`** (e.g. `IC-2026-HC-042`) via `case_code_service` when omitted on create.
+
+| API | Purpose |
+|-----|---------|
+| `GET /admin/cases/next-code?product_module=` | Preview next case code |
+| `GET /admin/allotment/therapists?product_module=` | Module-scoped therapist list (not booking assignees only) |
+| `GET/POST /admin/families`, `POST /admin/children` | Child/parent directory for allotment |
+| `POST /admin/cases/allot` | Create case + billing + assignment in one step |
+| `GET/POST /admin/invites` | Pending invite tokens (therapist, parent, staff) |
+
+**People hub** (`/admin/people`) consolidates staff, therapists (with profile status), families, and invites. **`client_billing_mode`** on `Case` (`PREPAID` / `POSTPAID`) drives family invoices separately from therapist `billing_type`.
+
+Admin address forms set `showLocationButton={false}` so GPS capture stays on parent/therapist flows only.
+
 ## Maturity matrix
 
 | Capability | Therapist | Admin | Parent | API |
@@ -265,11 +353,11 @@ Local dev uses SQLite (`insightcase.db`) and Vite proxy to `:8000`.
 | Auth / invite | ✓ | ✓ | ✓ | ✓ |
 | Case list / detail | ✓ | ✓ | case hub read-only | ✓ |
 | Session timer + logs | ✓ | review | approved logs only | ✓ |
-| Monthly reports | ✓ pipeline | approve | view published | ✓ |
-| Invoices | preview/submit | approve | — (family billing separate) | ✓ |
-| Slots / bookings | view/book | manage | book + list/cancel | ✓ |
+| Monthly reports | ✓ pipeline | approve + resend | hub, approve, feedback | ✓ |
+| Invoices | preview/submit | approve + client payments | dashboard, filters, disputes | ✓ |
+| Slots / bookings | view/book + parent label | manage | week calendar, book/reschedule/cancel | ✓ |
 | Leave / profile | ✓ | — | profile + address | ✓ |
-| IEP | admin upload | partial | acknowledge + download | ✓ |
+| IEP | admin upload | partial | in-app viewer + comments | ✓ |
 | Support tickets | full | manage | raise + list own | ✓ |
 | E2E Playwright | therapist smoke | parent smoke | admin smoke | — |
 | Case hub | `/therapist/cases/:id` | `/parent/cases/:id` | `/admin/cases/:id` | — |

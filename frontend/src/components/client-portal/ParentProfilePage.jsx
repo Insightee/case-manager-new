@@ -1,18 +1,282 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AvatarUpload } from '../shared/AvatarUpload.jsx'
+import {
+  AddressFormFields,
+  addressFromApi,
+  addressToPayload,
+  emptyAddress,
+  hasCoordinates,
+} from '../shared/AddressFormFields.jsx'
+import './parent-profile.css'
 
-export function ParentProfilePage() {
-  const { user, reload } = useAuth()
+function dedupeChildren(list) {
+  const byId = new Map()
+  for (const c of list || []) {
+    if (c?.id != null) byId.set(c.id, c)
+  }
+  return [...byId.values()]
+}
+
+function splitFullName(name) {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length === 1) return { first: parts[0], last: '' }
+  return { first: parts[0], last: parts.slice(1).join(' ') }
+}
+
+// ── Child row ──────────────────────────────────────────────────────────────
+function ChildRow({ child, caseService, onEditSave }) {
+  const [editing, setEditing] = useState(false)
+  const [firstName, setFirstName] = useState(child.first_name)
+  const [lastName, setLastName] = useState(child.last_name)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const fullName = [child.first_name, child.last_name].filter(Boolean).join(' ')
+
+  async function save() {
+    if (!firstName.trim()) return
+    setSaving(true)
+    setErr('')
+    try {
+      await onEditSave(child.id, firstName.trim(), lastName.trim())
+      setEditing(false)
+    } catch (e) {
+      setErr(e.message || 'Could not save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="parent-profile__child-row">
+      <div className="parent-profile__child-info">
+        <span className="parent-profile__child-name">{fullName || '—'}</span>
+        {caseService ? (
+          <div className="parent-profile__child-cases">
+            {caseService.map((s) => (
+              <span key={s.case_id} className="parent-profile__case-chip">
+                {s.case_code}
+                <span className="parent-profile__case-type">{s.service_type}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No case assigned yet</span>
+        )}
+      </div>
+
+      <div className="parent-profile__child-actions">
+        {caseService?.[0] ? (
+          <Link to={`/parent/cases/${caseService[0].case_id}`} className="parent-profile__child-link">
+            View case →
+          </Link>
+        ) : null}
+        <button
+          type="button"
+          className="parent-profile__child-edit-btn"
+          onClick={() => { setEditing((e) => !e); setErr('') }}
+          title="Edit name"
+        >
+          ✏
+        </button>
+      </div>
+
+      {editing ? (
+        <div className="parent-profile__child-edit-form">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="First name"
+              style={{ flex: 1, minWidth: 100, border: '1px solid #cbd5e1', borderRadius: 8, padding: '7px 10px', fontSize: '0.875rem' }}
+            />
+            <input
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Last name"
+              style={{ flex: 1, minWidth: 100, border: '1px solid #cbd5e1', borderRadius: 8, padding: '7px 10px', fontSize: '0.875rem' }}
+            />
+          </div>
+          {err ? <p style={{ fontSize: '0.78rem', color: '#b91c1c', marginTop: 4 }}>{err}</p> : null}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={save}
+              style={{ background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 16px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditing(false); setFirstName(child.first_name); setLastName(child.last_name) }}
+              style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: '0.8rem', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+// ── Add child inline form ──────────────────────────────────────────────────
+function AddChildForm({ onAdd, onCancel }) {
   const [fullName, setFullName] = useState('')
   const [saving, setSaving] = useState(false)
-  const [success, setSuccess] = useState('')
+  const [err, setErr] = useState('')
+
+  async function submit(e) {
+    e.preventDefault()
+    if (!fullName.trim()) { setErr('Name is required'); return }
+    setSaving(true)
+    setErr('')
+    try {
+      await onAdd(fullName.trim())
+    } catch (ex) {
+      setErr(ex.message || 'Could not add child')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="parent-profile__add-child-form">
+      <input
+        autoFocus
+        value={fullName}
+        onChange={(e) => setFullName(e.target.value)}
+        placeholder="Child's full name"
+        style={{ flex: 1, border: '1px solid #cbd5e1', borderRadius: 8, padding: '8px 12px', fontSize: '0.875rem' }}
+      />
+      {err ? <p style={{ fontSize: '0.78rem', color: '#b91c1c', marginTop: 4, width: '100%' }}>{err}</p> : null}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button
+          type="submit"
+          disabled={saving}
+          style={{ background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 18px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+        >
+          {saving ? 'Adding…' : 'Add'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: '0.85rem', cursor: 'pointer' }}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────
+export function ParentProfilePage() {
+  const { user, reload: reloadAuth } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [children, setChildren] = useState([])
+  const [services, setServices] = useState([])
+  const [homeAddr, setHomeAddr] = useState(emptyAddress())
+  const [homecareCases, setHomecareCases] = useState([])
+  const [serviceCaseId, setServiceCaseId] = useState('')
+  const [serviceAddr, setServiceAddr] = useState(emptyAddress())
+  const [showAddChild, setShowAddChild] = useState(false)
+
+  const loadProfile = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const p = await apiFetch('/api/v1/parent/profile')
+      setFullName(p.full_name || '')
+      setEmail(p.email || '')
+      setPhone(p.phone || '')
+      setChildren(
+        dedupeChildren(p.children).map((c) => ({
+          id: c.id,
+          first_name: c.first_name,
+          last_name: c.last_name,
+        })),
+      )
+      setServices(p.services || [])
+      setHomeAddr(addressFromApi(p.home_address))
+      const hc = p.homecare_cases || []
+      setHomecareCases(hc)
+      if (hc.length) {
+        const first = hc[0]
+        setServiceCaseId(String(first.case_id))
+        setServiceAddr(addressFromApi(first.service_address))
+      } else {
+        setServiceCaseId('')
+        setServiceAddr(emptyAddress())
+      }
+    } catch (err) {
+      setError(err.message || 'Could not load profile')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    if (user) setFullName(user.full_name || '')
-  }, [user])
+    loadProfile()
+  }, [loadProfile])
+
+  // Map each child to their case services (by matching child_name to full name)
+  const childServiceMap = useMemo(() => {
+    const map = new Map()
+    for (const child of children) {
+      const childFull = [child.first_name, child.last_name].filter(Boolean).join(' ').toLowerCase()
+      const matched = services.filter(
+        (s) => s.child_name?.toLowerCase() === childFull
+      )
+      map.set(child.id, matched.length ? matched : null)
+    }
+    return map
+  }, [children, services])
+
+  // Patch helper — sends full updated children array
+  async function patchChildren(updatedChildren) {
+    await apiFetch('/api/v1/parent/profile', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        children: updatedChildren.map((c) => ({
+          id: c.id,
+          first_name: c.first_name.trim(),
+          last_name: (c.last_name || '').trim(),
+        })),
+      }),
+    })
+    await loadProfile()
+  }
+
+  async function handleEditChildSave(childId, firstName, lastName) {
+    const updated = children.map((c) =>
+      c.id === childId ? { ...c, first_name: firstName, last_name: lastName } : c,
+    )
+    await patchChildren(updated)
+  }
+
+  async function handleAddChild(nameFull) {
+    const { first, last } = splitFullName(nameFull)
+    const updated = [...children, { id: undefined, first_name: first, last_name: last }]
+    await patchChildren(updated)
+    setShowAddChild(false)
+  }
+
+  function selectHomecareCase(caseId) {
+    setServiceCaseId(caseId)
+    const row = homecareCases.find((c) => String(c.case_id) === String(caseId))
+    setServiceAddr(addressFromApi(row?.service_address))
+  }
 
   async function handleSave(e) {
     e.preventDefault()
@@ -20,56 +284,182 @@ export function ParentProfilePage() {
     setError('')
     setSuccess('')
     try {
-      await apiFetch('/api/v1/auth/me', {
+      const body = {
+        full_name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim() || null,
+        ...addressToPayload(homeAddr, 'home_'),
+      }
+      if (serviceCaseId && homecareCases.length) {
+        body.service_address = {
+          case_id: Number(serviceCaseId),
+          address: addressToPayload(serviceAddr),
+        }
+      }
+      await apiFetch('/api/v1/parent/profile', {
         method: 'PATCH',
-        body: JSON.stringify({ full_name: fullName }),
+        body: JSON.stringify(body),
       })
-      await reload()
-      setSuccess('Profile updated.')
+      await reloadAuth()
+      await loadProfile()
+      setSuccess('Profile saved.')
     } catch (err) {
-      setError(err.message || 'Could not update profile')
+      setError(err.message || 'Could not save profile')
     } finally {
       setSaving(false)
     }
   }
 
+  if (loading) {
+    return <p className="parent-profile__intro">Loading profile…</p>
+  }
+
   return (
-    <div style={{ maxWidth: 480 }}>
-      <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: 20 }}>
-        Personalise your family portal with a photo and display name.
+    <div className="parent-profile">
+      <p className="parent-profile__intro">
+        Your care team may have set up some details when your case was created. Review everything below and
+        update names, contact info, and visit addresses anytime.
       </p>
-      {error ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{error}</p> : null}
-      {success ? <p style={{ color: '#15803d', fontSize: '0.875rem' }}>{success}</p> : null}
-      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24 }}>
-        <AvatarUpload user={user} onUpdated={reload} size={72} />
-        <form onSubmit={handleSave} style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label style={{ fontSize: '0.875rem', fontWeight: 500 }}>
-            Display name
-            <input
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-              style={{ display: 'block', width: '100%', marginTop: 4, padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db' }}
-            />
-          </label>
-          <p style={{ fontSize: '0.8rem', color: '#9ca3af', margin: 0 }}>{user?.email}</p>
-          <button
-            type="submit"
-            disabled={saving}
-            style={{
-              padding: '10px',
-              borderRadius: 8,
-              background: '#6366f1',
-              color: '#fff',
-              fontWeight: 600,
-              border: 'none',
-              cursor: saving ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </form>
+
+      {error ? <p className="parent-profile__alert parent-profile__alert--error">{error}</p> : null}
+      {success ? <p className="parent-profile__alert parent-profile__alert--success">{success}</p> : null}
+
+      <div className="parent-profile__card" style={{ marginBottom: 16 }}>
+        <AvatarUpload user={user} onUpdated={reloadAuth} size={72} />
       </div>
+
+      <form onSubmit={handleSave}>
+        {/* ── Contact details ── */}
+        <section className="parent-profile__card">
+          <h3>Your details</h3>
+          <p className="parent-profile__hint">How we reach you for appointments and updates.</p>
+          <div className="parent-profile__grid">
+            <div className="parent-profile__field" style={{ gridColumn: '1 / -1' }}>
+              <label>
+                Your name
+                <input value={fullName} onChange={(e) => setFullName(e.target.value)} required autoComplete="name" />
+              </label>
+            </div>
+            <div className="parent-profile__field">
+              <label>
+                Phone
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. 98765 43210"
+                  autoComplete="tel"
+                />
+              </label>
+            </div>
+            <div className="parent-profile__field">
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Children ── */}
+        {children.length > 0 || showAddChild ? (
+          <section className="parent-profile__card">
+            <div className="parent-profile__card-head">
+              <div>
+                <h3>{children.length === 1 ? 'Child' : `Children (${children.length})`}</h3>
+                <p className="parent-profile__hint" style={{ marginBottom: 0 }}>
+                  Names used on reports and session updates. Case reference numbers are shown for each.
+                </p>
+              </div>
+            </div>
+
+            <div className="parent-profile__children-list">
+              {children.map((child) => (
+                <ChildRow
+                  key={child.id}
+                  child={child}
+                  caseService={childServiceMap.get(child.id)}
+                  onEditSave={handleEditChildSave}
+                />
+              ))}
+            </div>
+
+            {showAddChild ? (
+              <AddChildForm onAdd={handleAddChild} onCancel={() => setShowAddChild(false)} />
+            ) : (
+              <button
+                type="button"
+                className="parent-profile__add-child-btn"
+                onClick={() => setShowAddChild(true)}
+              >
+                + Add another child
+              </button>
+            )}
+          </section>
+        ) : (
+          <section className="parent-profile__card">
+            <div className="parent-profile__card-head">
+              <div>
+                <h3>Children</h3>
+                <p className="parent-profile__hint" style={{ marginBottom: 0 }}>No children on record yet — add one below or contact your care team.</p>
+              </div>
+            </div>
+            {showAddChild ? (
+              <AddChildForm onAdd={handleAddChild} onCancel={() => setShowAddChild(false)} />
+            ) : (
+              <button type="button" className="parent-profile__add-child-btn" onClick={() => setShowAddChild(true)}>
+                + Add child
+              </button>
+            )}
+          </section>
+        )}
+
+        {/* ── Home address ── */}
+        <section className="parent-profile__card">
+          <h3>Home address</h3>
+          <p className="parent-profile__hint">Your family contact address. Pin location for accurate maps.</p>
+          <AddressFormFields value={homeAddr} onChange={setHomeAddr} idPrefix="home" disabled={saving} />
+          {hasCoordinates(homeAddr) ? (
+            <p style={{ fontSize: '0.8rem', color: '#15803d', marginTop: 8 }}>Location pinned on map.</p>
+          ) : null}
+        </section>
+
+        {/* ── Homecare address ── */}
+        {homecareCases.length > 0 ? (
+          <section className="parent-profile__card">
+            <h3>Homecare visit address</h3>
+            <p className="parent-profile__hint">Where therapists visit for home sessions. You can update this per case.</p>
+            <div className="parent-profile__field" style={{ marginBottom: 12 }}>
+              <label>
+                Case
+                <select value={serviceCaseId} onChange={(e) => selectHomecareCase(e.target.value)}>
+                  {homecareCases.map((c) => (
+                    <option key={c.case_id} value={c.case_id}>
+                      {c.case_code} · {c.child_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {homecareCases.find((c) => String(c.case_id) === serviceCaseId)?.service_address_summary ? (
+              <p className="parent-profile__hint" style={{ marginTop: 0 }}>
+                Current: {homecareCases.find((c) => String(c.case_id) === serviceCaseId).service_address_summary}
+              </p>
+            ) : null}
+            <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="visit" disabled={saving} />
+          </section>
+        ) : null}
+
+        <button type="submit" className="parent-profile__save" disabled={saving}>
+          {saving ? 'Saving…' : 'Save profile'}
+        </button>
+      </form>
     </div>
   )
 }

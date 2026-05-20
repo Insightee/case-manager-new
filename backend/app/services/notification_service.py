@@ -21,9 +21,35 @@ def create_notification(
     return n
 
 
-def list_notifications(db: Session, user_id: int) -> list[Notification]:
-    return list(
-        db.scalars(
-            select(Notification).where(Notification.user_id == user_id).order_by(Notification.created_at.desc())
-        ).all()
+def list_notifications(db: Session, user_id: int, *, limit: int = 50, unread_only: bool = False) -> list[Notification]:
+    stmt = select(Notification).where(Notification.user_id == user_id).order_by(Notification.created_at.desc())
+    if unread_only:
+        stmt = stmt.where(Notification.is_read.is_(False))
+    stmt = stmt.limit(limit)
+    return list(db.scalars(stmt).all())
+
+
+def unread_count(db: Session, user_id: int) -> int:
+    from sqlalchemy import func
+
+    n = db.scalar(
+        select(func.count(Notification.id)).where(Notification.user_id == user_id, Notification.is_read.is_(False))
     )
+    return int(n or 0)
+
+
+def mark_notification_read(db: Session, notification_id: int, user_id: int) -> Notification | None:
+    n = db.get(Notification, notification_id)
+    if not n or n.user_id != user_id:
+        return None
+    n.is_read = True
+    db.flush()
+    return n
+
+
+def mark_all_read(db: Session, user_id: int) -> int:
+    rows = db.scalars(select(Notification).where(Notification.user_id == user_id, Notification.is_read.is_(False))).all()
+    for n in rows:
+        n.is_read = True
+    db.flush()
+    return len(rows)

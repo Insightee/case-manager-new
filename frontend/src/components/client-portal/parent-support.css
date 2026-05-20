@@ -1,0 +1,229 @@
+.parent-support {
+  max-width: 720px;
+}
+
+.parent-support__form-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.parent-support__form-card h2 {
+  margin: 0 0 4px;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.parent-support__hint {
+  font-size: 0.8125rem;
+  color: #64748b;
+  margin: 0 0 16px;
+}
+
+.parent-support__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+.parent-support__field input,
+.parent-support__field select,
+.parent-support__field textarea {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.875rem;
+  font-family: inherit;
+}
+
+.parent-support__field textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.parent-support__topics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.parent-support__topic {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.parent-support__topic.is-selected {
+  border-color: #6366f1;
+  background: #eef2ff;
+  color: #4338ca;
+  font-weight: 600;
+}
+
+.parent-support__submit {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  background: #4f46e5;
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9375rem;
+}
+
+.parent-support__ticket {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.parent-support__ticket-head {
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.parent-support__ticket-head:hover {
+  background: #f8fafc;
+}
+
+.parent-support__status {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.parent-support__status--open {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.parent-support__status--in_progress {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.parent-support__status--resolved {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.parent-support__status--closed {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.parent-support__thread {
+  border-top: 1px solid #e2e8f0;
+  padding: 16px;
+  background: #fafafa;
+}
+
+.parent-support__msg {
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+  max-width: 92%;
+}
+
+.parent-support__msg--parent {
+  background: #eef2ff;
+  margin-left: auto;
+}
+
+.parent-support__msg--staff {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.parent-support__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.parent-support__btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+}
+
+.parent-support__btn--primary {
+  background: #4f46e5;
+  color: #fff;
+  border-color: #4f46e5;
+}
+
+.parent-support__footer {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.parent-support__footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.parent-support__footer-links a {
+  color: #4f46e5;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.parent-support__matrix {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.parent-support__matrix summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #475569;
+}
+
+.parent-support__star {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+  font-size: 1rem;
+}

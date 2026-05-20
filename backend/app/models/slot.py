@@ -14,6 +14,9 @@ class SlotStatus(str, enum.Enum):
     AVAILABLE = "AVAILABLE"
     BOOKED = "BOOKED"
     BLOCKED = "BLOCKED"
+    HOLIDAY = "HOLIDAY"
+    CANCELLED = "CANCELLED"
+    RESCHEDULED = "RESCHEDULED"
 
 
 class BookingSource(str, enum.Enum):
@@ -41,7 +44,19 @@ class TherapistSlot(Base):
     booking_source: Mapped[Optional[BookingSource]] = mapped_column(Enum(BookingSource), nullable=True)
     recurrence_group_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     slot_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    session_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sessions.id"), nullable=True, index=True)
+    rescheduled_to_slot_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("therapist_slots.id"), nullable=True, index=True
+    )
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    cancellation_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approval_status: Mapped[str] = mapped_column(String(32), default="CONFIRMED", nullable=False)
+    leave_block_leave_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     therapist = relationship("User", foreign_keys=[therapist_user_id])
     case = relationship("Case", foreign_keys=[case_id])

@@ -9,7 +9,13 @@ const PROFILE_STATUS = {
   PAUSED: { bg: '#fef2f2', color: '#b91c1c', label: 'Paused by admin' },
 }
 
+function serviceLabels(categories, ids) {
+  const map = Object.fromEntries((categories || []).map((c) => [c.id, c.label]))
+  return (ids || []).map((id) => map[id] || id.replace(/_/g, ' '))
+}
+
 export function TherapistServiceProfileSection() {
+  const [editing, setEditing] = useState(false)
   const [categories, setCategories] = useState([])
   const [profile, setProfile] = useState(null)
   const [form, setForm] = useState({
@@ -73,6 +79,7 @@ export function TherapistServiceProfileSection() {
     try {
       await persistDraft()
       setSuccess('Draft saved. Submit when ready for admin review.')
+      setEditing(false)
     } catch (err) {
       setError(err.message || 'Could not save')
     } finally {
@@ -96,30 +103,39 @@ export function TherapistServiceProfileSection() {
     }
   }
 
+  const serviceNames = serviceLabels(categories, form.services_offered)
+
   return (
-    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '24px', marginBottom: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
+    <section className="therapist-profile__card">
+      <div className="therapist-profile__card-head">
         <div>
-          <p style={{ fontSize: '0.875rem', fontWeight: 600, margin: 0 }}>Service profile</p>
-          <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: 4 }}>
-            Showcase your qualifications and services. Admin approves before this is visible to families.
+          <h2>Service profile</h2>
+          <p className="therapist-profile__card-hint" style={{ marginTop: 4, marginBottom: 0 }}>
+            Public-facing listing for families — admin approves before it goes live.
           </p>
         </div>
-        {profile ? (
-          <span
-            style={{
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              padding: '4px 10px',
-              borderRadius: 20,
-              background: st.bg,
-              color: st.color,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {st.label}
-          </span>
-        ) : null}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {profile ? (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                padding: '4px 10px',
+                borderRadius: 20,
+                background: st.bg,
+                color: st.color,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {st.label}
+            </span>
+          ) : null}
+          {!editing && !paused ? (
+            <button type="button" className="therapist-profile__edit-btn" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {profile?.admin_note ? (
@@ -128,7 +144,57 @@ export function TherapistServiceProfileSection() {
         </p>
       ) : null}
 
-      <form onSubmit={saveDraft} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {!editing ? (
+        <div className="therapist-profile__fields">
+          <div className="therapist-profile__field">
+            <span className="therapist-profile__field-label">Contact email</span>
+            <span className="therapist-profile__field-value">{profile?.email || '—'}</span>
+          </div>
+          <div className="therapist-profile__field">
+            <span className="therapist-profile__field-label">Display name</span>
+            <span className="therapist-profile__field-value">{form.display_name || '—'}</span>
+          </div>
+          <div className="therapist-profile__field">
+            <span className="therapist-profile__field-label">Bio</span>
+            <span className={`therapist-profile__field-value ${!form.short_bio ? 'therapist-profile__field-value--empty' : ''}`}>
+              {form.short_bio || 'Add a short bio'}
+            </span>
+          </div>
+          <div className="therapist-profile__field">
+            <span className="therapist-profile__field-label">Qualifications</span>
+            <span
+              className={`therapist-profile__field-value ${!form.academic_qualifications ? 'therapist-profile__field-value--empty' : ''}`}
+            >
+              {form.academic_qualifications || 'Not added'}
+            </span>
+          </div>
+          {(form.professional_certificates || '').trim() ? (
+            <div className="therapist-profile__field">
+              <span className="therapist-profile__field-label">Certificates</span>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: '0.875rem' }}>
+                {form.professional_certificates.split('\n').filter(Boolean).map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="therapist-profile__field">
+            <span className="therapist-profile__field-label">Services</span>
+            {serviceNames.length ? (
+              <div className="therapist-profile__chips" style={{ marginTop: 6 }}>
+                {serviceNames.map((s) => (
+                  <span key={s} className="therapist-profile__chip">
+                    {s}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="therapist-profile__field-value therapist-profile__field-value--empty">Select services</span>
+            )}
+          </div>
+        </div>
+      ) : (
+      <form onSubmit={saveDraft} className="therapist-profile__form" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
           Display name
           <input
@@ -187,46 +253,35 @@ export function TherapistServiceProfileSection() {
           />
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-          <button
-            type="submit"
-            disabled={saving || paused}
-            style={{
-              padding: '10px 16px',
-              borderRadius: 8,
-              background: '#6366f1',
-              color: '#fff',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              border: 'none',
-              cursor: saving || paused ? 'not-allowed' : 'pointer',
-              opacity: saving || paused ? 0.7 : 1,
-            }}
-          >
+        <div className="therapist-profile__form-actions">
+          <button type="submit" className="therapist-profile__save" disabled={saving || paused}>
             {saving ? 'Saving…' : 'Save draft'}
           </button>
           <button
             type="button"
+            className="therapist-profile__cancel"
+            disabled={saving}
+            onClick={() => {
+              setEditing(false)
+              setError('')
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="therapist-profile__edit-btn"
             disabled={saving || paused || profile?.status === 'PENDING'}
             onClick={submitForApproval}
-            style={{
-              padding: '10px 16px',
-              borderRadius: 8,
-              background: '#fff',
-              color: '#3730a3',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              border: '1px solid #c7d2fe',
-              cursor: saving || paused || profile?.status === 'PENDING' ? 'not-allowed' : 'pointer',
-            }}
           >
             Submit for approval
           </button>
         </div>
       </form>
+      )}
 
-      {error ? <p style={{ color: '#b91c1c', fontSize: '0.875rem', marginTop: 12 }}>{error}</p> : null}
-      {success ? <p style={{ color: '#15803d', fontSize: '0.875rem', marginTop: 12 }}>{success}</p> : null}
-    </div>
+      {error ? <p className="therapist-profile__alert therapist-profile__alert--error" style={{ marginTop: 12 }}>{error}</p> : null}
+      {success ? <p className="therapist-profile__alert therapist-profile__alert--success" style={{ marginTop: 12 }}>{success}</p> : null}
+    </section>
   )
 }

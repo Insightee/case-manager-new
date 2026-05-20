@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timezone
 
 from sqlalchemy import select
 
-from app.core.database import Base, SessionLocal, engine
+from app.core.database import Base, SessionLocal, engine, ensure_sqlite_schema_patches
 from app.core.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS, RoleName
 from app.core.security import hash_password
 from app.models import (
@@ -26,6 +26,16 @@ from app.models import (
     parent_child_link,
 )
 from app.models.parent_billing import ParentBillingStatus
+from app.models.client_billing import (
+    CarePackage,
+    CarePackageStatus,
+    ClientInvoice,
+    ClientInvoiceLine,
+    ClientInvoiceStatus,
+    ClientInvoiceType,
+    ClientPayment,
+    PaymentMethod,
+)
 from app.models.assignment import CaseAssignmentStatus
 from app.models.case import BillingType, CaseStatus, CompensationMode
 from app.models.daily_log import LogApprovalStatus
@@ -77,7 +87,9 @@ def get_or_create_user(db, email, password, full_name, role_name, **kwargs):
 
 
 def run():
+    ensure_sqlite_schema_patches()
     Base.metadata.create_all(bind=engine)
+    ensure_sqlite_schema_patches()
     db = SessionLocal()
     try:
         seed_roles_permissions(db)
@@ -108,7 +120,9 @@ def run():
             module_assignments=["homecare", "shadow_support"],
         )
         parent_user = get_or_create_user(db, "parent@demo.com", "demo123", "Parent Guardian", RoleName.PARENT.value)
-        get_or_create_user(db, "finance@demo.com", "demo123", "Finance User", RoleName.FINANCE.value, module_assignments=["billing"])
+        finance = get_or_create_user(
+            db, "finance@demo.com", "demo123", "Finance User", RoleName.FINANCE.value, module_assignments=["billing"]
+        )
         get_or_create_user(
             db, "supervisor@demo.com", "demo123", "Supervisor", RoleName.SUPERVISOR.value, module_assignments=["shadow_support"]
         )
@@ -483,6 +497,175 @@ def run():
                     amount_inr=8500,
                     status=ParentBillingStatus.PAID,
                     detail="Shadow support — March 2026",
+                )
+            )
+
+        if not db.scalars(select(ClientInvoice).limit(1)).first():
+            inv_may = ClientInvoice(
+                invoice_number="INV-2026-0201",
+                parent_user_id=parent_user.id,
+                case_id=case1.id,
+                invoice_type=ClientInvoiceType.POSTPAID,
+                status=ClientInvoiceStatus.GENERATED,
+                billing_month="2026-05",
+                service_type=case1.service_type,
+                product_module=case1.product_module,
+                due_date=date(2026, 5, 10),
+                subtotal_inr=4800,
+                tax_inr=0,
+                discount_inr=0,
+                package_deduction_inr=0,
+                adjustment_inr=0,
+                total_inr=4800,
+                amount_paid_inr=0,
+                notes="Postpaid monthly invoice for homecare sessions in May 2026.",
+                sent_at=None,
+            )
+            db.add(inv_may)
+            db.flush()
+            db.add_all(
+                [
+                    ClientInvoiceLine(
+                        client_invoice_id=inv_may.id,
+                        session_date=date(2026, 5, 5),
+                        therapist_name=therapist.full_name,
+                        service_label=case1.service_type,
+                        session_status="Completed",
+                        amount_inr=1200,
+                        package_deducted=False,
+                        parent_summary="Structured play and communication activities",
+                        sort_order=1,
+                    ),
+                    ClientInvoiceLine(
+                        client_invoice_id=inv_may.id,
+                        session_date=date(2026, 5, 8),
+                        therapist_name=therapist.full_name,
+                        service_label=case1.service_type,
+                        session_status="Completed",
+                        amount_inr=1200,
+                        package_deducted=False,
+                        parent_summary="Goals: communication and social skills",
+                        sort_order=2,
+                    ),
+                    ClientInvoiceLine(
+                        client_invoice_id=inv_may.id,
+                        session_date=date(2026, 5, 12),
+                        therapist_name=therapist.full_name,
+                        service_label=case1.service_type,
+                        session_status="Client Absent",
+                        amount_inr=0,
+                        package_deducted=False,
+                        parent_summary="Family informed in advance — no charge",
+                        sort_order=3,
+                    ),
+                    ClientInvoiceLine(
+                        client_invoice_id=inv_may.id,
+                        session_date=date(2026, 5, 15),
+                        therapist_name=therapist.full_name,
+                        service_label=case1.service_type,
+                        session_status="Completed",
+                        amount_inr=2400,
+                        package_deducted=False,
+                        parent_summary="Extended session — progress on IEP goals",
+                        sort_order=4,
+                    ),
+                ]
+            )
+            try:
+                from app.services import client_billing_service as _client_billing
+
+                _client_billing.notify_parent_invoice_issued(db, inv_may.id, resend=False)
+            except Exception:
+                pass
+            inv_mar = ClientInvoice(
+                invoice_number="INV-2026-0103",
+                parent_user_id=parent_user.id,
+                case_id=case2.id,
+                invoice_type=ClientInvoiceType.PREPAID,
+                status=ClientInvoiceStatus.PAID,
+                billing_month="2026-03",
+                service_type=case2.service_type,
+                product_module=case2.product_module,
+                due_date=date(2026, 3, 31),
+                subtotal_inr=8500,
+                tax_inr=0,
+                discount_inr=500,
+                package_deduction_inr=0,
+                adjustment_inr=0,
+                total_inr=8000,
+                amount_paid_inr=8000,
+                notes="Prepaid shadow support package — March usage.",
+                sent_at=datetime.now(timezone.utc),
+            )
+            db.add(inv_mar)
+            db.flush()
+            db.add_all(
+                [
+                    ClientInvoiceLine(
+                        client_invoice_id=inv_mar.id,
+                        session_date=date(2026, 3, 6),
+                        therapist_name=therapist.full_name,
+                        service_label=case2.service_type,
+                        session_status="Completed",
+                        amount_inr=4000,
+                        package_deducted=True,
+                        parent_summary="Shadow support at school",
+                        sort_order=1,
+                    ),
+                    ClientInvoiceLine(
+                        client_invoice_id=inv_mar.id,
+                        session_date=date(2026, 3, 13),
+                        therapist_name=therapist.full_name,
+                        service_label=case2.service_type,
+                        session_status="Completed",
+                        amount_inr=4000,
+                        package_deducted=True,
+                        parent_summary="Classroom inclusion support",
+                        sort_order=2,
+                    ),
+                ]
+            )
+            db.add(
+                ClientPayment(
+                    client_invoice_id=inv_mar.id,
+                    amount_inr=8000,
+                    method=PaymentMethod.UPI,
+                    reference="UPI-8839201",
+                    recorded_by_user_id=finance.id if finance else case_mgr.id,
+                )
+            )
+            db.add(
+                CarePackage(
+                    case_id=case1.id,
+                    parent_user_id=parent_user.id,
+                    name="Homecare 20 Session Pack",
+                    total_sessions=20,
+                    used_sessions=8,
+                    validity_end=date(2026, 6, 30),
+                    service_label=case1.service_type,
+                    status=CarePackageStatus.ACTIVE,
+                )
+            )
+            db.add(
+                CarePackage(
+                    case_id=case2.id,
+                    parent_user_id=parent_user.id,
+                    name="Shadow Support 12 Session Pack",
+                    total_sessions=12,
+                    used_sessions=10,
+                    validity_end=date(2026, 5, 31),
+                    service_label=case2.service_type,
+                    status=CarePackageStatus.ACTIVE,
+                )
+            )
+            db.add(
+                Notification(
+                    user_id=parent_user.id,
+                    title="May invoice generated",
+                    body="Your May invoice for Aarav has been generated. ₹4,800 due by 10 Jun.",
+                    is_read=False,
+                    entity_type="client_invoice",
+                    entity_id=inv_may.id,
                 )
             )
 

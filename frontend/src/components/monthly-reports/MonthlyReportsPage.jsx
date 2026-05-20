@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { buildReportWorkbench } from '../../lib/reportWorkbench.js'
+import { CaseReportsPanel } from '../cases/CaseReportsPanel.jsx'
 import { CalendarModal } from './CalendarModal.jsx'
 import { ChecklistPanel } from './ChecklistPanel.jsx'
 import { CreateDraftModal } from './CreateDraftModal.jsx'
@@ -52,6 +54,11 @@ function matchesSearch(item, q) {
   )
 }
 
+function matchesCaseFilter(item, caseDbId) {
+  if (!caseDbId) return true
+  return item.caseDbId === Number(caseDbId)
+}
+
 function SectionBlock({ id, title, subtitle, dotClass, children }) {
   return (
     <section aria-labelledby={id}>
@@ -68,6 +75,11 @@ function SectionBlock({ id, title, subtitle, dotClass, children }) {
 }
 
 export function MonthlyReportsPage() {
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const caseFilterId = searchParams.get('case_id')
+  const openCreate = searchParams.get('create') === '1'
+  const [assignedCases, setAssignedCases] = useState([])
   const [search, setSearch] = useState('')
   const [pipelineFilter, setPipelineFilter] = useState('all')
   const [calendarOpen, setCalendarOpen] = useState(false)
@@ -94,10 +106,12 @@ export function MonthlyReportsPage() {
     setError('')
     try {
       const [reports, cases] = await Promise.all([
-        apiFetch('/api/v1/reports/monthly'),
-        apiFetch('/api/v1/cases?assigned=true'),
+        apiFetch('/api/v1/reports/monthly?page_size=100'),
+        apiFetch('/api/v1/cases?assigned=true&page_size=100'),
       ])
-      setWorkbench(buildReportWorkbench({ reports: reports || [], cases: cases || [] }))
+      const caseList = unwrapList(cases)
+      setAssignedCases(caseList)
+      setWorkbench(buildReportWorkbench({ reports: unwrapList(reports), cases: caseList }))
     } catch (err) {
       setError(err.message || 'Could not load reports')
       setWorkbench({
@@ -115,6 +129,33 @@ export function MonthlyReportsPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (openCreate && caseFilterId) {
+      setDraftOpen(true)
+    }
+  }, [openCreate, caseFilterId])
+
+  const filteredCase = useMemo(() => {
+    if (!caseFilterId) return null
+    const id = Number(caseFilterId)
+    if (!Number.isFinite(id)) return null
+    const found = assignedCases.find((c) => c.id === id)
+    if (found) return found
+    return { id, child_name: 'Client', case_code: `Case #${id}` }
+  }, [assignedCases, caseFilterId])
+
+  function clearCaseFilter() {
+    setSearchParams({})
+  }
+
+  function goToCaseReports(caseDbId, { create = false } = {}) {
+    const params = new URLSearchParams()
+    params.set('case_id', String(caseDbId))
+    if (create) params.set('create', '1')
+    setSearchParams(params)
+    scrollTop()
+  }
 
   const handlePipelineClick = useCallback((key) => {
     setPipelineFilter((prev) => (prev === key ? 'all' : key))
@@ -137,21 +178,21 @@ export function MonthlyReportsPage() {
   const q = search.trim()
 
   const filteredAttention = useMemo(() => {
-    let list = workbench.attention.filter((a) => matchesSearch(a, q))
+    let list = workbench.attention.filter((a) => matchesSearch(a, q) && matchesCaseFilter(a, caseFilterId))
     if (pipelineFilter === 'overdue') list = list.filter((a) => a.attentionType === 'overdue')
     return list
-  }, [workbench.attention, q, pipelineFilter])
+  }, [workbench.attention, q, pipelineFilter, caseFilterId])
 
   const filteredInProgress = useMemo(() => {
-    let list = workbench.inProgress.filter((r) => matchesSearch(r, q))
+    let list = workbench.inProgress.filter((r) => matchesSearch(r, q) && matchesCaseFilter(r, caseFilterId))
     if (pipelineFilter === 'draft') list = list.filter((r) => r.status === 'draft')
     if (pipelineFilter === 'underReview') list = list.filter((r) => r.status === 'under_review')
     return list
-  }, [workbench.inProgress, q, pipelineFilter])
+  }, [workbench.inProgress, q, pipelineFilter, caseFilterId])
 
   const filteredPublished = useMemo(() => {
-    return workbench.published.filter((r) => matchesSearch(r, q))
-  }, [workbench.published, q])
+    return workbench.published.filter((r) => matchesSearch(r, q) && matchesCaseFilter(r, caseFilterId))
+  }, [workbench.published, q, caseFilterId])
 
   const showAttentionSection = pipelineFilter === 'all' || pipelineFilter === 'overdue'
   const showProgressSection =
@@ -199,8 +240,16 @@ export function MonthlyReportsPage() {
 
       <CreateDraftModal
         open={draftOpen}
-        onClose={() => setDraftOpen(false)}
+        onClose={() => {
+          setDraftOpen(false)
+          if (openCreate) {
+            const params = new URLSearchParams(searchParams)
+            params.delete('create')
+            setSearchParams(params)
+          }
+        }}
         defaultMonth={workbench.monthLabel}
+        defaultCaseId={caseFilterId ? Number(caseFilterId) : null}
         onCreated={() => {
           showToast('Draft saved — continue editing or submit for review.')
           load()
@@ -209,16 +258,54 @@ export function MonthlyReportsPage() {
 
       <CalendarModal open={calendarOpen} onClose={() => setCalendarOpen(false)} events={[]} />
 
+      {filteredCase ? (
+        <div className="sticky top-0 z-20 flex flex-col gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Client reports</p>
+            <p className="truncate text-base font-semibold text-indigo-950">
+              {filteredCase.child_name}
+              <span className="font-normal text-indigo-700"> · {filteredCase.case_code}</span>
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Link
+              to={`/therapist/cases/${filteredCase.id}`}
+              className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[0.99]"
+            >
+              Open case
+            </Link>
+            <button
+              type="button"
+              onClick={clearCaseFilter}
+              className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+            >
+              All clients
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <SectionHeader
-        title="Monthly Reports"
-        subtitle="Compile, review, and publish month-end reports"
+        title={filteredCase ? `Reports · ${filteredCase.child_name}` : 'Monthly Reports'}
+        subtitle={
+          filteredCase
+            ? 'Draft, submit, and track monthly progress for this client'
+            : 'Compile, review, and publish month-end reports'
+        }
         search={search}
         onSearchChange={setSearch}
         primaryActionLabel="+ Create Draft"
         onPrimaryAction={() => setDraftOpen(true)}
-        secondaryActionLabel="View Calendar"
-        onSecondaryAction={() => setCalendarOpen(true)}
       />
+
+      {filteredCase ? (
+        <CaseReportsPanel
+          caseId={filteredCase.id}
+          caseCode={filteredCase.case_code}
+          childName={filteredCase.child_name}
+          onUpdated={load}
+        />
+      ) : null}
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
@@ -243,7 +330,7 @@ export function MonthlyReportsPage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-8">
-          {totalVisible === 0 ? (
+          {caseFilterId ? null : totalVisible === 0 ? (
             <div className="rounded-2xl border border-dashed border-[#E2E8F0] bg-white px-6 py-16 text-center shadow-sm">
               <p className="text-lg font-semibold text-slate-800">
                 {q || pipelineFilter !== 'all'
@@ -283,9 +370,11 @@ export function MonthlyReportsPage() {
                           key={r.id}
                           variant="attention"
                           report={r}
-                          onStart={() => (r.isPlaceholder ? setDraftOpen(true) : null)}
+                          onStart={() =>
+                            r.isPlaceholder && r.caseDbId ? goToCaseReports(r.caseDbId, { create: true }) : setDraftOpen(true)
+                          }
                           onContinue={(rep) => {
-                            if (rep.caseDbId) window.location.href = `/therapist/cases/${rep.caseDbId}?tab=reports`
+                            if (rep.caseDbId) goToCaseReports(rep.caseDbId)
                           }}
                         />
                       ))}
@@ -313,7 +402,7 @@ export function MonthlyReportsPage() {
                           variant="progress"
                           report={r}
                           onContinue={(rep) => {
-                            window.location.href = `/therapist/cases/${rep.caseDbId}?tab=reports`
+                            if (rep.caseDbId) goToCaseReports(rep.caseDbId)
                           }}
                           onSubmitReview={r.status === 'draft' ? handleSubmitReview : undefined}
                           onPreview={(rep) =>
@@ -349,7 +438,7 @@ export function MonthlyReportsPage() {
                           variant="published"
                           report={r}
                           onView={(rep) => {
-                            window.location.href = `/therapist/cases/${rep.caseDbId}?tab=reports`
+                            if (rep.caseDbId) goToCaseReports(rep.caseDbId)
                           }}
                         />
                       ))}
@@ -364,11 +453,11 @@ export function MonthlyReportsPage() {
         <div className="min-w-0 xl:sticky xl:top-4 xl:self-start">
           <ChecklistPanel items={checklist} onToggle={handleCheckToggle} />
           <p className="mt-4 text-xs text-slate-500">
-            Tip: open{' '}
+            Tip: use{' '}
             <Link to="/therapist/cases" className="font-semibold text-indigo-600">
               My Cases
             </Link>{' '}
-            for per-client sessions and report drafts.
+            — Reports opens this page filtered to that client.
           </p>
         </div>
       </div>

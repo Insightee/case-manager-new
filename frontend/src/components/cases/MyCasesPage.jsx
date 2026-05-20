@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { buildCaseWorkbench } from '../../lib/caseWorkbench.js'
+import { unwrapList } from '../../lib/listApi.js'
+import {
+  buildCaseWorkbench,
+  buildSectionsFromCases,
+  buildStatsFromCases,
+  filterAndSortCases,
+  uniqueServices,
+} from '../../lib/caseWorkbench.js'
 import { CasesPageHeader } from './CasesPageHeader.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { StatCard } from './StatCard.jsx'
 import { TherapistCaseCard } from './TherapistCaseCard.jsx'
+import { UpcomingSessionsPanel } from './UpcomingSessionsPanel.jsx'
+import { mergeUpcomingSchedule } from '../../lib/therapistSchedule.js'
 import './my-cases.css'
 
 function SectionHeader({ title, tone, count }) {
@@ -17,12 +26,27 @@ function SectionHeader({ title, tone, count }) {
   )
 }
 
+const DEFAULT_FILTERS = {
+  stage: 'all',
+  service: 'all',
+  dueSoon: 'all',
+  sort: 'urgency',
+}
+
 export function MyCasesPage() {
   const [view, setView] = useState('grid')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [workbench, setWorkbench] = useState({ stats: [], sections: [], allCases: [] })
+  const [workbench, setWorkbench] = useState({
+    stats: [],
+    sections: [],
+    allCases: [],
+    upcomingBooked: [],
+    upcomingSessions: [],
+  })
+  const [scheduleItems, setScheduleItems] = useState([])
   const [search, setSearch] = useState('')
+  const [filters, setFilters] = useState(DEFAULT_FILTERS)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -33,17 +57,31 @@ export function MyCasesPage() {
       const toDate = new Date(today)
       toDate.setDate(toDate.getDate() + 90)
       const to = toDate.toISOString().slice(0, 10)
-      const [cases, sessions, logs, reports, slots] = await Promise.all([
-        apiFetch('/api/v1/cases?assigned=true'),
-        apiFetch('/api/v1/sessions'),
+      const [cases, sessions, logs, reports, slots, upcoming] = await Promise.all([
+        apiFetch('/api/v1/cases?assigned=true&page_size=100'),
+        apiFetch('/api/v1/sessions?page_size=100'),
         apiFetch('/api/v1/daily-logs'),
-        apiFetch('/api/v1/reports/monthly'),
+        apiFetch('/api/v1/reports/monthly?page_size=100'),
         apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`),
+        apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
       ])
-      setWorkbench(buildCaseWorkbench({ cases, sessions, logs, reports, slots }))
+      const sessionList = unwrapList(sessions)
+      const slotList = unwrapList(slots)
+      const upcomingList = Array.isArray(upcoming) ? upcoming : unwrapList(upcoming)
+      setWorkbench(
+        buildCaseWorkbench({
+          cases: unwrapList(cases),
+          sessions: sessionList,
+          logs: unwrapList(logs),
+          reports: unwrapList(reports),
+          slots: slotList,
+        }),
+      )
+      setScheduleItems(mergeUpcomingSchedule({ sessions: upcomingList, slots: slotList }))
     } catch (err) {
       setError(err.message || 'Could not load cases')
-      setWorkbench({ stats: [], sections: [], allCases: [] })
+      setWorkbench({ stats: [], sections: [], allCases: [], upcomingBooked: [], upcomingSessions: [] })
+      setScheduleItems([])
     } finally {
       setLoading(false)
     }
@@ -53,38 +91,45 @@ export function MyCasesPage() {
     load()
   }, [load])
 
-  const filteredSections = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const match = (c) =>
-      !q ||
-      c.caseId.toLowerCase().includes(q) ||
-      c.child.toLowerCase().includes(q) ||
-      c.service.toLowerCase().includes(q)
-    return workbench.sections.map((sec) => {
-      const cases = sec.cases.filter(match)
-      return { ...sec, cases, count: cases.length }
-    })
-  }, [workbench.sections, search])
+  const serviceOptions = useMemo(() => uniqueServices(workbench.allCases), [workbench.allCases])
 
-  const tableRows = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return workbench.allCases
-      .filter(
-        (c) =>
-          !q ||
-          c.caseId.toLowerCase().includes(q) ||
-          c.child.toLowerCase().includes(q) ||
-          c.service.toLowerCase().includes(q),
-      )
-      .map((c) => ({
-        id: c.id,
-        caseId: c.caseId,
-        child: c.child,
-        service: c.service,
-        stage: c.stage,
-        next: c.nextDue,
-      }))
-  }, [workbench.allCases, search])
+  const hasActiveFilters = useMemo(
+    () =>
+      Boolean(search.trim()) ||
+      filters.stage !== 'all' ||
+      filters.service !== 'all' ||
+      filters.dueSoon !== 'all' ||
+      filters.sort !== 'urgency',
+    [search, filters],
+  )
+
+  const displayCases = useMemo(
+    () =>
+      filterAndSortCases(workbench.allCases, {
+        search,
+        stage: filters.stage,
+        service: filters.service,
+        dueSoon: filters.dueSoon,
+        sort: filters.sort,
+      }),
+    [workbench.allCases, search, filters],
+  )
+
+  const displaySections = useMemo(() => buildSectionsFromCases(displayCases), [displayCases])
+
+  const displayStats = useMemo(() => {
+    const ids = new Set(displayCases.map((c) => c.id))
+    const bookingCount = (workbench.upcomingBooked || []).filter((sl) => ids.has(sl.case_id)).length
+    return buildStatsFromCases(displayCases, bookingCount)
+  }, [displayCases, workbench.upcomingBooked])
+
+  const resultCount = displayCases.length
+  const totalCount = workbench.allCases.length
+
+  function clearFilters() {
+    setSearch('')
+    setFilters(DEFAULT_FILTERS)
+  }
 
   if (loading) {
     return (
@@ -96,25 +141,52 @@ export function MyCasesPage() {
 
   return (
     <div className="ic-my-cases">
-      <CasesPageHeader search={search} onSearchChange={setSearch} />
-      <FilterBar view={view} onViewChange={setView} />
+      <CasesPageHeader
+        search={search}
+        onSearchChange={setSearch}
+        resultCount={resultCount}
+        totalCount={totalCount}
+      />
+      <FilterBar
+        view={view}
+        onViewChange={setView}
+        stage={filters.stage}
+        onStageChange={(stage) => setFilters((f) => ({ ...f, stage }))}
+        service={filters.service}
+        onServiceChange={(service) => setFilters((f) => ({ ...f, service }))}
+        serviceOptions={serviceOptions}
+        dueSoon={filters.dueSoon}
+        onDueSoonChange={(dueSoon) => setFilters((f) => ({ ...f, dueSoon }))}
+        sort={filters.sort}
+        onSortChange={(sort) => setFilters((f) => ({ ...f, sort }))}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={clearFilters}
+      />
 
       {error ? (
         <p style={{ color: '#b91c1c', fontSize: '0.875rem', marginBottom: 16 }}>{error}</p>
       ) : null}
 
+      <UpcomingSessionsPanel items={scheduleItems} loading={loading} />
+
       <section className="ic-stats" aria-label="Case summary">
-        {workbench.stats.map((s) => (
+        {displayStats.map((s) => (
           <StatCard key={s.id} label={s.label} value={s.value} variant={s.variant} />
         ))}
       </section>
 
+      {hasActiveFilters && resultCount < totalCount ? (
+        <p className="ic-results-hint" role="status">
+          Showing {resultCount} of {totalCount} cases
+        </p>
+      ) : null}
+
       {view === 'grid' ? (
         <div className="ic-board">
-          {filteredSections.every((s) => s.cases.length === 0) ? (
-            <p style={{ color: '#9ca3af' }}>No assigned cases match your search.</p>
+          {resultCount === 0 ? (
+            <p className="ic-empty-hint">No cases match your search or filters.</p>
           ) : (
-            filteredSections.map(
+            displaySections.map(
               (sec) =>
                 sec.cases.length > 0 && (
                   <section key={sec.id} className="ic-board__column">
@@ -146,17 +218,25 @@ export function MyCasesPage() {
                 </tr>
               </thead>
               <tbody>
-                {tableRows.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <Link to={`/therapist/cases/${r.id}`}>{r.caseId}</Link>
+                {displayCases.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="ic-table-empty">
+                      No cases match your search or filters.
                     </td>
-                    <td>{r.child}</td>
-                    <td>{r.service}</td>
-                    <td>{r.stage}</td>
-                    <td>{r.next}</td>
                   </tr>
-                ))}
+                ) : (
+                  displayCases.map((c) => (
+                    <tr key={c.id}>
+                      <td>
+                        <Link to={`/therapist/cases/${c.id}`}>{c.caseId}</Link>
+                      </td>
+                      <td>{c.child}</td>
+                      <td>{c.service}</td>
+                      <td>{c.stage}</td>
+                      <td>{c.nextDue}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

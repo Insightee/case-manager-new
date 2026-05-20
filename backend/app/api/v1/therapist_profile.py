@@ -13,7 +13,13 @@ from app.schemas.therapist_profile import (
     TherapistProfileRead,
     TherapistProfileUpdate,
 )
+from app.schemas.therapist_review import (
+    TherapistReviewSummary,
+    TherapistReviewsResponse,
+    TherapistSessionReviewRead,
+)
 from app.services import therapist_profile_service as svc
+from app.services import therapist_review_service as review_svc
 
 router = APIRouter(prefix="/therapist", tags=["therapist-profile"])
 
@@ -50,6 +56,17 @@ def save_my_profile(
     db.commit()
     db.refresh(profile)
     return TherapistProfileRead(**svc.profile_to_dict(profile, user))
+
+
+@router.get("/reviews", response_model=TherapistReviewsResponse)
+def list_my_reviews(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_therapist(user)
+    rows = review_svc.list_therapist_reviews(db, user.id)
+    summary = review_svc.review_summary(db, user.id)
+    return TherapistReviewsResponse(
+        summary=TherapistReviewSummary(**summary),
+        reviews=[TherapistSessionReviewRead(**r) for r in rows],
+    )
 
 
 @router.post("/profile/submit", response_model=TherapistProfileRead)

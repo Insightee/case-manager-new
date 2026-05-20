@@ -19,5 +19,5 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     entity_type: Mapped[Optional[str ]] = mapped_column(String(64))
     entity_id: Mapped[Optional[int ]] = mapped_column(Integer)
-    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
