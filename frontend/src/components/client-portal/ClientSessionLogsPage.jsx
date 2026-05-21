@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import './parent-session-updates.css'
 
@@ -21,21 +22,38 @@ function StarRating({ value, onChange, disabled }) {
   )
 }
 
-function SessionCard({ log, onSaved }) {
+function formatSubmittedAt(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  } catch {
+    return iso
+  }
+}
+
+function SessionCard({ log, onSaved, onDispute }) {
+  const hasSubmitted = !!(log.parent_feedback_at && (log.parent_session_rating || log.parent_feedback))
+  const [editing, setEditing] = useState(!hasSubmitted)
   const [rating, setRating] = useState(log.parent_session_rating || 0)
   const [feedback, setFeedback] = useState(log.parent_feedback || '')
   const [sharePublicly, setSharePublicly] = useState(!!log.parent_feedback_public)
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [localLog, setLocalLog] = useState(log)
+
+  useEffect(() => {
+    setLocalLog(log)
+    if (log.parent_feedback_at && (log.parent_session_rating || log.parent_feedback)) {
+      setEditing(false)
+    }
+  }, [log])
 
   async function saveFeedback() {
     if (!rating && !feedback.trim()) return
     setSaving(true)
     setError('')
-    setSaved(false)
     try {
-      await apiFetch(`/api/v1/parent/session-logs/${log.id}/feedback`, {
+      const updated = await apiFetch(`/api/v1/parent/session-logs/${localLog.id}/feedback`, {
         method: 'PATCH',
         body: JSON.stringify({
           rating: rating || undefined,
@@ -43,8 +61,9 @@ function SessionCard({ log, onSaved }) {
           share_publicly: sharePublicly,
         }),
       })
-      setSaved(true)
-      onSaved?.()
+      setLocalLog((prev) => ({ ...prev, ...updated }))
+      setEditing(false)
+      onSaved?.(updated)
     } catch (err) {
       setError(err.message || 'Could not save feedback')
     } finally {
@@ -52,8 +71,8 @@ function SessionCard({ log, onSaved }) {
     }
   }
 
-  const dateLabel = log.scheduled_date
-    ? new Date(log.scheduled_date).toLocaleDateString(undefined, {
+  const dateLabel = localLog.scheduled_date
+    ? new Date(localLog.scheduled_date).toLocaleDateString(undefined, {
         weekday: 'short',
         day: 'numeric',
         month: 'short',
@@ -61,74 +80,106 @@ function SessionCard({ log, onSaved }) {
       })
     : ''
 
+  const showClosed = hasSubmitted || (localLog.parent_feedback_at && !editing)
+
   return (
     <article className="session-card">
       <header className="session-card__head">
         <div>
-          <h3 className="session-card__title">{log.child_name || log.case_code}</h3>
+          <h3 className="session-card__title">{localLog.child_name || localLog.case_code}</h3>
           <p className="session-card__meta">
             {dateLabel}
-            {log.therapist_name ? ` · ${log.therapist_name}` : ''}
-            {log.start_time && log.end_time ? ` · ${log.start_time}–${log.end_time}` : ''}
+            {localLog.therapist_name ? ` · Therapist: ${localLog.therapist_name}` : ''}
+            {localLog.start_time && localLog.end_time ? ` · ${localLog.start_time}–${localLog.end_time}` : ''}
           </p>
         </div>
-        <span className="session-card__badge">{log.attendance_status}</span>
+        <span className="session-card__badge">{localLog.attendance_status}</span>
       </header>
 
-      {log.activities_done ? (
+      {localLog.activities_done ? (
         <p className="session-card__block">
-          <strong>Activities:</strong> {log.activities_done}
+          <strong>Activities:</strong> {localLog.activities_done}
         </p>
       ) : null}
-      {log.goals_addressed ? (
+      {localLog.goals_addressed ? (
         <p className="session-card__block">
-          <strong>Goals:</strong> {log.goals_addressed}
+          <strong>Goals:</strong> {localLog.goals_addressed}
         </p>
       ) : null}
-      {log.follow_ups ? (
+      {localLog.follow_ups ? (
         <p className="session-card__block">
-          <strong>Follow-ups:</strong> {log.follow_ups}
+          <strong>Follow-ups:</strong> {localLog.follow_ups}
         </p>
       ) : null}
-      {log.parent_notes ? (
+      {localLog.parent_notes ? (
         <div className="session-card__therapist-note">
           <strong>From your therapist</strong>
-          <p style={{ margin: '6px 0 0' }}>{log.parent_notes}</p>
+          <p style={{ margin: '6px 0 0' }}>{localLog.parent_notes}</p>
         </div>
       ) : null}
 
-      <div className="session-card__feedback">
-        <strong style={{ fontSize: '0.875rem' }}>Rate this session</strong>
-        <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 8px' }}>
-          Give a 1–5 star rating and optional review. Your therapist sees this on their profile; you can choose to
-          share it publicly later.
-        </p>
-        <StarRating value={rating} onChange={setRating} disabled={saving} />
-        <textarea
-          className="session-card__textarea"
-          placeholder="Your review (optional)"
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-          disabled={saving}
-        />
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, fontSize: '0.8rem', color: '#475569' }}>
-          <input
-            type="checkbox"
-            checked={sharePublicly}
-            onChange={(e) => setSharePublicly(e.target.checked)}
+      {showClosed && !editing ? (
+        <div className="session-card__feedback session-card__feedback--closed">
+          <strong style={{ fontSize: '0.875rem' }}>Your feedback</strong>
+          <div style={{ marginTop: 8 }}>
+            <StarRating value={localLog.parent_session_rating || 0} onChange={() => {}} disabled />
+          </div>
+          {localLog.parent_feedback ? (
+            <p style={{ fontSize: '0.85rem', color: '#475569', margin: '8px 0' }}>{localLog.parent_feedback}</p>
+          ) : null}
+          <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>
+            Submitted {formatSubmittedAt(localLog.parent_feedback_at)}
+            {localLog.parent_feedback_public ? ' · Shared on therapist profile' : ''}
+          </p>
+          <button type="button" className="session-card__edit-link" onClick={() => setEditing(true)}>
+            Edit feedback
+          </button>
+        </div>
+      ) : (
+        <div className="session-card__feedback">
+          <strong style={{ fontSize: '0.875rem' }}>Rate this session</strong>
+          <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 8px' }}>
+            Give a 1–5 star rating and optional review. Your therapist sees this on their profile.
+          </p>
+          <StarRating value={rating} onChange={setRating} disabled={saving} />
+          <textarea
+            className="session-card__textarea"
+            placeholder="Your review (optional)"
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
             disabled={saving}
-            style={{ marginTop: 3 }}
           />
-          <span>
-            Share this review on the therapist&apos;s public profile (when available). Your child&apos;s name is shown
-            only to the therapist and admin.
-          </span>
-        </label>
-        {error ? <p style={{ color: '#b91c1c', fontSize: '0.8rem' }}>{error}</p> : null}
-        {saved ? <p className="session-card__saved">Thank you — feedback saved.</p> : null}
-        <button type="button" className="session-card__save" onClick={saveFeedback} disabled={saving}>
-          {saving ? 'Saving…' : log.parent_feedback_at ? 'Update feedback' : 'Save feedback'}
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, fontSize: '0.8rem', color: '#475569' }}>
+            <input
+              type="checkbox"
+              checked={sharePublicly}
+              onChange={(e) => setSharePublicly(e.target.checked)}
+              disabled={saving}
+              style={{ marginTop: 3 }}
+            />
+            <span>Share this review on the therapist&apos;s public profile when available.</span>
+          </label>
+          {error ? <p style={{ color: '#b91c1c', fontSize: '0.8rem' }}>{error}</p> : null}
+          <div className="session-card__feedback-actions">
+            <button type="button" className="session-card__save" onClick={saveFeedback} disabled={saving}>
+              {saving ? 'Saving…' : 'Save feedback'}
+            </button>
+            {hasSubmitted ? (
+              <button type="button" className="session-card__ghost" onClick={() => setEditing(false)} disabled={saving}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      <div className="session-card__footer-actions">
+        <button type="button" className="session-card__dispute" onClick={() => onDispute(localLog)}>
+          Raise a dispute
         </button>
+        <Link to="/parent/book" className="session-card__link-schedule">
+          Session schedule →
+        </Link>
       </div>
     </article>
   )
@@ -150,17 +201,15 @@ function CmMeetingCard({ meeting }) {
         <div>
           <h3 className="session-card__title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {meeting.child_name || 'Case manager meeting'}
-            <span style={{ fontSize: '0.7rem', fontWeight: 700, background: '#ede9fe', color: '#4c1d95', borderRadius: 99, padding: '1px 8px', border: '1px solid #c4b5fd' }}>
-              CM Meeting
-            </span>
+            <span className="session-card__cm-pill">CM Meeting</span>
           </h3>
           <p className="session-card__meta">
             {dateLabel}
             {meeting.scheduled_time ? ` · ${meeting.scheduled_time}` : ''}
-            {meeting.case_manager_name ? ` · ${meeting.case_manager_name}` : ''}
+            {meeting.case_manager_name ? ` · Case manager: ${meeting.case_manager_name}` : ''}
           </p>
         </div>
-        <span className="session-card__badge" style={{ background: '#ede9fe', color: '#6d28d9' }}>{meeting.status}</span>
+        <span className="session-card__badge session-card__badge--cm">{meeting.status}</span>
       </header>
 
       {meeting.notes_concerns ? (
@@ -184,7 +233,9 @@ function CmMeetingCard({ meeting }) {
         </p>
       ) : null}
       {!meeting.notes_concerns && !meeting.notes_follow_up && !meeting.notes_action && !meeting.notes_other ? (
-        <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '8px 0 0' }}>Meeting notes will appear here after the meeting is completed.</p>
+        <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '8px 0 0' }}>
+          Meeting notes will appear here after your case manager completes the meeting.
+        </p>
       ) : null}
     </article>
   )
@@ -205,12 +256,22 @@ function buildMonthOptions() {
   return opts
 }
 
+const ATTENDANCE_FILTERS = [
+  { value: '', label: 'All attendance' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'PARTIAL', label: 'Partial' },
+  { value: 'NO_SHOW', label: 'No show' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+]
+
 export function ClientSessionLogsPage({ cases = [] }) {
+  const navigate = useNavigate()
   const monthOptions = useMemo(() => buildMonthOptions(), [])
   const [selectedMonth, setSelectedMonth] = useState(monthOptions[0].value)
   const [logs, setLogs] = useState([])
   const [meetings, setMeetings] = useState([])
   const [caseId, setCaseId] = useState('')
+  const [attendanceFilter, setAttendanceFilter] = useState('')
   const [loading, setLoading] = useState(true)
 
   const selectedMeta = useMemo(
@@ -222,12 +283,16 @@ export function ClientSessionLogsPage({ cases = [] }) {
     setLoading(true)
     const caseQ = caseId ? `&case_id=${caseId}` : ''
     Promise.all([
-      apiFetch(`/api/v1/parent/session-logs?year=${selectedMeta.year}&month=${selectedMeta.month}${caseQ}`).catch(() => []),
+      apiFetch(`/api/v1/parent/session-logs?year=${selectedMeta.year}&month=${selectedMeta.month}${caseQ}`).catch(
+        () => [],
+      ),
       apiFetch(`/api/v1/parent/cm-meetings?year=${selectedMeta.year}&month=${selectedMeta.month}`).catch(() => []),
-    ]).then(([logsData, meetingsData]) => {
-      setLogs(logsData || [])
-      setMeetings(meetingsData || [])
-    }).finally(() => setLoading(false))
+    ])
+      .then(([logsData, meetingsData]) => {
+        setLogs(logsData || [])
+        setMeetings(meetingsData || [])
+      })
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => {
@@ -242,19 +307,51 @@ export function ClientSessionLogsPage({ cases = [] }) {
     return [...byChild.values()]
   }, [cases])
 
+  const filteredLogs = useMemo(() => {
+    if (!attendanceFilter) return logs
+    return logs.filter((l) => (l.attendance_status || '').toUpperCase() === attendanceFilter)
+  }, [logs, attendanceFilter])
+
+  function handleDispute(log) {
+    const dateLabel = log.scheduled_date
+      ? new Date(log.scheduled_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+      : 'session'
+    navigate('/parent/support?tab=support', {
+      state: {
+        topic: 'THERAPIST',
+        case_id: log.case_id,
+        subject: `Session dispute — ${dateLabel} (${log.child_name || log.case_code})`,
+        message: [
+          `I would like to dispute or raise a concern about the following session.`,
+          ``,
+          `Session log ID: ${log.id}`,
+          `Date: ${log.scheduled_date || '—'}`,
+          `Therapist: ${log.therapist_name || '—'}`,
+          `Attendance: ${log.attendance_status || '—'}`,
+          ``,
+          `Please describe your concern below:`,
+        ].join('\n'),
+      },
+    })
+  }
+
   const monthLabel = selectedMeta.label
 
   return (
     <div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
+      <p className="session-updates__intro">
+        Approved session notes from your therapist and case manager meeting summaries. Your case manager is assigned by
+        the clinic on your child&apos;s case; your therapist is assigned separately for visits.
+      </p>
+
+      <div className="session-updates__filters">
         {caseOptions.length > 0 ? (
-          <label style={{ fontSize: '0.875rem', fontWeight: 500, color: '#475569' }}>
+          <label className="session-updates__filter-label">
             Child
             <select
               className="session-updates__select"
               value={caseId}
               onChange={(e) => setCaseId(e.target.value)}
-              style={{ display: 'block', marginTop: 4 }}
             >
               <option value="">All children</option>
               {caseOptions.map((c) => (
@@ -266,13 +363,12 @@ export function ClientSessionLogsPage({ cases = [] }) {
           </label>
         ) : null}
 
-        <label style={{ fontSize: '0.875rem', fontWeight: 500, color: '#475569' }}>
+        <label className="session-updates__filter-label">
           Month
           <select
             className="session-updates__select"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            style={{ display: 'block', marginTop: 4 }}
           >
             {monthOptions.map((o) => (
               <option key={o.value} value={o.value}>
@@ -281,26 +377,45 @@ export function ClientSessionLogsPage({ cases = [] }) {
             ))}
           </select>
         </label>
+
+        <label className="session-updates__filter-label">
+          Attendance
+          <select
+            className="session-updates__select"
+            value={attendanceFilter}
+            onChange={(e) => setAttendanceFilter(e.target.value)}
+          >
+            {ATTENDANCE_FILTERS.map((f) => (
+              <option key={f.value || 'all'} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <Link to="/parent/book" className="session-updates__schedule-link">
+          Session schedule →
+        </Link>
       </div>
 
       <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e293b', marginBottom: 12 }}>{monthLabel}</h2>
 
       {loading ? (
         <p style={{ color: '#94a3b8' }}>Loading session updates…</p>
-      ) : logs.length === 0 && meetings.length === 0 ? (
+      ) : filteredLogs.length === 0 && meetings.length === 0 ? (
         <p style={{ color: '#94a3b8' }}>
           No session updates for {monthLabel}. Your therapist will share approved updates after each visit.
         </p>
       ) : (
         (() => {
           const combined = [
-            ...logs.map((l) => ({ type: 'log', date: l.scheduled_date, data: l })),
+            ...filteredLogs.map((l) => ({ type: 'log', date: l.scheduled_date, data: l })),
             ...meetings.map((m) => ({ type: 'meeting', date: m.scheduled_date, data: m })),
           ].sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0))
 
           return combined.map((item) =>
             item.type === 'log' ? (
-              <SessionCard key={`log-${item.data.id}`} log={item.data} onSaved={load} />
+              <SessionCard key={`log-${item.data.id}`} log={item.data} onSaved={load} onDispute={handleDispute} />
             ) : (
               <CmMeetingCard key={`cm-${item.data.id}`} meeting={item.data} />
             ),

@@ -57,6 +57,7 @@ def _serialize_monthly_list_item(report: MonthlyReport, case: Case | None) -> di
         "status": _parent_status_label(report),
         "parentReviewStatus": report.parent_review_status,
         "summaryPreview": (report.summary or "")[:120],
+        "category": report.category,
     }
 
 
@@ -143,6 +144,10 @@ def get_monthly_detail(db: Session, user: User, report_id: int) -> dict:
         "childName": case.child.full_name if case.child else "",
         "month": report.month,
         "summary": report.summary,
+        "bodyHtml": report.body_html,
+        "planNextMonth": report.plan_next_month,
+        "category": report.category,
+        "downloadPath": f"/api/v1/reports/monthly/{report.id}/download",
         "status": _parent_status_label(report),
         "parentReviewStatus": report.parent_review_status,
         "parentFeedback": report.parent_feedback,

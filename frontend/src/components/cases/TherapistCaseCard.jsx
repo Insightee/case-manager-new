@@ -62,6 +62,23 @@ export function TherapistCaseCard({ data }) {
       <StatusBadge variant={data.badgeVariant}>{data.stage}</StatusBadge>
       <h3 className="ic-card__name">{data.child}</h3>
       <p className="ic-card__service">{data.service}</p>
+      {data.serviceAddress?.formatted ? (
+        <div className="ic-card__address">
+          <p className="ic-card__address-label">Visit address</p>
+          <p className="ic-card__address-text">{data.serviceAddress.formatted}</p>
+          {data.mapsUrl ? (
+            <a
+              href={data.mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ic-card__address-maps"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Open in Maps
+            </a>
+          ) : null}
+        </div>
+      ) : null}
       {bookingWhen ? (
         <Link to={bookingTo} className="ic-card__booking">
           <span className="ic-card__booking-label">Next visit</span>

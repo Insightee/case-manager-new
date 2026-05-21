@@ -1,24 +1,7 @@
 import { useEffect, useState } from 'react'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
-
-/**
- * Shared incident thread panel.
- *
- * Props:
- *   incident       — full incident object with .messages[]
- *   onUpdated(i)   — called with refreshed incident after any mutation
- *   apiBase        — "/api/v1/incidents" (admin/therapist) or "/api/v1/parent/incidents" (client)
- *   canManage      — whether this viewer can change status / resolve
- *   statusFlow     — ['OPEN','INVESTIGATING','RESOLVED','CLOSED']
- */
-
-const STATUS_META = {
-  OPEN: { label: 'Open', bg: '#fef3c7', color: '#b45309' },
-  INVESTIGATING: { label: 'Investigating', bg: '#dbeafe', color: '#1d4ed8' },
-  RESOLVED: { label: 'Resolved', bg: '#d1fae5', color: '#047857' },
-  CLOSED: { label: 'Closed', bg: '#f1f5f9', color: '#64748b' },
-}
+import { INCIDENT_STATUS_META, PRIORITY_META } from '../../lib/incidentCatalog.js'
 
 function fmtTime(iso) {
   if (!iso) return ''
@@ -32,7 +15,7 @@ function fmtTime(iso) {
 }
 
 function StatusPill({ status }) {
-  const m = STATUS_META[status] || STATUS_META.OPEN
+  const m = INCIDENT_STATUS_META[status] || INCIDENT_STATUS_META.REPORTED
   return (
     <span
       style={{
@@ -51,7 +34,18 @@ function StatusPill({ status }) {
   )
 }
 
-const STAFF_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER', 'SUPERVISOR'])
+function PriorityPill({ priority }) {
+  const m = PRIORITY_META[priority] || PRIORITY_META.NORMAL
+  return (
+    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: m.bg, color: m.color }}>
+      {m.label}
+    </span>
+  )
+}
+
+const STAFF_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER', 'SUPERVISOR', 'HR'])
+const STATUS_OPTIONS = ['REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
+const TAG_ROLES = ['CASE_MANAGER', 'HR', 'ADMIN']
 
 export function IncidentDetailPanel({
   incident,
@@ -61,10 +55,21 @@ export function IncidentDetailPanel({
 }) {
   const { user } = useAuth()
   const [reply, setReply] = useState('')
-  const [pendingStatus, setPendingStatus] = useState(incident?.status || 'OPEN')
+  const [pendingStatus, setPendingStatus] = useState(incident?.status || 'REPORTED')
+  const [pendingPriority, setPendingPriority] = useState(incident?.priority || 'NORMAL')
+  const [actionNote, setActionNote] = useState(incident?.action_taken_note || '')
+  const [taggedRoles, setTaggedRoles] = useState(incident?.tagged_roles || [])
   const [staffUsers, setStaffUsers] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [uploadFiles, setUploadFiles] = useState([])
+
+  useEffect(() => {
+    setPendingStatus(incident?.status || 'REPORTED')
+    setPendingPriority(incident?.priority || 'NORMAL')
+    setActionNote(incident?.action_taken_note || '')
+    setTaggedRoles(incident?.tagged_roles || [])
+  }, [incident?.id, incident?.status])
 
   useEffect(() => {
     if (!canManage) return
@@ -80,6 +85,7 @@ export function IncidentDetailPanel({
   if (!incident) return null
 
   const isClosed = incident.status === 'CLOSED'
+  const patchBase = canManage ? '/api/v1/incidents' : apiBase
 
   async function refresh() {
     const fresh = await apiFetch(`${apiBase}/${incident.id}`)
@@ -104,36 +110,13 @@ export function IncidentDetailPanel({
     }
   }
 
-  async function patchAssign(assigneeId) {
+  async function patchIncident(body) {
     setBusy(true)
     setError('')
     try {
-      await apiFetch(`/api/v1/incidents/${incident.id}`, {
+      await apiFetch(`${patchBase}/${incident.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ assigned_to_user_id: assigneeId }),
-      })
-      await refresh()
-    } catch (err) {
-      setError(err.message || 'Could not update assignee')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function sendAndUpdateStatus() {
-    setBusy(true)
-    setError('')
-    try {
-      if (reply.trim()) {
-        await apiFetch(`${apiBase}/${incident.id}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({ body: reply.trim() }),
-        })
-        setReply('')
-      }
-      await apiFetch(`/api/v1/incidents/${incident.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: pendingStatus }),
+        body: JSON.stringify(body),
       })
       await refresh()
     } catch (err) {
@@ -143,58 +126,125 @@ export function IncidentDetailPanel({
     }
   }
 
+  async function uploadAttachments() {
+    if (!uploadFiles.length) return
+    setBusy(true)
+    setError('')
+    try {
+      const fd = new FormData()
+      uploadFiles.forEach((f) => fd.append('files', f))
+      await apiUpload(`${apiBase}/${incident.id}/attachments`, fd)
+      setUploadFiles([])
+      await refresh()
+    } catch (err) {
+      setError(err.message || 'Could not upload files')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function toggleTag(role) {
+    const next = taggedRoles.includes(role)
+      ? taggedRoles.filter((r) => r !== role)
+      : [...taggedRoles, role]
+    setTaggedRoles(next)
+    patchIncident({ tagged_roles: next })
+  }
+
   return (
     <div className="ticket-detail-panel">
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-        <StatusPill status={incident.status} />
-        {incident.reporter_name ? (
-          <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Filed by {incident.reporter_name}</span>
-        ) : null}
-        {canManage ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <select
-              value={incident.assigned_to_user_id ?? ''}
-              onChange={(e) => patchAssign(e.target.value ? Number(e.target.value) : null)}
-              disabled={busy}
-              style={{ fontSize: '0.78rem', padding: '4px 8px', borderRadius: 8, border: '1px solid #d1d5db' }}
-            >
-              <option value="">Unassigned</option>
-              {staffUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name}
-                </option>
-              ))}
-            </select>
-            {user?.id && incident.assigned_to_user_id !== user.id ? (
-              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={busy} onClick={() => patchAssign(user.id)}>
-                Take
-              </button>
-            ) : null}
-          </div>
-        ) : incident.assigned_to_name ? (
-          <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>· Assigned to {incident.assigned_to_name}</span>
-        ) : null}
-        {incident.case_code ? (
-          <span
-            style={{
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              background: '#eef2ff',
-              color: '#3730a3',
-              border: '1px solid #c7d2fe',
-              borderRadius: 6,
-              padding: '2px 8px',
-              fontFamily: 'monospace',
-            }}
-          >
-            {incident.case_code}
-            {incident.child_name ? ` · ${incident.child_name}` : ''}
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        {incident.ticket_code ? (
+          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.85rem', color: '#0f172a' }}>
+            {incident.ticket_code}
           </span>
         ) : null}
+        <StatusPill status={incident.status} />
+        {incident.priority ? <PriorityPill priority={incident.priority} /> : null}
       </div>
 
-      {/* Message thread */}
+      <p style={{ margin: '0 0 10px', fontWeight: 600, color: '#0f172a' }}>{incident.title}</p>
+
+      <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: 12, display: 'grid', gap: 4 }}>
+        {incident.child_name ? <span>Client: {incident.child_name}</span> : null}
+        {incident.primary_category ? (
+          <span>
+            Category: {incident.primary_category}
+            {incident.subcategory ? ` · ${incident.subcategory}` : ''}
+          </span>
+        ) : null}
+        {incident.incident_at ? <span>When: {new Date(incident.incident_at).toLocaleString()}</span> : null}
+        {incident.location ? <span>Location: {incident.location}</span> : null}
+        {incident.child_safe ? <span>Child safe: {incident.child_safe}</span> : null}
+        {incident.parent_informed ? <span>Parent informed: {incident.parent_informed}</span> : null}
+        {incident.immediate_action ? <span>Immediate action: {incident.immediate_action}</span> : null}
+        {incident.primary_owner_role ? <span>Owner role: {incident.primary_owner_role}</span> : null}
+        {incident.assigned_to_name ? <span>Assigned: {incident.assigned_to_name}</span> : null}
+      </div>
+
+      {canManage ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+          <select
+            value={incident.assigned_to_user_id ?? ''}
+            onChange={(e) => patchIncident({ assigned_to_user_id: e.target.value ? Number(e.target.value) : null })}
+            disabled={busy}
+            style={{ fontSize: '0.78rem', padding: '4px 8px', borderRadius: 8, border: '1px solid #d1d5db' }}
+          >
+            <option value="">Unassigned</option>
+            {staffUsers.map((u) => (
+              <option key={u.id} value={u.id}>{u.full_name}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Tag:</span>
+          {TAG_ROLES.map((r) => (
+            <button
+              key={r}
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              style={{
+                background: taggedRoles.includes(r) ? '#eef2ff' : undefined,
+                borderColor: taggedRoles.includes(r) ? '#6366f1' : undefined,
+              }}
+              disabled={busy}
+              onClick={() => toggleTag(r)}
+            >
+              {r.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {(incident.attachments || []).length > 0 ? (
+        <div style={{ marginBottom: 12 }}>
+          <p style={{ fontSize: '0.75rem', fontWeight: 600, margin: '0 0 6px' }}>Attachments</p>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.8rem' }}>
+            {incident.attachments.map((a) => (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  className="ic-case-sessions__link-btn"
+                  onClick={() => apiDownload(`${apiBase}/attachments/${a.id}/download`, a.file_name)}
+                >
+                  {a.file_name}
+                </button>
+                {a.note ? <span style={{ color: '#94a3b8' }}> — {a.note}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {!isClosed && !canManage ? (
+        <div style={{ marginBottom: 12 }}>
+          <input type="file" multiple onChange={(e) => setUploadFiles(Array.from(e.target.files || []))} />
+          {uploadFiles.length > 0 ? (
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={busy} onClick={uploadAttachments} style={{ marginTop: 6 }}>
+              Upload {uploadFiles.length} file(s)
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="ticket-thread">
         {(incident.messages || []).map((m) => (
           <div
@@ -207,94 +257,79 @@ export function IncidentDetailPanel({
             <div className="ticket-bubble__body">{m.body}</div>
           </div>
         ))}
-        {incident.messages?.length === 0 ? (
-          <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>No messages yet.</p>
-        ) : null}
       </div>
 
-      {/* Resolved hint */}
-      {incident.status === 'RESOLVED' && !canManage ? (
-        <div
-          style={{
-            background: '#f0fdf4',
-            border: '1px solid #86efac',
-            borderRadius: 10,
-            padding: '10px 14px',
-            fontSize: '0.8rem',
-            color: '#166534',
-            marginBottom: 12,
-          }}
-        >
-          <strong>Marked as resolved by the team.</strong> Reply below if you have further concerns.
-        </div>
+      {incident.status === 'ACTION_TAKEN' && !canManage ? (
+        <p style={{ fontSize: '0.8rem', color: '#166534', marginBottom: 10 }}>
+          Action has been taken. Reply if you need follow-up before this is closed.
+        </p>
       ) : null}
 
-      {/* Compose area */}
       {!isClosed ? (
         <div className="ticket-compose">
           <textarea
             className="ticket-compose__input"
-            placeholder="Add a message or update…"
+            placeholder="Add a message…"
             value={reply}
             onChange={(e) => setReply(e.target.value)}
             rows={3}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply()
-            }}
           />
-          {error ? (
-            <p style={{ color: '#b91c1c', fontSize: '0.78rem', margin: '6px 0 0' }}>{error}</p>
+          {canManage ? (
+            <label style={{ display: 'block', marginTop: 8, fontSize: '0.78rem' }}>
+              Action taken note {pendingStatus === 'CLOSED' ? '(required to close)' : ''}
+              <textarea
+                rows={2}
+                value={actionNote}
+                onChange={(e) => setActionNote(e.target.value)}
+                style={{ width: '100%', marginTop: 4 }}
+              />
+            </label>
           ) : null}
-
-          <div className="ticket-compose__actions">
-            {/* Send reply button — always available for non-closed */}
-            <button
-              type="button"
-              disabled={busy || !reply.trim()}
-              onClick={sendReply}
-              className="ticket-compose__send"
-            >
-              {busy ? 'Sending…' : 'Send reply'}
+          {error ? <p style={{ color: '#b91c1c', fontSize: '0.78rem' }}>{error}</p> : null}
+          <div className="ticket-compose__actions" style={{ flexWrap: 'wrap' }}>
+            <button type="button" disabled={busy || !reply.trim()} onClick={sendReply} className="ticket-compose__send">
+              Send reply
             </button>
-
-            {/* Admin/supervisor: status selector + update button */}
             {canManage ? (
               <>
-                <select
-                  value={pendingStatus}
-                  onChange={(e) => setPendingStatus(e.target.value)}
-                  style={{
-                    padding: '7px 10px',
-                    borderRadius: 8,
-                    border: '1px solid #d1d5db',
-                    fontSize: '0.8rem',
-                    background: '#fff',
-                  }}
-                >
-                  {['OPEN', 'INVESTIGATING', 'RESOLVED', 'CLOSED'].map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
+                <select value={pendingPriority} onChange={(e) => setPendingPriority(e.target.value)} style={{ fontSize: '0.8rem' }}>
+                  <option value="NORMAL">Normal</option>
+                  <option value="URGENT">Urgent</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+                <select value={pendingStatus} onChange={(e) => setPendingStatus(e.target.value)} style={{ fontSize: '0.8rem' }}>
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{INCIDENT_STATUS_META[s]?.label || s}</option>
                   ))}
                 </select>
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={sendAndUpdateStatus}
+                  onClick={() =>
+                    patchIncident({
+                      status: pendingStatus,
+                      priority: pendingPriority,
+                      action_taken_note: actionNote || undefined,
+                    })
+                  }
                   className="ticket-compose__resolve"
                 >
-                  {reply.trim() ? 'Send & Update status' : 'Update status'}
+                  Update status
                 </button>
+                {!isClosed ? (
+                  <>
+                    <input type="file" multiple onChange={(e) => setUploadFiles(Array.from(e.target.files || []))} />
+                    {uploadFiles.length > 0 ? (
+                      <button type="button" disabled={busy} onClick={uploadAttachments}>Upload files</button>
+                    ) : null}
+                  </>
+                ) : null}
               </>
             ) : null}
           </div>
         </div>
       ) : (
-        <div className="ticket-compose">
-          <p style={{ fontSize: '0.78rem', color: '#94a3b8', padding: '4px 0' }}>
-            This incident is closed.
-          </p>
-        </div>
+        <p style={{ fontSize: '0.78rem', color: '#94a3b8' }}>This incident is closed.</p>
       )}
     </div>
   )

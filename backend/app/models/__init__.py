@@ -23,7 +23,8 @@ from app.models.notification import Notification
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.parent_billing import ParentBillingStatement, ParentBillingStatus
 from app.models.payout import Payout
-from app.models.report import MonthlyReport, ObservationReport, ParentReviewStatus
+from app.models.report import MonthlyReport, ObservationReport, ParentReviewStatus, ReportCategory
+from app.models.report_image import ReportImage
 from app.models.review import Review
 from app.models.role import Permission, Role, role_permissions, user_roles
 from app.models.session import Session as TherapySession
@@ -66,6 +67,8 @@ __all__ = [
     "DailyLog",
     "ObservationReport",
     "MonthlyReport",
+    "ReportCategory",
+    "ReportImage",
     "ParentReviewStatus",
     "DocumentComment",
     "Review",

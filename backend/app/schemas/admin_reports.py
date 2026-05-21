@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,7 @@ class AdminReportListItem(BaseModel):
     parent_review_status: Optional[str] = None
     parent_feedback: Optional[str] = None
     content_preview: Optional[str] = None
+    category: Optional[str] = None
     updated_at: Optional[datetime] = None
 
 
@@ -48,6 +49,11 @@ class AdminReportDetail(BaseModel):
     status: str
     summary: Optional[str] = None
     content: Optional[str] = None
+    body_html: Optional[str] = None
+    plan_next_month: Optional[str] = None
+    category: Optional[str] = None
+    sub_category: Optional[str] = None
+    report_date: Optional[date] = None
     reviewer_comment: Optional[str] = None
     visibility_status: Optional[str] = None
     parent_review_status: Optional[str] = None

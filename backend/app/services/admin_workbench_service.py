@@ -12,7 +12,7 @@ from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, M
 from app.models.child import Child
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.session import Session as TherapySession
-from app.models.incident import Incident, IncidentStatus
+from app.models.incident import Incident, OPEN_INCIDENT_STATUSES
 from app.models.report import MonthlyReport, ObservationReport, ParentReviewStatus, ReportStatus
 from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.slot import SlotStatus, TherapistSlot
@@ -106,7 +106,7 @@ def build_workbench_summary(db: Session, user: User) -> dict:
             select(Incident, Case, Child)
             .outerjoin(Case, Incident.case_id == Case.id)
             .outerjoin(Child, Case.child_id == Child.id)
-            .where(Incident.status.in_([IncidentStatus.OPEN, IncidentStatus.INVESTIGATING]))
+            .where(Incident.status.in_(list(OPEN_INCIDENT_STATUSES)))
             .order_by(Incident.created_at.desc())
             .limit(8)
         )

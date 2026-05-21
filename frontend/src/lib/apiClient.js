@@ -40,9 +40,10 @@ export async function apiFetch(path, options = {}) {
   try {
     res = await fetch(`${API_URL}${path}`, { ...options, headers })
   } catch {
-    throw new Error(
-      'Cannot reach the API. Run the backend (port 8000) and open the UI at http://localhost:5173 — not port 8000.',
-    )
+    const hint = API_URL
+      ? `Cannot reach the API at ${API_URL}. Check that the server is running and CORS allows this site.`
+      : 'Cannot reach the API. For local dev: run the backend on port 8000 and open http://localhost:5173. For Vercel: set VITE_API_URL to your deployed API.'
+    throw new Error(hint)
   }
 
   if (res.status === 401 && !path.includes('/auth/')) {
@@ -73,6 +74,30 @@ export async function apiFetch(path, options = {}) {
   const contentType = res.headers.get('content-type') || ''
   if (contentType.includes('text/csv')) return res.text()
   return res.json()
+}
+
+/** GET binary response with auth (for protected images). */
+export async function apiFetchBlob(path) {
+  const headers = {}
+  const { access } = getTokens()
+  if (access) headers.Authorization = `Bearer ${access}`
+
+  let res = await fetch(`${API_URL}${path}`, { headers })
+  if (res.status === 401 && access) {
+    const newAccess = await refreshAccess()
+    if (newAccess) {
+      headers.Authorization = `Bearer ${newAccess}`
+      res = await fetch(`${API_URL}${path}`, { headers })
+    }
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const detail = err.detail
+    const message =
+      typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join(', ') : res.statusText
+    throw new Error(message || 'Request failed')
+  }
+  return res.blob()
 }
 
 export async function apiUpload(path, formData) {

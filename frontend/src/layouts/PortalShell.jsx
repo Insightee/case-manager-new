@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
-import { avatarSrc } from '../components/shared/AvatarUpload.jsx'
+import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import '../components/shared/notification-bell.css'
 
@@ -50,6 +50,7 @@ const ADMIN_NAV = [
   { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: '👥' },
   { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: '🩺' },
   { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', feature: null, icon: '🗓' },
+  { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: '📅' },
 ]
 
 function NavLinks({ items, portal, className, linkClassName, onNavigate }) {
@@ -162,13 +163,7 @@ export function PortalShell({ portal }) {
             aria-controls="mobile-account-menu"
             onClick={() => setAccountOpen((o) => !o)}
           >
-            {avatarSrc(user) ? (
-              <img src={avatarSrc(user)} alt="" className="app-mobile-topbar__avatar" />
-            ) : (
-              <span className="app-mobile-topbar__avatar app-mobile-topbar__avatar--initial">
-                {user?.full_name?.charAt(0)?.toUpperCase() || '?'}
-              </span>
-            )}
+            <AuthenticatedAvatar user={user} className="app-mobile-topbar__avatar" size={36} />
             <span className="app-mobile-topbar__name">{firstName}</span>
             <span className="app-mobile-topbar__chevron" aria-hidden>
               {accountOpen ? '▲' : '▼'}
@@ -228,13 +223,7 @@ export function PortalShell({ portal }) {
           {/* User identity card — links to profile when one exists */}
           {profilePath ? (
             <NavLink to={profilePath} className="app-sidebar__user-card" title="Go to profile">
-              {avatarSrc(user) ? (
-                <img src={avatarSrc(user)} alt="" className="app-sidebar__user-avatar" />
-              ) : (
-                <span className="app-sidebar__user-avatar app-sidebar__user-avatar--initial">
-                  {user?.full_name?.charAt(0)?.toUpperCase() || '?'}
-                </span>
-              )}
+              <AuthenticatedAvatar user={user} className="app-sidebar__user-avatar" size={40} />
               <div className="app-sidebar__user-info">
                 <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
                 <span className="app-sidebar__user-role">{subtitle}</span>
@@ -243,13 +232,7 @@ export function PortalShell({ portal }) {
             </NavLink>
           ) : (
             <div className="app-sidebar__user-card app-sidebar__user-card--static">
-              {avatarSrc(user) ? (
-                <img src={avatarSrc(user)} alt="" className="app-sidebar__user-avatar" />
-              ) : (
-                <span className="app-sidebar__user-avatar app-sidebar__user-avatar--initial">
-                  {user?.full_name?.charAt(0)?.toUpperCase() || '?'}
-                </span>
-              )}
+              <AuthenticatedAvatar user={user} className="app-sidebar__user-avatar" size={40} />
               <div className="app-sidebar__user-info">
                 <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
                 <span className="app-sidebar__user-role">{subtitle}</span>

@@ -9,7 +9,7 @@ from app.core.module_access import get_allowed_case_product_modules
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.attachment import Attachment
 from app.models.case import Case, CaseStatus
-from app.models.incident import Incident, IncidentStatus
+from app.models.incident import Incident, IncidentStatus, OPEN_INCIDENT_STATUSES
 from app.models.report import MonthlyReport, ReportStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
@@ -166,7 +166,7 @@ def build_pipeline_board(db: Session, user: User) -> dict:
             select(Incident.case_id, func.count())
             .where(
                 Incident.case_id.in_(case_ids),
-                Incident.status.in_([IncidentStatus.OPEN, IncidentStatus.INVESTIGATING]),
+                Incident.status.in_(list(OPEN_INCIDENT_STATUSES)),
             )
             .group_by(Incident.case_id)
         ).all()

@@ -149,6 +149,9 @@
   font-weight: 600;
   color: #0f172a;
   line-height: 1.4;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .notification-bell__dropdown--admin .notification-bell__item-title {
@@ -164,13 +167,12 @@
 }
 
 .notification-bell__item-body {
-  display: block;
+  display: -webkit-box;
   font-size: 0.75rem;
   color: #64748b;
   line-height: 1.45;
-  /* clamp long bodies to 2 lines */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
+  word-break: break-word;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

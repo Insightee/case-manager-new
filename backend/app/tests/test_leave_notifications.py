@@ -193,3 +193,102 @@ def test_reject_keeps_booking_and_notifies_parent():
 
     notes = _parent_notifications(parent)
     assert any(n["title"] == "Leave request not approved" for n in notes)
+
+
+def _staff_notifications(token: str) -> list[dict]:
+    r = client.get("/api/v1/notifications", headers=_headers(token))
+    assert r.status_code == 200
+    return r.json().get("notifications", r.json())
+
+
+def test_hr_notified_on_leave_submit():
+    therapist = _login("therapist@demo.com")
+    hr = _login("hr@demo.com")
+    day = date(2026, 8, 5)
+    leave = client.post(
+        "/api/v1/leave",
+        headers=_headers(therapist),
+        json={
+            "leave_type": "ANNUAL",
+            "start_date": day.isoformat(),
+            "end_date": day.isoformat(),
+            "reason": "Vacation",
+        },
+    )
+    assert leave.status_code == 201
+    leave_id = leave.json()["id"]
+
+    notes = _staff_notifications(hr)
+    assert any(
+        n.get("entity_id") == leave_id and "pending" in n["title"].lower()
+        for n in notes
+    )
+
+
+def test_therapist_notified_on_reject_with_note():
+    therapist = _login("therapist@demo.com")
+    hr = _login("hr@demo.com")
+    th = _headers(therapist)
+    day = date(2026, 8, 12)
+
+    leave = client.post(
+        "/api/v1/leave",
+        headers=th,
+        json={
+            "leave_type": "CASUAL",
+            "start_date": day.isoformat(),
+            "end_date": day.isoformat(),
+        },
+    )
+    assert leave.status_code == 201
+    leave_id = leave.json()["id"]
+
+    review = client.patch(
+        f"/api/v1/leave/{leave_id}",
+        headers=_headers(hr),
+        json={"status": "REJECTED", "review_note": "Coverage required that week"},
+    )
+    assert review.status_code == 200
+
+    notes = _staff_notifications(therapist)
+    reject_notes = [
+        n for n in notes
+        if n.get("entity_id") == leave_id and "not approved" in n["title"].lower()
+    ]
+    assert len(reject_notes) >= 1
+    assert "Coverage required" in reject_notes[0]["body"]
+
+
+def test_leave_summary_and_report():
+    therapist = _login("therapist@demo.com")
+    hr = _login("hr@demo.com")
+    year = 2026
+
+    summary = client.get(
+        f"/api/v1/leave/summary?year={year}",
+        headers=_headers(therapist),
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert "approved_days" in body
+    assert "entries" in body
+
+    report = client.get(
+        f"/api/v1/leave/report?year={year}&granularity=monthly",
+        headers=_headers(hr),
+    )
+    assert report.status_code == 200
+    assert "rows" in report.json()
+
+    csv_res = client.get(
+        f"/api/v1/leave/report?year={year}&granularity=yearly&format=csv",
+        headers=_headers(hr),
+    )
+    assert csv_res.status_code == 200
+    assert "therapist_name" in csv_res.text
+
+    denied = client.get(
+        f"/api/v1/leave/report?year={year}",
+        headers=_headers(therapist),
+    )
+    assert denied.status_code == 403

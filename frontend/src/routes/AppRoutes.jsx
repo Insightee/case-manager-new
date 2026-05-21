@@ -15,6 +15,7 @@ import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
 import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
 import { DailyLogsPage } from '../components/daily-logs/DailyLogsPage.jsx'
 import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReportsPage.jsx'
+import { ReportEditPage } from '../components/reports/ReportEditPage.jsx'
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
 import { TherapistProfilePage } from '../components/therapist/TherapistProfilePage.jsx'
 import { TherapistTicketsPage } from '../components/therapist/TherapistTicketsPage.jsx'
@@ -30,6 +31,7 @@ import { AdminIncidentsPage } from '../components/admin-portal/AdminIncidentsPag
 import { AdminTherapistProfilesPage } from '../components/admin-portal/AdminTherapistProfilesPage.jsx'
 import { CaseManagerMeetingsPage } from '../components/admin-portal/CaseManagerMeetingsPage.jsx'
 import { AdminWorkbenchPage } from '../components/admin-portal/AdminWorkbenchPage.jsx'
+import { LeaveManagementPage } from '../components/hr-portal/LeaveManagementPage.jsx'
 
 function PortalRedirect() {
   const { portal, loading } = useAuth()
@@ -69,6 +71,7 @@ export function AppRoutes() {
         <Route path="cases/:caseId" element={<CaseDetailPage />} />
         <Route path="logs" element={<DailyLogsPage />} />
         <Route path="reports" element={<MonthlyReportsPage />} />
+        <Route path="reports/edit/:reportId" element={<ReportEditPage />} />
         <Route path="invoices" element={<InvoicesPage />} />
         <Route path="support" element={<TherapistSupportHubPage />} />
         <Route path="tickets" element={<Navigate to="/therapist/support?tab=tickets" replace />} />
@@ -112,6 +115,7 @@ export function AppRoutes() {
         <Route path="users" element={<Navigate to="/admin/people?tab=staff" replace />} />
         <Route path="therapist-profiles" element={<AdminTherapistProfilesPage />} />
         <Route path="cm-meetings" element={<CaseManagerMeetingsPage />} />
+        <Route path="leave" element={<LeaveManagementPage portal="admin" />} />
       </Route>
 
       <Route

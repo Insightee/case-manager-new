@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { apiFetch } from '../../lib/apiClient.js'
+
+const REPORTS_EDIT_BASE = '/therapist/reports/edit'
+import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { buildReportWorkbench } from '../../lib/reportWorkbench.js'
 import { CaseReportsPanel } from '../cases/CaseReportsPanel.jsx'
@@ -374,7 +376,9 @@ export function MonthlyReportsPage() {
                             r.isPlaceholder && r.caseDbId ? goToCaseReports(r.caseDbId, { create: true }) : setDraftOpen(true)
                           }
                           onContinue={(rep) => {
-                            if (rep.caseDbId) goToCaseReports(rep.caseDbId)
+                            if (rep.id && !String(rep.id).startsWith('missing-')) {
+                              navigate(`${REPORTS_EDIT_BASE}/${rep.id}`)
+                            } else if (rep.caseDbId) goToCaseReports(rep.caseDbId)
                           }}
                         />
                       ))}
@@ -401,16 +405,11 @@ export function MonthlyReportsPage() {
                           key={r.id}
                           variant="progress"
                           report={r}
-                          onContinue={(rep) => {
-                            if (rep.caseDbId) goToCaseReports(rep.caseDbId)
-                          }}
+                          onContinue={(rep) => navigate(`${REPORTS_EDIT_BASE}/${rep.id}`)}
                           onSubmitReview={r.status === 'draft' ? handleSubmitReview : undefined}
-                          onPreview={(rep) =>
-                            showToast(
-                              rep.summary
-                                ? rep.summary.slice(0, 120) + (rep.summary.length > 120 ? '…' : '')
-                                : 'No summary yet',
-                            )
+                          onPreview={(rep) => navigate(`${REPORTS_EDIT_BASE}/${rep.id}`)}
+                          onDownload={(rep) =>
+                            apiDownload(`/api/v1/reports/monthly/${rep.id}/download`, `report_${rep.month}.pdf`)
                           }
                         />
                       ))}

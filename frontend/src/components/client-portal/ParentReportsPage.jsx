@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { apiFetch, getTokens } from '../../lib/apiClient.js'
+import { apiFetch, apiDownload, getTokens } from '../../lib/apiClient.js'
+import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
+import '../reports/report-editor.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -110,7 +112,7 @@ export function ParentReportsPage() {
           : `/api/v1/parent/reports/monthly/${item.id}`
       const data = await apiFetch(path)
       setDetail({ ...data, kind: item.kind || (tab === 'iep' ? 'iep' : 'monthly') })
-      if (data.downloadPath) {
+      if (data.kind === 'iep' && data.downloadPath) {
         const blobUrl = await fetchBlobUrl(data.downloadPath)
         setPdfUrl(blobUrl)
       }
@@ -347,7 +349,15 @@ export function ParentReportsPage() {
               {detailLoading ? (
                 <p>Loading document…</p>
               ) : detail?.kind === 'monthly' ? (
-                <article style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{detail.summary}</article>
+                <>
+                  <ReportHtmlView html={detail.bodyHtml || detail.summary} />
+                  {detail.planNextMonth ? (
+                    <div className="report-plan-block" style={{ marginTop: 16 }}>
+                      <strong>Plan for next month</strong>
+                      <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{detail.planNextMonth}</p>
+                    </div>
+                  ) : null}
+                </>
               ) : pdfUrl ? (
                 <iframe
                   title={detail.fileName || 'IEP document'}
@@ -447,6 +457,16 @@ export function ParentReportsPage() {
                 {detail.kind === 'monthly' && canApproveMonthly ? (
                   <button type="button" className="admin-btn admin-btn--primary" disabled={acting} onClick={approveReport}>
                     Approve
+                  </button>
+                ) : null}
+                {detail.kind === 'monthly' && detail.downloadPath ? (
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary"
+                    disabled={acting}
+                    onClick={() => apiDownload(detail.downloadPath, `report_${detail.month || detail.id}.pdf`)}
+                  >
+                    Download PDF
                   </button>
                 ) : null}
                 {detail.kind === 'monthly' && canApproveMonthly ? (

@@ -182,7 +182,8 @@ def _serialize_monthly_row(row: tuple) -> AdminReportListItem:
         visibility_status=report.visibility_status.value if report.visibility_status else None,
         parent_review_status=report.parent_review_status,
         parent_feedback=report.parent_feedback,
-        content_preview=_preview(report.summary),
+        content_preview=_preview(report.summary or report.body_html),
+        category=report.category,
         updated_at=report.updated_at or report.created_at,
     )
 
@@ -201,7 +202,8 @@ def _serialize_observation_row(row: tuple) -> AdminReportListItem:
         label=report.title,
         status=report.status.value,
         visibility_status=report.visibility_status.value if report.visibility_status else None,
-        content_preview=_preview(report.content),
+        content_preview=_preview(report.content or report.body_html),
+        category=report.category,
         updated_at=report.created_at,
     )
 
@@ -410,6 +412,11 @@ def get_monthly_detail(db: Session, user: User, report_id: int) -> AdminReportDe
         status=report.status.value,
         summary=report.summary,
         content=report.summary,
+        body_html=report.body_html,
+        plan_next_month=report.plan_next_month,
+        category=report.category,
+        sub_category=report.sub_category,
+        report_date=report.report_date,
         reviewer_comment=report.reviewer_comment,
         visibility_status=report.visibility_status.value if report.visibility_status else None,
         parent_review_status=report.parent_review_status,
@@ -439,11 +446,70 @@ def get_observation_detail(db: Session, user: User, report_id: int) -> AdminRepo
         label=report.title,
         status=report.status.value,
         content=report.content,
+        body_html=report.body_html,
+        plan_next_month=report.plan_next_month,
+        category=report.category,
+        sub_category=report.sub_category,
+        report_date=report.report_date,
         visibility_status=report.visibility_status.value if report.visibility_status else None,
         created_at=report.created_at,
         updated_at=report.created_at,
         review_history=_review_history(db, "observation_report", report.id),
     )
+
+
+def list_missing_monthly(
+    db: Session,
+    user: User,
+    *,
+    month: str,
+    product_module: str | None = None,
+) -> list[dict]:
+    """Active cases without a CLIENT_MONTHLY report for the given month label."""
+    from app.models.case import CaseStatus
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+
+    stmt = select(Case).where(Case.status == CaseStatus.ACTIVE)
+    stmt = apply_case_scope(stmt, user)
+    if product_module:
+        stmt = stmt.where(Case.product_module == product_module)
+    cases = db.scalars(stmt.options(selectinload(Case.child))).all()
+
+    submitted_case_ids = set(
+        db.scalars(
+            select(MonthlyReport.case_id).where(
+                MonthlyReport.month.ilike(f"%{month.strip()}%"),
+                or_(MonthlyReport.category == "CLIENT_MONTHLY", MonthlyReport.category.is_(None)),
+            )
+        ).all()
+    )
+
+    out = []
+    for case in cases:
+        if case.id in submitted_case_ids:
+            continue
+        therapist_name = None
+        assignment = db.scalars(
+            select(CaseAssignment)
+            .where(
+                CaseAssignment.case_id == case.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+            .order_by(CaseAssignment.start_date.desc())
+        ).first()
+        if assignment:
+            tu = db.get(User, assignment.therapist_user_id)
+            therapist_name = _therapist_name(tu)
+        out.append(
+            {
+                "case_id": case.id,
+                "case_code": case.case_code,
+                "child_name": _child_name(case, case.child),
+                "therapist_name": therapist_name,
+                "product_module": case.product_module,
+            }
+        )
+    return out
 
 
 def _can_bulk_approve_monthly(report: MonthlyReport) -> bool:

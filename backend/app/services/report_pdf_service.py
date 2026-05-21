@@ -1,0 +1,165 @@
+from __future__ import annotations
+
+import io
+import re
+from html.parser import HTMLParser
+from typing import Optional
+
+from app.models.report import MonthlyReport, ObservationReport
+
+
+class _HtmlTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.blocks: list[tuple[str, str]] = []
+        self._current_tag: Optional[str] = None
+        self._buffer: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag in ("p", "h1", "h2", "h3", "li", "blockquote"):
+            self._flush()
+            self._current_tag = tag
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("p", "h1", "h2", "h3", "li", "blockquote", "div"):
+            self._flush()
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self._buffer.append(data)
+
+    def _flush(self) -> None:
+        if self._buffer:
+            text = " ".join(self._buffer).strip()
+            if text:
+                self.blocks.append((self._current_tag or "p", text))
+            self._buffer = []
+            self._current_tag = None
+
+    def finish(self) -> list[tuple[str, str]]:
+        self._flush()
+        return self.blocks
+
+
+def _html_to_blocks(html: Optional[str]) -> list[tuple[str, str]]:
+    if not html or not html.strip():
+        return []
+    parser = _HtmlTextExtractor()
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception:
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text).strip()
+        return [("p", text)] if text else []
+    return parser.blocks or []
+
+
+def build_report_pdf_bytes(
+    *,
+    title: str,
+    child_name: str,
+    case_code: str,
+    category: Optional[str],
+    month_label: str,
+    body_html: Optional[str],
+    plan_next_month: Optional[str],
+) -> bytes:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=48, rightMargin=48, topMargin=48, bottomMargin=48)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ReportTitle",
+        parent=styles["Title"],
+        fontSize=16,
+        spaceAfter=8,
+        textColor=colors.HexColor("#1e293b"),
+    )
+    meta_style = ParagraphStyle(
+        "ReportMeta",
+        parent=styles["Normal"],
+        fontSize=10,
+        textColor=colors.HexColor("#64748b"),
+        spaceAfter=12,
+    )
+    body_style = ParagraphStyle(
+        "ReportBody",
+        parent=styles["Normal"],
+        fontSize=11,
+        leading=15,
+        spaceAfter=8,
+    )
+    plan_style = ParagraphStyle(
+        "ReportPlan",
+        parent=styles["Normal"],
+        fontSize=11,
+        leading=15,
+        backColor=colors.HexColor("#ecfdf5"),
+        borderPadding=8,
+        spaceBefore=12,
+        spaceAfter=8,
+    )
+
+    story = [
+        Paragraph(title, title_style),
+        Paragraph(
+            f"{child_name} · {case_code} · {month_label}"
+            + (f" · {category.replace('_', ' ').title()}" if category else ""),
+            meta_style,
+        ),
+    ]
+
+    blocks = _html_to_blocks(body_html)
+    if not blocks:
+        plain = re.sub(r"<[^>]+>", "", body_html or "").strip()
+        if plain:
+            blocks = [("p", plain)]
+
+    for tag, text in blocks:
+        safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if tag in ("h1", "h2", "h3"):
+            story.append(Paragraph(f"<b>{safe}</b>", body_style))
+        elif tag == "li":
+            story.append(Paragraph(f"• {safe}", body_style))
+        else:
+            story.append(Paragraph(safe, body_style))
+
+    if plan_next_month and plan_next_month.strip():
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("<b>Plan for next month</b>", body_style))
+        for line in plan_next_month.strip().split("\n"):
+            if line.strip():
+                safe = line.strip().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                story.append(Paragraph(safe, plan_style))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def monthly_report_pdf(report: MonthlyReport, case_code: str, child_name: str) -> bytes:
+    return build_report_pdf_bytes(
+        title=f"Monthly report — {report.month}",
+        child_name=child_name,
+        case_code=case_code,
+        category=report.category,
+        month_label=report.month,
+        body_html=report.body_html or report.summary,
+        plan_next_month=report.plan_next_month,
+    )
+
+
+def observation_report_pdf(report: ObservationReport, case_code: str, child_name: str) -> bytes:
+    return build_report_pdf_bytes(
+        title=report.title,
+        child_name=child_name,
+        case_code=case_code,
+        category=report.category or "OBSERVATION",
+        month_label="",
+        body_html=report.body_html or report.content,
+        plan_next_month=report.plan_next_month,
+    )

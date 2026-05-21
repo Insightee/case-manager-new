@@ -79,6 +79,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "parent.read",
         "slot.read",
         "slot.book_any",
+        "leave.manage",
     ],
     RoleName.CASE_MANAGER: [
         "case.read.team",

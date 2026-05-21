@@ -182,10 +182,10 @@ def test_incident_patch():
     res = client.patch(
         f"/api/v1/incidents/{iid}",
         headers=headers,
-        json={"status": "RESOLVED"},
+        json={"status": "ACTION_TAKEN"},
     )
     assert res.status_code == 200
-    assert res.json()["status"] == "RESOLVED"
+    assert res.json()["status"] == "ACTION_TAKEN"
 
 
 def test_attachment_share_with_parent():
@@ -552,8 +552,9 @@ def test_incident_create_auto_assigns():
         headers=headers,
         json={
             "case_id": case_id,
-            "title": "Test incident routing",
-            "description": "Auto-assign check",
+            "primary_category": "SESSION_CLASSROOM_PROGRAM",
+            "subcategory": "session_disrupted",
+            "what_happened": "Auto-assign check for incident routing.",
             "is_sensitive": False,
         },
     )
@@ -659,3 +660,23 @@ def test_pipeline_assign_moves_case_from_needs_therapist():
     assert pipeline2.status_code == 200
     all_ids = {c["id"] for col in pipeline2.json()["columns"] for c in col["cases"]}
     assert case_id in all_ids
+
+
+def test_report_categories_endpoint():
+    token = _login("therapist@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.get("/api/v1/reports/categories", headers=headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert "categories" in body
+    ids = {c["id"] for c in body["categories"]}
+    assert "CLIENT_MONTHLY" in ids
+    assert "IEP_PLAN" in ids
+
+
+def test_admin_missing_monthly_reports():
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.get("/api/v1/admin/reports/missing-monthly?month=January%209900", headers=headers)
+    assert res.status_code == 200, res.text
+    assert isinstance(res.json(), list)

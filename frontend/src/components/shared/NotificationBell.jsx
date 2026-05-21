@@ -1,6 +1,37 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+
+const DROPDOWN_WIDTH = 360
+const DROPDOWN_MAX_HEIGHT = 520
+const VIEWPORT_MARGIN = 12
+
+/** Keep the panel fully inside the viewport (sidebar bell sits on the left). */
+function computeDropdownPosition(btnEl) {
+  const rect = btnEl.getBoundingClientRect()
+  const width = Math.min(DROPDOWN_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2)
+  const maxHeight = Math.min(window.innerHeight * 0.7, DROPDOWN_MAX_HEIGHT)
+
+  let left = rect.left
+  let top = rect.bottom + 8
+
+  if (left + width > window.innerWidth - VIEWPORT_MARGIN) {
+    left = window.innerWidth - width - VIEWPORT_MARGIN
+  }
+  if (left < VIEWPORT_MARGIN) {
+    left = rect.right + 8
+    if (left + width > window.innerWidth - VIEWPORT_MARGIN) {
+      left = Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN)
+    }
+  }
+
+  if (top + maxHeight > window.innerHeight - VIEWPORT_MARGIN) {
+    top = Math.max(VIEWPORT_MARGIN, rect.top - maxHeight - 8)
+  }
+
+  return { top, left, width, maxHeight }
+}
 
 /**
  * Derive a navigation path from entity_type + entity_id + portal.
@@ -10,6 +41,13 @@ function resolveLink(entityType, entityId, portal) {
   if (!entityType) return null
   const et = entityType.toLowerCase()
   switch (et) {
+    case 'appointment':
+    case 'recurring_schedule':
+    case 'invite':
+      if (portal === 'parent') return '/parent/book'
+      if (portal === 'therapist') return '/therapist/slots'
+      return '/admin/cases'
+
     // --- therapy sessions / slots ---
     case 'therapist_slot':
     case 'slot':
@@ -58,17 +96,21 @@ function resolveLink(entityType, entityId, portal) {
     case 'leave':
     case 'therapist_leave':
       if (portal === 'therapist') return '/therapist/leave'
+      if (portal === 'admin') return '/admin/leave'
       return '/hr/leave'
 
     // --- support tickets ---
     case 'support_ticket':
     case 'ticket':
       if (portal === 'parent') return '/parent/support'
-      if (portal === 'therapist') return '/therapist/tickets'
+      if (portal === 'therapist') return '/therapist/support'
       return '/admin/support?tab=tickets'
 
     // --- incidents ---
     case 'incident':
+      if (portal === 'therapist') return '/therapist/support'
+      if (portal === 'parent') return '/parent/support'
+      if (entityId) return `/admin/support?tab=incidents&incident=${entityId}`
       return '/admin/support?tab=incidents'
 
     // --- case manager meetings ---
@@ -110,7 +152,7 @@ function fmtTime(iso) {
 export function NotificationBell({ portal }) {
   const [open, setOpen] = useState(false)
   const [data, setData] = useState({ notifications: [], unread_count: 0 })
-  const [dropPos, setDropPos] = useState({ top: 0, right: 0 })
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: DROPDOWN_WIDTH, maxHeight: DROPDOWN_MAX_HEIGHT })
   const btnRef = useRef(null)
   const dropRef = useRef(null)
   const navigate = useNavigate()
@@ -130,15 +172,9 @@ export function NotificationBell({ portal }) {
     return () => clearInterval(t)
   }, [])
 
-  // Position the fixed dropdown relative to the button
   function openDropdown() {
     if (btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect()
-      const rightGap = window.innerWidth - rect.right
-      setDropPos({
-        top: rect.bottom + 8,
-        right: Math.max(8, rightGap),
-      })
+      setDropPos(computeDropdownPosition(btnRef.current))
     }
     setOpen(true)
     load()
@@ -162,9 +198,7 @@ export function NotificationBell({ portal }) {
     if (!open) return
     function reposition() {
       if (btnRef.current) {
-        const rect = btnRef.current.getBoundingClientRect()
-        const rightGap = window.innerWidth - rect.right
-        setDropPos({ top: rect.bottom + 8, right: Math.max(8, rightGap) })
+        setDropPos(computeDropdownPosition(btnRef.current))
       }
     }
     window.addEventListener('scroll', reposition, true)
@@ -213,74 +247,79 @@ export function NotificationBell({ portal }) {
         {n > 0 ? <span className="notification-bell__badge">{n > 99 ? '99+' : n}</span> : null}
       </button>
 
-      {open ? (
-        <div
-          ref={dropRef}
-          className={`notification-bell__dropdown${isAdmin ? ' notification-bell__dropdown--admin' : ''}`}
-          role="dialog"
-          aria-label="Notifications"
-          style={{
-            position: 'fixed',
-            top: dropPos.top,
-            right: dropPos.right,
-            zIndex: 9999,
-          }}
-        >
-          <div className="notification-bell__head">
-            <span className="notification-bell__title">Notifications</span>
-            {n > 0 ? (
-              <button type="button" className="notification-bell__link" onClick={markAll}>
-                Mark all read
-              </button>
-            ) : null}
-          </div>
-
-          <ul className="notification-bell__list">
-            {data.notifications?.length ? (
-              data.notifications.map((item) => {
-                const path = resolveLink(item.entity_type, item.entity_id, portal)
-                return (
-                  <li key={item.id} className={`notification-bell__item ${item.is_read ? '' : 'is-unread'}`}>
-                    <button
-                      type="button"
-                      className="notification-bell__item-btn"
-                      onClick={() => handleClick(item)}
-                    >
-                      <div className="notification-bell__item-row">
-                        <span className="notification-bell__item-title">{item.title}</span>
-                        <span className="notification-bell__item-time">{fmtTime(item.created_at)}</span>
-                      </div>
-                      <span className="notification-bell__item-body">{item.body}</span>
-                      {path ? (
-                        <span className="notification-bell__item-cta">View →</span>
-                      ) : null}
-                    </button>
-                  </li>
-                )
-              })
-            ) : (
-              <li className="notification-bell__empty">No notifications</li>
-            )}
-          </ul>
-
-          <div className="notification-bell__foot">
-            <button
-              type="button"
-              className="notification-bell__foot-link"
-              onClick={() => {
-                setOpen(false)
-                navigate(
-                  portal === 'parent' ? '/parent' :
-                  portal === 'therapist' ? '/therapist' :
-                  portal === 'hr' ? '/hr' : '/admin'
-                )
+      {open
+        ? createPortal(
+            <div
+              ref={dropRef}
+              className={`notification-bell__dropdown${isAdmin ? ' notification-bell__dropdown--admin' : ''}`}
+              role="dialog"
+              aria-label="Notifications"
+              style={{
+                position: 'fixed',
+                top: dropPos.top,
+                left: dropPos.left,
+                width: dropPos.width,
+                maxHeight: dropPos.maxHeight,
+                zIndex: 10000,
               }}
             >
-              Go to dashboard
-            </button>
-          </div>
-        </div>
-      ) : null}
+              <div className="notification-bell__head">
+                <span className="notification-bell__title">Notifications</span>
+                {n > 0 ? (
+                  <button type="button" className="notification-bell__link" onClick={markAll}>
+                    Mark all read
+                  </button>
+                ) : null}
+              </div>
+
+              <ul className="notification-bell__list">
+                {data.notifications?.length ? (
+                  data.notifications.map((item) => {
+                    const path = resolveLink(item.entity_type, item.entity_id, portal)
+                    return (
+                      <li key={item.id} className={`notification-bell__item ${item.is_read ? '' : 'is-unread'}`}>
+                        <button
+                          type="button"
+                          className="notification-bell__item-btn"
+                          onClick={() => handleClick(item)}
+                        >
+                          <div className="notification-bell__item-row">
+                            <span className="notification-bell__item-title">{item.title}</span>
+                            <span className="notification-bell__item-time">{fmtTime(item.created_at)}</span>
+                          </div>
+                          <span className="notification-bell__item-body">{item.body}</span>
+                          {path ? (
+                            <span className="notification-bell__item-cta">View →</span>
+                          ) : null}
+                        </button>
+                      </li>
+                    )
+                  })
+                ) : (
+                  <li className="notification-bell__empty">No notifications</li>
+                )}
+              </ul>
+
+              <div className="notification-bell__foot">
+                <button
+                  type="button"
+                  className="notification-bell__foot-link"
+                  onClick={() => {
+                    setOpen(false)
+                    navigate(
+                      portal === 'parent' ? '/parent' :
+                      portal === 'therapist' ? '/therapist' :
+                      portal === 'hr' ? '/hr' : '/admin'
+                    )
+                  }}
+                >
+                  Go to dashboard
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   )
 }

@@ -736,7 +736,11 @@ def run():
                     title="Minor equipment concern",
                     description="Therapy mat showed wear during home visit; replacement requested.",
                     is_sensitive=False,
-                    status=IncidentStatus.OPEN,
+                    ticket_code="INC-2026-00001",
+                    primary_category="SESSION_CLASSROOM_PROGRAM",
+                    subcategory="session_disrupted",
+                    priority="NORMAL",
+                    status=IncidentStatus.REPORTED,
                 )
             )
             db.add(
@@ -746,7 +750,11 @@ def run():
                     title="Scheduling conflict noted",
                     description="Parent requested reschedule due to school event.",
                     is_sensitive=False,
-                    status=IncidentStatus.INVESTIGATING,
+                    ticket_code="INC-2026-00002",
+                    primary_category="PARENT_SCHOOL_COMMUNICATION",
+                    subcategory="communication_delay",
+                    priority="NORMAL",
+                    status=IncidentStatus.IN_REVIEW,
                 )
             )
 

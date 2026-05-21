@@ -1725,6 +1725,19 @@ def admin_reports_export_pdf(
     )
 
 
+@router.get("/reports/missing-monthly")
+def admin_reports_missing_monthly(
+    month: str = Query(..., description="Month label e.g. May 2026"),
+    product_module: Optional[str] = None,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.schemas.report import MissingMonthlyCaseItem
+
+    rows = admin_report_svc.list_missing_monthly(db, user, month=month, product_module=product_module)
+    return [MissingMonthlyCaseItem(**r) for r in rows]
+
+
 @router.get("/invites")
 def admin_list_invites(
     user: User = Depends(require_permission("user.manage")),

@@ -50,6 +50,9 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
   background: linear-gradient(155deg, var(--portal-bg) 0%, var(--portal-bg-mid) 42%, var(--portal-bg-accent) 100%);
   color: var(--text-main);
 }
@@ -2572,7 +2575,11 @@ th {
 
   .app-mobile-tabs__link {
     font-size: 12px;
-    padding: 8px 6px;
+    padding: 10px 8px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .content {
@@ -2621,6 +2628,13 @@ th {
 
   .card-head button {
     width: 100%;
+  }
+
+  .table-scroll,
+  .admin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
   }
 
   table {

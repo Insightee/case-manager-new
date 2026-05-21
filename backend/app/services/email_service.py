@@ -185,6 +185,41 @@ def leave_admin_summary_email(
     send_email(to=to, subject=f"[Admin] Leave approved — {therapist_name}", body_text=body)
 
 
+def leave_pending_hr_email(
+    *,
+    to: str,
+    therapist_name: str,
+    date_range: str,
+    leave_type: str,
+    portal_url: str,
+) -> None:
+    body = (
+        f"A new leave request needs your review.\n\n"
+        f"Therapist: {therapist_name}\n"
+        f"Dates: {date_range}\n"
+        f"Type: {leave_type}\n\n"
+        f"Review here: {portal_url}\n"
+    )
+    send_email(to=to, subject=f"Leave request — {therapist_name}", body_text=body)
+
+
+def leave_rejected_therapist_email(
+    *,
+    to: str,
+    therapist_name: str,
+    date_range: str,
+    review_note: str | None,
+    portal_url: str,
+) -> None:
+    note_line = f"\nNote from reviewer: {review_note}\n" if review_note else ""
+    body = (
+        f"Hi {therapist_name},\n\n"
+        f"Your leave request for {date_range} was not approved.{note_line}\n"
+        f"View details: {portal_url}\n"
+    )
+    send_email(to=to, subject="Leave request not approved", body_text=body)
+
+
 def leave_sessions_reinstated_email(
     *,
     to: str,

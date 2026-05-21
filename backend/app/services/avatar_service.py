@@ -15,10 +15,18 @@ def avatar_public_path(user_id: int) -> str:
     return f"/api/v1/files/avatars/{user_id}"
 
 
-def validate_avatar_upload(content_type: str | None, size: int) -> str:
+def validate_avatar_upload(content_type: str | None, size: int, filename: str | None = None) -> str:
     if size > MAX_AVATAR_BYTES:
         raise ValueError("Image must be under 1 MB")
     ext = ALLOWED_CONTENT_TYPES.get(content_type or "")
+    if not ext and filename:
+        lower = filename.lower()
+        if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+            ext = ".jpg"
+        elif lower.endswith(".png"):
+            ext = ".png"
+        elif lower.endswith(".webp"):
+            ext = ".webp"
     if not ext:
         raise ValueError("Only JPEG, PNG, or WebP images are allowed")
     return ext

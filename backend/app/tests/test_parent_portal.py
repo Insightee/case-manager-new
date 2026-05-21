@@ -146,3 +146,28 @@ def test_parent_iep_comment_create():
     detail = client.get(f"/api/v1/parent/reports/iep/{att_id}", headers=parent_h)
     assert detail.status_code == 200
     assert len(detail.json().get("comments", [])) >= 1
+
+
+def test_parent_booking_availability():
+    headers = _login("parent@demo.com")
+    cases = client.get("/api/v1/parent/cases", headers=headers)
+    assert cases.status_code == 200
+    case_list = cases.json()
+    if not case_list:
+        return
+    case_id = case_list[0]["id"]
+    therapists = client.get(f"/api/v1/booking/therapists?case_id={case_id}", headers=headers)
+    assert therapists.status_code == 200, therapists.text
+    tlist = therapists.json()
+    if not tlist:
+        return
+    tid = tlist[0]["therapist_user_id"]
+    from datetime import date, timedelta
+
+    day = (date.today() + timedelta(days=7)).isoformat()
+    avail = client.get(
+        f"/api/v1/booking/availability?therapist_id={tid}&from_date={day}&to_date={day}",
+        headers=headers,
+    )
+    assert avail.status_code == 200, avail.text
+    assert isinstance(avail.json(), list)

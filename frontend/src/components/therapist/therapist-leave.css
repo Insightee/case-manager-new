@@ -91,6 +91,56 @@
   font-weight: 500;
 }
 
+.leave-year-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.leave-year-month {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 8px;
+  background: #fafafa;
+}
+
+.leave-year-month__title {
+  margin: 0 0 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #64748b;
+  text-align: center;
+}
+
+.leave-year-month__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.leave-year-day {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: #e5e7eb;
+}
+
+.leave-year-day--empty {
+  background: transparent;
+}
+
+.leave-year-day--approved {
+  background: #86efac;
+}
+
+.leave-year-day--pending {
+  background: #fde047;
+}
+
+.leave-year-day--rejected {
+  background: #fca5a5;
+}
+
 .leave-cal__legend-swatch--selecting {
   background: #fecaca;
   border: 1px solid #dc2626;

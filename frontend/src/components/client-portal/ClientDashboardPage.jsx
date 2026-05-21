@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useParentDashboardStats } from '../../hooks/useParentDashboardStats.js'
 
 function fmt(dateStr) {
@@ -52,6 +52,7 @@ function StatusBadge({ status }) {
 }
 
 function UpcomingSessionsStrip({ appointments }) {
+  const navigate = useNavigate()
   const next5 = [...(appointments || [])]
     .sort((a, b) => {
       const da = a.slotDate + 'T' + (a.startTime || '00:00')
@@ -98,41 +99,55 @@ function UpcomingSessionsStrip({ appointments }) {
           </Link>
         </div>
       ) : (
-        <div
-          style={{
-            display: 'flex',
-            gap: 12,
-            overflowX: 'auto',
-            paddingBottom: 4,
-          }}
-        >
+        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
           {next5.map((appt) => (
-            <div
+            <button
               key={appt.id}
+              type="button"
+              onClick={() => navigate('/parent/book', { state: { openApptId: appt.id } })}
               style={{
                 flex: '0 0 auto',
                 minWidth: 190,
                 maxWidth: 220,
-                background: '#fff',
-                border: '1px solid #e2e8f0',
+                background: appt.isCmMeeting ? '#faf5ff' : '#fff',
+                border: `1px solid ${appt.isCmMeeting ? '#ddd6fe' : '#e2e8f0'}`,
                 borderRadius: 14,
                 padding: '12px 14px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                textAlign: 'left',
+                cursor: 'pointer',
               }}
             >
-              <p style={{ margin: '0 0 4px', fontSize: '0.75rem', fontWeight: 700, color: '#4f46e5', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              <p
+                style={{
+                  margin: '0 0 4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  color: appt.isCmMeeting ? '#7c3aed' : '#4f46e5',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}
+              >
                 {fmt(appt.slotDate)}
               </p>
               <p style={{ margin: '0 0 2px', fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}>
                 {appt.startTime}
                 {appt.endTime ? `–${appt.endTime}` : ''}
-                <StatusBadge status={appt.approvalStatus} />
+                {!appt.isCmMeeting ? <StatusBadge status={appt.approvalStatus} /> : null}
               </p>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>{appt.childName}</p>
-              {appt.therapistName ? (
-                <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>{appt.therapistName}</p>
-              ) : null}
-            </div>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
+                {appt.isCmMeeting ? 'Case manager meeting' : `Therapy · ${appt.childName || '—'}`}
+              </p>
+              <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>
+                {appt.isCmMeeting
+                  ? appt.caseMgrName
+                    ? `With: ${appt.caseMgrName}`
+                    : 'With your case manager'
+                  : appt.therapistName
+                    ? `Therapist: ${appt.therapistName}`
+                    : null}
+              </p>
+            </button>
           ))}
         </div>
       )}
@@ -310,7 +325,11 @@ export function ClientDashboardPage({
                     </Link>
                   </p>
                   <span>
-                    {item.serviceType} · Therapist: {item.therapist}
+                    {item.serviceType}
+                    <br />
+                    Therapist: {item.therapist}
+                    <br />
+                    Case manager: {item.caseManager}
                   </span>
                 </div>
                 <div>

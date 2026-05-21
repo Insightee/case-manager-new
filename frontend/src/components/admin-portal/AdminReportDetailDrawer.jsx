@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
+import '../reports/report-editor.css'
 import './admin-reports.css'
 
 function statusPillClass(status) {
@@ -145,12 +147,36 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
               <Link to={`/admin/cases/${detail.case_id}?tab=reports`}>Open case</Link>
             </p>
 
+            {detail.category ? (
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 8 }}>
+                Category: {detail.category.replace(/_/g, ' ')}
+              </p>
+            ) : null}
+
             <div style={{ marginTop: 16 }}>
               <h3 style={{ fontSize: '0.9rem' }}>Content</h3>
-              <p style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem' }}>
-                {detail.content || detail.summary || '—'}
-              </p>
+              <ReportHtmlView html={detail.body_html || detail.content || detail.summary} />
             </div>
+
+            {detail.plan_next_month ? (
+              <div className="report-plan-block" style={{ marginTop: 12 }}>
+                <strong>Plan for next month</strong>
+                <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.85rem' }}>{detail.plan_next_month}</p>
+              </div>
+            ) : null}
+
+            {reportType === 'monthly' ? (
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                style={{ marginTop: 12 }}
+                onClick={() =>
+                  apiDownload(`/api/v1/reports/monthly/${reportId}/download`, `report_${detail.label}.pdf`)
+                }
+              >
+                Download PDF
+              </button>
+            ) : null}
 
             {detail.parent_feedback ? (
               <div style={{ marginTop: 12 }}>

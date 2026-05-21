@@ -119,8 +119,15 @@ export function ParentCaseDetailPage() {
 
       {tab === 'overview' && (
         <section className="card" style={{ padding: 16 }}>
+          <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: 12, lineHeight: 1.45 }}>
+            Your case manager is assigned by the clinic on this case. Your therapist is assigned separately for therapy
+            sessions.
+          </p>
           <p>
             <strong>Case manager:</strong> {caseRow.caseManagerName || '—'}
+          </p>
+          <p>
+            <strong>Therapist:</strong> {caseRow.therapistName || '—'}
           </p>
           <p>
             <strong>Latest report:</strong> {caseRow.latestApprovedReportMonth || '—'}

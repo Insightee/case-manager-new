@@ -68,9 +68,11 @@ export function TherapistLeavePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const now = useMemo(() => new Date(), [])
 
+  const [viewTab, setViewTab] = useState('month')
   const [calYear, setCalYear] = useState(now.getFullYear())
   const [calMonth, setCalMonth] = useState(now.getMonth())
   const [leaves, setLeaves] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -85,15 +87,20 @@ export function TherapistLeavePage() {
     setLoading(true)
     setLoadError('')
     try {
-      const data = await apiFetch('/api/v1/leave')
+      const [data, sum] = await Promise.all([
+        apiFetch('/api/v1/leave'),
+        apiFetch(`/api/v1/leave/summary?year=${calYear}`),
+      ])
       setLeaves(Array.isArray(data) ? data : [])
+      setSummary(sum)
     } catch (err) {
       setLeaves([])
+      setSummary(null)
       setLoadError(err.message || 'Could not load leave requests')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [calYear])
 
   useEffect(() => {
     if (authLoading || !user) return
@@ -208,14 +215,10 @@ export function TherapistLeavePage() {
 
   const todayStr = toDateStr(now.getFullYear(), now.getMonth(), now.getDate())
 
-  const pendingCount = leaves.filter((l) => l.status === 'PENDING').length
-  const approvedDays = leaves
-    .filter((l) => l.status === 'APPROVED')
-    .reduce((acc, l) => {
-      const start = new Date(l.start_date)
-      const end = new Date(l.end_date)
-      return acc + Math.round((end - start) / 86400000) + 1
-    }, 0)
+  const pendingCount = summary?.pending_count ?? leaves.filter((l) => l.status === 'PENDING').length
+  const rejectedCount = summary?.rejected_count ?? leaves.filter((l) => l.status === 'REJECTED').length
+  const approvedDaysYtd = summary?.approved_days ?? 0
+  const daysByType = summary?.days_by_type ?? {}
 
   const monthLeaves = leaves.filter(
     (l) =>
@@ -267,16 +270,69 @@ export function TherapistLeavePage() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
+          Year
+          <select
+            value={calYear}
+            onChange={(e) => setCalYear(Number(e.target.value))}
+            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+          >
+            {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {[
+            ['month', 'Month calendar'],
+            ['year', 'Year at a glance'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setViewTab(id)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 20,
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                border: 'none',
+                cursor: 'pointer',
+                background: viewTab === id ? '#6366f1' : '#f3f4f6',
+                color: viewTab === id ? '#fff' : '#374151',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending requests</p>
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Approved days ({calYear})</p>
+          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : approvedDaysYtd}</p>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending</p>
           <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a16207' }}>{loading ? '…' : pendingCount}</p>
         </div>
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Approved days (all time)</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : approvedDays}</p>
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Rejected ({calYear})</p>
+          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#b91c1c' }}>{loading ? '…' : rejectedCount}</p>
         </div>
       </div>
+      {Object.keys(daysByType).length > 0 ? (
+        <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: '-8px 0 16px' }}>
+          By type:{' '}
+          {Object.entries(daysByType)
+            .map(([t, d]) => `${t} ${d}d`)
+            .join(' · ')}
+        </p>
+      ) : null}
 
       {loadError ? (
         <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#b91c1c', fontSize: '0.875rem' }}>
@@ -293,6 +349,37 @@ export function TherapistLeavePage() {
         <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#15803d', fontSize: '0.875rem' }}>{success}</div>
       ) : null}
 
+      {viewTab === 'year' ? (
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+          <p style={{ fontWeight: 600, margin: '0 0 16px' }}>{calYear} — year at a glance</p>
+          <div className="leave-year-grid">
+            {MONTHS.map((monthName, monthIdx) => {
+              const days = daysInMonth(calYear, monthIdx)
+              const miniCells = []
+              const fd = new Date(calYear, monthIdx, 1).getDay()
+              for (let i = 0; i < fd; i++) miniCells.push(null)
+              for (let d = 1; d <= days; d++) miniCells.push(d)
+              return (
+                <div key={monthName} className="leave-year-month">
+                  <p className="leave-year-month__title">{monthName.slice(0, 3)}</p>
+                  <div className="leave-year-month__grid">
+                    {miniCells.map((day, i) => {
+                      if (!day) return <span key={`e-${i}`} className="leave-year-day leave-year-day--empty" />
+                      const ds = toDateStr(calYear, monthIdx, day)
+                      const entry = leaveOnDate(ds, leaves)
+                      let cls = 'leave-year-day'
+                      if (entry?.status === 'APPROVED') cls += ' leave-year-day--approved'
+                      else if (entry?.status === 'PENDING') cls += ' leave-year-day--pending'
+                      else if (entry?.status === 'REJECTED') cls += ' leave-year-day--rejected'
+                      return <span key={ds} className={cls} title={entry ? `${entry.leave_type} (${entry.status})` : ''} />
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ) : (
       <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <button
@@ -393,6 +480,7 @@ export function TherapistLeavePage() {
           </p>
         ) : null}
       </div>
+      )}
 
       {showForm ? (
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
@@ -498,7 +586,7 @@ export function TherapistLeavePage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ background: '#f9fafb' }}>
-                  {['Type', 'From', 'To', 'Reason', 'Status', ''].map((h) => (
+                  {['Type', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', ''].map((h) => (
                     <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>
                       {h}
                     </th>
@@ -516,9 +604,13 @@ export function TherapistLeavePage() {
                       </td>
                       <td style={{ padding: '10px 16px' }}>{l.start_date}</td>
                       <td style={{ padding: '10px 16px' }}>{l.end_date}</td>
+                      <td style={{ padding: '10px 16px' }}>{l.day_count ?? '—'}</td>
                       <td style={{ padding: '10px 16px', color: '#6b7280' }}>{l.reason || '—'}</td>
                       <td style={{ padding: '10px 16px' }}>
                         <span style={{ background: sc.bg, color: sc.color, fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, border: `1px solid ${sc.border}` }}>{l.status}</span>
+                      </td>
+                      <td style={{ padding: '10px 16px', color: '#6b7280', fontSize: '0.8rem', maxWidth: 160 }}>
+                        {l.status === 'REJECTED' && l.review_note ? l.review_note : '—'}
                       </td>
                       <td style={{ padding: '10px 16px' }}>
                         {l.status === 'PENDING' ? (

@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -848,32 +848,16 @@ def parent_ticket_escalate(
 
 class ParentIncidentCreate(BaseModel):
     case_id: Optional[int] = None
-    title: str
-    description: str
-
-
-def _serialize_incident(incident: Incident, db: Session) -> dict:
-    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return {
-        "id": incident.id,
-        "case_id": incident.case_id,
-        "case_code": case.case_code if case else None,
-        "child_name": case_service.case_child_display_name(case),
-        "title": incident.title,
-        "description": incident.description,
-        "status": incident.status.value,
-        "created_at": incident.created_at.isoformat(),
-        "messages": [
-            {
-                "id": m.id,
-                "body": m.body,
-                "author_name": m.author.full_name if m.author else "Unknown",
-                "is_reporter": m.author_user_id == incident.reported_by_user_id,
-                "created_at": m.created_at.isoformat(),
-            }
-            for m in incident.messages
-        ],
-    }
+    primary_category: str
+    subcategory: str
+    what_happened: str
+    priority: Optional[str] = None
+    service_type: Optional[str] = None
+    incident_at: Optional[datetime] = None
+    location: Optional[str] = None
+    immediate_action: Optional[str] = None
+    child_safe: Optional[str] = None
+    parent_informed: Optional[str] = None
 
 
 class ParentIncidentMessageCreate(BaseModel):
@@ -885,6 +869,8 @@ def parent_list_incidents(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    from app.services import incident_service as inc_svc
+
     incidents = db.scalars(
         select(Incident)
         .where(Incident.reported_by_user_id == user.id)
@@ -893,15 +879,7 @@ def parent_list_incidents(
     result = []
     for inc in incidents:
         case = case_service.get_case(db, inc.case_id) if inc.case_id else None
-        result.append({
-            "id": inc.id,
-            "case_id": inc.case_id,
-            "case_code": case.case_code if case else None,
-            "child_name": case_service.case_child_display_name(case),
-            "title": inc.title,
-            "status": inc.status.value,
-            "created_at": inc.created_at.isoformat(),
-        })
+        result.append(inc_svc.incident_to_list_dict(inc, case))
     return result
 
 
@@ -911,10 +889,13 @@ def parent_get_incident(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    incident = db.get(Incident, incident_id)
+    from app.services import incident_service as inc_svc
+
+    incident = inc_svc.get_incident_detail(db, incident_id)
     if not incident or incident.reported_by_user_id != user.id:
         raise HTTPException(status_code=404, detail="Not found")
-    return _serialize_incident(incident, db)
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    return inc_svc.incident_to_detail_dict(incident, case)
 
 
 @router.post("/incidents", status_code=201)
@@ -924,24 +905,99 @@ def parent_create_incident(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    incident = Incident(
-        case_id=payload.case_id,
-        reported_by_user_id=user.id,
-        title=payload.title,
-        description=payload.description,
-        is_sensitive=False,
+    from app.services import incident_service as inc_svc
+    from app.services import notification_service
+
+    try:
+        incident = inc_svc.create_incident(
+            db,
+            reporter_user_id=user.id,
+            reporter_role_names=user.role_names,
+            case_id=payload.case_id,
+            primary_category=payload.primary_category,
+            subcategory=payload.subcategory,
+            what_happened=payload.what_happened,
+            priority=payload.priority,
+            service_type=payload.service_type,
+            incident_at=payload.incident_at,
+            location=payload.location,
+            immediate_action=payload.immediate_action,
+            child_safe=payload.child_safe,
+            parent_informed=payload.parent_informed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    assignee_name = "our team"
+    if incident.assigned_to_user_id:
+        u = db.get(User, incident.assigned_to_user_id)
+        if u:
+            assignee_name = u.full_name
+    notification_service.create_notification(
+        db,
+        user_id=user.id,
+        title="Incident submitted",
+        body=f"{incident.ticket_code} submitted — {assignee_name} will review.",
+        entity_type="incident",
+        entity_id=incident.id,
     )
-    db.add(incident)
-    db.flush()
-    db.add(IncidentMessage(
-        incident_id=incident.id,
-        author_user_id=user.id,
-        body=payload.description,
-    ))
+    if incident.assigned_to_user_id:
+        notification_service.create_notification(
+            db,
+            user_id=incident.assigned_to_user_id,
+            title=f"New incident: {incident.ticket_code}",
+            body=incident.title,
+            entity_type="incident",
+            entity_id=incident.id,
+        )
+
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="incident", entity_id=incident.id, **meta)
     db.commit()
-    return {"id": incident.id, "status": incident.status.value}
+    db.refresh(incident)
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    detail = inc_svc.incident_to_detail_dict(incident, case)
+    detail["confirmation"] = f"Incident {incident.ticket_code} submitted — {assignee_name} will review."
+    return detail
+
+
+@router.post("/incidents/{incident_id}/attachments", status_code=201)
+async def parent_upload_incident_attachments(
+    incident_id: int,
+    request: Request,
+    note: Optional[str] = Form(None),
+    files: list[UploadFile] = File(default=[]),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import incident_attachment_service as att_svc
+
+    incident = db.get(Incident, incident_id)
+    if not incident or incident.reported_by_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        saved = await att_svc.save_attachments(db, incident, user, files, note=note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="attach", entity_type="incident", entity_id=incident_id, **meta)
+    db.commit()
+    return {"attachments": [att_svc.attachment_to_dict(a) for a in saved]}
+
+
+@router.get("/incidents/attachments/{attachment_id}/download")
+def parent_download_incident_attachment(
+    attachment_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import incident_attachment_service as att_svc
+
+    att = att_svc.get_attachment_or_404(db, attachment_id)
+    incident = db.get(Incident, att.incident_id)
+    if not incident or incident.reported_by_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return att_svc.download_response(att)
 
 
 @router.post("/incidents/{incident_id}/messages", status_code=201)
@@ -952,7 +1008,9 @@ def parent_add_incident_message(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    incident = db.get(Incident, incident_id)
+    from app.services import incident_service as inc_svc
+
+    incident = inc_svc.get_incident_detail(db, incident_id)
     if not incident or incident.reported_by_user_id != user.id:
         raise HTTPException(status_code=404, detail="Not found")
     db.add(IncidentMessage(
@@ -960,11 +1018,11 @@ def parent_add_incident_message(
         author_user_id=user.id,
         body=payload.body.strip(),
     ))
-    # Reopen if admin had marked as resolved
-    if incident.status == IncidentStatus.RESOLVED:
-        incident.status = IncidentStatus.INVESTIGATING
+    if incident.status in (IncidentStatus.ACTION_TAKEN, IncidentStatus.CLOSED):
+        incident.status = IncidentStatus.IN_REVIEW
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="message", entity_type="incident", entity_id=incident_id, **meta)
     db.commit()
-    db.refresh(incident)
-    return _serialize_incident(incident, db)
+    incident = inc_svc.get_incident_detail(db, incident_id)
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    return inc_svc.incident_to_detail_dict(incident, case)

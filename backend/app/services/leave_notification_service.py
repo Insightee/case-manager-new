@@ -16,6 +16,7 @@ from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
 from app.services import appointment_booking_service as appt_booking
 from app.services import email_service
+from app.services import leave_service
 from app.services import notification_service
 
 
@@ -78,6 +79,40 @@ def unblock_slots_for_leave(db: Session, leave_id: int) -> int:
 def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) -> int:
     date_range = _format_date_range(leave.start_date, leave.end_date)
     count = 0
+
+    notification_service.create_notification(
+        db,
+        user_id=therapist.id,
+        title="Leave request submitted",
+        body=f"Your leave for {date_range} is pending approval.",
+        entity_type="leave",
+        entity_id=leave.id,
+    )
+    count += 1
+
+    hr_portal = f"{settings.frontend_url}/hr/leave"
+    for manager in leave_service.users_with_leave_manage(db, exclude_user_id=therapist.id):
+        body = (
+            f"{therapist.full_name} requested {leave.leave_type.value} leave for {date_range}. "
+            "Review and approve or reject in Leave Management."
+        )
+        notification_service.create_notification(
+            db,
+            user_id=manager.id,
+            title="Leave request pending approval",
+            body=body,
+            entity_type="leave",
+            entity_id=leave.id,
+        )
+        email_service.leave_pending_hr_email(
+            to=manager.email,
+            therapist_name=therapist.full_name,
+            date_range=date_range,
+            leave_type=leave.leave_type.value,
+            portal_url=hr_portal,
+        )
+        count += 1
+
     for parent_user_id, cases in _parents_for_therapist_cases(db, leave.therapist_user_id).items():
         case_codes = ", ".join(c.case_code for c in cases[:3])
         if len(cases) > 3:
@@ -204,6 +239,18 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         count += 1
 
     cancel_n = sum(len(v) for v in cancelled_by_parent.values())
+    notification_service.create_notification(
+        db,
+        user_id=therapist.id,
+        title="Leave approved",
+        body=(
+            f"Your leave for {date_range} is approved. "
+            f"{cancel_n} booked session(s) were cancelled and clients were notified."
+        ),
+        entity_type="leave",
+        entity_id=leave.id,
+    )
+    count += 1
     email_service.leave_approved_therapist_email(
         to=therapist.email,
         therapist_name=therapist.full_name,
@@ -227,6 +274,27 @@ def notify_leave_rejected(db: Session, leave: TherapistLeave, therapist: User) -
     date_range = _format_date_range(leave.start_date, leave.end_date)
     count = 0
     portal = f"{settings.frontend_url}/parent/book"
+    therapist_portal = f"{settings.frontend_url}/therapist/leave"
+
+    reject_body = f"Your leave request for {date_range} was not approved."
+    if leave.review_note:
+        reject_body += f" Note: {leave.review_note}"
+    notification_service.create_notification(
+        db,
+        user_id=therapist.id,
+        title="Leave request not approved",
+        body=reject_body,
+        entity_type="leave",
+        entity_id=leave.id,
+    )
+    email_service.leave_rejected_therapist_email(
+        to=therapist.email,
+        therapist_name=therapist.full_name,
+        date_range=date_range,
+        review_note=leave.review_note,
+        portal_url=therapist_portal,
+    )
+    count += 1
     for parent_user_id, cases in _parents_for_therapist_cases(db, leave.therapist_user_id).items():
         case_codes = ", ".join(c.case_code for c in cases)
         body = (

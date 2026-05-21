@@ -37,6 +37,16 @@ API-only smoke (backend must be on `:8000`): `python3 scripts/therapist_flow_smo
 
 See [backend/README.md](backend/README.md) for API details and role matrix. System architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+### Dev preview (Vercel + API)
+
+To share the UI with reviewers:
+
+1. Deploy the **API** (Postgres + env vars) — see [docs/DEPLOY.md](docs/DEPLOY.md).
+2. Deploy **frontend** on Vercel with root directory `frontend` and `VITE_API_URL` pointing at the API.
+3. Add your Vercel URL to API `CORS_ORIGINS`, then run seed on the API host.
+
+CI runs backend tests and `npm run build` on push (`.github/workflows/ci.yml`).
+
 ---
 
 ## Product Overview

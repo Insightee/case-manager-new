@@ -1,0 +1,125 @@
+.report-editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 12px 12px 0 0;
+}
+
+.report-editor__toolbar button {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 6px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.report-editor__toolbar button:hover {
+  background: #f1f5f9;
+}
+
+.report-editor__toolbar button.is-active {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #3730a3;
+}
+
+.report-editor__content {
+  min-height: 220px;
+  padding: 14px 16px;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: #1e293b;
+}
+
+.report-editor__content:focus {
+  outline: none;
+}
+
+.report-editor__content h2 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin: 1em 0 0.4em;
+}
+
+.report-editor__content ul,
+.report-editor__content ol {
+  padding-left: 1.25rem;
+  margin: 0.5em 0;
+}
+
+.report-editor__content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.report-editor__shell {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.report-editor__plan {
+  margin-top: 16px;
+}
+
+.report-editor__plan label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f766e;
+  margin-bottom: 6px;
+}
+
+.report-editor__plan textarea {
+  width: 100%;
+  min-height: 88px;
+  border: 1px solid #99f6e4;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  background: #ecfdf5;
+  resize: vertical;
+}
+
+.report-html-view {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: #334155;
+}
+
+.report-html-view img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.report-html-view h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 1rem;
+}
+
+.report-plan-block {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: #ecfdf5;
+  border: 1px solid #99f6e4;
+  border-radius: 12px;
+}
+
+.report-plan-block strong {
+  display: block;
+  font-size: 0.8rem;
+  color: #0f766e;
+  margin-bottom: 8px;
+}

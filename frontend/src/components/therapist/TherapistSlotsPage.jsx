@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { BookSlotModal } from './BookSlotModal.jsx'
-import { TherapistAssignedCasesPanel } from './TherapistAssignedCasesPanel.jsx'
 import { WeeklyScheduleDrawer } from './WeeklyScheduleDrawer.jsx'
 import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
 import { SlotDetailSheet } from '../scheduling/SlotDetailSheet.jsx'
@@ -60,8 +59,6 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
           </button>
         </div>
       </div>
-
-      {!therapistIdProp ? <TherapistAssignedCasesPanel /> : null}
 
       <TherapistCalendar
         therapistId={therapistIdProp}

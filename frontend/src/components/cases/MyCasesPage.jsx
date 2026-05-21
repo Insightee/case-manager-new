@@ -213,6 +213,7 @@ export function MyCasesPage() {
                   <th>Case ID</th>
                   <th>Child</th>
                   <th>Service</th>
+                  <th>Visit address</th>
                   <th>Stage</th>
                   <th>Next due</th>
                 </tr>
@@ -220,7 +221,7 @@ export function MyCasesPage() {
               <tbody>
                 {displayCases.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="ic-table-empty">
+                    <td colSpan={6} className="ic-table-empty">
                       No cases match your search or filters.
                     </td>
                   </tr>
@@ -232,6 +233,23 @@ export function MyCasesPage() {
                       </td>
                       <td>{c.child}</td>
                       <td>{c.service}</td>
+                      <td className="ic-table-address">
+                        {c.serviceAddress?.formatted ? (
+                          <>
+                            <span>{c.serviceAddress.formatted}</span>
+                            {c.mapsUrl ? (
+                              <>
+                                {' '}
+                                <a href={c.mapsUrl} target="_blank" rel="noopener noreferrer">
+                                  Maps
+                                </a>
+                              </>
+                            ) : null}
+                          </>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td>{c.stage}</td>
                       <td>{c.nextDue}</td>
                     </tr>

@@ -186,7 +186,7 @@ async def upload_avatar(
 ):
     content = await file.read()
     try:
-        ext = avatar_service.validate_avatar_upload(file.content_type, len(content))
+        ext = avatar_service.validate_avatar_upload(file.content_type, len(content), file.filename)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     path = avatar_service.save_avatar(user.id, content, ext)

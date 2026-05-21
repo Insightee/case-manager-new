@@ -1,106 +1,123 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from pydantic import BaseModel, Field
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.incident_catalog import meta_payload
 from app.core.pagination import paginate_query, paginated_response
 from app.core.module_access import user_has_feature
 from app.core.permissions import case_scope_check, require_permission, user_has_permission
-from app.models.incident import Incident, IncidentMessage, IncidentStatus
+from app.models.incident import Incident, IncidentMessage, IncidentStatus, normalize_incident_status
 from app.models.user import User
 from app.models.case import Case
-from app.services import case_service
-from app.services import ticket_escalation_service as ticket_esc
-from app.core.permissions import RoleName
+from app.services import case_service, incident_attachment_service as att_svc
+from app.services import incident_service as inc_svc
+from app.services import incident_sla_service as sla_svc
+from app.services import notification_service
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
 
-# ── Pydantic schemas ────────────────────────────────────────────────────────
-
 class IncidentCreate(BaseModel):
     case_id: Optional[int] = None
-    title: str
-    description: str
+    primary_category: str
+    subcategory: str
+    what_happened: str = Field(..., min_length=3)
+    priority: Optional[str] = None
+    service_type: Optional[str] = None
+    incident_at: Optional[datetime] = None
+    location: Optional[str] = None
+    immediate_action: Optional[str] = None
+    child_safe: Optional[str] = None
+    parent_informed: Optional[str] = None
     is_sensitive: bool = False
+    # Legacy fallback
+    title: Optional[str] = None
+    description: Optional[str] = None
 
 
 class IncidentUpdate(BaseModel):
-    status: Optional[IncidentStatus] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
     assigned_to_user_id: Optional[int] = None
+    tagged_roles: Optional[list[str]] = None
+    action_taken_note: Optional[str] = None
 
 
 class IncidentMessageCreate(BaseModel):
     body: str
 
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
-
 def _has_manage(user: User) -> bool:
-    """True for super-admin / supervisor with incidents module."""
     return user_has_permission(user, "incident.read_sensitive") and user_has_feature(user, "incidents")
 
 
-def _serialize_detail(incident: Incident, db: Session, viewer_user_id: int) -> dict:
-    reporter = incident.reporter
-    assignee = incident.assignee
-    case = None
-    if incident.case_id:
-        case = db.scalars(
-            select(Case).where(Case.id == incident.case_id).options(selectinload(Case.child))
-        ).first()
-    return {
-        "id": incident.id,
-        "case_id": incident.case_id,
-        "case_code": case.case_code if case else None,
-        "child_name": case_service.case_child_display_name(case),
-        "title": incident.title,
-        "description": incident.description,
-        "is_sensitive": incident.is_sensitive,
-        "status": incident.status.value,
-        "product_module": case.product_module if case else None,
-        "reporter_name": reporter.full_name if reporter else None,
-        "assigned_to_user_id": incident.assigned_to_user_id,
-        "assigned_to_name": assignee.full_name if assignee else None,
-        "created_at": incident.created_at.isoformat(),
-        "messages": [
-            {
-                "id": m.id,
-                "body": m.body,
-                "author_name": m.author.full_name if m.author else "Unknown",
-                "is_reporter": m.author_user_id == incident.reported_by_user_id,
-                "created_at": m.created_at.isoformat(),
-            }
-            for m in incident.messages
-        ],
-    }
+def _can_access(incident: Incident, user: User, db: Session) -> bool:
+    if incident.reported_by_user_id == user.id:
+        return True
+    if _has_manage(user):
+        if incident.case_id:
+            case = case_service.get_case(db, incident.case_id)
+            return case is None or case_scope_check(db, user, case)
+        return True
+    if incident.assigned_to_user_id == user.id:
+        return True
+    return False
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
+@router.get("/meta")
+def incidents_meta():
+    return meta_payload()
+
+
+@router.get("/attachments/{attachment_id}/download")
+def download_incident_attachment(
+    attachment_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    att = att_svc.get_attachment_or_404(db, attachment_id)
+    incident = db.get(Incident, att.incident_id)
+    if not incident or not att_svc.can_access_incident(db, user, incident):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return att_svc.download_response(att)
+
 
 @router.get("")
 def list_incidents(
     product_module: Optional[str] = None,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    primary_category: Optional[str] = None,
+    assigned_to_me: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Supervisors/admins see all incidents (module-gated).
-    Other authenticated users (therapists, etc.) see only incidents they reported.
-    """
     has_manage = _has_manage(user)
 
     if has_manage:
         stmt = select(Incident).order_by(Incident.created_at.desc())
+    elif assigned_to_me:
+        stmt = (
+            select(Incident)
+            .where(
+                or_(
+                    Incident.assigned_to_user_id == user.id,
+                    Incident.reported_by_user_id == user.id,
+                )
+            )
+            .order_by(Incident.created_at.desc())
+        )
     else:
         stmt = (
             select(Incident)
@@ -108,7 +125,17 @@ def list_incidents(
             .order_by(Incident.created_at.desc())
         )
 
+    if status:
+        stmt = stmt.where(Incident.status == normalize_incident_status(status))
+    if priority:
+        stmt = stmt.where(Incident.priority == priority.upper())
+    if primary_category:
+        stmt = stmt.where(Incident.primary_category == primary_category.upper())
+
     incidents, total = paginate_query(db, stmt, page=page, page_size=page_size)
+
+    if has_manage:
+        sla_svc.process_open_incidents(db, incidents)
 
     case_ids = {i.case_id for i in incidents if i.case_id}
     cases_by_id = {}
@@ -125,18 +152,10 @@ def list_incidents(
             continue
         if product_module and (not case or case.product_module != product_module):
             continue
-        result.append({
-            "id": i.id,
-            "case_id": i.case_id,
-            "case_code": case.case_code if case else None,
-            "child_name": case_service.case_child_display_name(case),
-            "title": i.title,
-            "status": i.status.value,
-            "is_sensitive": i.is_sensitive,
-            "product_module": case.product_module if case else None,
-            "reporter_name": i.reporter.full_name if i.reporter else None,
-            "created_at": i.created_at.isoformat(),
-        })
+        result.append(inc_svc.incident_to_list_dict(i, case))
+
+    if has_manage:
+        db.commit()
 
     return paginated_response(result, total, page, page_size)
 
@@ -147,17 +166,19 @@ def get_incident(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    incident = db.get(Incident, incident_id)
+    incident = inc_svc.get_incident_detail(db, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
-
-    has_manage = _has_manage(user)
-    is_reporter = incident.reported_by_user_id == user.id
-
-    if not has_manage and not is_reporter:
+    if not _can_access(incident, user, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    return _serialize_detail(incident, db, user.id)
+    is_owner = incident.assigned_to_user_id == user.id and _has_manage(user)
+    if is_owner:
+        inc_svc.mark_in_review_on_owner_open(incident, user.id)
+        db.commit()
+
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    return inc_svc.incident_to_detail_dict(incident, case)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -167,36 +188,105 @@ def create_incident(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    case = case_service.get_case(db, payload.case_id) if payload.case_id else None
-    assignee_id = None
-    if case:
-        if case.case_manager_user_id:
-            assignee_id = case.case_manager_user_id
-        else:
-            assignee_id = ticket_esc.find_assignee_for_role(db, RoleName.SUPERVISOR.value, case)
-    incident = Incident(
-        case_id=payload.case_id,
-        reported_by_user_id=user.id,
-        title=payload.title,
-        description=payload.description,
-        is_sensitive=payload.is_sensitive,
-        assigned_to_user_id=assignee_id,
-    )
-    db.add(incident)
-    db.flush()
+    what = payload.what_happened or payload.description or ""
+    if not what.strip():
+        raise HTTPException(status_code=400, detail="What happened is required")
+    if payload.case_id:
+        case = case_service.get_case(db, payload.case_id)
+        if not case or not case_scope_check(db, user, case):
+            raise HTTPException(status_code=404, detail="Case not found")
 
-    # Add the description as the first message so the thread always starts with context
-    first_msg = IncidentMessage(
-        incident_id=incident.id,
-        author_user_id=user.id,
-        body=payload.description,
+    try:
+        incident = inc_svc.create_incident(
+            db,
+            reporter_user_id=user.id,
+            reporter_role_names=user.role_names,
+            case_id=payload.case_id,
+            primary_category=payload.primary_category,
+            subcategory=payload.subcategory,
+            what_happened=what,
+            priority=payload.priority,
+            service_type=payload.service_type,
+            incident_at=payload.incident_at,
+            location=payload.location,
+            immediate_action=payload.immediate_action,
+            child_safe=payload.child_safe,
+            parent_informed=payload.parent_informed,
+            is_sensitive=payload.is_sensitive,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    assignee_name = "the assigned owner"
+    if incident.assigned_to_user_id:
+        u = db.get(User, incident.assigned_to_user_id)
+        if u:
+            assignee_name = u.full_name
+    notification_service.create_notification(
+        db,
+        user_id=user.id,
+        title="Incident submitted",
+        body=f"{incident.ticket_code} submitted — {assignee_name} will review.",
+        entity_type="incident",
+        entity_id=incident.id,
     )
-    db.add(first_msg)
+    if incident.assigned_to_user_id:
+        notification_service.create_notification(
+            db,
+            user_id=incident.assigned_to_user_id,
+            title=f"New incident: {incident.ticket_code}",
+            body=incident.title,
+            entity_type="incident",
+            entity_id=incident.id,
+        )
+    if incident.priority == "CRITICAL" and incident.assigned_to_user_id:
+        from app.services.ticket_escalation_service import find_assignee_for_role
+        from app.core.permissions import RoleName
+
+        case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+        hr_id = find_assignee_for_role(db, RoleName.HR.value, case)
+        if hr_id and hr_id != incident.assigned_to_user_id:
+            notification_service.create_notification(
+                db,
+                user_id=hr_id,
+                title=f"Critical incident: {incident.ticket_code}",
+                body=incident.title,
+                entity_type="incident",
+                entity_id=incident.id,
+            )
 
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="incident", entity_id=incident.id, **meta)
     db.commit()
-    return {"id": incident.id, "status": incident.status.value}
+    db.refresh(incident)
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    detail = inc_svc.incident_to_detail_dict(incident, case)
+    detail["confirmation"] = f"Incident {incident.ticket_code} submitted — {assignee_name} will review."
+    return detail
+
+
+@router.post("/{incident_id}/attachments", status_code=status.HTTP_201_CREATED)
+async def upload_incident_attachments(
+    incident_id: int,
+    request: Request,
+    note: Optional[str] = Form(None),
+    files: list[UploadFile] = File(default=[]),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    incident = db.get(Incident, incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    if not att_svc.can_access_incident(db, user, incident):
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        saved = await att_svc.save_attachments(db, incident, user, files, note=note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="attach", entity_type="incident", entity_id=incident_id, **meta)
+    db.commit()
+    return {"attachments": [att_svc.attachment_to_dict(a) for a in saved]}
 
 
 @router.post("/{incident_id}/messages", status_code=status.HTTP_201_CREATED)
@@ -207,15 +297,14 @@ def add_incident_message(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    incident = db.get(Incident, incident_id)
+    incident = inc_svc.get_incident_detail(db, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
-
-    has_manage = _has_manage(user)
-    is_reporter = incident.reported_by_user_id == user.id
-
-    if not has_manage and not is_reporter:
+    if not _can_access(incident, user, db):
         raise HTTPException(status_code=403, detail="Access denied")
+
+    is_reporter = incident.reported_by_user_id == user.id
+    is_owner = incident.assigned_to_user_id == user.id and _has_manage(user)
 
     msg = IncidentMessage(
         incident_id=incident_id,
@@ -224,15 +313,19 @@ def add_incident_message(
     )
     db.add(msg)
 
-    # Reopen if resolved and reporter replies
-    if is_reporter and incident.status == IncidentStatus.RESOLVED:
-        incident.status = IncidentStatus.INVESTIGATING
+    if is_reporter and incident.status in (IncidentStatus.ACTION_TAKEN, IncidentStatus.CLOSED):
+        incident.status = IncidentStatus.IN_REVIEW
+    if is_owner:
+        incident.last_owner_activity_at = datetime.now(timezone.utc)
+        if incident.status == IncidentStatus.REPORTED:
+            incident.status = IncidentStatus.IN_REVIEW
 
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="message", entity_type="incident", entity_id=incident_id, **meta)
     db.commit()
-    db.refresh(incident)
-    return _serialize_detail(incident, db, user.id)
+    incident = inc_svc.get_incident_detail(db, incident_id)
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    return inc_svc.incident_to_detail_dict(incident, case)
 
 
 @router.patch("/{incident_id}")
@@ -245,20 +338,33 @@ def update_incident(
 ):
     if not user_has_feature(user, "incidents"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Incidents module access required")
-    incident = db.get(Incident, incident_id)
+    incident = inc_svc.get_incident_detail(db, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     if incident.case_id:
         case = case_service.get_case(db, incident.case_id)
         if case and not case_scope_check(db, user, case):
             raise HTTPException(status_code=403, detail="Case access denied")
-    data = payload.model_dump(exclude_unset=True)
-    if "status" in data and data["status"] is not None:
-        incident.status = data["status"]
-    if "assigned_to_user_id" in data:
-        incident.assigned_to_user_id = data["assigned_to_user_id"]
+
+    is_owner = incident.assigned_to_user_id == user.id or user_has_permission(user, "admin.override")
+    try:
+        inc_svc.update_incident(
+            db,
+            incident,
+            actor_user_id=user.id,
+            is_owner=is_owner,
+            status=payload.status,
+            priority=payload.priority,
+            assigned_to_user_id=payload.assigned_to_user_id,
+            tagged_roles=payload.tagged_roles,
+            action_taken_note=payload.action_taken_note,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="incident", entity_id=incident.id, **meta)
     db.commit()
-    db.refresh(incident)
-    return _serialize_detail(incident, db, user.id)
+    incident = inc_svc.get_incident_detail(db, incident_id)
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    return inc_svc.incident_to_detail_dict(incident, case)

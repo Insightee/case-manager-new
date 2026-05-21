@@ -62,6 +62,12 @@ def ensure_sqlite_schema_patches() -> None:
             if "leave_block_leave_id" not in slot_cols:
                 conn.execute(text("ALTER TABLE therapist_slots ADD COLUMN leave_block_leave_id INTEGER"))
 
+    if insp.has_table("users"):
+        user_cols = {c["name"] for c in insp.get_columns("users")}
+        if "avatar_path" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN avatar_path VARCHAR(512)"))
+
     if insp.has_table("daily_logs"):
         log_cols = {c["name"] for c in insp.get_columns("daily_logs")}
         with engine.begin() as conn:
@@ -120,6 +126,60 @@ def ensure_sqlite_schema_patches() -> None:
                     text("ALTER TABLE ticket_messages ADD COLUMN is_internal BOOLEAN NOT NULL DEFAULT 0")
                 )
 
+    if insp.has_table("incidents"):
+        inc_cols = {c["name"] for c in insp.get_columns("incidents")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("ticket_code", "VARCHAR(32)"),
+                ("primary_category", "VARCHAR(64)"),
+                ("subcategory", "VARCHAR(64)"),
+                ("priority", "VARCHAR(16)"),
+                ("service_type", "VARCHAR(32)"),
+                ("incident_at", "DATETIME"),
+                ("location", "VARCHAR(32)"),
+                ("immediate_action", "TEXT"),
+                ("child_safe", "VARCHAR(8)"),
+                ("parent_informed", "VARCHAR(8)"),
+                ("primary_owner_role", "VARCHAR(32)"),
+                ("tagged_roles", "TEXT"),
+                ("action_taken_note", "TEXT"),
+                ("last_owner_activity_at", "DATETIME"),
+                ("sla_reminder_sent_at", "DATETIME"),
+                ("escalated_at", "DATETIME"),
+            ):
+                if col not in inc_cols:
+                    conn.execute(text(f"ALTER TABLE incidents ADD COLUMN {col} {ddl}"))
+            conn.execute(text("UPDATE incidents SET status = 'REPORTED' WHERE status = 'OPEN'"))
+            conn.execute(text("UPDATE incidents SET status = 'IN_REVIEW' WHERE status = 'INVESTIGATING'"))
+            conn.execute(text("UPDATE incidents SET status = 'ACTION_TAKEN' WHERE status = 'RESOLVED'"))
+            conn.execute(
+                text("UPDATE incidents SET ticket_code = 'INC-LEGACY-' || id WHERE ticket_code IS NULL")
+            )
+
+    if not insp.has_table("incident_attachments"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE incident_attachments (
+                        id INTEGER PRIMARY KEY,
+                        incident_id INTEGER NOT NULL REFERENCES incidents(id),
+                        message_id INTEGER REFERENCES incident_messages(id),
+                        file_name VARCHAR(255) NOT NULL,
+                        file_path VARCHAR(512) NOT NULL,
+                        mime_type VARCHAR(128) NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        note TEXT,
+                        uploaded_by_user_id INTEGER NOT NULL REFERENCES users(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_incident_attachments_incident_id ON incident_attachments (incident_id)")
+            )
+
     if not insp.has_table("observation_reports"):
         with engine.begin() as conn:
             conn.execute(
@@ -140,4 +200,55 @@ def ensure_sqlite_schema_patches() -> None:
             )
             conn.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_observation_reports_case_id ON observation_reports (case_id)")
+            )
+
+    if insp.has_table("monthly_reports"):
+        mr_cols = {c["name"] for c in insp.get_columns("monthly_reports")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("body_html", "TEXT"),
+                ("plan_next_month", "TEXT"),
+                ("category", "VARCHAR(32)"),
+                ("sub_category", "VARCHAR(32)"),
+                ("report_date", "DATE"),
+            ):
+                if col not in mr_cols:
+                    conn.execute(text(f"ALTER TABLE monthly_reports ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("observation_reports"):
+        ob_cols = {c["name"] for c in insp.get_columns("observation_reports")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("body_html", "TEXT"),
+                ("plan_next_month", "TEXT"),
+                ("category", "VARCHAR(32)"),
+                ("sub_category", "VARCHAR(32)"),
+                ("report_date", "DATE"),
+            ):
+                if col not in ob_cols:
+                    conn.execute(text(f"ALTER TABLE observation_reports ADD COLUMN {col} {ddl}"))
+
+    if not insp.has_table("report_images"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE report_images (
+                        id INTEGER PRIMARY KEY,
+                        report_type VARCHAR(32) NOT NULL,
+                        report_id INTEGER NOT NULL,
+                        file_path VARCHAR(512) NOT NULL,
+                        mime_type VARCHAR(128) NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        uploaded_by_user_id INTEGER NOT NULL REFERENCES users(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_report_images_report "
+                    "ON report_images (report_type, report_id)"
+                )
             )

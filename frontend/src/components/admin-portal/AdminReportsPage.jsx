@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, getTokens } from '../../lib/apiClient.js'
 import { AdminPageHeader, AdminSearchInput } from './ui/index.js'
 import { AdminReportDetailDrawer } from './AdminReportDetailDrawer.jsx'
@@ -59,6 +59,10 @@ export function AdminReportsPage() {
   const [status, setStatus] = useState(searchParams.get('status') || '')
   const [module, setModule] = useState(searchParams.get('module') || '')
   const [month, setMonth] = useState(searchParams.get('month') || '')
+  const [missingMonth, setMissingMonth] = useState(
+    () => new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+  )
+  const [missingRows, setMissingRows] = useState([])
 
   const filters = useMemo(
     () => ({ search, status, module, month, parentReview: '', caseId: searchParams.get('case_id') || '' }),
@@ -118,9 +122,27 @@ export function AdminReportsPage() {
     loadSummary()
   }, [loadSummary])
 
+  const loadMissing = useCallback(async () => {
+    if (tab !== 'missing') return
+    setLoading(true)
+    try {
+      const q = new URLSearchParams({ month: missingMonth })
+      if (module) q.set('product_module', module)
+      const rows = await apiFetch(`/api/v1/admin/reports/missing-monthly?${q}`)
+      setMissingRows(rows || [])
+      setMessage('')
+    } catch (err) {
+      setMissingRows([])
+      setMessage(err.message || 'Could not load missing reports')
+    } finally {
+      setLoading(false)
+    }
+  }, [tab, missingMonth, module])
+
   useEffect(() => {
-    loadList()
-  }, [loadList])
+    if (tab === 'missing') loadMissing()
+    else loadList()
+  }, [tab, loadList, loadMissing])
 
   useEffect(() => {
     setPage(1)
@@ -335,6 +357,13 @@ export function AdminReportsPage() {
         >
           All reports
         </button>
+        <button
+          type="button"
+          className={`admin-btn admin-btn--sm ${tab === 'missing' ? 'admin-btn--primary' : ''}`}
+          onClick={() => setTab('missing')}
+        >
+          Missing monthly
+        </button>
         <span style={{ marginLeft: 8 }} />
         {['all', 'monthly', 'observation'].map((t) => (
           <button
@@ -438,17 +467,63 @@ export function AdminReportsPage() {
         </div>
       ) : null}
 
-      <AdminReportsTable
-        rows={rows}
-        loading={loading}
-        selected={selected}
-        onToggle={toggleSelect}
-        onToggleAll={toggleAll}
-        onView={openDrawer}
-        onApprove={quickApprove}
-        onReject={quickReject}
-      />
+      {tab === 'missing' ? (
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Month</span>
+            <input
+              className="admin-input"
+              value={missingMonth}
+              onChange={(e) => setMissingMonth(e.target.value)}
+              style={{ maxWidth: 200 }}
+            />
+            <button type="button" className="admin-btn admin-btn--sm" onClick={loadMissing}>
+              Refresh
+            </button>
+          </label>
+          {loading ? (
+            <p>Loading…</p>
+          ) : missingRows.length === 0 ? (
+            <p className="admin-muted">All active cases have a client monthly report for this month.</p>
+          ) : (
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Case</th>
+                  <th>Child</th>
+                  <th>Therapist</th>
+                  <th>Module</th>
+                </tr>
+              </thead>
+              <tbody>
+                {missingRows.map((r) => (
+                  <tr key={r.case_id}>
+                    <td>
+                      <Link to={`/admin/cases/${r.case_id}?tab=reports`}>{r.case_code}</Link>
+                    </td>
+                    <td>{r.child_name}</td>
+                    <td>{r.therapist_name || '—'}</td>
+                    <td>{r.product_module || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : (
+        <AdminReportsTable
+          rows={rows}
+          loading={loading}
+          selected={selected}
+          onToggle={toggleSelect}
+          onToggleAll={toggleAll}
+          onView={openDrawer}
+          onApprove={quickApprove}
+          onReject={quickReject}
+        />
+      )}
 
+      {tab !== 'missing' ? (
       <div className="admin-reports__pagination">
         <button
           type="button"
@@ -470,6 +545,7 @@ export function AdminReportsPage() {
           Next
         </button>
       </div>
+      ) : null}
 
       {drawerId ? (
         <AdminReportDetailDrawer

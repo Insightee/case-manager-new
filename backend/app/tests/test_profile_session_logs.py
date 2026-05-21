@@ -20,6 +20,24 @@ def _login(email: str, password: str = "demo123"):
     return r.json()["access_token"]
 
 
+def test_avatar_upload_and_fetch():
+    token = _login("therapist@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    jpeg = bytes([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9])
+    up = client.post(
+        "/api/v1/auth/me/avatar",
+        headers=headers,
+        files={"file": ("photo.jpg", jpeg, "image/jpeg")},
+    )
+    assert up.status_code == 200, up.text
+    assert up.json()["avatar_url"].startswith("/api/v1/files/avatars/")
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.json()["avatar_url"]
+    av = client.get(me.json()["avatar_url"], headers=headers)
+    assert av.status_code == 200
+    assert av.headers["content-type"].startswith("image/")
+
+
 def test_avatar_rejects_oversized():
     token = _login("therapist@demo.com")
     big = b"x" * (1_048_576 + 1)

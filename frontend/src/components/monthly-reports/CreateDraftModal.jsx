@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { unwrapList } from '../../lib/listApi.js'
 
 export function CreateDraftModal({ open, onClose, onCreated, defaultMonth, defaultCaseId = null }) {
+  const navigate = useNavigate()
+  const reportsBase = window.location.pathname.startsWith('/therapist') ? '/therapist/reports' : '/reports'
   const [cases, setCases] = useState([])
   const [caseId, setCaseId] = useState(defaultCaseId ? String(defaultCaseId) : '')
   const [month, setMonth] = useState(defaultMonth || '')
-  const [summary, setSummary] = useState('')
+  const [category, setCategory] = useState('CLIENT_MONTHLY')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -32,13 +36,13 @@ export function CreateDraftModal({ open, onClose, onCreated, defaultMonth, defau
         body: JSON.stringify({
           case_id: Number(caseId),
           month,
-          summary: summary || undefined,
+          category,
         }),
       })
       onCreated?.(created)
       onClose()
       setCaseId('')
-      setSummary('')
+      navigate(`${reportsBase}/edit/${created.id}`)
     } catch (err) {
       setError(err.message || 'Could not create draft')
     } finally {
@@ -94,15 +98,20 @@ export function CreateDraftModal({ open, onClose, onCreated, defaultMonth, defau
             />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Summary
-            <textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              rows={4}
+            Report type
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
               className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              placeholder="Progress, goals, recommendations…"
-            />
+            >
+              {REPORT_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </label>
+          <p className="text-xs text-slate-500">You will write the full report in the editor next.</p>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex gap-2 pt-2">
             <button

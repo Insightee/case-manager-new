@@ -34,6 +34,10 @@ export function AdminCasesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [scheduleCase, setScheduleCase] = useState(null)
   const [assignError, setAssignError] = useState('')
+  const [cmUsers, setCmUsers] = useState([])
+  const [caseManagerId, setCaseManagerId] = useState('')
+  const [cmSaving, setCmSaving] = useState(false)
+  const [cmError, setCmError] = useState('')
 
   const { data: casesData, isLoading: loading, refetch: refetchCases } = useApiQuery(
     ['admin', 'cases'],
@@ -104,9 +108,40 @@ export function AdminCasesPage() {
     refetchCases()
   }
 
+  useEffect(() => {
+    if (!can('case.update')) return
+    apiFetch('/api/v1/admin/users')
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : rows?.items || []
+        setCmUsers(list.filter((u) => u.roles?.includes('CASE_MANAGER')))
+      })
+      .catch(() => setCmUsers([]))
+  }, [can])
+
   function openCase(c) {
     setSelected(c)
+    setCaseManagerId(c.case_manager_user_id ? String(c.case_manager_user_id) : '')
+    setCmError('')
     loadAssignments(c.id)
+  }
+
+  async function saveCaseManager(caseId) {
+    setCmSaving(true)
+    setCmError('')
+    try {
+      const updated = await apiFetch(`/api/v1/cases/${caseId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          case_manager_user_id: caseManagerId ? Number(caseManagerId) : null,
+        }),
+      })
+      setSelected(updated)
+      refetchCases()
+    } catch (err) {
+      setCmError(err.message || 'Could not update case manager')
+    } finally {
+      setCmSaving(false)
+    }
   }
 
   async function saveBilling(payload) {
@@ -324,6 +359,41 @@ export function AdminCasesPage() {
             onSave={can('case.update') ? saveServiceAddress : undefined}
             readOnly={!can('case.update')}
           />
+          {can('case.update') ? (
+            <div className="admin-form-grid" style={{ maxWidth: 420, marginBottom: 16 }}>
+              <label>
+                Case manager
+                <select
+                  className="admin-input"
+                  value={caseManagerId}
+                  onChange={(e) => setCaseManagerId(e.target.value)}
+                >
+                  <option value="">Not assigned</option>
+                  {cmUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name || u.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p style={{ fontSize: '0.75rem', color: '#64748b', margin: 0 }}>
+                Shown to parents on their dashboard and case hub. Therapists are assigned separately below.
+              </p>
+              {cmError ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{cmError}</p> : null}
+              <button
+                type="button"
+                className="admin-btn admin-btn--secondary admin-btn--sm"
+                disabled={cmSaving}
+                onClick={() => saveCaseManager(selected.id)}
+              >
+                {cmSaving ? 'Saving…' : 'Save case manager'}
+              </button>
+            </div>
+          ) : selected.case_manager_user_id ? (
+            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: 16 }}>
+              Case manager ID: {selected.case_manager_user_id}
+            </p>
+          ) : null}
           <h4 className="admin-drawer__subtitle" style={{ marginTop: 8 }}>
             Assignment history
           </h4>

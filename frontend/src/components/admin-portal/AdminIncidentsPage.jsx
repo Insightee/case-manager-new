@@ -6,12 +6,12 @@ import { IncidentDetailPanel } from '../support/IncidentDetailPanel.jsx'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminToolbar, AdminSearchInput, StatusBadge } from './ui/index.js'
 import '../support/support-tickets.css'
 
-const STATUS_FILTERS = ['ALL', 'OPEN', 'INVESTIGATING', 'RESOLVED', 'CLOSED']
+const STATUS_FILTERS = ['ALL', 'REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
 
 export function AdminIncidentsPage() {
   const [incidents, setIncidents] = useState([])
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('OPEN')
+  const [statusFilter, setStatusFilter] = useState('REPORTED')
   const [moduleFilter, setModuleFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
@@ -44,7 +44,7 @@ export function AdminIncidentsPage() {
     })
   }, [incidents, search, statusFilter])
 
-  const openCount = incidents.filter((i) => i.status === 'OPEN' || i.status === 'INVESTIGATING').length
+  const openCount = incidents.filter((i) => i.status !== 'CLOSED').length
 
   async function toggleExpand(inc) {
     if (expandedId === inc.id) {

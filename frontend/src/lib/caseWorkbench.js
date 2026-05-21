@@ -143,7 +143,7 @@ function stageBadge(caseRow, needsLogCount, reportPending) {
   return { variant: 'active', label: caseRow.operational_stage || 'Active' }
 }
 
-export function buildCaseWorkbench({ cases = [], sessions = [], logs = [], reports = [], slots = [] }) {
+export function buildCaseWorkbench({ cases = [], sessions = [], logs: _logs = [], reports = [], slots = [] }) {
   const today = todayIso()
   const sessionsByCase = new Map()
   for (const s of sessions) {

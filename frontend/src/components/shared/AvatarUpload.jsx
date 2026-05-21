@@ -1,25 +1,90 @@
-import { useRef, useState } from 'react'
-import { apiUpload, apiFetch } from '../../lib/apiClient.js'
+import { useEffect, useRef, useState } from 'react'
+import { apiFetch, apiFetchBlob, apiUpload } from '../../lib/apiClient.js'
 
 const MAX_BYTES = 1_048_576
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp']
 
+/** @deprecated Use AuthenticatedAvatar — plain URLs require auth and break in <img>. */
 export function avatarSrc(user) {
   if (!user?.avatar_url) return null
-  const base = import.meta.env.VITE_API_URL || ''
-  return `${base}${user.avatar_url}?t=${Date.now()}`
+  return null
 }
 
-export function AvatarUpload({ user, onUpdated, size = 48 }) {
+function useAuthenticatedAvatarSrc(user) {
+  const [blobUrl, setBlobUrl] = useState(null)
+
+  useEffect(() => {
+    if (!user?.avatar_url) {
+      setBlobUrl(null)
+      return undefined
+    }
+
+    let revoked = null
+    let cancelled = false
+
+    apiFetchBlob(`${user.avatar_url.split('?')[0]}?t=${Date.now()}`)
+      .then((blob) => {
+        if (cancelled) return
+        revoked = URL.createObjectURL(blob)
+        setBlobUrl(revoked)
+      })
+      .catch(() => {
+        if (!cancelled) setBlobUrl(null)
+      })
+
+    return () => {
+      cancelled = true
+      if (revoked) URL.revokeObjectURL(revoked)
+    }
+  }, [user?.avatar_url, user?.id])
+
+  return blobUrl
+}
+
+/** Avatar image that loads via authenticated fetch (API requires Bearer token). */
+export function AuthenticatedAvatar({ user, className, style, size = 48 }) {
+  const src = useAuthenticatedAvatarSrc(user)
+  const initial = user?.full_name?.charAt(0)?.toUpperCase() || '?'
+
+  return (
+    <div
+      className={className}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        overflow: 'hidden',
+        background: '#6366f1',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#fff',
+        fontWeight: 700,
+        fontSize: size * 0.35,
+        flexShrink: 0,
+        ...style,
+      }}
+    >
+      {src ? (
+        <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        initial
+      )}
+    </div>
+  )
+}
+
+export function AvatarUpload({ user, onUpdated, size = 80 }) {
   const inputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const previewSrc = useAuthenticatedAvatarSrc(user)
 
   async function handleFile(e) {
     const file = e.target.files?.[0]
     if (!file) return
     setError('')
-    if (!ALLOWED.includes(file.type)) {
+    if (!ALLOWED.includes(file.type) && !/\.(jpe?g|png|webp)$/i.test(file.name)) {
       setError('Use JPEG, PNG, or WebP.')
       return
     }
@@ -54,11 +119,9 @@ export function AvatarUpload({ user, onUpdated, size = 48 }) {
     }
   }
 
-  const src = avatarSrc(user)
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <div className="avatar-upload">
+      <div className="avatar-upload__row">
         <div
           style={{
             width: size,
@@ -75,53 +138,36 @@ export function AvatarUpload({ user, onUpdated, size = 48 }) {
             flexShrink: 0,
           }}
         >
-          {src ? (
-            <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          {previewSrc ? (
+            <img src={previewSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
             user?.full_name?.charAt(0).toUpperCase() || '?'
           )}
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <div className="avatar-upload__actions">
           <button
             type="button"
             disabled={uploading}
             onClick={() => inputRef.current?.click()}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 8,
-              border: '1px solid #d1d5db',
-              background: '#fff',
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              cursor: uploading ? 'not-allowed' : 'pointer',
-            }}
+            className="avatar-upload__btn"
           >
             {uploading ? 'Uploading…' : 'Upload photo'}
           </button>
-          {src ? (
+          {user?.avatar_url ? (
             <button
               type="button"
               disabled={uploading}
               onClick={handleRemove}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 8,
-                border: '1px solid #fca5a5',
-                background: '#fff',
-                color: '#b91c1c',
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                cursor: uploading ? 'not-allowed' : 'pointer',
-              }}
+              className="avatar-upload__btn avatar-upload__btn--danger"
             >
               Remove
             </button>
           ) : null}
         </div>
-        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleFile} />
       </div>
-      <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: 0 }}>JPEG, PNG, or WebP. Max 1 MB.</p>
-      {error ? <p style={{ fontSize: '0.75rem', color: '#b91c1c', margin: 0 }}>{error}</p> : null}
+      <p className="avatar-upload__hint">JPEG, PNG, or WebP. Max 1 MB.</p>
+      {error ? <p className="avatar-upload__error">{error}</p> : null}
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden onChange={handleFile} />
     </div>
   )
 }

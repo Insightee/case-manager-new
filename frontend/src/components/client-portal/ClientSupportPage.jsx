@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { createParentTicket, replyParentTicket } from '../../lib/ticketFormUtils.js'
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
@@ -203,6 +204,7 @@ function TicketThread({ ticket, onRefresh }) {
 }
 
 export function ClientSupportPage({ cases = [] }) {
+  const location = useLocation()
   const [portalInfo, setPortalInfo] = useState(null)
   const [tickets, setTickets] = useState([])
   const [expandedId, setExpandedId] = useState(null)
@@ -228,6 +230,17 @@ export function ClientSupportPage({ cases = [] }) {
     apiFetch('/api/v1/parent/portal-info').then(setPortalInfo).catch(() => setPortalInfo(null))
     loadTickets()
   }, [loadTickets])
+
+  useEffect(() => {
+    const prefill = location.state?.prefill || location.state
+    if (!prefill?.subject && !prefill?.message) return
+    if (prefill.topic) setTopic(prefill.topic)
+    if (prefill.subject) setSubject(prefill.subject)
+    if (prefill.message) setMessage(prefill.message)
+    if (prefill.case_id) setCaseId(String(prefill.case_id))
+    const el = document.getElementById('parent-support-form')
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [location.state])
 
   const caseOptions = useMemo(() => {
     const map = new Map()
