@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { dateStr } from './slotCalendarUtils.js'
+import { ScheduleWeekdayPicker } from './ScheduleWeekdayPicker.jsx'
+import { ONGOING_MATERIALIZE_WEEKS } from './scheduleTemplateUtils.js'
+import { dateStr, weekEndContaining } from './slotCalendarUtils.js'
 
 const DURATION_CHIPS = [
   { label: '30 min', mins: 30 },
@@ -19,9 +21,6 @@ const SERVICE_TYPES = [
   { value: 'other', label: 'Other' },
 ]
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-
 function addMinsToHM(hm, mins) {
   const [h, m] = hm.split(':').map(Number)
   const total = h * 60 + m + mins
@@ -34,12 +33,6 @@ function diffMins(start, end) {
   const [eh, em] = end.split(':').map(Number)
   const d = eh * 60 + em - (sh * 60 + sm)
   return d > 0 ? d : null
-}
-
-function addWeeks(dateStr, n) {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + n * 7)
-  return d.toISOString().slice(0, 10)
 }
 
 // 3-months from today
@@ -83,6 +76,7 @@ export function SlotEditSheet({
   // Recurring
   const [recurring, setRecurring] = useState(false)
   const [recurWeekdays, setRecurWeekdays] = useState([])
+  const [recurScope, setRecurScope] = useState('until')
   const [recurEndDate, setRecurEndDate] = useState(defaultEndDate())
 
   const [saving, setSaving] = useState(false)
@@ -96,6 +90,7 @@ export function SlotEditSheet({
     setSaving(false)
     setRecurring(false)
     setRecurWeekdays([])
+    setRecurScope('until')
     setRecurEndDate(defaultEndDate())
     setBookClient(!!isAdmin)
     setBookTab('existing')
@@ -137,10 +132,23 @@ export function SlotEditSheet({
     setEndTime(addMinsToHM(startTime, mins))
   }
 
-  function toggleWeekday(key) {
-    setRecurWeekdays((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-    )
+  function resolveRecurEndDate(fromDate) {
+    if (recurScope === 'this_week') return weekEndContaining(fromDate)
+    if (recurScope === 'ongoing') {
+      const d = new Date(`${fromDate}T12:00:00`)
+      d.setDate(d.getDate() + ONGOING_MATERIALIZE_WEEKS * 7)
+      return dateStr(d)
+    }
+    return recurEndDate
+  }
+
+  function recurWeeksCount(fromDate) {
+    if (recurScope === 'this_week') return 1
+    if (recurScope === 'ongoing') return ONGOING_MATERIALIZE_WEEKS
+    const start = new Date(`${fromDate}T12:00:00`)
+    const end = new Date(`${recurEndDate}T12:00:00`)
+    const diff = Math.max(1, Math.ceil((end - start) / (7 * 86400000)))
+    return Math.min(52, diff)
   }
 
   async function handleSave(e) {
@@ -153,29 +161,16 @@ export function SlotEditSheet({
     try {
       // ------- Recurring path (no case booking, just open slots) -------
       if (recurring && recurWeekdays.length > 0 && !bookClient) {
-        const from = slotDate
-        const to = recurEndDate
-        await apiFetch('/api/v1/scheduling/assign-recurring', {
+        await apiFetch('/api/v1/slots/recurring', {
           method: 'POST',
           body: JSON.stringify({
-            case_id: null,
-            therapist_user_id: therapistId || undefined,
-            weekdays: recurWeekdays,
+            weekday_keys: recurWeekdays,
             start_time: startTime,
             end_time: endTime,
-            start_date: from,
-            end_date: to,
+            from_date: slotDate,
+            weeks: recurWeeksCount(slotDate),
+            therapist_id: therapistId || undefined,
           }),
-        }).catch(async () => {
-          // Fallback to template materialize for plain availability blocks
-          await apiFetch('/api/v1/scheduling/template/materialize', {
-            method: 'POST',
-            body: JSON.stringify({
-              from_date: from,
-              to_date: to,
-              therapist_id: therapistId || undefined,
-            }),
-          })
         })
         onSaved?.()
         onClose()
@@ -239,7 +234,7 @@ export function SlotEditSheet({
             start_time: startTime,
             end_time: endTime,
             start_date: slotDate,
-            end_date: recurEndDate,
+            end_date: resolveRecurEndDate(slotDate),
           }),
         }).catch(() => {}) // best-effort
       }
@@ -488,39 +483,42 @@ export function SlotEditSheet({
 
             {recurring && (
               <div className="mt-4 space-y-3">
-                <div>
-                  <p className="text-xs font-medium text-slate-600 mb-2">Repeat on</p>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {WEEKDAYS.map((day, i) => {
-                      const key = WEEKDAY_KEYS[i]
-                      const active = recurWeekdays.includes(key)
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => toggleWeekday(key)}
-                          className={`h-9 w-9 rounded-full text-xs font-semibold border transition-colors ${
-                            active
-                              ? 'border-indigo-600 bg-indigo-600 text-white'
-                              : 'border-slate-200 text-slate-600 hover:border-indigo-300'
-                          }`}
-                        >
-                          {day.slice(0, 2)}
-                        </button>
-                      )
-                    })}
-                  </div>
+                <ScheduleWeekdayPicker value={recurWeekdays} onChange={setRecurWeekdays} compact />
+                <div className="space-y-2">
+                  {[
+                    { id: 'this_week', label: 'This week only' },
+                    { id: 'until', label: 'Until a date' },
+                    { id: 'ongoing', label: `Ongoing (${ONGOING_MATERIALIZE_WEEKS} weeks ahead)` },
+                  ].map((m) => (
+                    <label key={m.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="recurScope"
+                        checked={recurScope === m.id}
+                        onChange={() => setRecurScope(m.id)}
+                      />
+                      {m.label}
+                    </label>
+                  ))}
                 </div>
-                <label className="block text-sm font-medium text-slate-700">
-                  Until
-                  <input
-                    type="date"
-                    value={recurEndDate}
-                    min={slotDate}
-                    onChange={(e) => setRecurEndDate(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  />
-                </label>
+                {recurScope === 'until' ? (
+                  <label className="block text-sm font-medium text-slate-700">
+                    Until
+                    <input
+                      type="date"
+                      value={recurEndDate}
+                      min={slotDate}
+                      onChange={(e) => setRecurEndDate(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                ) : null}
+                {recurScope === 'ongoing' ? (
+                  <p className="text-xs text-slate-500">
+                    Open slots or bookings repeat through{' '}
+                    {slotDate ? resolveRecurEndDate(slotDate) : '…'} — re-run weekly schedule to extend.
+                  </p>
+                ) : null}
               </div>
             )}
           </div>

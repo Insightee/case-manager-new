@@ -4,6 +4,7 @@ import {
   formatSessionTimeRange,
   isLogEditable,
   logToFormState,
+  todayIsoIST,
   validateSessionLogForm,
 } from '../../lib/sessionLogUtils.js'
 
@@ -64,8 +65,7 @@ export function SubmitSessionLogForm({
 
   const isLateSession = useMemo(() => {
     if (!session?.scheduled_date) return false
-    const today = new Date().toISOString().slice(0, 10)
-    return session.scheduled_date < today
+    return session.scheduled_date < todayIsoIST()
   }, [session])
 
   const timeRange = formatSessionTimeRange(session)
@@ -74,6 +74,14 @@ export function SubmitSessionLogForm({
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (!isEdit && !session?.id) {
+      setError('Session is missing — refresh the page and try again.')
+      return
+    }
+    if (!isEdit && session?.status && session.status !== 'COMPLETED') {
+      setError('End the session before submitting a log.')
+      return
+    }
     const validationError = validateSessionLogForm(form, { isLateSession })
     if (validationError) {
       setError(validationError)
@@ -162,6 +170,13 @@ export function SubmitSessionLogForm({
 
       {error ? <p className="ic-session-log-panel__error">{error}</p> : null}
 
+      {isLateSession && !isEdit ? (
+        <p className="ic-session-log-panel__late-banner">
+          This visit is from a past day. You must add a <strong>late reason</strong> below before admin can approve
+          the log.
+        </p>
+      ) : null}
+
       <form className="ic-session-log-form" onSubmit={handleSubmit}>
         <fieldset className="ic-session-log-form__attendance">
           <legend>Attendance</legend>
@@ -208,12 +223,15 @@ export function SubmitSessionLogForm({
               Late reason
               <span className="ic-session-log-field__req">Required</span>
             </span>
-            <span className="ic-session-log-field__hint">This session is from a past day — explain for admin review</span>
+            <span className="ic-session-log-field__hint">
+              Scheduled {session?.scheduled_date} — explain why the log is late (required to save).
+            </span>
             <textarea
               required
               value={form.late_reason}
               onChange={(e) => setForm({ ...form, late_reason: e.target.value })}
-              rows={2}
+              rows={3}
+              placeholder="e.g. Session completed offline; submitting after travel."
             />
           </label>
         ) : null}

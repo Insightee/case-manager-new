@@ -2,7 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import {
+  actualDurationMinsIST,
+  formatSessionActualRange,
+  formatTimeIST,
+  isStartedLateOnSchedule,
+  parseApiDatetime,
+} from '../../lib/datetime.js'
 import { isLogEditable } from '../../lib/sessionLogUtils.js'
+import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
 import '../cases/my-cases.css'
@@ -12,35 +20,10 @@ function formatTime(t) {
   return String(t).slice(0, 5)
 }
 
-function fmtActualTime(isoStr) {
-  if (!isoStr) return null
-  return new Date(isoStr).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-}
-
-function actualDurationMins(startIso, endIso) {
-  if (!startIso || !endIso) return null
-  const diff = Math.round((new Date(endIso) - new Date(startIso)) / 60000)
-  return diff > 0 ? diff : null
-}
-
-function scheduledStartMins(startTime) {
-  if (!startTime) return null
-  const [h, m] = String(startTime).split(':').map(Number)
-  return h * 60 + m
-}
-
-function isStartedLate(actualStartIso, scheduledStartTime, thresholdMins = 5) {
-  const actualTime = fmtActualTime(actualStartIso)
-  if (!actualTime || !scheduledStartTime) return false
-  const [ah, am] = actualTime.split(':').map(Number)
-  const actualMins = ah * 60 + am
-  const sched = scheduledStartMins(scheduledStartTime)
-  return sched !== null && actualMins - sched > thresholdMins
-}
-
 function formatDuration(startIso, tick) {
   if (!startIso) return '00:00:00'
-  const start = new Date(startIso).getTime()
+  const start = parseApiDatetime(startIso)?.getTime()
+  if (start == null) return '00:00:00'
   const secs = Math.max(0, Math.floor((tick - start) / 1000))
   const h = Math.floor(secs / 3600)
   const m = Math.floor((secs % 3600) / 60)
@@ -64,9 +47,11 @@ export function DailyLogsPage() {
   const [bookedSlots, setBookedSlots] = useState([])
   const logPanelRef = useRef(null)
 
-  const loadAll = useCallback(async () => {
-    setLoading(true)
-    setError('')
+  const loadAll = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true)
+      setError('')
+    }
     try {
       const today = new Date()
       const from = today.toISOString().slice(0, 10)
@@ -113,6 +98,7 @@ export function DailyLogsPage() {
   }, [logSession?.id, editingLog?.id])
 
   function openLogForm(session, { required = false, log = null } = {}) {
+    setError('')
     setLogSession(session)
     setEditingLog(log)
     setLogRequired(required)
@@ -144,7 +130,7 @@ export function DailyLogsPage() {
         method: 'POST',
         body: JSON.stringify(pos ? { lat: pos.lat, lng: pos.lng } : {}),
       })
-      await loadAll()
+      await loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not start session')
     }
@@ -158,8 +144,8 @@ export function DailyLogsPage() {
         method: 'POST',
         body: JSON.stringify(pos ? { lat: pos.lat, lng: pos.lng } : {}),
       })
-      await loadAll()
       openLogForm(ended, { required: true })
+      await loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not end session')
     }
@@ -169,21 +155,45 @@ export function DailyLogsPage() {
     setSubmitting(true)
     setError('')
     try {
-      const session = await apiFetch('/api/v1/sessions/manual', {
-        method: 'POST',
-        body: JSON.stringify({
-          case_id: payload.case_id,
-          scheduled_date: payload.scheduled_date,
-          actual_start_at: payload.actual_start_at,
-          actual_end_at: payload.actual_end_at,
-          mode: payload.mode,
-        }),
-      })
-      openLogForm(session, { required: true })
-      if (payload.isPastDay) {
-        setSuccess('Session added. Submit the log and include a late reason for admin review.')
+      let session
+      if (payload.walkIn) {
+        const result = await apiFetch('/api/v1/sessions/manual-walk-in', {
+          method: 'POST',
+          body: JSON.stringify({
+            client_name: payload.client_name,
+            client_email: payload.client_email,
+            child_name: payload.child_name,
+            client_phone: payload.client_phone || undefined,
+            scheduled_date: payload.scheduled_date,
+            actual_start_at: payload.actual_start_at,
+            actual_end_at: payload.actual_end_at,
+            mode: payload.mode,
+            product_module: payload.product_module || 'homecare',
+          }),
+        })
+        session = result.session
+        setSuccess(
+          result.invite_sent
+            ? `Invite sent to ${payload.client_email}. Case ${result.case_code} is pending admin allotment — complete the log below.`
+            : `Case ${result.case_code} created — complete the log below.`,
+        )
+      } else {
+        session = await apiFetch('/api/v1/sessions/manual', {
+          method: 'POST',
+          body: JSON.stringify({
+            case_id: payload.case_id,
+            scheduled_date: payload.scheduled_date,
+            actual_start_at: payload.actual_start_at,
+            actual_end_at: payload.actual_end_at,
+            mode: payload.mode,
+          }),
+        })
+        if (payload.isPastDay) {
+          setSuccess('Session added. Submit the log and include a late reason for admin review.')
+        }
       }
-      await loadAll()
+      openLogForm(session, { required: true })
+      await loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not add session')
     } finally {
@@ -193,7 +203,7 @@ export function DailyLogsPage() {
 
   const showComposer = !logSession && !active
 
-  if (loading) {
+  if (loading && !logSession) {
     return <p style={{ padding: 24, color: '#6b7280' }}>Loading session logs…</p>
   }
 
@@ -233,10 +243,10 @@ export function DailyLogsPage() {
               Scheduled: {formatTime(active.start_time)}–{formatTime(active.end_time)}
               {active.actual_start_at ? (
                 <>
-                  {isStartedLate(active.actual_start_at, active.start_time) ? (
-                    <span style={{ color: '#b45309', fontWeight: 600 }}> · Started late at {fmtActualTime(active.actual_start_at)}</span>
+                  {isStartedLateOnSchedule(active.actual_start_at, active.scheduled_date, active.start_time) ? (
+                    <span style={{ color: '#b45309', fontWeight: 600 }}> · Started late at {formatTimeIST(active.actual_start_at)} IST</span>
                   ) : (
-                    <span> · Started at {fmtActualTime(active.actual_start_at)}</span>
+                    <span> · Started at {formatTimeIST(active.actual_start_at)} IST</span>
                   )}
                 </>
               ) : null}
@@ -267,7 +277,7 @@ export function DailyLogsPage() {
             onSuccess={async () => {
               setSuccess(editingLog ? 'Session log updated.' : 'Session log submitted — pending admin review.')
               closeLogForm()
-              await loadAll()
+              await loadAll({ silent: true })
             }}
             onCancel={closeLogForm}
           />
@@ -279,7 +289,7 @@ export function DailyLogsPage() {
           upcomingSessions={upcoming}
           bookedSlots={bookedSlots}
           disabled={!!active}
-          onSessionStarted={loadAll}
+          onSessionStarted={() => loadAll({ silent: true })}
           onManualSession={handleManualSession}
           onError={setError}
         />
@@ -319,10 +329,10 @@ export function DailyLogsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {upcoming.map((s) => {
-                const startedLate = isStartedLate(s.actual_start_at, s.start_time)
-                const actualStart = fmtActualTime(s.actual_start_at)
-                const actualEnd = fmtActualTime(s.actual_end_at)
-                const durMins = actualDurationMins(s.actual_start_at, s.actual_end_at)
+                const startedLate = isStartedLateOnSchedule(s.actual_start_at, s.scheduled_date, s.start_time)
+                const actualStart = formatTimeIST(s.actual_start_at)
+                const actualEnd = formatTimeIST(s.actual_end_at)
+                const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
                 const isInProgress = s.status === 'IN_PROGRESS'
                 const isCompleted = s.status === 'COMPLETED'
                 return (
@@ -411,19 +421,28 @@ export function DailyLogsPage() {
           <div className="ic-session-log-recent">
             {logs.slice(0, 10).map((l) => {
               const canEdit = isLogEditable(l)
+              const timeRange = formatSessionActualRange({
+                actual_start_at: l.actual_start_at,
+                actual_end_at: l.actual_end_at,
+              })
               return (
                 <div key={l.id} className="ic-session-log-recent__row">
-                  <div>
-                    <strong>{l.child_name || l.case_code}</strong>
-                    {l.scheduled_date ? <> · {l.scheduled_date}</> : null}
-                    <span className="ic-session-log-recent__meta">
-                      {l.attendance_status} · {l.approval_status}
-                      {l.late_addition ? ' · late' : ''}
-                    </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p className="ic-session-log-recent__title">
+                      {l.child_name || l.case_code}
+                      {l.scheduled_date ? <> · {l.scheduled_date}</> : null}
+                    </p>
+                    {timeRange ? <p className="ic-session-log-recent__times">Actual: {timeRange}</p> : null}
+                    <SessionLogStatusBadge
+                      approvalStatus={l.approval_status}
+                      attendanceStatus={l.attendance_status}
+                    />
+                    {l.late_addition ? (
+                      <span className="ic-session-log-recent__meta">Late submission</span>
+                    ) : null}
                     {l.case_id ? (
                       <span className="ic-session-log-recent__meta">
-                        {' '}
-                        · <Link to={`/therapist/cases/${l.case_id}`}>Open case</Link>
+                        <Link to={`/therapist/cases/${l.case_id}`}>Open case</Link>
                       </span>
                     ) : null}
                   </div>

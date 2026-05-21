@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
 
 const MODES = [
@@ -20,11 +21,6 @@ function pad2(n) {
   return String(n).padStart(2, '0')
 }
 
-export function todayIso() {
-  const d = new Date()
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
-}
-
 function toTimeInput(date) {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
@@ -36,7 +32,7 @@ export function defaultForgotSession() {
   start.setMinutes(start.getMinutes() - 60)
   return {
     case_id: '',
-    session_date: todayIso(),
+    session_date: todayIsoIST(),
     start_time: toTimeInput(start),
     end_time: toTimeInput(end),
     mode: 'HOME',
@@ -88,11 +84,30 @@ const labelStyle = {
   color: '#374151',
 }
 
+const tabBtnStyle = (active) => ({
+  flex: 1,
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: active ? '2px solid #6366f1' : '1px solid #e2e8f0',
+  background: active ? '#eef2ff' : '#fff',
+  color: active ? '#4338ca' : '#64748b',
+  fontWeight: 600,
+  fontSize: '0.8125rem',
+  cursor: 'pointer',
+})
+
 export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, submitting, initialCaseId = '' }) {
+  const [clientTab, setClientTab] = useState(initialCaseId ? 'existing' : 'existing')
   const [form, setForm] = useState(() => ({
     ...defaultForgotSession(),
     case_id: initialCaseId ? String(initialCaseId) : '',
   }))
+  const [newClient, setNewClient] = useState({
+    client_name: '',
+    child_name: '',
+    client_email: '',
+    client_phone: '',
+  })
   const [cases, setCases] = useState([])
   const [localError, setLocalError] = useState('')
 
@@ -119,11 +134,12 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
     return [...map.values()]
   }, [cases, fallbackCases])
 
+  const today = todayIsoIST()
   const startDt = combineDateAndTime(form.session_date, form.start_time)
   const endDt = combineDateAndTime(form.session_date, form.end_time)
   const durationLabel = formatDurationLabel(startDt, endDt)
-  const isPastDay = form.session_date < todayIso()
-  const isToday = form.session_date === todayIso()
+  const isPastDay = form.session_date < today
+  const isToday = form.session_date === today
 
   function setStartTime(time) {
     setForm((f) => ({ ...f, start_time: time }))
@@ -140,10 +156,6 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
   function handleSubmit(e) {
     e.preventDefault()
     setLocalError('')
-    if (!form.case_id) {
-      setLocalError('Select a client.')
-      return
-    }
     const start = combineDateAndTime(form.session_date, form.start_time)
     const end = combineDateAndTime(form.session_date, form.end_time)
     if (!start || !end) {
@@ -154,13 +166,37 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
       setLocalError('End time must be after start time.')
       return
     }
-    const today = todayIso()
     if (form.session_date > today) {
       setLocalError('Session date cannot be in the future.')
       return
     }
     if (isToday && end > new Date()) {
       setLocalError('End time cannot be in the future for today.')
+      return
+    }
+
+    if (clientTab === 'new') {
+      if (!newClient.client_name.trim() || !newClient.client_email.trim() || !newClient.child_name.trim()) {
+        setLocalError('Parent name, child name, and email are required for a new client.')
+        return
+      }
+      onSubmit({
+        walkIn: true,
+        client_name: newClient.client_name.trim(),
+        child_name: newClient.child_name.trim(),
+        client_email: newClient.client_email.trim(),
+        client_phone: newClient.client_phone.trim() || undefined,
+        scheduled_date: form.session_date,
+        actual_start_at: start.toISOString(),
+        actual_end_at: end.toISOString(),
+        mode: form.mode,
+        isPastDay,
+      })
+      return
+    }
+
+    if (!form.case_id) {
+      setLocalError('Select a client.')
       return
     }
     onSubmit({
@@ -214,24 +250,96 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {caseOptions.length > 1 || !initialCaseId ? (
-          <label style={labelStyle}>
-            Client
-            <select
-              required
-              value={form.case_id}
-              onChange={(e) => setForm({ ...form, case_id: e.target.value })}
-              style={fieldStyle}
-            >
-              <option value="">Choose client…</option>
-              {caseOptions.map((c) => (
-                <option key={c.case_id} value={c.case_id}>
-                  {c.child_name || c.case_code}
-                  {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+        {!initialCaseId ? (
+          <div>
+            <p style={{ ...labelStyle, margin: '0 0 8px' }}>Client</p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button type="button" style={tabBtnStyle(clientTab === 'existing')} onClick={() => setClientTab('existing')}>
+                Existing client
+              </button>
+              <button type="button" style={tabBtnStyle(clientTab === 'new')} onClick={() => setClientTab('new')}>
+                New client
+              </button>
+            </div>
+            {clientTab === 'existing' ? (
+              <label style={labelStyle}>
+                <span className="sr-only">Choose client</span>
+                <select
+                  required={clientTab === 'existing'}
+                  value={form.case_id}
+                  onChange={(e) => setForm({ ...form, case_id: e.target.value })}
+                  style={fieldStyle}
+                >
+                  <option value="">Choose client…</option>
+                  {caseOptions.map((c) => (
+                    <option key={c.case_id} value={c.case_id}>
+                      {c.child_name || c.case_code}
+                      {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: '#f0f9ff',
+                    border: '1px solid #bae6fd',
+                    color: '#0369a1',
+                    fontSize: '0.8125rem',
+                  }}
+                >
+                  Admin will allot billing and finalize the case. The parent gets a portal invite and can log in after
+                  registering.
+                </p>
+                <label style={labelStyle}>
+                  Parent / guardian name
+                  <input
+                    type="text"
+                    required
+                    value={newClient.client_name}
+                    onChange={(e) => setNewClient({ ...newClient, client_name: e.target.value })}
+                    style={fieldStyle}
+                    placeholder="e.g. Priya Sharma"
+                  />
+                </label>
+                <label style={labelStyle}>
+                  Child name
+                  <input
+                    type="text"
+                    required
+                    value={newClient.child_name}
+                    onChange={(e) => setNewClient({ ...newClient, child_name: e.target.value })}
+                    style={fieldStyle}
+                    placeholder="e.g. Aarav Sharma"
+                  />
+                </label>
+                <label style={labelStyle}>
+                  Parent email (portal invite)
+                  <input
+                    type="email"
+                    required
+                    value={newClient.client_email}
+                    onChange={(e) => setNewClient({ ...newClient, client_email: e.target.value })}
+                    style={fieldStyle}
+                    placeholder="parent@example.com"
+                  />
+                </label>
+                <label style={labelStyle}>
+                  Phone (optional)
+                  <input
+                    type="tel"
+                    value={newClient.client_phone}
+                    onChange={(e) => setNewClient({ ...newClient, client_phone: e.target.value })}
+                    style={fieldStyle}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
         ) : (
           <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, color: '#374151' }}>
             {caseOptions[0]?.child_name || caseOptions[0]?.case_code || 'Selected client'}
@@ -243,14 +351,14 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
           <input
             type="date"
             required
-            max={todayIso()}
+            max={today}
             value={form.session_date}
             onChange={(e) => setForm({ ...form, session_date: e.target.value })}
             style={fieldStyle}
           />
           <span style={{ display: 'block', marginTop: 4, fontSize: '0.75rem', color: '#94a3b8' }}>
             {formatDisplayDate(form.session_date)}
-            {isToday ? ' · Today' : isPastDay ? ' · Past date' : ''}
+            {isToday ? ' · Today (IST)' : isPastDay ? ' · Past date' : ''}
           </span>
         </label>
 
@@ -380,7 +488,7 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
               opacity: submitting ? 0.7 : 1,
             }}
           >
-            {submitting ? 'Adding…' : 'Add session & write log'}
+            {submitting ? 'Adding…' : clientTab === 'new' ? 'Add client & write log' : 'Add session & write log'}
           </button>
           <button
             type="button"

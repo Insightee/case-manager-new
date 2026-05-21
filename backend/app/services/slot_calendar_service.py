@@ -26,6 +26,61 @@ def _parse_hm(value: str) -> time:
     return time(int(parts[0]), int(parts[1]))
 
 
+def normalize_day_config(day_cfg: dict[str, Any] | None) -> dict[str, Any]:
+    """Support legacy single start/end per day and multi-window days (breaks)."""
+    day_cfg = day_cfg or {}
+    if day_cfg.get("windows"):
+        windows = [
+            {"start": w.get("start", "09:00"), "end": w.get("end", "18:00")}
+            for w in day_cfg["windows"]
+            if w.get("start") and w.get("end")
+        ]
+        if windows:
+            return {"enabled": bool(day_cfg.get("enabled")), "windows": windows}
+    return {
+        "enabled": bool(day_cfg.get("enabled")),
+        "windows": [
+            {
+                "start": day_cfg.get("start", "09:00"),
+                "end": day_cfg.get("end", "18:00"),
+            }
+        ],
+    }
+
+
+def _materialize_day_windows(
+    db: Session,
+    therapist_user_id: int,
+    d: date,
+    windows: list[dict[str, Any]],
+    duration: int,
+    existing: set[tuple[date, time]],
+) -> int:
+    created = 0
+    for window in windows:
+        start = _parse_hm(window.get("start", "09:00"))
+        end = _parse_hm(window.get("end", "18:00"))
+        cursor = start
+        while _add_minutes(cursor, duration) <= end:
+            slot_end = _add_minutes(cursor, duration)
+            key = (d, cursor)
+            if key not in existing:
+                db.add(
+                    TherapistSlot(
+                        therapist_user_id=therapist_user_id,
+                        slot_date=d,
+                        start_time=cursor,
+                        end_time=slot_end,
+                        status=SlotStatus.AVAILABLE,
+                        slot_duration_minutes=duration,
+                    )
+                )
+                existing.add(key)
+                created += 1
+            cursor = slot_end
+    return created
+
+
 def _add_minutes(t: time, minutes: int) -> time:
     dt = datetime.combine(date.today(), t) + timedelta(minutes=minutes)
     return dt.time()
@@ -121,30 +176,13 @@ def materialize_range(
         if is_day_on_leave(db, therapist_user_id, d):
             d += timedelta(days=1)
             continue
-        day_cfg = days_cfg.get(_weekday_key(d), {})
+        day_cfg = normalize_day_config(days_cfg.get(_weekday_key(d), {}))
         if not day_cfg.get("enabled"):
             d += timedelta(days=1)
             continue
-        start = _parse_hm(day_cfg.get("start", "09:00"))
-        end = _parse_hm(day_cfg.get("end", "18:00"))
-        cursor = start
-        while _add_minutes(cursor, duration) <= end:
-            slot_end = _add_minutes(cursor, duration)
-            key = (d, cursor)
-            if key not in existing:
-                db.add(
-                    TherapistSlot(
-                        therapist_user_id=therapist_user_id,
-                        slot_date=d,
-                        start_time=cursor,
-                        end_time=slot_end,
-                        status=SlotStatus.AVAILABLE,
-                        slot_duration_minutes=duration,
-                    )
-                )
-                existing.add(key)
-                created += 1
-            cursor = slot_end
+        created += _materialize_day_windows(
+            db, therapist_user_id, d, day_cfg["windows"], duration, existing
+        )
         d += timedelta(days=1)
     db.flush()
     return created

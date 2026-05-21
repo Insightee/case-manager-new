@@ -1,8 +1,9 @@
+import { formatSessionActualRange, todayIsoIST } from './datetime.js'
+
+export { todayIsoIST }
+
 export function formatSessionTimeRange(session) {
-  if (!session?.actual_start_at || !session?.actual_end_at) return null
-  const start = new Date(session.actual_start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const end = new Date(session.actual_end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return `${start} – ${end}`
+  return formatSessionActualRange(session)
 }
 
 export function isLogEditable(log) {

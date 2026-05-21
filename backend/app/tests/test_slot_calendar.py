@@ -42,6 +42,45 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def test_materialize_multi_window_day():
+    """Therapists can define multiple time blocks per day (e.g. break between sessions)."""
+    therapist = _login("therapist@demo.com")
+    th = _headers(therapist)
+    tpl = client.get("/api/v1/slots/template", headers=th)
+    assert tpl.status_code == 200
+    config = tpl.json()["config"]
+    config["slot_duration_minutes"] = 60
+    config["days"]["mon"] = {
+        "enabled": True,
+        "windows": [
+            {"start": "09:00", "end": "12:00"},
+            {"start": "14:00", "end": "17:00"},
+        ],
+    }
+    patch = client.patch("/api/v1/slots/template", headers=th, json={"config": config})
+    assert patch.status_code == 200
+
+    start = date(2026, 7, 6)
+    end = date(2026, 7, 6)
+    mat = client.post(
+        "/api/v1/slots/materialize",
+        headers=th,
+        json={"from_date": start.isoformat(), "to_date": end.isoformat()},
+    )
+    assert mat.status_code == 200
+    assert mat.json()["created"] >= 5
+
+    cal = client.get(
+        f"/api/v1/slots/calendar?from_date={start.isoformat()}&to_date={end.isoformat()}",
+        headers=th,
+    )
+    mon_slots = [s for s in cal.json()["slots"] if s["slot_date"] == start.isoformat()]
+    starts = sorted(s["start_time"] for s in mon_slots)
+    assert "09:00" in starts
+    assert "14:00" in starts
+    assert not any(s.startswith("12:") or s.startswith("13:") for s in starts)
+
+
 def test_materialize_and_book():
     therapist = _login("therapist@demo.com")
     th = _headers(therapist)

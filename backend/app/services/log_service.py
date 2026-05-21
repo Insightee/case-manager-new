@@ -12,6 +12,7 @@ from app.models.daily_log import AttendanceStatus, DailyLog, LogApprovalStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.visibility import VisibilityStatus
+from app.core.timezone import ensure_utc_aware, today_ist
 
 
 def _normalize_attendance(value: str | AttendanceStatus) -> str:
@@ -81,8 +82,7 @@ def create_daily_log(db: Session, **kwargs) -> DailyLog:
     if existing:
         raise ValueError("Daily log already exists for this session")
 
-    today = date.today()
-    late = session.scheduled_date < today
+    late = session.scheduled_date < today_ist()
     late_reason = kwargs.get("late_reason")
     if late and not (late_reason and str(late_reason).strip()):
         raise ValueError("Late reason is required for sessions from past days")
@@ -147,8 +147,8 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
     }
     if session:
         data["scheduled_date"] = session.scheduled_date
-        data["actual_start_at"] = session.actual_start_at
-        data["actual_end_at"] = session.actual_end_at
+        data["actual_start_at"] = ensure_utc_aware(session.actual_start_at)
+        data["actual_end_at"] = ensure_utc_aware(session.actual_end_at)
         if case and getattr(case, "child", None):
             data["child_name"] = case.child.full_name
     if session and not data.get("case_code") and getattr(session, "case", None):

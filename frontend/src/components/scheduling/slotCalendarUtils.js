@@ -46,6 +46,12 @@ export function weekDays(weekStart) {
   return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 }
 
+/** Sunday-start week end date (ISO) containing `dateIso`. */
+export function weekEndContaining(dateIso) {
+  const start = startOfWeek(new Date(`${dateIso}T12:00:00`))
+  return dateStr(addDays(start, 6))
+}
+
 /** Hour rows 08–20 for calendar grids */
 export function defaultHourRows() {
   return Array.from({ length: 13 }, (_, i) => i + 8)

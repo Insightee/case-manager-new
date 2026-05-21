@@ -29,9 +29,11 @@ export function CaseSessionsPanel({
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true)
+      setError('')
+    }
     try {
       const [sess, allLogs, act, upcoming] = await Promise.all([
         apiFetch(`/api/v1/sessions?case_id=${caseId}&page_size=100`),
@@ -75,6 +77,7 @@ export function CaseSessionsPanel({
   )
 
   function openLogForm(session, { required = false, log = null } = {}) {
+    setError('')
     setLogSession(session)
     setEditingLog(log)
     setLogRequired(required)
@@ -91,7 +94,7 @@ export function CaseSessionsPanel({
     try {
       const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, { method: 'POST' })
       openLogForm(ended, { required: true })
-      await load()
+      await load({ silent: true })
       onScheduleChange?.()
     } catch (err) {
       setError(err.message || 'Could not end session')
@@ -101,30 +104,54 @@ export function CaseSessionsPanel({
   async function handleManual(payload) {
     setError('')
     try {
-      const session = await apiFetch('/api/v1/sessions/manual', {
-        method: 'POST',
-        body: JSON.stringify({
-          case_id: payload.case_id,
-          scheduled_date: payload.scheduled_date,
-          actual_start_at: payload.actual_start_at,
-          actual_end_at: payload.actual_end_at,
-          mode: payload.mode,
-        }),
-      })
+      let session
+      if (payload.walkIn) {
+        const result = await apiFetch('/api/v1/sessions/manual-walk-in', {
+          method: 'POST',
+          body: JSON.stringify({
+            client_name: payload.client_name,
+            client_email: payload.client_email,
+            child_name: payload.child_name,
+            client_phone: payload.client_phone || undefined,
+            scheduled_date: payload.scheduled_date,
+            actual_start_at: payload.actual_start_at,
+            actual_end_at: payload.actual_end_at,
+            mode: payload.mode,
+            product_module: payload.product_module || 'homecare',
+          }),
+        })
+        session = result.session
+        setSuccess(
+          result.invite_sent
+            ? `Invite sent. Case ${result.case_code} pending admin allotment — complete the log below.`
+            : `Case ${result.case_code} created — complete the log below.`,
+        )
+      } else {
+        session = await apiFetch('/api/v1/sessions/manual', {
+          method: 'POST',
+          body: JSON.stringify({
+            case_id: payload.case_id,
+            scheduled_date: payload.scheduled_date,
+            actual_start_at: payload.actual_start_at,
+            actual_end_at: payload.actual_end_at,
+            mode: payload.mode,
+          }),
+        })
+        setSuccess(
+          payload.isPastDay
+            ? 'Session added — include a late reason when submitting the log for client approval.'
+            : 'Session added — complete the log below.',
+        )
+      }
       openLogForm(session, { required: true })
-      setSuccess(
-        payload.isPastDay
-          ? 'Session added — include a late reason when submitting the log for client approval.'
-          : 'Session added — complete the log below.',
-      )
-      await load()
+      await load({ silent: true })
       onScheduleChange?.()
     } catch (err) {
       setError(err.message || 'Could not add session')
     }
   }
 
-  if (loading) return <p className="ic-case-panel__loading">Loading sessions…</p>
+  if (loading && !logSession) return <p className="ic-case-panel__loading">Loading sessions…</p>
 
   return (
     <div className="ic-case-sessions">
@@ -152,10 +179,10 @@ export function CaseSessionsPanel({
           childName={childName}
           caseCode={caseCode}
           required={logRequired && !editingLog}
-          onSuccess={() => {
+          onSuccess={async () => {
             closeLogForm()
             setSuccess(editingLog ? 'Log updated.' : 'Log submitted for review.')
-            load()
+            await load({ silent: true })
           }}
           onCancel={closeLogForm}
         />
@@ -166,7 +193,7 @@ export function CaseSessionsPanel({
           upcomingSessions={upcomingAll}
           bookedSlots={bookedSlots}
           disabled={!!active}
-          onSessionStarted={load}
+          onSessionStarted={() => load({ silent: true })}
           onManualSession={handleManual}
           onError={setError}
         />

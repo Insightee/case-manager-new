@@ -4,7 +4,7 @@ from typing import Optional
 
 from datetime import date, datetime, time
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from app.models.session import SessionMode, SessionStatus
 
@@ -35,6 +35,18 @@ class ManualSessionCreate(BaseModel):
     mode: SessionMode = SessionMode.HOME
 
 
+class ManualWalkInSessionCreate(BaseModel):
+    client_name: str = Field(..., min_length=1, max_length=255)
+    client_email: EmailStr
+    child_name: str = Field(..., min_length=1, max_length=255)
+    client_phone: Optional[str] = None
+    scheduled_date: date
+    actual_start_at: datetime
+    actual_end_at: datetime
+    mode: SessionMode = SessionMode.HOME
+    product_module: str = "homecare"
+
+
 class SessionRead(BaseModel):
     id: int
     case_id: int
@@ -57,3 +69,11 @@ class SessionRead(BaseModel):
     checkout_lng: Optional[float] = None
 
     model_config = {"from_attributes": True}
+
+
+class ManualWalkInSessionResponse(BaseModel):
+    session: SessionRead
+    case_id: int
+    case_code: str
+    invite_url: Optional[str] = None
+    invite_sent: bool = False

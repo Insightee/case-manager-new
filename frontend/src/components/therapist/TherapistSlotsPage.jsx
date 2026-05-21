@@ -5,14 +5,13 @@ import { WeeklyScheduleDrawer } from './WeeklyScheduleDrawer.jsx'
 import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
 import { SlotDetailSheet } from '../scheduling/SlotDetailSheet.jsx'
 import { SlotEditSheet } from '../scheduling/SlotEditSheet.jsx'
-import { QuickRecurringModal } from '../scheduling/QuickRecurringModal.jsx'
 import { addDays, dateStr, startOfWeek } from '../scheduling/slotCalendarUtils.js'
 
 export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
   const [scheduleWeekStart, setScheduleWeekStart] = useState(() => startOfWeek(new Date()))
   const [refreshKey, setRefreshKey] = useState(0)
   const [scheduleOpen, setScheduleOpen] = useState(false)
-  const [recurringOpen, setRecurringOpen] = useState(false)
+  const [scheduleTab, setScheduleTab] = useState('availability')
   const [bookSlot, setBookSlot] = useState(null)
   const [detailSlot, setDetailSlot] = useState(null)
   const [editState, setEditState] = useState(null)
@@ -34,14 +33,20 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setRecurringOpen(true)}
+            onClick={() => {
+              setScheduleTab('recurring')
+              setScheduleOpen(true)
+            }}
             className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
           >
-            Quick recurring
+            Book recurring
           </button>
           <button
             type="button"
-            onClick={() => setScheduleOpen(true)}
+            onClick={() => {
+              setScheduleTab('availability')
+              setScheduleOpen(true)
+            }}
             className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
           >
             Weekly schedule
@@ -100,6 +105,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
       <WeeklyScheduleDrawer
         open={scheduleOpen}
         onClose={() => setScheduleOpen(false)}
+        initialTab={scheduleTab}
         weekStart={dateStr(scheduleWeekStart)}
         weekEnd={dateStr(weekEnd)}
         therapistId={therapistIdProp}
@@ -111,12 +117,6 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
         therapistId={therapistIdProp}
         onClose={() => setBookSlot(null)}
         onBooked={bumpRefresh}
-      />
-      <QuickRecurringModal
-        open={recurringOpen}
-        onClose={() => setRecurringOpen(false)}
-        therapistUserId={therapistIdProp}
-        onSuccess={bumpRefresh}
       />
     </div>
   )

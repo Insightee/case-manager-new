@@ -146,7 +146,9 @@ def create_manual_session(
     actual_end_at: datetime,
     mode: SessionMode,
 ) -> TherapySession:
-    today = date.today()
+    from app.core.timezone import today_ist
+
+    today = today_ist()
     if scheduled_date > today:
         raise ValueError("Cannot create manual sessions for future dates")
     if actual_end_at <= actual_start_at:

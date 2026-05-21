@@ -16,8 +16,16 @@ from app.models.case import Case
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.user import User
-from app.schemas.session import ManualSessionCreate, SessionCreate, SessionRead, SessionUpdate
-from app.services import case_service, session_service
+from app.schemas.session import (
+    ManualSessionCreate,
+    ManualWalkInSessionCreate,
+    ManualWalkInSessionResponse,
+    SessionCreate,
+    SessionRead,
+    SessionUpdate,
+)
+from app.core.timezone import ensure_utc_aware
+from app.services import case_service, session_service, therapist_intake_service
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -38,8 +46,8 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         scheduled_date=s.scheduled_date,
         start_time=s.start_time,
         end_time=s.end_time,
-        actual_start_at=s.actual_start_at,
-        actual_end_at=s.actual_end_at,
+        actual_start_at=ensure_utc_aware(s.actual_start_at),
+        actual_end_at=ensure_utc_aware(s.actual_end_at),
         auto_ended=bool(s.auto_ended),
         slot_duration_minutes=s.slot_duration_minutes,
         mode=s.mode,
@@ -166,6 +174,54 @@ def create_manual_session(
     db.commit()
     db.refresh(session)
     return _session_read(session, case)
+
+
+@router.post("/manual-walk-in", response_model=ManualWalkInSessionResponse, status_code=status.HTTP_201_CREATED)
+def create_manual_walk_in_session(
+    payload: ManualWalkInSessionCreate,
+    request: Request,
+    user: User = Depends(require_permission("session.create")),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = therapist_intake_service.create_walk_in_manual_session(
+            db,
+            therapist_user_id=user.id,
+            therapist_name=user.full_name,
+            client_name=payload.client_name,
+            client_email=str(payload.client_email),
+            child_name=payload.child_name,
+            client_phone=payload.client_phone,
+            scheduled_date=payload.scheduled_date,
+            actual_start_at=payload.actual_start_at,
+            actual_end_at=payload.actual_end_at,
+            mode=payload.mode,
+            product_module=payload.product_module,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    case = result["case"]
+    session = result["session"]
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="create_manual_walk_in",
+        entity_type="session",
+        entity_id=session.id,
+        new_value={"case_id": case.id, "client_email": str(payload.client_email)},
+        **meta,
+    )
+    db.commit()
+    db.refresh(session)
+    case = case_service.get_case(db, case.id)
+    return ManualWalkInSessionResponse(
+        session=_session_read(session, case),
+        case_id=case.id,
+        case_code=case.case_code,
+        invite_url=result.get("invite_url"),
+        invite_sent=result.get("invite_sent", False),
+    )
 
 
 @router.patch("/{session_id}", response_model=SessionRead)
