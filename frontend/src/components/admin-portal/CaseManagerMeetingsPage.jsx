@@ -1,5 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { AdminPageHeader, AdminSearchInput } from './ui/index.js'
+import './admin-reports.css'
 
 const MEETING_TYPES = [
   { value: 'CLIENT_ONLY', label: 'Client only' },
@@ -111,14 +115,14 @@ function BookMeetingModal({ cases, onClose, onCreated }) {
             </label>
           ) : null}
 
-          {!form.case_id ? (
-            <label style={labelStyle}>
-              Meeting type
-              <select style={inputStyle} value={form.meeting_type} onChange={(e) => set('meeting_type', e.target.value)}>
-                {MEETING_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </label>
-          ) : null}
+          <label style={labelStyle}>
+            Meeting type
+            <select style={inputStyle} value={form.meeting_type} onChange={(e) => set('meeting_type', e.target.value)}>
+              {MEETING_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </label>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={labelStyle}>
@@ -262,7 +266,14 @@ function MeetingCard({ meeting, onAddNotes, onCancel }) {
       </div>
 
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 8 }}>
-        {meeting.child_name ? <span>Child: <strong>{meeting.child_name}</strong> &nbsp;·&nbsp; </span> : null}
+        {meeting.case_id ? (
+          <span>
+            <Link to={`/admin/cases/${meeting.case_id}?tab=overview`}>{meeting.case_code || `Case #${meeting.case_id}`}</Link>
+            {meeting.child_name ? ` · ${meeting.child_name}` : ''} &nbsp;·&nbsp;{' '}
+          </span>
+        ) : meeting.child_name ? (
+          <span>Child: <strong>{meeting.child_name}</strong> &nbsp;·&nbsp; </span>
+        ) : null}
         {meeting.parent_name ? <span>Parent: {meeting.parent_name} &nbsp;·&nbsp; </span> : null}
         {meeting.therapist_name ? <span>Therapist: {meeting.therapist_name}</span> : null}
         {!meeting.child_name && !meeting.parent_name ? <span>{typeLabel}</span> : null}
@@ -302,22 +313,56 @@ function MeetingCard({ meeting, onAddNotes, onCancel }) {
 }
 
 export function CaseManagerMeetingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { user } = useAuth()
+  const isAdmin = user?.roles?.includes('SUPER_ADMIN') || user?.roles?.includes('ADMIN')
+  const canBookMeetings =
+    user?.roles?.includes('CASE_MANAGER')
+    || user?.roles?.includes('ADMIN')
+    || user?.roles?.includes('SUPER_ADMIN')
   const [meetings, setMeetings] = useState([])
   const [cases, setCases] = useState([])
+  const [cmUsers, setCmUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showBook, setShowBook] = useState(false)
   const [notesTarget, setNotesTarget] = useState(null)
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
+  const [typeFilter, setTypeFilter] = useState(searchParams.get('meeting_type') || '')
+  const [caseFilter, setCaseFilter] = useState(searchParams.get('case_id') || '')
+  const [cmFilter, setCmFilter] = useState(searchParams.get('cm_id') || '')
+  const [monthFilter, setMonthFilter] = useState(searchParams.get('month') || '')
+  const [yearFilter, setYearFilter] = useState(searchParams.get('year') || String(new Date().getFullYear()))
+  const [search, setSearch] = useState(searchParams.get('search') || '')
   const [error, setError] = useState('')
+
+  const queueTab = searchParams.get('queue') === 'supervision'
+
+  function buildQuery() {
+    const p = new URLSearchParams()
+    if (statusFilter) p.set('status', statusFilter)
+    if (typeFilter || queueTab) p.set('meeting_type', queueTab ? 'SUPERVISION' : typeFilter)
+    if (caseFilter) p.set('case_id', caseFilter)
+    if (cmFilter && isAdmin) p.set('case_manager_user_id', cmFilter)
+    if (monthFilter) p.set('month', monthFilter)
+    if (yearFilter) p.set('year', yearFilter)
+    if (search.trim()) p.set('search', search.trim())
+    const qs = p.toString()
+    return qs ? `?${qs}` : ''
+  }
 
   function load() {
     setLoading(true)
-    const q = statusFilter ? `?status=${statusFilter}` : ''
-    apiFetch(`/api/v1/cm-meetings${q}`)
+    apiFetch(`/api/v1/cm-meetings${buildQuery()}`)
       .then(setMeetings)
       .catch((e) => setError(e.message || 'Could not load meetings'))
       .finally(() => setLoading(false))
   }
+
+  const kpis = useMemo(() => {
+    const scheduled = meetings.filter((m) => m.status === 'SCHEDULED').length
+    const supervision = meetings.filter((m) => m.meeting_type === 'SUPERVISION' && m.status === 'SCHEDULED').length
+    return { scheduled, supervision, total: meetings.length }
+  }, [meetings])
 
   useEffect(() => {
     apiFetch('/api/v1/admin/cases').catch(() => apiFetch('/api/v1/cases')).then((data) => {
@@ -331,7 +376,17 @@ export function CaseManagerMeetingsPage() {
     }).catch(() => setCases([]))
   }, [])
 
-  useEffect(() => { load() }, [statusFilter])
+  useEffect(() => {
+    if (!isAdmin) return
+    apiFetch('/api/v1/admin/users')
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : rows?.items || []
+        setCmUsers(list.filter((u) => u.roles?.includes('CASE_MANAGER')))
+      })
+      .catch(() => setCmUsers([]))
+  }, [isAdmin])
+
+  useEffect(() => { load() }, [statusFilter, typeFilter, caseFilter, cmFilter, monthFilter, yearFilter, search, queueTab])
 
   function handleCreated(m) {
     setShowBook(false)
@@ -354,37 +409,84 @@ export function CaseManagerMeetingsPage() {
   }
 
   return (
-    <div style={{ maxWidth: 760 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1e293b', margin: 0 }}>Case manager meetings</h1>
-          <p style={{ fontSize: '0.875rem', color: '#64748b', margin: '4px 0 0' }}>Schedule and log meetings with clients and therapists.</p>
-        </div>
+    <div className="admin-page" style={{ maxWidth: 900 }}>
+      <AdminPageHeader
+        title="Case manager meetings"
+        subtitle="Schedule client meetings, supervision sessions, and log notes."
+        actions={
+          canBookMeetings ? (
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowBook(true)}>
+              Book meeting
+            </button>
+          ) : null
+        }
+      />
+
+      {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
+
+      <div className="admin-reports__kpis" style={{ marginBottom: 16 }}>
+        <button type="button" className="admin-reports__kpi" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => { setStatusFilter('SCHEDULED'); setSearchParams({}) }}>
+          <div className="admin-reports__kpi-value">{kpis.scheduled}</div>
+          <div className="admin-reports__kpi-label">Scheduled (filtered)</div>
+        </button>
         <button
           type="button"
-          style={{ background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '10px 20px', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}
-          onClick={() => setShowBook(true)}
+          className="admin-reports__kpi"
+          style={{ cursor: 'pointer', textAlign: 'left' }}
+          onClick={() => setSearchParams({ queue: 'supervision', status: 'SCHEDULED' })}
         >
-          + Book meeting
+          <div className="admin-reports__kpi-value">{kpis.supervision}</div>
+          <div className="admin-reports__kpi-label">Supervision meetings (CM)</div>
         </button>
+        <div className="admin-reports__kpi">
+          <div className="admin-reports__kpi-value">{kpis.total}</div>
+          <div className="admin-reports__kpi-label">In current list</div>
+        </div>
       </div>
 
-      {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
+      {queueTab ? (
+        <p className="admin-alert" style={{ marginBottom: 12 }}>
+          Showing scheduled supervision meetings.{' '}
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setSearchParams({})}>
+            Clear
+          </button>
+        </p>
+      ) : null}
 
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: '0.875rem', fontWeight: 500, color: '#475569' }}>
-          Filter by status
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ display: 'block', marginTop: 4, border: '1px solid #e2e8f0', borderRadius: 10, padding: '7px 10px', fontSize: '0.875rem' }}
-          >
-            <option value="">All</option>
-            <option value="SCHEDULED">Scheduled</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="CANCELLED">Cancelled</option>
+      <div className="admin-reports__toolbar">
+        <AdminSearchInput value={search} onChange={setSearch} placeholder="Child, case code, title…" />
+        <select className="admin-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">All statuses</option>
+          <option value="SCHEDULED">Scheduled</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+        <select className="admin-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} disabled={queueTab}>
+          <option value="">All types</option>
+          {MEETING_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+        <select className="admin-select" value={caseFilter} onChange={(e) => setCaseFilter(e.target.value)}>
+          <option value="">All cases</option>
+          {cases.map((c) => (
+            <option key={c.id} value={c.id}>{c.childName} ({c.caseCode || c.id})</option>
+          ))}
+        </select>
+        {isAdmin ? (
+          <select className="admin-select" value={cmFilter} onChange={(e) => setCmFilter(e.target.value)}>
+            <option value="">All case managers</option>
+            {cmUsers.map((u) => (
+              <option key={u.id} value={u.id}>{u.full_name}</option>
+            ))}
           </select>
-        </label>
+        ) : null}
+        <input type="month" className="admin-input" style={{ maxWidth: 160 }} value={monthFilter ? `${yearFilter}-${String(monthFilter).padStart(2, '0')}` : ''} onChange={(e) => {
+          if (!e.target.value) { setMonthFilter(''); return }
+          const [y, m] = e.target.value.split('-')
+          setYearFilter(y)
+          setMonthFilter(String(Number(m)))
+        }} />
       </div>
 
       {loading ? (

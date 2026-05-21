@@ -44,3 +44,29 @@ class MonthlyReportRead(BaseModel):
 class ReviewAction(BaseModel):
     comment: Optional[str] = None
     visibility_status: Optional[VisibilityStatus] = None
+
+
+class ObservationReportCreate(BaseModel):
+    case_id: int
+    title: str
+    content: Optional[str] = None
+
+
+class ObservationReportUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+
+class ObservationReportRead(BaseModel):
+    id: int
+    case_id: int
+    case_code: Optional[str] = None
+    child_name: Optional[str] = None
+    therapist_user_id: int
+    title: str
+    status: ReportStatus
+    content: Optional[str] = None
+    visibility_status: VisibilityStatus
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

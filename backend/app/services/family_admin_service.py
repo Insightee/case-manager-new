@@ -11,7 +11,7 @@ from app.models.case import Case
 from app.models.child import Child
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import InviteToken, User
-from app.services import auth_service
+from app.services import auth_service, email_service
 
 
 def list_families(db: Session, search: str | None = None) -> list[dict]:
@@ -45,6 +45,21 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
     for case in db.scalars(select(Case)).all():
         cases_by_child.setdefault(case.child_id, []).append(case.case_code)
 
+    now = datetime.now(timezone.utc)
+    pending_by_child: dict[int, dict] = {}
+    for inv in db.scalars(
+        select(InviteToken).where(
+            InviteToken.used_at.is_(None),
+            InviteToken.expires_at > now,
+            InviteToken.linked_child_id.isnot(None),
+        )
+    ).all():
+        if inv.linked_child_id and inv.linked_child_id not in pending_by_child:
+            pending_by_child[inv.linked_child_id] = {
+                "pendingEmail": inv.email,
+                "inviteExpiresAt": inv.expires_at.isoformat() if inv.expires_at else None,
+            }
+
     result = []
     q = (search or "").strip().lower()
     for child in children:
@@ -54,6 +69,7 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
             hay = f"{label} {' '.join(p['parentEmail'] for p in parents)} {' '.join(cases_by_child.get(child.id, []))}".lower()
             if q not in hay:
                 continue
+        pending = pending_by_child.get(child.id)
         result.append(
             {
                 "childId": child.id,
@@ -63,6 +79,8 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
                 "dateOfBirth": child.date_of_birth.isoformat() if child.date_of_birth else None,
                 "parents": parents,
                 "caseCodes": cases_by_child.get(child.id, []),
+                "hasParent": bool(parents),
+                "pendingInvite": pending,
             }
         )
     return result
@@ -112,6 +130,7 @@ def create_family(
         db.add(invite)
         db.flush()
         invite_url = f"{settings.frontend_url}/invite/{token}"
+        _send_parent_invite_email(email, invite_url, parent_full_name.strip(), child.full_name)
     else:
         pwd = password or secrets.token_urlsafe(12)
         user = auth_service.create_user(
@@ -137,12 +156,38 @@ def create_family(
     return {"childId": child.id, "parentUserId": None, "inviteUrl": invite_url, "pendingEmail": email}
 
 
-def issue_parent_invite(db: Session, parent_user_id: int, created_by_user_id: int) -> str:
+def _send_parent_invite_email(to: str, invite_url: str, parent_name: str, child_name: str) -> None:
+    body = (
+        f"Hi {parent_name},\n\n"
+        f"You have been invited to the InsightCase parent portal for {child_name}.\n\n"
+        f"Create your account here:\n{invite_url}\n\n"
+        "If you did not expect this, you can ignore this email.\n"
+    )
+    email_service.send_email(
+        to=to,
+        subject="You're invited to InsightCase — Parent portal",
+        body_text=body,
+    )
+
+
+def issue_parent_invite(
+    db: Session,
+    parent_user_id: int,
+    created_by_user_id: int,
+    *,
+    child_id: int | None = None,
+    send_email: bool = True,
+) -> str:
     from app.core.permissions import RoleName
 
     user = db.get(User, parent_user_id)
     if not user or RoleName.PARENT.value not in user.role_names:
         raise ValueError("Parent user not found")
+    linked_child_id = child_id
+    if linked_child_id is None:
+        pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == user.id)).first()
+        if pg and pg.children:
+            linked_child_id = pg.children[0].id
     token = secrets.token_urlsafe(32)
     invite = InviteToken(
         email=user.email,
@@ -151,10 +196,19 @@ def issue_parent_invite(db: Session, parent_user_id: int, created_by_user_id: in
         token=token,
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
         created_by_user_id=created_by_user_id,
+        linked_child_id=linked_child_id,
     )
     db.add(invite)
     db.flush()
-    return f"{settings.frontend_url}/invite/{token}"
+    url = f"{settings.frontend_url}/invite/{token}"
+    if send_email:
+        child_name = "your child"
+        if linked_child_id:
+            ch = db.get(Child, linked_child_id)
+            if ch:
+                child_name = ch.full_name
+        _send_parent_invite_email(user.email, url, user.full_name or user.email, child_name)
+    return url
 
 
 def link_child_to_parent_by_email(db: Session, child_id: int, parent_email: str) -> None:

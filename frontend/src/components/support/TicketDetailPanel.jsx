@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { replyStaffTicket } from '../../lib/ticketFormUtils.js'
 import { TicketAttachmentList } from './TicketAttachmentList.jsx'
 import { TicketFileInput } from './TicketFileInput.jsx'
@@ -41,11 +42,27 @@ function fmtTime(iso) {
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
+const STAFF_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER', 'SUPERVISOR'])
+
 export function TicketDetailPanel({ ticket, onUpdated, showResolve = false }) {
+  const { user } = useAuth()
   const [reply, setReply] = useState('')
   const [replyFiles, setReplyFiles] = useState([])
+  const [internalNote, setInternalNote] = useState(false)
+  const [staffUsers, setStaffUsers] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!showResolve) return
+    apiFetch('/api/v1/admin/users')
+      .then((users) => {
+        setStaffUsers(
+          users.filter((u) => u.roles?.some((r) => STAFF_ROLES.has(r)) && u.is_active !== false),
+        )
+      })
+      .catch(() => setStaffUsers([]))
+  }, [showResolve])
 
   if (!ticket?.messages) {
     return <p style={{ fontSize: '0.875rem', color: '#9ca3af', padding: '12px 0' }}>Loading thread…</p>
@@ -64,7 +81,7 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false }) {
     setBusy(true)
     setError('')
     try {
-      await replyStaffTicket(ticket.id, reply.trim(), replyFiles)
+      await replyStaffTicket(ticket.id, reply.trim(), replyFiles, { isInternal: internalNote })
       setReply('')
       setReplyFiles([])
       await refreshDetail()
@@ -75,12 +92,41 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false }) {
     }
   }
 
+  async function patchAssign(assigneeId) {
+    setBusy(true)
+    setError('')
+    try {
+      const updated = await apiFetch(`/api/v1/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ assigned_to_user_id: assigneeId }),
+      })
+      onUpdated?.(updated)
+    } catch (err) {
+      setError(err.message || 'Could not update assignee')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function escalate() {
+    setBusy(true)
+    setError('')
+    try {
+      const updated = await apiFetch(`/api/v1/tickets/${ticket.id}/escalate`, { method: 'POST' })
+      onUpdated?.(updated)
+    } catch (err) {
+      setError(err.message || 'Could not escalate')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function sendAndResolve() {
     setBusy(true)
     setError('')
     try {
       if (reply.trim()) {
-        await replyStaffTicket(ticket.id, reply.trim(), replyFiles)
+        await replyStaffTicket(ticket.id, reply.trim(), replyFiles, { isInternal: internalNote })
         setReply('')
         setReplyFiles([])
       }
@@ -96,9 +142,40 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false }) {
   return (
     <div className="ticket-detail-panel">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         <StatusPill status={ticket.status} />
-        {ticket.assigned_to_name ? (
+        {ticket.product_module ? (
+          <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'capitalize' }}>
+            {String(ticket.product_module).replace(/_/g, ' ')}
+          </span>
+        ) : null}
+        {showResolve ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <select
+              value={ticket.assigned_to_user_id ?? ''}
+              onChange={(e) => patchAssign(e.target.value ? Number(e.target.value) : null)}
+              disabled={busy}
+              style={{ fontSize: '0.78rem', padding: '4px 8px', borderRadius: 8, border: '1px solid #d1d5db' }}
+            >
+              <option value="">Unassigned</option>
+              {staffUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name}
+                </option>
+              ))}
+            </select>
+            {user?.id && ticket.assigned_to_user_id !== user.id ? (
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={busy} onClick={() => patchAssign(user.id)}>
+                Take
+              </button>
+            ) : null}
+            {!isClosed && ticket.escalation_level < 2 ? (
+              <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={busy} onClick={escalate}>
+                Escalate
+              </button>
+            ) : null}
+          </div>
+        ) : ticket.assigned_to_name ? (
           <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Assigned to {ticket.assigned_to_name}</span>
         ) : null}
         {ticket.escalation_level > 0 ? (
@@ -119,9 +196,16 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false }) {
       {/* Message thread */}
       <div className="ticket-thread">
         {ticket.messages.map((m) => (
-          <div key={m.id} className={`ticket-bubble ${m.is_raiser ? 'ticket-bubble--raiser' : 'ticket-bubble--staff'}`}>
+          <div
+            key={m.id}
+            className={`ticket-bubble ${m.is_raiser ? 'ticket-bubble--raiser' : 'ticket-bubble--staff'}`}
+            style={m.is_internal ? { borderLeft: '3px solid #f59e0b', background: '#fffbeb' } : undefined}
+          >
             <div className="ticket-bubble__meta">
               {m.author_name} · {fmtTime(m.created_at)}
+              {m.is_internal ? (
+                <span style={{ marginLeft: 6, fontSize: '0.65rem', fontWeight: 700, color: '#b45309' }}>INTERNAL</span>
+              ) : null}
             </div>
             <div className="ticket-bubble__body">{m.body}</div>
             {m.attachments?.length > 0 ? (
@@ -161,6 +245,12 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false }) {
             }}
           />
           <TicketFileInput files={replyFiles} onChange={setReplyFiles} disabled={busy} />
+          {showResolve ? (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#64748b', marginTop: 8 }}>
+              <input type="checkbox" checked={internalNote} onChange={(e) => setInternalNote(e.target.checked)} />
+              Internal note (staff only)
+            </label>
+          ) : null}
           {error ? <p style={{ color: '#b91c1c', fontSize: '0.78rem', margin: '6px 0 0' }}>{error}</p> : null}
           <div className="ticket-compose__actions">
             <button

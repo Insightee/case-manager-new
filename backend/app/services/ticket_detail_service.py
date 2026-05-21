@@ -32,9 +32,12 @@ def get_ticket_detail(db: Session, user: User, ticket_id: int) -> dict:
     attachments = att_svc.list_for_ticket(db, ticket.id)
     ticket_level = [att_svc.attachment_to_dict(a) for a in attachments if a.message_id is None]
 
-    msgs = db.scalars(
-        select(TicketMessage).where(TicketMessage.ticket_id == ticket.id).order_by(TicketMessage.created_at.asc())
-    ).all()
+    msg_stmt = select(TicketMessage).where(TicketMessage.ticket_id == ticket.id).order_by(TicketMessage.created_at.asc())
+    if ticket.raised_by_user_id == user.id:
+        msg_stmt = msg_stmt.where(TicketMessage.is_internal.is_(False))
+    msgs = db.scalars(msg_stmt).all()
+    if len(msgs) > 50:
+        msgs = msgs[-50:]
     by_message: dict[int | None, list] = {}
     for a in attachments:
         by_message.setdefault(a.message_id, []).append(att_svc.attachment_to_dict(a))
@@ -49,6 +52,7 @@ def get_ticket_detail(db: Session, user: User, ticket_id: int) -> dict:
                 "author_user_id": m.author_user_id,
                 "author_name": author.full_name if author else "Staff",
                 "is_raiser": m.author_user_id == ticket.raised_by_user_id,
+                "is_internal": bool(getattr(m, "is_internal", False)),
                 "created_at": m.created_at.isoformat(),
                 "attachments": by_message.get(m.id, []),
             }
@@ -57,4 +61,7 @@ def get_ticket_detail(db: Session, user: User, ticket_id: int) -> dict:
     row["messages"] = messages
     row["attachments"] = ticket_level
     row["topic_label"] = ticket_esc.TOPIC_LABELS.get(ticket.topic, "Other") if ticket.topic else "Other"
+    if ticket.assigned_to_user_id:
+        assignee = db.get(User, ticket.assigned_to_user_id)
+        row["assigned_to_name"] = assignee.full_name if assignee else None
     return row

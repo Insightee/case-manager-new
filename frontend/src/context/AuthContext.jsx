@@ -3,7 +3,15 @@ import { apiFetch, clearTokens, getTokens, setTokens } from '../lib/apiClient.js
 
 const AuthContext = createContext(null)
 
-const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER', 'SUPERVISOR', 'FINANCE', 'SCHOOL_COORDINATOR']
+const ADMIN_ROLES = [
+  'SUPER_ADMIN',
+  'ADMIN',
+  'VIEWER',
+  'CASE_MANAGER',
+  'SUPERVISOR',
+  'FINANCE',
+  'SCHOOL_COORDINATOR',
+]
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -72,9 +80,14 @@ export function AuthProvider({ children }) {
     [user],
   )
 
+  const isViewOnly = useMemo(
+    () => Boolean(user?.permissions?.includes('admin.view_only')),
+    [user],
+  )
+
   const value = useMemo(
-    () => ({ user, loading, login, logout, portal, can, hasFeature, reload: loadMe }),
-    [user, loading, portal, can, hasFeature, loadMe],
+    () => ({ user, loading, login, logout, portal, can, hasFeature, isViewOnly, reload: loadMe }),
+    [user, loading, portal, can, hasFeature, isViewOnly, loadMe],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

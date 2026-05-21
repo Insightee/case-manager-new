@@ -73,6 +73,15 @@ def child_ids_for_parent(db: Session, user_id: int) -> list[int]:
     return [c.id for c in _unique_children(list(pg.children))]
 
 
+def primary_parent_user_id_for_child(db: Session, child_id: int) -> int | None:
+    pg = db.scalars(
+        select(ParentGuardian)
+        .join(parent_child_link, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
+        .where(parent_child_link.c.child_id == child_id)
+    ).first()
+    return pg.user_id if pg else None
+
+
 def active_therapist_name(db: Session, case_id: int) -> str | None:
     row = db.scalars(
         select(CaseAssignment)

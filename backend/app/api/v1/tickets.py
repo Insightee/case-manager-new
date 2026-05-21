@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, user_has_permission
 from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage, TicketStatus, TicketTopic
 from app.models.user import User
 from app.services import case_service, ticket_attachment_service as att_svc, ticket_detail_service, ticket_escalation_service as ticket_esc, ticket_list_service
@@ -29,6 +29,7 @@ class TicketCreate(BaseModel):
 
 class TicketMessageCreate(BaseModel):
     body: str
+    is_internal: bool = False
 
 
 class TicketUpdate(BaseModel):
@@ -46,13 +47,14 @@ def _parse_category(raw: str) -> TicketCategory:
 @router.get("")
 def list_tickets(
     category: Optional[TicketCategory] = None,
+    product_module: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return ticket_list_service.list_tickets_for_user(
-        db, user, category=category, page=page, page_size=page_size
+        db, user, category=category, product_module=product_module, page=page, page_size=page_size
     )
 
 
@@ -155,7 +157,22 @@ def update_ticket(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()
-    return {"id": ticket.id, "status": ticket.status.value}
+    return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
+
+
+@router.post("/{ticket_id}/escalate")
+def staff_escalate_ticket(
+    ticket_id: int,
+    user: User = Depends(require_permission("ticket.manage")),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    case = case_service.get_case(db, ticket.case_id) if ticket.case_id else None
+    ticket_esc.escalate_ticket(db, ticket, case)
+    db.commit()
+    return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
 
 
 @router.post("/{ticket_id}/messages", status_code=status.HTTP_201_CREATED)
@@ -171,21 +188,30 @@ async def add_message(
 
     content_type = request.headers.get("content-type", "")
     files: List[UploadFile] = []
+    is_internal = False
     if "multipart/form-data" in content_type:
         form = await request.form()
         body = str(form.get("body") or "").strip()
         files = att_svc.files_from_form(form)
+        raw_internal = str(form.get("is_internal") or "").lower() in ("1", "true", "yes")
+        is_internal = raw_internal and (
+            user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override")
+        )
     else:
         try:
             data = await request.json()
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="Invalid JSON body")
-        body = str(data.get("body") or "").strip()
+        payload_msg = TicketMessageCreate(**data)
+        body = payload_msg.body.strip()
+        is_internal = payload_msg.is_internal and (
+            user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override")
+        )
 
     if not body:
         raise HTTPException(status_code=400, detail="Message body is required")
 
-    msg = TicketMessage(ticket_id=ticket_id, author_user_id=user.id, body=body)
+    msg = TicketMessage(ticket_id=ticket_id, author_user_id=user.id, body=body, is_internal=is_internal)
     db.add(msg)
     db.flush()
     try:

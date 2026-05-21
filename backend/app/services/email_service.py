@@ -104,6 +104,21 @@ def booking_rescheduled_email(
     send_email(to=to, subject=f"Session rescheduled — {child_name}", body_text=body)
 
 
+def therapist_staff_invite_email(
+    *,
+    to: str,
+    invite_url: str,
+    full_name: str,
+) -> None:
+    body = (
+        f"Hi {full_name},\n\n"
+        "You have been invited to join InsightCase as a therapist.\n\n"
+        f"Create your account here:\n{invite_url}\n\n"
+        "If you did not expect this, you can ignore this email.\n"
+    )
+    send_email(to=to, subject="You're invited to InsightCase — Therapist", body_text=body)
+
+
 def invite_portal_email(
     *,
     to: str,

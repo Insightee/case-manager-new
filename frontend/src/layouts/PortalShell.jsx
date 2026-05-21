@@ -13,7 +13,7 @@ const THERAPIST_NAV = [
   { to: '/therapist/logs', label: 'Session Logs' },
   { to: '/therapist/reports', label: 'Monthly Reports' },
   { to: '/therapist/invoices', label: 'Invoices' },
-  { to: '/therapist/tickets', label: 'Support Tickets' },
+  { to: '/therapist/support', label: 'Support & Incidents' },
   { to: '/therapist/leave', label: 'Leave' },
   { to: '/therapist/slots', label: 'Open Slots' },
   { to: '/therapist/profile', label: 'My Profile' },
@@ -35,18 +35,18 @@ const PARENT_NAV = [
   { to: '/parent/reports', label: 'Reports' },
   { to: '/parent/billing', label: 'Billing' },
   { to: '/parent/profile', label: 'My profile' },
-  { to: '/parent/support', label: 'Support' },
+  { to: '/parent/support', label: 'Support & Incidents' },
 ]
 
 const ADMIN_NAV = [
   { to: '/admin', label: 'Dashboard', end: true, perm: null, feature: null, icon: '▦' },
+  { to: '/admin/workbench', label: 'My caseload', perm: 'case.read.team', feature: null, icon: '◎' },
   { to: '/admin/cases', label: 'Cases', perm: 'case.read.all', feature: 'cases', icon: '◉' },
   { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', icon: '☰' },
-  { to: '/admin/reports', label: 'Report Review', perm: 'monthly_report.approve', feature: 'reports', icon: '▣' },
+  { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', icon: '▣' },
   { to: '/admin/invoices', label: 'Invoices', perm: 'invoice.approve', feature: 'invoices', icon: '₹' },
-  { to: '/admin/iep', label: 'IEP', perm: 'attachment.manage', feature: 'iep', icon: '📎' },
-  { to: '/admin/tickets', label: 'Tickets', perm: 'ticket.manage', feature: 'tickets', icon: '✉' },
-  { to: '/admin/incidents', label: 'Incidents', perm: 'incident.read_sensitive', feature: 'incidents', icon: '⚠' },
+  { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', icon: '📎' },
+  { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', icon: '✉' },
   { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: '👥' },
   { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: '🩺' },
   { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', feature: null, icon: '🗓' },
@@ -78,7 +78,7 @@ function NavLinks({ items, portal, className, linkClassName, onNavigate }) {
 }
 
 export function PortalShell({ portal }) {
-  const { user, logout, can, hasFeature } = useAuth()
+  const { user, logout, can, hasFeature, isViewOnly } = useAuth()
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
 
@@ -105,6 +105,26 @@ export function PortalShell({ portal }) {
   if (portal === 'hr') nav = HR_NAV
   if (portal === 'admin') {
     nav = ADMIN_NAV.filter((item) => {
+      if (item.to === '/admin/workbench') {
+        return (
+          (can('case.read.team') || can('case.read.scoped'))
+          && (can('monthly_report.approve') || can('daily_log.review'))
+        )
+      }
+      if (item.to === '/admin/cases') {
+        return (
+          (can('case.read.all') || can('case.read.team') || can('case.read.scoped'))
+          && hasFeature('cases')
+        )
+      }
+      if (item.to === '/admin/iep') {
+        return (can('attachment.manage') || can('iep.read')) && hasFeature('iep')
+      }
+      if (item.to === '/admin/support') {
+        const ticketsOk = can('ticket.manage') && hasFeature('tickets')
+        const incidentsOk = can('incident.read_sensitive') && hasFeature('incidents')
+        return ticketsOk || incidentsOk
+      }
       if (item.perm && !can(item.perm)) return false
       if (item.feature && !hasFeature(item.feature)) return false
       return true
@@ -205,23 +225,64 @@ export function PortalShell({ portal }) {
           linkClassName="app-sidebar__link"
         />
         <div className="app-sidebar__footer">
-          <div className="app-sidebar__user">
-            {avatarSrc(user) ? (
-              <img src={avatarSrc(user)} alt="" className="app-sidebar__user-avatar" />
-            ) : (
-              <span className="app-sidebar__user-avatar app-sidebar__user-avatar--initial">
-                {user?.full_name?.charAt(0)?.toUpperCase() || '?'}
-              </span>
-            )}
-            <p className="app-sidebar__help">{user?.full_name}</p>
-          </div>
+          {/* User identity card — links to profile when one exists */}
+          {profilePath ? (
+            <NavLink to={profilePath} className="app-sidebar__user-card" title="Go to profile">
+              {avatarSrc(user) ? (
+                <img src={avatarSrc(user)} alt="" className="app-sidebar__user-avatar" />
+              ) : (
+                <span className="app-sidebar__user-avatar app-sidebar__user-avatar--initial">
+                  {user?.full_name?.charAt(0)?.toUpperCase() || '?'}
+                </span>
+              )}
+              <div className="app-sidebar__user-info">
+                <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
+                <span className="app-sidebar__user-role">{subtitle}</span>
+              </div>
+              <span className="app-sidebar__user-chevron" aria-hidden>›</span>
+            </NavLink>
+          ) : (
+            <div className="app-sidebar__user-card app-sidebar__user-card--static">
+              {avatarSrc(user) ? (
+                <img src={avatarSrc(user)} alt="" className="app-sidebar__user-avatar" />
+              ) : (
+                <span className="app-sidebar__user-avatar app-sidebar__user-avatar--initial">
+                  {user?.full_name?.charAt(0)?.toUpperCase() || '?'}
+                </span>
+              )}
+              <div className="app-sidebar__user-info">
+                <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
+                <span className="app-sidebar__user-role">{subtitle}</span>
+              </div>
+            </div>
+          )}
+
           <button type="button" className="app-sidebar__logout" onClick={logout}>
-            Logout
+            <svg className="app-sidebar__logout-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l3 3m0 0l-3 3m3-3H8m5-7H5a2 2 0 00-2 2v10a2 2 0 002 2h8" />
+            </svg>
+            Sign out
           </button>
         </div>
       </aside>
 
       <main className="content">
+        {portal === 'admin' && isViewOnly ? (
+          <div
+            role="status"
+            style={{
+              margin: '0 0 16px',
+              padding: '10px 14px',
+              background: '#fffbeb',
+              border: '1px solid #fcd34d',
+              borderRadius: 8,
+              fontSize: '0.875rem',
+              color: '#92400e',
+            }}
+          >
+            View-only access — you can browse cases and logs but cannot change records.
+          </div>
+        ) : null}
         <Outlet />
       </main>
     </div>

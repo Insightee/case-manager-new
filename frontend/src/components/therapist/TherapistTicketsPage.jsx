@@ -6,14 +6,15 @@ import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
 import { TicketFileInput } from '../support/TicketFileInput.jsx'
 import '../support/support-tickets.css'
+import '../client-portal/parent-support.css'
 
 const CATEGORIES = ['FINANCE', 'HR', 'SERVICE', 'POSH', 'CPP', 'OTHER']
 
-const STATUS_COLORS = {
-  OPEN: { bg: '#eff6ff', color: '#1d4ed8' },
-  IN_PROGRESS: { bg: '#fefce8', color: '#a16207' },
-  RESOLVED: { bg: '#f0fdf4', color: '#15803d' },
-  CLOSED: { bg: '#f4f4f5', color: '#71717a' },
+const STATUS_META = {
+  OPEN: { label: 'Open', bg: '#eff6ff', color: '#1d4ed8' },
+  IN_PROGRESS: { label: 'In progress', bg: '#fefce8', color: '#a16207' },
+  RESOLVED: { label: 'Resolved', bg: '#f0fdf4', color: '#15803d' },
+  CLOSED: { label: 'Closed', bg: '#f4f4f5', color: '#71717a' },
 }
 
 const CAT_COLORS = {
@@ -35,6 +36,7 @@ export function TherapistTicketsPage() {
   const [formFiles, setFormFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
   async function loadTickets() {
     setLoading(true)
@@ -73,6 +75,7 @@ export function TherapistTicketsPage() {
     e.preventDefault()
     setSubmitting(true)
     setError('')
+    setSuccess('')
     try {
       await createStaffTicket({
         subject: form.subject,
@@ -83,6 +86,7 @@ export function TherapistTicketsPage() {
       setForm({ subject: '', body: '', category: 'OTHER' })
       setFormFiles([])
       setShowForm(false)
+      setSuccess('Ticket submitted. The team will respond shortly.')
       loadTickets()
     } catch (err) {
       setError(err.message || 'Could not create ticket')
@@ -91,149 +95,136 @@ export function TherapistTicketsPage() {
     }
   }
 
+  const openTickets = tickets.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS')
+  const closedTickets = tickets.filter((t) => t.status === 'RESOLVED' || t.status === 'CLOSED')
+
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', padding: '2rem 1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-            Support
-          </p>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>My Tickets</h1>
-          <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>Raise and track support requests.</p>
+    <div className="parent-support">
+      {/* Form card */}
+      <section className="parent-support__form-card">
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+          <h2 style={{ margin: 0 }}>Raise a new ticket</h2>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <PoliciesBotButton />
+            <button
+              type="button"
+              onClick={() => { setShowForm((v) => !v); setError(''); setSuccess('') }}
+              style={{ padding: '7px 16px', background: showForm ? '#f1f5f9' : '#6366f1', color: showForm ? '#475569' : '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
+            >
+              {showForm ? 'Cancel' : '+ New ticket'}
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <PoliciesBotButton />
-          <button
-            type="button"
-            onClick={() => setShowForm(!showForm)}
-            style={{ padding: '8px 18px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}
-          >
-            {showForm ? 'Cancel' : '+ New ticket'}
-          </button>
-        </div>
-      </div>
+        <p className="parent-support__hint">
+          Choose a category so your request reaches the right team. You can track and reply on tickets below.
+        </p>
 
-      {error ? (
-        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#b91c1c', fontSize: '0.875rem' }}>
-          {error}
-        </div>
-      ) : null}
-
-      {showForm ? (
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
-          <p style={{ fontWeight: 600, marginBottom: 16 }}>New support ticket</p>
-          <form onSubmit={createTicket} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+        {showForm ? (
+          <form onSubmit={createTicket} style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label className="parent-support__field">
               Category
               <select
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
               >
                 {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+            <label className="parent-support__field">
               Subject
               <input
                 value={form.subject}
                 onChange={(e) => setForm({ ...form, subject: e.target.value })}
                 required
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+                placeholder="Brief summary"
               />
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+            <label className="parent-support__field">
               Details
               <textarea
                 value={form.body}
                 onChange={(e) => setForm({ ...form, body: e.target.value })}
                 rows={4}
                 required
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', resize: 'vertical' }}
+                placeholder="Describe your concern…"
               />
             </label>
             <TicketFileInput files={formFiles} onChange={setFormFiles} disabled={submitting} />
-            <button
-              type="submit"
-              disabled={submitting}
-              style={{ padding: '10px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}
-            >
+            <button type="submit" className="parent-support__submit" disabled={submitting}>
               {submitting ? 'Submitting…' : 'Submit ticket'}
             </button>
           </form>
+        ) : null}
+
+        {error ? <p style={{ color: '#b91c1c', marginTop: 10, fontSize: '0.875rem' }}>{error}</p> : null}
+        {success ? <p style={{ color: '#15803d', marginTop: 10, fontSize: '0.875rem' }}>{success}</p> : null}
+      </section>
+
+      {/* Open tickets */}
+      <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 12 }}>Open tickets ({openTickets.length})</h2>
+      {loading ? (
+        <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: 24 }}>Loading…</p>
+      ) : openTickets.length === 0 ? (
+        <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: 24 }}>No open tickets.</p>
+      ) : (
+        openTickets.map((t) => <TicketRow key={t.id} ticket={t} activeTicket={activeTicket} detailLoading={detailLoading} onOpen={openTicket} onUpdated={(updated) => { setActiveTicket(updated); loadTickets() }} />)
+      )}
+
+      {/* Closed tickets */}
+      {closedTickets.length > 0 ? (
+        <>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, margin: '24px 0 12px' }}>Closed / resolved</h2>
+          {closedTickets.map((t) => <TicketRow key={t.id} ticket={t} activeTicket={activeTicket} detailLoading={detailLoading} onOpen={openTicket} onUpdated={(updated) => { setActiveTicket(updated); loadTickets() }} />)}
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function TicketRow({ ticket: t, activeTicket, detailLoading, onOpen, onUpdated }) {
+  const expanded = activeTicket?.id === t.id
+  const sc = STATUS_META[t.status] || STATUS_META.OPEN
+  const cc = CAT_COLORS[t.category] || CAT_COLORS.OTHER
+
+  return (
+    <div className="parent-support__ticket" style={{ boxShadow: expanded ? '0 0 0 2px #6366f1' : undefined }}>
+      <div
+        className="parent-support__ticket-head"
+        onClick={() => onOpen(t)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && onOpen(t)}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cc, color: '#374151' }}>{t.category}</span>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: sc.bg, color: sc.color }}>{sc.label}</span>
+            {t.attachment_count > 0 ? (
+              <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>{t.attachment_count} file{t.attachment_count !== 1 ? 's' : ''}</span>
+            ) : null}
+            <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#9ca3af' }}>
+              {new Date(t.created_at).toLocaleDateString()}
+            </span>
+          </div>
+          <p style={{ margin: '0 0 4px', fontWeight: 600 }}>{t.subject}</p>
+          {t.body ? (
+            <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280' }}>{t.body.slice(0, 100)}{t.body.length > 100 ? '…' : ''}</p>
+          ) : null}
+        </div>
+        <span style={{ color: '#94a3b8', marginLeft: 8 }}>{expanded ? '▲' : '▼'}</span>
+      </div>
+
+      {expanded ? (
+        <div className="ticket-detail-panel">
+          {detailLoading || activeTicket?.id === t.id && !activeTicket?.messages ? (
+            <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>Loading thread…</p>
+          ) : (
+            <TicketDetailPanel ticket={activeTicket} onUpdated={onUpdated} />
+          )}
         </div>
       ) : null}
-
-      {loading ? (
-        <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>Loading…</div>
-      ) : tickets.length === 0 ? (
-        <div style={{ padding: 48, textAlign: 'center', background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', color: '#6b7280' }}>
-          <p style={{ fontWeight: 600, marginBottom: 6 }}>No tickets yet</p>
-          <p style={{ fontSize: '0.875rem' }}>Raise a support ticket using the button above.</p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {tickets.map((t) => {
-            const sc = STATUS_COLORS[t.status] || STATUS_COLORS.OPEN
-            const cc = CAT_COLORS[t.category] || CAT_COLORS.OTHER
-            const expanded = activeTicket?.id === t.id
-            return (
-              <div
-                key={t.id}
-                style={{
-                  background: '#fff',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 12,
-                  padding: '16px 20px',
-                  boxShadow: expanded ? '0 0 0 2px #6366f1' : 'none',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => openTicket(t)}
-                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <span style={{ background: cc, color: '#374151', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
-                      {t.category}
-                    </span>
-                    <span style={{ background: sc.bg, color: sc.color, fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
-                      {t.status}
-                    </span>
-                    {t.attachment_count > 0 ? (
-                      <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>{t.attachment_count} file{t.attachment_count !== 1 ? 's' : ''}</span>
-                    ) : null}
-                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#9ca3af' }}>
-                      {new Date(t.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <p style={{ fontWeight: 600, marginBottom: 4 }}>{t.subject}</p>
-                  <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: 0 }}>{t.body?.slice(0, 120)}{t.body?.length > 120 ? '…' : ''}</p>
-                </button>
-                {expanded ? (
-                  <div className="ticket-detail-panel">
-                    {detailLoading ? (
-                      <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>Loading thread…</p>
-                    ) : (
-                      <TicketDetailPanel
-                        ticket={activeTicket}
-                        onUpdated={(updated) => {
-                          setActiveTicket(updated)
-                          loadTickets()
-                        }}
-                      />
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }

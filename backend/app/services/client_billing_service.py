@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.case import Case
+from app.models.child import Child
+from app.models.parent import ParentGuardian
 from app.models.client_billing import (
     BillingDispute,
     BillingDisputeStatus,
@@ -487,3 +489,313 @@ def notify_parent_invoice_issued(db: Session, invoice_id: int, *, resend: bool =
         )
     db.flush()
     return {"status": "sent", "sent_at": inv.sent_at.isoformat() if inv.sent_at else None}
+
+
+def _parents_for_case(db: Session, case_id: int) -> list[int]:
+    case = db.get(Case, case_id)
+    if not case:
+        return []
+    parents = db.scalars(
+        select(ParentGuardian)
+        .join(ParentGuardian.children)
+        .where(Child.id == case.child_id)
+    ).all()
+    return list({pg.user_id for pg in parents})
+
+
+def _next_invoice_number(db: Session) -> str:
+    year = date.today().year
+    prefix = f"INV-{year}-"
+    existing = db.scalars(
+        select(ClientInvoice.invoice_number).where(ClientInvoice.invoice_number.like(f"{prefix}%"))
+    ).all()
+    nums = []
+    for num in existing:
+        try:
+            nums.append(int(num.split("-")[-1]))
+        except ValueError:
+            pass
+    seq = (max(nums) + 1) if nums else 1
+    return f"{prefix}{seq:04d}"
+
+
+def _admin_invoice_summary_row(inv: ClientInvoice, case: Case | None, parent: User | None) -> dict:
+    base = _serialize_invoice_summary(inv, case)
+    base["status"] = inv.status.value
+    base["parentUserId"] = inv.parent_user_id
+    base["parentName"] = parent.full_name if parent else ""
+    base["parentEmail"] = parent.email if parent else ""
+    base["sentAt"] = inv.sent_at.isoformat() if inv.sent_at else None
+    base["notes"] = inv.notes
+    return base
+
+
+def admin_list_invoices(
+    db: Session,
+    *,
+    month: Optional[str] = None,
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
+) -> list[dict]:
+    stmt = select(ClientInvoice).order_by(ClientInvoice.created_at.desc())
+    if month:
+        stmt = stmt.where(ClientInvoice.billing_month == month)
+    if case_id:
+        stmt = stmt.where(ClientInvoice.case_id == case_id)
+    if status:
+        try:
+            stmt = stmt.where(ClientInvoice.status == ClientInvoiceStatus(status))
+        except ValueError:
+            pass
+    if module:
+        stmt = stmt.where(ClientInvoice.product_module == module)
+
+    rows = db.scalars(stmt).all()
+    case_ids = {r.case_id for r in rows}
+    cases = {c.id: c for c in db.scalars(select(Case).where(Case.id.in_(case_ids))).all()} if case_ids else {}
+    parent_ids = {r.parent_user_id for r in rows}
+    parents = {u.id: u for u in db.scalars(select(User).where(User.id.in_(parent_ids))).all()} if parent_ids else {}
+
+    result = []
+    for inv in rows:
+        case = cases.get(inv.case_id)
+        if case and case.child_id:
+            case = db.scalar(
+                select(Case).where(Case.id == inv.case_id).options(selectinload(Case.child))
+            ) or case
+        parent = parents.get(inv.parent_user_id)
+        item = _admin_invoice_summary_row(inv, case, parent)
+        if search:
+            q = search.lower()
+            hay = " ".join(
+                [
+                    item.get("invoiceNumber", ""),
+                    item.get("childName", ""),
+                    item.get("caseId", ""),
+                    item.get("parentName", ""),
+                    item.get("parentEmail", ""),
+                    item.get("billingMonth", ""),
+                ]
+            ).lower()
+            if q not in hay:
+                continue
+        result.append(item)
+    return result
+
+
+def admin_get_invoice_detail(db: Session, invoice_id: int) -> dict:
+    inv = db.scalar(
+        select(ClientInvoice)
+        .where(ClientInvoice.id == invoice_id)
+        .options(
+            selectinload(ClientInvoice.lines),
+            selectinload(ClientInvoice.payments),
+            selectinload(ClientInvoice.disputes),
+        )
+    )
+    if not inv:
+        raise ValueError("Invoice not found")
+    case = db.scalar(select(Case).where(Case.id == inv.case_id).options(selectinload(Case.child)))
+    parent = db.get(User, inv.parent_user_id)
+    lines = sorted(inv.lines, key=lambda x: (x.session_date, x.sort_order))
+    detail = _admin_invoice_summary_row(inv, case, parent)
+    detail.update(
+        {
+            "subtotalInr": float(inv.subtotal_inr or 0),
+            "taxInr": float(inv.tax_inr or 0),
+            "discountInr": float(inv.discount_inr or 0),
+            "packageDeductionInr": float(inv.package_deduction_inr or 0),
+            "adjustmentInr": float(inv.adjustment_inr or 0),
+            "lines": [
+                {
+                    "id": line.id,
+                    "sessionDate": line.session_date.isoformat(),
+                    "therapistName": line.therapist_name,
+                    "serviceLabel": line.service_label,
+                    "sessionStatus": line.session_status,
+                    "amountInr": float(line.amount_inr),
+                    "packageDeducted": line.package_deducted,
+                    "parentSummary": line.parent_summary,
+                    "sessionId": line.session_id,
+                    "dailyLogId": line.daily_log_id,
+                }
+                for line in lines
+            ],
+            "payments": [
+                {
+                    "id": p.id,
+                    "amountInr": float(p.amount_inr),
+                    "method": p.method.value,
+                    "reference": p.reference,
+                    "paidAt": p.paid_at.isoformat() if p.paid_at else None,
+                    "notes": p.notes,
+                }
+                for p in inv.payments
+            ],
+            "disputes": [
+                {
+                    "id": d.id,
+                    "reasonCode": d.reason_code,
+                    "message": d.message,
+                    "status": d.status.value,
+                    "adminResolution": d.admin_resolution,
+                    "createdAt": d.created_at.isoformat() if d.created_at else None,
+                    "resolvedAt": d.resolved_at.isoformat() if d.resolved_at else None,
+                }
+                for d in inv.disputes
+            ],
+        }
+    )
+    return detail
+
+
+def admin_create_invoice(
+    db: Session,
+    *,
+    case_id: int,
+    invoice_type: str,
+    billing_month: str,
+    due_date: Optional[date],
+    lines: list[dict],
+    notes: Optional[str],
+    discount_inr: float,
+    admin_user_id: int,
+) -> ClientInvoice:
+    case = db.scalar(select(Case).where(Case.id == case_id).options(selectinload(Case.child)))
+    if not case:
+        raise ValueError("Case not found")
+    parent_ids = _parents_for_case(db, case_id)
+    if not parent_ids:
+        raise ValueError("No parent linked to this case")
+    parent_user_id = parent_ids[0]
+
+    subtotal = sum(float(ln.get("amount_inr", 0)) for ln in lines)
+    total = max(0, subtotal - float(discount_inr or 0))
+
+    inv = ClientInvoice(
+        invoice_number=_next_invoice_number(db),
+        parent_user_id=parent_user_id,
+        case_id=case_id,
+        invoice_type=ClientInvoiceType(invoice_type),
+        status=ClientInvoiceStatus.DRAFT,
+        billing_month=billing_month,
+        service_type=case.service_type,
+        product_module=case.product_module,
+        due_date=due_date,
+        subtotal_inr=subtotal,
+        discount_inr=discount_inr or 0,
+        total_inr=total,
+        notes=notes,
+    )
+    db.add(inv)
+    db.flush()
+
+    for i, ln in enumerate(lines):
+        db.add(
+            ClientInvoiceLine(
+                client_invoice_id=inv.id,
+                session_id=ln.get("session_id"),
+                daily_log_id=ln.get("daily_log_id"),
+                session_date=ln["session_date"],
+                therapist_name=ln["therapist_name"],
+                service_label=ln["service_label"],
+                session_status=ln.get("session_status", "COMPLETED"),
+                amount_inr=ln["amount_inr"],
+                parent_summary=ln.get("parent_summary"),
+                sort_order=i,
+            )
+        )
+    db.flush()
+    return inv
+
+
+def admin_update_invoice(db: Session, invoice_id: int, updates: dict) -> ClientInvoice:
+    inv = db.get(ClientInvoice, invoice_id)
+    if not inv:
+        raise ValueError("Invoice not found")
+    if inv.status not in (ClientInvoiceStatus.DRAFT, ClientInvoiceStatus.GENERATED):
+        if updates.get("status") not in (None, inv.status.value):
+            raise ValueError("Only draft or generated invoices can be edited")
+
+    if "due_date" in updates and updates["due_date"] is not None:
+        inv.due_date = updates["due_date"]
+    if "notes" in updates:
+        inv.notes = updates["notes"]
+    if "discount_inr" in updates and updates["discount_inr"] is not None:
+        inv.discount_inr = updates["discount_inr"]
+        inv.total_inr = max(
+            0,
+            float(inv.subtotal_inr or 0)
+            - float(inv.discount_inr or 0)
+            - float(inv.package_deduction_inr or 0)
+            + float(inv.adjustment_inr or 0),
+        )
+    if "adjustment_inr" in updates and updates["adjustment_inr"] is not None:
+        inv.adjustment_inr = updates["adjustment_inr"]
+        inv.total_inr = max(
+            0,
+            float(inv.subtotal_inr or 0)
+            - float(inv.discount_inr or 0)
+            - float(inv.package_deduction_inr or 0)
+            + float(inv.adjustment_inr or 0),
+        )
+    if updates.get("status") == "GENERATED" and inv.status == ClientInvoiceStatus.DRAFT:
+        inv.status = ClientInvoiceStatus.GENERATED
+    db.flush()
+    return inv
+
+
+def admin_summary(db: Session) -> dict:
+    rows = db.scalars(select(ClientInvoice)).all()
+    today = date.today()
+    month_prefix = today.strftime("%b %Y")
+    total_outstanding = 0.0
+    overdue_count = 0
+    disputed_count = 0
+    paid_this_month = 0
+    draft_count = 0
+    sent_unpaid = 0
+
+    for inv in rows:
+        balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
+        if inv.status == ClientInvoiceStatus.DRAFT:
+            draft_count += 1
+        if inv.status == ClientInvoiceStatus.DISPUTED:
+            disputed_count += 1
+        if inv.status == ClientInvoiceStatus.PAID or balance <= 0:
+            if inv.billing_month == month_prefix or (
+                inv.updated_at and inv.updated_at.strftime("%b %Y") == month_prefix
+            ):
+                paid_this_month += 1
+        elif balance > 0:
+            total_outstanding += balance
+            if _invoice_is_overdue(inv, balance):
+                overdue_count += 1
+            if inv.status in (ClientInvoiceStatus.SENT, ClientInvoiceStatus.PARTIALLY_PAID, ClientInvoiceStatus.GENERATED):
+                sent_unpaid += 1
+
+    open_disputes = (
+        db.scalar(
+            select(func.count())
+            .select_from(BillingDispute)
+            .where(
+                BillingDispute.status.in_(
+                    [BillingDisputeStatus.OPEN, BillingDisputeStatus.UNDER_REVIEW]
+                )
+            )
+        )
+        or 0
+    )
+
+    return {
+        "totalOutstandingInr": round(total_outstanding, 2),
+        "overdueCount": overdue_count,
+        "disputedCount": disputed_count,
+        "openDisputesCount": open_disputes,
+        "paidThisMonthCount": paid_this_month,
+        "draftCount": draft_count,
+        "sentUnpaidCount": sent_unpaid,
+        "invoiceCount": len(rows),
+    }

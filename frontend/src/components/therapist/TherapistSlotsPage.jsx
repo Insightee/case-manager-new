@@ -92,6 +92,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
         cellDate={editState?.cellDate}
         cellHour={editState?.cellHour}
         therapistId={therapistIdProp}
+        isAdmin={!!therapistIdProp}
         onClose={() => setEditState(null)}
         onSaved={bumpRefresh}
       />

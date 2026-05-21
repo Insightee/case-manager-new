@@ -184,15 +184,25 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
 
       {step === 1 ? (
         <div className="admin-form-grid" style={{ maxWidth: 520 }}>
-          <fieldset style={{ gridColumn: '1 / -1', border: 'none', padding: 0 }}>
-            <legend style={{ fontWeight: 600, marginBottom: 8 }}>Family</legend>
-            <label style={{ marginRight: 16 }}>
-              <input type="radio" checked={familyMode === 'existing'} onChange={() => setFamilyMode('existing')} /> Existing
-              client
-            </label>
-            <label>
-              <input type="radio" checked={familyMode === 'new'} onChange={() => setFamilyMode('new')} /> New client
-            </label>
+          <fieldset style={{ gridColumn: '1 / -1', border: 'none', padding: 0, margin: 0 }}>
+            <legend className="text-sm font-semibold text-slate-700 mb-3">Client type</legend>
+            <div className="flex gap-4">
+              {[
+                { id: 'existing', label: 'Existing client' },
+                { id: 'new', label: 'New client' },
+              ].map((opt) => (
+                <label key={opt.id} className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name="familyMode"
+                    checked={familyMode === opt.id}
+                    onChange={() => setFamilyMode(opt.id)}
+                    className="h-4 w-4 accent-indigo-600 flex-shrink-0"
+                  />
+                  <span className="text-sm text-slate-700">{opt.label}</span>
+                </label>
+              ))}
+            </div>
           </fieldset>
           {familyMode === 'existing' ? (
             <>
@@ -396,19 +406,22 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       ) : null}
 
       {step === 4 ? (
-        <div style={{ maxWidth: 400 }}>
-          <label>
-            Assign therapist
-            <AdminTherapistPicker
-              mode="allotment"
-              productModule={productModule}
-              value={therapistId}
-              onChange={setTherapistId}
-            />
-          </label>
-          <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 8 }}>
-            Only therapists approved for {productModule.replace('_', ' ')} are listed.
+        <div style={{ maxWidth: 480 }}>
+          <p className="text-sm font-semibold text-slate-700 mb-1">Assign therapist</p>
+          <p className="text-xs text-slate-500 mb-3">
+            Only therapists approved for {productModule.replace(/_/g, ' ')} are listed.
           </p>
+          <AdminTherapistPicker
+            mode="allotment"
+            productModule={productModule}
+            value={therapistId}
+            onChange={setTherapistId}
+          />
+          {therapistId && (
+            <p className="mt-3 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              Therapist selected — click <strong>Create case &amp; assign</strong> to proceed.
+            </p>
+          )}
         </div>
       ) : null}
 

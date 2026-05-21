@@ -40,6 +40,12 @@ function resolveLink(entityType, entityId, portal) {
     case 'report':
       if (portal === 'parent') return '/parent/reports'
       if (portal === 'therapist') return '/therapist/reports'
+      if (entityId) {
+        const p = new URLSearchParams({ reportId: String(entityId) })
+        if (entityType === 'observation_report') p.set('type', 'observation')
+        else p.set('type', 'monthly')
+        return `/admin/reports?${p.toString()}`
+      }
       return '/admin/reports'
 
     // --- IEP ---
@@ -59,11 +65,11 @@ function resolveLink(entityType, entityId, portal) {
     case 'ticket':
       if (portal === 'parent') return '/parent/support'
       if (portal === 'therapist') return '/therapist/tickets'
-      return '/admin/tickets'
+      return '/admin/support?tab=tickets'
 
     // --- incidents ---
     case 'incident':
-      return '/admin/incidents'
+      return '/admin/support?tab=incidents'
 
     // --- case manager meetings ---
     case 'case_manager_meeting':

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -40,9 +41,14 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         actual_start_at=s.actual_start_at,
         actual_end_at=s.actual_end_at,
         auto_ended=bool(s.auto_ended),
+        slot_duration_minutes=s.slot_duration_minutes,
         mode=s.mode,
         status=s.status,
         has_daily_log=s.daily_log is not None,
+        checkin_lat=s.checkin_lat,
+        checkin_lng=s.checkin_lng,
+        checkout_lat=s.checkout_lat,
+        checkout_lng=s.checkout_lng,
     )
 
 
@@ -185,10 +191,16 @@ def update_session(
     return _session_read(session, case)
 
 
+class _LocationBody(BaseModel):
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
 @router.post("/{session_id}/start", response_model=SessionRead)
 def start_session(
     session_id: int,
     request: Request,
+    payload: _LocationBody = _LocationBody(),
     user: User = Depends(require_permission("session.update")),
     db: Session = Depends(get_db),
 ):
@@ -203,7 +215,7 @@ def start_session(
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Access denied")
     try:
-        session = session_service.start_session(db, session, user.id)
+        session = session_service.start_session(db, session, user.id, lat=payload.lat, lng=payload.lng)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
@@ -216,6 +228,7 @@ def start_session(
 def end_session(
     session_id: int,
     request: Request,
+    payload: _LocationBody = _LocationBody(),
     user: User = Depends(require_permission("session.update")),
     db: Session = Depends(get_db),
 ):
@@ -232,7 +245,7 @@ def end_session(
     if session.therapist_user_id != user.id:
         raise HTTPException(status_code=403, detail="Can only end your own sessions")
     try:
-        session = session_service.end_session(db, session)
+        session = session_service.end_session(db, session, lat=payload.lat, lng=payload.lng)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)

@@ -5,8 +5,13 @@ import { DayCalendarGrid } from './DayCalendarGrid.jsx'
 import { MonthCalendarGrid } from './MonthCalendarGrid.jsx'
 import { addDays, dateStr, endOfMonth, startOfMonth, startOfWeek } from './slotCalendarUtils.js'
 
+/**
+ * Shared day/week/month calendar shell. Parent booking uses apiPrefix + caseId;
+ * therapist/admin use scheduling calendar with optional case_id filter.
+ */
 export function TherapistCalendar({
   therapistId,
+  caseId,
   apiPrefix = '/api/v1/scheduling',
   mode = 'therapist',
   onSlotClick,
@@ -16,6 +21,7 @@ export function TherapistCalendar({
   onMarkLeave,
   refreshKey = 0,
   onScheduleContext,
+  onCalendarLoad,
 }) {
   const [view, setView] = useState(() => 'week')
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
@@ -54,19 +60,26 @@ export function TherapistCalendar({
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
+    if (apiPrefix.includes('parent/booking') && (!caseId || !therapistId)) {
+      setCalendar(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError('')
     const tid = therapistId ? `&therapist_id=${therapistId}` : ''
+    const cid = caseId ? `&case_id=${caseId}` : ''
     try {
-      const data = await apiFetch(`${apiPrefix}/calendar?from_date=${fromDate}&to_date=${toDate}${tid}`)
+      const data = await apiFetch(`${apiPrefix}/calendar?from_date=${fromDate}&to_date=${toDate}${tid}${cid}`)
       setCalendar(data)
+      onCalendarLoad?.(data)
     } catch (err) {
       setError(err.message || 'Could not load calendar')
       setCalendar(null)
     } finally {
       setLoading(false)
     }
-  }, [fromDate, toDate, therapistId, apiPrefix, refreshKey])
+  }, [fromDate, toDate, therapistId, caseId, apiPrefix, refreshKey, onCalendarLoad])
 
   useEffect(() => {
     load()

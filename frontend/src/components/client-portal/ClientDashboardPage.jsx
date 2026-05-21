@@ -189,8 +189,9 @@ function ActionAlertsBanner({ billingSummary, pendingIepCount }) {
     <section style={{ marginBottom: 16 }} aria-label="Action required">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {alerts.map((a) => (
-          <div
+          <Link
             key={a.key}
+            to={a.link}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -200,6 +201,8 @@ function ActionAlertsBanner({ billingSummary, pendingIepCount }) {
               border: `1px solid ${a.border}`,
               borderRadius: 12,
               padding: '10px 14px',
+              textDecoration: 'none',
+              cursor: 'pointer',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -208,20 +211,18 @@ function ActionAlertsBanner({ billingSummary, pendingIepCount }) {
                 {a.message}
               </span>
             </div>
-            <Link
-              to={a.link}
+            <span
               style={{
                 flexShrink: 0,
                 fontSize: '0.8rem',
                 fontWeight: 700,
                 color: a.iconColor,
-                textDecoration: 'none',
                 whiteSpace: 'nowrap',
               }}
             >
               {a.linkLabel} →
-            </Link>
-          </div>
+            </span>
+          </Link>
         ))}
       </div>
     </section>

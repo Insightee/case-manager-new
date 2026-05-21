@@ -13,6 +13,9 @@ from app.core.audit import log_audit
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.permissions import user_has_permission
+from app.models.case import Case
+from app.models.session import Session as TherapySession
+from app.models.session import SessionStatus
 from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.user import InviteToken, User
 from app.services import appointment_booking_service as appt_booking
@@ -71,6 +74,8 @@ class BookSlotRequest(BaseModel):
 class InviteClientRequest(BaseModel):
     client_name: str = Field(..., min_length=1, max_length=255)
     client_email: EmailStr
+    child_name: Optional[str] = None
+    client_phone: Optional[str] = None
 
 
 class CancelSlotRequest(BaseModel):
@@ -446,6 +451,8 @@ def invite_client_to_slot(
         invite_metadata={
             "pending_slot_id": slot_id,
             "client_name": payload.client_name.strip(),
+            "child_name": payload.child_name.strip() if payload.child_name else None,
+            "client_phone": payload.client_phone.strip() if payload.client_phone else None,
             "therapist_user_id": user.id,
         },
     )
@@ -511,3 +518,131 @@ def decline_reschedule(
     db.commit()
     db.refresh(slot)
     return _serialise(slot)
+
+
+# ---------------------------------------------------------------------------
+# Shadow-care bulk block scheduling
+# ---------------------------------------------------------------------------
+
+class ShadowBlockRequest(BaseModel):
+    case_id: int
+    therapist_user_id: int
+    dates: list[date] = Field(..., min_length=1)
+    start_time: time
+    duration_hours: float = Field(..., gt=0, le=24)
+
+
+def _shadow_conflict_check(
+    db: Session,
+    therapist_user_id: int,
+    check_date: date,
+    start: time,
+    end: time,
+) -> list[dict]:
+    """Return any BOOKED/BLOCKED slots for the therapist that overlap the window."""
+    from sqlalchemy import select as sa_select
+    from datetime import datetime, timezone
+
+    slots = db.scalars(
+        sa_select(TherapistSlot).where(
+            TherapistSlot.therapist_user_id == therapist_user_id,
+            TherapistSlot.slot_date == check_date,
+            TherapistSlot.status.in_([SlotStatus.BOOKED, SlotStatus.BLOCKED]),
+        )
+    ).all()
+    conflicts = []
+    for s in slots:
+        # overlap when proposed_start < slot_end AND proposed_end > slot_start
+        if start < s.end_time and end > s.start_time:
+            conflicts.append({
+                "slot_id": s.id,
+                "date": check_date.isoformat(),
+                "start": s.start_time.strftime("%H:%M"),
+                "end": s.end_time.strftime("%H:%M"),
+                "status": s.status.value,
+            })
+    return conflicts
+
+
+@router.get("/shadow-block/preview")
+def shadow_block_preview(
+    therapist_user_id: int = Query(...),
+    dates: list[date] = Query(...),
+    start_time: time = Query(...),
+    duration_hours: float = Query(..., gt=0, le=24),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return any conflicting slots without committing changes."""
+    if not user_has_permission(user, "case.read.all"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from datetime import datetime, timedelta
+
+    end_time = (datetime.combine(date.today(), start_time) + timedelta(hours=duration_hours)).time()
+    all_conflicts: list[dict] = []
+    for d in dates:
+        all_conflicts.extend(_shadow_conflict_check(db, therapist_user_id, d, start_time, end_time))
+    return {"conflicts": all_conflicts}
+
+
+@router.post("/shadow-block", status_code=status.HTTP_201_CREATED)
+def create_shadow_block(
+    payload: ShadowBlockRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Bulk-create BOOKED shadow-care slots (and linked sessions) for a therapist."""
+    if not user_has_permission(user, "case.read.all"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    case = db.get(Case, payload.case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if case.product_module != "shadow_support":
+        raise HTTPException(status_code=400, detail="Shadow block is only for shadow_support cases")
+
+    from datetime import datetime, timedelta
+    from sqlalchemy import select as sa_select
+
+    duration_mins = int(payload.duration_hours * 60)
+    end_time = (datetime.combine(date.today(), payload.start_time) + timedelta(hours=payload.duration_hours)).time()
+
+    # Conflict check across all requested dates
+    all_conflicts: list[dict] = []
+    for d in payload.dates:
+        all_conflicts.extend(_shadow_conflict_check(db, payload.therapist_user_id, d, payload.start_time, end_time))
+    if all_conflicts:
+        raise HTTPException(status_code=400, detail={"message": "Scheduling conflicts detected", "conflicts": all_conflicts})
+
+    created = []
+    for d in payload.dates:
+        slot = TherapistSlot(
+            therapist_user_id=payload.therapist_user_id,
+            slot_date=d,
+            start_time=payload.start_time,
+            end_time=end_time,
+            slot_duration_minutes=duration_mins,
+            status=SlotStatus.BOOKED,
+            case_id=payload.case_id,
+            booking_source=BookingSource.ADMIN,
+        )
+        db.add(slot)
+        db.flush()
+        session = appt_booking.sync_session_for_slot(db, slot)
+        if session:
+            session.slot_duration_minutes = duration_mins
+        created.append(_serialise(slot))
+
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="shadow_block",
+        entity_type="slot",
+        entity_id=None,
+        new_value={"case_id": payload.case_id, "dates": [str(d) for d in payload.dates]},
+        **meta,
+    )
+    db.commit()
+    return {"created": created}

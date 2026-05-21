@@ -1,23 +1,24 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
-import { AdminScheduleSessionModal } from './AdminScheduleSessionModal.jsx'
-import { AdminAssignSchedulePanel } from './AdminAssignSchedulePage.jsx'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { StatusBadge } from './ui/index.js'
+import { AdminCaseReportsPanel } from './AdminCaseReportsPanel.jsx'
+import { AdminCaseCmMeetingsPanel } from './AdminCaseCmMeetingsPanel.jsx'
+import { AdminCaseSchedulingPanel } from './AdminCaseSchedulingPanel.jsx'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'assignments', label: 'Assignments' },
   { id: 'logs', label: 'Session logs' },
   { id: 'reports', label: 'Reports' },
+  { id: 'cm-meetings', label: 'CM meetings' },
   { id: 'billing', label: 'Billing', perm: 'case.update' },
-  { id: 'schedule', label: 'Schedule', perm: 'slot.book_any' },
-  { id: 'schedule-assign', label: 'Assign schedule', perm: 'slot.book_any' },
+  { id: 'scheduling', label: 'Scheduling', perm: 'slot.book_any' },
 ]
 
 export function AdminCaseDetailPage() {
@@ -28,27 +29,23 @@ export function AdminCaseDetailPage() {
   const [caseRow, setCaseRow] = useState(null)
   const [assignments, setAssignments] = useState([])
   const [logs, setLogs] = useState([])
-  const [reports, setReports] = useState([])
   const [therapistId, setTherapistId] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [scheduleOpen, setScheduleOpen] = useState(false)
   const [actingLogId, setActingLogId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const [c, asg, allLogs, allReports] = await Promise.all([
+      const [c, asg, allLogs] = await Promise.all([
         apiFetch(`/api/v1/cases/${caseId}`),
         apiFetch(`/api/v1/cases/${caseId}/assignments`),
         apiFetch(`/api/v1/daily-logs?case_id=${caseId}`),
-        apiFetch('/api/v1/reports/monthly?page_size=100'),
       ])
       setCaseRow(c)
       setAssignments(asg || [])
       setLogs(Array.isArray(allLogs) ? allLogs : unwrapList(allLogs))
-      setReports(unwrapList(allReports).filter((r) => String(r.case_id) === String(caseId)))
     } catch (err) {
       setError(err.message || 'Case not found')
       setCaseRow(null)
@@ -99,6 +96,7 @@ export function AdminCaseDetailPage() {
     }
   }
 
+  const isShadowCase = caseRow?.product_module === 'shadow_support'
   const visibleTabs = TABS.filter((t) => !t.perm || can(t.perm))
 
   if (loading) return <p className="admin-muted">Loading case…</p>
@@ -157,14 +155,19 @@ export function AdminCaseDetailPage() {
               ) : null}
             </div>
           ) : null}
+          <CaseBillingForm caseItem={caseRow} readOnly />
           {can('case.update') ? (
             <>
-              <CaseBillingForm caseItem={caseRow} onSave={saveBilling} />
-              <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} />
+              <p style={{ fontSize: '0.85rem', margin: '8px 0 0' }}>
+                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setTab('billing')}>
+                  Edit billing & address →
+                </button>
+              </p>
             </>
-          ) : (
-            <CaseBillingForm caseItem={caseRow} readOnly />
-          )}
+          ) : null}
+          {can('case.update') ? (
+            <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} />
+          ) : null}
         </section>
       )}
 
@@ -266,53 +269,30 @@ export function AdminCaseDetailPage() {
       )}
 
       {tab === 'reports' && (
-        <section>
-          <p style={{ marginBottom: 12 }}>
-            <Link to="/admin/reports" className="admin-btn admin-btn--ghost admin-btn--sm">
-              Open report review queue
-            </Link>
-          </p>
-          <ul className="admin-queue">
-            {reports.length === 0 ? (
-              <li className="admin-queue__item">No reports for this case.</li>
-            ) : (
-              reports.map((r) => (
-                <li key={r.id} className="admin-queue__item">
-                  <div>
-                    <p className="admin-queue__title">{r.month}</p>
-                    <p className="admin-queue__meta">{r.summary?.slice(0, 120) || 'No summary'}</p>
-                  </div>
-                  <StatusBadge status={r.status} />
-                </li>
-              ))
-            )}
-          </ul>
+        <AdminCaseReportsPanel
+          caseId={caseRow?.id || caseId}
+          highlightReportId={searchParams.get('reportId')}
+          highlightType={searchParams.get('type')}
+        />
+      )}
+
+      {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
+
+      {tab === 'billing' && can('case.update') && (
+        <section className="admin-layout admin-layout--stack">
+          <CaseBillingForm caseItem={caseRow} onSave={saveBilling} />
+          <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} />
         </section>
       )}
 
-      {tab === 'billing' && can('case.update') && <CaseBillingForm caseItem={caseRow} onSave={saveBilling} />}
-
-      {tab === 'schedule' && can('slot.book_any') && (
-        <section>
-          <button type="button" className="admin-btn admin-btn--primary" onClick={() => setScheduleOpen(true)}>
-            Schedule session
-          </button>
-        </section>
+      {tab === 'scheduling' && can('slot.book_any') && (
+        <AdminCaseSchedulingPanel
+          caseItem={caseRow}
+          assignments={assignments}
+          onDone={load}
+          isShadow={isShadowCase}
+        />
       )}
-
-      {tab === 'schedule-assign' && can('slot.book_any') && (
-        <AdminAssignSchedulePanel caseItem={caseRow} assignments={assignments} onDone={load} />
-      )}
-
-      <AdminScheduleSessionModal
-        open={scheduleOpen}
-        caseItem={caseRow}
-        onClose={() => setScheduleOpen(false)}
-        onDone={() => {
-          setScheduleOpen(false)
-          load()
-        }}
-      />
     </div>
   )
 }

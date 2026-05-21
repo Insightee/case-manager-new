@@ -9,10 +9,19 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
 
 SESSION_MAX_DURATION = timedelta(hours=2)
+# Fallback auto-end threshold when no slot duration is known
+SESSION_FALLBACK_MAX_HOURS = 4
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _auto_end_threshold(session: TherapySession) -> timedelta:
+    """Return the stale-session threshold. Uses slot_duration_minutes * 1.5 if known."""
+    if session.slot_duration_minutes and session.slot_duration_minutes > 0:
+        return timedelta(seconds=session.slot_duration_minutes * 60 * 1.5)
+    return timedelta(hours=SESSION_FALLBACK_MAX_HOURS)
 
 
 def auto_end_if_stale(db: Session, session: TherapySession) -> TherapySession:
@@ -21,7 +30,7 @@ def auto_end_if_stale(db: Session, session: TherapySession) -> TherapySession:
     started = session.actual_start_at
     if started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
-    if _now() - started > SESSION_MAX_DURATION:
+    if _now() - started > _auto_end_threshold(session):
         return end_session(db, session, auto_ended=True)
     return session
 
@@ -45,7 +54,14 @@ def get_active_session(db: Session, therapist_user_id: int) -> TherapySession | 
     return None
 
 
-def start_session(db: Session, session: TherapySession, therapist_user_id: int) -> TherapySession:
+def start_session(
+    db: Session,
+    session: TherapySession,
+    therapist_user_id: int,
+    *,
+    lat: float | None = None,
+    lng: float | None = None,
+) -> TherapySession:
     if session.therapist_user_id != therapist_user_id:
         raise ValueError("Not your session")
     if session.status != SessionStatus.SCHEDULED:
@@ -65,11 +81,22 @@ def start_session(db: Session, session: TherapySession, therapist_user_id: int) 
     session.actual_start_at = now
     if not session.start_time:
         session.start_time = now.time().replace(second=0, microsecond=0)
+    if lat is not None:
+        session.checkin_lat = lat
+    if lng is not None:
+        session.checkin_lng = lng
     db.flush()
     return session
 
 
-def end_session(db: Session, session: TherapySession, *, auto_ended: bool = False) -> TherapySession:
+def end_session(
+    db: Session,
+    session: TherapySession,
+    *,
+    auto_ended: bool = False,
+    lat: float | None = None,
+    lng: float | None = None,
+) -> TherapySession:
     if session.status != SessionStatus.IN_PROGRESS:
         raise ValueError("Session is not in progress")
     now = _now()
@@ -79,6 +106,10 @@ def end_session(db: Session, session: TherapySession, *, auto_ended: bool = Fals
     if session.actual_start_at and not session.start_time:
         session.start_time = session.actual_start_at.time().replace(second=0, microsecond=0)
     session.auto_ended = auto_ended
+    if lat is not None:
+        session.checkout_lat = lat
+    if lng is not None:
+        session.checkout_lng = lng
     db.flush()
     return session
 

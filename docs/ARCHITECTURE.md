@@ -2,6 +2,8 @@
 
 _Last updated: May 2026 — reflects therapist-first delivery, dual work surfaces (Session Logs vs My Cases), and API-backed operations._
 
+**Leadership docs:** [BOARD_ONE_PAGER.md](./BOARD_ONE_PAGER.md) · [PRODUCT_ROADMAP.md](./PRODUCT_ROADMAP.md) · [REVIEW_FINDINGS.md](./REVIEW_FINDINGS.md)
+
 ## Executive summary
 
 InsightCase is a **case-centric operations platform** for Insighte Childcare. Every engagement is anchored on a **Case ID**; sessions, daily logs, monthly reports, bookings, invoices, and parent visibility all roll up to that case.

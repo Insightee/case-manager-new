@@ -7,7 +7,7 @@ import { ClientPortalLayout } from '../components/client-portal/ClientPortalLayo
 import { ClientDashboardPage } from '../components/client-portal/ClientDashboardPage.jsx'
 import { ParentReportsPage } from '../components/client-portal/ParentReportsPage.jsx'
 import { ParentBillingPage } from '../components/client-portal/ParentBillingPage.jsx'
-import { ClientSupportPage } from '../components/client-portal/ClientSupportPage.jsx'
+import { ClientSupportHubPage } from '../components/client-portal/ClientSupportHubPage.jsx'
 import { ClientBookAppointmentPage } from '../components/client-portal/ClientBookAppointmentPage.jsx'
 import { ParentProfilePage } from '../components/client-portal/ParentProfilePage.jsx'
 import { ClientSessionLogsPage } from '../components/client-portal/ClientSessionLogsPage.jsx'
@@ -125,7 +125,8 @@ export function ParentRoutes() {
       <Route path="book" element={<ClientBookAppointmentPage cases={bootstrap.cases} />} />
       <Route path="session-logs" element={<ClientSessionLogsPage cases={bootstrap.cases} />} />
       <Route path="profile" element={<ParentProfilePage onProfileUpdated={reload} />} />
-      <Route path="support" element={<ClientSupportPage cases={bootstrap.cases} />} />
+      <Route path="support" element={<ClientSupportHubPage cases={bootstrap.cases} />} />
+      <Route path="incidents" element={<Navigate to="/parent/support?tab=incidents" replace />} />
     </Routes>
   )
 }

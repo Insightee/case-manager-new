@@ -47,8 +47,13 @@ class SessionRead(BaseModel):
     actual_start_at: Optional[datetime] = None
     actual_end_at: Optional[datetime] = None
     auto_ended: bool = False
+    slot_duration_minutes: Optional[int] = None
     mode: SessionMode
     status: SessionStatus
     has_daily_log: bool = False
+    checkin_lat: Optional[float] = None
+    checkin_lng: Optional[float] = None
+    checkout_lat: Optional[float] = None
+    checkout_lng: Optional[float] = None
 
     model_config = {"from_attributes": True}

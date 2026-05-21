@@ -18,6 +18,7 @@ class UserRead(BaseModel):
     id: int
     email: str
     full_name: str
+    phone: Optional[str] = None
     is_active: bool
     roles: list[str]
     region: Optional[str]

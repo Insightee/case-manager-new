@@ -17,6 +17,7 @@ import { AdminCaseAllotmentWizard } from './AdminCaseAllotmentWizard.jsx'
 import { AdminScheduleSessionModal } from './AdminScheduleSessionModal.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
+import { AdminCasesKanban } from './AdminCasesKanban.jsx'
 import { billingSummary } from '../invoices/invoiceUtils.js'
 
 export function AdminCasesPage() {
@@ -25,6 +26,8 @@ export function AdminCasesPage() {
   const [cases, setCases] = useState([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
+  const [viewMode, setViewMode] = useState('board')
+  const [moduleFilter, setModuleFilter] = useState('all')
   const [selected, setSelected] = useState(null)
   const [assignments, setAssignments] = useState([])
   const [therapistId, setTherapistId] = useState('')
@@ -141,7 +144,7 @@ export function AdminCasesPage() {
       <AdminPageHeader
         eyebrow="Case management"
         title="Cases"
-        subtitle="Create cases with billing, assign therapists, and review history."
+        subtitle="Pipeline board for allotment, reassignment, reports, IEP, and compliance — or use the list view."
         actions={
           can('case.create') ? (
             <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowCreate((v) => !v)}>
@@ -163,6 +166,45 @@ export function AdminCasesPage() {
         />
       ) : null}
 
+      <div className="admin-btn-group" style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className={`admin-btn admin-btn--sm ${viewMode === 'board' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+          onClick={() => setViewMode('board')}
+        >
+          Pipeline board
+        </button>
+        <button
+          type="button"
+          className={`admin-btn admin-btn--sm ${viewMode === 'list' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+          onClick={() => setViewMode('list')}
+        >
+          List
+        </button>
+        {viewMode === 'board' ? (
+          <select
+            className="admin-input admin-btn--sm"
+            style={{ width: 'auto', marginLeft: 8 }}
+            value={moduleFilter}
+            onChange={(e) => setModuleFilter(e.target.value)}
+          >
+            <option value="all">All modules</option>
+            <option value="homecare">Homecare</option>
+            <option value="shadow_support">Shadow support</option>
+          </select>
+        ) : null}
+      </div>
+
+      {viewMode === 'board' ? (
+        <AdminPanel title="Case pipeline" padded={false}>
+          <div className="admin-panel__body" style={{ padding: '12px 16px 16px' }}>
+            <AdminCasesKanban productFilter={moduleFilter} />
+          </div>
+        </AdminPanel>
+      ) : null}
+
+      {viewMode === 'list' ? (
+        <>
       <section className="admin-kpi-grid" aria-label="Case counts">
         {['ACTIVE', 'PENDING_ALLOTMENT', 'SUSPENDED', 'CLOSED'].map((s) => (
           <button
@@ -266,6 +308,8 @@ export function AdminCasesPage() {
           )}
         </div>
       </AdminPanel>
+        </>
+      ) : null}
 
       {selected ? (
         <div className="admin-drawer">

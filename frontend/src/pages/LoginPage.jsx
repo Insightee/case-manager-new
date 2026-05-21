@@ -26,7 +26,10 @@ const PORTALS = [
       { email: 'superadmin@demo.com', label: 'Super Admin' },
       { email: 'casemanager@demo.com', label: 'Case Manager' },
       { email: 'finance@demo.com', label: 'Finance' },
-      { email: 'admin@demo.com', label: 'View Admin' },
+      { email: 'admin@demo.com', label: 'Module admin' },
+      { email: 'viewer@demo.com', label: 'View only' },
+      { email: 'supervisor@demo.com', label: 'Supervisor' },
+      { email: 'casemanager@demo.com', label: 'Case manager' },
     ],
   },
 ]

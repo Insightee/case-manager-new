@@ -213,12 +213,14 @@ def delete_recurring_group(db: Session, therapist_user_id: int, group_id: str, *
 def _slot_to_dict(slot: TherapistSlot, case: Case | None = None) -> dict[str, Any]:
     child_name = None
     case_code = None
-    if case:
-        case_code = case.case_code
-        child_name = case.child.full_name if case.child else None
-    elif slot.case:
-        case_code = slot.case.case_code
-        child_name = slot.case.child.full_name if slot.case.child else None
+    product_module = None
+    service_type = None
+    resolved_case = case or slot.case
+    if resolved_case:
+        case_code = resolved_case.case_code
+        child_name = resolved_case.child.full_name if resolved_case.child else None
+        product_module = getattr(resolved_case, "product_module", None)
+        service_type = getattr(resolved_case, "service_type", None)
     return {
         "id": slot.id,
         "therapist_user_id": slot.therapist_user_id,
@@ -230,6 +232,8 @@ def _slot_to_dict(slot: TherapistSlot, case: Case | None = None) -> dict[str, An
         "case_id": slot.case_id,
         "case_code": case_code,
         "child_name": child_name,
+        "product_module": product_module,
+        "service_type": service_type,
         "booked_by_user_id": slot.booked_by_user_id,
         "booking_source": slot.booking_source.value if slot.booking_source else None,
         "recurrence_group_id": slot.recurrence_group_id,

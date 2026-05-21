@@ -23,6 +23,7 @@ from app.models.report import MonthlyReport, ReportStatus
 from app.models.session import Session as TherapySession
 from app.models.slot import SlotStatus, TherapistSlot
 from app.models.support_ticket import SupportTicket, TicketMessage, TicketStatus, TicketTopic
+from app.models.incident import Incident, IncidentMessage, IncidentStatus
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.schemas.address import ServiceAddressUpdate
@@ -840,3 +841,130 @@ def parent_ticket_escalate(
     )
     db.commit()
     return parent_ticket_service.get_parent_ticket(db, user, ticket.id)
+
+
+# ── Parent incident reporting ─────────────────────────────────────────────
+
+
+class ParentIncidentCreate(BaseModel):
+    case_id: Optional[int] = None
+    title: str
+    description: str
+
+
+def _serialize_incident(incident: Incident, db: Session) -> dict:
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    return {
+        "id": incident.id,
+        "case_id": incident.case_id,
+        "case_code": case.case_code if case else None,
+        "child_name": case_service.case_child_display_name(case),
+        "title": incident.title,
+        "description": incident.description,
+        "status": incident.status.value,
+        "created_at": incident.created_at.isoformat(),
+        "messages": [
+            {
+                "id": m.id,
+                "body": m.body,
+                "author_name": m.author.full_name if m.author else "Unknown",
+                "is_reporter": m.author_user_id == incident.reported_by_user_id,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in incident.messages
+        ],
+    }
+
+
+class ParentIncidentMessageCreate(BaseModel):
+    body: str
+
+
+@router.get("/incidents")
+def parent_list_incidents(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    incidents = db.scalars(
+        select(Incident)
+        .where(Incident.reported_by_user_id == user.id)
+        .order_by(Incident.created_at.desc())
+    ).all()
+    result = []
+    for inc in incidents:
+        case = case_service.get_case(db, inc.case_id) if inc.case_id else None
+        result.append({
+            "id": inc.id,
+            "case_id": inc.case_id,
+            "case_code": case.case_code if case else None,
+            "child_name": case_service.case_child_display_name(case),
+            "title": inc.title,
+            "status": inc.status.value,
+            "created_at": inc.created_at.isoformat(),
+        })
+    return result
+
+
+@router.get("/incidents/{incident_id}")
+def parent_get_incident(
+    incident_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    incident = db.get(Incident, incident_id)
+    if not incident or incident.reported_by_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    return _serialize_incident(incident, db)
+
+
+@router.post("/incidents", status_code=201)
+def parent_create_incident(
+    payload: ParentIncidentCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    incident = Incident(
+        case_id=payload.case_id,
+        reported_by_user_id=user.id,
+        title=payload.title,
+        description=payload.description,
+        is_sensitive=False,
+    )
+    db.add(incident)
+    db.flush()
+    db.add(IncidentMessage(
+        incident_id=incident.id,
+        author_user_id=user.id,
+        body=payload.description,
+    ))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="create", entity_type="incident", entity_id=incident.id, **meta)
+    db.commit()
+    return {"id": incident.id, "status": incident.status.value}
+
+
+@router.post("/incidents/{incident_id}/messages", status_code=201)
+def parent_add_incident_message(
+    incident_id: int,
+    payload: ParentIncidentMessageCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    incident = db.get(Incident, incident_id)
+    if not incident or incident.reported_by_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.add(IncidentMessage(
+        incident_id=incident_id,
+        author_user_id=user.id,
+        body=payload.body.strip(),
+    ))
+    # Reopen if admin had marked as resolved
+    if incident.status == IncidentStatus.RESOLVED:
+        incident.status = IncidentStatus.INVESTIGATING
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="message", entity_type="incident", entity_id=incident_id, **meta)
+    db.commit()
+    db.refresh(incident)
+    return _serialize_incident(incident, db)

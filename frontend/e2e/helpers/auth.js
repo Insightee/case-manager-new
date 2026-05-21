@@ -38,3 +38,19 @@ export async function loginAdmin(page) {
   await page.getByRole('button', { name: 'Sign in' }).click()
   await page.waitForURL(/\/admin/)
 }
+
+/** @param {import('@playwright.test').Page} page */
+export async function loginCaseManager(page) {
+  await page.goto('/login')
+  await page.getByRole('tab', { name: 'Admin' }).click()
+  await page.getByRole('textbox', { name: 'Email' }).fill('casemanager@demo.com')
+  await page.getByLabel('Password').fill('demo123')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.waitForURL(/\/admin/)
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function loginFinance(page) {
+  await login(page, { email: 'finance@demo.com' })
+  await page.waitForURL(/\/admin/)
+}

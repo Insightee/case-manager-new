@@ -32,6 +32,7 @@ def list_tickets_for_user(
     user: User,
     *,
     category: Optional[TicketCategory] = None,
+    product_module: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
 ) -> dict:
@@ -39,6 +40,8 @@ def list_tickets_for_user(
 
     if category:
         stmt = stmt.where(SupportTicket.category == category)
+    if product_module:
+        stmt = stmt.where(SupportTicket.product_module == product_module)
 
     if user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override"):
         allowed = get_allowed_case_product_modules(user)
@@ -63,6 +66,12 @@ def list_tickets_for_user(
         cases = db.scalars(select(Case).where(Case.id.in_(case_ids))).all()
         cases_by_id = {c.id: c for c in cases}
 
+    assignee_ids = {t.assigned_to_user_id for t in rows if t.assigned_to_user_id}
+    assignees_by_id: dict[int, User] = {}
+    if assignee_ids:
+        for u in db.scalars(select(User).where(User.id.in_(assignee_ids))).all():
+            assignees_by_id[u.id] = u
+
     ticket_ids = [t.id for t in rows]
     att_counts: dict[int, int] = {}
     if ticket_ids:
@@ -82,15 +91,17 @@ def list_tickets_for_user(
         elif t.product_module and not case_product_module_allowed(user, t.product_module):
             if not user_has_permission(user, "admin.override"):
                 continue
-        items.append(_ticket_row(t, att_counts.get(t.id, 0)))
+        assignee = assignees_by_id.get(t.assigned_to_user_id) if t.assigned_to_user_id else None
+        items.append(_ticket_row(t, att_counts.get(t.id, 0), assignee_name=assignee.full_name if assignee else None))
 
     return paginated_response(items, total, page, page_size)
 
 
-def _ticket_row(t: SupportTicket, attachment_count: int = 0) -> dict:
+def _ticket_row(t: SupportTicket, attachment_count: int = 0, assignee_name: str | None = None) -> dict:
     return {
         "id": t.id,
         "case_id": t.case_id,
+        "product_module": t.product_module,
         "raised_by_user_id": t.raised_by_user_id,
         "subject": t.subject,
         "body": t.body,
@@ -99,6 +110,7 @@ def _ticket_row(t: SupportTicket, attachment_count: int = 0) -> dict:
         "topic_label": ticket_esc.TOPIC_LABELS.get(t.topic, "Other") if t.topic else "Other",
         "status": t.status.value,
         "assigned_to_user_id": t.assigned_to_user_id,
+        "assigned_to_name": assignee_name,
         "escalation_level": getattr(t, "escalation_level", 0) or 0,
         "attachment_count": attachment_count,
         "created_at": t.created_at.isoformat(),

@@ -5,16 +5,18 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import extract, select
-from sqlalchemy.orm import Session
+from sqlalchemy import extract, or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.permissions import RoleName, user_has_permission
 from app.models.case import Case
+from app.models.child import Child
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.user import User
 from app.services import parent_service
+from app.services.admin_scope_service import apply_case_scope, scoped_case_ids_subquery
 
 router = APIRouter(tags=["cm-meetings"])
 
@@ -51,8 +53,29 @@ class CmMeetingNotesUpdate(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _require_cm_or_admin(user: User) -> None:
-    role = user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
+def _role_name(user: User) -> str:
+    return user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
+
+
+def _can_read_cm_meetings(user: User) -> bool:
+    if user_has_permission(user, "admin.override"):
+        return True
+    role = _role_name(user)
+    return role in {
+        RoleName.CASE_MANAGER.value,
+        RoleName.ADMIN.value,
+        RoleName.SUPER_ADMIN.value,
+        RoleName.SUPERVISOR.value,
+    }
+
+
+def _require_cm_meetings_read(user: User) -> None:
+    if not _can_read_cm_meetings(user):
+        raise HTTPException(status_code=403, detail="Not allowed to view CM meetings")
+
+
+def _require_cm_meetings_write(user: User) -> None:
+    role = _role_name(user)
     allowed = {RoleName.CASE_MANAGER.value, RoleName.ADMIN.value, RoleName.SUPER_ADMIN.value}
     if role not in allowed and not user_has_permission(user, "admin.override"):
         raise HTTPException(status_code=403, detail="Case manager or admin role required")
@@ -63,15 +86,19 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
     parent = db.get(User, meeting.parent_user_id) if meeting.parent_user_id else None
     therapist = db.get(User, meeting.therapist_user_id) if meeting.therapist_user_id else None
     child_name: Optional[str] = None
+    case_code: Optional[str] = None
     if meeting.case_id:
         case = db.get(Case, meeting.case_id)
-        if case and case.child:
-            child_name = case.child.full_name
+        if case:
+            case_code = case.case_code
+            if case.child:
+                child_name = case.child.full_name
     return {
         "id": meeting.id,
         "case_manager_user_id": meeting.case_manager_user_id,
         "case_manager_name": cm.full_name if cm else None,
         "case_id": meeting.case_id,
+        "case_code": case_code,
         "child_name": child_name,
         "parent_user_id": meeting.parent_user_id,
         "parent_name": parent.full_name if parent else None,
@@ -101,14 +128,21 @@ def create_cm_meeting(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_cm_or_admin(user)
+    _require_cm_meetings_write(user)
     meeting_type = payload.meeting_type
     if payload.therapist_user_id:
         meeting_type = MeetingType.CLIENT_AND_THERAPIST
+    parent_user_id = payload.parent_user_id
+    if payload.case_id and not parent_user_id:
+        case = db.get(Case, payload.case_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if case.child_id:
+            parent_user_id = parent_service.primary_parent_user_id_for_child(db, case.child_id)
     meeting = CaseManagerMeeting(
         case_manager_user_id=user.id,
         case_id=payload.case_id,
-        parent_user_id=payload.parent_user_id,
+        parent_user_id=parent_user_id,
         therapist_user_id=payload.therapist_user_id,
         scheduled_date=payload.scheduled_date,
         scheduled_time=payload.scheduled_time,
@@ -129,25 +163,62 @@ def list_cm_meetings(
     status: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
+    meeting_type: Optional[str] = None,
+    case_manager_user_id: Optional[int] = None,
+    search: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_cm_or_admin(user)
-    role = user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
+    _require_cm_meetings_read(user)
+    role = _role_name(user)
     stmt = select(CaseManagerMeeting).order_by(
         CaseManagerMeeting.scheduled_date.desc()
     )
-    # Scope: case managers only see their own meetings; admins see all
     if role == RoleName.CASE_MANAGER.value and not user_has_permission(user, "admin.override"):
         stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == user.id)
+    elif role == RoleName.SUPERVISOR.value and not user_has_permission(user, "admin.override"):
+        case_ids = db.scalars(scoped_case_ids_subquery(user)).all()
+        if not case_ids:
+            stmt = stmt.where(CaseManagerMeeting.id < 0)
+        else:
+            stmt = stmt.where(
+                or_(
+                    CaseManagerMeeting.case_id.in_(case_ids),
+                    CaseManagerMeeting.case_manager_user_id == user.id,
+                )
+            )
     if case_id is not None:
         stmt = stmt.where(CaseManagerMeeting.case_id == case_id)
     if status:
-        stmt = stmt.where(CaseManagerMeeting.status == status)
+        try:
+            stmt = stmt.where(CaseManagerMeeting.status == MeetingStatus(status.upper()))
+        except ValueError:
+            pass
+    if meeting_type:
+        try:
+            stmt = stmt.where(CaseManagerMeeting.meeting_type == MeetingType(meeting_type.upper()))
+        except ValueError:
+            pass
+    if case_manager_user_id is not None:
+        stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == case_manager_user_id)
     if year is not None:
         stmt = stmt.where(extract("year", CaseManagerMeeting.scheduled_date) == year)
     if month is not None:
         stmt = stmt.where(extract("month", CaseManagerMeeting.scheduled_date) == month)
+    if search:
+        q = f"%{search.strip()}%"
+        stmt = (
+            stmt.outerjoin(Case, CaseManagerMeeting.case_id == Case.id)
+            .outerjoin(Child, Case.child_id == Child.id)
+            .where(
+                or_(
+                    CaseManagerMeeting.title.ilike(q),
+                    Case.case_code.ilike(q),
+                    Child.first_name.ilike(q),
+                    Child.last_name.ilike(q),
+                )
+            )
+        )
     meetings = db.scalars(stmt).all()
     return [_serialize(m, db) for m in meetings]
 
@@ -159,7 +230,7 @@ def update_cm_meeting(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_cm_or_admin(user)
+    _require_cm_meetings_write(user)
     meeting = db.get(CaseManagerMeeting, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -198,7 +269,7 @@ def cancel_cm_meeting(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_cm_or_admin(user)
+    _require_cm_meetings_write(user)
     meeting = db.get(CaseManagerMeeting, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { ServiceCategoryPicker } from '../shared/ServiceCategoryPicker.jsx'
 import { TherapistReviewsSection } from '../therapist/TherapistReviewsSection.jsx'
-import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
+import { TherapistServiceProfileForm } from './TherapistServiceProfileForm.jsx'
+import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminStatCard, AdminToolbar, StatusBadge } from './ui/index.js'
+import './admin-reports.css'
 
 const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT']
 
@@ -16,10 +18,15 @@ const EMPTY_FORM = {
 }
 
 export function AdminTherapistProfilesPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlStatus = searchParams.get('status') || 'PENDING'
+  const urlUserId = searchParams.get('user_id')
+
   const [profiles, setProfiles] = useState([])
   const [therapists, setTherapists] = useState([])
   const [categories, setCategories] = useState([])
-  const [statusFilter, setStatusFilter] = useState('PENDING')
+  const [summary, setSummary] = useState(null)
+  const [statusFilter, setStatusFilter] = useState(urlStatus)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
@@ -33,14 +40,16 @@ export function AdminTherapistProfilesPage() {
     setLoading(true)
     try {
       const q = statusFilter !== 'ALL' ? `?status=${statusFilter}` : ''
-      const [rows, users, cats] = await Promise.all([
+      const [rows, users, cats, sum] = await Promise.all([
         apiFetch(`/api/v1/admin/therapist-profiles${q}`),
         apiFetch('/api/v1/admin/users'),
         apiFetch('/api/v1/therapist/service-categories'),
+        apiFetch('/api/v1/admin/therapist-profiles/summary').catch(() => null),
       ])
       setProfiles(rows)
       setTherapists(users.filter((u) => u.roles?.includes('THERAPIST')))
       setCategories(cats)
+      setSummary(sum)
     } catch {
       setProfiles([])
     } finally {
@@ -51,6 +60,25 @@ export function AdminTherapistProfilesPage() {
   useEffect(() => {
     load()
   }, [statusFilter])
+
+  useEffect(() => {
+    setStatusFilter(urlStatus)
+  }, [urlStatus])
+
+  useEffect(() => {
+    if (!urlUserId || loading || profiles.length === 0) return
+    const uid = Number(urlUserId)
+    const match = profiles.find((p) => p.user_id === uid)
+    if (match) setSelected(match)
+  }, [urlUserId, loading, profiles])
+
+  function setStatusFilterAndUrl(next) {
+    setStatusFilter(next)
+    const nextParams = { ...Object.fromEntries(searchParams.entries()) }
+    if (next === 'ALL') delete nextParams.status
+    else nextParams.status = next
+    setSearchParams(nextParams, { replace: true })
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -141,54 +169,28 @@ export function AdminTherapistProfilesPage() {
       {error ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{error}</p> : null}
       {success ? <p style={{ color: '#15803d', fontSize: '0.875rem' }}>{success}</p> : null}
 
+      {summary ? (
+        <div className="admin-reports-kpi-row" style={{ marginBottom: 16 }}>
+          <AdminStatCard title="Pending" value={summary.PENDING ?? 0} tone="amber" onClick={() => setStatusFilterAndUrl('PENDING')} />
+          <AdminStatCard title="Draft" value={summary.DRAFT ?? 0} tone="slate" onClick={() => setStatusFilterAndUrl('DRAFT')} />
+          <AdminStatCard title="Approved" value={summary.APPROVED ?? 0} tone="green" onClick={() => setStatusFilterAndUrl('APPROVED')} />
+          <AdminStatCard title="Paused" value={summary.PAUSED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('PAUSED')} />
+          <AdminStatCard title="No profile" value={summary.no_profile ?? 0} tone="indigo" hint="Therapists without listing" />
+        </div>
+      ) : null}
+
       {showCreate ? (
         <form className="admin-form-grid" style={{ maxWidth: 520, marginBottom: 20 }} onSubmit={handleCreate}>
           <p className="admin-drawer__subtitle" style={{ gridColumn: '1 / -1' }}>
             Create profile for therapist
           </p>
-          <label>
-            Therapist
-            <select required value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })}>
-              <option value="">Select…</option>
-              {therapistsWithoutProfile.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.full_name} ({t.email})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Display name
-            <input required value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
-          </label>
-          <label style={{ gridColumn: '1 / -1' }}>
-            Short bio
-            <textarea value={form.short_bio} onChange={(e) => setForm({ ...form, short_bio: e.target.value })} rows={2} />
-          </label>
-          <label style={{ gridColumn: '1 / -1' }}>
-            Qualifications
-            <textarea
-              value={form.academic_qualifications}
-              onChange={(e) => setForm({ ...form, academic_qualifications: e.target.value })}
-              rows={2}
-            />
-          </label>
-          <label style={{ gridColumn: '1 / -1' }}>
-            Certificates (one per line)
-            <textarea
-              value={form.professional_certificates}
-              onChange={(e) => setForm({ ...form, professional_certificates: e.target.value })}
-              rows={2}
-            />
-          </label>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <p className="admin-drawer__subtitle">Services</p>
-            <ServiceCategoryPicker
-              categories={categories}
-              value={form.services_offered}
-              onChange={(services_offered) => setForm({ ...form, services_offered })}
-            />
-          </div>
+          <TherapistServiceProfileForm
+            form={form}
+            setForm={setForm}
+            categories={categories}
+            showTherapistSelect
+            therapists={therapistsWithoutProfile}
+          />
           <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" style={{ gridColumn: '1 / -1' }}>
             Create & approve
           </button>
@@ -203,7 +205,7 @@ export function AdminTherapistProfilesPage() {
               className="admin-search__input"
               style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => setStatusFilterAndUrl(e.target.value)}
             >
               {STATUS_FILTERS.map((s) => (
                 <option key={s} value={s}>

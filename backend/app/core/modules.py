@@ -68,11 +68,12 @@ ALL_FEATURE_IDS: tuple[str, ...] = tuple(
 
 # Roles that must be scoped to at least one product module (unless super admin).
 MODULE_SCOPED_ROLES: frozenset[str] = frozenset(
-    {"ADMIN", "CASE_MANAGER", "SUPERVISOR", "FINANCE", "HR", "SCHOOL_COORDINATOR"}
+    {"ADMIN", "VIEWER", "CASE_MANAGER", "SUPERVISOR", "FINANCE", "HR", "SCHOOL_COORDINATOR"}
 )
 
 ROLE_DEFAULT_MODULES: dict[str, list[str]] = {
     "ADMIN": ["homecare"],
+    "VIEWER": ["homecare", "shadow_support"],
     "CASE_MANAGER": ["homecare", "shadow_support"],
     "SUPERVISOR": ["homecare", "shadow_support"],
     "FINANCE": ["billing"],

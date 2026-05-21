@@ -47,6 +47,25 @@ def sync_session_for_slot(db: Session, slot: TherapistSlot) -> TherapySession | 
         db.flush()
         return existing
 
+    # Guard: adopt any bare SCHEDULED session for the same case+date+time
+    # (created e.g. by seed before the slot was booked) rather than duplicating.
+    orphan = db.scalars(
+        select(TherapySession).where(
+            TherapySession.case_id == slot.case_id,
+            TherapySession.scheduled_date == slot.slot_date,
+            TherapySession.start_time == slot.start_time,
+            TherapySession.status == SessionStatus.SCHEDULED,
+            TherapySession.slot_id.is_(None),
+        )
+    ).first()
+    if orphan:
+        orphan.end_time = slot.end_time
+        orphan.therapist_user_id = slot.therapist_user_id
+        orphan.slot_id = slot.id
+        slot.session_id = orphan.id
+        db.flush()
+        return orphan
+
     sess = TherapySession(
         case_id=slot.case_id,
         therapist_user_id=slot.therapist_user_id,
@@ -55,6 +74,7 @@ def sync_session_for_slot(db: Session, slot: TherapistSlot) -> TherapySession | 
         end_time=slot.end_time,
         status=SessionStatus.SCHEDULED,
         slot_id=slot.id,
+        slot_duration_minutes=slot.slot_duration_minutes,
     )
     db.add(sess)
     db.flush()

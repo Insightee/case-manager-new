@@ -212,6 +212,40 @@ export function ParentBillingPage() {
         </ul>
       ) : null}
 
+      {showDueStrip ? (
+        <section className="parent-pay__due-section" aria-label="Invoices that need payment">
+          <h3>Action required — pay now</h3>
+          <div className="parent-pay__due-grid">
+            {dueInvoices.map((inv) => (
+              <article key={inv.id} className={`parent-pay__due-card ${inv.isOverdue ? 'is-overdue' : ''}`}>
+                <div className="parent-pay__due-card-top">
+                  <div>
+                    <h4>{inv.invoiceNumber}</h4>
+                    <p className="parent-pay__due-meta">
+                      {inv.childName} · {formatMonth(inv.billingMonth)}
+                    </p>
+                  </div>
+                  {inv.isOverdue ? (
+                    <span className="parent-pay__badge parent-pay__badge--overdue">Overdue</span>
+                  ) : inv.paymentBucket === 'partial' ? (
+                    <span className="parent-pay__badge parent-pay__badge--partial">Partial</span>
+                  ) : null}
+                </div>
+                {inv.dueDate ? (
+                  <p className="parent-pay__due-meta">Due {new Date(inv.dueDate).toLocaleDateString('en-IN')}</p>
+                ) : null}
+                <div className="parent-pay__due-balance">{formatInr(inv.balanceInr)} due</div>
+                <div className="parent-pay__due-actions">
+                  <button type="button" onClick={() => openInvoice(inv.id)}>
+                    View &amp; pay
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {dashboard?.packages?.length > 0 ? (
         <section className="parent-pay__packages parent-pay__table-card">
           <div className="parent-pay__table-head">
@@ -296,40 +330,6 @@ export function ParentBillingPage() {
           </select>
         </label>
       </div>
-
-      {showDueStrip ? (
-        <section className="parent-pay__due-section" aria-label="Invoices that need payment">
-          <h3>Pay first</h3>
-          <div className="parent-pay__due-grid">
-            {dueInvoices.map((inv) => (
-              <article key={inv.id} className={`parent-pay__due-card ${inv.isOverdue ? 'is-overdue' : ''}`}>
-                <div className="parent-pay__due-card-top">
-                  <div>
-                    <h4>{inv.invoiceNumber}</h4>
-                    <p className="parent-pay__due-meta">
-                      {inv.childName} · {formatMonth(inv.billingMonth)}
-                    </p>
-                  </div>
-                  {inv.isOverdue ? (
-                    <span className="parent-pay__badge parent-pay__badge--overdue">Overdue</span>
-                  ) : inv.paymentBucket === 'partial' ? (
-                    <span className="parent-pay__badge parent-pay__badge--partial">Partial</span>
-                  ) : null}
-                </div>
-                {inv.dueDate ? (
-                  <p className="parent-pay__due-meta">Due {new Date(inv.dueDate).toLocaleDateString('en-IN')}</p>
-                ) : null}
-                <div className="parent-pay__due-balance">{formatInr(inv.balanceInr)} due</div>
-                <div className="parent-pay__due-actions">
-                  <button type="button" onClick={() => openInvoice(inv.id)}>
-                    View &amp; pay
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
 
       <section className="parent-pay__table-card">
         <div className="parent-pay__table-head">

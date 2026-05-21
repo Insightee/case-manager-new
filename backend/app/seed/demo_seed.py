@@ -16,6 +16,7 @@ from app.models import (
     DailyLog,
     Invoice,
     MonthlyReport,
+    ObservationReport,
     Notification,
     ParentBillingStatement,
     ParentGuardian,
@@ -48,6 +49,7 @@ from app.models.leave import LeaveType, LeaveStatus, TherapistLeave
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.services import slot_calendar_service as cal
 from app.models.incident import Incident, IncidentStatus
+from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.visibility import VisibilityStatus
 
 
@@ -125,6 +127,14 @@ def run():
         )
         get_or_create_user(
             db, "supervisor@demo.com", "demo123", "Supervisor", RoleName.SUPERVISOR.value, module_assignments=["shadow_support"]
+        )
+        get_or_create_user(
+            db,
+            "viewer@demo.com",
+            "demo123",
+            "View Only Admin",
+            RoleName.VIEWER.value,
+            module_assignments=["homecare", "shadow_support"],
         )
         get_or_create_user(db, "support@demo.com", "demo123", "Support Admin", RoleName.ADMIN.value, module_assignments=["homecare", "billing"])
         get_or_create_user(
@@ -307,7 +317,6 @@ def run():
                 select(TherapySession).where(
                     TherapySession.case_id == case.id,
                     TherapySession.scheduled_date == day,
-                    TherapySession.status == SessionStatus.SCHEDULED,
                 )
             ).first()
             if existing:
@@ -419,6 +428,28 @@ def run():
                     month="Mar 2026",
                     status=ReportStatus.PUBLISHED,
                     summary="Published report for parent",
+                    visibility_status=VisibilityStatus.APPROVED_FOR_PARENT,
+                )
+            )
+
+        if not db.scalars(select(ObservationReport).where(ObservationReport.case_id == case1.id)).first():
+            db.add(
+                ObservationReport(
+                    case_id=case1.id,
+                    therapist_user_id=therapist.id,
+                    title="Classroom shadow observation",
+                    content="Student engaged well during group activity; minor sensory breaks needed.",
+                    status=ReportStatus.UNDER_REVIEW,
+                    visibility_status=VisibilityStatus.INTERNAL_ONLY,
+                )
+            )
+            db.add(
+                ObservationReport(
+                    case_id=case1.id,
+                    therapist_user_id=therapist.id,
+                    title="Home visit observation",
+                    content="Parent implemented strategies from last session.",
+                    status=ReportStatus.PUBLISHED,
                     visibility_status=VisibilityStatus.APPROVED_FOR_PARENT,
                 )
             )
@@ -666,6 +697,34 @@ def run():
                     is_read=False,
                     entity_type="client_invoice",
                     entity_id=inv_may.id,
+                )
+            )
+
+        if not db.scalars(select(CaseManagerMeeting).limit(1)).first():
+            db.add(
+                CaseManagerMeeting(
+                    case_manager_user_id=case_mgr.id,
+                    case_id=case1.id,
+                    parent_user_id=parent_user.id,
+                    scheduled_date=date(2026, 5, 28),
+                    scheduled_time=time(10, 0),
+                    duration_minutes=45,
+                    meeting_type=MeetingType.CLIENT_ONLY,
+                    title="Monthly check-in — Aarav",
+                    status=MeetingStatus.SCHEDULED,
+                )
+            )
+            db.add(
+                CaseManagerMeeting(
+                    case_manager_user_id=case_mgr.id,
+                    case_id=case1.id,
+                    therapist_user_id=therapist.id,
+                    scheduled_date=date(2026, 6, 5),
+                    scheduled_time=time(14, 30),
+                    duration_minutes=30,
+                    meeting_type=MeetingType.SUPERVISION,
+                    title="Supervision — shadow support case",
+                    status=MeetingStatus.SCHEDULED,
                 )
             )
 

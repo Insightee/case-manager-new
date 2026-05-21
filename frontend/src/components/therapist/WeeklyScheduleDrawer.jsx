@@ -92,14 +92,19 @@ export function WeeklyScheduleDrawer({ open, onClose, weekStart, weekEnd, therap
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {error ? <p className="text-sm text-red-700">{error}</p> : null}
           <label className="block text-sm font-medium text-slate-700">
-            Slot length (minutes)
+            Session duration
             <select
               className="mt-1 w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-sm"
-              value={config.slot_duration_minutes || 30}
+              value={config.slot_duration_minutes || 60}
               onChange={(e) => setConfig({ ...config, slot_duration_minutes: Number(e.target.value) })}
             >
               <option value={30}>30 min</option>
-              <option value={60}>60 min</option>
+              <option value={60}>60 min (standard)</option>
+              <option value={90}>90 min (1.5 h)</option>
+              <option value={120}>120 min (2 h)</option>
+              <option value={240}>240 min (4 h — shadow care)</option>
+              <option value={360}>360 min (6 h — shadow care)</option>
+              <option value={480}>480 min (8 h — shadow care)</option>
             </select>
           </label>
           {WEEKDAY_KEYS.map((key, i) => {

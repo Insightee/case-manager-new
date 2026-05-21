@@ -32,16 +32,34 @@ from app.models.child import Child
 from app.models.daily_log import DailyLog
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.report import MonthlyReport, ReportStatus
+from app.schemas.admin_reports import (
+    AdminReportDetail,
+    AdminReportListItem,
+    AdminReportSummary,
+    BulkReportAction,
+    BulkReportResult,
+)
+from app.services import admin_report_service as admin_report_svc
 from app.models.session import Session as TherapySession
 from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import InviteToken, User
+from app.schemas.admin_case_pipeline import AdminCasePipelineBoard
+from app.schemas.admin_iep import AdminIepDashboard
+from app.schemas.therapist_onboarding import (
+    TherapistBulkOnboardRequest,
+    TherapistOnboardCreate,
+    TherapistOnboardResult,
+)
 from app.schemas.therapist_profile import (
     TherapistProfileAdminCreate,
     TherapistProfileRead,
     TherapistProfileReview,
     TherapistProfileUpdate,
 )
+from app.services import admin_case_pipeline_service as case_pipeline_svc
+from app.services import admin_iep_service as admin_iep_svc
+from app.services import therapist_onboarding_service as therapist_onboard_svc
 from app.schemas.therapist_review import (
     TherapistReviewSummary,
     TherapistReviewsResponse,
@@ -50,6 +68,7 @@ from app.schemas.therapist_review import (
 from app.schemas.allotment import CaseAllotRequest, ChildCreate, FamilyCreate
 from app.schemas.user import InviteCreate, UserCreate, UserRead, UserUpdate
 from app.services import auth_service, case_service, log_service, therapist_profile_service as profile_svc
+from app.services.admin_scope_service import apply_case_scope
 from app.services import therapist_review_service as review_svc
 from app.core.permissions import RoleName
 
@@ -82,25 +101,46 @@ def list_product_modules(user: User = Depends(require_permission("user.manage"))
     }
 
 
+def _workbench_user(user: User = Depends(get_current_user)) -> User:
+    if not (
+        user_has_permission(user, "case.read.team")
+        and (
+            user_has_permission(user, "monthly_report.approve")
+            or user_has_permission(user, "daily_log.review")
+        )
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return user
+
+
+@router.get("/workbench/summary")
+def workbench_summary(
+    user: User = Depends(_workbench_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import admin_workbench_service as workbench_svc
+
+    return workbench_svc.build_workbench_summary(db, user)
+
+
 @router.get("/dashboard/summary")
 def dashboard_summary(
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
 ):
     allowed_cases = get_allowed_case_product_modules(user)
-    case_filters = _case_filter(allowed_cases)
 
     def _count_case_status(status: CaseStatus) -> int:
-        stmt = select(func.count()).select_from(Case).where(Case.status == status, *case_filters)
+        stmt = select(func.count()).select_from(Case).where(Case.status == status)
+        stmt = apply_case_scope(stmt, user)
         return db.scalar(stmt) or 0
 
     pending_stmt = (
         select(Case.id, Case.case_code, Case.service_type, Case.status, Child.first_name, Child.last_name)
         .join(Child, Case.child_id == Child.id)
-        .where(Case.status == CaseStatus.PENDING_ALLOTMENT, *case_filters)
-        .order_by(Case.created_at.desc())
-        .limit(6)
+        .where(Case.status == CaseStatus.PENDING_ALLOTMENT)
     )
+    pending_stmt = apply_case_scope(pending_stmt, user).order_by(Case.created_at.desc()).limit(6)
     pending_rows = db.execute(pending_stmt).all()
 
     report_stmt = (
@@ -115,10 +155,9 @@ def dashboard_summary(
         )
         .join(Case, MonthlyReport.case_id == Case.id)
         .join(Child, Case.child_id == Child.id)
-        .where(MonthlyReport.status == ReportStatus.UNDER_REVIEW, *case_filters)
-        .order_by(MonthlyReport.updated_at.desc())
-        .limit(6)
+        .where(MonthlyReport.status == ReportStatus.UNDER_REVIEW)
     )
+    report_stmt = apply_case_scope(report_stmt, user).order_by(MonthlyReport.updated_at.desc()).limit(6)
     report_rows = db.execute(report_stmt).all() if user_has_feature(user, "reports") else []
 
     invoice_rows = []
@@ -186,22 +225,22 @@ def dashboard_summary(
 
     reports_in_review = 0
     if user_has_feature(user, "reports"):
-        reports_in_review = (
-            db.scalar(
-                select(func.count())
-                .select_from(MonthlyReport)
-                .join(Case, MonthlyReport.case_id == Case.id)
-                .where(MonthlyReport.status == ReportStatus.UNDER_REVIEW, *case_filters)
-            )
-            or 0
+        reports_count_stmt = (
+            select(func.count())
+            .select_from(MonthlyReport)
+            .join(Case, MonthlyReport.case_id == Case.id)
+            .where(MonthlyReport.status == ReportStatus.UNDER_REVIEW)
         )
+        reports_in_review = db.scalar(apply_case_scope(reports_count_stmt, user)) or 0
+
+    total_cases_stmt = apply_case_scope(select(func.count()).select_from(Case), user)
 
     return {
         "open_cases": _count_case_status(CaseStatus.ACTIVE),
         "pending_allotment": _count_case_status(CaseStatus.PENDING_ALLOTMENT),
         "suspended_cases": _count_case_status(CaseStatus.SUSPENDED),
         "closed_cases": _count_case_status(CaseStatus.CLOSED),
-        "total_cases": db.scalar(select(func.count()).select_from(Case).where(*case_filters)) or 0,
+        "total_cases": db.scalar(total_cases_stmt) or 0,
         "reports_in_review": reports_in_review,
         "invoices_pending": invoices_pending,
         "open_tickets": open_tickets,
@@ -252,6 +291,474 @@ def dashboard_summary(
             for t in ticket_rows
         ],
     }
+
+
+@router.get("/sessions/analytics")
+def sessions_analytics(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    therapist_id: Optional[int] = None,
+    product_module: Optional[str] = None,
+    session_status: Optional[str] = Query(None, alias="status"),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from datetime import date, timedelta
+    from sqlalchemy import case as sa_case, cast, String, distinct
+    from app.models.session import SessionStatus
+
+    today = date.today()
+    d_from = date.fromisoformat(date_from) if date_from else today - timedelta(days=29)
+    d_to = date.fromisoformat(date_to) if date_to else today
+
+    allowed_cases = get_allowed_case_product_modules(user)
+    base_filters = []
+    if allowed_cases is not None:
+        base_filters.append(Case.product_module.in_(allowed_cases) if allowed_cases else Case.id == -1)
+    if therapist_id:
+        base_filters.append(TherapySession.therapist_user_id == therapist_id)
+    if product_module:
+        base_filters.append(Case.product_module == product_module)
+    if session_status:
+        base_filters.append(TherapySession.status == session_status)
+
+    # Base join: session → case
+    base_q = (
+        select(TherapySession)
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(
+            TherapySession.scheduled_date >= d_from,
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
+        )
+    )
+
+    # Today count
+    today_count = db.scalar(
+        select(func.count())
+        .select_from(TherapySession)
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(TherapySession.scheduled_date == today, *base_filters)
+    ) or 0
+
+    # This-week count
+    week_start = today - timedelta(days=today.weekday())
+    week_count = db.scalar(
+        select(func.count())
+        .select_from(TherapySession)
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(TherapySession.scheduled_date >= week_start, TherapySession.scheduled_date <= today, *base_filters)
+    ) or 0
+
+    # Status counts
+    status_rows = db.execute(
+        select(TherapySession.status, func.count().label("n"))
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(
+            TherapySession.scheduled_date >= d_from,
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
+        )
+        .group_by(TherapySession.status)
+    ).all()
+    status_counts = {row.status.value if hasattr(row.status, "value") else str(row.status): row.n for row in status_rows}
+
+    # By therapist
+    therapist_rows = db.execute(
+        select(
+            TherapySession.therapist_user_id,
+            User.full_name,
+            func.count().label("total"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.COMPLETED, 1), else_=0)).label("completed"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.CANCELLED, 1), else_=0)).label("cancelled"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.SCHEDULED, 1), else_=0)).label("scheduled"),
+        )
+        .join(Case, TherapySession.case_id == Case.id)
+        .outerjoin(User, TherapySession.therapist_user_id == User.id)
+        .where(
+            TherapySession.scheduled_date >= d_from,
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
+        )
+        .group_by(TherapySession.therapist_user_id, User.full_name)
+        .order_by(func.count().desc())
+    ).all()
+    by_therapist = [
+        {
+            "therapist_id": r.therapist_user_id,
+            "name": r.full_name or f"Therapist #{r.therapist_user_id}",
+            "total": r.total,
+            "completed": int(r.completed or 0),
+            "cancelled": int(r.cancelled or 0),
+            "scheduled": int(r.scheduled or 0),
+        }
+        for r in therapist_rows
+    ]
+
+    # By product module
+    product_rows = db.execute(
+        select(
+            Case.product_module,
+            func.count().label("total"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.COMPLETED, 1), else_=0)).label("completed"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.CANCELLED, 1), else_=0)).label("cancelled"),
+        )
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(
+            TherapySession.scheduled_date >= d_from,
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
+        )
+        .group_by(Case.product_module)
+        .order_by(func.count().desc())
+    ).all()
+    by_product = [
+        {
+            "module": r.product_module or "unknown",
+            "total": r.total,
+            "completed": int(r.completed or 0),
+            "cancelled": int(r.cancelled or 0),
+        }
+        for r in product_rows
+    ]
+
+    # By day (within requested range)
+    day_rows = db.execute(
+        select(
+            TherapySession.scheduled_date,
+            func.count().label("total"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.COMPLETED, 1), else_=0)).label("completed"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.CANCELLED, 1), else_=0)).label("cancelled"),
+        )
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(
+            TherapySession.scheduled_date >= d_from,
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
+        )
+        .group_by(TherapySession.scheduled_date)
+        .order_by(TherapySession.scheduled_date)
+    ).all()
+    by_day = [
+        {
+            "date": r.scheduled_date.isoformat(),
+            "total": r.total,
+            "completed": int(r.completed or 0),
+            "cancelled": int(r.cancelled or 0),
+        }
+        for r in day_rows
+    ]
+
+    # By month (last 12 months from today)
+    month_start = (today.replace(day=1) - timedelta(days=365)).replace(day=1)
+    from sqlalchemy import extract
+    month_rows = db.execute(
+        select(
+            extract("year", TherapySession.scheduled_date).label("yr"),
+            extract("month", TherapySession.scheduled_date).label("mo"),
+            func.count().label("total"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.COMPLETED, 1), else_=0)).label("completed"),
+            func.sum(sa_case((TherapySession.status == SessionStatus.CANCELLED, 1), else_=0)).label("cancelled"),
+        )
+        .join(Case, TherapySession.case_id == Case.id)
+        .where(
+            TherapySession.scheduled_date >= month_start,
+            *([TherapySession.therapist_user_id == therapist_id] if therapist_id else []),
+            *([Case.product_module == product_module] if product_module else []),
+            *(base_filters[0:1] if base_filters else []),
+        )
+        .group_by("yr", "mo")
+        .order_by("yr", "mo")
+    ).all()
+    by_month = [
+        {
+            "month": f"{int(r.yr)}-{int(r.mo):02d}",
+            "total": r.total,
+            "completed": int(r.completed or 0),
+            "cancelled": int(r.cancelled or 0),
+        }
+        for r in month_rows
+    ]
+
+    # Recent sessions for the table (last 50 within filter range)
+    from sqlalchemy.orm import selectinload
+    sessions_q = (
+        select(TherapySession)
+        .join(Case, TherapySession.case_id == Case.id)
+        .options(
+            selectinload(TherapySession.case).selectinload(Case.child),
+        )
+        .where(
+            TherapySession.scheduled_date >= d_from,
+            TherapySession.scheduled_date <= d_to,
+            *base_filters,
+        )
+        .order_by(TherapySession.scheduled_date.desc())
+        .limit(50)
+    )
+    sessions_rows = db.scalars(sessions_q).all()
+    recent_sessions = []
+    for s in sessions_rows:
+        case_obj = s.case
+        child_name = (case_obj.child.full_name if case_obj and case_obj.child else None)
+        therapist_name = None
+        if s.therapist_user_id:
+            tu = db.get(User, s.therapist_user_id)
+            therapist_name = tu.full_name if tu else None
+        duration_mins = None
+        if s.actual_start_at and s.actual_end_at:
+            duration_mins = int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)
+        elif s.start_time and s.end_time:
+            from datetime import datetime as dt
+            s_start = dt.combine(s.scheduled_date, s.start_time)
+            s_end = dt.combine(s.scheduled_date, s.end_time)
+            duration_mins = int((s_end - s_start).total_seconds() / 60)
+        recent_sessions.append({
+            "id": s.id,
+            "case_id": s.case_id,
+            "case_code": case_obj.case_code if case_obj else None,
+            "child_name": child_name,
+            "therapist_id": s.therapist_user_id,
+            "therapist_name": therapist_name,
+            "product_module": case_obj.product_module if case_obj else None,
+            "scheduled_date": s.scheduled_date.isoformat(),
+            "start_time": s.start_time.isoformat() if s.start_time else None,
+            "end_time": s.end_time.isoformat() if s.end_time else None,
+            "actual_start_at": s.actual_start_at.isoformat() if s.actual_start_at else None,
+            "actual_end_at": s.actual_end_at.isoformat() if s.actual_end_at else None,
+            "mode": s.mode.value if hasattr(s.mode, "value") else s.mode,
+            "status": s.status.value if hasattr(s.status, "value") else s.status,
+            "duration_mins": duration_mins,
+        })
+
+    return {
+        "today_count": today_count,
+        "week_count": week_count,
+        "status_counts": status_counts,
+        "by_therapist": by_therapist,
+        "by_product": by_product,
+        "by_day": by_day,
+        "by_month": by_month,
+        "recent_sessions": recent_sessions,
+        "date_from": d_from.isoformat(),
+        "date_to": d_to.isoformat(),
+    }
+
+
+@router.post("/sessions/{session_id}/flag")
+def flag_session_for_review(
+    session_id: int,
+    payload: dict,
+    request: Request,
+    user: User = Depends(require_permission("case.read.all")),
+    db: Session = Depends(get_db),
+):
+    session = db.get(TherapySession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = case_service.get_case(db, session.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    reason = payload.get("reason", "Session flagged for review")
+    notes = payload.get("notes", "")
+    subject = f"Session #{session_id} flagged: {reason}"
+    body = f"Session {session_id} on {session.scheduled_date} was flagged for review.\n\nReason: {reason}"
+    if notes:
+        body += f"\n\nNotes: {notes}"
+
+    from app.models.support_ticket import TicketCategory, TicketTopic
+    ticket = SupportTicket(
+        case_id=session.case_id,
+        raised_by_user_id=user.id,
+        assigned_to_user_id=session.therapist_user_id,
+        product_module=case.product_module if case else None,
+        category=TicketCategory.SERVICE,
+        topic=TicketTopic.THERAPIST,
+        subject=subject,
+        body=body,
+        status=TicketStatus.OPEN,
+    )
+    db.add(ticket)
+    db.flush()
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="flag_session", entity_type="session", entity_id=session_id, **meta)
+    db.commit()
+    return {"ticket_id": ticket.id, "subject": ticket.subject}
+
+
+@router.get("/sessions/export/xlsx")
+def export_sessions_xlsx(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    therapist_id: Optional[int] = None,
+    product_module: Optional[str] = None,
+    session_status: Optional[str] = Query(None, alias="status"),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    import openpyxl
+    from datetime import date, timedelta
+    from io import BytesIO
+    from sqlalchemy import case as sa_case
+    from app.models.session import SessionStatus
+
+    today = date.today()
+    d_from = date.fromisoformat(date_from) if date_from else today - timedelta(days=29)
+    d_to = date.fromisoformat(date_to) if date_to else today
+    allowed_cases = get_allowed_case_product_modules(user)
+    base_filters = []
+    if allowed_cases is not None:
+        base_filters.append(Case.product_module.in_(allowed_cases) if allowed_cases else Case.id == -1)
+    if therapist_id:
+        base_filters.append(TherapySession.therapist_user_id == therapist_id)
+    if product_module:
+        base_filters.append(Case.product_module == product_module)
+    if session_status:
+        base_filters.append(TherapySession.status == session_status)
+
+    from sqlalchemy.orm import selectinload
+    sessions_rows = db.scalars(
+        select(TherapySession)
+        .join(Case, TherapySession.case_id == Case.id)
+        .options(selectinload(TherapySession.case).selectinload(Case.child))
+        .where(TherapySession.scheduled_date >= d_from, TherapySession.scheduled_date <= d_to, *base_filters)
+        .order_by(TherapySession.scheduled_date.desc())
+    ).all()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sessions"
+    headers = ["Session ID", "Date", "Start", "End", "Actual Start", "Actual End", "Duration (min)",
+               "Case Code", "Child", "Therapist ID", "Product Module", "Mode", "Status"]
+    ws.append(headers)
+
+    for s in sessions_rows:
+        case_obj = s.case
+        child_name = (case_obj.child.full_name if case_obj and case_obj.child else "")
+        duration_mins = ""
+        if s.actual_start_at and s.actual_end_at:
+            duration_mins = int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)
+        elif s.start_time and s.end_time:
+            from datetime import datetime as dt
+            s_start = dt.combine(s.scheduled_date, s.start_time)
+            s_end = dt.combine(s.scheduled_date, s.end_time)
+            duration_mins = int((s_end - s_start).total_seconds() / 60)
+        ws.append([
+            s.id,
+            s.scheduled_date.isoformat(),
+            s.start_time.isoformat() if s.start_time else "",
+            s.end_time.isoformat() if s.end_time else "",
+            s.actual_start_at.isoformat() if s.actual_start_at else "",
+            s.actual_end_at.isoformat() if s.actual_end_at else "",
+            duration_mins,
+            case_obj.case_code if case_obj else "",
+            child_name,
+            s.therapist_user_id,
+            case_obj.product_module if case_obj else "",
+            s.mode.value if hasattr(s.mode, "value") else str(s.mode),
+            s.status.value if hasattr(s.status, "value") else str(s.status),
+        ])
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=sessions_{d_from}_{d_to}.xlsx"},
+    )
+
+
+@router.get("/sessions/export/pdf")
+def export_sessions_pdf(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    therapist_id: Optional[int] = None,
+    product_module: Optional[str] = None,
+    session_status: Optional[str] = Query(None, alias="status"),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib import colors
+    from datetime import date, timedelta
+    from io import BytesIO
+    from sqlalchemy.orm import selectinload
+
+    today = date.today()
+    d_from = date.fromisoformat(date_from) if date_from else today - timedelta(days=29)
+    d_to = date.fromisoformat(date_to) if date_to else today
+    allowed_cases = get_allowed_case_product_modules(user)
+    base_filters = []
+    if allowed_cases is not None:
+        base_filters.append(Case.product_module.in_(allowed_cases) if allowed_cases else Case.id == -1)
+    if therapist_id:
+        base_filters.append(TherapySession.therapist_user_id == therapist_id)
+    if product_module:
+        base_filters.append(Case.product_module == product_module)
+    if session_status:
+        base_filters.append(TherapySession.status == session_status)
+
+    sessions_rows = db.scalars(
+        select(TherapySession)
+        .join(Case, TherapySession.case_id == Case.id)
+        .options(selectinload(TherapySession.case).selectinload(Case.child))
+        .where(TherapySession.scheduled_date >= d_from, TherapySession.scheduled_date <= d_to, *base_filters)
+        .order_by(TherapySession.scheduled_date.desc())
+        .limit(500)
+    ).all()
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=30, rightMargin=30, topMargin=40, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    elements = []
+    elements.append(Paragraph(f"Session Report: {d_from} to {d_to}", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    table_data = [["Date", "Case", "Child", "Therapist", "Module", "Mode", "Status", "Duration"]]
+    for s in sessions_rows:
+        c = s.case
+        child_name = (c.child.full_name if c and c.child else "")
+        duration = ""
+        if s.actual_start_at and s.actual_end_at:
+            duration = f"{int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)} min"
+        elif s.start_time and s.end_time:
+            from datetime import datetime as dt
+            duration = f"{int((dt.combine(s.scheduled_date, s.end_time) - dt.combine(s.scheduled_date, s.start_time)).total_seconds() / 60)} min"
+        table_data.append([
+            s.scheduled_date.isoformat(),
+            c.case_code if c else "",
+            child_name,
+            str(s.therapist_user_id),
+            c.product_module if c else "",
+            s.mode.value if hasattr(s.mode, "value") else str(s.mode),
+            s.status.value if hasattr(s.status, "value") else str(s.status),
+            duration,
+        ])
+
+    t = Table(table_data, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#6366f1")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, 0), 9),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(t)
+    doc.build(elements)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=sessions_{d_from}_{d_to}.pdf"},
+    )
 
 
 @router.get("/session-logs/export")
@@ -317,6 +824,7 @@ def list_users(
             id=u.id,
             email=u.email,
             full_name=u.full_name,
+            phone=u.phone,
             is_active=u.is_active,
             roles=u.role_names,
             region=u.region,
@@ -363,6 +871,7 @@ def update_user(
         id=target.id,
         email=target.email,
         full_name=target.full_name,
+        phone=target.phone,
         is_active=target.is_active,
         roles=target.role_names,
         region=target.region,
@@ -395,6 +904,7 @@ def create_user(
         id=new_user.id,
         email=new_user.email,
         full_name=new_user.full_name,
+        phone=new_user.phone,
         is_active=new_user.is_active,
         roles=new_user.role_names,
         region=new_user.region,
@@ -425,11 +935,44 @@ def invite_therapist(
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
+    """Legacy generic invite; therapist invites use richer metadata via onboard_therapist_invite."""
+    role = payload.role_name or "THERAPIST"
+    modules = validate_module_assignments([role], payload.module_assignments)
+    if role == "THERAPIST":
+        try:
+            result = therapist_onboard_svc.onboard_therapist_invite(
+                db,
+                email=payload.email,
+                full_name=payload.email.split("@")[0],
+                phone=None,
+                module_assignments=modules,
+                services_offered=[],
+                short_bio=None,
+                created_by_user_id=user.id,
+                send_email=False,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="invite",
+            entity_type="invite_token",
+            entity_id=result.get("invite_id"),
+            **meta,
+        )
+        db.commit()
+        print(f"[DEV INVITE] {payload.email} -> {result['invite_url']}")
+        return {
+            "invite_url": result["invite_url"],
+            "email": payload.email,
+            "expires_at": result["expires_at"],
+        }
     token = secrets.token_urlsafe(32)
-    modules = validate_module_assignments([payload.role_name], payload.module_assignments)
     invite = InviteToken(
         email=payload.email.lower(),
-        role_name=payload.role_name,
+        role_name=role,
         module_assignments=modules,
         token=token,
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
@@ -442,6 +985,96 @@ def invite_therapist(
     url = f"{settings.frontend_url}/invite/{token}"
     print(f"[DEV INVITE] {payload.email} -> {url}")
     return {"invite_url": url, "email": payload.email, "expires_at": invite.expires_at.isoformat()}
+
+
+@router.post("/therapists/onboard")
+def onboard_therapist(
+    payload: TherapistOnboardCreate,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    validate_module_assignments(["THERAPIST"], payload.module_assignments)
+    if payload.services_offered:
+        from app.core.therapist_services import validate_service_ids
+
+        try:
+            validate_service_ids(payload.services_offered)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    try:
+        result = therapist_onboard_svc.onboard_therapist(
+            db,
+            email=str(payload.email),
+            full_name=payload.full_name,
+            phone=payload.phone,
+            module_assignments=payload.module_assignments,
+            services_offered=payload.services_offered,
+            mode=payload.mode,
+            password=payload.password,
+            send_email=payload.send_email,
+            short_bio=payload.short_bio,
+            created_by_user_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="onboard_therapist", entity_type="user", entity_id=result.get("user_id"), **meta)
+    db.commit()
+    return result
+
+
+@router.post("/therapists/bulk-onboard", response_model=list[TherapistOnboardResult])
+def bulk_onboard_therapists(
+    payload: TherapistBulkOnboardRequest,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.core.therapist_services import validate_service_ids
+
+    rows = []
+    for row in payload.therapists:
+        validate_module_assignments(["THERAPIST"], row.module_assignments)
+        if row.services_offered:
+            try:
+                validate_service_ids(row.services_offered)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        rows.append(row.model_dump())
+    results = therapist_onboard_svc.onboard_therapists_bulk(
+        db,
+        rows,
+        mode=payload.mode,
+        send_email=payload.send_email,
+        created_by_user_id=user.id,
+    )
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="bulk_onboard_therapists", entity_type="user", entity_id=None, **meta)
+    db.commit()
+    return [TherapistOnboardResult(**r) for r in results]
+
+
+@router.get("/therapist-profiles/summary")
+def therapist_profiles_summary(
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.models.role import Role
+
+    profiles = profile_svc.list_profiles(db, None)
+    therapists = db.scalars(
+        select(User).join(User.roles).where(Role.name == RoleName.THERAPIST.value)
+    ).all()
+    therapist_ids = {t.id for t in therapists}
+    profile_user_ids = {p.user_id for p in profiles}
+    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0}
+    for p in profiles:
+        key = p.status.value if hasattr(p.status, "value") else str(p.status)
+        if key in counts:
+            counts[key] += 1
+    no_profile = len(therapist_ids - profile_user_ids)
+    return {**counts, "no_profile": no_profile, "total": len(profiles)}
 
 
 @router.get("/therapist-profiles", response_model=list[TherapistProfileRead])
@@ -626,6 +1259,45 @@ def admin_next_case_code(
     return {"case_code": code, "preview": case_code_service.preview_case_code(product_module)}
 
 
+@router.get("/cases/pipeline", response_model=AdminCasePipelineBoard)
+def admin_cases_pipeline_board(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    """Action-oriented case kanban columns (allotment, reassignment, reports, IEP, compliance)."""
+    data = case_pipeline_svc.build_pipeline_board(db, user)
+    return AdminCasePipelineBoard(**data)
+
+
+def _iep_reader(user: User = Depends(get_current_user)) -> User:
+    if not (
+        user_has_permission(user, "attachment.manage")
+        or user_has_permission(user, "iep.read")
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return user
+
+
+@router.get("/iep/dashboard", response_model=AdminIepDashboard)
+def admin_iep_dashboard(
+    status: Optional[str] = Query(None, description="MISSING | INTERNAL_ONLY | AWAITING_ACK | ACKNOWLEDGED | ALL"),
+    product_module: Optional[str] = None,
+    search: Optional[str] = None,
+    include_closed: bool = False,
+    user: User = Depends(_iep_reader),
+    db: Session = Depends(get_db),
+):
+    data = admin_iep_svc.build_iep_dashboard(
+        db,
+        user,
+        status=status,
+        product_module=product_module,
+        search=search,
+        include_closed=include_closed,
+    )
+    return AdminIepDashboard(**data)
+
+
 @router.get("/allotment/therapists")
 def admin_allotment_therapists(
     product_module: str,
@@ -704,20 +1376,36 @@ def admin_create_family(
 def admin_invite_parent(
     parent_user_id: int,
     request: Request,
+    child_id: Optional[int] = Query(None),
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import family_admin_service
 
     try:
-        url = family_admin_service.issue_parent_invite(db, parent_user_id, user.id)
+        url = family_admin_service.issue_parent_invite(
+            db, parent_user_id, user.id, child_id=child_id
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="invite", entity_type="user", entity_id=parent_user_id, **meta)
     db.commit()
-    print(f"[DEV INVITE] parent user {parent_user_id} -> {url}")
     return {"invite_url": url}
+
+
+@router.post("/families/link-by-email")
+def admin_link_parent_by_email(
+    child_id: int = Query(...),
+    parent_email: str = Query(...),
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    family_admin_service.link_child_to_parent_by_email(db, child_id, parent_email)
+    db.commit()
+    return {"status": "linked", "child_id": child_id}
 
 
 @router.post("/families/link")
@@ -773,6 +1461,268 @@ def admin_allot_case(
     )
     db.commit()
     return result
+
+
+def _reports_admin_user(user: User = Depends(get_current_user)) -> User:
+    if not user_has_permission(user, "monthly_report.approve"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    if not user_has_feature(user, "reports"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reports module not enabled")
+    return user
+
+
+def _parse_report_status(value: Optional[str]) -> ReportStatus | None:
+    if not value:
+        return None
+    try:
+        return ReportStatus(value.upper())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+
+@router.get("/reports/summary", response_model=AdminReportSummary)
+def admin_reports_summary(
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    return admin_report_svc.get_summary(db, user)
+
+
+@router.get("/reports/queue", response_model=PaginatedList[AdminReportListItem])
+def admin_reports_queue(
+    report_type: Optional[str] = Query(None, alias="type"),
+    product_module: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    items, meta = admin_report_svc.list_queue_admin(
+        db,
+        user,
+        report_type=report_type,
+        product_module=product_module,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+    return PaginatedList[AdminReportListItem](
+        items=items,
+        total=meta["total"],
+        page=meta["page"],
+        page_size=meta["page_size"],
+        pages=meta["pages"],
+    )
+
+
+@router.get("/reports/monthly", response_model=PaginatedList[AdminReportListItem])
+def admin_reports_monthly_list(
+    status: Optional[str] = None,
+    case_id: Optional[int] = None,
+    product_module: Optional[str] = None,
+    month: Optional[str] = None,
+    search: Optional[str] = None,
+    parent_review_status: Optional[str] = None,
+    queue_only: bool = False,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    items, meta = admin_report_svc.list_monthly_admin(
+        db,
+        user,
+        status=_parse_report_status(status),
+        case_id=case_id,
+        product_module=product_module,
+        month=month,
+        search=search,
+        parent_review_status=parent_review_status,
+        queue_only=queue_only,
+        page=page,
+        page_size=page_size,
+    )
+    return PaginatedList[AdminReportListItem](
+        items=items,
+        total=meta["total"],
+        page=meta["page"],
+        page_size=meta["page_size"],
+        pages=meta["pages"],
+    )
+
+
+@router.get("/reports/observation", response_model=PaginatedList[AdminReportListItem])
+def admin_reports_observation_list(
+    status: Optional[str] = None,
+    case_id: Optional[int] = None,
+    product_module: Optional[str] = None,
+    search: Optional[str] = None,
+    queue_only: bool = False,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    items, meta = admin_report_svc.list_observation_admin(
+        db,
+        user,
+        status=_parse_report_status(status),
+        case_id=case_id,
+        product_module=product_module,
+        search=search,
+        queue_only=queue_only,
+        page=page,
+        page_size=page_size,
+    )
+    return PaginatedList[AdminReportListItem](
+        items=items,
+        total=meta["total"],
+        page=meta["page"],
+        page_size=meta["page_size"],
+        pages=meta["pages"],
+    )
+
+
+@router.get("/reports/monthly/{report_id}", response_model=AdminReportDetail)
+def admin_reports_monthly_detail(
+    report_id: int,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    detail = admin_report_svc.get_monthly_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+@router.get("/reports/observation/{report_id}", response_model=AdminReportDetail)
+def admin_reports_observation_detail(
+    report_id: int,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    detail = admin_report_svc.get_observation_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+@router.post("/reports/bulk/approve", response_model=BulkReportResult)
+def admin_reports_bulk_approve(
+    payload: BulkReportAction,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    result = admin_report_svc.bulk_approve(
+        db,
+        user,
+        report_type=payload.report_type,
+        ids=payload.ids,
+        comment=payload.comment,
+        visibility=payload.visibility_status,
+    )
+    meta = get_request_meta(request)
+    for rid in payload.ids:
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="bulk_approve",
+            entity_type=f"{payload.report_type}_report",
+            entity_id=rid,
+            **meta,
+        )
+    db.commit()
+    return result
+
+
+@router.post("/reports/bulk/reject", response_model=BulkReportResult)
+def admin_reports_bulk_reject(
+    payload: BulkReportAction,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    result = admin_report_svc.bulk_reject(
+        db,
+        user,
+        report_type=payload.report_type,
+        ids=payload.ids,
+        comment=payload.comment or "",
+    )
+    meta = get_request_meta(request)
+    for rid in payload.ids:
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="bulk_reject",
+            entity_type=f"{payload.report_type}_report",
+            entity_id=rid,
+            **meta,
+        )
+    db.commit()
+    return result
+
+
+@router.get("/reports/export/xlsx")
+def admin_reports_export_xlsx(
+    report_type: Optional[str] = Query(None, alias="type"),
+    status: Optional[str] = None,
+    case_id: Optional[int] = None,
+    product_module: Optional[str] = None,
+    month: Optional[str] = None,
+    search: Optional[str] = None,
+    queue_only: bool = False,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    data = admin_report_svc.export_xlsx(
+        db,
+        user,
+        report_type=report_type or "all",
+        queue_only=queue_only,
+        status=_parse_report_status(status),
+        case_id=case_id,
+        product_module=product_module,
+        month=month,
+        search=search,
+    )
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="reports-export.xlsx"'},
+    )
+
+
+@router.get("/reports/export/pdf")
+def admin_reports_export_pdf(
+    report_type: Optional[str] = Query(None, alias="type"),
+    status: Optional[str] = None,
+    case_id: Optional[int] = None,
+    product_module: Optional[str] = None,
+    month: Optional[str] = None,
+    search: Optional[str] = None,
+    queue_only: bool = False,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    data = admin_report_svc.export_pdf(
+        db,
+        user,
+        report_type=report_type or "all",
+        queue_only=queue_only,
+        status=_parse_report_status(status),
+        case_id=case_id,
+        product_module=product_module,
+        month=month,
+        search=search,
+    )
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="reports-export.pdf"'},
+    )
 
 
 @router.get("/invites")

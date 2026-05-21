@@ -103,6 +103,12 @@ def get_case(db: Session, case_id: int) -> Case | None:
     return db.scalars(select(Case).where(Case.id == case_id).options(selectinload(Case.child))).first()
 
 
+def case_child_display_name(case: Case | None) -> str | None:
+    if not case:
+        return None
+    return case.child.full_name if case.child else None
+
+
 def case_to_read(case: Case) -> dict:
     service_addr = case_service_address_read(case)
     return {

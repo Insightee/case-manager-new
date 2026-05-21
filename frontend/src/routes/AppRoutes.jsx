@@ -6,11 +6,10 @@ import { AdminDashboardPage } from '../components/admin-portal/AdminDashboardPag
 import { AdminCasesPage } from '../components/admin-portal/AdminCasesPage.jsx'
 import { AdminCaseDetailPage } from '../components/admin-portal/AdminCaseDetailPage.jsx'
 import { AdminSessionLogsPage } from '../components/admin-portal/AdminSessionLogsPage.jsx'
-import { AdminReportReviewPage } from '../components/admin-portal/AdminReportReviewPage.jsx'
+import { AdminReportsPage } from '../components/admin-portal/AdminReportsPage.jsx'
 import { AdminInvoicesPage } from '../components/admin-portal/AdminInvoicesPage.jsx'
 import { AdminPeoplePage } from '../components/admin-portal/AdminPeoplePage.jsx'
 import { AdminIepPage } from '../components/admin-portal/AdminIepPage.jsx'
-import { AdminTicketsPage } from '../components/admin-portal/AdminTicketsPage.jsx'
 import { TherapistDashboardPage } from '../pages/TherapistDashboardPage.jsx'
 import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
 import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
@@ -19,14 +18,18 @@ import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReports
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
 import { TherapistProfilePage } from '../components/therapist/TherapistProfilePage.jsx'
 import { TherapistTicketsPage } from '../components/therapist/TherapistTicketsPage.jsx'
+import { TherapistSupportHubPage } from '../components/therapist/TherapistSupportHubPage.jsx'
 import { TherapistLeavePage } from '../components/therapist/TherapistLeavePage.jsx'
 import { TherapistSlotsPage } from '../components/therapist/TherapistSlotsPage.jsx'
 import { ParentRoutes } from './ParentRoutes.jsx'
 import { HRRoutes } from './HRRoutes.jsx'
 import { InvitePage } from '../pages/InvitePage.jsx'
+import { AdminSupportHubPage } from '../components/admin-portal/AdminSupportHubPage.jsx'
+import { AdminTicketsPage } from '../components/admin-portal/AdminTicketsPage.jsx'
 import { AdminIncidentsPage } from '../components/admin-portal/AdminIncidentsPage.jsx'
 import { AdminTherapistProfilesPage } from '../components/admin-portal/AdminTherapistProfilesPage.jsx'
 import { CaseManagerMeetingsPage } from '../components/admin-portal/CaseManagerMeetingsPage.jsx'
+import { AdminWorkbenchPage } from '../components/admin-portal/AdminWorkbenchPage.jsx'
 
 function PortalRedirect() {
   const { portal, loading } = useAuth()
@@ -67,7 +70,9 @@ export function AppRoutes() {
         <Route path="logs" element={<DailyLogsPage />} />
         <Route path="reports" element={<MonthlyReportsPage />} />
         <Route path="invoices" element={<InvoicesPage />} />
-        <Route path="tickets" element={<TherapistTicketsPage />} />
+        <Route path="support" element={<TherapistSupportHubPage />} />
+        <Route path="tickets" element={<Navigate to="/therapist/support?tab=tickets" replace />} />
+        <Route path="incidents" element={<Navigate to="/therapist/support?tab=incidents" replace />} />
         <Route path="leave" element={<TherapistLeavePage />} />
         <Route path="slots" element={<TherapistSlotsPage />} />
         <Route path="profile" element={<TherapistProfilePage />} />
@@ -93,14 +98,16 @@ export function AppRoutes() {
         }
       >
         <Route index element={<AdminDashboardPage />} />
+        <Route path="workbench" element={<AdminWorkbenchPage />} />
         <Route path="cases" element={<AdminCasesPage />} />
         <Route path="cases/:caseId" element={<AdminCaseDetailPage />} />
         <Route path="logs" element={<AdminSessionLogsPage />} />
-        <Route path="reports" element={<AdminReportReviewPage />} />
+        <Route path="reports" element={<AdminReportsPage />} />
         <Route path="invoices" element={<AdminInvoicesPage />} />
         <Route path="iep" element={<AdminIepPage />} />
-        <Route path="tickets" element={<AdminTicketsPage />} />
-        <Route path="incidents" element={<AdminIncidentsPage />} />
+        <Route path="support" element={<AdminSupportHubPage />} />
+        <Route path="tickets" element={<Navigate to="/admin/support?tab=tickets" replace />} />
+        <Route path="incidents" element={<Navigate to="/admin/support?tab=incidents" replace />} />
         <Route path="people" element={<AdminPeoplePage />} />
         <Route path="users" element={<Navigate to="/admin/people?tab=staff" replace />} />
         <Route path="therapist-profiles" element={<AdminTherapistProfilesPage />} />

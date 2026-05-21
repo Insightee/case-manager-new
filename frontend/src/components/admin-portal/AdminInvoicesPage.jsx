@@ -11,8 +11,10 @@ import {
   formatCurrency,
 } from './ui/index.js'
 import { InvoiceBreakdownModal } from '../invoices/InvoiceBreakdownModal.jsx'
+import { AdminClientInvoicesTab } from './AdminClientInvoicesTab.jsx'
+import './admin-client-invoices.css'
 
-export function AdminInvoicesPage() {
+function TherapistPayoutsTab() {
   const { can } = useAuth()
   const [invoices, setInvoices] = useState([])
   const [search, setSearch] = useState('')
@@ -83,20 +85,15 @@ export function AdminInvoicesPage() {
   }
 
   return (
-    <div className="admin-page">
+    <>
       <InvoiceBreakdownModal invoiceId={breakdownId} open={Boolean(breakdownId)} onClose={() => setBreakdownId(null)} />
-      <AdminPageHeader
-        eyebrow="Finance"
-        title="Invoice review"
-        subtitle="Approve therapist invoices and record payment overrides."
-        actions={
-          <span className="admin-chip" style={{ background: '#fef3c7', color: '#b45309' }}>
-            {pendingCount} in review
-          </span>
-        }
-      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <span className="admin-chip" style={{ background: '#fef3c7', color: '#b45309' }}>
+          {pendingCount} therapist invoices in review
+        </span>
+      </div>
 
-      <AdminPanel title={`${filtered.length} invoices`} padded={false}>
+      <AdminPanel title={`${filtered.length} therapist payout invoices`} padded={false}>
         <div className="admin-panel__body">
           <AdminToolbar>
             <AdminSearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Therapist name or month…" />
@@ -211,6 +208,39 @@ export function AdminInvoicesPage() {
           </div>
         </div>
       ) : null}
+    </>
+  )
+}
+
+export function AdminInvoicesPage() {
+  const [activeTab, setActiveTab] = useState('client')
+
+  return (
+    <div className="admin-page">
+      <AdminPageHeader
+        eyebrow="Finance"
+        title="Billing & invoices"
+        subtitle="Manage client invoices sent to families and therapist payout approvals."
+      />
+
+      <div className="sessions-dash__tabs" style={{ marginBottom: 4 }}>
+        <button
+          type="button"
+          className={`sessions-dash__tab ${activeTab === 'client' ? 'is-active' : ''}`}
+          onClick={() => setActiveTab('client')}
+        >
+          Client invoices
+        </button>
+        <button
+          type="button"
+          className={`sessions-dash__tab ${activeTab === 'therapist' ? 'is-active' : ''}`}
+          onClick={() => setActiveTab('therapist')}
+        >
+          Therapist payouts
+        </button>
+      </div>
+
+      {activeTab === 'client' ? <AdminClientInvoicesTab /> : <TherapistPayoutsTab />}
     </div>
   )
 }

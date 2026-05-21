@@ -93,6 +93,10 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
             if child and child not in pg.children:
                 pg.children.append(child)
         dedupe_parent_child_links(db, pg.id)
+    elif invite.role_name == "THERAPIST":
+        from app.services.therapist_onboarding_service import apply_therapist_invite_metadata
+
+        apply_therapist_invite_metadata(db, user, invite)
     invite.used_at = datetime.now(timezone.utc)
     if invite.invite_metadata and invite.invite_metadata.get("pending_slot_id"):
         from app.services import appointment_notification_service as appt_ns

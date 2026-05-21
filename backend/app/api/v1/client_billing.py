@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,13 @@ from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.permissions import RoleName, require_permission
 from app.models.user import User
-from app.schemas.client_billing import AdminDisputeResolve, BillingDisputeCreate, ClientPaymentRecord
+from app.schemas.client_billing import (
+    AdminClientInvoiceCreate,
+    AdminClientInvoiceUpdate,
+    AdminDisputeResolve,
+    BillingDisputeCreate,
+    ClientPaymentRecord,
+)
 from app.services import client_billing_service
 
 parent_router = APIRouter(prefix="/parent/billing", tags=["parent-billing"])
@@ -128,6 +134,225 @@ def parent_create_dispute(
     log_audit(db, actor_user_id=user.id, action="billing_dispute", entity_type="client_invoice", entity_id=invoice_id, **meta)
     db.commit()
     return result
+
+
+@admin_router.get("/summary")
+def admin_billing_summary(
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    return client_billing_service.admin_summary(db)
+
+
+@admin_router.get("/invoices/export/xlsx")
+def admin_export_invoices_xlsx(
+    month: Optional[str] = None,
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    import openpyxl
+    from io import BytesIO
+
+    rows = client_billing_service.admin_list_invoices(
+        db, month=month, case_id=case_id, status=status, module=module, search=search
+    )
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Client Invoices"
+    ws.append(
+        [
+            "Invoice #",
+            "Child",
+            "Case",
+            "Parent",
+            "Month",
+            "Type",
+            "Status",
+            "Total INR",
+            "Paid INR",
+            "Balance INR",
+            "Due Date",
+        ]
+    )
+    for r in rows:
+        ws.append(
+            [
+                r.get("invoiceNumber"),
+                r.get("childName"),
+                r.get("caseId"),
+                r.get("parentName"),
+                r.get("billingMonth"),
+                r.get("invoiceType"),
+                r.get("status"),
+                r.get("totalInr"),
+                r.get("amountPaidInr"),
+                r.get("balanceInr"),
+                r.get("dueDate") or "",
+            ]
+        )
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=client_invoices.xlsx"},
+    )
+
+
+@admin_router.get("/invoices/export/pdf")
+def admin_export_invoices_pdf(
+    month: Optional[str] = None,
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    from io import BytesIO
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    rows = client_billing_service.admin_list_invoices(
+        db, month=month, case_id=case_id, status=status, module=module, search=search
+    )
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=30, rightMargin=30, topMargin=40, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    elements = [Paragraph("Client Invoices Report", styles["Title"]), Spacer(1, 12)]
+    table_data = [
+        ["Invoice #", "Child", "Case", "Parent", "Month", "Type", "Status", "Total", "Balance", "Due"]
+    ]
+    for r in rows:
+        table_data.append(
+            [
+                r.get("invoiceNumber", ""),
+                (r.get("childName") or "")[:20],
+                r.get("caseId", ""),
+                (r.get("parentName") or "")[:18],
+                r.get("billingMonth", ""),
+                r.get("invoiceType", ""),
+                r.get("status", ""),
+                f"₹{r.get('totalInr', 0):,.0f}",
+                f"₹{r.get('balanceInr', 0):,.0f}",
+                r.get("dueDate") or "",
+            ]
+        )
+    t = Table(table_data, repeatRows=1)
+    t.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#6366f1")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
+                ("FONTSIZE", (0, 1), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+            ]
+        )
+    )
+    elements.append(t)
+    doc.build(elements)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=client_invoices.pdf"},
+    )
+
+
+@admin_router.get("/invoices")
+def admin_list_client_invoices(
+    month: Optional[str] = None,
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    return client_billing_service.admin_list_invoices(
+        db, month=month, case_id=case_id, status=status, module=module, search=search
+    )
+
+
+@admin_router.post("/invoices")
+def admin_create_client_invoice(
+    payload: AdminClientInvoiceCreate,
+    request: Request,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    try:
+        inv = client_billing_service.admin_create_invoice(
+            db,
+            case_id=payload.case_id,
+            invoice_type=payload.invoice_type,
+            billing_month=payload.billing_month,
+            due_date=payload.due_date,
+            lines=[ln.model_dump() for ln in payload.lines],
+            notes=payload.notes,
+            discount_inr=payload.discount_inr,
+            admin_user_id=user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="create_client_invoice",
+        entity_type="client_invoice",
+        entity_id=inv.id,
+        **meta,
+    )
+    db.commit()
+    return client_billing_service.admin_get_invoice_detail(db, inv.id)
+
+
+@admin_router.get("/invoices/{invoice_id}")
+def admin_get_client_invoice(
+    invoice_id: int,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return client_billing_service.admin_get_invoice_detail(db, invoice_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+
+@admin_router.patch("/invoices/{invoice_id}")
+def admin_patch_client_invoice(
+    invoice_id: int,
+    payload: AdminClientInvoiceUpdate,
+    request: Request,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    try:
+        inv = client_billing_service.admin_update_invoice(
+            db, invoice_id, payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="update_client_invoice",
+        entity_type="client_invoice",
+        entity_id=invoice_id,
+        **meta,
+    )
+    db.commit()
+    return client_billing_service.admin_get_invoice_detail(db, inv.id)
 
 
 @admin_router.get("/disputes")

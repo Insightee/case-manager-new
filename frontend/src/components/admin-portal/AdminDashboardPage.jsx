@@ -59,7 +59,7 @@ export function AdminDashboardPage() {
       hint: 'Awaiting approval',
       tone: 'indigo',
       icon: '▣',
-      to: '/admin/reports',
+      to: '/admin/reports?tab=queue',
     },
     {
       title: 'Invoices pending',

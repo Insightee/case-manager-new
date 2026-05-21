@@ -1,0 +1,21 @@
+ID,Priority,Theme,Initiative,Effort,Phase,Status,Success metric
+R-001,P0,Platform,Postgres production + Alembic runbook,S,A,Open,Clean migrate on fresh DB
+R-002,P0,Compliance,Object storage for uploads,M,A,Open,No PHI on local disk in prod
+R-003,P0,Security,Prod JWT + Redis refresh + break-glass doc,S,A,Open,Security checklist passed
+R-004,P0,Billing,Finance reject + payment status + leave in preview,M,A,Open,Month close without spreadsheets
+R-005,P0,Release,Manual release gate checklist,S,A,Open,Checklist per release
+R-006,P1,Scale,Pipeline filters + pagination,M,B,Open,p95 < 2s at 500 cases
+R-007,P1,Engagement,Notifications v1 (reschedule report invoice),L,B,Open,80% events delivered < 5 min
+R-008,P1,Revenue,Parent payment gateway (Razorpay/UPI),L,B,Open,50% invoices paid digitally
+R-009,P1,Clinical,IEP goals linked to logs/reports,L,B,Open,Goal progress in parent reports
+R-010,P1,Product,Supervision model doc + case note,S,B,Open,No duplicate inbox confusion
+R-011,P2,Scale,Bulk assign API,S,C,Open,50 cases bulk < 10s
+R-012,P2,Scale,Calendar API cache,S,C,Open,50% fewer calendar DB hits
+R-013,P2,Ops,Observability Sentry + slow queries,M,C,Open,MTTR < 1h P1 incidents
+R-014,P2,Quality,Playwright reschedule + invoice E2E,M,C,Open,3 E2E paths green in CI
+R-015,P2,Quality,ESLint triage frontend/src,M,C,Open,Zero new lint on PR
+R-016,P2,Analytics,Executive dashboard utilization revenue,L,C,Open,Weekly report without SQL
+R-017,P3,Compliance,Audit export + IEP consent timestamps,M,C,Open,Diligence pack ready
+R-018,P3,Quality,Parent ticket escalate E2E,S,C,Open,CI coverage
+R-019,P3,Infra,Multi-tenant isolation,XL,C,Backlog,Strategy dependent
+R-020,P3,Defer,Supervisor request inbox,—,—,Won't do,Unless clinical workflow defined

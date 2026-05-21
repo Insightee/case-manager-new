@@ -2,18 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { AdminTherapistOnboardPanel } from './AdminTherapistOnboardPanel.jsx'
+import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
 import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
-import { ModulePicker } from './ui/ModulePicker.jsx'
 
-const INVITE_ROLES = [
-  { id: 'THERAPIST', label: 'Therapist' },
-  { id: 'PARENT', label: 'Parent (client portal)' },
-  { id: 'ADMIN', label: 'Admin' },
-  { id: 'CASE_MANAGER', label: 'Case manager' },
-]
-
-const EMPTY_INVITE = { email: '', role_name: 'THERAPIST', module_assignments: [] }
-const EMPTY_CHILD = { first_name: '', last_name: '' }
+const EMPTY_CHILD = { first_name: '', last_name: '', date_of_birth: '' }
 
 export function AdminPeoplePage() {
   const [searchParams] = useSearchParams()
@@ -28,39 +21,50 @@ export function AdminPeoplePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [inviteForm, setInviteForm] = useState(EMPTY_INVITE)
   const [inviteUrl, setInviteUrl] = useState('')
   const [childForm, setChildForm] = useState(EMPTY_CHILD)
   const [submitting, setSubmitting] = useState(false)
+  const [showFamilyWizard, setShowFamilyWizard] = useState(false)
+  const [familySearchDebounced, setFamilySearchDebounced] = useState('')
 
   useEffect(() => {
     const t = searchParams.get('tab')
-    if (t && ['staff', 'therapists', 'families', 'invites', 'onboarding'].includes(t)) setTab(t)
+    if (t && ['staff', 'therapists', 'families'].includes(t)) setTab(t)
   }, [searchParams])
+
+  useEffect(() => {
+    if (tab !== 'families') return
+    const t = setTimeout(() => setFamilySearchDebounced(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search, tab])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
+      const familyQs =
+        tab === 'families' && familySearchDebounced
+          ? `?search=${encodeURIComponent(familySearchDebounced)}`
+          : ''
       const [userRows, moduleMeta, profileRows, familyRows, inviteRows] = await Promise.all([
         apiFetch('/api/v1/admin/users'),
         apiFetch('/api/v1/admin/modules'),
         apiFetch('/api/v1/admin/therapist-profiles'),
-        apiFetch('/api/v1/admin/families'),
-        apiFetch('/api/v1/admin/invites'),
+        apiFetch(`/api/v1/admin/families${familyQs}`),
+        apiFetch('/api/v1/admin/invites').catch(() => []),
       ])
       setUsers(unwrapList(userRows))
       setCatalog(moduleMeta.modules ?? [])
       setRoleDefaults(moduleMeta.role_defaults ?? {})
       setProfiles(profileRows)
       setFamilies(familyRows)
-      setInvites(inviteRows)
+      setInvites(Array.isArray(inviteRows) ? inviteRows : [])
     } catch (err) {
       setError(err.message || 'Could not load people data')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [tab, familySearchDebounced])
 
   useEffect(() => {
     load()
@@ -86,43 +90,17 @@ export function AdminPeoplePage() {
     (u) => filterText(`${u.full_name} ${u.email} ${(u.roles || []).join(' ')}`),
   )
   const filteredTherapists = therapists.filter((u) => filterText(`${u.full_name} ${u.email}`))
-  const filteredFamilies = families.filter((f) =>
+  const filteredFamilies = tab === 'families' ? families : families.filter((f) =>
     filterText(`${f.childName} ${f.parents?.map((p) => p.parentEmail).join(' ')} ${(f.caseCodes || []).join(' ')}`),
   )
-  const filteredInvites = invites.filter((i) => filterText(`${i.email} ${i.role_name}`))
-  const walkInInvites = useMemo(
-    () => invites.filter((i) => i.pending_slot_id && filterText(`${i.email} ${i.client_name || ''}`)),
+  const parentPendingInvites = useMemo(
+    () => invites.filter((i) => i.role_name === 'PARENT' && filterText(i.email)),
     [invites, search],
   )
-
-  function suggestModules(role) {
-    return [...(roleDefaults[role] ?? [])]
-  }
-
-  async function sendInvite(e) {
-    e.preventDefault()
-    setError('')
-    setSuccess('')
-    setSubmitting(true)
-    try {
-      const res = await apiFetch('/api/v1/admin/invites', {
-        method: 'POST',
-        body: JSON.stringify({
-          email: inviteForm.email.trim(),
-          role_name: inviteForm.role_name,
-          module_assignments: inviteForm.role_name === 'PARENT' ? [] : inviteForm.module_assignments,
-        }),
-      })
-      setInviteUrl(res.invite_url)
-      setSuccess(`Invite created for ${inviteForm.email}`)
-      setInviteForm(EMPTY_INVITE)
-      load()
-    } catch (err) {
-      setError(err.message || 'Invite failed')
-    } finally {
-      setSubmitting(false)
-    }
-  }
+  const therapistPendingInvites = useMemo(
+    () => invites.filter((i) => i.role_name === 'THERAPIST' && filterText(i.email)),
+    [invites, search],
+  )
 
   async function addChild(e) {
     e.preventDefault()
@@ -134,6 +112,7 @@ export function AdminPeoplePage() {
         body: JSON.stringify({
           first_name: childForm.first_name.trim(),
           last_name: childForm.last_name.trim(),
+          date_of_birth: childForm.date_of_birth || null,
         }),
       })
       setChildForm(EMPTY_CHILD)
@@ -146,10 +125,11 @@ export function AdminPeoplePage() {
     }
   }
 
-  async function inviteParent(userId) {
+  async function inviteParent(userId, childId) {
     setError('')
     try {
-      const res = await apiFetch(`/api/v1/admin/families/${userId}/invite`, { method: 'POST' })
+      const qs = childId ? `?child_id=${childId}` : ''
+      const res = await apiFetch(`/api/v1/admin/families/${userId}/invite${qs}`, { method: 'POST' })
       setInviteUrl(res.invite_url)
       setSuccess('Parent invite link generated')
     } catch (err) {
@@ -166,8 +146,6 @@ export function AdminPeoplePage() {
     { id: 'staff', label: 'Staff' },
     { id: 'therapists', label: 'Therapists' },
     { id: 'families', label: 'Families' },
-    { id: 'invites', label: 'Invites' },
-    { id: 'onboarding', label: 'Walk-in onboarding' },
   ]
 
   return (
@@ -175,7 +153,7 @@ export function AdminPeoplePage() {
       <AdminPageHeader
         eyebrow="Directory"
         title="People"
-        subtitle="Staff, therapists, client families, and pending portal invites in one place."
+        subtitle="Staff, therapists, and client families — add therapists with invite or bulk upload."
       />
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
@@ -210,82 +188,77 @@ export function AdminPeoplePage() {
         <AdminSearchInput value={search} onChange={setSearch} placeholder="Search…" />
       </AdminToolbar>
 
-      {tab === 'invites' ? (
-        <AdminPanel title="Send invite">
-          <form onSubmit={sendInvite} className="admin-form-grid" style={{ maxWidth: 520 }}>
-            <label>
-              Email
-              <input
-                type="email"
-                className="admin-input"
-                value={inviteForm.email}
-                onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Role
-              <select
-                className="admin-input"
-                value={inviteForm.role_name}
-                onChange={(e) => {
-                  const role = e.target.value
-                  setInviteForm((f) => ({
-                    ...f,
-                    role_name: role,
-                    module_assignments: suggestModules(role),
-                  }))
-                }}
-              >
-                {INVITE_ROLES.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {inviteForm.role_name !== 'PARENT' ? (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <ModulePicker
-                  catalog={catalog}
-                  value={inviteForm.module_assignments}
-                  onChange={(mods) => setInviteForm((f) => ({ ...f, module_assignments: mods }))}
-                />
-              </div>
-            ) : null}
-            <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={submitting}>
-              {submitting ? 'Sending…' : 'Generate invite link'}
-            </button>
-          </form>
-        </AdminPanel>
+      {tab === 'families' && showFamilyWizard ? (
+        <AdminAddFamilyWizard
+          onCancel={() => setShowFamilyWizard(false)}
+          onComplete={(result) => {
+            setShowFamilyWizard(false)
+            if (result?.inviteUrl) setInviteUrl(result.inviteUrl)
+            setSuccess(result?.case ? 'Family and case created' : 'Family created')
+            load()
+          }}
+        />
       ) : null}
 
-      {tab === 'families' ? (
-        <AdminPanel title="Quick add child" subtitle="Link parents when creating a case or from a new family">
-          <form onSubmit={addChild} className="admin-form-grid" style={{ maxWidth: 420, marginBottom: 16 }}>
-            <label>
-              First name
-              <input
-                className="admin-input"
-                value={childForm.first_name}
-                onChange={(e) => setChildForm((c) => ({ ...c, first_name: e.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Last name
-              <input
-                className="admin-input"
-                value={childForm.last_name}
-                onChange={(e) => setChildForm((c) => ({ ...c, last_name: e.target.value }))}
-                required
-              />
-            </label>
-            <button type="submit" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={submitting}>
-              Add child
+      {tab === 'families' && !showFamilyWizard ? (
+        <>
+          <div className="admin-btn-group" style={{ marginBottom: 12 }}>
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowFamilyWizard(true)}>
+              Add family
             </button>
-          </form>
-        </AdminPanel>
+          </div>
+          <AdminPanel title="Quick add child" subtitle="Or use Add family to include parent and optional case">
+            <form onSubmit={addChild} className="admin-form-grid" style={{ maxWidth: 420, marginBottom: 16 }}>
+              <label>
+                First name
+                <input
+                  className="admin-input"
+                  value={childForm.first_name}
+                  onChange={(e) => setChildForm((c) => ({ ...c, first_name: e.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                Last name
+                <input
+                  className="admin-input"
+                  value={childForm.last_name}
+                  onChange={(e) => setChildForm((c) => ({ ...c, last_name: e.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                Date of birth
+                <input
+                  type="date"
+                  className="admin-input"
+                  value={childForm.date_of_birth}
+                  onChange={(e) => setChildForm((c) => ({ ...c, date_of_birth: e.target.value }))}
+                />
+              </label>
+              <button type="submit" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={submitting}>
+                Add child
+              </button>
+            </form>
+          </AdminPanel>
+          {parentPendingInvites.length > 0 ? (
+            <AdminPanel title="Pending parent invites" subtitle="Invites not yet accepted">
+              <ul className="admin-queue">
+                {parentPendingInvites.map((inv) => (
+                  <li key={inv.id} className="admin-queue__item">
+                    <div>
+                      <p className="admin-queue__title">{inv.email}</p>
+                      <p className="admin-queue__meta">Expires {new Date(inv.expires_at).toLocaleDateString()}</p>
+                    </div>
+                    <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => copyLink(inv.invite_url)}>
+                      Copy link
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </AdminPanel>
+          ) : null}
+        </>
       ) : null}
 
       {loading ? (
@@ -322,61 +295,108 @@ export function AdminPeoplePage() {
           )}
 
           {tab === 'therapists' && (
-            <AdminPanel
-              title={`Therapists (${filteredTherapists.length})`}
-              actions={
-                <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
-                  Profile editor
-                </Link>
-              }
-            >
-              {filteredTherapists.length === 0 ? (
-                <AdminEmptyState title="No therapists" description="Send an invite from the Invites tab." />
-              ) : (
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Email</th>
-                      <th>Profile</th>
-                      <th>Modules</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTherapists.map((u) => {
-                      const prof = profileByUser.get(u.id)
-                      return (
-                        <tr key={u.id}>
-                          <td>{u.full_name}</td>
-                          <td>{u.email}</td>
-                          <td>
-                            {prof ? <StatusBadge status={prof.status} /> : <span className="admin-muted">No profile</span>}
-                          </td>
-                          <td>{(u.module_assignments || []).join(', ') || '—'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </AdminPanel>
+            <>
+              <AdminTherapistOnboardPanel
+                catalog={catalog}
+                roleDefaults={roleDefaults}
+                pendingInvites={therapistPendingInvites}
+                onSuccess={setSuccess}
+                onError={setError}
+                onReload={load}
+              />
+              <AdminPanel
+                title={`Therapists (${filteredTherapists.length})`}
+                actions={
+                  <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
+                    Profile editor
+                  </Link>
+                }
+              >
+                {filteredTherapists.length === 0 ? (
+                  <AdminEmptyState title="No therapists yet" description="Use Add therapist or Bulk upload above." />
+                ) : (
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Profile</th>
+                        <th>Modules</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTherapists.map((u) => {
+                        const prof = profileByUser.get(u.id)
+                        return (
+                          <tr key={u.id}>
+                            <td className="admin-muted">{u.id}</td>
+                            <td>
+                              <Link
+                                to={`/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : ''}`}
+                              >
+                                {u.full_name}
+                              </Link>
+                            </td>
+                            <td>{u.email}</td>
+                            <td>{u.phone || '—'}</td>
+                            <td>
+                              {prof ? (
+                                <Link to={`/admin/therapist-profiles?user_id=${u.id}&status=${prof.status}`}>
+                                  <StatusBadge status={prof.status} />
+                                </Link>
+                              ) : (
+                                <Link to={`/admin/therapist-profiles?user_id=${u.id}`} className="admin-muted">
+                                  No profile
+                                </Link>
+                              )}
+                            </td>
+                            <td>{(u.module_assignments || []).join(', ') || '—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </AdminPanel>
+            </>
           )}
 
           {tab === 'families' && (
             <AdminPanel title={`Families (${filteredFamilies.length})`}>
               {filteredFamilies.length === 0 ? (
-                <AdminEmptyState title="No families" description="Add a child or create a family from case allotment." />
+                <AdminEmptyState title="No families" description="Use Add family or quick add child to get started." />
               ) : (
                 <ul className="admin-queue">
                   {filteredFamilies.map((f) => (
                     <li key={f.childId} className="admin-queue__item">
                       <div>
-                        <p className="admin-queue__title">{f.childName}</p>
+                        <p className="admin-queue__title">
+                          {f.childName}
+                          {!f.hasParent && !f.pendingInvite ? (
+                            <span className="admin-badge admin-badge--warn" style={{ marginLeft: 8 }}>
+                              No parent
+                            </span>
+                          ) : null}
+                          {f.pendingInvite ? (
+                            <span className="admin-badge" style={{ marginLeft: 8 }}>
+                              Invite pending
+                            </span>
+                          ) : null}
+                          {f.caseCodes?.length ? (
+                            <span className="admin-badge admin-badge--ok" style={{ marginLeft: 8 }}>
+                              {f.caseCodes.length} case{f.caseCodes.length > 1 ? 's' : ''}
+                            </span>
+                          ) : null}
+                        </p>
                         <p className="admin-queue__meta">
                           {f.parents?.length
                             ? f.parents.map((p) => `${p.parentName} · ${p.parentEmail}`).join(' | ')
-                            : 'No parent linked'}
-                          {f.caseCodes?.length ? ` · Cases: ${f.caseCodes.join(', ')}` : ''}
+                            : f.pendingInvite
+                              ? `Pending: ${f.pendingInvite.pendingEmail}`
+                              : 'No parent linked'}
+                          {f.caseCodes?.length ? ` · ${f.caseCodes.join(', ')}` : ''}
                         </p>
                       </div>
                       <div className="admin-btn-group">
@@ -384,9 +404,20 @@ export function AdminPeoplePage() {
                           <button
                             type="button"
                             className="admin-btn admin-btn--ghost admin-btn--sm"
-                            onClick={() => inviteParent(f.parents[0].userId)}
+                            onClick={() => inviteParent(f.parents[0].userId, f.childId)}
                           >
                             Invite parent
+                          </button>
+                        ) : null}
+                        {!f.hasParent && !f.pendingInvite ? (
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--ghost admin-btn--sm"
+                            onClick={() => {
+                              setShowFamilyWizard(true)
+                            }}
+                          >
+                            Add parent
                           </button>
                         ) : null}
                         <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary admin-btn--sm">
@@ -400,91 +431,6 @@ export function AdminPeoplePage() {
             </AdminPanel>
           )}
 
-          {tab === 'invites' && (
-            <AdminPanel title={`Pending invites (${filteredInvites.length})`}>
-              {filteredInvites.length === 0 ? (
-                <AdminEmptyState title="No pending invites" description="Generate a link above." />
-              ) : (
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Email</th>
-                      <th>Role</th>
-                      <th>Walk-in</th>
-                      <th>Expires</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredInvites.map((inv) => (
-                      <tr key={inv.id}>
-                        <td>{inv.email}</td>
-                        <td>{inv.role_name}</td>
-                        <td>{inv.pending_slot_id ? `${inv.client_name || '—'} · slot #${inv.pending_slot_id}` : '—'}</td>
-                        <td>{new Date(inv.expires_at).toLocaleDateString()}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="admin-btn admin-btn--ghost admin-btn--sm"
-                            onClick={() => copyLink(inv.invite_url)}
-                          >
-                            Copy link
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </AdminPanel>
-          )}
-
-          {tab === 'onboarding' && (
-            <AdminPanel title={`Walk-in onboarding (${walkInInvites.length})`} subtitle="Slots held for new client invites — finalize family & case, then share the invite link.">
-              {walkInInvites.length === 0 ? (
-                <AdminEmptyState title="No walk-in invites" description="When a therapist invites a new parent from a slot, it appears here." />
-              ) : (
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Client</th>
-                      <th>Email</th>
-                      <th>Slot</th>
-                      <th>Therapist</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {walkInInvites.map((inv) => (
-                      <tr key={inv.id}>
-                        <td>{inv.client_name || '—'}</td>
-                        <td>{inv.email}</td>
-                        <td>#{inv.pending_slot_id}</td>
-                        <td className="admin-muted">{inv.therapist_user_id ?? '—'}</td>
-                        <td>
-                          <div className="admin-btn-group">
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn--ghost admin-btn--sm"
-                              onClick={() => copyLink(inv.invite_url)}
-                            >
-                              Copy link
-                            </button>
-                            <Link
-                              to={`/admin/cases?allot=1&parent_email=${encodeURIComponent(inv.email)}`}
-                              className="admin-btn admin-btn--primary admin-btn--sm"
-                            >
-                              Finalize case
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </AdminPanel>
-          )}
         </>
       )}
     </div>

@@ -186,10 +186,11 @@ export function ParentProfilePage() {
   const [phone, setPhone] = useState('')
   const [children, setChildren] = useState([])
   const [services, setServices] = useState([])
-  const [homeAddr, setHomeAddr] = useState(emptyAddress())
-  const [homecareCases, setHomecareCases] = useState([])
-  const [serviceCaseId, setServiceCaseId] = useState('')
   const [serviceAddr, setServiceAddr] = useState(emptyAddress())
+  const [addressType, setAddressType] = useState('home') // 'home' | 'school'
+  const [billingSame, setBillingSame] = useState(true)
+  const [billingAddr, setBillingAddr] = useState(emptyAddress())
+  const [homecareCases, setHomecareCases] = useState([])
   const [showAddChild, setShowAddChild] = useState(false)
 
   const loadProfile = useCallback(async () => {
@@ -208,16 +209,27 @@ export function ParentProfilePage() {
         })),
       )
       setServices(p.services || [])
-      setHomeAddr(addressFromApi(p.home_address))
+      setAddressType(p.address_type || 'home')
       const hc = p.homecare_cases || []
       setHomecareCases(hc)
-      if (hc.length) {
-        const first = hc[0]
-        setServiceCaseId(String(first.case_id))
-        setServiceAddr(addressFromApi(first.service_address))
+      // Prefer the homecare service address if one exists, otherwise fall back to home_address
+      const primaryAddr = hc.length ? hc[0].service_address : p.home_address
+      setServiceAddr(addressFromApi(primaryAddr))
+      if (p.billing_address_line1) {
+        setBillingSame(false)
+        setBillingAddr(addressFromApi({
+          address_line1: p.billing_address_line1,
+          address_line2: p.billing_address_line2,
+          city: p.billing_city,
+          state: p.billing_state,
+          pincode: p.billing_pincode,
+          landmark: p.billing_landmark,
+          latitude: p.billing_latitude,
+          longitude: p.billing_longitude,
+        }))
       } else {
-        setServiceCaseId('')
-        setServiceAddr(emptyAddress())
+        setBillingSame(true)
+        setBillingAddr(emptyAddress())
       }
     } catch (err) {
       setError(err.message || 'Could not load profile')
@@ -272,12 +284,6 @@ export function ParentProfilePage() {
     setShowAddChild(false)
   }
 
-  function selectHomecareCase(caseId) {
-    setServiceCaseId(caseId)
-    const row = homecareCases.find((c) => String(c.case_id) === String(caseId))
-    setServiceAddr(addressFromApi(row?.service_address))
-  }
-
   async function handleSave(e) {
     e.preventDefault()
     setSaving(true)
@@ -288,13 +294,20 @@ export function ParentProfilePage() {
         full_name: fullName.trim(),
         email: email.trim(),
         phone: phone.trim() || null,
-        ...addressToPayload(homeAddr, 'home_'),
+        address_type: addressType,
+        // Save single address as home_address_* for backward compat
+        ...addressToPayload(serviceAddr, 'home_'),
       }
-      if (serviceCaseId && homecareCases.length) {
+      // Propagate to first homecare case service_address if one exists
+      if (homecareCases.length) {
         body.service_address = {
-          case_id: Number(serviceCaseId),
+          case_id: Number(homecareCases[0].case_id),
           address: addressToPayload(serviceAddr),
         }
+      }
+      // Billing address — only save when it's different from service address
+      if (!billingSame) {
+        Object.assign(body, addressToPayload(billingAddr, 'billing_'))
       }
       await apiFetch('/api/v1/parent/profile', {
         method: 'PATCH',
@@ -420,41 +433,84 @@ export function ParentProfilePage() {
           </section>
         )}
 
-        {/* ── Home address ── */}
+        {/* ── Service address ── */}
         <section className="parent-profile__card">
-          <h3>Home address</h3>
-          <p className="parent-profile__hint">Your family contact address. Pin location for accurate maps.</p>
-          <AddressFormFields value={homeAddr} onChange={setHomeAddr} idPrefix="home" disabled={saving} />
-          {hasCoordinates(homeAddr) ? (
-            <p style={{ fontSize: '0.8rem', color: '#15803d', marginTop: 8 }}>Location pinned on map.</p>
-          ) : null}
-        </section>
+          <h3>Service address</h3>
+          <p className="parent-profile__hint">Where your therapist visits. Use the GPS button to pin the exact location.</p>
 
-        {/* ── Homecare address ── */}
-        {homecareCases.length > 0 ? (
-          <section className="parent-profile__card">
-            <h3>Homecare visit address</h3>
-            <p className="parent-profile__hint">Where therapists visit for home sessions. You can update this per case.</p>
-            <div className="parent-profile__field" style={{ marginBottom: 12 }}>
-              <label>
-                Case
-                <select value={serviceCaseId} onChange={(e) => selectHomecareCase(e.target.value)}>
-                  {homecareCases.map((c) => (
-                    <option key={c.case_id} value={c.case_id}>
-                      {c.case_code} · {c.child_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          {/* Type: Home / School */}
+          <fieldset style={{ border: 'none', padding: 0, margin: '0 0 16px' }}>
+            <legend style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Address type
+            </legend>
+            <div style={{ display: 'flex', gap: 12 }}>
+              {[
+                { id: 'home', label: '🏠 Home' },
+                { id: 'school', label: '🏫 School' },
+              ].map((opt) => (
+                <label
+                  key={opt.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 16px',
+                    borderRadius: 10,
+                    border: `2px solid ${addressType === opt.id ? '#6366f1' : '#e2e8f0'}`,
+                    background: addressType === opt.id ? '#eef2ff' : '#fff',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                    color: addressType === opt.id ? '#4338ca' : '#475569',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="addressType"
+                    checked={addressType === opt.id}
+                    onChange={() => setAddressType(opt.id)}
+                    style={{ display: 'none' }}
+                  />
+                  {opt.label}
+                </label>
+              ))}
             </div>
-            {homecareCases.find((c) => String(c.case_id) === serviceCaseId)?.service_address_summary ? (
-              <p className="parent-profile__hint" style={{ marginTop: 0 }}>
-                Current: {homecareCases.find((c) => String(c.case_id) === serviceCaseId).service_address_summary}
+          </fieldset>
+
+          <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="service" disabled={saving} />
+          {hasCoordinates(serviceAddr) ? (
+            <p style={{ fontSize: '0.8rem', color: '#15803d', marginTop: 8 }}>📍 Location pinned on map.</p>
+          ) : null}
+
+          {/* Billing address */}
+          <div style={{ marginTop: 20, borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={billingSame}
+                onChange={(e) => setBillingSame(e.target.checked)}
+                style={{ width: 16, height: 16, accentColor: '#6366f1', flexShrink: 0 }}
+              />
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a' }}>
+                Use this address as billing address
+              </span>
+            </label>
+
+            {!billingSame ? (
+              <div style={{ marginTop: 14 }}>
+                <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+                  Billing address
+                </p>
+                <AddressFormFields value={billingAddr} onChange={setBillingAddr} idPrefix="billing" disabled={saving} />
+              </div>
+            ) : (
+              <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 6 }}>
+                Invoices will be addressed to the service address above.
               </p>
-            ) : null}
-            <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="visit" disabled={saving} />
-          </section>
-        ) : null}
+            )}
+          </div>
+        </section>
 
         <button type="submit" className="parent-profile__save" disabled={saving}>
           {saving ? 'Saving…' : 'Save profile'}

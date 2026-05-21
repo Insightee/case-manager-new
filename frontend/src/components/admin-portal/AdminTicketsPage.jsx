@@ -11,6 +11,7 @@ export function AdminTicketsPage() {
   const [tickets, setTickets] = useState([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('OPEN')
+  const [moduleFilter, setModuleFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
   const [detail, setDetail] = useState(null)
@@ -19,7 +20,9 @@ export function AdminTicketsPage() {
   async function load() {
     setLoading(true)
     try {
-      setTickets(unwrapList(await apiFetch('/api/v1/tickets?page_size=100')))
+      const qs = new URLSearchParams({ page_size: '100' })
+      if (moduleFilter) qs.set('product_module', moduleFilter)
+      setTickets(unwrapList(await apiFetch(`/api/v1/tickets?${qs.toString()}`)))
     } catch {
       setTickets([])
     } finally {
@@ -32,7 +35,7 @@ export function AdminTicketsPage() {
     apiFetch('/api/v1/cases?page_size=100')
       .then((d) => setCases(unwrapList(d)))
       .catch(() => setCases([]))
-  }, [])
+  }, [moduleFilter])
 
   const caseById = useMemo(() => {
     const map = {}
@@ -103,6 +106,17 @@ export function AdminTicketsPage() {
               <option value="OPEN">Open</option>
               <option value="IN_PROGRESS">In progress</option>
               <option value="RESOLVED">Resolved</option>
+            </select>
+            <select
+              className="admin-search__input"
+              style={{ flex: '0 0 auto', width: 'auto', minWidth: 150, paddingLeft: 12, backgroundImage: 'none' }}
+              value={moduleFilter}
+              onChange={(e) => setModuleFilter(e.target.value)}
+            >
+              <option value="">All modules</option>
+              <option value="homecare">Homecare</option>
+              <option value="shadow_support">Shadow support</option>
+              <option value="billing">Billing</option>
             </select>
           </AdminToolbar>
 

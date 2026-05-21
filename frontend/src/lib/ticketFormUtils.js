@@ -22,16 +22,17 @@ export async function createStaffTicket({ subject, body, category, case_id, file
   })
 }
 
-export async function replyStaffTicket(ticketId, body, files = []) {
+export async function replyStaffTicket(ticketId, body, files = [], { isInternal = false } = {}) {
   if (files.length > 0) {
     const fd = new FormData()
     fd.append('body', body)
+    if (isInternal) fd.append('is_internal', 'true')
     appendTicketFiles(fd, files)
     return apiUpload(`/api/v1/tickets/${ticketId}/messages`, fd)
   }
   return apiFetch(`/api/v1/tickets/${ticketId}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ body }),
+    body: JSON.stringify({ body, is_internal: isInternal }),
   })
 }
 
