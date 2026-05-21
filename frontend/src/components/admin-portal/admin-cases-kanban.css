@@ -1,0 +1,212 @@
+.admin-cases-kanban {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-cases-kanban__board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+@media (max-width: 1400px) {
+  .admin-cases-kanban__board {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .admin-cases-kanban__board {
+    grid-template-columns: repeat(2, minmax(200px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-cases-kanban__board {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-cases-kanban__column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px;
+  max-height: 72vh;
+}
+
+.admin-cases-kanban__column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.admin-cases-kanban__column-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+
+.admin-cases-kanban__count {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.admin-cases-kanban__count--danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.admin-cases-kanban__count--warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.admin-cases-kanban__count--success {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.admin-cases-kanban__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 48px;
+}
+
+.admin-case-card {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.admin-case-card:hover {
+  border-color: #a5b4fc;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
+}
+
+.admin-case-card__code {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-case-card__child {
+  margin: 4px 0 0;
+  font-size: 0.8125rem;
+  color: #334155;
+}
+
+.admin-case-card__meta {
+  margin: 6px 0 0;
+  font-size: 0.6875rem;
+  color: #64748b;
+}
+
+.admin-case-card__action {
+  margin: 8px 0 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #4f46e5;
+}
+
+.admin-case-card__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.admin-case-card__flag {
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.admin-case-card__flag--warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.admin-case-card__flag--danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.admin-cases-kanban__column--over {
+  border-color: #818cf8;
+  background: #eef2ff;
+}
+
+.admin-case-card--draggable {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  cursor: default;
+}
+
+.admin-case-card--draggable .admin-case-card__link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  padding-top: 4px;
+}
+
+.admin-case-card__drag-handle {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  cursor: grab;
+  user-select: none;
+  padding: 4px;
+}
+
+.admin-case-card__drag-handle:active {
+  cursor: grabbing;
+}
+
+.admin-case-card__select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: #64748b;
+  padding: 4px 8px 0;
+}
+
+.admin-case-card--overlay {
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
+  border-color: #818cf8;
+}

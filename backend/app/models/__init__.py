@@ -5,6 +5,7 @@ from app.models.assignment import BookingMode, CaseAssignment
 from app.models.attachment import Attachment
 from app.models.audit_event import AuditEvent
 from app.models.case import BillingType, Case, CompensationMode
+from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.client_billing import (
     BillingDispute,
     CarePackage,
@@ -15,7 +16,7 @@ from app.models.client_billing import (
 from app.models.child import Child
 from app.models.daily_log import DailyLog
 from app.models.document_comment import DocumentComment
-from app.models.incident import Incident
+from app.models.incident import Incident, IncidentMessage
 from app.models.invoice import Invoice
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine
 from app.models.notification import Notification
@@ -55,6 +56,9 @@ __all__ = [
     "Case",
     "BillingType",
     "CompensationMode",
+    "CaseManagerMeeting",
+    "MeetingType",
+    "MeetingStatus",
     "CaseAssignment",
     "BookingMode",
     "CaseAppointmentUsage",

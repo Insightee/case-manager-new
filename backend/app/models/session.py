@@ -5,7 +5,7 @@ from typing import Optional
 import enum
 from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Time, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Time, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -44,6 +44,13 @@ class Session(Base):
     actual_end_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     auto_ended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     slot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("therapist_slots.id"), nullable=True, index=True)
+    # Duration hint copied from the linked slot (used for auto-end threshold)
+    slot_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # GPS coordinates captured at clock-in and clock-out
+    checkin_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    checkin_lng: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    checkout_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    checkout_lng: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     case = relationship("Case", back_populates="sessions", lazy="joined")

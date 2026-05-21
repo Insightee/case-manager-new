@@ -1,0 +1,120 @@
+.admin-reports__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.admin-reports__kpi {
+  background: var(--admin-surface, #fff);
+  border: 1px solid var(--admin-border, #e2e8f0);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.admin-reports__kpi-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.admin-reports__kpi-label {
+  font-size: 0.75rem;
+  color: var(--admin-muted, #64748b);
+  margin-top: 4px;
+}
+
+.admin-reports__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.admin-reports__tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-reports__bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.admin-reports__status-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.admin-reports__status-pill--draft { background: #f1f5f9; color: #475569; }
+.admin-reports__status-pill--under_review { background: #fef3c7; color: #92400e; }
+.admin-reports__status-pill--published { background: #d1fae5; color: #065f46; }
+.admin-reports__status-pill--rejected { background: #fee2e2; color: #991b1b; }
+
+.admin-reports__parent-badge {
+  font-size: 0.65rem;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #fce7f3;
+  color: #9d174d;
+}
+
+.admin-reports__drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 200;
+}
+
+.admin-reports__drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(480px, 100vw);
+  height: 100vh;
+  background: #fff;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  z-index: 201;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.admin-reports__drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.admin-reports__history-item {
+  border-left: 3px solid #cbd5e1;
+  padding-left: 10px;
+  margin-bottom: 10px;
+  font-size: 0.85rem;
+}
+
+.admin-reports__table-wrap {
+  overflow-x: auto;
+}
+
+.admin-reports__pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  font-size: 0.85rem;
+}

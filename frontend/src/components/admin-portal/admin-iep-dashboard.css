@@ -1,0 +1,86 @@
+.admin-iep-dash__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.admin-iep-dash__kpi {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.admin-iep-dash__kpi:hover {
+  border-color: #a5b4fc;
+}
+
+.admin-iep-dash__kpi.is-active {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.admin-iep-dash__kpi-label {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.admin-iep-dash__kpi-value {
+  margin: 4px 0 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-iep-dash__kpi--awaiting {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.admin-iep-dash__kpi--missing {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.admin-iep-dash__kpi--ack {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.admin-iep-status {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.admin-iep-status--MISSING {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.admin-iep-status--INTERNAL_ONLY {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.admin-iep-status--AWAITING_ACK {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.admin-iep-status--ACKNOWLEDGED {
+  background: #dcfce7;
+  color: #15803d;
+}

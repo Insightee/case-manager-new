@@ -16,6 +16,7 @@ from app.models.user import User
 class RoleName(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     ADMIN = "ADMIN"
+    VIEWER = "VIEWER"
     CASE_MANAGER = "CASE_MANAGER"
     SUPERVISOR = "SUPERVISOR"
     THERAPIST = "THERAPIST"
@@ -56,6 +57,8 @@ ALL_PERMISSIONS = [
     "slot.book",
     "slot.book_any",
     "slot.book_parent",
+    "iep.read",
+    "admin.view_only",
 ]
 
 ROLE_PERMISSIONS: dict[str, list[str]] = {
@@ -72,6 +75,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "monthly_report.approve",
         "invoice.approve",
         "ticket.manage",
+        "incident.read_sensitive",
         "parent.read",
         "slot.read",
         "slot.book_any",
@@ -93,12 +97,21 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "slot.read",
         "slot.book_any",
     ],
+    RoleName.VIEWER: [
+        "case.read.scoped",
+        "session.read",
+        "therapist.read",
+        "parent.read",
+        "iep.read",
+        "admin.view_only",
+    ],
     RoleName.SUPERVISOR: [
         "case.read.team",
         "session.read",
         "daily_log.review",
         "monthly_report.approve",
         "incident.read_sensitive",
+        "iep.read",
     ],
     RoleName.THERAPIST: [
         "case.read.assigned",

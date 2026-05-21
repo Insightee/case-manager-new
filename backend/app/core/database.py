@@ -111,3 +111,33 @@ def ensure_sqlite_schema_patches() -> None:
             )
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_ticket_attachments_ticket_id ON ticket_attachments (ticket_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_ticket_attachments_message_id ON ticket_attachments (message_id)"))
+
+    if insp.has_table("ticket_messages"):
+        tmsg_cols = {c["name"] for c in insp.get_columns("ticket_messages")}
+        if "is_internal" not in tmsg_cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE ticket_messages ADD COLUMN is_internal BOOLEAN NOT NULL DEFAULT 0")
+                )
+
+    if not insp.has_table("observation_reports"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE observation_reports (
+                        id INTEGER PRIMARY KEY,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        therapist_user_id INTEGER NOT NULL REFERENCES users(id),
+                        title VARCHAR(255) NOT NULL,
+                        content TEXT,
+                        status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+                        visibility_status VARCHAR(32) NOT NULL DEFAULT 'INTERNAL_ONLY',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_observation_reports_case_id ON observation_reports (case_id)")
+            )
