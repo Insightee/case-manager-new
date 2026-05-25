@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
+import { AdminObservationChecklistsPanel } from './AdminObservationChecklistsPanel.jsx'
 import './admin-reports.css'
 
 const SECTION_META = {
@@ -51,6 +52,116 @@ function WorkbenchSection({ id, section }) {
   )
 }
 
+function StatusRequestsPanel() {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing] = useState(null)
+  const [rejectId, setRejectId] = useState(null)
+  const [rejectNote, setRejectNote] = useState('')
+
+  function load() {
+    setLoading(true)
+    apiFetch('/api/v1/admin/status-requests')
+      .then(setRows)
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function approve(id) {
+    setActing(id)
+    try {
+      await apiFetch(`/api/v1/admin/status-requests/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ note: '' }),
+      })
+      load()
+    } finally {
+      setActing(null)
+    }
+  }
+
+  async function reject(id) {
+    if (!rejectNote.trim()) return
+    setActing(id)
+    try {
+      await apiFetch(`/api/v1/admin/status-requests/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ note: rejectNote.trim() }),
+      })
+      setRejectId(null)
+      setRejectNote('')
+      load()
+    } finally {
+      setActing(null)
+    }
+  }
+
+  return (
+    <AdminPanel title={`Case status requests (${rows.length})`} padded={false}>
+      <div className="admin-panel__body">
+        {loading ? (
+          <p className="admin-muted" style={{ padding: 12 }}>Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="admin-muted" style={{ padding: 12 }}>No pending status change requests.</p>
+        ) : (
+          <ul className="admin-queue">
+            {rows.map((r) => (
+              <li key={r.id} className="admin-queue__item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <p className="admin-queue__title">
+                  {r.caseId} · {r.childName}: {r.fromStatus} → {r.toStatus}
+                </p>
+                <p className="admin-queue__meta">{r.requestedBy} · {r.reason}</p>
+                {rejectId === r.id ? (
+                  <textarea
+                    className="client-inv__filter-input"
+                    style={{ width: '100%', marginTop: 8, minHeight: 48 }}
+                    placeholder="Reason if rejecting"
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                  />
+                ) : null}
+                <div className="admin-btn-group" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary admin-btn--sm"
+                    disabled={acting === r.id}
+                    onClick={() => approve(r.id)}
+                  >
+                    Approve
+                  </button>
+                  {rejectId === r.id ? (
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--sm"
+                      disabled={acting === r.id || !rejectNote.trim()}
+                      onClick={() => reject(r.id)}
+                    >
+                      Confirm reject
+                    </button>
+                  ) : (
+                    <button type="button" className="admin-btn admin-btn--sm" onClick={() => setRejectId(r.id)}>
+                      Reject…
+                    </button>
+                  )}
+                  {r.caseDbId ? (
+                    <Link to={`/admin/cases/${r.caseDbId}`} className="admin-btn admin-btn--ghost admin-btn--sm">
+                      Case
+                    </Link>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </AdminPanel>
+  )
+}
+
 export function AdminWorkbenchPage() {
   const { can } = useAuth()
   const [data, setData] = useState(null)
@@ -88,6 +199,9 @@ export function AdminWorkbenchPage() {
         </Link>
         — not a separate supervisor request inbox.
       </p>
+
+      {can('case.update') ? <StatusRequestsPanel /> : null}
+      {can('monthly_report.approve') ? <AdminObservationChecklistsPanel /> : null}
 
       {loading ? (
         <p className="admin-muted">Loading workbench…</p>

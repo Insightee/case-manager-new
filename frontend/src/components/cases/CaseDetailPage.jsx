@@ -1,26 +1,42 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
-import { formatScheduleWhen, mergeUpcomingSchedule } from '../../lib/therapistSchedule.js'
+import { mergeUpcomingSchedule } from '../../lib/therapistSchedule.js'
 import { CaseSessionsPanel } from './CaseSessionsPanel.jsx'
+import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
+import { CaseManagerPanel } from './CaseManagerPanel.jsx'
+import { ObservationChecklistPanel } from './ObservationChecklistPanel.jsx'
 import './my-cases.css'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'observation', label: 'Observation' },
   { id: 'sessions', label: 'Sessions & logs' },
+  { id: 'documents', label: 'Documents' },
+]
+
+const CLINICAL_PLACEHOLDERS = [
+  { id: 'history', title: 'Client history' },
+  { id: 'diagnosis', title: 'Diagnosis' },
+  { id: 'strengths', title: 'Strengths' },
+  { id: 'interests', title: 'Interests' },
+  { id: 'goals', title: 'Goals' },
 ]
 
 export function CaseDetailPage() {
   const { caseId } = useParams()
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
   const [caseRow, setCaseRow] = useState(null)
-  const [assignments, setAssignments] = useState([])
   const [scheduleItems, setScheduleItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [statusTo, setStatusTo] = useState('SUSPENDED')
+  const [statusReason, setStatusReason] = useState('')
+  const [statusMsg, setStatusMsg] = useState('')
+  const [statusBusy, setStatusBusy] = useState(false)
+  const [clinicalProfile, setClinicalProfile] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -32,14 +48,14 @@ export function CaseDetailPage() {
       toDate.setDate(toDate.getDate() + 90)
       const to = toDate.toISOString().slice(0, 10)
 
-      const [c, a, upcoming, slots] = await Promise.all([
+      const [c, upcoming, slots, profile] = await Promise.all([
         apiFetch(`/api/v1/cases/${caseId}`),
-        apiFetch(`/api/v1/cases/${caseId}/assignments`),
         apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
         apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`).catch(() => []),
+        apiFetch(`/api/v1/cases/${caseId}/clinical-profile`).catch(() => null),
       ])
       setCaseRow(c)
-      setAssignments(Array.isArray(a) ? a : [])
+      setClinicalProfile(profile)
       const upcomingList = Array.isArray(upcoming) ? upcoming : unwrapList(upcoming)
       const slotList = unwrapList(slots)
       const merged = mergeUpcomingSchedule({ sessions: upcomingList, slots: slotList }).filter(
@@ -57,14 +73,6 @@ export function CaseDetailPage() {
   useEffect(() => {
     load()
   }, [load])
-
-  useEffect(() => {
-    if (tab === 'reports') {
-      navigate(`/therapist/reports?case_id=${caseId}`, { replace: true })
-    }
-  }, [tab, caseId, navigate])
-
-  const nextVisit = scheduleItems[0] || null
 
   function setTab(id) {
     setSearchParams({ tab: id }, { replace: true })
@@ -84,6 +92,16 @@ export function CaseDetailPage() {
 
   const addr = caseRow.service_address?.formatted
   const childLabel = `${caseRow.child_name} (${caseRow.case_code})`
+  const statusLabel =
+    caseRow.status === 'ACTIVE'
+      ? 'Active'
+      : caseRow.status === 'SUSPENDED'
+        ? 'Suspended'
+        : caseRow.status === 'CLOSED'
+          ? 'Closed'
+          : caseRow.status === 'PENDING_ALLOTMENT'
+            ? 'Pending allotment'
+            : caseRow.status
 
   return (
     <div className="ic-my-cases ic-case-detail">
@@ -93,9 +111,14 @@ export function CaseDetailPage() {
 
       <header className="ic-case-detail__header">
         <p className="ic-case-detail__code">{caseRow.case_code}</p>
-        <h1 className="ic-case-detail__name">{caseRow.child_name}</h1>
+        <div className="ic-case-detail__title-row">
+          <h1 className="ic-case-detail__name">{caseRow.child_name}</h1>
+          <span className={`ic-case-status-pill ic-case-status-pill--${String(caseRow.status).toLowerCase()}`}>
+            {statusLabel}
+          </span>
+        </div>
         <p className="ic-case-detail__meta">
-          {caseRow.service_type} · {caseRow.product_module} · {caseRow.status}
+          {caseRow.service_type} · {caseRow.product_module}
         </p>
       </header>
 
@@ -117,37 +140,64 @@ export function CaseDetailPage() {
 
       {tab === 'overview' ? (
         <div className="ic-case-detail__grid">
-          {nextVisit ? (
-            <section className="ic-case-highlight ic-case-highlight--visit">
-              <p className="ic-case-highlight__eyebrow">Next visit</p>
-              <p className="ic-case-highlight__title">{formatScheduleWhen(nextVisit)}</p>
-              <p className="ic-case-highlight__sub">{nextVisit.subtitle}</p>
-              <div className="ic-case-highlight__actions">
-                <Link to={`/therapist/cases/${caseId}?tab=sessions`} className="ic-btn ic-btn--primary">
-                  Start or log session
-                </Link>
-                <Link to="/therapist/slots" className="ic-btn ic-btn--ghost">
-                  Calendar
-                </Link>
-              </div>
-            </section>
-          ) : (
-            <section className="ic-case-highlight ic-case-highlight--muted">
-              <p className="ic-case-highlight__eyebrow">Schedule</p>
-              <p className="ic-case-highlight__title">No upcoming booking</p>
-              <p className="ic-case-highlight__sub">Open your calendar to add availability or book this client.</p>
-              <Link to="/therapist/slots" className="ic-btn ic-btn--primary">
-                Open slots
-              </Link>
-            </section>
-          )}
+          <CaseManagerPanel caseRow={caseRow} />
+
+          <section className="ic-case-panel">
+            <h3>Request status change</h3>
+            <p className="ic-case-panel__hint">
+              Current status: <strong>{caseRow.status || '—'}</strong>. Submit a request for admin approval.
+            </p>
+            {statusMsg ? <p style={{ color: '#15803d', fontSize: '0.85rem' }}>{statusMsg}</p> : null}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
+              <select
+                value={statusTo}
+                onChange={(e) => setStatusTo(e.target.value)}
+                className="ic-case-panel__select"
+                style={{ padding: 8, borderRadius: 8, border: '1px solid #e2e8f0' }}
+              >
+                <option value="SUSPENDED">Suspend case</option>
+                <option value="CLOSED">Close case</option>
+                <option value="ACTIVE">Reactivate case</option>
+              </select>
+              <textarea
+                value={statusReason}
+                onChange={(e) => setStatusReason(e.target.value)}
+                rows={3}
+                placeholder="Reason for this change (required)"
+                style={{ padding: 8, borderRadius: 8, border: '1px solid #e2e8f0' }}
+              />
+              <button
+                type="button"
+                className="ic-btn ic-btn--ghost"
+                disabled={statusBusy || statusReason.trim().length < 5}
+                onClick={async () => {
+                  setStatusBusy(true)
+                  setStatusMsg('')
+                  try {
+                    await apiFetch(`/api/v1/cases/${caseId}/status-requests`, {
+                      method: 'POST',
+                      body: JSON.stringify({ to_status: statusTo, reason: statusReason.trim() }),
+                    })
+                    setStatusMsg('Request submitted. Your case manager will review it.')
+                    setStatusReason('')
+                  } catch (err) {
+                    setStatusMsg(err.message || 'Could not submit request')
+                  } finally {
+                    setStatusBusy(false)
+                  }
+                }}
+              >
+                {statusBusy ? 'Submitting…' : 'Submit request'}
+              </button>
+            </div>
+          </section>
 
           <section className="ic-case-panel">
             <h3>Quick actions</h3>
             <div className="ic-case-quick">
               <Link to={`/therapist/cases/${caseId}?tab=sessions`} className="ic-case-quick__item">
-                <strong>Session log</strong>
-                <span>Start, end, or backfill a visit</span>
+                <strong>Sessions & logs</strong>
+                <span>Upcoming visits, start session, submit logs</span>
               </Link>
               <Link to={`/therapist/reports?case_id=${caseId}`} className="ic-case-quick__item">
                 <strong>Monthly report</strong>
@@ -155,14 +205,24 @@ export function CaseDetailPage() {
               </Link>
               <Link to="/therapist/logs" className="ic-case-quick__item">
                 <strong>All session logs</strong>
-                <span>Timer across every client</span>
+                <span>Timer and logs across every client</span>
               </Link>
             </div>
           </section>
 
           <section className="ic-case-panel">
-            <h3>Case details</h3>
+            <h3>Client snapshot</h3>
             <dl className="ic-case-dl">
+              <div>
+                <dt>Child</dt>
+                <dd>{caseRow.child_name}</dd>
+              </div>
+              <div>
+                <dt>Service</dt>
+                <dd>
+                  {caseRow.service_type} ({caseRow.product_module})
+                </dd>
+              </div>
               <div>
                 <dt>Operational stage</dt>
                 <dd>{caseRow.operational_stage || '—'}</dd>
@@ -188,34 +248,47 @@ export function CaseDetailPage() {
                 </div>
               ) : null}
             </dl>
+            {caseRow.notes ? (
+              <div className="ic-case-panel__notes">
+                <p className="ic-case-panel__notes-label">Notes from operations</p>
+                <p>{caseRow.notes}</p>
+              </div>
+            ) : null}
           </section>
 
-          {assignments.length ? (
-            <section className="ic-case-panel">
-              <h3>Assignment</h3>
-              {assignments.map((a) => (
-                <p key={a.id} className="ic-case-panel__line">
-                  Therapist #{a.therapist_user_id} · {a.status} · from {a.start_date}
-                </p>
-              ))}
-            </section>
-          ) : null}
-
-          {scheduleItems.length > 1 ? (
-            <section className="ic-case-panel">
-              <h3>All upcoming</h3>
-              <ul className="ic-case-schedule-list">
-                {scheduleItems.map((item) => (
-                  <li key={item.key}>
-                    <span>{formatScheduleWhen(item)}</span>
-                    <span className="ic-case-schedule-list__sub">{item.subtitle}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
+          {CLINICAL_PLACEHOLDERS.map((section) => {
+            const value =
+              section.id === 'history'
+                ? clinicalProfile?.history
+                : section.id === 'diagnosis'
+                  ? clinicalProfile?.diagnosis
+                  : section.id === 'strengths'
+                    ? clinicalProfile?.strengths
+                    : section.id === 'interests'
+                      ? clinicalProfile?.interests
+                      : section.id === 'goals'
+                        ? clinicalProfile?.goals_summary
+                        : null
+            return (
+              <section
+                key={section.id}
+                className={`ic-case-panel${value ? '' : ' ic-case-panel--placeholder'}`}
+              >
+                <h3>{section.title}</h3>
+                {value ? (
+                  <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.9rem' }}>{value}</p>
+                ) : (
+                  <p className="ic-case-panel__hint">
+                    Complete the observation checklist; your case manager will populate this after review.
+                  </p>
+                )}
+              </section>
+            )
+          })}
         </div>
       ) : null}
+
+      {tab === 'observation' ? <ObservationChecklistPanel caseId={caseId} /> : null}
 
       {tab === 'sessions' ? (
         <CaseSessionsPanel
@@ -223,6 +296,7 @@ export function CaseDetailPage() {
           caseCode={caseRow.case_code}
           childName={caseRow.child_name}
           childLabel={childLabel}
+          scheduleItems={scheduleItems}
           bookedSlots={scheduleItems.filter((i) => i.kind === 'booking').map((i) => ({
             id: i.slotId,
             case_id: i.caseId,
@@ -236,6 +310,13 @@ export function CaseDetailPage() {
         />
       ) : null}
 
+      {tab === 'documents' ? (
+        <CaseDocumentsPanel
+          caseId={Number(caseId)}
+          variant="therapist"
+          monthlyReportsPath={`/therapist/reports?case_id=${caseId}`}
+        />
+      ) : null}
     </div>
   )
 }

@@ -5,6 +5,9 @@ from app.models.assignment import BookingMode, CaseAssignment
 from app.models.attachment import Attachment
 from app.models.audit_event import AuditEvent
 from app.models.case import BillingType, Case, CompensationMode
+from app.models.case_status_request import CaseStatusRequest, CaseStatusRequestStatus
+from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
+from app.models.iep_plan import IepPlan, IepPlanStatus
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.client_billing import (
     BillingDispute,
@@ -15,6 +18,14 @@ from app.models.client_billing import (
 )
 from app.models.child import Child
 from app.models.daily_log import DailyLog
+from app.models.case_document import (
+    CaseDocument,
+    CaseDocumentCategory,
+    CaseDocumentStatus,
+    CaseDocumentVersion,
+    CaseDocumentVisibility,
+    CaseDocumentWorkflowEvent,
+)
 from app.models.document_comment import DocumentComment
 from app.models.incident import Incident, IncidentMessage
 from app.models.invoice import Invoice
@@ -70,6 +81,12 @@ __all__ = [
     "ReportCategory",
     "ReportImage",
     "ParentReviewStatus",
+    "CaseDocument",
+    "CaseDocumentCategory",
+    "CaseDocumentStatus",
+    "CaseDocumentVisibility",
+    "CaseDocumentVersion",
+    "CaseDocumentWorkflowEvent",
     "DocumentComment",
     "Review",
     "Invoice",

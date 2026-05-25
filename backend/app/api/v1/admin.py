@@ -8,6 +8,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -37,6 +38,7 @@ from app.schemas.admin_reports import (
     AdminReportListItem,
     AdminReportSummary,
     BulkReportAction,
+    CmReviewAction,
     BulkReportResult,
 )
 from app.services import admin_report_service as admin_report_svc
@@ -46,6 +48,8 @@ from app.models.therapist_profile import TherapistProfile, TherapistProfileStatu
 from app.models.user import InviteToken, User
 from app.schemas.admin_case_pipeline import AdminCasePipelineBoard
 from app.schemas.admin_iep import AdminIepDashboard
+from app.schemas.clinical import ObservationChecklistReview
+from app.schemas.iep_plan import IepPlanSave
 from app.schemas.therapist_onboarding import (
     TherapistBulkOnboardRequest,
     TherapistOnboardCreate,
@@ -121,6 +125,57 @@ def workbench_summary(
     from app.services import admin_workbench_service as workbench_svc
 
     return workbench_svc.build_workbench_summary(db, user)
+
+
+@router.get("/home")
+def admin_home(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import admin_home_service
+
+    return admin_home_service.build_admin_home(db, user)
+
+
+@router.get("/audit")
+def admin_audit_list(
+    entity_type: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    case_id: Optional[int] = None,
+    limit: int = Query(50, ge=1, le=100),
+    cursor: Optional[int] = None,
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import audit_service
+
+    try:
+        return audit_service.list_audit_events(
+            db,
+            user,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            case_id=case_id,
+            limit=limit,
+            cursor=cursor,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
+@router.get("/cases/{case_id}/timeline")
+def admin_case_timeline(
+    case_id: int,
+    limit: int = Query(40, ge=1, le=100),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import audit_service
+
+    try:
+        return {"items": audit_service.case_timeline(db, user, case_id, limit=limit)}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
 
 
 @router.get("/dashboard/summary")
@@ -810,11 +865,18 @@ def export_session_logs(
     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=session_logs.csv"})
 
 
+def require_user_directory_read(user: User = Depends(get_current_user)) -> User:
+    """Staff pickers (tickets, CM meetings) use therapist.read; People uses user.manage."""
+    if user_has_permission(user, "user.manage") or user_has_permission(user, "therapist.read"):
+        return user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to list users")
+
+
 @router.get("/users", response_model=PaginatedList[UserRead])
 def list_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_user_directory_read),
     db: Session = Depends(get_db),
 ):
     stmt = select(User).order_by(User.email)
@@ -1394,6 +1456,262 @@ def admin_invite_parent(
     return {"invite_url": url}
 
 
+class StatusRequestReview(BaseModel):
+    note: Optional[str] = None
+
+
+@router.get("/status-requests")
+def admin_list_status_requests(
+    user: User = Depends(require_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_status_request_service as csr_svc
+
+    return csr_svc.list_pending(db)
+
+
+@router.post("/status-requests/{request_id}/approve")
+def admin_approve_status_request(
+    request_id: int,
+    payload: StatusRequestReview,
+    request: Request,
+    user: User = Depends(require_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_status_request_service as csr_svc
+
+    try:
+        case = csr_svc.approve_request(db, request_id, user, payload.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="approve_status_request",
+        entity_type="case_status_request",
+        entity_id=request_id,
+        case_id=case.id,
+        **meta,
+    )
+    db.commit()
+    return {"status": "approved", "caseId": case.case_code}
+
+
+@router.post("/status-requests/{request_id}/reject")
+def admin_reject_status_request(
+    request_id: int,
+    payload: StatusRequestReview,
+    request: Request,
+    user: User = Depends(require_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_status_request_service as csr_svc
+
+    if not payload.note or len(payload.note.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Review note is required to reject")
+    try:
+        csr_svc.reject_request(db, request_id, user, payload.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="reject_status_request",
+        entity_type="case_status_request",
+        entity_id=request_id,
+        **meta,
+    )
+    db.commit()
+    return {"status": "rejected"}
+
+
+@router.get("/observation-checklists")
+def admin_list_observation_checklists(
+    user: User = Depends(require_permission("monthly_report.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.services import observation_checklist_service as obs_svc
+
+    return obs_svc.list_pending_for_admin(db, user)
+
+
+@router.get("/observation-checklists/{checklist_id}")
+def admin_observation_checklist_detail(
+    checklist_id: int,
+    user: User = Depends(require_permission("monthly_report.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.models.clinical import ObservationChecklist
+    from app.services import case_service, observation_checklist_service as obs_svc
+
+    checklist = db.get(ObservationChecklist, checklist_id)
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Checklist not found")
+    case = case_service.get_case(db, checklist.case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Checklist not found")
+    return obs_svc.checklist_to_dict(db, checklist, case, user)
+
+
+@router.post("/observation-checklists/{checklist_id}/approve")
+def admin_approve_observation_checklist(
+    checklist_id: int,
+    payload: ObservationChecklistReview,
+    request: Request,
+    user: User = Depends(require_permission("monthly_report.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.models.clinical import ObservationChecklist
+    from app.schemas.clinical import ObservationChecklistReview
+    from app.services import observation_checklist_service as obs_svc
+
+    checklist = db.get(ObservationChecklist, checklist_id)
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Checklist not found")
+    try:
+        obs_svc.approve_checklist(
+            db,
+            checklist,
+            user,
+            comment=payload.comment,
+            share_with_parent=payload.share_with_parent,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="approve_observation_checklist",
+        entity_type="observation_checklist",
+        entity_id=checklist_id,
+        case_id=checklist.case_id,
+        **meta,
+    )
+    db.commit()
+    from app.services import case_service
+
+    case = case_service.get_case(db, checklist.case_id)
+    return obs_svc.checklist_to_dict(db, checklist, case, user)
+
+
+@router.post("/observation-checklists/{checklist_id}/reject")
+def admin_reject_observation_checklist(
+    checklist_id: int,
+    payload: ObservationChecklistReview,
+    request: Request,
+    user: User = Depends(require_permission("monthly_report.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.models.clinical import ObservationChecklist
+    from app.schemas.clinical import ObservationChecklistReview
+    from app.services import case_service, observation_checklist_service as obs_svc
+
+    checklist = db.get(ObservationChecklist, checklist_id)
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Checklist not found")
+    if not payload.comment or len(payload.comment.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Reviewer comment is required")
+    try:
+        obs_svc.reject_checklist(db, checklist, user, payload.comment)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="reject_observation_checklist",
+        entity_type="observation_checklist",
+        entity_id=checklist_id,
+        case_id=checklist.case_id,
+        **meta,
+    )
+    db.commit()
+    case = case_service.get_case(db, checklist.case_id)
+    return obs_svc.checklist_to_dict(db, checklist, case, user)
+
+
+@router.get("/cases/{case_id}/iep-plans")
+def admin_list_iep_plans(
+    case_id: int,
+    user: User = Depends(require_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_plan_service as iep_svc
+
+    return iep_svc.list_plans_for_case(db, case_id)
+
+
+@router.get("/cases/{case_id}/iep-plan")
+def admin_get_iep_plan(
+    case_id: int,
+    user: User = Depends(require_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    plan = iep_svc.get_or_create_plan(db, case, user)
+    db.commit()
+    return iep_svc.plan_to_dict(db, plan, user)
+
+
+@router.put("/cases/{case_id}/iep-plan")
+def admin_save_iep_plan(
+    case_id: int,
+    payload: IepPlanSave,
+    user: User = Depends(require_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    plan = iep_svc.get_or_create_plan(db, case, user)
+    try:
+        iep_svc.save_plan(db, plan, payload.sections, payload.version)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return iep_svc.plan_to_dict(db, plan, user)
+
+
+@router.post("/cases/{case_id}/iep-plan/share-with-parent")
+def admin_share_iep_plan(
+    case_id: int,
+    request: Request,
+    user: User = Depends(require_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    plan = iep_svc.get_or_create_plan(db, case, user)
+    try:
+        iep_svc.share_plan_with_parent(db, plan, user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="share_iep_plan",
+        entity_type="iep_plan",
+        entity_id=plan.id,
+        case_id=case_id,
+        **meta,
+    )
+    db.commit()
+    return iep_svc.plan_to_dict(db, plan, user)
+
+
 @router.post("/families/link-by-email")
 def admin_link_parent_by_email(
     child_id: int = Query(...),
@@ -1492,6 +1810,7 @@ def admin_reports_summary(
 def admin_reports_queue(
     report_type: Optional[str] = Query(None, alias="type"),
     product_module: Optional[str] = None,
+    category: Optional[str] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
@@ -1503,6 +1822,7 @@ def admin_reports_queue(
         user,
         report_type=report_type,
         product_module=product_module,
+        category=category,
         search=search,
         page=page,
         page_size=page_size,
@@ -1522,6 +1842,7 @@ def admin_reports_monthly_list(
     case_id: Optional[int] = None,
     product_module: Optional[str] = None,
     month: Optional[str] = None,
+    category: Optional[str] = None,
     search: Optional[str] = None,
     parent_review_status: Optional[str] = None,
     queue_only: bool = False,
@@ -1537,6 +1858,7 @@ def admin_reports_monthly_list(
         case_id=case_id,
         product_module=product_module,
         month=month,
+        category=category,
         search=search,
         parent_review_status=parent_review_status,
         queue_only=queue_only,
@@ -1557,6 +1879,7 @@ def admin_reports_observation_list(
     status: Optional[str] = None,
     case_id: Optional[int] = None,
     product_module: Optional[str] = None,
+    category: Optional[str] = None,
     search: Optional[str] = None,
     queue_only: bool = False,
     page: int = Query(1, ge=1),
@@ -1570,6 +1893,7 @@ def admin_reports_observation_list(
         status=_parse_report_status(status),
         case_id=case_id,
         product_module=product_module,
+        category=category,
         search=search,
         queue_only=queue_only,
         page=page,
@@ -1603,6 +1927,50 @@ def admin_reports_observation_detail(
     db: Session = Depends(get_db),
 ):
     detail = admin_report_svc.get_observation_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+@router.post("/reports/monthly/{report_id}/cm-review", response_model=AdminReportDetail)
+def admin_reports_monthly_cm_review(
+    report_id: int,
+    payload: CmReviewAction,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, report_service
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.status != ReportStatus.UNDER_REVIEW:
+        raise HTTPException(status_code=400, detail="Report is not awaiting review")
+    if not payload.comment.strip():
+        raise HTTPException(status_code=400, detail="Comment is required")
+    report_service.cm_review_monthly_report(
+        db,
+        report,
+        user.id,
+        comment=payload.comment,
+        request_changes=payload.request_changes,
+    )
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="cm_review",
+        entity_type="monthly_report",
+        entity_id=report_id,
+        **meta,
+    )
+    db.commit()
+    db.refresh(report)
+    detail = admin_report_svc.get_monthly_detail(db, user, report_id)
     if not detail:
         raise HTTPException(status_code=404, detail="Report not found")
     return detail

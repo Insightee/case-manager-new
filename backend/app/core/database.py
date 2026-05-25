@@ -228,6 +228,14 @@ def ensure_sqlite_schema_patches() -> None:
                 if col not in ob_cols:
                     conn.execute(text(f"ALTER TABLE observation_reports ADD COLUMN {col} {ddl}"))
 
+    if insp.has_table("audit_events"):
+        audit_cols = {c["name"] for c in insp.get_columns("audit_events")}
+        if "case_id" not in audit_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE audit_events ADD COLUMN case_id INTEGER"))
+
+    _sqlite_portal_indexes(conn_ctx=engine)
+
     if not insp.has_table("report_images"):
         with engine.begin() as conn:
             conn.execute(
@@ -237,9 +245,8 @@ def ensure_sqlite_schema_patches() -> None:
                         id INTEGER PRIMARY KEY,
                         report_type VARCHAR(32) NOT NULL,
                         report_id INTEGER NOT NULL,
+                        file_name VARCHAR(255) NOT NULL,
                         file_path VARCHAR(512) NOT NULL,
-                        mime_type VARCHAR(128) NOT NULL,
-                        size_bytes INTEGER NOT NULL,
                         uploaded_by_user_id INTEGER NOT NULL REFERENCES users(id),
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
@@ -252,3 +259,163 @@ def ensure_sqlite_schema_patches() -> None:
                     "ON report_images (report_type, report_id)"
                 )
             )
+
+    if insp.has_table("report_images"):
+        ri_cols = {c["name"] for c in insp.get_columns("report_images")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("storage_provider", "VARCHAR(16)"),
+                ("storage_key", "VARCHAR(512)"),
+                ("original_filename", "VARCHAR(255)"),
+                ("mime_type", "VARCHAR(64)"),
+                ("size_bytes", "INTEGER"),
+            ):
+                if col not in ri_cols:
+                    conn.execute(text(f"ALTER TABLE report_images ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("client_payments"):
+        pay_cols = {c["name"] for c in insp.get_columns("client_payments")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("payment_status", "VARCHAR(32) NOT NULL DEFAULT 'CONFIRMED'"),
+                ("submitted_by_user_id", "INTEGER"),
+                ("proof_file_path", "VARCHAR(512)"),
+                ("proof_file_name", "VARCHAR(255)"),
+                ("confirmed_by_user_id", "INTEGER"),
+                ("confirmed_at", "DATETIME"),
+                ("rejection_note", "TEXT"),
+            ):
+                if col not in pay_cols:
+                    conn.execute(text(f"ALTER TABLE client_payments ADD COLUMN {col} {ddl}"))
+
+    if not insp.has_table("case_status_requests"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE case_status_requests (
+                        id INTEGER PRIMARY KEY,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        requested_by_user_id INTEGER NOT NULL REFERENCES users(id),
+                        from_status VARCHAR(32) NOT NULL,
+                        to_status VARCHAR(32) NOT NULL,
+                        reason TEXT NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                        reviewed_by_user_id INTEGER REFERENCES users(id),
+                        review_note TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        reviewed_at DATETIME
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_case_status_requests_case_id ON case_status_requests (case_id)")
+            )
+
+    if not insp.has_table("case_clinical_profiles"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE case_clinical_profiles (
+                        id INTEGER PRIMARY KEY,
+                        case_id INTEGER NOT NULL UNIQUE REFERENCES cases(id),
+                        history TEXT,
+                        diagnosis TEXT,
+                        strengths TEXT,
+                        interests TEXT,
+                        goals_summary TEXT,
+                        updated_by_user_id INTEGER REFERENCES users(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_case_clinical_profiles_case_id "
+                    "ON case_clinical_profiles (case_id)"
+                )
+            )
+
+    if not insp.has_table("observation_checklists"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE observation_checklists (
+                        id INTEGER PRIMARY KEY,
+                        case_id INTEGER NOT NULL UNIQUE REFERENCES cases(id),
+                        therapist_user_id INTEGER NOT NULL REFERENCES users(id),
+                        status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+                        section_responses_json TEXT,
+                        due_at DATE,
+                        due_rule VARCHAR(64),
+                        submitted_at DATETIME,
+                        reviewed_by_user_id INTEGER REFERENCES users(id),
+                        reviewer_comment TEXT,
+                        reviewed_at DATETIME,
+                        observation_report_id INTEGER REFERENCES observation_reports(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_observation_checklists_case_id "
+                    "ON observation_checklists (case_id)"
+                )
+            )
+
+    if not insp.has_table("iep_plans"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE iep_plans (
+                        id INTEGER PRIMARY KEY,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        version VARCHAR(32) NOT NULL DEFAULT 'v1',
+                        status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+                        sections_json TEXT,
+                        visibility_status VARCHAR(32) NOT NULL DEFAULT 'INTERNAL_ONLY',
+                        attachment_id INTEGER REFERENCES attachments(id),
+                        created_by_user_id INTEGER NOT NULL REFERENCES users(id),
+                        published_at DATETIME,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_iep_plans_case_id ON iep_plans (case_id)")
+            )
+
+
+def _sqlite_portal_indexes(conn_ctx=engine) -> None:
+    """Idempotent composite indexes for portal query hardening (SQLite dev/test)."""
+    if not settings.is_sqlite or not settings.is_development:
+        return
+    specs = [
+        ("ix_audit_events_case_id_created_id", "audit_events", "case_id, created_at, id"),
+        ("ix_audit_events_entity_type_id", "audit_events", "entity_type, entity_id"),
+        ("ix_audit_events_created_id", "audit_events", "created_at, id"),
+        ("ix_sessions_therapist_scheduled", "sessions", "therapist_user_id, scheduled_date"),
+        ("ix_sessions_therapist_status", "sessions", "therapist_user_id, status"),
+        ("ix_sessions_case_scheduled", "sessions", "case_id, scheduled_date"),
+        ("ix_monthly_reports_therapist_status", "monthly_reports", "therapist_user_id, status"),
+        ("ix_monthly_reports_case_month", "monthly_reports", "case_id, month"),
+        ("ix_therapist_slots_therapist_date_status", "therapist_slots", "therapist_user_id, slot_date, status"),
+        ("ix_therapist_slots_case_date_status", "therapist_slots", "case_id, slot_date, status"),
+        ("ix_attachments_case_entity_type", "attachments", "case_id, entity_type"),
+    ]
+    insp = inspect(conn_ctx)
+    with conn_ctx.begin() as conn:
+        for name, table, cols in specs:
+            if insp.has_table(table):
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({cols})"))

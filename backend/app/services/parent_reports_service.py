@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.attachment import Attachment
 from app.models.case import Case
 from app.models.document_comment import CommentType, DocumentComment, DocumentEntityType
-from app.models.report import MonthlyReport, ParentReviewStatus, ReportStatus
+from app.models.report import MonthlyReport, ObservationReport, ParentReviewStatus, ReportStatus
 from app.models.review import Review, ReviewDecision
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
@@ -24,11 +24,19 @@ def _parent_case_ids(db: Session, user_id: int) -> list[int]:
     return list(db.scalars(select(Case.id).where(Case.child_id.in_(child_ids))).all())
 
 
+def parent_can_see_observation(report: ObservationReport) -> bool:
+    if report.visibility_status not in PARENT_VISIBLE:
+        return False
+    return report.status == ReportStatus.PUBLISHED
+
+
 def parent_can_see_monthly(report: MonthlyReport) -> bool:
     if report.visibility_status not in PARENT_VISIBLE:
         return False
+    if report.status in (ReportStatus.DRAFT, ReportStatus.REJECTED):
+        return False
     if report.parent_review_status:
-        return True
+        return report.status in (ReportStatus.PUBLISHED, ReportStatus.UNDER_REVIEW)
     return report.status == ReportStatus.PUBLISHED
 
 
@@ -74,6 +82,81 @@ def _serialize_iep_list_item(att: Attachment, case: Case | None) -> dict:
         "fileName": att.file_name,
         "status": "acknowledged" if acknowledged else "pending",
         "issuedAt": att.created_at.isoformat() if att.created_at else None,
+    }
+
+
+def _serialize_observation_list_item(report: ObservationReport, case: Case | None) -> dict:
+    return {
+        "kind": "observation",
+        "id": str(report.id),
+        "caseId": case.case_code if case else "",
+        "caseDbId": report.case_id,
+        "childName": case.child.full_name if case and case.child else "",
+        "title": report.title,
+        "label": report.title,
+        "reportDate": report.report_date.isoformat() if report.report_date else None,
+        "status": "approved",
+        "summaryPreview": (report.content or "")[:120],
+        "category": report.category,
+    }
+
+
+def list_observation_for_case(db: Session, user: User, case_id: int) -> list[dict]:
+    case = parent_service.get_parent_case(db, user, case_id)
+    if not case:
+        raise ValueError("Case not found")
+    rows = db.scalars(select(ObservationReport).where(ObservationReport.case_id == case_id)).all()
+    return [_serialize_observation_list_item(r, case) for r in rows if parent_can_see_observation(r)]
+
+
+def get_observation_detail(db: Session, user: User, report_id: int) -> dict:
+    report = db.get(ObservationReport, report_id)
+    if not report or not parent_can_see_observation(report):
+        raise ValueError("Report not found")
+    case = parent_service.get_parent_case(db, user, report.case_id)
+    if not case:
+        raise ValueError("Report not found")
+    return {
+        "kind": "observation",
+        "id": str(report.id),
+        "caseId": case.case_code,
+        "caseDbId": case.id,
+        "childName": case.child.full_name if case.child else "",
+        "title": report.title,
+        "bodyHtml": report.body_html,
+        "content": report.content,
+        "planNextMonth": report.plan_next_month,
+        "reportDate": report.report_date.isoformat() if report.report_date else None,
+        "downloadPath": f"/api/v1/parent/reports/observation/{report.id}/download",
+        "status": "approved",
+        "createdAt": report.created_at.isoformat() if report.created_at else None,
+    }
+
+
+def case_reports_summary(db: Session, user: User, case_id: int) -> dict:
+    case = parent_service.get_parent_case(db, user, case_id)
+    if not case:
+        raise ValueError("Case not found")
+    monthly_rows = db.scalars(select(MonthlyReport).where(MonthlyReport.case_id == case_id)).all()
+    monthly_count = sum(1 for r in monthly_rows if parent_can_see_monthly(r))
+    obs_count = len(list_observation_for_case(db, user, case_id))
+    iep_count = len(
+        db.scalars(
+            select(Attachment).where(
+                Attachment.case_id == case_id,
+                Attachment.entity_type == "iep",
+                Attachment.visibility_status.in_(PARENT_VISIBLE),
+            )
+        ).all()
+    )
+    from app.services import case_document_service as case_doc_svc
+
+    doc_count = sum(1 for d in case_doc_svc.list_for_parent(db, user.id) if d.get("caseDbId") == case_id)
+    return {
+        "monthlyCount": monthly_count,
+        "observationCount": obs_count,
+        "iepCount": iep_count,
+        "documentsCount": doc_count,
     }
 
 

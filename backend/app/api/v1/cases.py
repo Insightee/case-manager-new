@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -15,8 +16,16 @@ from app.schemas.case import CaseCreate, CaseRead, CaseUpdate
 from app.schemas.pagination import PaginatedList
 from app.core.billing_validation import apply_billing_payload
 from app.services import address_service, case_code_service, case_service
+from app.services import case_status_request_service as csr_svc
+from app.services import observation_checklist_service as obs_svc
+from app.schemas.clinical import ClinicalProfileUpdate, ObservationChecklistSave
 
 router = APIRouter(prefix="/cases", tags=["cases"])
+
+
+class CaseStatusRequestCreate(BaseModel):
+    to_status: str = Field(min_length=3, max_length=32)
+    reason: str = Field(min_length=5)
 
 _SERVICE_ADDRESS_KEYS = frozenset(
     {
@@ -106,7 +115,7 @@ def create_case(
     log_audit(db, actor_user_id=user.id, action="create", entity_type="case", entity_id=case.id, new_value=payload.model_dump(), **meta)
     db.commit()
     db.refresh(case)
-    return CaseRead(**case_service.case_to_read(case))
+    return CaseRead(**case_service.case_to_read(case, db))
 
 
 @router.get("/{case_id}", response_model=CaseRead)
@@ -116,7 +125,7 @@ def get_case(case_id: int, user: User = Depends(get_current_user), db: Session =
         raise HTTPException(status_code=404, detail="Case not found")
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
-    return CaseRead(**case_service.case_to_read(case))
+    return CaseRead(**case_service.case_to_read(case, db))
 
 
 @router.patch("/{case_id}", response_model=CaseRead)
@@ -150,4 +159,119 @@ def update_case(
     log_audit(db, actor_user_id=user.id, action="update", entity_type="case", entity_id=case.id, old_value=old, new_value=payload.model_dump(exclude_unset=True), **meta)
     db.commit()
     db.refresh(case)
-    return CaseRead(**case_service.case_to_read(case))
+    return CaseRead(**case_service.case_to_read(case, db))
+
+
+@router.post("/{case_id}/status-requests", status_code=201)
+def create_case_status_request(
+    case_id: int,
+    payload: CaseStatusRequestCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Case access denied")
+    try:
+        req = csr_svc.create_request(db, user, case, payload.to_status, payload.reason)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="status_request",
+        entity_type="case_status_request",
+        entity_id=req.id,
+        case_id=case_id,
+        **meta,
+    )
+    db.commit()
+    return {
+        "id": req.id,
+        "fromStatus": req.from_status,
+        "toStatus": req.to_status,
+        "status": req.status.value.lower(),
+    }
+
+
+def _case_for_user(db: Session, user: User, case_id: int) -> Case:
+    case = case_service.get_case(db, case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+@router.get("/{case_id}/clinical-profile")
+def get_clinical_profile(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user(db, user, case_id)
+    profile = obs_svc.get_or_create_profile(db, case.id)
+    return obs_svc.profile_to_dict(profile)
+
+
+@router.patch("/{case_id}/clinical-profile")
+def update_clinical_profile(
+    case_id: int,
+    payload: ClinicalProfileUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user(db, user, case_id)
+    profile = obs_svc.update_profile(db, case, user, payload.model_dump(exclude_unset=True))
+    db.commit()
+    return obs_svc.profile_to_dict(profile)
+
+
+@router.get("/{case_id}/observation-checklist")
+def get_observation_checklist(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user(db, user, case_id)
+    checklist = obs_svc.get_or_create_checklist(db, case, user.id)
+    return obs_svc.checklist_to_dict(db, checklist, case, user)
+
+
+@router.put("/{case_id}/observation-checklist")
+def save_observation_checklist(
+    case_id: int,
+    payload: ObservationChecklistSave,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user(db, user, case_id)
+    try:
+        checklist = obs_svc.save_checklist(
+            db,
+            case,
+            user,
+            payload.responses,
+            sync_clinical_profile=payload.sync_clinical_profile,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return obs_svc.checklist_to_dict(db, checklist, case, user)
+
+
+@router.post("/{case_id}/observation-checklist/submit", status_code=200)
+def submit_observation_checklist(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user(db, user, case_id)
+    try:
+        checklist = obs_svc.submit_checklist(db, case, user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return obs_svc.checklist_to_dict(db, checklist, case, user)
