@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _normalize_database_url(url: str) -> str:
+    """Railway/Heroku often provide postgres:// without a SQLAlchemy driver."""
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg2://" + url[len("postgres://") :]
+    if url.startswith("postgresql://") and "+" not in url.split("://", 1)[0]:
+        return "postgresql+psycopg2://" + url[len("postgresql://") :]
+    return url
 
 
 class Settings(BaseSettings):
@@ -30,6 +40,13 @@ class Settings(BaseSettings):
     smtp_from: str = "noreply@insighte.com"
     smtp_tls: bool = True
     admin_notification_emails: str = ""
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return _normalize_database_url(value)
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:

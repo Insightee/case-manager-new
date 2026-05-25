@@ -11,7 +11,7 @@ from app.models.session import SessionMode, SessionStatus
 
 class SessionCreate(BaseModel):
     case_id: int
-    therapist_user_id: int
+    therapist_user_id: Optional[int] = None
     scheduled_date: date
     start_time: Optional[time] = None
     end_time: Optional[time] = None

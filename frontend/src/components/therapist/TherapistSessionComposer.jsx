@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { isToday, todayIso } from '../../lib/therapistSchedule.js'
@@ -40,6 +41,7 @@ export function TherapistSessionComposer({
   onManualSession,
   onError,
 }) {
+  const { user } = useAuth()
   const [mode, setMode] = useState('live')
   const [cases, setCases] = useState([])
   const [caseId, setCaseId] = useState(lockCaseId ? String(lockCaseId) : '')
@@ -119,7 +121,7 @@ export function TherapistSessionComposer({
         method: 'POST',
         body: JSON.stringify({
           case_id: selectedCaseId,
-          therapist_user_id: 0,
+          therapist_user_id: user?.id ?? 0,
           scheduled_date: today,
           start_time: walkInStart,
           end_time: walkInEnd,

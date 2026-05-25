@@ -3,12 +3,15 @@ from __future__ import annotations
 
 from sqlalchemy import inspect, text
 
+from app.core.config import settings
 from app.core.database import Base, engine
 import app.models  # noqa: F401
 
 
 def bootstrap_schema() -> None:
-    """Create tables on empty DB; run Alembic separately for incremental upgrades."""
+    """Create tables on empty SQLite dev DB only; production uses Alembic on Postgres."""
+    if not settings.is_sqlite:
+        return
     insp = inspect(engine)
     if not insp.has_table("users"):
         Base.metadata.create_all(bind=engine)

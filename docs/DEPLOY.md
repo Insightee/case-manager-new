@@ -16,7 +16,51 @@ This app is a **split deployment**: the React UI on Vercel and the FastAPI API o
 
 ## 1. Deploy the API (required for Vercel UI)
 
-Options: Railway, Render, Fly.io, or your own VM.
+Options: Railway (recommended below), Render, Fly.io, or your own VM.
+
+### Railway (Postgres + Docker API)
+
+1. In [Railway](https://railway.com), **New Project** → **Deploy from GitHub repo** → `Insightee/case-manager-new`.
+2. Add a **PostgreSQL** plugin to the project.
+3. Create a **service** for the API:
+   - **Root directory:** `backend` (monorepo — required)
+   - Build uses [`backend/railway.toml`](../backend/railway.toml) + [`backend/Dockerfile`](../backend/Dockerfile)
+   - Start command (set in `railway.toml`, or paste in the service **Start Command**):
+
+     ```bash
+     sh scripts/start-production.sh
+     ```
+
+     That script runs `alembic upgrade head`, `python -m app.seed.demo_seed`, then `uvicorn` on `$PORT`.
+
+4. **Variables** on the API service (reference Postgres plugin for `DATABASE_URL`):
+
+   | Variable | Value |
+   |----------|--------|
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (Railway reference) — auto-normalized to `postgresql+psycopg2` |
+   | `JWT_SECRET_KEY` | long random string |
+   | `JWT_REFRESH_SECRET_KEY` | different long random string |
+   | `APP_ENV` | `production` |
+   | `CORS_ORIGINS` | `https://frontend-omega-eight-92.vercel.app,http://localhost:5173` (add every Vercel preview URL you use) |
+   | `FRONTEND_URL` | `https://frontend-omega-eight-92.vercel.app` |
+
+   Redis is optional; refresh tokens fall back to in-memory if `REDIS_URL` is unset.
+
+5. **Networking** → **Generate domain** (e.g. `https://insightcase-api-production.up.railway.app`).
+6. Verify: `curl https://YOUR-RAILWAY-DOMAIN/health` → `{"status":"ok",...}`.
+7. **Vercel** → Project → Environment variables → `VITE_API_URL` = Railway URL (no trailing slash) → **Redeploy** frontend.
+
+**CLI (optional):** create a token at Railway → Account → Tokens, then:
+
+```bash
+export RAILWAY_TOKEN="<your-token>"
+cd backend
+npx @railway/cli link          # pick project
+npx @railway/cli up --detach
+npx @railway/cli domain
+```
+
+Do not commit tokens; revoke any token pasted into chat.
 
 **Minimum env vars:**
 

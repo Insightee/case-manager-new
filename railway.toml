@@ -1,0 +1,11 @@
+# Monorepo: GitHub deploys from repo root; API lives in backend/
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "backend/Dockerfile"
+watchPatterns = ["backend/**"]
+
+[deploy]
+startCommand = "sh scripts/start-production.sh"
+healthcheckPath = "/health"
+healthcheckTimeout = 180
+restartPolicyType = "ON_FAILURE"

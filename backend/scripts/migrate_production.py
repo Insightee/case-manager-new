@@ -1,0 +1,70 @@
+"""Apply schema on Railway Postgres.
+
+The initial Alembic revision bootstraps via SQLAlchemy ``create_all`` (current models).
+Incremental revisions are idempotent where possible; on greenfield DBs we stamp ``head``
+after bootstrap to avoid duplicate-column failures.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "alembic"))
+
+from alembic import command
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from sqlalchemy import inspect, text
+
+from app.core.config import settings
+from app.core.database import engine
+
+import app.models  # noqa: F401
+
+
+def _current_revision() -> str | None:
+    insp = inspect(engine)
+    if not insp.has_table("alembic_version"):
+        return None
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).first()
+    return row[0] if row else None
+
+
+def main() -> None:
+    cfg = Config("alembic.ini")
+    script = ScriptDirectory.from_config(cfg)
+    head = script.get_current_head()
+    insp = inspect(engine)
+
+    if not insp.has_table("users"):
+        print("Empty database — running bootstrap revision 70ed65093b89...")
+        command.upgrade(cfg, "70ed65093b89")
+        print(f"Stamping alembic head ({head}) after model bootstrap...")
+        command.stamp(cfg, head)
+        return
+
+    current = _current_revision()
+    if current == head:
+        print(f"Database already at head ({head}).")
+        return
+
+    print(f"Migrating {current or '(none)'} -> {head}...")
+    try:
+        command.upgrade(cfg, head)
+    except Exception as exc:
+        # Bootstrap revision may have already created full model schema.
+        if insp.has_table("cases") and "billing_type" in {c["name"] for c in insp.get_columns("cases")}:
+            print(f"Upgrade error ({exc!r}); stamping head because schema matches models.")
+            command.stamp(cfg, head)
+            return
+        raise
+
+
+if __name__ == "__main__":
+    if settings.is_sqlite:
+        command.upgrade(Config("alembic.ini"), "head")
+    else:
+        main()

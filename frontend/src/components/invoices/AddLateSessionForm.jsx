@@ -27,7 +27,7 @@ export function AddLateSessionForm({ caseId, month, onAdded, onCancel }) {
           session_date: sessionDate,
           start_time: `${startTime}:00`,
           end_time: `${endTime}:00`,
-          attendance_status: 'present',
+          attendance_status: 'PRESENT',
           activities_done: activities.trim() || null,
           observations: observations.trim() || null,
           late_reason: lateReason.trim(),

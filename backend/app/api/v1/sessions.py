@@ -135,7 +135,10 @@ def create_session(
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
     data = payload.model_dump()
-    if user_has_permission(user, "case.read.assigned") and not user_has_permission(user, "case.read.all"):
+    tid = data.get("therapist_user_id")
+    if not tid or tid == 0:
+        data["therapist_user_id"] = user.id
+    elif user_has_permission(user, "case.read.assigned") and not user_has_permission(user, "case.read.all"):
         data["therapist_user_id"] = user.id
     session = TherapySession(**data)
     db.add(session)
