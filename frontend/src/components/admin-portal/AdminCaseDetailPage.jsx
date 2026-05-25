@@ -10,12 +10,18 @@ import { StatusBadge } from './ui/index.js'
 import { AdminCaseReportsPanel } from './AdminCaseReportsPanel.jsx'
 import { AdminCaseCmMeetingsPanel } from './AdminCaseCmMeetingsPanel.jsx'
 import { AdminCaseSchedulingPanel } from './AdminCaseSchedulingPanel.jsx'
+import { CaseActivityPanel } from './CaseActivityPanel.jsx'
+import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
+import { IepBuilderPanel } from './IepBuilderPanel.jsx'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'activity', label: 'Activity' },
   { id: 'assignments', label: 'Assignments' },
   { id: 'logs', label: 'Session logs' },
   { id: 'reports', label: 'Reports' },
+  { id: 'iep', label: 'IEP builder', perm: 'iep.read' },
+  { id: 'documents', label: 'Documents' },
   { id: 'cm-meetings', label: 'CM meetings' },
   { id: 'billing', label: 'Billing', perm: 'case.update' },
   { id: 'scheduling', label: 'Scheduling', perm: 'slot.book_any' },
@@ -139,6 +145,8 @@ export function AdminCaseDetailPage() {
           </button>
         ))}
       </nav>
+
+      {tab === 'activity' && <CaseActivityPanel caseId={caseId} />}
 
       {tab === 'overview' && (
         <section className="admin-layout admin-layout--stack">
@@ -274,6 +282,12 @@ export function AdminCaseDetailPage() {
           highlightReportId={searchParams.get('reportId')}
           highlightType={searchParams.get('type')}
         />
+      )}
+
+      {tab === 'iep' && can('iep.read') && <IepBuilderPanel caseId={caseRow?.id || caseId} />}
+
+      {tab === 'documents' && (
+        <CaseDocumentsPanel caseId={Number(caseRow?.id || caseId)} variant="admin" />
       )}
 
       {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}

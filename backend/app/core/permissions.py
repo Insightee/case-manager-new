@@ -59,6 +59,8 @@ ALL_PERMISSIONS = [
     "slot.book_parent",
     "iep.read",
     "admin.view_only",
+    "case_document.create",
+    "case_document.review",
 ]
 
 ROLE_PERMISSIONS: dict[str, list[str]] = {
@@ -80,10 +82,13 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "slot.read",
         "slot.book_any",
         "leave.manage",
+        "user.manage",
+        "case_document.create",
+        "case_document.review",
     ],
+    # Team/region scope only — not case.read.all (see admin home scope tests).
     RoleName.CASE_MANAGER: [
         "case.read.team",
-        "case.read.all",
         "case.create",
         "case.update",
         "case.assign",
@@ -92,11 +97,14 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "session.create",
         "daily_log.review",
         "monthly_report.approve",
+        "iep.read",
         "invoice.approve",
         "attachment.manage",
         "ticket.manage",
         "slot.read",
         "slot.book_any",
+        "case_document.create",
+        "case_document.review",
     ],
     RoleName.VIEWER: [
         "case.read.scoped",
@@ -113,6 +121,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "monthly_report.approve",
         "incident.read_sensitive",
         "iep.read",
+        "case_document.review",
     ],
     RoleName.THERAPIST: [
         "case.read.assigned",
@@ -123,6 +132,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "monthly_report.create",
         "invoice.generate",
         "slot.book",
+        "case_document.create",
     ],
     RoleName.FINANCE: [
         "case.read.all",

@@ -14,6 +14,7 @@ class MeetingType(str, enum.Enum):
     CLIENT_ONLY = "CLIENT_ONLY"
     CLIENT_AND_THERAPIST = "CLIENT_AND_THERAPIST"
     SUPERVISION = "SUPERVISION"
+    IEP_MEETING = "IEP_MEETING"
 
 
 class MeetingStatus(str, enum.Enum):
