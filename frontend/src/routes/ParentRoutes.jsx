@@ -12,6 +12,7 @@ import { ClientBookAppointmentPage } from '../components/client-portal/ClientBoo
 import { ParentProfilePage } from '../components/client-portal/ParentProfilePage.jsx'
 import { ClientSessionLogsPage } from '../components/client-portal/ClientSessionLogsPage.jsx'
 import { ParentCaseDetailPage } from '../components/client-portal/ParentCaseDetailPage.jsx'
+import { NotificationCenterPage } from '../components/shared/NotificationCenterPage.jsx'
 
 function mapParentCases(cases) {
   return (cases || []).map((c) => ({
@@ -153,6 +154,7 @@ export function ParentRoutes() {
       <Route path="book" element={<ClientBookAppointmentPage cases={bootstrap.cases} />} />
       <Route path="session-logs" element={<ClientSessionLogsPage cases={bootstrap.cases} />} />
       <Route path="profile" element={<ParentProfilePage onProfileUpdated={reload} />} />
+      <Route path="notifications" element={<NotificationCenterPage portal="parent" />} />
       <Route path="support" element={<ClientSupportHubPage cases={bootstrap.cases} />} />
       <Route path="incidents" element={<Navigate to="/parent/support?tab=incidents" replace />} />
     </Routes>

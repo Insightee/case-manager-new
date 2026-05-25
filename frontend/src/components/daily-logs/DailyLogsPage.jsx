@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { queryKeys } from '../../lib/queryClient.js'
+import {
+  patchCachesAfterLogSave,
+  refreshTherapistLogDraftIds,
+} from '../../lib/therapistSessionLogCache.js'
+import { useTherapistSessionsWorkspace } from '../../hooks/useTherapistHome.js'
+import { QueryState } from '../shared/QueryState.jsx'
 import {
   actualDurationMinsIST,
   formatSessionActualRange,
@@ -13,7 +22,16 @@ import { isLogEditable } from '../../lib/sessionLogUtils.js'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
+import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
 import '../cases/my-cases.css'
+
+const LOG_TABS = [
+  { id: 'needs', label: 'Needs log' },
+  { id: 'pending', label: 'Pending review' },
+  { id: 'approved', label: 'Approved' },
+  { id: 'rejected', label: 'Rejected' },
+  { id: 'all', label: 'All logs' },
+]
 
 function formatTime(t) {
   if (!t) return '—'
@@ -32,57 +50,72 @@ function formatDuration(startIso, tick) {
 }
 
 export function DailyLogsPage() {
-  const [upcoming, setUpcoming] = useState([])
-  const [active, setActive] = useState(null)
-  const [logs, setLogs] = useState([])
-  const [needsLog, setNeedsLog] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [searchParams] = useSearchParams()
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const therapistId = user?.id
+  const { data: workspace, isLoading: wsLoading } = useTherapistSessionsWorkspace()
+  const logsQuery = useQuery({
+    queryKey: queryKeys.therapistDailyLogs(therapistId),
+    queryFn: () =>
+      apiFetch(
+        therapistId
+          ? `/api/v1/daily-logs?therapist_user_id=${therapistId}`
+          : '/api/v1/daily-logs',
+      ),
+    enabled: therapistId != null,
+  })
+  const upcoming = workspace?.upcoming || []
+  const active = workspace?.active_session || null
+  const needsLog = workspace?.needs_log || []
+  const bookedSlots = workspace?.booked_slots || []
+  const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
+  const loading = wsLoading || logsQuery.isLoading
   const [tick, setTick] = useState(Date.now())
+  const [draftIds, setDraftIds] = useState(new Set())
   const [logSession, setLogSession] = useState(null)
   const [editingLog, setEditingLog] = useState(null)
   const [logRequired, setLogRequired] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [bookedSlots, setBookedSlots] = useState([])
+  const [logTab, setLogTab] = useState('needs')
+  const [viewingLog, setViewingLog] = useState(null)
   const logPanelRef = useRef(null)
 
-  const loadAll = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) {
-      setLoading(true)
-      setError('')
-    }
-    try {
-      const today = new Date()
-      const from = today.toISOString().slice(0, 10)
-      const toDate = new Date(today)
-      toDate.setDate(toDate.getDate() + 90)
-      const to = toDate.toISOString().slice(0, 10)
+  const pendingLogs = useMemo(
+    () => logs.filter((l) => l.approval_status === 'PENDING'),
+    [logs],
+  )
+  const approvedLogs = useMemo(
+    () => logs.filter((l) => l.approval_status === 'APPROVED'),
+    [logs],
+  )
+  const rejectedLogs = useMemo(
+    () => logs.filter((l) => l.approval_status === 'REJECTED'),
+    [logs],
+  )
 
-      const [up, act, allLogs, allSessions, slots] = await Promise.all([
-        apiFetch('/api/v1/sessions/upcoming?days=14'),
-        apiFetch('/api/v1/sessions/active').catch(() => null),
-        apiFetch('/api/v1/daily-logs'),
-        apiFetch('/api/v1/sessions?page_size=100'),
-        apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`),
-      ])
-      setUpcoming(Array.isArray(up) ? up : unwrapList(up))
-      setBookedSlots(unwrapList(slots))
-      setActive(act || null)
-      setLogs(Array.isArray(allLogs) ? allLogs : unwrapList(allLogs))
-      const completedNoLog = unwrapList(allSessions).filter(
-        (s) => s.status === 'COMPLETED' && !s.has_daily_log,
-      )
-      setNeedsLog(completedNoLog)
-    } catch (err) {
-      setError(err.message || 'Could not load sessions')
-    } finally {
-      setLoading(false)
-    }
+  const syncDraftIds = useCallback(async () => {
+    const ids = await refreshTherapistLogDraftIds()
+    setDraftIds(ids)
   }, [])
 
+  const loadAll = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setError('')
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.therapistWorkspace }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.therapistDailyLogs(therapistId) }),
+      ])
+      await syncDraftIds()
+    } catch (err) {
+      setError(err.message || 'Could not load sessions')
+    }
+  }, [queryClient, therapistId, syncDraftIds])
+
   useEffect(() => {
-    loadAll()
+    loadAll({ silent: true })
   }, [loadAll])
 
   useEffect(() => {
@@ -97,18 +130,112 @@ export function DailyLogsPage() {
     }
   }, [logSession?.id, editingLog?.id])
 
-  function openLogForm(session, { required = false, log = null } = {}) {
+  function openLogForm(session, { required = false, log = null, readOnly = false } = {}) {
     setError('')
+    setViewingLog(null)
+    if (readOnly && log) {
+      setLogSession(null)
+      setEditingLog(null)
+      setLogRequired(false)
+      setViewingLog({ log, session })
+      setSuccess('')
+      return
+    }
     setLogSession(session)
     setEditingLog(log)
     setLogRequired(required)
     setSuccess('')
   }
 
+  useEffect(() => {
+    const sessionId = searchParams.get('session')
+    if (!sessionId || loading) return
+    const sid = Number(sessionId)
+    const match =
+      needsLog.find((s) => s.id === sid) ||
+      upcoming.find((s) => s.id === sid) ||
+      (active?.id === sid ? active : null)
+    if (match) openLogForm(match, { required: false })
+  }, [searchParams, loading, needsLog, upcoming, active])
+
   function closeLogForm() {
     setLogSession(null)
     setEditingLog(null)
     setLogRequired(false)
+    setViewingLog(null)
+  }
+
+  function renderLogRow(l, { allowEdit = false, allowView = false } = {}) {
+    const canEdit = allowEdit && isLogEditable(l)
+    const timeRange = formatSessionActualRange({
+      actual_start_at: l.actual_start_at,
+      actual_end_at: l.actual_end_at,
+    })
+    return (
+      <div key={l.id} className="ic-session-log-recent__row">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="ic-session-log-recent__title">
+            {l.child_name || l.case_code}
+            {l.scheduled_date ? <> · {l.scheduled_date}</> : null}
+          </p>
+          {timeRange ? <p className="ic-session-log-recent__times">Actual: {timeRange}</p> : null}
+          <SessionLogStatusBadge
+            approvalStatus={l.approval_status}
+            attendanceStatus={l.attendance_status}
+          />
+          {l.late_addition ? (
+            <span className="ic-session-log-recent__meta">Late submission</span>
+          ) : null}
+          {l.case_id ? (
+            <span className="ic-session-log-recent__meta">
+              <Link to={`/therapist/cases/${l.case_id}`}>Open case</Link>
+            </span>
+          ) : null}
+        </div>
+        {canEdit ? (
+          <button
+            type="button"
+            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
+            onClick={() =>
+              openLogForm(
+                {
+                  id: l.session_id,
+                  scheduled_date: l.scheduled_date,
+                  actual_start_at: l.actual_start_at,
+                  actual_end_at: l.actual_end_at,
+                  case_code: l.case_code,
+                  child_name: l.child_name,
+                },
+                { log: l },
+              )
+            }
+          >
+            Edit (24h)
+          </button>
+        ) : null}
+        {allowView && !canEdit ? (
+          <button
+            type="button"
+            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
+            onClick={() =>
+              openLogForm(
+                {
+                  id: l.session_id,
+                  scheduled_date: l.scheduled_date,
+                  actual_start_at: l.actual_start_at,
+                  actual_end_at: l.actual_end_at,
+                  case_code: l.case_code,
+                  child_name: l.child_name,
+                },
+                { log: l, readOnly: true },
+              )
+            }
+          >
+            View log
+          </button>
+        ) : null}
+      </div>
+    )
   }
 
   async function getGeoCoords() {
@@ -130,7 +257,7 @@ export function DailyLogsPage() {
         method: 'POST',
         body: JSON.stringify(pos ? { lat: pos.lat, lng: pos.lng } : {}),
       })
-      await loadAll({ silent: true })
+      void loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not start session')
     }
@@ -145,7 +272,7 @@ export function DailyLogsPage() {
         body: JSON.stringify(pos ? { lat: pos.lat, lng: pos.lng } : {}),
       })
       openLogForm(ended, { required: true })
-      await loadAll({ silent: true })
+      void loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not end session')
     }
@@ -193,7 +320,7 @@ export function DailyLogsPage() {
         }
       }
       openLogForm(session, { required: true })
-      await loadAll({ silent: true })
+      void loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not add session')
     } finally {
@@ -201,7 +328,7 @@ export function DailyLogsPage() {
     }
   }
 
-  const showComposer = !logSession && !active
+  const showComposer = !logSession && !viewingLog && !active
 
   if (loading && !logSession) {
     return <p style={{ padding: 24, color: '#6b7280' }}>Loading session logs…</p>
@@ -266,6 +393,18 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
+      {viewingLog ? (
+        <section ref={logPanelRef} style={{ marginBottom: 24 }}>
+          <SessionLogReadOnly
+            log={viewingLog.log}
+            session={viewingLog.session}
+            childName={viewingLog.log.child_name}
+            caseCode={viewingLog.log.case_code}
+            onClose={closeLogForm}
+          />
+        </section>
+      ) : null}
+
       {logSession ? (
         <section ref={logPanelRef} style={{ marginBottom: 24 }}>
           <SubmitSessionLogForm
@@ -274,10 +413,16 @@ export function DailyLogsPage() {
             caseCode={logSession.case_code}
             childName={logSession.child_name}
             required={logRequired && !editingLog}
-            onSuccess={async () => {
+            onSuccess={(savedLog) => {
               setSuccess(editingLog ? 'Session log updated.' : 'Session log submitted — pending admin review.')
               closeLogForm()
-              await loadAll({ silent: true })
+              patchCachesAfterLogSave({
+                userId: therapistId,
+                sessionId: logSession?.id,
+                savedLog,
+                isEdit: Boolean(editingLog),
+              })
+              void syncDraftIds()
             }}
             onCancel={closeLogForm}
           />
@@ -289,7 +434,7 @@ export function DailyLogsPage() {
           upcomingSessions={upcoming}
           bookedSlots={bookedSlots}
           disabled={!!active}
-          onSessionStarted={() => loadAll({ silent: true })}
+          onSessionStarted={() => void loadAll({ silent: true })}
           onManualSession={handleManualSession}
           onError={setError}
         />
@@ -413,65 +558,100 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
-      <section>
-        <h3 className="ic-section-head__title">Recent logs</h3>
-        {logs.length === 0 ? (
-          <p style={{ color: '#9ca3af' }}>No logs submitted yet.</p>
-        ) : (
-          <div className="ic-session-log-recent">
-            {logs.slice(0, 10).map((l) => {
-              const canEdit = isLogEditable(l)
-              const timeRange = formatSessionActualRange({
-                actual_start_at: l.actual_start_at,
-                actual_end_at: l.actual_end_at,
-              })
-              return (
-                <div key={l.id} className="ic-session-log-recent__row">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p className="ic-session-log-recent__title">
-                      {l.child_name || l.case_code}
-                      {l.scheduled_date ? <> · {l.scheduled_date}</> : null}
-                    </p>
-                    {timeRange ? <p className="ic-session-log-recent__times">Actual: {timeRange}</p> : null}
-                    <SessionLogStatusBadge
-                      approvalStatus={l.approval_status}
-                      attendanceStatus={l.attendance_status}
-                    />
-                    {l.late_addition ? (
-                      <span className="ic-session-log-recent__meta">Late submission</span>
-                    ) : null}
-                    {l.case_id ? (
-                      <span className="ic-session-log-recent__meta">
-                        <Link to={`/therapist/cases/${l.case_id}`}>Open case</Link>
-                      </span>
-                    ) : null}
-                  </div>
-                  {canEdit ? (
+      <section className="ic-session-log-tabs-section">
+        <div className="ic-session-log-tabs" role="tablist" aria-label="Session log lists">
+          {LOG_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={logTab === t.id}
+              className={`ic-session-log-tabs__btn${logTab === t.id ? ' is-active' : ''}`}
+              onClick={() => setLogTab(t.id)}
+            >
+              {t.label}
+              {t.id === 'needs' && needsLog.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{needsLog.length}</span>
+              ) : null}
+              {t.id === 'pending' && pendingLogs.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{pendingLogs.length}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+
+        <div className="ic-session-log-tab-panel" role="tabpanel">
+          {logTab === 'needs' ? (
+            needsLog.length === 0 ? (
+              <p className="ic-empty-hint">No sessions waiting for a log.</p>
+            ) : (
+              <div className="ic-session-log-recent">
+                {needsLog.map((s) => (
+                  <div key={s.id} className="ic-session-log-recent__row">
+                    <div style={{ flex: 1 }}>
+                      <p className="ic-session-log-recent__title">
+                        {s.child_name || s.case_code} · {s.scheduled_date}
+                      </p>
+                      <span className="ic-session-log-recent__meta">Completed — log required</span>
+                    </div>
                     <button
                       type="button"
-                      className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
-                      onClick={() =>
-                        openLogForm(
-                          {
-                            id: l.session_id,
-                            scheduled_date: l.scheduled_date,
-                            actual_start_at: l.actual_start_at,
-                            actual_end_at: l.actual_end_at,
-                            case_code: l.case_code,
-                            child_name: l.child_name,
-                          },
-                          { log: l },
-                        )
-                      }
+                      className="ic-btn ic-btn--primary"
+                      onClick={() => openLogForm(s, { required: true })}
                     >
-                      Edit (24h)
+                      Write log
                     </button>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        )}
+                  </div>
+                ))}
+              </div>
+            )
+          ) : null}
+
+          {logTab === 'pending' ? (
+            pendingLogs.length === 0 ? (
+              <p className="ic-empty-hint">No logs pending admin review.</p>
+            ) : (
+              <div className="ic-session-log-recent">
+                {pendingLogs.map((l) => renderLogRow(l, { allowEdit: true }))}
+              </div>
+            )
+          ) : null}
+
+          {logTab === 'approved' ? (
+            approvedLogs.length === 0 ? (
+              <p className="ic-empty-hint">No approved logs yet.</p>
+            ) : (
+              <div className="ic-session-log-recent">
+                {approvedLogs.map((l) => renderLogRow(l, { allowView: true }))}
+              </div>
+            )
+          ) : null}
+
+          {logTab === 'rejected' ? (
+            rejectedLogs.length === 0 ? (
+              <p className="ic-empty-hint">No rejected logs.</p>
+            ) : (
+              <div className="ic-session-log-recent">
+                {rejectedLogs.map((l) => renderLogRow(l, { allowView: true }))}
+              </div>
+            )
+          ) : null}
+
+          {logTab === 'all' ? (
+            logs.length === 0 ? (
+              <p className="ic-empty-hint">No logs submitted yet.</p>
+            ) : (
+              <div className="ic-session-log-recent">
+                {logs.map((l) =>
+                  renderLogRow(l, {
+                    allowEdit: l.approval_status === 'PENDING',
+                    allowView: l.approval_status !== 'PENDING' || !isLogEditable(l),
+                  }),
+                )}
+              </div>
+            )
+          ) : null}
+        </div>
       </section>
     </div>
   )

@@ -200,6 +200,57 @@ function AdminIepUploadPanel({ onUploaded }) {
   )
 }
 
+function StructuredIepPlansPanel() {
+  const [plans, setPlans] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [statusFilter, setStatusFilter] = useState('DRAFT')
+
+  useEffect(() => {
+    setLoading(true)
+    const qs = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : ''
+    apiFetch(`/api/v1/admin/iep/plans${qs}`)
+      .then(setPlans)
+      .catch(() => setPlans([]))
+      .finally(() => setLoading(false))
+  }, [statusFilter])
+
+  return (
+    <AdminPanel title="Structured IEP plans (builder)" subtitle="Draft and shared plans created in the case IEP tab.">
+      <div className="admin-toolbar" style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <select className="admin-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ maxWidth: 200 }}>
+          <option value="">All statuses</option>
+          <option value="DRAFT">Draft</option>
+          <option value="SHARED_WITH_PARENT">Shared with parent</option>
+        </select>
+      </div>
+      {loading ? (
+        <div className="admin-skeleton" />
+      ) : plans.length === 0 ? (
+        <AdminEmptyState title="No structured plans" description="Open a case and use the IEP builder tab to create a plan." />
+      ) : (
+        <ul className="admin-queue">
+          {plans.map((p) => (
+            <li key={p.id} className="admin-queue__item">
+              <div>
+                <p className="admin-queue__title">
+                  {p.child_name} · {p.case_code}
+                </p>
+                <p className="admin-queue__meta">
+                  {p.version} · {p.status}
+                  {p.updated_at ? ` · ${p.updated_at.slice(0, 10)}` : ''}
+                </p>
+              </div>
+              <Link to={`/admin/cases/${p.case_id}?tab=iep`} className="admin-btn admin-btn--ghost admin-btn--sm">
+                Open builder
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </AdminPanel>
+  )
+}
+
 export function AdminIepPage() {
   const [tab, setTab] = useState('dashboard')
   const [dashboard, setDashboard] = useState(null)
@@ -281,6 +332,13 @@ export function AdminIepPage() {
           onClick={() => setTab('dashboard')}
         >
           Status dashboard
+        </button>
+        <button
+          type="button"
+          className={`admin-btn admin-btn--sm ${tab === 'plans' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+          onClick={() => setTab('plans')}
+        >
+          Structured plans
         </button>
         <button
           type="button"
@@ -451,6 +509,8 @@ export function AdminIepPage() {
             </div>
           </AdminPanel>
         </>
+      ) : tab === 'plans' ? (
+        <StructuredIepPlansPanel />
       ) : (
         <AdminIepUploadPanel onUploaded={loadDashboard} />
       )}

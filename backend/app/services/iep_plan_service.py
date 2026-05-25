@@ -225,6 +225,41 @@ def share_plan_with_parent(db: Session, plan: IepPlan, user: User) -> IepPlan:
     return plan
 
 
+def list_plans_scoped(
+    db: Session,
+    user,
+    *,
+    status=None,
+    limit: int = 50,
+) -> list[dict]:
+    from app.services.admin_scope_service import apply_case_scope
+
+    stmt = (
+        select(IepPlan, Case, Child)
+        .join(Case, IepPlan.case_id == Case.id)
+        .outerjoin(Child, Case.child_id == Child.id)
+        .order_by(IepPlan.updated_at.desc())
+        .limit(limit)
+    )
+    if status:
+        stmt = stmt.where(IepPlan.status == status)
+    stmt = apply_case_scope(stmt, user)
+    rows = db.execute(stmt).all()
+    return [
+        {
+            "id": p.id,
+            "case_id": p.case_id,
+            "case_code": case.case_code if case else None,
+            "child_name": child.full_name if child else None,
+            "version": p.version,
+            "status": p.status,
+            "visibility_status": p.visibility_status,
+            "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+        }
+        for p, case, child in rows
+    ]
+
+
 def list_plans_for_case(db: Session, case_id: int) -> list[dict]:
     rows = db.scalars(select(IepPlan).where(IepPlan.case_id == case_id).order_by(IepPlan.id.desc())).all()
     case = case_service.get_case(db, case_id)

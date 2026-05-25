@@ -1,5 +1,8 @@
+import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useParentDashboardStats } from '../../hooks/useParentDashboardStats.js'
+import { useParentHome } from '../../hooks/useParentHome.js'
+import { QueryState } from '../shared/QueryState.jsx'
+import './parent-dashboard.css'
 
 function fmt(dateStr) {
   if (!dateStr) return ''
@@ -207,34 +210,23 @@ function ActionAlertsBanner({ billingSummary, pendingIepCount }) {
           <Link
             key={a.key}
             to={a.link}
+            className="parent-action-alert card"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
               background: a.bg,
               border: `1px solid ${a.border}`,
               borderRadius: 12,
               padding: '10px 14px',
-              textDecoration: 'none',
-              cursor: 'pointer',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-              <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>{a.icon}</span>
-              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: a.textColor, lineHeight: 1.4 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0, flex: '1 1 auto' }}>
+              <span style={{ fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>
+                {a.icon}
+              </span>
+              <span className="parent-action-alert__message" style={{ color: a.textColor }}>
                 {a.message}
               </span>
             </div>
-            <span
-              style={{
-                flexShrink: 0,
-                fontSize: '0.8rem',
-                fontWeight: 700,
-                color: a.iconColor,
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <span className="parent-action-alert__cta" style={{ color: a.iconColor }}>
               {a.linkLabel} →
             </span>
           </Link>
@@ -255,38 +247,103 @@ export function ClientDashboardPage({
   onMarkRead,
   onMarkNotificationRead,
 }) {
-  const { stats, loading: statsLoading } = useParentDashboardStats()
-  const pendingIepCount = (iepItems || []).filter((item) => item.status === 'pending').length
+  const { data: home, isLoading: homeLoading, isError, error, refetch } = useParentHome()
+  const stats = home?.stats
+  const homeCases = useMemo(() => {
+    if (!home?.cases?.length) return cases || []
+    return home.cases.map((c) => ({
+      id: c.id,
+      caseId: c.caseId,
+      childName: c.childName,
+      serviceType: c.serviceType,
+      therapist: c.therapistName || '—',
+      caseManager: c.caseManagerName || '—',
+      latestApprovedReportMonth: c.latestApprovedReportMonth || '—',
+    }))
+  }, [home, cases])
+  const recentUpdates = home?.recent_updates || []
+  const highlight = homeCases?.[0]?.session_highlight
+  const childLabel = homeCases?.[0]?.childName
+  const pendingIepCount =
+    stats?.pending_iep ?? (iepItems || []).filter((item) => item.status === 'pending').length
   const handleMarkRead = onMarkRead || onMarkNotificationRead
 
   return (
     <>
+      <QueryState
+        isLoading={homeLoading}
+        isError={isError}
+        error={error}
+        onRetry={() => refetch()}
+      >
+      {highlight ? (
+        <section className="parent-home-hero card" style={{ marginBottom: 20, padding: 20 }}>
+          <p className="parent-home-hero__eyebrow">
+            This week{childLabel ? ` with ${childLabel}` : ''}
+          </p>
+          <h2 style={{ margin: '0 0 8px', fontSize: '1.25rem' }}>{highlight.headline}</h2>
+          {highlight.summary_paragraph ? (
+            <p style={{ margin: 0, color: '#475569', lineHeight: 1.5 }}>{highlight.summary_paragraph}</p>
+          ) : null}
+          {highlight.what_is_next ? (
+            <p style={{ margin: '12px 0 0', fontSize: '0.875rem' }}>
+              <strong>What’s next:</strong> {highlight.what_is_next}
+            </p>
+          ) : null}
+          <Link to="/parent/session-logs" style={{ display: 'inline-block', marginTop: 12, fontWeight: 600 }}>
+            All session updates →
+          </Link>
+        </section>
+      ) : null}
+
+      {recentUpdates.length > 0 ? (
+        <section style={{ marginBottom: 20 }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 4px' }}>Recent updates</h2>
+          <ul className="parent-update-list">
+            {recentUpdates.map((u) => (
+              <li key={u.id} className="card parent-update-list__item">
+                <div className="parent-update-list__headline">{u.headline}</div>
+                <p className="parent-update-list__meta">
+                  {u.child_name} · {u.attendance_label}
+                </p>
+                {u.summary_paragraph ? (
+                  <p className="parent-update-list__body">{u.summary_paragraph}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      </QueryState>
+
       <ActionAlertsBanner billingSummary={billingSummary} pendingIepCount={pendingIepCount} />
 
       <UpcomingSessionsStrip appointments={appointments} />
 
-      {!statsLoading && stats ? (
+      {stats ? (
         <section className="therapist-dashboard-stats" aria-label="Family summary" style={{ marginBottom: 20 }}>
           <ul className="therapist-dashboard-stats__grid">
             <li>
-              <strong>{stats.caseCount}</strong>
+              <strong>{stats.case_count}</strong>
               <span>Active cases</span>
             </li>
             <li>
               <Link to="/parent/session-logs">
-                <strong>{stats.sessionUpdates}</strong>
-                <span>Session updates</span>
+                <strong>{recentUpdates.length}</strong>
+                <span>Recent updates</span>
               </Link>
             </li>
             <li>
               <Link to="/parent/reports?type=iep">
-                <strong>{stats.pendingIep}</strong>
+                <strong>{stats.pending_iep}</strong>
                 <span>IEP pending</span>
               </Link>
             </li>
             <li>
-              <strong>{stats.unreadNotifications}</strong>
-              <span>Unread alerts</span>
+              <Link to="/parent/notifications">
+                <strong>{stats.unread_notifications}</strong>
+                <span>Unread alerts</span>
+              </Link>
             </li>
           </ul>
         </section>
@@ -295,7 +352,7 @@ export function ClientDashboardPage({
       <section className="kpi-grid">
         <article className="card kpi-card">
           <p className="kpi-title">Active Cases</p>
-          <p className="kpi-value">{(cases || []).length}</p>
+          <p className="kpi-value">{(homeCases || []).length}</p>
           <p className="kpi-meta">Mapped to your account only</p>
         </article>
         <article className="card kpi-card">
@@ -316,7 +373,7 @@ export function ClientDashboardPage({
             <h3>Your Active Cases</h3>
           </div>
           <ul className="log-list">
-            {(cases || []).map((item) => (
+            {(homeCases || []).map((item) => (
               <li key={item.id}>
                 <div>
                   <p>

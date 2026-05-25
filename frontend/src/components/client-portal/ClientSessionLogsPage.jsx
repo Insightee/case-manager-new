@@ -93,25 +93,36 @@ function SessionCard({ log, onSaved, onDispute }) {
             {localLog.start_time && localLog.end_time ? ` · ${localLog.start_time}–${localLog.end_time}` : ''}
           </p>
         </div>
-        <span className="session-card__badge">{localLog.attendance_status}</span>
+        <span className="session-card__badge">
+          {localLog.attendance_label || localLog.attendance_status}
+        </span>
       </header>
 
-      {localLog.activities_done ? (
+      {localLog.headline ? (
+        <h4 className="session-card__headline">{localLog.headline}</h4>
+      ) : null}
+      {localLog.summary_paragraph ? (
+        <p className="session-card__summary">{localLog.summary_paragraph}</p>
+      ) : null}
+      {localLog.what_we_did ? (
         <p className="session-card__block">
-          <strong>Activities:</strong> {localLog.activities_done}
+          <strong>What we did:</strong> {localLog.what_we_did}
+        </p>
+      ) : localLog.activities_done ? (
+        <p className="session-card__block">
+          <strong>What we did:</strong> {localLog.activities_done}
         </p>
       ) : null}
-      {localLog.goals_addressed ? (
+      {localLog.what_is_next ? (
         <p className="session-card__block">
-          <strong>Goals:</strong> {localLog.goals_addressed}
+          <strong>What’s next:</strong> {localLog.what_is_next}
+        </p>
+      ) : localLog.follow_ups ? (
+        <p className="session-card__block">
+          <strong>What’s next:</strong> {localLog.follow_ups}
         </p>
       ) : null}
-      {localLog.follow_ups ? (
-        <p className="session-card__block">
-          <strong>Follow-ups:</strong> {localLog.follow_ups}
-        </p>
-      ) : null}
-      {localLog.parent_notes ? (
+      {!localLog.summary_paragraph && localLog.parent_notes ? (
         <div className="session-card__therapist-note">
           <strong>From your therapist</strong>
           <p style={{ margin: '6px 0 0' }}>{localLog.parent_notes}</p>

@@ -117,6 +117,6 @@ def allot_case(
         case.status = CaseStatus.ACTIVE
     db.flush()
     return {
-        "case": case_service.case_to_read(case),
+        "case": case_service.case_to_read(case, db),
         "assignment_id": assignment.id,
     }

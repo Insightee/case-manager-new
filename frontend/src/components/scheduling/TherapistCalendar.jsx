@@ -22,6 +22,7 @@ export function TherapistCalendar({
   refreshKey = 0,
   onScheduleContext,
   onCalendarLoad,
+  focusDate,
 }) {
   const [view, setView] = useState(() => 'week')
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
@@ -54,6 +55,17 @@ export function TherapistCalendar({
   useEffect(() => {
     onScheduleContext?.({ weekStart: scheduleWeekStart })
   }, [onScheduleContext, scheduleWeekStart])
+
+  useEffect(() => {
+    if (!focusDate) return
+    const d = new Date(`${focusDate}T12:00:00`)
+    if (Number.isNaN(d.getTime())) return
+    d.setHours(0, 0, 0, 0)
+    setWeekStart(startOfWeek(d))
+    setDayDate(d)
+    setMonthDate(startOfMonth(d))
+    setView('week')
+  }, [focusDate])
 
   const [calendar, setCalendar] = useState(null)
   const [loading, setLoading] = useState(true)

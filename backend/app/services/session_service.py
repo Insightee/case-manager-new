@@ -86,6 +86,10 @@ def start_session(
     if lng is not None:
         session.checkin_lng = lng
     db.flush()
+    if session.case_id:
+        from app.services.invite_on_start_service import ensure_parent_portal_invite_for_case
+
+        ensure_parent_portal_invite_for_case(db, session.case_id, therapist_user_id)
     return session
 
 

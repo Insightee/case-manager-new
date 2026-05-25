@@ -3,6 +3,7 @@ import {
   PARENT_SLOT_STYLES,
   THERAPIST_STATUS_STYLES,
   addDays,
+  calendarGridEvents,
   dateStr,
   defaultHourRows,
   startOfWeek,
@@ -38,8 +39,8 @@ export function WeekCalendarGrid({
   const hours = defaultHourRows()
   const today = dateStr(new Date())
   const slotsByDayHour = useMemo(
-    () => groupSlotsByDayHour(calendar?.slots),
-    [calendar?.slots],
+    () => groupSlotsByDayHour(calendarGridEvents(calendar)),
+    [calendar],
   )
 
   return (
@@ -146,9 +147,11 @@ export function WeekCalendarGrid({
                             ? s.is_mine
                               ? `My session · ${s.start_time}`
                               : `Available · ${s.start_time}`
-                            : s.status === 'BOOKED'
-                              ? `${s.approval_status === 'PENDING_THERAPIST' ? '⏳ ' : ''}${s.booking_source === 'PARENT' ? 'Parent · ' : ''}${s.child_name || s.case_code || 'Booked'}`
-                              : `${s.start_time}–${s.end_time}`
+                            : s.event_type === 'session'
+                              ? `${s.status === 'IN_PROGRESS' ? 'In progress · ' : 'Session · '}${s.child_name || s.case_code || 'Visit'}`
+                              : s.status === 'BOOKED'
+                                ? `${s.approval_status === 'PENDING_THERAPIST' ? '⏳ ' : ''}${s.booking_source === 'PARENT' ? 'Parent · ' : ''}${s.child_name || s.case_code || 'Booked'}`
+                                : `${s.start_time}–${s.end_time}`
                           return (
                             <button
                               key={s.id}

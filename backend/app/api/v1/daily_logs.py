@@ -28,6 +28,14 @@ def _log_case_scope(db: Session, user: User, log) -> None:
         raise HTTPException(status_code=403, detail="Case access denied")
 
 
+def _therapist_lists_own_logs_only(user: User) -> bool:
+    if RoleName.THERAPIST.value not in user.role_names:
+        return False
+    if user_has_permission(user, "daily_log.review") or user_has_permission(user, "case.read.all"):
+        return False
+    return user_has_permission(user, "daily_log.create")
+
+
 @router.get("")
 def list_daily_logs(
     therapist_user_id: Optional[int] = None,
@@ -43,19 +51,25 @@ def list_daily_logs(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     if user_has_permission(user, "session.read") and not user_has_feature(user, "session_logs") and not user_has_permission(user, "daily_log.create"):
         raise HTTPException(status_code=403, detail="Session logs module access required")
+    own_logs_only = _therapist_lists_own_logs_only(user)
+    if therapist_user_id is None and own_logs_only:
+        therapist_user_id = user.id
     logs = log_service.list_logs(db, therapist_user_id=therapist_user_id, case_id=case_id, month=month, product_module=product_module)
     if approval_status is not None:
         logs = [l for l in logs if l.approval_status == approval_status]
     if late_addition is not None:
         logs = [l for l in logs if bool(l.late_addition) == late_addition]
-    scoped = []
-    for log in logs:
-        if not log.session:
-            continue
-        case = case_service.get_case(db, log.session.case_id)
-        if case and case_scope_check(db, user, case):
-            scoped.append(log)
-    logs = scoped
+    if own_logs_only and therapist_user_id == user.id:
+        logs = [l for l in logs if l.session]
+    else:
+        scoped = []
+        for log in logs:
+            if not log.session:
+                continue
+            case = case_service.get_case(db, log.session.case_id)
+            if case and case_scope_check(db, user, case):
+                scoped.append(log)
+        logs = scoped
     is_finance = RoleName.FINANCE.value in user.role_names and RoleName.SUPER_ADMIN.value not in user.role_names
     if is_finance:
         return [DailyLogFinanceRead(**log_service.log_to_read(l, include_clinical=False)) for l in logs]

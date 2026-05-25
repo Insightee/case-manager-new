@@ -28,8 +28,12 @@ PRODUCT_MODULES: tuple[ProductModule, ...] = (
         features=(
             ModuleFeature("cases", "Cases & assignments", ("case.read.all", "case.read.team", "case.read.scoped", "case.update", "case.assign")),
             ModuleFeature("session_logs", "Session logs", ("session.read",)),
-            ModuleFeature("reports", "Monthly report review", ("monthly_report.approve",)),
-            ModuleFeature("iep", "IEP documents", ("attachment.manage",)),
+            ModuleFeature(
+                "reports",
+                "Reports & case documents",
+                ("monthly_report.approve", "case_document.create", "case_document.review"),
+            ),
+            ModuleFeature("iep", "IEP documents", ("attachment.manage", "iep.read")),
             ModuleFeature("tickets", "Support tickets", ("ticket.manage",)),
             ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive",)),
         ),
@@ -42,8 +46,12 @@ PRODUCT_MODULES: tuple[ProductModule, ...] = (
         features=(
             ModuleFeature("cases", "Cases & assignments", ("case.read.all", "case.read.team", "case.read.scoped", "case.update", "case.assign")),
             ModuleFeature("session_logs", "Session logs", ("session.read",)),
-            ModuleFeature("reports", "Monthly report review", ("monthly_report.approve",)),
-            ModuleFeature("iep", "IEP documents", ("attachment.manage",)),
+            ModuleFeature(
+                "reports",
+                "Reports & case documents",
+                ("monthly_report.approve", "case_document.create", "case_document.review"),
+            ),
+            ModuleFeature("iep", "IEP documents", ("attachment.manage", "iep.read")),
             ModuleFeature("tickets", "Support tickets", ("ticket.manage",)),
             ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive",)),
         ),

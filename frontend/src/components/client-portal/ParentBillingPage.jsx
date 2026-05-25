@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { apiFetch, getTokens } from '../../lib/apiClient.js'
+import { Link } from 'react-router-dom'
+import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import './parent-payments.css'
 
-const API_URL = import.meta.env.VITE_API_URL || ''
+const DISPUTE_STATUS_LABELS = {
+  open: 'Submitted — finance will review',
+  under_review: 'Finance is reviewing',
+  resolved: 'Resolved',
+  rejected: 'Closed',
+}
 
 const PAYMENT_TABS = [
   { id: '', label: 'All invoices' },
@@ -57,6 +63,12 @@ export function ParentBillingPage() {
   const [disputeLineId, setDisputeLineId] = useState(null)
   const [acting, setActing] = useState(false)
   const [message, setMessage] = useState('')
+  const [paymentOpen, setPaymentOpen] = useState(false)
+  const [payAmount, setPayAmount] = useState('')
+  const [payMethod, setPayMethod] = useState('UPI')
+  const [payRef, setPayRef] = useState('')
+  const [payNotes, setPayNotes] = useState('')
+  const [payProof, setPayProof] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -91,11 +103,39 @@ export function ParentBillingPage() {
   async function openInvoice(id) {
     setLineDetail(null)
     setDisputeOpen(false)
+    setPaymentOpen(false)
     try {
       const detail = await apiFetch(`/api/v1/parent/billing/invoices/${id}`)
       setSelected(detail)
+      setPayAmount(String(detail.balanceInr ?? ''))
     } catch (err) {
       setError(err.message || 'Could not load invoice')
+    }
+  }
+
+  async function submitPaymentClaim(e) {
+    e?.preventDefault?.()
+    if (!selected || !payAmount) return
+    setActing(true)
+    setError('')
+    try {
+      const fd = new FormData()
+      fd.append('amount_inr', payAmount)
+      fd.append('method', payMethod)
+      if (payRef) fd.append('reference', payRef)
+      if (payNotes) fd.append('notes', payNotes)
+      if (payProof) fd.append('proof', payProof)
+      await apiUpload(`/api/v1/parent/billing/invoices/${selected.id}/payment-claims`, fd)
+      setMessage('Payment submitted for review. Finance will confirm once verified.')
+      setPaymentOpen(false)
+      setPayProof(null)
+      const detail = await apiFetch(`/api/v1/parent/billing/invoices/${selected.id}`)
+      setSelected(detail)
+      await load()
+    } catch (err) {
+      setError(err.message || 'Could not submit payment')
+    } finally {
+      setActing(false)
     }
   }
 
@@ -108,20 +148,13 @@ export function ParentBillingPage() {
     }
   }
 
-  async function downloadPdf(invoiceId) {
-    const { access } = getTokens()
-    const url = `${API_URL}/api/v1/parent/billing/invoices/${invoiceId}/print`
-    const res = await fetch(url, { headers: access ? { Authorization: `Bearer ${access}` } : {} })
-    if (!res.ok) {
-      setError('Could not download invoice')
-      return
-    }
-    const html = await res.text()
-    const w = window.open('', '_blank')
-    if (w) {
-      w.document.write(html)
-      w.document.close()
-      w.print()
+  async function downloadPdf(invoiceId, invoiceNumber) {
+    setError('')
+    try {
+      const safe = (invoiceNumber || invoiceId).toString().replace(/\//g, '-')
+      await apiDownload(`/api/v1/parent/billing/invoices/${invoiceId}/pdf`, `invoice_${safe}.pdf`)
+    } catch (err) {
+      setError(err.message || 'Could not download invoice PDF')
     }
   }
 
@@ -138,9 +171,13 @@ export function ParentBillingPage() {
           line_id: disputeLineId,
         }),
       })
-      setMessage('Dispute submitted. Finance will review and update you.')
+      setMessage('Dispute submitted. Finance will review and update you by email or in this portal.')
       setDisputeOpen(false)
-      setSelected(null)
+      setDisputeMessage('')
+      setDisputeLineId(null)
+      setPaymentTab('disputed')
+      const detail = await apiFetch(`/api/v1/parent/billing/invoices/${selected.id}`)
+      setSelected(detail)
       await load()
     } catch (err) {
       setError(err.message || 'Could not submit dispute')
@@ -586,15 +623,157 @@ export function ParentBillingPage() {
                 </section>
               ) : null}
 
-              {(selected.disputes || []).length > 0 ? (
+              {(selected.payments || []).length > 0 ? (
                 <section style={{ marginTop: 16 }}>
-                  <h3 style={{ fontSize: 15 }}>Dispute history</h3>
+                  <h3 style={{ fontSize: 15 }}>Payment history</h3>
+                  <ul className="log-list">
+                    {selected.payments.map((p) => (
+                      <li key={p.id}>
+                        <span
+                          className={`status ${
+                            p.paymentStatus === 'confirmed'
+                              ? 'completed'
+                              : p.paymentStatus === 'rejected'
+                                ? 'warning'
+                                : 'pending'
+                          }`}
+                        >
+                          {p.paymentStatus === 'pending_review'
+                            ? 'Pending review'
+                            : p.paymentStatus === 'confirmed'
+                              ? 'Confirmed'
+                              : p.paymentStatus === 'rejected'
+                                ? 'Not accepted'
+                                : p.paymentStatus}
+                        </span>
+                        <p style={{ margin: '4px 0' }}>
+                          ₹{p.amountInr?.toLocaleString('en-IN')} · {p.method}
+                          {p.reference ? ` · ${p.reference}` : ''}
+                        </p>
+                        {p.rejectionNote ? (
+                          <p style={{ fontSize: 13, color: '#6b7280' }}>{p.rejectionNote}</p>
+                        ) : null}
+                        {p.hasProof ? (
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--ghost admin-btn--sm"
+                            style={{ marginTop: 4 }}
+                            onClick={() =>
+                              apiDownload(
+                                `/api/v1/parent/billing/payments/${p.id}/proof`,
+                                p.proofFileName || 'payment-proof',
+                              ).catch((err) => setError(err.message))
+                            }
+                          >
+                            View screenshot
+                          </button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {paymentOpen ? (
+                <section style={{ marginTop: 16, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
+                  <h3 style={{ fontSize: 15, marginTop: 0 }}>Record offline payment</h3>
+                  <form onSubmit={submitPaymentClaim}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>
+                      Amount (INR)
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        style={{ width: '100%', marginTop: 4, padding: 8 }}
+                      />
+                    </label>
+                    <label style={{ display: 'block', marginBottom: 8 }}>
+                      Method
+                      <select
+                        value={payMethod}
+                        onChange={(e) => setPayMethod(e.target.value)}
+                        style={{ width: '100%', marginTop: 4, padding: 8 }}
+                      >
+                        <option value="UPI">UPI</option>
+                        <option value="BANK_TRANSFER">Bank transfer</option>
+                        <option value="CASH">Cash</option>
+                        <option value="CHEQUE">Cheque</option>
+                      </select>
+                    </label>
+                    <label style={{ display: 'block', marginBottom: 8 }}>
+                      Reference (optional)
+                      <input
+                        value={payRef}
+                        onChange={(e) => setPayRef(e.target.value)}
+                        style={{ width: '100%', marginTop: 4, padding: 8 }}
+                      />
+                    </label>
+                    <label style={{ display: 'block', marginBottom: 8 }}>
+                      Payment screenshot (optional)
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={(e) => setPayProof(e.target.files?.[0] || null)}
+                        style={{ width: '100%', marginTop: 4 }}
+                      />
+                    </label>
+                    <label style={{ display: 'block', marginBottom: 8 }}>
+                      Notes (optional)
+                      <textarea
+                        value={payNotes}
+                        onChange={(e) => setPayNotes(e.target.value)}
+                        rows={2}
+                        style={{ width: '100%', marginTop: 4, padding: 8 }}
+                      />
+                    </label>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="submit" className="admin-btn admin-btn--primary" disabled={acting}>
+                        {acting ? 'Submitting…' : 'Submit for review'}
+                      </button>
+                      <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setPaymentOpen(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              ) : null}
+
+              {(selected.disputes || []).length > 0 ? (
+                <section style={{ marginTop: 16 }} className="parent-pay__dispute-next">
+                  <h3 style={{ fontSize: 15 }}>Dispute status</h3>
+                  <p className="parent-pay__dispute-hint">
+                    We typically respond within a few business days. You can track updates here and under the{' '}
+                    <button
+                      type="button"
+                      className="parent-pay__inline-link"
+                      onClick={() => {
+                        setPaymentTab('disputed')
+                        setSelected(null)
+                      }}
+                    >
+                      Disputed
+                    </button>{' '}
+                    tab. Questions?{' '}
+                    <Link to="/parent/support">Contact support</Link>.
+                  </p>
                   <ul className="log-list">
                     {selected.disputes.map((d) => (
                       <li key={d.id}>
-                        <span className={`status ${d.status === 'resolved' ? 'completed' : 'pending'}`}>{d.status}</span>
+                        <span
+                          className={`status ${
+                            d.status === 'resolved' ? 'completed' : d.status === 'rejected' ? 'warning' : 'pending'
+                          }`}
+                        >
+                          {DISPUTE_STATUS_LABELS[d.status] || d.status}
+                        </span>
                         <p style={{ margin: '4px 0' }}>{d.message}</p>
-                        {d.adminResolution ? <p style={{ fontSize: 13, color: '#6b7280' }}>Response: {d.adminResolution}</p> : null}
+                        {d.adminResolution ? (
+                          <p style={{ fontSize: 13, color: '#6b7280' }}>Response: {d.adminResolution}</p>
+                        ) : d.status === 'open' || d.status === 'under_review' ? (
+                          <p style={{ fontSize: 13, color: '#6b7280' }}>No response yet — our finance team will update this invoice when reviewed.</p>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
@@ -603,13 +782,37 @@ export function ParentBillingPage() {
             </div>
 
             <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <button type="button" className="admin-btn admin-btn--secondary" onClick={() => downloadPdf(selected.id)}>
+              <button
+                type="button"
+                className="admin-btn admin-btn--secondary"
+                onClick={() => downloadPdf(selected.id, selected.invoiceNumber)}
+              >
                 Download PDF
               </button>
               {selected.paymentBucket !== 'paid' && selected.paymentBucket !== 'disputed' ? (
-                <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setDisputeOpen(true)}>
-                  Dispute invoice
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary"
+                    disabled
+                    title="Online payment gateway coming soon"
+                  >
+                    Pay online
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary"
+                    onClick={() => {
+                      setPaymentOpen(true)
+                      setDisputeOpen(false)
+                    }}
+                  >
+                    I paid offline
+                  </button>
+                  <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setDisputeOpen(true)}>
+                    Dispute invoice
+                  </button>
+                </>
               ) : null}
             </div>
           </div>

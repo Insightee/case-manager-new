@@ -19,6 +19,7 @@ from app.models.incident import Incident, IncidentMessage, IncidentStatus, norma
 from app.models.user import User
 from app.models.case import Case
 from app.services import case_service, incident_attachment_service as att_svc
+from app.services import incident_flow_service as inc_flow
 from app.services import incident_service as inc_svc
 from app.services import incident_sla_service as sla_svc
 from app.services import notification_service
@@ -54,6 +55,14 @@ class IncidentUpdate(BaseModel):
 
 class IncidentMessageCreate(BaseModel):
     body: str
+
+
+class IncidentFlowNote(BaseModel):
+    note: str = Field(..., min_length=3)
+
+
+class IncidentEscalateRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 def _has_manage(user: User) -> bool:
@@ -178,7 +187,57 @@ def get_incident(
         db.commit()
 
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case)
+    return inc_svc.incident_to_detail_dict(incident, case, user)
+
+
+@router.post("/{incident_id}/close")
+def close_incident_endpoint(
+    incident_id: int,
+    payload: IncidentFlowNote,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    incident = inc_svc.get_incident_detail(db, incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    if not _can_access(incident, user, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        inc_flow.close_incident(db, user, incident, note=payload.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="close", entity_type="incident", entity_id=incident.id, **meta)
+    db.commit()
+    incident = inc_svc.get_incident_detail(db, incident_id)
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    return inc_svc.incident_to_detail_dict(incident, case, user)
+
+
+@router.post("/{incident_id}/escalate")
+def escalate_incident_endpoint(
+    incident_id: int,
+    request: Request,
+    payload: IncidentEscalateRequest = IncidentEscalateRequest(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    incident = inc_svc.get_incident_detail(db, incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    if not _can_access(incident, user, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        inc_flow.escalate_incident(db, user, incident, reason=payload.reason)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="escalate", entity_type="incident", entity_id=incident.id, **meta)
+    db.commit()
+    incident = inc_svc.get_incident_detail(db, incident_id)
+    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    return inc_svc.incident_to_detail_dict(incident, case, user)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -260,7 +319,7 @@ def create_incident(
     db.commit()
     db.refresh(incident)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    detail = inc_svc.incident_to_detail_dict(incident, case)
+    detail = inc_svc.incident_to_detail_dict(incident, case, user)
     detail["confirmation"] = f"Incident {incident.ticket_code} submitted — {assignee_name} will review."
     return detail
 
@@ -325,7 +384,7 @@ def add_incident_message(
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case)
+    return inc_svc.incident_to_detail_dict(incident, case, user)
 
 
 @router.patch("/{incident_id}")
@@ -367,4 +426,4 @@ def update_incident(
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case)
+    return inc_svc.incident_to_detail_dict(incident, case, user)

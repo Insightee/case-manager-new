@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Optional
+import secrets
+import shutil
+
+from fastapi import UploadFile
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -19,6 +24,7 @@ from app.models.client_billing import (
     ClientInvoiceStatus,
     ClientInvoiceType,
     ClientPayment,
+    ClientPaymentStatus,
     PaymentMethod,
 )
 from app.models.daily_log import DailyLog
@@ -264,6 +270,11 @@ def get_invoice_detail(db: Session, user: User, invoice_id: int) -> dict:
                     "method": p.method.value,
                     "reference": p.reference,
                     "paidAt": p.paid_at.isoformat() if p.paid_at else None,
+                    "paymentStatus": p.payment_status.value.lower(),
+                    "proofFileName": p.proof_file_name,
+                    "hasProof": bool(p.proof_file_path),
+                    "rejectionNote": p.rejection_note,
+                    "notes": p.notes,
                 }
                 for p in inv.payments
             ],
@@ -370,6 +381,9 @@ def record_payment(
         reference=reference,
         notes=notes,
         recorded_by_user_id=recorded_by_user_id,
+        payment_status=ClientPaymentStatus.CONFIRMED,
+        confirmed_by_user_id=recorded_by_user_id,
+        confirmed_at=datetime.now(timezone.utc),
     )
     db.add(payment)
     inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + amount_inr
@@ -630,6 +644,10 @@ def admin_get_invoice_detail(db: Session, invoice_id: int) -> dict:
                     "method": p.method.value,
                     "reference": p.reference,
                     "paidAt": p.paid_at.isoformat() if p.paid_at else None,
+                    "paymentStatus": p.payment_status.value.lower(),
+                    "proofFileName": p.proof_file_name,
+                    "hasProof": bool(p.proof_file_path),
+                    "rejectionNote": p.rejection_note,
                     "notes": p.notes,
                 }
                 for p in inv.payments
@@ -799,3 +817,201 @@ def admin_summary(db: Session) -> dict:
         "sentUnpaidCount": sent_unpaid,
         "invoiceCount": len(rows),
     }
+
+
+BILLING_PROOF_DIR = Path("uploads/billing")
+MAX_PROOF_BYTES = 5 * 1024 * 1024
+ALLOWED_PROOF_MIME = frozenset(
+    {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+)
+
+
+async def _save_payment_proof(file: UploadFile, payment_id: int) -> tuple[str, str]:
+    if not file.filename:
+        raise ValueError("Proof file is required")
+    content = await file.read()
+    if len(content) > MAX_PROOF_BYTES:
+        raise ValueError("Proof file must be 5 MB or smaller")
+    mime = file.content_type or "application/octet-stream"
+    if mime not in ALLOWED_PROOF_MIME:
+        raise ValueError("Proof must be JPEG, PNG, WebP, or PDF")
+    BILLING_PROOF_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(file.filename).name.replace("..", "")
+    dest_name = f"{payment_id}_{secrets.token_hex(4)}_{safe_name}"
+    dest = BILLING_PROOF_DIR / dest_name
+    dest.write_bytes(content)
+    return str(dest), safe_name
+
+
+async def submit_payment_claim(
+    db: Session,
+    user: User,
+    invoice_id: int,
+    amount_inr: float,
+    method: str,
+    reference: Optional[str],
+    notes: Optional[str],
+    proof_file: Optional[UploadFile],
+) -> ClientPayment:
+    inv_detail = get_invoice_detail(db, user, invoice_id)
+    balance = float(inv_detail.get("balanceInr") or 0)
+    if amount_inr <= 0:
+        raise ValueError("Amount must be greater than zero")
+    if amount_inr > balance + 0.01:
+        raise ValueError("Amount exceeds invoice balance")
+    inv = db.get(ClientInvoice, invoice_id)
+    if not inv:
+        raise ValueError("Invoice not found")
+    payment = ClientPayment(
+        client_invoice_id=inv.id,
+        amount_inr=amount_inr,
+        method=PaymentMethod(method),
+        reference=reference,
+        notes=notes,
+        submitted_by_user_id=user.id,
+        payment_status=ClientPaymentStatus.PENDING_REVIEW,
+    )
+    db.add(payment)
+    db.flush()
+    if proof_file and proof_file.filename:
+        path, name = await _save_payment_proof(proof_file, payment.id)
+        payment.proof_file_path = path
+        payment.proof_file_name = name
+    notification_service.create_notification(
+        db,
+        user_id=user.id,
+        title="Payment submitted",
+        body=f"We received your payment claim for {inv.invoice_number}. Finance will confirm shortly.",
+        entity_type="client_invoice",
+        entity_id=inv.id,
+    )
+    db.flush()
+    return payment
+
+
+def confirm_payment_claim(db: Session, payment_id: int, admin_user_id: int) -> ClientInvoice:
+    payment = db.get(ClientPayment, payment_id)
+    if not payment or payment.payment_status != ClientPaymentStatus.PENDING_REVIEW:
+        raise ValueError("Payment claim not found")
+    inv = db.get(ClientInvoice, payment.client_invoice_id)
+    if not inv:
+        raise ValueError("Invoice not found")
+    payment.payment_status = ClientPaymentStatus.CONFIRMED
+    payment.confirmed_by_user_id = admin_user_id
+    payment.confirmed_at = datetime.now(timezone.utc)
+    payment.recorded_by_user_id = admin_user_id
+    inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + float(payment.amount_inr)
+    balance = float(inv.total_inr) - float(inv.amount_paid_inr)
+    if balance <= 0:
+        inv.status = ClientInvoiceStatus.PAID
+    elif float(inv.amount_paid_inr) > 0:
+        inv.status = ClientInvoiceStatus.PARTIALLY_PAID
+    notification_service.create_notification(
+        db,
+        user_id=inv.parent_user_id,
+        title="Payment confirmed",
+        body=f"₹{int(payment.amount_inr):,} confirmed for {inv.invoice_number}",
+        entity_type="client_invoice",
+        entity_id=inv.id,
+    )
+    db.flush()
+    return inv
+
+
+def reject_payment_claim(db: Session, payment_id: int, admin_user_id: int, note: str) -> ClientPayment:
+    payment = db.get(ClientPayment, payment_id)
+    if not payment or payment.payment_status != ClientPaymentStatus.PENDING_REVIEW:
+        raise ValueError("Payment claim not found")
+    payment.payment_status = ClientPaymentStatus.REJECTED
+    payment.confirmed_by_user_id = admin_user_id
+    payment.confirmed_at = datetime.now(timezone.utc)
+    payment.rejection_note = note.strip()
+    inv = db.get(ClientInvoice, payment.client_invoice_id)
+    if inv:
+        notification_service.create_notification(
+            db,
+            user_id=inv.parent_user_id,
+            title="Payment not confirmed",
+            body=f"Your payment claim for {inv.invoice_number} was not accepted. {payment.rejection_note}",
+            entity_type="client_invoice",
+            entity_id=inv.id,
+        )
+    db.flush()
+    return payment
+
+
+def payment_proof_download(db: Session, user: User, payment_id: int, *, admin: bool = False):
+    from fastapi.responses import FileResponse
+
+    payment = db.get(ClientPayment, payment_id)
+    if not payment or not payment.proof_file_path:
+        raise ValueError("Proof not found")
+    inv = db.get(ClientInvoice, payment.client_invoice_id)
+    if not inv:
+        raise ValueError("Proof not found")
+    if not admin and inv.parent_user_id != user.id:
+        raise ValueError("Proof not found")
+    path = Path(payment.proof_file_path)
+    if not path.is_file():
+        raise ValueError("Proof file missing")
+    return FileResponse(path, filename=payment.proof_file_name or path.name)
+
+
+def client_invoice_pdf_bytes(inv_detail: dict) -> bytes:
+    """Build a simple client invoice PDF from get_invoice_detail payload."""
+    import io
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=48, rightMargin=48, topMargin=48, bottomMargin=48)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("InvTitle", parent=styles["Title"], fontSize=16, spaceAfter=6)
+    meta_style = ParagraphStyle("InvMeta", parent=styles["Normal"], fontSize=10, textColor=colors.grey)
+
+    story = [
+        Paragraph(inv_detail.get("invoiceNumber", "Invoice"), title_style),
+        Paragraph(
+            f"{inv_detail.get('childName', '')} · {inv_detail.get('caseId', '')} · {inv_detail.get('month', '')}",
+            meta_style,
+        ),
+        Paragraph(
+            f"Status: {inv_detail.get('status', '')} · Due: {inv_detail.get('dueDate') or '—'} · "
+            f"Balance: ₹{inv_detail.get('balanceInr', 0):,.0f}",
+            meta_style,
+        ),
+        Spacer(1, 12),
+    ]
+
+    table_data = [["Date", "Therapist", "Service", "Status", "Amount (₹)"]]
+    for line in inv_detail.get("lines") or []:
+        table_data.append(
+            [
+                line.get("sessionDate", ""),
+                line.get("therapistName", ""),
+                line.get("serviceLabel", ""),
+                line.get("sessionStatus", ""),
+                f"{line.get('amountInr', 0):,.0f}",
+            ]
+        )
+    table_data.append(["", "", "", "Total", f"{inv_detail.get('totalInr', 0):,.0f}"])
+    table_data.append(["", "", "", "Paid", f"{inv_detail.get('amountPaidInr', 0):,.0f}"])
+
+    tbl = Table(table_data, colWidths=[70, 100, 120, 70, 70])
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                ("ALIGN", (4, 1), (4, -1), "RIGHT"),
+            ]
+        )
+    )
+    story.append(tbl)
+    doc.build(story)
+    return buf.getvalue()

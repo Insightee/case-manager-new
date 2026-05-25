@@ -298,4 +298,7 @@ def test_unified_calendar_with_case_filter():
         headers=therapist_h,
     )
     assert cal.status_code == 200
-    assert "slots" in cal.json()
+    body = cal.json()
+    assert "slots" in body
+    assert "sessions" in body
+    assert isinstance(body["sessions"], list)

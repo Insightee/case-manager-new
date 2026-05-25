@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.attachment import Attachment
@@ -42,6 +42,96 @@ def _parent_contacts_by_child_ids(db: Session, child_ids: list[int]) -> dict[int
         if label not in bucket:
             bucket.append(label)
     return out
+
+
+def _iep_status_from_visibility(vis: VisibilityStatus | None) -> str:
+    if vis is None:
+        return "MISSING"
+    if vis == VisibilityStatus.SHARED_WITH_PARENT:
+        return "ACKNOWLEDGED"
+    if vis == VisibilityStatus.APPROVED_FOR_PARENT:
+        return "AWAITING_ACK"
+    return "INTERNAL_ONLY"
+
+
+def build_iep_workbench_widget(db: Session, user: User, *, row_limit: int = 8) -> dict:
+    """Lightweight IEP summary for admin home/workbench (no full case scan)."""
+    case_stmt = select(Case.id).where(Case.status != CaseStatus.CLOSED)
+    case_stmt = apply_case_scope(case_stmt, user)
+    scoped_case_ids = list(db.scalars(case_stmt).all())
+    if not scoped_case_ids:
+        return {
+            "count": 0,
+            "items": [],
+            "summary": {"missing": 0, "internal_only": 0},
+        }
+
+    latest_iep = (
+        select(
+            Attachment.case_id,
+            func.max(Attachment.id).label("att_id"),
+        )
+        .where(Attachment.case_id.in_(scoped_case_ids), Attachment.entity_type == "iep")
+        .group_by(Attachment.case_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(
+            Case.id,
+            Case.case_code,
+            Child.first_name,
+            Child.last_name,
+            Attachment.visibility_status,
+        )
+        .join(latest_iep, latest_iep.c.case_id == Case.id)
+        .join(Attachment, Attachment.id == latest_iep.c.att_id)
+        .outerjoin(Child, Case.child_id == Child.id)
+    ).all()
+
+    cases_with_iep = {int(r[0]) for r in rows}
+    missing_count = len(scoped_case_ids) - len(cases_with_iep)
+    internal_only_count = 0
+    attention_items: list[dict] = []
+
+    for case_id, case_code, first_name, last_name, vis in rows:
+        child_name = " ".join(p for p in (first_name, last_name) if p).strip() or None
+        status = _iep_status_from_visibility(vis)
+        if status == "INTERNAL_ONLY":
+            internal_only_count += 1
+            attention_items.append(
+                {
+                    "case_id": case_id,
+                    "case_code": case_code,
+                    "child_name": child_name,
+                    "iep_status": status,
+                }
+            )
+
+    if missing_count:
+        missing_rows = db.execute(
+            select(Case.id, Case.case_code, Child.first_name, Child.last_name)
+            .outerjoin(Child, Case.child_id == Child.id)
+            .where(Case.id.in_(set(scoped_case_ids) - cases_with_iep))
+            .order_by(Case.case_code)
+            .limit(row_limit)
+        ).all()
+        for case_id, case_code, first_name, last_name in missing_rows:
+            child_name = " ".join(p for p in (first_name, last_name) if p).strip() or None
+            attention_items.append(
+                {
+                    "case_id": case_id,
+                    "case_code": case_code,
+                    "child_name": child_name,
+                    "iep_status": "MISSING",
+                }
+            )
+
+    attention_items.sort(key=lambda r: (0 if r["iep_status"] == "MISSING" else 1, r.get("case_code") or ""))
+    return {
+        "count": missing_count + internal_only_count,
+        "items": attention_items[:row_limit],
+        "summary": {"missing": missing_count, "internal_only": internal_only_count},
+    }
 
 
 def build_iep_dashboard(

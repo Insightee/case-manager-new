@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./styles/admin-portal.css";
+@import "./styles/ux-foundations.css";
 
 @theme {
   --font-sans:
@@ -142,6 +143,9 @@ input {
 
 .app-sidebar__link {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
@@ -151,6 +155,7 @@ input {
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
+  text-decoration: none;
   transition:
     background 0.15s ease,
     color 0.15s ease,
@@ -897,6 +902,16 @@ th {
   color: #215aaf;
 }
 
+.status.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status.warning {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
 .log-list {
   list-style: none;
   padding: 0;
@@ -1374,6 +1389,11 @@ th {
   width: 100%;
   max-width: 360px;
   transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-submit:disabled {
+  opacity: 0.72;
+  cursor: wait;
 }
 
 .login-submit:hover {
@@ -2500,6 +2520,27 @@ th {
   display: none;
 }
 
+@media (min-width: 901px) {
+  .app-shell {
+    grid-template-columns: 268px minmax(0, 1fr);
+  }
+
+  .app-sidebar--drawer {
+    display: none;
+  }
+
+  .app-sidebar--desktop {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .content {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+}
+
 @media (max-width: 900px) {
   #root {
     padding: 12px;
@@ -3095,5 +3136,233 @@ th {
 
   .therapist-quick-actions__more-list {
     grid-template-columns: 1fr;
+  }
+}
+
+.page-skeleton {
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.page-skeleton__bar {
+  height: 14px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: page-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.page-skeleton__bar--title {
+  height: 22px;
+  width: 40%;
+}
+
+.page-skeleton--grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.page-skeleton__card {
+  min-height: 88px;
+  border-radius: 12px;
+  background: #e2e8f0;
+  animation: page-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes page-skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.query-state--error {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.query-state__empty {
+  color: #64748b;
+  padding: 16px 0;
+}
+
+.therapist-home-panel {
+  margin-bottom: 20px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.therapist-home-panel h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.therapist-home-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.therapist-home-list li {
+  margin-bottom: 8px;
+}
+
+.therapist-home-list a {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  background: #f8fafc;
+}
+
+.therapist-home-list__meta {
+  display: block;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.therapist-home-panel__link {
+  display: inline-block;
+  margin-top: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.notification-center__filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.notification-center__filters button {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+}
+
+.notification-center__filters button.is-active {
+  background: #4f46e5;
+  color: #fff;
+  border-color: #4f46e5;
+}
+
+.notification-center__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notification-center__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.notification-center__list li.is-unread {
+  background: #f0f9ff;
+}
+
+.report-save-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.report-save-status__chip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.report-save-status__chip--saving {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.report-save-status__chip--ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.report-save-status__chip--error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.ic-draft-badge {
+  font-size: 0.8rem;
+  color: #0369a1;
+  background: #e0f2fe;
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.case-activity-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.case-activity-timeline__item {
+  padding: 10px 0;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-card__headline {
+  margin: 8px 0 4px;
+  font-size: 1.05rem;
+}
+
+.session-card__summary {
+  margin: 0 0 10px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .app-mobile-tabs--bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    justify-content: space-around;
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-mobile-tabs--bottom .app-mobile-tabs__link {
+    min-height: 44px;
+    min-width: 44px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .content {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
 }

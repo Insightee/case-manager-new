@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { apiFetch } from '../lib/apiClient.js'
 import { PortalShell } from '../layouts/PortalShell.jsx'
 import { LoginPage } from '../pages/LoginPage.jsx'
 import { AdminDashboardPage } from '../components/admin-portal/AdminDashboardPage.jsx'
@@ -32,11 +34,35 @@ import { AdminTherapistProfilesPage } from '../components/admin-portal/AdminTher
 import { CaseManagerMeetingsPage } from '../components/admin-portal/CaseManagerMeetingsPage.jsx'
 import { AdminWorkbenchPage } from '../components/admin-portal/AdminWorkbenchPage.jsx'
 import { LeaveManagementPage } from '../components/hr-portal/LeaveManagementPage.jsx'
+import { NotificationCenterPage } from '../components/shared/NotificationCenterPage.jsx'
 
 function PortalRedirect() {
   const { portal, loading } = useAuth()
+  const [adminLanding, setAdminLanding] = useState(null)
+
+  useEffect(() => {
+    if (portal !== 'admin') {
+      setAdminLanding(null)
+      return
+    }
+    let cancelled = false
+    apiFetch('/api/v1/admin/home')
+      .then((home) => {
+        if (!cancelled) setAdminLanding(home?.landing_route || '/admin')
+      })
+      .catch(() => {
+        if (!cancelled) setAdminLanding('/admin')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [portal])
+
   if (loading) return <p style={{ padding: '2rem' }}>Loading…</p>
-  if (portal === 'admin') return <Navigate to="/admin" replace />
+  if (portal === 'admin') {
+    if (!adminLanding) return <p style={{ padding: '2rem' }}>Loading…</p>
+    return <Navigate to={adminLanding} replace />
+  }
   if (portal === 'parent') return <Navigate to="/parent" replace />
   if (portal === 'therapist') return <Navigate to="/therapist" replace />
   if (portal === 'hr') return <Navigate to="/hr" replace />
@@ -79,6 +105,7 @@ export function AppRoutes() {
         <Route path="leave" element={<TherapistLeavePage />} />
         <Route path="slots" element={<TherapistSlotsPage />} />
         <Route path="profile" element={<TherapistProfilePage />} />
+        <Route path="notifications" element={<NotificationCenterPage portal="therapist" />} />
       </Route>
 
       <Route
@@ -116,6 +143,7 @@ export function AppRoutes() {
         <Route path="therapist-profiles" element={<AdminTherapistProfilesPage />} />
         <Route path="cm-meetings" element={<CaseManagerMeetingsPage />} />
         <Route path="leave" element={<LeaveManagementPage portal="admin" />} />
+        <Route path="notifications" element={<NotificationCenterPage portal="admin" />} />
       </Route>
 
       <Route

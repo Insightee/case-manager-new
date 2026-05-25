@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { clearLogDraft, getLogDraft, saveLogDraft } from '../../lib/logDraftStore.js'
 import {
   formatSessionTimeRange,
   isLogEditable,
@@ -54,14 +55,46 @@ export function SubmitSessionLogForm({
   const [form, setForm] = useState(emptyLogForm)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [draftNote, setDraftNote] = useState('')
+  const draftTimer = useRef(null)
 
   useEffect(() => {
-    if (existingLog) {
-      setForm(logToFormState(existingLog))
-    } else {
-      setForm(emptyLogForm)
+    let cancelled = false
+    async function hydrate() {
+      if (existingLog) {
+        setForm(logToFormState(existingLog))
+        return
+      }
+      if (!session?.id) {
+        setForm(emptyLogForm)
+        return
+      }
+      const draft = await getLogDraft(session.id)
+      if (cancelled) return
+      if (draft?.fields) {
+        setForm({ ...emptyLogForm, ...draft.fields })
+        setDraftNote('Restored from device draft')
+      } else {
+        setForm(emptyLogForm)
+      }
+    }
+    hydrate()
+    return () => {
+      cancelled = true
     }
   }, [existingLog?.id, session?.id])
+
+  useEffect(() => {
+    if (!session?.id || isEdit) return undefined
+    if (draftTimer.current) clearTimeout(draftTimer.current)
+    draftTimer.current = setTimeout(() => {
+      saveLogDraft(session.id, { ...form, sync_status: 'local' }).catch(() => {})
+      setDraftNote('Saved on this device')
+    }, 500)
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current)
+    }
+  }, [form, session?.id, isEdit])
 
   const isLateSession = useMemo(() => {
     if (!session?.scheduled_date) return false
@@ -94,19 +127,26 @@ export function SubmitSessionLogForm({
         ...form,
         late_reason: form.late_reason || undefined,
       }
+      let saved
       if (isEdit) {
-        await apiFetch(`/api/v1/daily-logs/${existingLog.id}`, {
+        saved = await apiFetch(`/api/v1/daily-logs/${existingLog.id}`, {
           method: 'PATCH',
           body: JSON.stringify(body),
         })
       } else {
-        await apiFetch('/api/v1/daily-logs', {
+        saved = await apiFetch('/api/v1/daily-logs', {
           method: 'POST',
           body: JSON.stringify({ session_id: session.id, ...body }),
         })
       }
-      onSuccess?.()
+      if (session?.id) void clearLogDraft(session.id)
+      setDraftNote('')
+      onSuccess?.(saved)
     } catch (err) {
+      if (session?.id) {
+        await saveLogDraft(session.id, { ...form, sync_status: 'pending_sync' }).catch(() => {})
+        setDraftNote('Saved on device — will sync when you’re back online')
+      }
       setError(err.message || 'Could not save log')
     } finally {
       setSubmitting(false)
@@ -132,6 +172,7 @@ export function SubmitSessionLogForm({
 
   return (
     <div className={`ic-session-log-panel${required ? ' ic-session-log-panel--required' : ''}`}>
+      {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}
       <header className="ic-session-log-panel__head">
         <div>
           <p className="ic-session-log-panel__eyebrow">

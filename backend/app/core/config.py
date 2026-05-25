@@ -1,7 +1,16 @@
 from __future__ import annotations
 
-from pydantic import field_validator
+from pathlib import Path
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
+def default_sqlite_database_url() -> str:
+    """Stable path regardless of process cwd (avoids stray ./insightcase.db files)."""
+    return f"sqlite:///{(_BACKEND_ROOT / 'insightcase.db').as_posix()}"
 
 
 def _normalize_database_url(url: str) -> str:
@@ -17,7 +26,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
-    database_url: str = "sqlite:///./insightcase.db"
+    database_url: str = Field(default_factory=default_sqlite_database_url)
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret_key: str = "dev-secret-change-in-production"
     jwt_refresh_secret_key: str = "dev-refresh-secret-change-in-production"
@@ -32,6 +41,17 @@ class Settings(BaseSettings):
     support_phone: str = "+91 80 0000 0000"
     ticket_attachment_max_bytes: int = 5 * 1024 * 1024
     ticket_attachment_max_files: int = 3
+    case_document_max_bytes: int = 15 * 1024 * 1024
+
+    storage_provider: str = "local"
+    storage_prefix: str = "insightcase"
+    storage_environment: str = "development"
+    max_upload_bytes: int = 10 * 1024 * 1024
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = ""
+    r2_endpoint_url: str = ""
 
     smtp_host: str = ""
     smtp_port: int = 587
@@ -63,6 +83,15 @@ class Settings(BaseSettings):
     @property
     def admin_notification_email_list(self) -> list[str]:
         return [e.strip() for e in self.admin_notification_emails.split(",") if e.strip()]
+
+    @property
+    def storage_r2_endpoint(self) -> str:
+        if self.r2_endpoint_url.strip():
+            return self.r2_endpoint_url.strip().rstrip("/")
+        account = self.r2_account_id.strip()
+        if account:
+            return f"https://{account}.r2.cloudflarestorage.com"
+        return ""
 
 
 settings = Settings()

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { categoryLabel } from '../../lib/reportCategories.js'
 import './admin-reports.css'
 
 function statusPillClass(status) {
@@ -34,6 +35,7 @@ export function AdminReportsTable({
             <th>Type</th>
             <th>Case / child</th>
             <th>Label</th>
+            <th>Category</th>
             <th>Status</th>
             <th>Therapist</th>
             <th>Updated</th>
@@ -43,11 +45,11 @@ export function AdminReportsTable({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={8}>Loading…</td>
+              <td colSpan={9}>Loading…</td>
             </tr>
           ) : rows.length === 0 ? (
             <tr>
-              <td colSpan={8}>No reports match your filters.</td>
+              <td colSpan={9}>No reports match your filters.</td>
             </tr>
           ) : (
             rows.map((r) => {
@@ -80,6 +82,9 @@ export function AdminReportsTable({
                     )}
                   </td>
                   <td>{r.label}</td>
+                  <td style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    {r.category ? categoryLabel(r.category) : '—'}
+                  </td>
                   <td>
                     <span className={statusPillClass(r.status)}>{r.status}</span>
                     {r.parent_review_status === 'CHANGES_REQUESTED' ? (

@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload, getTokens } from '../../lib/apiClient.js'
+import {
+  categoryLabel,
+  statusLabel,
+  workflowActionLabel,
+} from '../../lib/caseDocumentCategories.js'
+import { GOOGLE_LINK_WARNING } from '../../lib/googleLinkValidation.js'
+import { useParentDocumentsList } from '../../hooks/useCaseDocuments.js'
+import { CaseDocumentComments } from '../documents/CaseDocumentComments.jsx'
 import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
+import '../documents/case-documents.css'
 import '../reports/report-editor.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -36,9 +45,11 @@ async function fetchBlobUrl(downloadPath) {
 
 export function ParentReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const initialTab = searchParams.get('type') === 'iep' ? 'iep' : 'monthly'
+  const typeParam = searchParams.get('type')
+  const initialTab = typeParam === 'iep' ? 'iep' : typeParam === 'documents' ? 'documents' : 'monthly'
   const [tab, setTab] = useState(initialTab)
   const [hub, setHub] = useState({ monthly: [], iep: [] })
+  const [parentCases, setParentCases] = useState([])
   const [caseFilter, setCaseFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [detail, setDetail] = useState(null)
@@ -51,12 +62,22 @@ export function ParentReportsPage() {
   const [acting, setActing] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [docFeedbackOpen, setDocFeedbackOpen] = useState(false)
+  const [docFeedbackText, setDocFeedbackText] = useState('')
+
+  const { data: parentDocs = [], isLoading: docsLoading, refetch: refetchDocs } = useParentDocumentsList({
+    enabled: tab === 'documents',
+  })
 
   const loadHub = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await apiFetch('/api/v1/parent/reports/hub')
+      const [data, cases] = await Promise.all([
+        apiFetch('/api/v1/parent/reports/hub'),
+        apiFetch('/api/v1/parent/cases').catch(() => []),
+      ])
       setHub({ monthly: data.monthly || [], iep: data.iep || [] })
+      setParentCases(cases || [])
     } catch (err) {
       setError(err.message || 'Could not load reports')
       setHub({ monthly: [], iep: [] })
@@ -70,22 +91,28 @@ export function ParentReportsPage() {
   }, [loadHub])
 
   useEffect(() => {
-    setSearchParams(tab === 'iep' ? { type: 'iep' } : {}, { replace: true })
+    if (tab === 'iep') setSearchParams({ type: 'iep' }, { replace: true })
+    else if (tab === 'documents') setSearchParams({ type: 'documents' }, { replace: true })
+    else setSearchParams({}, { replace: true })
   }, [tab, setSearchParams])
 
-  const list = tab === 'iep' ? hub.iep : hub.monthly
+  const list =
+    tab === 'iep' ? hub.iep : tab === 'documents' ? parentDocs : hub.monthly
 
   const caseOptions = useMemo(() => {
     const ids = new Map()
     list.forEach((item) => {
-      if (item.caseDbId) ids.set(String(item.caseDbId), `${item.childName} · ${item.caseId}`)
+      const caseDbId = item.caseDbId ?? item.case_id
+      const childName = item.childName ?? item.child_name
+      const caseCode = item.caseId ?? item.case_code
+      if (caseDbId) ids.set(String(caseDbId), `${childName} · ${caseCode}`)
     })
     return [...ids.entries()]
   }, [list])
 
   const filtered = useMemo(() => {
     if (caseFilter === 'all') return list
-    return list.filter((item) => String(item.caseDbId) === caseFilter)
+    return list.filter((item) => String(item.caseDbId ?? item.case_id) === caseFilter)
   }, [list, caseFilter])
 
   function closeDetail() {
@@ -96,6 +123,8 @@ export function ParentReportsPage() {
     setFeedbackText('')
     setCommentBody('')
     setCommentType('GENERAL')
+    setDocFeedbackOpen(false)
+    setDocFeedbackText('')
   }
 
   async function openDetail(item) {
@@ -106,6 +135,14 @@ export function ParentReportsPage() {
     setPdfUrl(null)
     setDetail(null)
     try {
+      if (tab === 'documents') {
+        const [data, comments] = await Promise.all([
+          apiFetch(`/api/v1/parent/documents/${item.id}`),
+          apiFetch(`/api/v1/parent/documents/${item.id}/comments`).catch(() => []),
+        ])
+        setDetail({ ...data, kind: 'case_document', comments })
+        return
+      }
       const path =
         item.kind === 'iep' || tab === 'iep'
           ? `/api/v1/parent/reports/iep/${item.id}`
@@ -177,6 +214,41 @@ export function ParentReportsPage() {
     }
   }
 
+  async function approveCaseDocument() {
+    if (!detail || detail.kind !== 'case_document') return
+    setActing(true)
+    setMessage('')
+    try {
+      await apiFetch(`/api/v1/parent/documents/${detail.id}/approve`, { method: 'POST' })
+      setMessage('Document approved. Thank you!')
+      await refetchDocs()
+      closeDetail()
+    } catch (err) {
+      setError(err.message || 'Approve failed')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function submitDocFeedback() {
+    if (!detail || !docFeedbackText.trim()) return
+    setActing(true)
+    setMessage('')
+    try {
+      await apiFetch(`/api/v1/parent/documents/${detail.id}/feedback`, {
+        method: 'POST',
+        body: JSON.stringify({ message: docFeedbackText.trim() }),
+      })
+      setMessage('Feedback sent. Your care team will review and reshare.')
+      await refetchDocs()
+      closeDetail()
+    } catch (err) {
+      setError(err.message || 'Could not send feedback')
+    } finally {
+      setActing(false)
+    }
+  }
+
   async function acknowledgeIep() {
     if (!detail) return
     setActing(true)
@@ -196,6 +268,12 @@ export function ParentReportsPage() {
     detail?.kind === 'monthly' &&
     (detail.parentReviewStatus === 'PENDING' || detail.status === 'pending_review')
 
+  const canApproveDoc =
+    detail?.kind === 'case_document' && detail.allowed_actions?.includes('parent_approve')
+
+  const canDocFeedback =
+    detail?.kind === 'case_document' && detail.allowed_actions?.includes('parent_feedback')
+
   return (
     <div className="parent-reports">
       {error ? (
@@ -209,6 +287,26 @@ export function ParentReportsPage() {
         </p>
       ) : null}
 
+      {parentCases.length > 0 ? (
+        <section className="parent-reports__cases" aria-label="Your children">
+          <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 12px', color: '#1e293b' }}>Your children</h2>
+          <div className="parent-reports__case-grid">
+            {parentCases.map((c) => (
+              <Link
+                key={c.id}
+                to={`/parent/cases/${c.id}?tab=overview`}
+                className="parent-reports__case-card"
+              >
+                <p className="parent-reports__case-code">{c.caseId}</p>
+                <p className="parent-reports__case-name">{c.childName}</p>
+                <p className="parent-reports__case-meta">{c.serviceType}</p>
+                <span className="parent-reports__case-cta">View profile & reports →</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div
         className="parent-reports__tabs"
         role="tablist"
@@ -218,6 +316,7 @@ export function ParentReportsPage() {
         {[
           { id: 'monthly', label: 'Monthly reports' },
           { id: 'iep', label: 'IEP plans' },
+          { id: 'documents', label: 'Documents' },
         ].map((t) => (
           <button
             key={t.id}
@@ -255,13 +354,19 @@ export function ParentReportsPage() {
 
       <section className="card">
         <div className="card-head">
-          <h3>{tab === 'iep' ? 'IEP plans' : 'Monthly reports'}</h3>
+          <h3>
+            {tab === 'iep' ? 'IEP plans' : tab === 'documents' ? 'Shared documents' : 'Monthly reports'}
+          </h3>
         </div>
-        {loading ? (
+        {(tab === 'documents' ? docsLoading : loading) ? (
           <p style={{ padding: 16, color: '#9ca3af' }}>Loading…</p>
         ) : filtered.length === 0 ? (
           <p style={{ padding: 16, color: '#9ca3af' }}>
-            {tab === 'iep' ? 'No IEP documents shared yet.' : 'No reports shared for your review yet.'}
+            {tab === 'iep'
+              ? 'No IEP documents shared yet.'
+              : tab === 'documents'
+                ? 'No documents shared with your family yet.'
+                : 'No reports shared for your review yet.'}
           </p>
         ) : (
           <ul className="log-list">
@@ -285,11 +390,27 @@ export function ParentReportsPage() {
                 >
                   <div>
                     <p style={{ margin: 0, fontWeight: 600 }}>
-                      {item.childName} · {item.label || item.month}
+                      {tab === 'documents'
+                        ? `${item.child_name || item.childName} · ${item.title}`
+                        : `${item.childName} · ${item.label || item.month}`}
                     </p>
-                    <span style={{ fontSize: 13, color: '#6b7280' }}>{item.caseId}</span>
+                    <span style={{ fontSize: 13, color: '#6b7280' }}>
+                      {tab === 'documents'
+                        ? `${item.case_code || item.caseId} · ${categoryLabel(item.category)}`
+                        : item.caseId}
+                    </span>
                   </div>
-                  <StatusChip status={item.status} />
+                  <StatusChip
+                    status={
+                      tab === 'documents'
+                        ? item.parent_review_status === 'PENDING'
+                          ? 'pending_review'
+                          : item.parent_review_status === 'APPROVED'
+                            ? 'approved'
+                            : item.status
+                        : item.status
+                    }
+                  />
                 </button>
               </li>
             ))}
@@ -334,10 +455,14 @@ export function ParentReportsPage() {
             >
               <div>
                 <h2 style={{ margin: 0, fontSize: 18 }}>
-                  {detail?.month || detail?.fileName || 'Document'}
+                  {detail?.kind === 'case_document'
+                    ? detail.title
+                    : detail?.month || detail?.fileName || 'Document'}
                 </h2>
                 <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-                  {detail?.childName} · {detail?.caseId}
+                  {detail?.kind === 'case_document'
+                    ? `${categoryLabel(detail.category)} · ${statusLabel(detail.status)}`
+                    : `${detail?.childName} · ${detail?.caseId}`}
                 </p>
               </div>
               <button type="button" onClick={closeDetail} aria-label="Close">
@@ -348,6 +473,63 @@ export function ParentReportsPage() {
             <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
               {detailLoading ? (
                 <p>Loading document…</p>
+              ) : detail?.kind === 'case_document' ? (
+                <>
+                  {detail.current_version?.source_type === 'EXTERNAL_LINK' ? (
+                    <p className="case-docs__banner">{GOOGLE_LINK_WARNING}</p>
+                  ) : null}
+                  {detail.current_version?.external_url ? (
+                    <p style={{ marginBottom: 12 }}>
+                      <a
+                        href={detail.current_version.external_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="admin-btn admin-btn--secondary"
+                      >
+                        Open in Google
+                      </a>
+                    </p>
+                  ) : null}
+                  {detail.current_version?.file_name ? (
+                    <p style={{ fontSize: 14, color: '#4b5563' }}>File: {detail.current_version.file_name}</p>
+                  ) : null}
+                  <CaseDocumentComments
+                    documentId={detail.id}
+                    detail={detail}
+                    onDetailChange={setDetail}
+                    canComment={detail.allowed_actions?.includes('comment')}
+                    commentPathPrefix="/api/v1/parent/documents"
+                  />
+                  {docFeedbackOpen ? (
+                    <section style={{ marginTop: 16 }}>
+                      <h3 style={{ fontSize: 15 }}>Request changes</h3>
+                      <textarea
+                        value={docFeedbackText}
+                        onChange={(e) => setDocFeedbackText(e.target.value)}
+                        rows={4}
+                        placeholder="Describe what should be updated"
+                        style={{ width: '100%', padding: 8 }}
+                      />
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn--primary"
+                          disabled={acting || !docFeedbackText.trim()}
+                          onClick={submitDocFeedback}
+                        >
+                          Send feedback
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn--ghost"
+                          onClick={() => setDocFeedbackOpen(false)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </section>
+                  ) : null}
+                </>
               ) : detail?.kind === 'monthly' ? (
                 <>
                   <ReportHtmlView html={detail.bodyHtml || detail.summary} />
@@ -484,11 +666,58 @@ export function ParentReportsPage() {
                     Acknowledge IEP
                   </button>
                 ) : null}
+                {detail.kind === 'case_document' && canApproveDoc ? (
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary"
+                    disabled={acting}
+                    onClick={approveCaseDocument}
+                  >
+                    {workflowActionLabel('parent_approve')}
+                  </button>
+                ) : null}
+                {detail.kind === 'case_document' &&
+                detail.current_version?.source_type === 'UPLOAD' ? (
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary"
+                    disabled={acting}
+                    onClick={() =>
+                      apiDownload(
+                        `/api/v1/documents/${detail.id}/download`,
+                        detail.current_version?.file_name || `document_${detail.id}`,
+                      )
+                    }
+                  >
+                    Download
+                  </button>
+                ) : null}
+                {detail.kind === 'case_document' && canDocFeedback && !docFeedbackOpen ? (
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary"
+                    disabled={acting}
+                    onClick={() => setDocFeedbackOpen(true)}
+                  >
+                    {workflowActionLabel('parent_feedback')}
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
         </div>
       ) : null}
+
+      <style>{`
+        .parent-reports__cases { margin-bottom: 24px; }
+        .parent-reports__case-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+        .parent-reports__case-card { display: block; padding: 14px 16px; border-radius: 14px; border: 1px solid #e2e8f0; background: #fff; text-decoration: none; color: inherit; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: border-color 0.15s, box-shadow 0.15s; }
+        .parent-reports__case-card:hover { border-color: #c7d2fe; box-shadow: 0 4px 12px rgba(99,102,241,0.12); }
+        .parent-reports__case-code { font-size: 0.7rem; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
+        .parent-reports__case-name { font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0 0 4px; }
+        .parent-reports__case-meta { font-size: 0.8rem; color: #64748b; margin: 0 0 8px; }
+        .parent-reports__case-cta { font-size: 0.75rem; font-weight: 600; color: #4f46e5; }
+      `}</style>
     </div>
   )
 }

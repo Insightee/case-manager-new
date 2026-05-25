@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -15,6 +16,11 @@ class ReportImage(Base):
     report_type: Mapped[str] = mapped_column(String(16), nullable=False)
     report_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    storage_provider: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    storage_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     uploaded_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

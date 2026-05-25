@@ -46,6 +46,16 @@ def _serialise_user(u: User) -> dict:
     }
 
 
+@router.get("/ops-snapshot")
+def hr_ops_snapshot(
+    user: User = Depends(require_permission("therapist.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services.hr_ops_snapshot_service import build_hr_ops_snapshot
+
+    return build_hr_ops_snapshot(db, user)
+
+
 @router.get("/therapists")
 def list_therapists(
     search: Optional[str] = None,
@@ -99,7 +109,11 @@ def update_therapist(
     if payload.location is not None:
         target.location = payload.location
     if payload.module_assignments is not None:
-        target.module_assignments = payload.module_assignments
+        from app.core.module_access import validate_module_assignments
+
+        target.module_assignments = validate_module_assignments(
+            target.role_names, payload.module_assignments
+        )
     if payload.is_active is not None:
         target.is_active = payload.is_active
 

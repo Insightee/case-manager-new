@@ -40,6 +40,12 @@ class PaymentMethod(str, enum.Enum):
     GATEWAY = "GATEWAY"
 
 
+class ClientPaymentStatus(str, enum.Enum):
+    PENDING_REVIEW = "PENDING_REVIEW"
+    CONFIRMED = "CONFIRMED"
+    REJECTED = "REJECTED"
+
+
 class BillingDisputeStatus(str, enum.Enum):
     OPEN = "OPEN"
     UNDER_REVIEW = "UNDER_REVIEW"
@@ -125,6 +131,15 @@ class ClientPayment(Base):
     reference: Mapped[Optional[str]] = mapped_column(String(128))
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     recorded_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    submitted_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    payment_status: Mapped[ClientPaymentStatus] = mapped_column(
+        Enum(ClientPaymentStatus), default=ClientPaymentStatus.CONFIRMED
+    )
+    proof_file_path: Mapped[Optional[str]] = mapped_column(String(512))
+    proof_file_name: Mapped[Optional[str]] = mapped_column(String(255))
+    confirmed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    rejection_note: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
 
     invoice = relationship("ClientInvoice", back_populates="payments")

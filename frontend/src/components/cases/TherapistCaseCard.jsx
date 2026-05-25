@@ -62,6 +62,13 @@ export function TherapistCaseCard({ data }) {
       <StatusBadge variant={data.badgeVariant}>{data.stage}</StatusBadge>
       <h3 className="ic-card__name">{data.child}</h3>
       <p className="ic-card__service">{data.service}</p>
+      {data.caseManagerName ? (
+        <p className="ic-card__cm">
+          Case manager: <span>{data.caseManagerName}</span>
+        </p>
+      ) : (
+        <p className="ic-card__cm ic-card__cm--muted">Case manager not assigned</p>
+      )}
       {data.serviceAddress?.formatted ? (
         <div className="ic-card__address">
           <p className="ic-card__address-label">Visit address</p>

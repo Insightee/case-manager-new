@@ -1,12 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch, apiFetchBlob, apiUpload } from '../../lib/apiClient.js'
+import './avatar-upload.css'
 
-const MAX_BYTES = 1_048_576
+export const AVATAR_MAX_BYTES = 1_048_576
+
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp']
 
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function normalizeUploadError(message) {
+  const m = (message || '').trim()
+  if (!m) return 'Upload failed. Try a smaller image (max 1 MB).'
+  if (/1\s*mb|size|too large|payload/i.test(m)) {
+    return 'Image must be under 1 MB. Choose a smaller photo or resize it before uploading.'
+  }
+  return m
+}
+
 /** @deprecated Use AuthenticatedAvatar — plain URLs require auth and break in <img>. */
-export function avatarSrc(user) {
-  if (!user?.avatar_url) return null
+export function avatarSrc() {
   return null
 }
 
@@ -19,24 +35,36 @@ function useAuthenticatedAvatarSrc(user) {
       return undefined
     }
 
-    let revoked = null
     let cancelled = false
+    const path = `${user.avatar_url.split('?')[0]}?t=${Date.now()}`
 
-    apiFetchBlob(`${user.avatar_url.split('?')[0]}?t=${Date.now()}`)
+    apiFetchBlob(path)
       .then((blob) => {
         if (cancelled) return
-        revoked = URL.createObjectURL(blob)
-        setBlobUrl(revoked)
+        const next = URL.createObjectURL(blob)
+        setBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev)
+          return next
+        })
       })
       .catch(() => {
-        if (!cancelled) setBlobUrl(null)
+        /* Keep previous preview on transient fetch errors — avoids blank flash */
       })
 
     return () => {
       cancelled = true
-      if (revoked) URL.revokeObjectURL(revoked)
     }
   }, [user?.avatar_url, user?.id])
+
+  useEffect(
+    () => () => {
+      setBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
+    },
+    [],
+  )
 
   return blobUrl
 }
@@ -80,29 +108,46 @@ export function AvatarUpload({ user, onUpdated, size = 80 }) {
   const [error, setError] = useState('')
   const previewSrc = useAuthenticatedAvatarSrc(user)
 
+  function validateFile(file) {
+    if (!file) return 'No file selected.'
+    if (file.size > AVATAR_MAX_BYTES) {
+      return `This photo is ${formatFileSize(file.size)}. Maximum size is 1 MB — choose a smaller image.`
+    }
+    if (file.size === 0) return 'That file is empty. Choose another image.'
+    if (!ALLOWED.includes(file.type) && !/\.(jpe?g|png|webp)$/i.test(file.name)) {
+      return 'Use JPEG, PNG, or WebP.'
+    }
+    return null
+  }
+
   async function handleFile(e) {
     const file = e.target.files?.[0]
+    if (inputRef.current) inputRef.current.value = ''
     if (!file) return
+
+    const validationError = validateFile(file)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
     setError('')
-    if (!ALLOWED.includes(file.type) && !/\.(jpe?g|png|webp)$/i.test(file.name)) {
-      setError('Use JPEG, PNG, or WebP.')
-      return
-    }
-    if (file.size > MAX_BYTES) {
-      setError('Image must be under 1 MB.')
-      return
-    }
     setUploading(true)
     try {
       const fd = new FormData()
       fd.append('file', file)
       await apiUpload('/api/v1/auth/me/avatar', fd)
-      if (onUpdated) await onUpdated()
+      if (onUpdated) {
+        try {
+          await onUpdated()
+        } catch {
+          setError('Photo uploaded, but the page could not refresh. Reload the page to see it.')
+        }
+      }
     } catch (err) {
-      setError(err.message || 'Upload failed')
+      setError(normalizeUploadError(err.message))
     } finally {
       setUploading(false)
-      if (inputRef.current) inputRef.current.value = ''
     }
   }
 
@@ -111,7 +156,13 @@ export function AvatarUpload({ user, onUpdated, size = 80 }) {
     setError('')
     try {
       await apiFetch('/api/v1/auth/me/avatar', { method: 'DELETE' })
-      if (onUpdated) await onUpdated()
+      if (onUpdated) {
+        try {
+          await onUpdated()
+        } catch {
+          setError('Photo removed, but the page could not refresh. Reload the page.')
+        }
+      }
     } catch (err) {
       setError(err.message || 'Could not remove photo')
     } finally {
@@ -123,6 +174,7 @@ export function AvatarUpload({ user, onUpdated, size = 80 }) {
     <div className="avatar-upload">
       <div className="avatar-upload__row">
         <div
+          className="avatar-upload__preview"
           style={{
             width: size,
             height: size,
@@ -136,7 +188,9 @@ export function AvatarUpload({ user, onUpdated, size = 80 }) {
             fontWeight: 700,
             fontSize: size * 0.35,
             flexShrink: 0,
+            opacity: uploading ? 0.85 : 1,
           }}
+          aria-busy={uploading}
         >
           {previewSrc ? (
             <img src={previewSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -166,8 +220,18 @@ export function AvatarUpload({ user, onUpdated, size = 80 }) {
         </div>
       </div>
       <p className="avatar-upload__hint">JPEG, PNG, or WebP. Max 1 MB.</p>
-      {error ? <p className="avatar-upload__error">{error}</p> : null}
-      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden onChange={handleFile} />
+      {error ? (
+        <div className="avatar-upload__error-banner" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+        hidden
+        onChange={handleFile}
+      />
     </div>
   )
 }

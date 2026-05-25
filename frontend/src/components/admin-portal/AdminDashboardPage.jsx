@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useAdminHome } from '../../hooks/useAdminHome.js'
+import { AdminOpsKpiGrid, buildAdminKpis } from './AdminOpsKpiGrid.jsx'
 import {
   AdminPageHeader,
-  AdminStatCard,
   AdminPanel,
   AdminEmptyState,
   StatusBadge,
@@ -36,61 +37,83 @@ export function AdminDashboardPage() {
     return Math.max(vals.reduce((a, b) => a + b, 0), 1)
   }, [breakdown])
 
-  const kpis = [
-    {
-      title: 'Active cases',
-      value: summary?.open_cases ?? '—',
-      hint: `${summary?.total_cases ?? '—'} total in system`,
-      tone: 'teal',
-      icon: '◉',
-      to: '/admin/cases',
-    },
-    {
-      title: 'Pending allotment',
-      value: summary?.pending_allotment ?? '—',
-      hint: 'Needs therapist assignment',
-      tone: 'amber',
-      icon: '◎',
-      to: can('case.create') ? '/admin/cases?allot=1' : '/admin/cases',
-    },
-    {
-      title: 'Reports in review',
-      value: summary?.reports_in_review ?? '—',
-      hint: 'Awaiting approval',
-      tone: 'indigo',
-      icon: '▣',
-      to: '/admin/reports?tab=queue',
-    },
-    {
-      title: 'Invoices pending',
-      value: summary?.invoices_pending ?? '—',
-      hint: 'Finance queue',
-      tone: 'rose',
-      icon: '₹',
-      to: '/admin/invoices',
-    },
-    {
-      title: 'Open tickets',
-      value: summary?.open_tickets ?? '—',
-      hint: 'Support workload',
-      tone: 'slate',
-      icon: '✉',
-      to: '/admin/tickets',
-    },
-    {
-      title: 'Suspended',
-      value: summary?.suspended_cases ?? '—',
-      hint: `${summary?.closed_cases ?? '—'} closed`,
-      tone: 'slate',
-      icon: '⏸',
-      to: '/admin/cases',
-    },
-  ]
-
   const canNavigate = can('case.read.all') || can('case.read.team')
+  const { data: roleHome } = useAdminHome()
+  const role = roleHome?.role || user?.roles?.[0]
+
+  const kpis = useMemo(
+    () => buildAdminKpis({ summary, role, canNavigate, can }),
+    [summary, role, canNavigate, can],
+  )
+
+  const widgetFooter = (w) => {
+    const map = {
+      billing: '/admin/invoices',
+      reschedules: '/admin/workbench?section=reschedules',
+      reports: '/admin/reports?tab=queue',
+      logs: '/admin/workbench?section=logs',
+      tickets: '/admin/support?tab=tickets',
+      observations: '/admin/workbench?section=observations',
+      status_requests: '/admin/workbench?section=status_requests',
+      client_claims: '/admin/invoices?tab=client&claims=pending',
+    }
+    return map[w.id] || w.section?.href || '/admin/workbench'
+  }
 
   return (
     <div className="admin-page">
+      {roleHome?.alerts?.length ? (
+        <section className="admin-alerts-strip" style={{ marginBottom: 16 }}>
+          {roleHome.alerts.map((alert) => (
+            <Link
+              key={alert.id}
+              to={alert.href || '/admin/workbench'}
+              className={`admin-alert admin-alert--${alert.severity || 'warning'}`}
+              style={{ display: 'block', marginBottom: 8, textDecoration: 'none' }}
+            >
+              <strong>{alert.title}</strong>
+              {alert.message ? ` — ${alert.message}` : ''}
+            </Link>
+          ))}
+        </section>
+      ) : null}
+
+      {roleHome?.widgets?.length ? (
+        <section className="admin-role-widgets" style={{ marginBottom: 24 }}>
+          <p className="admin-page__eyebrow">Your queue · {roleHome.role?.replace('_', ' ')}</p>
+          <div className="admin-role-widgets__grid">
+            {roleHome.widgets.map((w) => (
+              <AdminPanel key={w.id} title={w.title}>
+                {w.section?.items?.length ? (
+                  <ul className="admin-queue-list">
+                    {w.section.items.slice(0, 5).map((item) => (
+                      <li key={item.id || item.href}>
+                        <Link to={item.href || '/admin'}>
+                          {item.child_name || item.label || item.case_code}
+                          {item.case_code ? ` · ${item.case_code}` : ''}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <AdminEmptyState message="Nothing in this queue right now." />
+                )}
+                {w.section?.count > 5 ? (
+                  <Link to={widgetFooter(w)} className="admin-btn admin-btn--ghost admin-btn--sm">
+                    View all ({w.section.count})
+                  </Link>
+                ) : null}
+              </AdminPanel>
+            ))}
+          </div>
+          {roleHome.landing_route && roleHome.landing_route !== '/admin' ? (
+            <p style={{ marginTop: 12, fontSize: '0.875rem' }}>
+              <Link to={roleHome.landing_route}>Go to your primary workspace →</Link>
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       <AdminPageHeader
         eyebrow="Operations"
         title={`Welcome back${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`}
@@ -113,21 +136,7 @@ export function AdminDashboardPage() {
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
-      <section className="admin-kpi-grid" aria-label="Key metrics">
-        {loading
-          ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="admin-skeleton" />)
-          : kpis.map((kpi) => (
-              <AdminStatCard
-                key={kpi.title}
-                title={kpi.title}
-                value={kpi.value}
-                hint={kpi.hint}
-                tone={kpi.tone}
-                icon={kpi.icon}
-                to={canNavigate ? kpi.to : undefined}
-              />
-            ))}
-      </section>
+      <AdminOpsKpiGrid kpis={kpis} loading={loading} />
 
       <div className="admin-layout">
         <div className="admin-layout admin-layout--stack" style={{ gap: 16 }}>

@@ -12,6 +12,7 @@ from app.core.database import Base
 class DocumentEntityType(str, enum.Enum):
     IEP = "iep"
     MONTHLY_REPORT = "monthly_report"
+    CASE_DOCUMENT = "case_document"
 
 
 class CommentType(str, enum.Enum):

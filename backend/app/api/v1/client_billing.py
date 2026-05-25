@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -17,6 +17,7 @@ from app.schemas.client_billing import (
     AdminDisputeResolve,
     BillingDisputeCreate,
     ClientPaymentRecord,
+    PaymentClaimReject,
 )
 from app.services import client_billing_service
 
@@ -100,6 +101,24 @@ def parent_invoice_print(
     return HTMLResponse(html)
 
 
+@parent_router.get("/invoices/{invoice_id}/pdf")
+def parent_invoice_pdf(
+    invoice_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    _require_parent(user)
+    try:
+        inv = client_billing_service.get_invoice_detail(db, user, invoice_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    pdf = client_billing_service.client_invoice_pdf_bytes(inv)
+    safe = inv.get("invoiceNumber", str(invoice_id)).replace("/", "-")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="invoice_{safe}.pdf"'},
+    )
+
+
 @parent_router.get("/lines/{line_id}/session")
 def parent_line_session(line_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_parent(user)
@@ -134,6 +153,49 @@ def parent_create_dispute(
     log_audit(db, actor_user_id=user.id, action="billing_dispute", entity_type="client_invoice", entity_id=invoice_id, **meta)
     db.commit()
     return result
+
+
+@parent_router.post("/invoices/{invoice_id}/payment-claims", status_code=201)
+async def parent_submit_payment_claim(
+    invoice_id: int,
+    request: Request,
+    amount_inr: float = Form(...),
+    method: str = Form(...),
+    reference: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    proof: Optional[UploadFile] = File(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    try:
+        payment = await client_billing_service.submit_payment_claim(
+            db, user, invoice_id, amount_inr, method, reference, notes, proof
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="payment_claim",
+        entity_type="client_payment",
+        entity_id=payment.id,
+        **meta,
+    )
+    db.commit()
+    return {"id": payment.id, "paymentStatus": payment.payment_status.value.lower()}
+
+
+@parent_router.get("/payments/{payment_id}/proof")
+def parent_payment_proof(
+    payment_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    _require_parent(user)
+    try:
+        return client_billing_service.payment_proof_download(db, user, payment_id, admin=False)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Proof not found")
 
 
 @admin_router.get("/summary")
@@ -437,6 +499,53 @@ def admin_record_payment(
     log_audit(db, actor_user_id=user.id, action="record_payment", entity_type="client_invoice", entity_id=invoice_id, **meta)
     db.commit()
     return {"status": "recorded"}
+
+
+@admin_router.post("/payments/{payment_id}/confirm")
+def admin_confirm_payment_claim(
+    payment_id: int,
+    request: Request,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    try:
+        client_billing_service.confirm_payment_claim(db, payment_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="confirm_payment", entity_type="client_payment", entity_id=payment_id, **meta)
+    db.commit()
+    return {"status": "confirmed"}
+
+
+@admin_router.post("/payments/{payment_id}/reject")
+def admin_reject_payment_claim(
+    payment_id: int,
+    payload: PaymentClaimReject,
+    request: Request,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    try:
+        client_billing_service.reject_payment_claim(db, payment_id, user.id, payload.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="reject_payment", entity_type="client_payment", entity_id=payment_id, **meta)
+    db.commit()
+    return {"status": "rejected"}
+
+
+@admin_router.get("/payments/{payment_id}/proof")
+def admin_payment_proof(
+    payment_id: int,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return client_billing_service.payment_proof_download(db, user, payment_id, admin=True)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Proof not found")
 
 
 @admin_router.post("/disputes/{dispute_id}/resolve")

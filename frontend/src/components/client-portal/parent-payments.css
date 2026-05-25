@@ -378,6 +378,23 @@
   color: #b91c1c;
 }
 
+.parent-pay__dispute-hint {
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+
+.parent-pay__inline-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #4f46e5;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .parent-pay__table-card button {
   padding: 6px 12px;
   border-radius: 8px;

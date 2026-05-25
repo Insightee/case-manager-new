@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { categoryLabel } from '../../lib/reportCategories.js'
 import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
 import '../reports/report-editor.css'
 import './admin-reports.css'
@@ -17,6 +19,9 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
   const [acting, setActing] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [rejectComment, setRejectComment] = useState('')
+  const [cmComment, setCmComment] = useState('')
+  const { can } = useAuth()
+  const canPublishToParent = can('case.read.all')
 
   useEffect(() => {
     if (!reportId || !reportType) return
@@ -80,6 +85,31 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
     }
   }
 
+  async function cmReview(requestChanges) {
+    if (!cmComment.trim()) {
+      setErr('Comment is required')
+      return
+    }
+    setActing(true)
+    setErr('')
+    try {
+      await apiFetch(`/api/v1/admin/reports/monthly/${reportId}/cm-review`, {
+        method: 'POST',
+        body: JSON.stringify({
+          comment: cmComment.trim(),
+          request_changes: requestChanges,
+        }),
+      })
+      setCmComment('')
+      onAction?.()
+      onClose()
+    } catch (e) {
+      setErr(e.message || 'Review failed')
+    } finally {
+      setActing(false)
+    }
+  }
+
   async function reject() {
     if (!rejectComment.trim()) {
       setErr('Rejection comment is required')
@@ -111,7 +141,16 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
     (reportType === 'monthly' &&
       detail?.status === 'PUBLISHED' &&
       detail?.parent_review_status === 'CHANGES_REQUESTED')
-  const canReject = detail?.status === 'UNDER_REVIEW'
+  const canReject = canPublishToParent && detail?.status === 'UNDER_REVIEW'
+  const canCmReview =
+    reportType === 'monthly' &&
+    !canPublishToParent &&
+    can('monthly_report.approve') &&
+    detail?.status === 'UNDER_REVIEW'
+  const pdfPath =
+    reportType === 'monthly'
+      ? `/api/v1/reports/monthly/${reportId}/download`
+      : `/api/v1/reports/observation/${reportId}/download`
 
   return (
     <>
@@ -149,7 +188,7 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
 
             {detail.category ? (
               <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 8 }}>
-                Category: {detail.category.replace(/_/g, ' ')}
+                Category: {categoryLabel(detail.category)}
               </p>
             ) : null}
 
@@ -165,18 +204,14 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
               </div>
             ) : null}
 
-            {reportType === 'monthly' ? (
-              <button
-                type="button"
-                className="admin-btn admin-btn--ghost admin-btn--sm"
-                style={{ marginTop: 12 }}
-                onClick={() =>
-                  apiDownload(`/api/v1/reports/monthly/${reportId}/download`, `report_${detail.label}.pdf`)
-                }
-              >
-                Download PDF
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              style={{ marginTop: 12 }}
+              onClick={() => apiDownload(pdfPath, `report_${detail.label || reportId}.pdf`)}
+            >
+              Download PDF
+            </button>
 
             {detail.parent_feedback ? (
               <div style={{ marginTop: 12 }}>
@@ -209,8 +244,39 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
               </div>
             ) : null}
 
+            {canCmReview ? (
+              <div style={{ marginTop: 16 }}>
+                <h3 style={{ fontSize: '0.9rem' }}>Case manager review</h3>
+                <textarea
+                  className="admin-input"
+                  rows={3}
+                  placeholder="Internal note for admin (required)"
+                  value={cmComment}
+                  onChange={(e) => setCmComment(e.target.value)}
+                />
+                <div className="admin-btn-group" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary admin-btn--sm"
+                    disabled={acting}
+                    onClick={() => cmReview(false)}
+                  >
+                    Mark reviewed
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--sm"
+                    disabled={acting}
+                    onClick={() => cmReview(true)}
+                  >
+                    Request correction
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="admin-btn-group" style={{ marginTop: 20 }}>
-              {canApprove ? (
+              {canApprove && canPublishToParent ? (
                 <button
                   type="button"
                   className="admin-btn admin-btn--primary admin-btn--sm"

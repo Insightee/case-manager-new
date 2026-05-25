@@ -279,8 +279,11 @@ export function ParentProfilePage() {
 
   async function handleAddChild(nameFull) {
     const { first, last } = splitFullName(nameFull)
-    const updated = [...children, { id: undefined, first_name: first, last_name: last }]
-    await patchChildren(updated)
+    await apiFetch('/api/v1/parent/children', {
+      method: 'POST',
+      body: JSON.stringify({ first_name: first, last_name: last }),
+    })
+    await loadProfile()
     setShowAddChild(false)
   }
 

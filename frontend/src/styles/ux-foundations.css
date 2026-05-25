@@ -1,0 +1,120 @@
+/* UX foundations: a11y, motion, touch targets, mobile nav drawer */
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 10px 16px;
+  background: #0f3d2e;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 0 0 8px 0;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  left: 0;
+  outline: 2px solid #2db7a7;
+  outline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid #1f9f91;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.portal-tabs--four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-width: 100%;
+}
+
+@media (max-width: 520px) {
+  .portal-tabs--four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .login-submit,
+  .login-demo-btn,
+  .portal-tabs button,
+  .login-form input,
+  .login-form select {
+    min-height: 44px;
+  }
+
+  .portal-tabs button {
+    padding: 10px 8px;
+  }
+
+  .app-shell__backdrop.is-visible {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 44;
+    border: none;
+    padding: 0;
+    margin: 0;
+    background: rgba(15, 23, 42, 0.5);
+    cursor: pointer;
+  }
+
+  .app-sidebar--drawer {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(300px, 88vw);
+    z-index: 50;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    box-shadow: 8px 0 32px rgba(15, 23, 42, 0.2);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-sidebar--drawer.is-open {
+    transform: translateX(0);
+  }
+
+  .app-sidebar--drawer .app-sidebar__nav {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .app-mobile-tabs__link--menu {
+    border: none;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  .app-mobile-tabs__link--menu.is-active,
+  .app-mobile-tabs__link--menu[aria-expanded='true'] {
+    color: #0f3d2e;
+    background: #e8f7f5;
+    border-radius: 10px;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-mobile-tabs:not(.app-mobile-tabs--compact) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

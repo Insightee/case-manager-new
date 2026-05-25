@@ -52,8 +52,8 @@ export function ClientIncidentPage({ cases = [] }) {
   const caseOptions = useMemo(() => {
     const seen = new Set()
     return (cases || []).filter((c) => {
-      const key = c.caseId || c.id
-      if (seen.has(key)) return false
+      const key = c.id
+      if (key == null || seen.has(key)) return false
       seen.add(key)
       return true
     })
@@ -144,7 +144,11 @@ export function ClientIncidentPage({ cases = [] }) {
               </span>
             </div>
             <p style={{ fontWeight: 600, margin: '0 0 2px', fontSize: '0.9rem' }}>{inc.title}</p>
-            {inc.child_name ? <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>{inc.child_name}</p> : null}
+            {inc.case_code || inc.child_name ? (
+              <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                {[inc.case_code, inc.child_name].filter(Boolean).join(' · ')}
+              </p>
+            ) : null}
           </div>
           <span style={{ color: '#94a3b8' }}>{isExpanded ? '▲' : '▼'}</span>
         </div>
@@ -188,9 +192,10 @@ export function ClientIncidentPage({ cases = [] }) {
           <div style={{ marginTop: 12 }}>
             <IncidentReportForm
               cases={caseOptions.map((c) => ({
-                id: c.caseId || c.id,
-                child_name: c.childName || c.child_name,
-                case_code: c.caseCode || c.case_code,
+                id: c.id,
+                child_name: c.childName,
+                case_code: c.caseId,
+                service_type: c.serviceType,
               }))}
               caseRequired={caseOptions.length > 0}
               onSubmit={submitReport}

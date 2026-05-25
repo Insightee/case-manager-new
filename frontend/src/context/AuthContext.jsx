@@ -73,9 +73,11 @@ export function AuthProvider({ children }) {
 
   const hasFeature = useCallback(
     (feature) => {
-      if (!user?.features?.length) return true
-      if (user.features.includes('*')) return true
-      return user.features.includes(feature)
+      if (!user) return false
+      const features = user.features
+      if (!features?.length) return false
+      if (features.includes('*')) return true
+      return features.includes(feature)
     },
     [user],
   )

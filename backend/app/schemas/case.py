@@ -54,6 +54,9 @@ class CaseRead(CaseBillingFields):
     product_module: str
     status: CaseStatus
     case_manager_user_id: Optional[int]
+    case_manager_name: Optional[str] = None
+    case_manager_email: Optional[str] = None
+    notes: Optional[str] = None
     region: Optional[str]
     operational_stage: Optional[str]
     created_at: datetime

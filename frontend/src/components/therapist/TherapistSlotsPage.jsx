@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { BookSlotModal } from './BookSlotModal.jsx'
 import { WeeklyScheduleDrawer } from './WeeklyScheduleDrawer.jsx'
 import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
@@ -7,6 +8,9 @@ import { SlotEditSheet } from '../scheduling/SlotEditSheet.jsx'
 import { addDays, dateStr, startOfWeek } from '../scheduling/slotCalendarUtils.js'
 
 export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const focusDate = searchParams.get('date')
   const [scheduleWeekStart, setScheduleWeekStart] = useState(() => startOfWeek(new Date()))
   const [refreshKey, setRefreshKey] = useState(0)
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -63,9 +67,16 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
       <TherapistCalendar
         therapistId={therapistIdProp}
         refreshKey={refreshKey}
+        focusDate={focusDate}
         mode="therapist"
         onScheduleContext={({ weekStart }) => setScheduleWeekStart(weekStart)}
-        onSlotClick={(s) => setDetailSlot(s)}
+        onSlotClick={(s) => {
+          if (s.event_type === 'session' && s.case_id) {
+            navigate(`/therapist/cases/${s.case_id}?tab=sessions`)
+            return
+          }
+          setDetailSlot(s)
+        }}
         onCellClick={(day, hour) => setEditState({ mode: 'add', cellDate: day, cellHour: hour })}
       />
 

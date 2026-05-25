@@ -64,6 +64,13 @@ export const THERAPIST_STATUS_STYLES = {
   HOLIDAY: 'bg-amber-100 text-amber-900 border-amber-200',
   CANCELLED: 'bg-red-50 text-red-800 border-red-200 line-through',
   RESCHEDULED: 'bg-purple-50 text-purple-800 border-purple-200',
+  SESSION: 'bg-violet-100 text-violet-900 border-violet-200',
+  IN_PROGRESS: 'bg-amber-100 text-amber-900 border-amber-300',
+}
+
+/** Slots plus scheduled therapy sessions returned by the calendar API. */
+export function calendarGridEvents(calendar) {
+  return [...(calendar?.slots || []), ...(calendar?.sessions || [])]
 }
 
 export const STATUS_LABELS = {

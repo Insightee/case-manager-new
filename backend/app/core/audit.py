@@ -22,6 +22,37 @@ def _serialize(value: Any) -> Any:
     return str(value)
 
 
+def _extract_case_id_from_payload(payload: Any) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("case_id") or payload.get("caseId")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def infer_audit_case_id(
+    *,
+    entity_type: str,
+    entity_id: str | int | None,
+    old_value: Any = None,
+    new_value: Any = None,
+) -> int | None:
+    if entity_type == "case" and entity_id is not None:
+        try:
+            return int(entity_id)
+        except (TypeError, ValueError):
+            return None
+    for payload in (new_value, old_value):
+        cid = _extract_case_id_from_payload(payload)
+        if cid is not None:
+            return cid
+    return _extract_case_id_from_payload(new_value) or _extract_case_id_from_payload(old_value)
+
+
 def log_audit(
     db: Session,
     *,
@@ -33,9 +64,19 @@ def log_audit(
     new_value: Any = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
+    case_id: int | None = None,
 ) -> AuditEvent:
+    resolved_case_id = case_id
+    if resolved_case_id is None:
+        resolved_case_id = infer_audit_case_id(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            old_value=old_value,
+            new_value=new_value,
+        )
     event = AuditEvent(
         actor_user_id=actor_user_id,
+        case_id=resolved_case_id,
         action=action,
         entity_type=entity_type,
         entity_id=str(entity_id) if entity_id is not None else None,

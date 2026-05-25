@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import {
+  applyLogSavedToCaseLogs,
+  applyLogSavedToSessions,
+  patchCachesAfterLogSave,
+} from '../../lib/therapistSessionLogCache.js'
+import { formatScheduleWhen } from '../../lib/therapistSchedule.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
 
@@ -15,9 +22,12 @@ export function CaseSessionsPanel({
   caseCode,
   childName,
   childLabel = '',
+  scheduleItems = [],
   bookedSlots = [],
   onScheduleChange,
 }) {
+  const { user } = useAuth()
+  const therapistId = user?.id
   const [sessions, setSessions] = useState([])
   const [logs, setLogs] = useState([])
   const [upcomingAll, setUpcomingAll] = useState([])
@@ -35,16 +45,16 @@ export function CaseSessionsPanel({
       setError('')
     }
     try {
-      const [sess, allLogs, act, upcoming] = await Promise.all([
+      const logParams = new URLSearchParams({ case_id: String(caseId) })
+      if (therapistId) logParams.set('therapist_user_id', String(therapistId))
+      const [sess, caseLogs, act, upcoming] = await Promise.all([
         apiFetch(`/api/v1/sessions?case_id=${caseId}&page_size=100`),
-        apiFetch('/api/v1/daily-logs'),
+        apiFetch(`/api/v1/daily-logs?${logParams}`),
         apiFetch('/api/v1/sessions/active').catch(() => null),
         apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
       ])
       setSessions(unwrapList(sess))
-      setLogs((Array.isArray(allLogs) ? allLogs : unwrapList(allLogs)).filter(
-        (l) => l.case_id === Number(caseId),
-      ))
+      setLogs(Array.isArray(caseLogs) ? caseLogs : unwrapList(caseLogs))
       setUpcomingAll(Array.isArray(upcoming) ? upcoming : unwrapList(upcoming))
       if (act?.case_id === Number(caseId)) setActive(act)
       else setActive(null)
@@ -53,7 +63,7 @@ export function CaseSessionsPanel({
     } finally {
       setLoading(false)
     }
-  }, [caseId])
+  }, [caseId, therapistId])
 
   useEffect(() => {
     load()
@@ -94,7 +104,13 @@ export function CaseSessionsPanel({
     try {
       const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, { method: 'POST' })
       openLogForm(ended, { required: true })
-      await load({ silent: true })
+      setActive(null)
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId ? { ...s, ...ended, status: 'COMPLETED', has_daily_log: false } : s,
+        ),
+      )
+      void load({ silent: true })
       onScheduleChange?.()
     } catch (err) {
       setError(err.message || 'Could not end session')
@@ -144,7 +160,12 @@ export function CaseSessionsPanel({
         )
       }
       openLogForm(session, { required: true })
-      await load({ silent: true })
+      setSessions((prev) => {
+        const exists = prev.some((s) => s.id === session.id)
+        if (exists) return prev
+        return [{ ...session, has_daily_log: false }, ...prev]
+      })
+      void load({ silent: true })
       onScheduleChange?.()
     } catch (err) {
       setError(err.message || 'Could not add session')
@@ -163,6 +184,31 @@ export function CaseSessionsPanel({
       {error ? <p className="ic-session-composer__error">{error}</p> : null}
       {success ? <p className="ic-case-sessions__success">{success}</p> : null}
 
+      {scheduleItems.length > 0 ? (
+        <section className="ic-case-sessions__block ic-case-sessions__block--upcoming">
+          <h4>Upcoming for this client</h4>
+          <ul className="ic-case-schedule-list">
+            {scheduleItems.map((item) => (
+              <li key={item.key}>
+                <span className="ic-case-schedule-list__when">{formatScheduleWhen(item)}</span>
+                <span className="ic-case-schedule-list__sub">{item.subtitle}</span>
+              </li>
+            ))}
+          </ul>
+          <Link to="/therapist/slots" className="ic-btn ic-btn--ghost" style={{ marginTop: 8 }}>
+            Open calendar
+          </Link>
+        </section>
+      ) : (
+        <section className="ic-case-sessions__block ic-case-sessions__block--upcoming">
+          <h4>Upcoming for this client</h4>
+          <p className="ic-case-panel__hint">No upcoming sessions or bookings. Add availability in your calendar.</p>
+          <Link to="/therapist/slots" className="ic-btn ic-btn--primary" style={{ marginTop: 8 }}>
+            Open slots
+          </Link>
+        </section>
+      )}
+
       {active ? (
         <div className="ic-case-active">
           <p className="ic-case-active__title">Session in progress</p>
@@ -179,10 +225,20 @@ export function CaseSessionsPanel({
           childName={childName}
           caseCode={caseCode}
           required={logRequired && !editingLog}
-          onSuccess={async () => {
+          onSuccess={(savedLog) => {
+            const sessionId = logSession?.id ?? savedLog?.session_id
             closeLogForm()
             setSuccess(editingLog ? 'Log updated.' : 'Log submitted for review.')
-            await load({ silent: true })
+            patchCachesAfterLogSave({
+              userId: therapistId,
+              sessionId,
+              savedLog,
+              isEdit: Boolean(editingLog),
+            })
+            setSessions((prev) => applyLogSavedToSessions(prev, sessionId))
+            setLogs((prev) => applyLogSavedToCaseLogs(prev, savedLog, caseId, { isEdit: Boolean(editingLog) }))
+            if (active?.id === sessionId) setActive(null)
+            void load({ silent: true })
           }}
           onCancel={closeLogForm}
         />
@@ -193,7 +249,7 @@ export function CaseSessionsPanel({
           upcomingSessions={upcomingAll}
           bookedSlots={bookedSlots}
           disabled={!!active}
-          onSessionStarted={() => load({ silent: true })}
+          onSessionStarted={() => void load({ silent: true })}
           onManualSession={handleManual}
           onError={setError}
         />

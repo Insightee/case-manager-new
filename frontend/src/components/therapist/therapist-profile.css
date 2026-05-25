@@ -39,60 +39,6 @@
   margin: 24px 0 20px;
 }
 
-.avatar-upload {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.avatar-upload__row {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.avatar-upload__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 4px;
-}
-
-.avatar-upload__btn {
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.avatar-upload__btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.avatar-upload__btn--danger {
-  border-color: #fca5a5;
-  color: #b91c1c;
-}
-
-.avatar-upload__hint {
-  font-size: 0.75rem;
-  color: #9ca3af;
-  margin: 0;
-}
-
-.avatar-upload__error {
-  font-size: 0.75rem;
-  color: #b91c1c;
-  margin: 0;
-}
-
 .therapist-profile__hero-main {
   flex: 1;
   min-width: 0;

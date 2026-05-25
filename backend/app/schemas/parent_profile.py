@@ -20,6 +20,11 @@ class ParentChildUpdate(BaseModel):
     last_name: str = Field(min_length=1, max_length=128)
 
 
+class ParentChildCreate(BaseModel):
+    first_name: str = Field(min_length=1, max_length=128)
+    last_name: str = Field(default="", max_length=128)
+
+
 class ParentServiceRead(BaseModel):
     case_id: int
     case_code: str

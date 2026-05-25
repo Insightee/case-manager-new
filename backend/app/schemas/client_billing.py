@@ -26,6 +26,10 @@ class ClientPaymentRecord(BaseModel):
     notes: Optional[str] = None
 
 
+class PaymentClaimReject(BaseModel):
+    note: str = Field(min_length=3)
+
+
 class AdminDisputeResolve(BaseModel):
     status: Literal["RESOLVED", "REJECTED"]
     resolution: str = Field(min_length=5)

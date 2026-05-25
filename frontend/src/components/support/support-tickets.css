@@ -248,3 +248,68 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.ticket-flow-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.ticket-flow-dialog {
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.2);
+}
+
+.ticket-flow-dialog__title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ticket-flow-dialog__desc {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.ticket-flow-dialog__label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.ticket-flow-dialog__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+.ticket-flow-dialog__hint {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  color: #b45309;
+}
+
+.ticket-flow-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

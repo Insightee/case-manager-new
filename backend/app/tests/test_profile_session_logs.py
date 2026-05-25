@@ -20,6 +20,21 @@ def _login(email: str, password: str = "demo123"):
     return r.json()["access_token"]
 
 
+def test_therapist_daily_logs_list_defaults_to_own_logs():
+    token = _login("therapist@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    uid = me.json()["id"]
+    default_list = client.get("/api/v1/daily-logs", headers=headers)
+    scoped_list = client.get(f"/api/v1/daily-logs?therapist_user_id={uid}", headers=headers)
+    assert default_list.status_code == 200
+    assert scoped_list.status_code == 200
+    default_ids = {row["id"] for row in default_list.json()}
+    scoped_ids = {row["id"] for row in scoped_list.json()}
+    assert default_ids == scoped_ids
+
+
 def test_avatar_upload_and_fetch():
     token = _login("therapist@demo.com")
     headers = {"Authorization": f"Bearer {token}"}

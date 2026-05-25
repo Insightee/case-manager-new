@@ -1,27 +1,39 @@
-import { useEffect, useState } from 'react'
-import { hydrateReportImages, sanitizeReportHtml } from '../../lib/reportHtml.js'
+import { useEffect, useRef, useState } from 'react'
+import { hydrateReportImages, revokeBlobUrlsInHtml, sanitizeReportHtml } from '../../lib/reportHtml.js'
 import './report-editor.css'
 
 export function ReportHtmlView({ html, className = 'report-html-view' }) {
   const [displayHtml, setDisplayHtml] = useState('')
+  const displayRef = useRef('')
 
   useEffect(() => {
     let cancelled = false
     const run = async () => {
       if (!html) {
+        displayRef.current = ''
         setDisplayHtml('')
         return
       }
       try {
         const hydrated = await hydrateReportImages(html)
-        if (!cancelled) setDisplayHtml(hydrated)
+        if (cancelled) {
+          revokeBlobUrlsInHtml(hydrated)
+          return
+        }
+        displayRef.current = hydrated
+        setDisplayHtml(hydrated)
       } catch {
-        if (!cancelled) setDisplayHtml(sanitizeReportHtml(html))
+        if (!cancelled) {
+          const fallback = sanitizeReportHtml(html)
+          displayRef.current = fallback
+          setDisplayHtml(fallback)
+        }
       }
     }
     run()
     return () => {
       cancelled = true
+      revokeBlobUrlsInHtml(displayRef.current)
     }
   }, [html])
 

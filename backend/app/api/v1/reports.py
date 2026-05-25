@@ -3,14 +3,14 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse, Response
-from pathlib import Path
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.db_errors import commit_or_http
 from app.core.permissions import case_scope_check, require_permission
 from app.core.report_constants import PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES
 from app.models.report import MonthlyReport, ObservationReport, ReportCategory, ReportStatus
@@ -68,6 +68,7 @@ def list_monthly_reports(
 
 def _report_read(db: Session, report: MonthlyReport) -> MonthlyReportRead:
     case = case_service.get_case(db, report.case_id)
+    visibility = report.visibility_status or VisibilityStatus.INTERNAL_ONLY
     return MonthlyReportRead(
         id=report.id,
         case_id=report.case_id,
@@ -83,7 +84,7 @@ def _report_read(db: Session, report: MonthlyReport) -> MonthlyReportRead:
         sub_category=report.sub_category,
         report_date=report.report_date,
         reviewer_comment=report.reviewer_comment,
-        visibility_status=report.visibility_status,
+        visibility_status=visibility,
         parent_review_status=report.parent_review_status,
         parent_feedback=report.parent_feedback,
         parent_reviewed_at=report.parent_reviewed_at,
@@ -129,7 +130,7 @@ def create_monthly_report(
     )
     sync_summary_from_body(report)
     db.add(report)
-    db.commit()
+    commit_or_http(db)
     db.refresh(report)
     return _report_read(db, report)
 
@@ -156,7 +157,7 @@ def update_monthly_report(
     if report.status == ReportStatus.REJECTED:
         report.status = ReportStatus.DRAFT
         report.reviewer_comment = None
-    db.commit()
+    commit_or_http(db)
     db.refresh(report)
     return _report_read(db, report)
 
@@ -176,7 +177,9 @@ async def upload_monthly_report_image(
     user: User = Depends(require_permission("monthly_report.create")),
     db: Session = Depends(get_db),
 ):
-    return await report_image_service.save_report_image(db, user, "monthly", report_id, file)
+    result = await report_image_service.save_report_image(db, user, "monthly", report_id, file)
+    commit_or_http(db)
+    return result
 
 
 @router.get("/images/{image_id}")
@@ -186,10 +189,12 @@ def download_report_image(
     db: Session = Depends(get_db),
 ):
     img = report_image_service.get_image_for_user(db, user, image_id)
-    path = Path(img.file_path)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(path, media_type="image/jpeg", filename=img.file_name)
+    data, mime, filename = report_image_service.open_report_image_content(img)
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.get("/monthly/{report_id}/session-context", response_model=list[SessionLogContextItem])
@@ -264,11 +269,13 @@ def submit_monthly_report(
         raise HTTPException(status_code=404, detail="Report not found")
     if report.status not in (ReportStatus.DRAFT, ReportStatus.REJECTED):
         raise HTTPException(status_code=400, detail="Report cannot be submitted in its current state")
+    if not (report.month or "").strip():
+        raise HTTPException(status_code=400, detail="Set the report month before submitting")
     has_body = (report.body_html or "").strip() or (report.summary or "").strip()
     if not has_body:
         raise HTTPException(status_code=400, detail="Add report content before submitting")
     report.status = ReportStatus.UNDER_REVIEW
-    db.commit()
+    commit_or_http(db)
     return {"status": "under_review"}
 
 
@@ -461,7 +468,9 @@ async def upload_observation_report_image(
     user: User = Depends(require_permission("monthly_report.create")),
     db: Session = Depends(get_db),
 ):
-    return await report_image_service.save_report_image(db, user, "observation", report_id, file)
+    result = await report_image_service.save_report_image(db, user, "observation", report_id, file)
+    commit_or_http(db)
+    return result
 
 
 @router.get("/observation/{report_id}/download")

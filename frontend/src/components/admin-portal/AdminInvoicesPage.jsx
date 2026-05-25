@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
@@ -213,7 +214,24 @@ function TherapistPayoutsTab() {
 }
 
 export function AdminInvoicesPage() {
-  const [activeTab, setActiveTab] = useState('client')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') === 'therapist' ? 'therapist' : 'client'
+  const [claimsPending, setClaimsPending] = useState(0)
+
+  useEffect(() => {
+    apiFetch('/api/v1/admin/dashboard/summary')
+      .then((s) => setClaimsPending(s?.client_payments_pending_review ?? 0))
+      .catch(() => setClaimsPending(0))
+  }, [])
+
+  function setTab(tab) {
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', tab)
+    if (tab !== 'client') next.delete('claims')
+    setSearchParams(next)
+  }
+
+  const highlightClaims = searchParams.get('claims') === 'pending'
 
   return (
     <div className="admin-page">
@@ -223,24 +241,36 @@ export function AdminInvoicesPage() {
         subtitle="Manage client invoices sent to families and therapist payout approvals."
       />
 
+      {claimsPending > 0 ? (
+        <div className="admin-alert admin-alert--warning" style={{ marginBottom: 16 }}>
+          <strong>{claimsPending} client payment claim{claimsPending === 1 ? '' : 's'}</strong> awaiting review.{' '}
+          <Link to="/admin/invoices?tab=client&claims=pending">Review on client invoices →</Link>
+        </div>
+      ) : null}
+
       <div className="sessions-dash__tabs" style={{ marginBottom: 4 }}>
         <button
           type="button"
           className={`sessions-dash__tab ${activeTab === 'client' ? 'is-active' : ''}`}
-          onClick={() => setActiveTab('client')}
+          onClick={() => setTab('client')}
         >
           Client invoices
+          {claimsPending > 0 ? ` (${claimsPending})` : ''}
         </button>
         <button
           type="button"
           className={`sessions-dash__tab ${activeTab === 'therapist' ? 'is-active' : ''}`}
-          onClick={() => setActiveTab('therapist')}
+          onClick={() => setTab('therapist')}
         >
           Therapist payouts
         </button>
       </div>
 
-      {activeTab === 'client' ? <AdminClientInvoicesTab /> : <TherapistPayoutsTab />}
+      {activeTab === 'client' ? (
+        <AdminClientInvoicesTab highlightClaimsPending={highlightClaims} openInvoiceId={searchParams.get('invoiceId')} />
+      ) : (
+        <TherapistPayoutsTab />
+      )}
     </div>
   )
 }

@@ -9,6 +9,7 @@ from app.models.support_ticket import SupportTicket, TicketMessage
 from app.models.user import User
 from app.services import ticket_attachment_service as att_svc
 from app.services import ticket_escalation_service as ticket_esc
+from app.services import ticket_flow_service as flow
 from app.services import ticket_list_service
 
 
@@ -64,4 +65,8 @@ def get_ticket_detail(db: Session, user: User, ticket_id: int) -> dict:
     if ticket.assigned_to_user_id:
         assignee = db.get(User, ticket.assigned_to_user_id)
         row["assigned_to_name"] = assignee.full_name if assignee else None
+    row.update(flow.ticket_flow_flags(db, user, ticket))
+    row["resolved_at"] = ticket.resolved_at.isoformat() if ticket.resolved_at else None
+    row["parent_satisfaction_rating"] = ticket.parent_satisfaction_rating
+    row["parent_resolution_feedback"] = ticket.parent_resolution_feedback
     return row

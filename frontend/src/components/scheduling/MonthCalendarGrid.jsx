@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { addDays, addMonths, dateStr, startOfMonth } from './slotCalendarUtils.js'
+import { addDays, addMonths, calendarGridEvents, dateStr, startOfMonth } from './slotCalendarUtils.js'
 
-function slotsForDate(slots, ds) {
-  return (slots || []).filter((s) => s.slot_date === ds)
+function eventsForDate(calendar, ds) {
+  return calendarGridEvents(calendar).filter((s) => s.slot_date === ds)
 }
 
 export function MonthCalendarGrid({
@@ -66,10 +66,12 @@ export function MonthCalendarGrid({
             {cells.map((d) => {
               const ds = dateStr(d)
               const inMonth = d.getMonth() === monthDate.getMonth()
-              const daySlots = slotsForDate(calendar?.slots, ds)
+              const dayEvents = eventsForDate(calendar, ds)
               const overlay = calendar?.day_overlays?.[ds]
-              const hasBooked = daySlots.some((s) => s.status === 'BOOKED')
-              const hasAvailable = daySlots.some((s) => s.status === 'AVAILABLE')
+              const hasBooked = dayEvents.some(
+                (s) => s.status === 'BOOKED' || s.event_type === 'session',
+              )
+              const hasAvailable = dayEvents.some((s) => s.status === 'AVAILABLE')
               const isToday = ds === today
               return (
                 <button
@@ -99,7 +101,7 @@ export function MonthCalendarGrid({
             })}
           </div>
           <p className="mt-3 text-center text-[10px] text-slate-500 sm:text-xs">
-            Tap a day for hourly view · <span className="text-indigo-600">●</span> booked{' '}
+            Tap a day for hourly view · <span className="text-indigo-600">●</span> booked / session{' '}
             <span className="text-emerald-600">●</span> available <span className="text-amber-600">●</span> leave
           </p>
         </div>

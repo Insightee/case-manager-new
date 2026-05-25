@@ -12,7 +12,10 @@ from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.schedule_template import TherapistScheduleTemplate, default_template_config
+from app.models.session import Session as TherapySession
+from app.models.session import SessionStatus
 from app.models.slot import BookingSource, SlotStatus, TherapistSlot
+from app.services.therapist_portal_queries import fetch_calendar_sessions
 
 WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
@@ -285,11 +288,40 @@ def _slot_to_dict(slot: TherapistSlot, case: Case | None = None) -> dict[str, An
     }
 
 
+def _session_to_calendar_dict(session: TherapySession) -> dict[str, Any]:
+    case = session.case
+    child_name = case.child.full_name if case and case.child else None
+    case_code = case.case_code if case else None
+    start = session.start_time.strftime("%H:%M") if session.start_time else "09:00"
+    end = session.end_time.strftime("%H:%M") if session.end_time else start
+    status = (
+        "IN_PROGRESS"
+        if session.status == SessionStatus.IN_PROGRESS
+        else "SESSION"
+    )
+    return {
+        "event_type": "session",
+        "id": f"session-{session.id}",
+        "session_id": session.id,
+        "slot_id": session.slot_id,
+        "slot_date": session.scheduled_date.isoformat(),
+        "start_time": start,
+        "end_time": end,
+        "status": status,
+        "case_id": session.case_id,
+        "case_code": case_code,
+        "child_name": child_name,
+        "mode": session.mode.value if session.mode else None,
+    }
+
+
 def get_calendar_view(
     db: Session,
     therapist_user_id: int,
     from_date: date,
     to_date: date,
+    *,
+    case_id: int | None = None,
 ) -> dict[str, Any]:
     slots = db.scalars(
         select(TherapistSlot)
@@ -301,6 +333,15 @@ def get_calendar_view(
         .options(selectinload(TherapistSlot.case).selectinload(Case.child))
         .order_by(TherapistSlot.slot_date, TherapistSlot.start_time)
     ).all()
+    linked_slot_ids = {s.id for s in slots if s.session_id}
+    session_rows = fetch_calendar_sessions(
+        db, therapist_user_id, from_date, to_date, case_id=case_id
+    )
+    sessions = [
+        _session_to_calendar_dict(sess)
+        for sess in session_rows
+        if not (sess.slot_id and sess.slot_id in linked_slot_ids)
+    ]
     template = get_or_create_template(db, therapist_user_id)
     return {
         "therapist_user_id": therapist_user_id,
@@ -309,6 +350,7 @@ def get_calendar_view(
         "template": template.get_config(),
         "day_overlays": _leave_dates(db, therapist_user_id, from_date, to_date),
         "slots": [_slot_to_dict(s) for s in slots],
+        "sessions": sessions,
     }
 
 

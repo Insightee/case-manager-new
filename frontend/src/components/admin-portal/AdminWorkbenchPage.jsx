@@ -7,6 +7,9 @@ import { AdminObservationChecklistsPanel } from './AdminObservationChecklistsPan
 import './admin-reports.css'
 
 const SECTION_META = {
+  observations: { title: 'Observation checklists', empty: 'No checklists awaiting review.' },
+  status_requests: { title: 'Case status requests', empty: 'No pending status change requests.' },
+  client_claims: { title: 'Client payment claims', empty: 'No payment claims awaiting review.' },
   reports: { title: 'Reports to review', empty: 'No reports awaiting review.' },
   logs: { title: 'Session logs pending', empty: 'No logs pending approval.' },
   tickets: { title: 'Open support tickets', empty: 'No open tickets on your caseload.' },
@@ -175,7 +178,22 @@ export function AdminWorkbenchPage() {
   }, [])
 
   const sections = data?.sections || {}
-  const order = ['reports', 'logs', 'reschedules', 'tickets', 'incidents', 'iep', 'meetings'].filter((id) => {
+  const baseOrder = [
+    'observations',
+    'status_requests',
+    'client_claims',
+    'reports',
+    'logs',
+    'reschedules',
+    'tickets',
+    'incidents',
+    'iep',
+    'meetings',
+  ]
+  const order = baseOrder.filter((id) => {
+    if (id === 'observations' && !can('monthly_report.approve')) return false
+    if (id === 'status_requests' && !can('case.update')) return false
+    if (id === 'client_claims' && !can('invoice.approve')) return false
     if (id === 'tickets' && !can('ticket.manage')) return false
     if (id === 'incidents' && !can('incident.read_sensitive')) return false
     if (id === 'reports' && !can('monthly_report.approve')) return false
@@ -183,13 +201,14 @@ export function AdminWorkbenchPage() {
     if (id === 'iep' && !can('iep.read')) return false
     return sections[id]
   })
+  const hasStatusSection = Boolean(sections.status_requests?.count)
 
   return (
     <div className="admin-page">
       <AdminPageHeader
         eyebrow="Operations"
-        title="My caseload"
-        subtitle="Reports, logs, support, IEP, and meetings for cases in your region or assigned to you."
+        title="Workbench"
+        subtitle="Observation checklists, status requests, reports, logs, billing claims, and meetings for your caseload."
       />
 
       <p className="admin-muted" style={{ marginBottom: 16, fontSize: '0.875rem' }}>
@@ -200,7 +219,7 @@ export function AdminWorkbenchPage() {
         — not a separate supervisor request inbox.
       </p>
 
-      {can('case.update') ? <StatusRequestsPanel /> : null}
+      {can('case.update') && !hasStatusSection ? <StatusRequestsPanel /> : null}
       {can('monthly_report.approve') ? <AdminObservationChecklistsPanel /> : null}
 
       {loading ? (

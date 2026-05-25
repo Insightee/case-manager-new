@@ -110,6 +110,31 @@ def list_observation_reports(
     return scoped, meta
 
 
+def cm_review_monthly_report(
+    db: Session,
+    report: MonthlyReport,
+    reviewer_user_id: int,
+    *,
+    comment: str,
+    request_changes: bool,
+) -> MonthlyReport:
+    """Case manager internal note or correction request without publishing to parents."""
+    if request_changes:
+        return review_monthly_report(
+            db, report, reviewer_user_id, ReviewDecision.REJECT, comment, None
+        )
+    review = Review(
+        entity_type="monthly_report",
+        entity_id=report.id,
+        reviewer_user_id=reviewer_user_id,
+        decision=ReviewDecision.APPROVE,
+        comment=f"[CM reviewed] {comment.strip()}",
+    )
+    db.add(review)
+    db.flush()
+    return report
+
+
 def review_monthly_report(
     db: Session,
     report: MonthlyReport,

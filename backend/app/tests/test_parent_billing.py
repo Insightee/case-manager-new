@@ -69,6 +69,19 @@ def test_parent_invoice_detail_and_dispute():
         assert "session_notes" not in sess.json()
 
 
+def test_parent_invoice_pdf_download():
+    headers = _login("parent@demo.com")
+    dash = client.get("/api/v1/parent/billing/dashboard", headers=headers).json()
+    invs = dash.get("invoices") or []
+    if not invs:
+        return
+    inv_id = invs[0]["id"]
+    r = client.get(f"/api/v1/parent/billing/invoices/{inv_id}/pdf", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.headers.get("content-type") == "application/pdf"
+    assert r.content[:4] == b"%PDF"
+
+
 def test_admin_record_payment():
     parent_h = _login("parent@demo.com")
     admin_h = _login("superadmin@demo.com")

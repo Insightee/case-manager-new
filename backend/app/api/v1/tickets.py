@@ -13,7 +13,14 @@ from app.core.database import get_db
 from app.core.permissions import require_permission, user_has_permission
 from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage, TicketStatus, TicketTopic
 from app.models.user import User
-from app.services import case_service, ticket_attachment_service as att_svc, ticket_detail_service, ticket_escalation_service as ticket_esc, ticket_list_service
+from app.services import (
+    case_service,
+    ticket_attachment_service as att_svc,
+    ticket_detail_service,
+    ticket_escalation_service as ticket_esc,
+    ticket_flow_service as ticket_flow,
+    ticket_list_service,
+)
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -35,6 +42,15 @@ class TicketMessageCreate(BaseModel):
 class TicketUpdate(BaseModel):
     status: Optional[TicketStatus] = None
     assigned_to_user_id: Optional[int] = None
+
+
+class TicketFlowNote(BaseModel):
+    note: Optional[str] = None
+    accept_resolution: bool = False
+
+
+class TicketEscalateRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 def _parse_category(raw: str) -> TicketCategory:
@@ -160,17 +176,71 @@ def update_ticket(
     return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
 
 
-@router.post("/{ticket_id}/escalate")
-def staff_escalate_ticket(
+@router.post("/{ticket_id}/resolve")
+def resolve_ticket_endpoint(
     ticket_id: int,
+    payload: TicketFlowNote,
+    request: Request,
     user: User = Depends(require_permission("ticket.manage")),
     db: Session = Depends(get_db),
 ):
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    case = case_service.get_case(db, ticket.case_id) if ticket.case_id else None
-    ticket_esc.escalate_ticket(db, ticket, case)
+    try:
+        ticket_flow.resolve_ticket(db, user, ticket, note=payload.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="resolve", entity_type="support_ticket", entity_id=ticket.id, **meta)
+    db.commit()
+    return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
+
+
+@router.post("/{ticket_id}/close")
+def close_ticket_endpoint(
+    ticket_id: int,
+    payload: TicketFlowNote,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket or not ticket_detail_service._can_view_ticket(db, user, ticket):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        ticket_flow.close_ticket(
+            db,
+            user,
+            ticket,
+            note=payload.note,
+            accept_resolution=payload.accept_resolution,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="close", entity_type="support_ticket", entity_id=ticket.id, **meta)
+    db.commit()
+    return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
+
+
+@router.post("/{ticket_id}/escalate")
+def escalate_ticket_endpoint(
+    ticket_id: int,
+    request: Request,
+    payload: TicketEscalateRequest = TicketEscalateRequest(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket or not ticket_detail_service._can_view_ticket(db, user, ticket):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        ticket_flow.escalate_ticket_for_user(db, user, ticket, reason=payload.reason)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="escalate", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()
     return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
 
@@ -214,6 +284,8 @@ async def add_message(
     msg = TicketMessage(ticket_id=ticket_id, author_user_id=user.id, body=body, is_internal=is_internal)
     db.add(msg)
     db.flush()
+    if not is_internal:
+        ticket_flow.on_ticket_message(db, user, ticket)
     try:
         await att_svc.save_attachments(db, ticket, user, files, message_id=msg.id)
     except ValueError as e:

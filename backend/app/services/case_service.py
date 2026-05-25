@@ -95,7 +95,7 @@ def list_cases_for_user(
         rows = [c for c in rows if case_scope_check(db, user, c)]
         total = len(rows)
 
-    items = [case_to_read(c) for c in rows]
+    items = [case_to_read(c, db) for c in rows]
     return paginated_response(items, total, page, page_size)
 
 
@@ -109,8 +109,20 @@ def case_child_display_name(case: Case | None) -> str | None:
     return case.child.full_name if case.child else None
 
 
-def case_to_read(case: Case) -> dict:
+def case_manager_contact(db: Session, case: Case) -> tuple[Optional[str], Optional[str]]:
+    if not case.case_manager_user_id:
+        return None, None
+    cm = db.get(User, case.case_manager_user_id)
+    if not cm:
+        return None, None
+    return cm.full_name, cm.email
+
+
+def case_to_read(case: Case, db: Session | None = None) -> dict:
     service_addr = case_service_address_read(case)
+    cm_name, cm_email = (None, None)
+    if db is not None:
+        cm_name, cm_email = case_manager_contact(db, case)
     return {
         "id": case.id,
         "case_code": case.case_code,
@@ -120,6 +132,9 @@ def case_to_read(case: Case) -> dict:
         "product_module": case.product_module,
         "status": case.status,
         "case_manager_user_id": case.case_manager_user_id,
+        "case_manager_name": cm_name,
+        "case_manager_email": cm_email,
+        "notes": case.notes,
         "region": case.region,
         "operational_stage": case.operational_stage,
         "created_at": case.created_at,

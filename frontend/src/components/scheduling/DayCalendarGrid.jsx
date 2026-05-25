@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import {
   PARENT_SLOT_STYLES,
   THERAPIST_STATUS_STYLES,
+  calendarGridEvents,
   dateStr,
   defaultHourRows,
 } from './slotCalendarUtils.js'
@@ -32,7 +33,7 @@ export function DayCalendarGrid({
   const ds = dateStr(dayDate)
   const hours = defaultHourRows()
   const today = dateStr(new Date())
-  const slotsByDayHour = useMemo(() => groupSlotsByDayHour(calendar?.slots), [calendar?.slots])
+  const slotsByDayHour = useMemo(() => groupSlotsByDayHour(calendarGridEvents(calendar)), [calendar])
   const overlay = calendar?.day_overlays?.[ds]
   const isToday = ds === today
 
@@ -129,9 +130,11 @@ export function DayCalendarGrid({
                           ? s.is_mine
                             ? `My session · ${s.start_time}`
                             : `Available · ${s.start_time}`
-                          : s.status === 'BOOKED'
-                            ? `${s.approval_status === 'PENDING_THERAPIST' ? '⏳ ' : ''}${s.booking_source === 'PARENT' ? 'Parent · ' : ''}${s.child_name || s.case_code || 'Booked'}`
-                            : `${s.start_time}–${s.end_time}`
+                          : s.event_type === 'session'
+                            ? `${s.status === 'IN_PROGRESS' ? 'In progress · ' : 'Session · '}${s.child_name || s.case_code || 'Visit'}`
+                            : s.status === 'BOOKED'
+                              ? `${s.approval_status === 'PENDING_THERAPIST' ? '⏳ ' : ''}${s.booking_source === 'PARENT' ? 'Parent · ' : ''}${s.child_name || s.case_code || 'Booked'}`
+                              : `${s.start_time}–${s.end_time}`
                         return (
                           <button
                             key={s.id}

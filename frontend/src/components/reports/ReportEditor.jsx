@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
-import { apiUpload } from '../../lib/apiClient.js'
+import { apiFetchBlob, apiUpload } from '../../lib/apiClient.js'
 import { compressImageFile } from '../../lib/compressImage.js'
+import { dehydrateReportImages, hydrateReportImages } from '../../lib/reportHtml.js'
+import { ReportImageExtension } from '../../lib/reportImageExtension.js'
 import './report-editor.css'
 
 function ToolbarButton({ active, onClick, children, title }) {
@@ -16,6 +17,7 @@ function ToolbarButton({ active, onClick, children, title }) {
 
 export function ReportEditor({
   reportId,
+  documentVersion = 0,
   initialHtml = '',
   planNextMonth = '',
   onPlanChange,
@@ -25,27 +27,53 @@ export function ReportEditor({
   const fileRef = useRef(null)
   const onHtmlChangeRef = useRef(onHtmlChange)
   onHtmlChangeRef.current = onHtmlChange
+  const lastAppliedDocRef = useRef(-1)
+  const [uploadError, setUploadError] = useState(null)
+  const [pendingFile, setPendingFile] = useState(null)
+  const [editorReady, setEditorReady] = useState(false)
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [2, 3] } }),
-      Image.configure({ inline: true, allowBase64: false }),
+      ReportImageExtension.configure({ inline: true, allowBase64: false }),
     ],
-    content: initialHtml || '<p></p>',
+    content: '<p></p>',
     editable: !disabled,
     onUpdate: ({ editor: ed }) => {
-      onHtmlChangeRef.current?.(ed.getHTML())
+      onHtmlChangeRef.current?.(dehydrateReportImages(ed.getHTML()))
     },
   })
 
   useEffect(() => {
+    lastAppliedDocRef.current = -1
+  }, [reportId])
+
+  useEffect(() => {
     if (!editor) return
-    const current = editor.getHTML()
-    const next = initialHtml || '<p></p>'
-    if (initialHtml !== undefined && current !== next && !editor.isFocused) {
-      editor.commands.setContent(next, false)
+    setEditorReady(true)
+  }, [editor])
+
+  const initialHtmlRef = useRef(initialHtml)
+  initialHtmlRef.current = initialHtml
+
+  useEffect(() => {
+    if (!editor || !editorReady || documentVersion < 1) return
+    if (documentVersion === lastAppliedDocRef.current) return
+    let cancelled = false
+    const runForVersion = documentVersion
+    const sourceHtml = initialHtmlRef.current || '<p></p>'
+    ;(async () => {
+      const displayHtml = await hydrateReportImages(sourceHtml)
+      if (cancelled || runForVersion !== documentVersion) return
+      if (!editor.isDestroyed) {
+        editor.commands.setContent(displayHtml, false)
+        lastAppliedDocRef.current = documentVersion
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [editor, initialHtml])
+  }, [editor, editorReady, documentVersion])
 
   useEffect(() => {
     if (editor) editor.setEditable(!disabled)
@@ -58,8 +86,15 @@ export function ReportEditor({
       const fd = new FormData()
       fd.append('file', compressed)
       const res = await apiUpload(`/api/v1/reports/monthly/${reportId}/images`, fd)
-      const path = res.url || `/api/v1/reports/images/${res.id}`
-      editor.chain().focus().setImage({ src: path }).run()
+      const apiPath = res.url || `/api/v1/reports/images/${res.id}`
+      const blob = await apiFetchBlob(apiPath)
+      const blobUrl = URL.createObjectURL(blob)
+      editor.chain().focus().setImage({ src: blobUrl, dataApiSrc: apiPath }).run()
+      queueMicrotask(() => {
+        if (!editor.isDestroyed) {
+          onHtmlChangeRef.current?.(dehydrateReportImages(editor.getHTML()))
+        }
+      })
     },
     [editor, reportId],
   )
@@ -68,10 +103,24 @@ export function ReportEditor({
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+    setPendingFile(file)
+    setUploadError(null)
     try {
       await insertImage(file)
+      setPendingFile(null)
     } catch (err) {
-      alert(err.message || 'Could not upload image')
+      setUploadError(err.message || 'Could not upload image')
+    }
+  }
+
+  async function retryUpload() {
+    if (!pendingFile) return
+    setUploadError(null)
+    try {
+      await insertImage(pendingFile)
+      setPendingFile(null)
+    } catch (err) {
+      setUploadError(err.message || 'Could not upload image')
     }
   }
 
@@ -129,7 +178,7 @@ export function ReportEditor({
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/jpeg,image/png,image/webp"
                   className="hidden"
                   onChange={onPickImage}
                 />
@@ -137,6 +186,16 @@ export function ReportEditor({
                   Image
                 </ToolbarButton>
               </>
+            ) : null}
+          </div>
+        ) : null}
+        {uploadError ? (
+          <div className="report-editor__upload-error" role="alert" style={{ padding: '8px 12px', marginBottom: 8 }}>
+            <span>{uploadError}</span>
+            {pendingFile ? (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={retryUpload} style={{ marginLeft: 8 }}>
+                Retry upload
+              </button>
             ) : null}
           </div>
         ) : null}

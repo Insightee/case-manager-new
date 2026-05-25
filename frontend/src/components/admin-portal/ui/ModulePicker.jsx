@@ -1,5 +1,16 @@
 import { useMemo } from 'react'
 
+const FEATURE_HINTS = {
+  reports: 'Monthly reports & observation checklists',
+  iep: 'Structured IEP builder and attachment uploads',
+  invoices: 'Therapist payouts and client payment claims',
+  session_logs: 'Daily session logs and workbench queues',
+  cases: 'Case pipeline and allotment',
+  tickets: 'Internal support tickets',
+  incidents: 'Incident reporting',
+  dashboard: 'Role-aware KPIs and home widgets',
+}
+
 const ROLE_LABELS = {
   SUPER_ADMIN: 'Super Admin',
   ADMIN: 'Admin',
@@ -91,7 +102,14 @@ export function ModulePicker({
                 ) : null}
                 <ul className="module-card__features">
                   {mod.features.map((f) => (
-                    <li key={f.id}>{f.label}</li>
+                    <li key={f.id}>
+                      {f.label}
+                      {FEATURE_HINTS[f.id] ? (
+                        <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem' }}>
+                          {FEATURE_HINTS[f.id]}
+                        </span>
+                      ) : null}
+                    </li>
                   ))}
                 </ul>
               </div>

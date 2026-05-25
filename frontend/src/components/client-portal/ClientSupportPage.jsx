@@ -5,6 +5,7 @@ import { createParentTicket, replyParentTicket } from '../../lib/ticketFormUtils
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { TicketAttachmentList } from '../support/TicketAttachmentList.jsx'
 import { TicketFileInput } from '../support/TicketFileInput.jsx'
+import { TicketFlowDialog } from '../support/TicketFlowDialog.jsx'
 import '../support/support-tickets.css'
 import './parent-support.css'
 
@@ -23,6 +24,7 @@ function TicketThread({ ticket, onRefresh }) {
   const [rateNote, setRateNote] = useState(ticket.parent_resolution_feedback || '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [dialog, setDialog] = useState(null)
 
   async function sendReply() {
     if (!reply.trim()) return
@@ -40,11 +42,15 @@ function TicketThread({ ticket, onRefresh }) {
     }
   }
 
-  async function escalate() {
+  async function escalate(reason) {
     setBusy(true)
     setError('')
+    setDialog(null)
     try {
-      await apiFetch(`/api/v1/parent/support/tickets/${ticket.id}/escalate`, { method: 'POST' })
+      await apiFetch(`/api/v1/parent/support/tickets/${ticket.id}/escalate`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
       await onRefresh()
     } catch (err) {
       setError(err.message || 'Could not escalate')
@@ -53,12 +59,13 @@ function TicketThread({ ticket, onRefresh }) {
     }
   }
 
-  async function accept() {
+  async function accept(feedback) {
     setBusy(true)
+    setDialog(null)
     try {
       await apiFetch(`/api/v1/parent/support/tickets/${ticket.id}/accept`, {
         method: 'POST',
-        body: JSON.stringify({ feedback: rateNote.trim() || undefined }),
+        body: JSON.stringify({ feedback: feedback || undefined }),
       })
       await onRefresh()
     } catch (err) {
@@ -85,6 +92,9 @@ function TicketThread({ ticket, onRefresh }) {
   }
 
   const open = ticket.status !== 'CLOSED'
+  const nextRole = ticket.escalation_next_role
+    ? String(ticket.escalation_next_role).replace(/_/g, ' ')
+    : 'senior support'
 
   return (
     <div className="parent-support__thread">
@@ -126,11 +136,17 @@ function TicketThread({ ticket, onRefresh }) {
           <button
             type="button"
             className="parent-support__btn parent-support__btn--primary"
-            onClick={accept}
+            onClick={() =>
+              setDialog({
+                type: 'accept',
+                title: 'Accept resolution & close',
+                description: 'Confirm that support has addressed your issue. You can add optional feedback below.',
+              })
+            }
             disabled={busy}
             style={{ width: '100%' }}
           >
-            {busy ? 'Closing…' : '✓ Accept resolution & close ticket'}
+            Accept resolution & close…
           </button>
         </div>
       ) : null}
@@ -156,9 +172,25 @@ function TicketThread({ ticket, onRefresh }) {
               {busy ? 'Sending…' : 'Send reply'}
             </button>
             {ticket.can_escalate ? (
-              <button type="button" className="parent-support__btn" onClick={escalate} disabled={busy}>
-                Escalate (level {(ticket.escalation_level || 0) + 1})
+              <button
+                type="button"
+                className="parent-support__btn"
+                disabled={busy}
+                onClick={() =>
+                  setDialog({
+                    type: 'escalate',
+                    title: 'Escalate ticket',
+                    description: `Not satisfied with the response? Escalate to ${nextRole}.`,
+                  })
+                }
+              >
+                Escalate…
               </button>
+            ) : null}
+            {!ticket.has_staff_reply && open ? (
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8', alignSelf: 'center' }}>
+                Escalation available after the first team reply
+              </span>
             ) : null}
           </div>
         </div>
@@ -199,6 +231,20 @@ function TicketThread({ ticket, onRefresh }) {
           )}
         </div>
       ) : null}
+
+      <TicketFlowDialog
+        open={!!dialog}
+        title={dialog?.title}
+        description={dialog?.description}
+        confirmLabel={dialog?.type === 'escalate' ? 'Escalate' : 'Accept & close'}
+        requireNote={false}
+        noteLabel={dialog?.type === 'escalate' ? 'What was missing? (optional)' : 'Feedback (optional)'}
+        onCancel={() => setDialog(null)}
+        onConfirm={(note) => {
+          if (dialog?.type === 'escalate') escalate(note)
+          else accept(note)
+        }}
+      />
     </div>
   )
 }

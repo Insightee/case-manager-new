@@ -4,7 +4,7 @@ from datetime import date
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
@@ -170,6 +170,149 @@ def parent_case_payload(db: Session, case: Case) -> dict:
     }
 
 
+def _batch_active_therapist_names(db: Session, case_ids: list[int]) -> dict[int, str | None]:
+    if not case_ids:
+        return {}
+    subq = (
+        select(
+            CaseAssignment.case_id,
+            func.max(CaseAssignment.id).label("aid"),
+        )
+        .where(
+            CaseAssignment.case_id.in_(case_ids),
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .group_by(CaseAssignment.case_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(CaseAssignment.case_id, User.full_name)
+        .join(subq, CaseAssignment.id == subq.c.aid)
+        .join(User, User.id == CaseAssignment.therapist_user_id)
+    ).all()
+    return {int(cid): name for cid, name in rows}
+
+
+def _batch_case_manager_names(db: Session, cases: list[Case]) -> dict[int, str | None]:
+    cm_ids = {c.case_manager_user_id for c in cases if c.case_manager_user_id}
+    if not cm_ids:
+        return {}
+    users = {u.id: u.full_name for u in db.scalars(select(User).where(User.id.in_(cm_ids))).all()}
+    return {c.id: users.get(c.case_manager_user_id) for c in cases if c.case_manager_user_id}
+
+
+def _batch_latest_published_report_month(db: Session, case_ids: list[int]) -> dict[int, str | None]:
+    if not case_ids:
+        return {}
+    subq = (
+        select(
+            MonthlyReport.case_id,
+            func.max(MonthlyReport.id).label("rid"),
+        )
+        .where(
+            MonthlyReport.case_id.in_(case_ids),
+            MonthlyReport.visibility_status.in_(PARENT_VISIBLE),
+            MonthlyReport.status == ReportStatus.PUBLISHED,
+        )
+        .group_by(MonthlyReport.case_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(MonthlyReport.case_id, MonthlyReport.month).join(
+            subq, MonthlyReport.id == subq.c.rid
+        )
+    ).all()
+    return {int(cid): month for cid, month in rows}
+
+
+def _batch_iep_status(db: Session, case_ids: list[int]) -> dict[int, str]:
+    if not case_ids:
+        return {}
+    subq = (
+        select(Attachment.case_id, func.max(Attachment.id).label("aid"))
+        .where(Attachment.case_id.in_(case_ids), Attachment.entity_type == "iep")
+        .group_by(Attachment.case_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(Attachment.case_id, Attachment.visibility_status)
+        .join(subq, Attachment.id == subq.c.aid)
+    ).all()
+    out = {cid: "none" for cid in case_ids}
+    for case_id, vis in rows:
+        if vis == VisibilityStatus.SHARED_WITH_PARENT:
+            out[int(case_id)] = "acknowledged"
+        else:
+            out[int(case_id)] = "pending"
+    return out
+
+
+def _batch_upcoming_booking(db: Session, case_ids: list[int], today: date | None = None) -> dict[int, str | None]:
+    today = today or date.today()
+    if not case_ids:
+        return {}
+    subq = (
+        select(
+            TherapistSlot.case_id,
+            func.min(TherapistSlot.slot_date).label("min_date"),
+        )
+        .where(
+            TherapistSlot.case_id.in_(case_ids),
+            TherapistSlot.status == SlotStatus.BOOKED,
+            TherapistSlot.slot_date >= today,
+        )
+        .group_by(TherapistSlot.case_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(TherapistSlot.case_id, TherapistSlot.slot_date, TherapistSlot.start_time)
+        .join(
+            subq,
+            (TherapistSlot.case_id == subq.c.case_id) & (TherapistSlot.slot_date == subq.c.min_date),
+        )
+        .where(
+            TherapistSlot.status == SlotStatus.BOOKED,
+            TherapistSlot.case_id.in_(case_ids),
+        )
+        .order_by(TherapistSlot.start_time.asc())
+    ).all()
+    out: dict[int, str | None] = {}
+    for case_id, slot_date, start_time in rows:
+        cid = int(case_id)
+        if cid in out:
+            continue
+        out[cid] = f"{slot_date} {start_time.strftime('%H:%M')}"
+    return out
+
+
+def parent_case_payload_from_batch(
+    case: Case,
+    *,
+    therapist_name: str | None,
+    case_manager_name: str | None,
+    latest_month: str | None,
+    iep_status: str,
+    upcoming_booking: str | None,
+) -> dict:
+    svc = address_service.case_service_address_read(case)
+    return {
+        "id": case.id,
+        "caseId": case.case_code,
+        "childName": case.child.full_name if case.child else "",
+        "serviceType": case.service_type,
+        "productModule": case.product_module,
+        "status": case.status.value,
+        "serviceAddressSummary": address_service.service_address_summary(case),
+        "serviceAddress": svc.model_dump() if svc else None,
+        "isHomecare": address_service.is_homecare_case(case),
+        "therapistName": therapist_name,
+        "caseManagerName": case_manager_name,
+        "latestApprovedReportMonth": latest_month,
+        "iepStatus": iep_status,
+        "upcomingBooking": upcoming_booking,
+    }
+
+
 def list_parent_cases(db: Session, user: User) -> list[dict]:
     child_ids = child_ids_for_parent(db, user.id)
     if not child_ids:
@@ -177,7 +320,23 @@ def list_parent_cases(db: Session, user: User) -> list[dict]:
     cases = db.scalars(
         select(Case).where(Case.child_id.in_(child_ids)).options(selectinload(Case.child))
     ).all()
-    return [parent_case_payload(db, c) for c in cases]
+    case_ids = [c.id for c in cases]
+    therapists = _batch_active_therapist_names(db, case_ids)
+    cms = _batch_case_manager_names(db, cases)
+    months = _batch_latest_published_report_month(db, case_ids)
+    iep = _batch_iep_status(db, case_ids)
+    bookings = _batch_upcoming_booking(db, case_ids)
+    return [
+        parent_case_payload_from_batch(
+            c,
+            therapist_name=therapists.get(c.id),
+            case_manager_name=cms.get(c.id),
+            latest_month=months.get(c.id),
+            iep_status=iep.get(c.id, "none"),
+            upcoming_booking=bookings.get(c.id),
+        )
+        for c in cases
+    ]
 
 
 def get_parent_case(db: Session, user: User, case_id: int) -> Case | None:
@@ -217,20 +376,65 @@ def list_billing_summaries(db: Session, user: User) -> list[dict]:
     return result
 
 
-def get_parent_profile(db: Session, user: User) -> ParentProfileRead:
-    pg = get_parent_guardian(db, user.id)
-    children = []
+def _profile_children_list(db: Session, user: User, pg: ParentGuardian | None) -> list[dict]:
+    """Distinct children from guardian links and active cases (avoids duplicate link inflation)."""
+    by_id: dict[int, dict] = {}
     if pg:
         dedupe_parent_child_links(db, pg.id)
         for c in _unique_children(list(pg.children)):
-            children.append(
-                {
+            by_id[c.id] = {
+                "id": c.id,
+                "first_name": c.first_name,
+                "last_name": c.last_name,
+                "full_name": c.full_name,
+            }
+    case_ids = _parent_case_ids_from_user(db, user)
+    if case_ids:
+        cases = db.scalars(
+            select(Case).where(Case.id.in_(case_ids)).options(selectinload(Case.child))
+        ).all()
+        for case in cases:
+            if not case.child:
+                continue
+            c = case.child
+            if c.id not in by_id:
+                by_id[c.id] = {
                     "id": c.id,
                     "first_name": c.first_name,
                     "last_name": c.last_name,
                     "full_name": c.full_name,
                 }
-            )
+    return sorted(by_id.values(), key=lambda x: (x["first_name"], x["last_name"]))
+
+
+def _parent_case_ids_from_user(db: Session, user: User) -> list[int]:
+    child_ids = child_ids_for_parent(db, user.id)
+    if not child_ids:
+        return []
+    return list(
+        db.scalars(select(Case.id).where(Case.child_id.in_(child_ids))).all()
+    )
+
+
+def add_child_to_parent(db: Session, user: User, first_name: str, last_name: str) -> ParentProfileRead:
+    from app.services import family_admin_service
+
+    pg = get_parent_guardian(db, user.id)
+    if not pg:
+        pg = ParentGuardian(user_id=user.id)
+        db.add(pg)
+        db.flush()
+    child = family_admin_service.create_child(db, first_name.strip(), (last_name or "").strip() or "—")
+    linked_ids = {c.id for c in pg.children}
+    if child.id not in linked_ids:
+        pg.children.append(child)
+    db.flush()
+    return get_parent_profile(db, user)
+
+
+def get_parent_profile(db: Session, user: User) -> ParentProfileRead:
+    pg = get_parent_guardian(db, user.id)
+    children = _profile_children_list(db, user, pg)
     cases_payload = list_parent_cases(db, user)
     services = [
         {

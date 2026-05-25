@@ -14,6 +14,7 @@ from app.core.incident_catalog import (
 )
 from app.core.permissions import RoleName
 from app.models.case import Case
+from app.models.user import User
 from app.models.incident import (
     Incident,
     IncidentMessage,
@@ -227,8 +228,9 @@ def incident_to_list_dict(incident: Incident, case: Case | None) -> dict:
     }
 
 
-def incident_to_detail_dict(incident: Incident, case: Case | None) -> dict:
+def incident_to_detail_dict(incident: Incident, case: Case | None, user: User | None = None) -> dict:
     from app.services import incident_attachment_service as att_svc
+    from app.services import incident_flow_service as inc_flow
 
     base = incident_to_list_dict(incident, case)
     base.update(
@@ -255,4 +257,6 @@ def incident_to_detail_dict(incident: Incident, case: Case | None) -> dict:
             "attachments": [att_svc.attachment_to_dict(a) for a in incident.attachments],
         }
     )
+    if user is not None:
+        base.update(inc_flow.incident_flow_flags(user, incident))
     return base

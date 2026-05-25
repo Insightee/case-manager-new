@@ -1,0 +1,64 @@
+/* Parent / client portal dashboard — avoid reusing .log-list row layout for update cards */
+
+.parent-update-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.parent-update-list__item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 14px 16px;
+}
+
+.parent-update-list__headline {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.parent-update-list__meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.parent-update-list__body {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.parent-action-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  text-decoration: none;
+}
+
+.parent-action-alert__message {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.parent-action-alert__cta {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}

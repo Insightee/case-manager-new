@@ -1,20 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
 import {
-  buildCaseWorkbench,
   buildSectionsFromCases,
   buildStatsFromCases,
   filterAndSortCases,
   uniqueServices,
 } from '../../lib/caseWorkbench.js'
+import { useTherapistHome } from '../../hooks/useTherapistHome.js'
+import { QueryState } from '../shared/QueryState.jsx'
 import { CasesPageHeader } from './CasesPageHeader.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { StatCard } from './StatCard.jsx'
 import { TherapistCaseCard } from './TherapistCaseCard.jsx'
 import { UpcomingSessionsPanel } from './UpcomingSessionsPanel.jsx'
-import { mergeUpcomingSchedule } from '../../lib/therapistSchedule.js'
 import './my-cases.css'
 
 function SectionHeader({ title, tone, count }) {
@@ -33,63 +31,31 @@ const DEFAULT_FILTERS = {
   sort: 'urgency',
 }
 
+const VIEW_STORAGE_KEY = 'ic-my-cases-view'
+
 export function MyCasesPage() {
-  const [view, setView] = useState('grid')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [workbench, setWorkbench] = useState({
-    stats: [],
-    sections: [],
-    allCases: [],
-    upcomingBooked: [],
-    upcomingSessions: [],
+  const [view, setView] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem(VIEW_STORAGE_KEY)
+      return stored === 'table' ? 'table' : 'grid'
+    } catch {
+      return 'grid'
+    }
   })
-  const [scheduleItems, setScheduleItems] = useState([])
+  const { data: home, isLoading, isError, error, refetch } = useTherapistHome()
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const today = new Date()
-      const from = today.toISOString().slice(0, 10)
-      const toDate = new Date(today)
-      toDate.setDate(toDate.getDate() + 90)
-      const to = toDate.toISOString().slice(0, 10)
-      const [cases, sessions, logs, reports, slots, upcoming] = await Promise.all([
-        apiFetch('/api/v1/cases?assigned=true&page_size=100'),
-        apiFetch('/api/v1/sessions?page_size=100'),
-        apiFetch('/api/v1/daily-logs'),
-        apiFetch('/api/v1/reports/monthly?page_size=100'),
-        apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`),
-        apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
-      ])
-      const sessionList = unwrapList(sessions)
-      const slotList = unwrapList(slots)
-      const upcomingList = Array.isArray(upcoming) ? upcoming : unwrapList(upcoming)
-      setWorkbench(
-        buildCaseWorkbench({
-          cases: unwrapList(cases),
-          sessions: sessionList,
-          logs: unwrapList(logs),
-          reports: unwrapList(reports),
-          slots: slotList,
-        }),
-      )
-      setScheduleItems(mergeUpcomingSchedule({ sessions: upcomingList, slots: slotList }))
-    } catch (err) {
-      setError(err.message || 'Could not load cases')
-      setWorkbench({ stats: [], sections: [], allCases: [], upcomingBooked: [], upcomingSessions: [] })
-      setScheduleItems([])
-    } finally {
-      setLoading(false)
+  const workbench = useMemo(() => {
+    const board = home?.cases_board || {}
+    return {
+      stats: board.stats || [],
+      sections: board.sections || [],
+      allCases: board.allCases || [],
     }
-  }, [])
+  }, [home])
 
-  useEffect(() => {
-    load()
-  }, [load])
+  const scheduleItems = useMemo(() => home?.schedule_preview || [], [home])
 
   const serviceOptions = useMemo(() => uniqueServices(workbench.allCases), [workbench.allCases])
 
@@ -118,10 +84,9 @@ export function MyCasesPage() {
   const displaySections = useMemo(() => buildSectionsFromCases(displayCases), [displayCases])
 
   const displayStats = useMemo(() => {
-    const ids = new Set(displayCases.map((c) => c.id))
-    const bookingCount = (workbench.upcomingBooked || []).filter((sl) => ids.has(sl.case_id)).length
+    const bookingCount = scheduleItems.filter((i) => i.kind === 'booking').length
     return buildStatsFromCases(displayCases, bookingCount)
-  }, [displayCases, workbench.upcomingBooked])
+  }, [displayCases, scheduleItems])
 
   const resultCount = displayCases.length
   const totalCount = workbench.allCases.length
@@ -131,22 +96,41 @@ export function MyCasesPage() {
     setFilters(DEFAULT_FILTERS)
   }
 
-  if (loading) {
-    return (
-      <div className="ic-my-cases" style={{ padding: 24 }}>
-        <p style={{ color: '#6b7280' }}>Loading your cases…</p>
-      </div>
-    )
-  }
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(VIEW_STORAGE_KEY, view)
+    } catch {
+      /* ignore */
+    }
+  }, [view])
+
+  const viewClass = view === 'table' ? 'ic-view-table' : 'ic-view-grid'
 
   return (
     <div className="ic-my-cases">
+      <QueryState
+        isLoading={isLoading}
+        isError={isError}
+        error={error}
+        onRetry={() => refetch()}
+        isEmpty={!isLoading && totalCount === 0}
+        emptyMessage="No assigned cases yet."
+      >
       <CasesPageHeader
         search={search}
         onSearchChange={setSearch}
         resultCount={resultCount}
         totalCount={totalCount}
       />
+
+      <UpcomingSessionsPanel items={scheduleItems} loading={isLoading} />
+
+      <section className="ic-stats" aria-label="Case summary">
+        {displayStats.map((s) => (
+          <StatCard key={s.id} label={s.label} value={s.value} variant={s.variant} />
+        ))}
+      </section>
+
       <FilterBar
         view={view}
         onViewChange={setView}
@@ -163,24 +147,13 @@ export function MyCasesPage() {
         onClearFilters={clearFilters}
       />
 
-      {error ? (
-        <p style={{ color: '#b91c1c', fontSize: '0.875rem', marginBottom: 16 }}>{error}</p>
-      ) : null}
-
-      <UpcomingSessionsPanel items={scheduleItems} loading={loading} />
-
-      <section className="ic-stats" aria-label="Case summary">
-        {displayStats.map((s) => (
-          <StatCard key={s.id} label={s.label} value={s.value} variant={s.variant} />
-        ))}
-      </section>
-
       {hasActiveFilters && resultCount < totalCount ? (
         <p className="ic-results-hint" role="status">
           Showing {resultCount} of {totalCount} cases
         </p>
       ) : null}
 
+      <div className={viewClass}>
       {view === 'grid' ? (
         <div className="ic-board">
           {resultCount === 0 ? (
@@ -260,6 +233,8 @@ export function MyCasesPage() {
           </div>
         </div>
       )}
+      </div>
+      </QueryState>
     </div>
   )
 }

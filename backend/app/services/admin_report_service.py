@@ -96,6 +96,7 @@ def _apply_monthly_filters(
     case_id: int | None,
     product_module: str | None,
     month: str | None,
+    category: str | None,
     search: str | None,
     parent_review_status: str | None,
     queue_only: bool,
@@ -108,6 +109,8 @@ def _apply_monthly_filters(
         stmt = stmt.where(Case.product_module == product_module)
     if month:
         stmt = stmt.where(MonthlyReport.month.ilike(f"%{month.strip()}%"))
+    if category:
+        stmt = stmt.where(MonthlyReport.category == category.strip())
     if parent_review_status:
         stmt = stmt.where(MonthlyReport.parent_review_status == parent_review_status)
     if queue_only:
@@ -139,6 +142,7 @@ def _apply_observation_filters(
     status: ReportStatus | None,
     case_id: int | None,
     product_module: str | None,
+    category: str | None,
     search: str | None,
     queue_only: bool,
 ):
@@ -148,6 +152,8 @@ def _apply_observation_filters(
         stmt = stmt.where(ObservationReport.status == status)
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
+    if category:
+        stmt = stmt.where(ObservationReport.category == category.strip())
     if queue_only:
         stmt = stmt.where(ObservationReport.status == ReportStatus.UNDER_REVIEW)
     if search:
@@ -216,6 +222,7 @@ def list_monthly_admin(
     case_id: int | None = None,
     product_module: str | None = None,
     month: str | None = None,
+    category: str | None = None,
     search: str | None = None,
     parent_review_status: str | None = None,
     queue_only: bool = False,
@@ -229,6 +236,7 @@ def list_monthly_admin(
         case_id=case_id,
         product_module=product_module,
         month=month,
+        category=category,
         search=search,
         parent_review_status=parent_review_status,
         queue_only=queue_only,
@@ -246,6 +254,7 @@ def list_observation_admin(
     status: ReportStatus | None = None,
     case_id: int | None = None,
     product_module: str | None = None,
+    category: str | None = None,
     search: str | None = None,
     queue_only: bool = False,
     page: int = 1,
@@ -257,6 +266,7 @@ def list_observation_admin(
         status=status,
         case_id=case_id,
         product_module=product_module,
+        category=category,
         search=search,
         queue_only=queue_only,
     )
@@ -295,6 +305,7 @@ def list_queue_admin(
     *,
     report_type: str | None = None,
     product_module: str | None = None,
+    category: str | None = None,
     search: str | None = None,
     page: int = 1,
     page_size: int = 25,
@@ -309,35 +320,40 @@ def list_queue_admin(
     else:
         types = ["monthly", "observation"]
 
+    fetch_each = max(page_size, page * page_size)
     combined: list[AdminReportListItem] = []
+    total = 0
     if "monthly" in types:
-        monthly_items, _ = list_monthly_admin(
+        monthly_items, monthly_meta = list_monthly_admin(
             db,
             user,
             product_module=product_module,
+            category=category,
             search=search,
             queue_only=True,
             page=1,
-            page_size=5000,
+            page_size=fetch_each,
         )
         combined.extend(monthly_items)
+        total += int(monthly_meta.get("total") or 0)
     if "observation" in types:
-        obs_items, _ = list_observation_admin(
+        obs_items, obs_meta = list_observation_admin(
             db,
             user,
             product_module=product_module,
+            category=category,
             search=search,
             queue_only=True,
             page=1,
-            page_size=5000,
+            page_size=fetch_each,
         )
         combined.extend(obs_items)
+        total += int(obs_meta.get("total") or 0)
 
     combined.sort(
         key=lambda x: x.updated_at or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
-    total = len(combined)
     start = (page - 1) * page_size
     page_items = combined[start : start + page_size]
     return page_items, paginated_response(page_items, total, page, page_size)

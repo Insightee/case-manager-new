@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { INCIDENT_STATUS_META, PRIORITY_META } from '../../lib/incidentCatalog.js'
+import { TicketFlowDialog } from './TicketFlowDialog.jsx'
+
+const FLOW_API = '/api/v1/incidents'
 
 function fmtTime(iso) {
   if (!iso) return ''
@@ -63,6 +67,7 @@ export function IncidentDetailPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [uploadFiles, setUploadFiles] = useState([])
+  const [dialog, setDialog] = useState(null)
 
   useEffect(() => {
     setPendingStatus(incident?.status || 'REPORTED')
@@ -73,10 +78,11 @@ export function IncidentDetailPanel({
 
   useEffect(() => {
     if (!canManage) return
-    apiFetch('/api/v1/admin/users')
+    apiFetch('/api/v1/admin/users?page_size=100')
       .then((users) => {
+        const list = unwrapList(users)
         setStaffUsers(
-          users.filter((u) => u.roles?.some((r) => STAFF_ROLES.has(r)) && u.is_active !== false),
+          list.filter((u) => u.roles?.some((r) => STAFF_ROLES.has(r)) && u.is_active !== false),
         )
       })
       .catch(() => setStaffUsers([]))
@@ -90,6 +96,25 @@ export function IncidentDetailPanel({
   async function refresh() {
     const fresh = await apiFetch(`${apiBase}/${incident.id}`)
     onUpdated?.(fresh)
+  }
+
+  async function flowAction(action, note) {
+    setBusy(true)
+    setError('')
+    setDialog(null)
+    try {
+      const body = action === 'escalate' ? { reason: note } : { note: note || '' }
+      const flowBase = canManage ? FLOW_API : apiBase
+      const updated = await apiFetch(`${flowBase}/${incident.id}/${action}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      onUpdated?.(updated)
+    } catch (err) {
+      setError(err.message || `Could not ${action} incident`)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function sendReply() {
@@ -261,7 +286,19 @@ export function IncidentDetailPanel({
 
       {incident.status === 'ACTION_TAKEN' && !canManage ? (
         <p style={{ fontSize: '0.8rem', color: '#166534', marginBottom: 10 }}>
-          Action has been taken. Reply if you need follow-up before this is closed.
+          Action has been taken. Close when satisfied, reply for follow-up, or escalate if the response was not adequate.
+        </p>
+      ) : null}
+
+      {incident.status === 'ESCALATED' ? (
+        <p style={{ fontSize: '0.8rem', color: '#9a3412', marginBottom: 10 }}>
+          Escalated to {incident.escalation_next_role ? String(incident.escalation_next_role).replace(/_/g, ' ') : 'senior review'}.
+        </p>
+      ) : null}
+
+      {!canManage && !incident.has_staff_reply && !isClosed ? (
+        <p style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: 10 }}>
+          Waiting for the first response from the team. You can escalate after they reply.
         </p>
       ) : null}
 
@@ -307,7 +344,7 @@ export function IncidentDetailPanel({
                   disabled={busy}
                   onClick={() =>
                     patchIncident({
-                      status: pendingStatus,
+                      status: pendingStatus === 'CLOSED' ? 'ACTION_TAKEN' : pendingStatus,
                       priority: pendingPriority,
                       action_taken_note: actionNote || undefined,
                     })
@@ -316,6 +353,44 @@ export function IncidentDetailPanel({
                 >
                   Update status
                 </button>
+                {incident.can_close_staff ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="admin-btn admin-btn--ghost admin-btn--sm"
+                    onClick={() =>
+                      setDialog({
+                        action: 'close',
+                        title: 'Close incident',
+                        description: 'Record what action was taken and close this report. The reporter will see this in the thread.',
+                        confirmLabel: 'Close incident',
+                        requireNote: true,
+                        noteLabel: 'Action taken note',
+                      })
+                    }
+                  >
+                    Close…
+                  </button>
+                ) : null}
+                {incident.can_escalate && canManage ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="admin-btn admin-btn--secondary admin-btn--sm"
+                    onClick={() =>
+                      setDialog({
+                        action: 'escalate',
+                        title: 'Escalate incident',
+                        description: `Route to ${incident.escalation_next_role ? String(incident.escalation_next_role).replace(/_/g, ' ') : 'the next level'}.`,
+                        confirmLabel: 'Escalate',
+                        requireNote: false,
+                        noteLabel: 'Reason (optional)',
+                      })
+                    }
+                  >
+                    Escalate…
+                  </button>
+                ) : null}
                 {!isClosed ? (
                   <>
                     <input type="file" multiple onChange={(e) => setUploadFiles(Array.from(e.target.files || []))} />
@@ -325,12 +400,69 @@ export function IncidentDetailPanel({
                   </>
                 ) : null}
               </>
-            ) : null}
+            ) : (
+              <>
+                {incident.can_close_reporter ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="ticket-compose__resolve"
+                    onClick={() =>
+                      setDialog({
+                        action: 'close',
+                        title: 'Close incident report',
+                        description: 'Confirm you are satisfied and no further follow-up is needed.',
+                        confirmLabel: 'Close report',
+                        requireNote: true,
+                        noteLabel: 'Closing note',
+                        notePlaceholder: 'Brief summary (e.g. issue resolved)…',
+                      })
+                    }
+                  >
+                    Close report…
+                  </button>
+                ) : null}
+                {incident.can_escalate ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="admin-btn admin-btn--secondary admin-btn--sm"
+                    onClick={() =>
+                      setDialog({
+                        action: 'escalate',
+                        title: 'Escalate incident',
+                        description: 'Not satisfied with the team response? Escalate for senior review.',
+                        confirmLabel: 'Escalate',
+                        requireNote: false,
+                        noteLabel: 'What was missing? (optional)',
+                      })
+                    }
+                  >
+                    Escalate…
+                  </button>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       ) : (
         <p style={{ fontSize: '0.78rem', color: '#94a3b8' }}>This incident is closed.</p>
       )}
+
+      <TicketFlowDialog
+        open={!!dialog}
+        title={dialog?.title}
+        description={dialog?.description}
+        confirmLabel={dialog?.confirmLabel}
+        requireNote={dialog?.requireNote}
+        noteLabel={dialog?.noteLabel}
+        notePlaceholder={dialog?.notePlaceholder}
+        onCancel={() => setDialog(null)}
+        onConfirm={(note) => {
+          if (dialog?.action === 'close') flowAction('close', note)
+          else if (dialog?.action === 'escalate') flowAction('escalate', note)
+        }}
+      />
     </div>
   )
 }

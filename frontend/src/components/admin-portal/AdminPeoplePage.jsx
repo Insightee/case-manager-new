@@ -2,13 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminTherapistOnboardPanel } from './AdminTherapistOnboardPanel.jsx'
 import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
+import { AdminStaffManageSection } from './AdminStaffManageSection.jsx'
 import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
 
 const EMPTY_CHILD = { first_name: '', last_name: '', date_of_birth: '' }
 
 export function AdminPeoplePage() {
+  const { can, portal } = useAuth()
+  const isHrPortal = portal === 'hr'
+  const canManageUsers = can('user.manage')
   const [searchParams] = useSearchParams()
   const [tab, setTab] = useState(() => searchParams.get('tab') || 'staff')
   const [users, setUsers] = useState([])
@@ -46,12 +51,16 @@ export function AdminPeoplePage() {
         tab === 'families' && familySearchDebounced
           ? `?search=${encodeURIComponent(familySearchDebounced)}`
           : ''
+      const userFetch = canManageUsers
+        ? apiFetch('/api/v1/admin/users?page_size=100')
+        : Promise.resolve([])
+      const modulesFetch = canManageUsers ? apiFetch('/api/v1/admin/modules') : Promise.resolve({ modules: [], role_defaults: {} })
       const [userRows, moduleMeta, profileRows, familyRows, inviteRows] = await Promise.all([
-        apiFetch('/api/v1/admin/users'),
-        apiFetch('/api/v1/admin/modules'),
-        apiFetch('/api/v1/admin/therapist-profiles'),
+        userFetch,
+        modulesFetch,
+        canManageUsers ? apiFetch('/api/v1/admin/therapist-profiles') : Promise.resolve([]),
         apiFetch(`/api/v1/admin/families${familyQs}`),
-        apiFetch('/api/v1/admin/invites').catch(() => []),
+        canManageUsers ? apiFetch('/api/v1/admin/invites').catch(() => []) : Promise.resolve([]),
       ])
       setUsers(unwrapList(userRows))
       setCatalog(moduleMeta.modules ?? [])
@@ -64,7 +73,7 @@ export function AdminPeoplePage() {
     } finally {
       setLoading(false)
     }
-  }, [tab, familySearchDebounced])
+  }, [tab, familySearchDebounced, canManageUsers])
 
   useEffect(() => {
     load()
@@ -265,34 +274,25 @@ export function AdminPeoplePage() {
         <p className="admin-muted">Loading…</p>
       ) : (
         <>
-          {tab === 'staff' && (
-            <AdminPanel title={`Staff (${filteredStaff.length})`}>
-              {filteredStaff.length === 0 ? (
-                <AdminEmptyState title="No staff" description="Try a different search." />
-              ) : (
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Email</th>
-                      <th>Roles</th>
-                      <th>Modules</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredStaff.map((u) => (
-                      <tr key={u.id}>
-                        <td>{u.full_name}</td>
-                        <td>{u.email}</td>
-                        <td>{(u.roles || []).join(', ')}</td>
-                        <td>{(u.module_assignments || []).join(', ') || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+          {tab === 'staff' && canManageUsers ? (
+            <AdminStaffManageSection
+              catalog={catalog}
+              roleDefaults={roleDefaults}
+              staff={filteredStaff}
+              onReload={load}
+              onSuccess={setSuccess}
+              onError={setError}
+            />
+          ) : null}
+
+          {tab === 'staff' && !canManageUsers ? (
+            <AdminPanel title="Staff">
+              <AdminEmptyState
+                title="Directory access required"
+                description="Your role cannot manage staff accounts. Contact an administrator or HR."
+              />
             </AdminPanel>
-          )}
+          ) : null}
 
           {tab === 'therapists' && (
             <>
@@ -420,9 +420,15 @@ export function AdminPeoplePage() {
                             Add parent
                           </button>
                         ) : null}
-                        <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary admin-btn--sm">
-                          Allot case
-                        </Link>
+                        {isHrPortal ? (
+                          <Link to="/hr/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
+                            View cases
+                          </Link>
+                        ) : can('case.create') ? (
+                          <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary admin-btn--sm">
+                            Allot case
+                          </Link>
+                        ) : null}
                       </div>
                     </li>
                   ))}

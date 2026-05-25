@@ -45,23 +45,35 @@ export function ParentBookSessionForm({
   }, [cases, caseId])
 
   useEffect(() => {
+    if (rescheduleFrom) {
+      const cid = rescheduleFrom.caseDbId
+      if (cid) setCaseId(String(cid))
+      if (rescheduleFrom.therapistUserId) {
+        setTherapistId(String(rescheduleFrom.therapistUserId))
+      }
+      return
+    }
     if (cases?.length && !caseId) {
       setCaseId(String(cases[0].id ?? cases[0].caseId ?? ''))
     }
-  }, [cases, caseId])
+  }, [cases, caseId, rescheduleFrom])
 
   useEffect(() => {
-    if (!numericCaseId) return
+    if (!numericCaseId || rescheduleFrom) return
     apiFetch(`/api/v1/booking/therapists?case_id=${numericCaseId}`)
       .then(setTherapists)
-      .catch(() => setTherapists([]))
-  }, [numericCaseId])
+      .catch((err) => {
+        setTherapists([])
+        setError(err.message || 'Could not load therapists')
+      })
+  }, [numericCaseId, rescheduleFrom, setError])
 
   useEffect(() => {
+    if (rescheduleFrom?.therapistUserId) return
     if (therapists.length && !therapistId) {
       setTherapistId(String(therapists[0].therapist_user_id))
     }
-  }, [therapists, therapistId])
+  }, [therapists, therapistId, rescheduleFrom])
 
   const loadSlots = useCallback(async () => {
     if (!therapistId || !selectedDate) {
@@ -126,11 +138,18 @@ export function ParentBookSessionForm({
           <span>
             Rescheduling {fmtDateLabel(rescheduleFrom.slotDate)} · {rescheduleFrom.startTime}
             {rescheduleFrom.endTime ? `–${rescheduleFrom.endTime}` : ''}
+            {rescheduleFrom.therapistName ? ` · ${rescheduleFrom.therapistName}` : ''}
           </span>
           <button type="button" className="parent-book-form__banner-cancel" onClick={onCancelReschedule}>
             Cancel
           </button>
         </div>
+      ) : null}
+
+      {isReschedule ? (
+        <p className="parent-book-form__help" style={{ marginTop: 0 }}>
+          You must pick a new slot with the <strong>same therapist</strong> ({rescheduleFrom.therapistName || 'assigned therapist'}).
+        </p>
       ) : null}
 
       <p className="parent-book-form__help">
@@ -159,17 +178,21 @@ export function ParentBookSessionForm({
 
         <label className="parent-book-form__field">
           Therapist
-          <select
-            value={therapistId}
-            onChange={(e) => setTherapistId(e.target.value)}
-            disabled={isReschedule || !therapists.length}
-          >
-            {therapists.map((t) => (
-              <option key={t.therapist_user_id} value={t.therapist_user_id}>
-                {t.full_name}
-              </option>
-            ))}
-          </select>
+          {isReschedule ? (
+            <input type="text" readOnly value={rescheduleFrom.therapistName || 'Your therapist'} />
+          ) : (
+            <select
+              value={therapistId}
+              onChange={(e) => setTherapistId(e.target.value)}
+              disabled={!therapists.length}
+            >
+              {therapists.map((t) => (
+                <option key={t.therapist_user_id} value={t.therapist_user_id}>
+                  {t.full_name}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
 
         <label className="parent-book-form__field">

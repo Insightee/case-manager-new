@@ -4,6 +4,10 @@ import { formatScheduleWhen, isToday } from '../../lib/therapistSchedule.js'
 export function UpcomingSessionsPanel({ items = [], loading = false }) {
   const preview = items.slice(0, 6)
   const todayCount = items.filter((i) => isToday(i.date)).length
+  const calendarHref =
+    preview.length > 0 && preview[0].date
+      ? `/therapist/slots?date=${preview[0].date}`
+      : '/therapist/slots'
 
   return (
     <section className="ic-upcoming" aria-label="Upcoming sessions">
@@ -18,7 +22,7 @@ export function UpcomingSessionsPanel({ items = [], loading = false }) {
                 : 'Bookings and scheduled visits across your caseload'}
           </p>
         </div>
-        <Link to="/therapist/slots" className="ic-btn ic-btn--ghost">
+        <Link to={calendarHref} className="ic-btn ic-btn--ghost">
           Open calendar
         </Link>
       </div>
@@ -57,7 +61,7 @@ export function UpcomingSessionsPanel({ items = [], loading = false }) {
       {items.length > preview.length ? (
         <p className="ic-upcoming__more">
           +{items.length - preview.length} more — use filters below or{' '}
-          <Link to="/therapist/slots">calendar</Link>
+          <Link to={calendarHref}>calendar</Link>
         </p>
       ) : null}
     </section>

@@ -32,13 +32,23 @@ async function refreshAccess() {
 }
 
 export async function apiFetch(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const { params, ...fetchOptions } = options
+  let url = path
+  if (params && typeof params === 'object') {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) qs.set(k, String(v))
+    }
+    const q = qs.toString()
+    if (q) url = `${path}${path.includes('?') ? '&' : '?'}${q}`
+  }
+  const headers = { 'Content-Type': 'application/json', ...(fetchOptions.headers || {}) }
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
 
   let res
   try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers })
+    res = await fetch(`${API_URL}${url}`, { ...fetchOptions, headers })
   } catch {
     const hint = API_URL
       ? `Cannot reach the API at ${API_URL}. Check that the server is running and CORS allows this site.`
@@ -50,7 +60,7 @@ export async function apiFetch(path, options = {}) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetch(`${API_URL}${path}`, { ...options, headers })
+      res = await fetch(`${API_URL}${url}`, { ...fetchOptions, headers })
     }
     if (res.status === 401) {
       clearTokens()

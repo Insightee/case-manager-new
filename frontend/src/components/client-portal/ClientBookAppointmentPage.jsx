@@ -103,17 +103,20 @@ export function ClientBookAppointmentPage({ cases }) {
 
   function loadAppointments() {
     setApptLoading(true)
+    setError('')
     Promise.all([
-      apiFetch('/api/v1/parent/appointments').catch(() => []),
-      apiFetch('/api/v1/parent/cm-meetings').catch(() => []),
+      apiFetch('/api/v1/parent/appointments'),
+      apiFetch('/api/v1/parent/cm-meetings'),
     ])
       .then(([slots, meetings]) => {
         const slotItems = (slots || []).map((a) => ({
           id: `slot-${a.id}`,
           rawId: a.id,
           isCmMeeting: false,
+          caseDbId: a.caseDbId,
           childName: a.childName,
           therapistName: a.therapistName,
+          therapistUserId: a.therapistUserId,
           slotDate: a.slotDate,
           startTime: a.startTime,
           endTime: a.endTime,
@@ -144,6 +147,11 @@ export function ClientBookAppointmentPage({ cases }) {
         })
         setAppointments(all)
         return all
+      })
+      .catch((err) => {
+        setError(err.message || 'Could not load appointments')
+        setAppointments([])
+        return []
       })
       .finally(() => setApptLoading(false))
   }
@@ -228,6 +236,12 @@ export function ClientBookAppointmentPage({ cases }) {
           </div>
         )}
       </section>
+
+      {!cases?.length ? (
+        <p className="parent-schedule-page__msg parent-schedule-page__msg--err" role="alert">
+          No active cases are linked to your account yet. Contact your care team if you expected to book sessions here.
+        </p>
+      ) : null}
 
       <section>
         <h2 className="parent-schedule-page__section-title">

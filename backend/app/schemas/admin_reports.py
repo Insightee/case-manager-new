@@ -78,6 +78,11 @@ class AdminReportSummary(BaseModel):
     queue_total: int
 
 
+class CmReviewAction(BaseModel):
+    comment: str
+    request_changes: bool = False
+
+
 class BulkReportAction(BaseModel):
     report_type: Literal["monthly", "observation"]
     ids: list[int] = Field(min_length=1, max_length=100)

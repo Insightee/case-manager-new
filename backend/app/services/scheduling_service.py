@@ -37,7 +37,9 @@ def get_unified_calendar(
     *,
     case_id: Optional[int] = None,
 ) -> dict[str, Any]:
-    return cal.get_calendar_view(db, therapist_user_id, from_date, to_date)
+    return cal.get_calendar_view(
+        db, therapist_user_id, from_date, to_date, case_id=case_id
+    )
 
 
 def create_slot(

@@ -10,6 +10,7 @@ from app.models.case import Case
 from app.models.support_ticket import SupportTicket, TicketMessage, TicketStatus, TicketTopic
 from app.models.user import User
 from app.services import case_service, ticket_attachment_service as att_svc, ticket_escalation_service as esc
+from app.services import ticket_flow_service as flow
 
 
 def _ticket_visible(db: Session, user: User, ticket: SupportTicket) -> bool:
@@ -18,7 +19,7 @@ def _ticket_visible(db: Session, user: User, ticket: SupportTicket) -> bool:
     return False
 
 
-def ticket_to_dict(db: Session, ticket: SupportTicket, *, include_messages: bool = False) -> dict:
+def ticket_to_dict(db: Session, user: User, ticket: SupportTicket, *, include_messages: bool = False) -> dict:
     case = case_service.get_case(db, ticket.case_id) if ticket.case_id else None
     child_name = case.child.full_name if case and case.child else None
     assignee = db.get(User, ticket.assigned_to_user_id) if ticket.assigned_to_user_id else None
@@ -43,15 +44,13 @@ def ticket_to_dict(db: Session, ticket: SupportTicket, *, include_messages: bool
         "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
         "created_at": ticket.created_at.isoformat(),
         "updated_at": ticket.updated_at.isoformat(),
-        "can_escalate": (ticket.escalation_level or 0) < len(roles) - 1
-        and ticket.status not in (TicketStatus.CLOSED,),
         "can_rate": ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
         and ticket.parent_satisfaction_rating is None,
-        "can_accept": ticket.status == TicketStatus.RESOLVED,
         "attachment_count": att_svc.count_for_ticket(db, ticket.id),
     }
     attachments = att_svc.list_for_ticket(db, ticket.id)
     data["attachments"] = [att_svc.attachment_to_dict(a) for a in attachments if a.message_id is None]
+    data.update(flow.ticket_flow_flags(db, user, ticket))
     if include_messages:
         msgs = db.scalars(
             select(TicketMessage)
@@ -72,6 +71,7 @@ def ticket_to_dict(db: Session, ticket: SupportTicket, *, include_messages: bool
             }
             for m in msgs
         ]
+    data["can_accept"] = data.get("can_accept", False)
     return data
 
 
@@ -81,11 +81,11 @@ def list_parent_tickets(db: Session, user: User) -> list[dict]:
         .where(SupportTicket.raised_by_user_id == user.id)
         .order_by(SupportTicket.created_at.desc())
     ).all()
-    return [ticket_to_dict(db, t) for t in tickets]
+    return [ticket_to_dict(db, user, t) for t in tickets]
 
 
 def get_parent_ticket(db: Session, user: User, ticket_id: int) -> dict:
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket or not _ticket_visible(db, user, ticket):
         raise HTTPException(status_code=404, detail="Ticket not found")
-    return ticket_to_dict(db, ticket, include_messages=True)
+    return ticket_to_dict(db, user, ticket, include_messages=True)

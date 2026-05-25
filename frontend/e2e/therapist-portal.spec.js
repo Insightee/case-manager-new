@@ -11,6 +11,13 @@ test.describe('Therapist portal smoke', () => {
     await sidebarLink(page, 'Session Logs').click()
     await expect(page).toHaveURL(/\/therapist\/logs/)
     await expect(page.getByRole('heading', { name: 'Session Logs' })).toBeVisible()
+    await expect(page.getByRole('tablist', { name: 'Session log lists' })).toBeVisible()
+    await page.getByRole('tab', { name: 'Approved' }).click()
+    const viewBtn = page.getByRole('button', { name: 'View log' }).first()
+    if (await viewBtn.isVisible()) {
+      await viewBtn.click()
+      await expect(page.getByText(/cannot be edited/i)).toBeVisible()
+    }
 
     await sidebarLink(page, 'My Cases').click()
     await expect(page).toHaveURL(/\/therapist\/cases/)
@@ -37,6 +44,10 @@ test.describe('Therapist portal smoke', () => {
     await caseLink.click()
     await expect(page).toHaveURL(/\/therapist\/cases\/\d+/)
     await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your case manager' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Sessions & logs' }).click()
+    await expect(page.getByRole('heading', { name: 'Upcoming for this client' })).toBeVisible()
 
     await page.goBack()
     await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
@@ -74,6 +85,18 @@ test.describe('Therapist portal smoke', () => {
         test.skip(true, 'No startable session or pending log in seed data')
       }
     }
+  })
+
+  test('my cases grid and table views toggle', async ({ page }) => {
+    await loginTherapist(page)
+    await sidebarLink(page, 'My Cases').click()
+    await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
+    await expect(page.locator('.ic-board')).toBeVisible()
+    await page.getByRole('button', { name: 'Table' }).click()
+    await expect(page.locator('.ic-table-card')).toBeVisible()
+    await expect(page.locator('.ic-board')).toBeHidden()
+    await page.getByRole('button', { name: 'Grid' }).click()
+    await expect(page.locator('.ic-board')).toBeVisible()
   })
 
   test('monthly report draft modal opens', async ({ page }) => {

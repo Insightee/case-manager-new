@@ -50,3 +50,14 @@ Optional environment variables:
 | `VITE_POLICIES_BOT_URL` | Frontend fallback if portal info is unavailable |
 
 Ticket attachments: up to **3 files**, **5 MB** each (JPEG, PNG, WebP, PDF, plain text). Stored under `uploads/tickets/`. Staff and parents download via `GET /api/v1/tickets/attachments/{id}/download` when they have access to the ticket.
+
+## Report image storage
+
+Rich-text report images (monthly and observation) use a storage abstraction:
+
+| `STORAGE_PROVIDER` | Behavior |
+|--------------------|----------|
+| `local` (default) | Files under `uploads/objects/{storage_prefix}/{environment}/report-images/...` |
+| `r2` | Private Cloudflare R2 bucket via S3-compatible API; streamed through the API (no public URLs) |
+
+Set `STORAGE_PREFIX`, `STORAGE_ENVIRONMENT`, and `MAX_UPLOAD_BYTES` (default 10 MB). For R2, configure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, and optionally `R2_ENDPOINT_URL`. Allowed types: JPEG, PNG, WebP only.

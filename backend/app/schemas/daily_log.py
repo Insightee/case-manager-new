@@ -92,6 +92,11 @@ class ParentSessionLogRead(BaseModel):
     parent_feedback_at: Optional[datetime] = None
     parent_feedback_public: bool = False
     submitted_at: Optional[datetime] = None
+    headline: Optional[str] = None
+    summary_paragraph: Optional[str] = None
+    attendance_label: Optional[str] = None
+    what_we_did: Optional[str] = None
+    what_is_next: Optional[str] = None
 
 
 class ParentSessionFeedbackUpdate(BaseModel):

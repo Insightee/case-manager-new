@@ -24,9 +24,11 @@ from app.api.v1 import (
     tickets,
     support,
     therapist_profile,
+    therapist_portal,
     geocode,
     files,
     client_billing,
+    case_documents,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -53,5 +55,8 @@ api_router.include_router(scheduling.router)
 api_router.include_router(booking.router)
 api_router.include_router(hr.router)
 api_router.include_router(therapist_profile.router)
+api_router.include_router(therapist_portal.router)
 api_router.include_router(geocode.router)
 api_router.include_router(files.router)
+api_router.include_router(case_documents.router)
+api_router.include_router(case_documents.documents_router)

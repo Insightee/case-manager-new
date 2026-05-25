@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, getTokens } from '../../lib/apiClient.js'
+import { REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { AdminPageHeader, AdminSearchInput } from './ui/index.js'
 import { AdminReportDetailDrawer } from './AdminReportDetailDrawer.jsx'
 import { AdminReportsTable } from './AdminReportsTable.jsx'
@@ -31,6 +32,7 @@ function buildListQuery(filters, page, pageSize) {
   if (filters.status) p.set('status', filters.status)
   if (filters.module) p.set('product_module', filters.module)
   if (filters.month) p.set('month', filters.month)
+  if (filters.category) p.set('category', filters.category)
   if (filters.parentReview) p.set('parent_review_status', filters.parentReview)
   if (filters.caseId) p.set('case_id', filters.caseId)
   return `?${p.toString()}`
@@ -59,14 +61,23 @@ export function AdminReportsPage() {
   const [status, setStatus] = useState(searchParams.get('status') || '')
   const [module, setModule] = useState(searchParams.get('module') || '')
   const [month, setMonth] = useState(searchParams.get('month') || '')
+  const [category, setCategory] = useState(searchParams.get('category') || '')
   const [missingMonth, setMissingMonth] = useState(
     () => new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
   )
   const [missingRows, setMissingRows] = useState([])
 
   const filters = useMemo(
-    () => ({ search, status, module, month, parentReview: '', caseId: searchParams.get('case_id') || '' }),
-    [search, status, module, month, searchParams],
+    () => ({
+      search,
+      status,
+      module,
+      month,
+      category,
+      parentReview: '',
+      caseId: searchParams.get('case_id') || '',
+    }),
+    [search, status, module, month, category, searchParams],
   )
 
   const loadSummary = useCallback(async () => {
@@ -146,7 +157,7 @@ export function AdminReportsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [tab, typeFilter, search, status, module, month])
+  }, [tab, typeFilter, search, status, module, month, category])
 
   function openDrawer(row) {
     const next = new URLSearchParams(searchParams)
@@ -302,6 +313,7 @@ export function AdminReportsPage() {
     if (filters.status) p.set('status', filters.status)
     if (filters.module) p.set('product_module', filters.module)
     if (filters.month) p.set('month', filters.month)
+    if (filters.category) p.set('category', filters.category)
     if (filters.caseId) p.set('case_id', filters.caseId)
     const qs = p.toString()
     return `/api/v1/admin/reports/export/${fmt}${qs ? `?${qs}` : ''}`
@@ -392,6 +404,14 @@ export function AdminReportsPage() {
           <option value="">All modules</option>
           <option value="homecare">Homecare</option>
           <option value="shadow_support">Shadow support</option>
+        </select>
+        <select className="admin-select" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="">All categories</option>
+          {REPORT_CATEGORIES.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
         </select>
         {(typeFilter === 'all' || typeFilter === 'monthly') && tab === 'all' ? (
           <input

@@ -90,9 +90,10 @@ export function IncidentReportForm({
           >
             <option value="">{caseRequired ? 'Select client…' : 'Not linked to a specific case'}</option>
             {cases.map((c) => (
-              <option key={c.id || c.case_id} value={c.id || c.case_id}>
-                {c.child_name || c.childName || c.case_code}
-                {c.case_code ? ` · ${c.case_code}` : ''}
+              <option key={c.id} value={c.id}>
+                {[c.case_code, c.child_name || c.childName, c.service_type || c.serviceType]
+                  .filter(Boolean)
+                  .join(' · ')}
               </option>
             ))}
           </select>

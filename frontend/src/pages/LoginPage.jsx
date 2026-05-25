@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { SkipLink } from '../components/shared/SkipLink.jsx'
+import { usePageMeta } from '../hooks/usePageMeta.js'
 
 const PORTALS = [
   {
@@ -16,6 +18,13 @@ const PORTALS = [
     subtitle: 'Approved reports, IEP acknowledgements, and billing.',
     placeholder: 'parent@demo.com',
     demos: [{ email: 'parent@demo.com', label: 'Parent / Guardian' }],
+  },
+  {
+    id: 'hr',
+    label: 'HR',
+    subtitle: 'Therapists, families, leave, and people management.',
+    placeholder: 'hr@demo.com',
+    demos: [{ email: 'hr@demo.com', label: 'HR' }],
   },
   {
     id: 'admin',
@@ -41,8 +50,14 @@ export function LoginPage() {
   const [email, setEmail] = useState('therapist@demo.com')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const active = useMemo(() => PORTALS.find((p) => p.id === portal) ?? PORTALS[0], [portal])
+
+  usePageMeta({
+    title: 'Sign in',
+    description: `Sign in to the InsightCase ${active.label.toLowerCase()} portal.`,
+  })
 
   function selectPortal(id) {
     setPortal(id)
@@ -60,26 +75,30 @@ export function LoginPage() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    setSubmitting(true)
     try {
       await login(email.trim().toLowerCase(), password)
       navigate('/')
     } catch (err) {
       setError(err.message || 'Invalid credentials.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   return (
     <div className="login-page">
+      <SkipLink />
       <div className="login-shell">
         <section className="login-card">
-          <div className="login-main">
+          <main id="main-content" className="login-main" tabIndex={-1}>
             <header className="login-header">
               <p className="login-brand">InsightCase</p>
               <h1 className="login-title">{active.label} portal</h1>
               <p className="login-sub">{active.subtitle}</p>
             </header>
 
-            <div className="portal-tabs" role="tablist" aria-label="Select portal">
+            <div className="portal-tabs portal-tabs--four" role="tablist" aria-label="Select portal">
               {PORTALS.map((p) => (
                 <button
                   key={p.id}
@@ -120,8 +139,8 @@ export function LoginPage() {
                   {error}
                 </p>
               ) : null}
-              <button type="submit" className="login-submit">
-                Sign in
+              <button type="submit" className="login-submit" disabled={submitting} aria-busy={submitting}>
+                {submitting ? 'Signing in…' : 'Sign in'}
               </button>
             </form>
 
@@ -140,9 +159,9 @@ export function LoginPage() {
                 ))}
               </ul>
             </div>
-          </div>
+          </main>
 
-          <aside className="login-aside" aria-hidden="true">
+          <aside className="login-aside" aria-label="Platform highlights">
             <p className="login-aside__tag">Case-centric care</p>
             <h2>One platform for your whole team</h2>
             <ul className="login-aside__list">

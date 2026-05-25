@@ -25,9 +25,13 @@ export function ReportEditPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState(null)
+  const [saveFailed, setSaveFailed] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [documentVersion, setDocumentVersion] = useState(0)
   const saveTimer = useRef(null)
+  const skipAutosaveRef = useRef(true)
 
   const editable =
     report && (report.status === 'DRAFT' || report.status === 'REJECTED')
@@ -43,11 +47,16 @@ export function ReportEditPage() {
       setCategory(row.category || 'CLIENT_MONTHLY')
       setSubCategory(row.sub_category || '')
       setMonth(row.month || '')
+      setDocumentVersion((v) => v + 1)
+      skipAutosaveRef.current = true
     } catch (err) {
       setError(err.message || 'Report not found')
       setReport(null)
     } finally {
       setLoading(false)
+      queueMicrotask(() => {
+        skipAutosaveRef.current = false
+      })
     }
   }, [reportId])
 
@@ -59,6 +68,7 @@ export function ReportEditPage() {
     async (silent = true) => {
       if (!report || !editable) return
       setSaving(true)
+      setSaveFailed(false)
       if (!silent) setError('')
       try {
         const updated = await apiFetch(`/api/v1/reports/monthly/${report.id}`, {
@@ -73,8 +83,10 @@ export function ReportEditPage() {
         })
         setReport(updated)
         setSavedAt(new Date())
+        setDirty(false)
         if (!silent) setMessage('Saved.')
       } catch (err) {
+        setSaveFailed(true)
         setError(err.message || 'Could not save')
       } finally {
         setSaving(false)
@@ -84,7 +96,8 @@ export function ReportEditPage() {
   )
 
   useEffect(() => {
-    if (!editable || loading) return
+    if (!editable || loading || skipAutosaveRef.current) return
+    setDirty(true)
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => persist(true), 2000)
     return () => {
@@ -92,11 +105,28 @@ export function ReportEditPage() {
     }
   }, [bodyHtml, planNextMonth, category, subCategory, month, editable, loading, persist])
 
+  useEffect(() => {
+    if (!dirty || !editable) return undefined
+    const onBeforeUnload = (e) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [dirty, editable])
+
   async function handleSubmit() {
+    setError('')
+    if (!(month || '').trim()) {
+      setError('Set the report month before submitting.')
+      return
+    }
     await persist(false)
+    if (saveFailed) return
     try {
       await apiFetch(`/api/v1/reports/monthly/${reportId}/submit`, { method: 'POST' })
       setMessage('Submitted for admin review.')
+      setError('')
       await load()
     } catch (err) {
       setError(err.message || 'Could not submit')
@@ -169,8 +199,25 @@ export function ReportEditPage() {
 
       {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {savedAt && editable ? (
-        <p className="text-xs text-slate-400">Autosaved {savedAt.toLocaleTimeString()}</p>
+      {editable ? (
+        <div className="report-save-status" role="status">
+          {saving ? (
+            <span className="report-save-status__chip report-save-status__chip--saving">Saving…</span>
+          ) : saveFailed ? (
+            <>
+              <span className="report-save-status__chip report-save-status__chip--error">Save failed</span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => persist(false)}>
+                Retry
+              </button>
+            </>
+          ) : savedAt ? (
+            <span className="report-save-status__chip report-save-status__chip--ok">
+              Saved {savedAt.toLocaleTimeString()}
+            </span>
+          ) : dirty ? (
+            <span className="report-save-status__chip">Unsaved changes</span>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -222,6 +269,7 @@ export function ReportEditPage() {
 
           <ReportEditor
             reportId={Number(reportId)}
+            documentVersion={documentVersion}
             initialHtml={bodyHtml}
             planNextMonth={planNextMonth}
             onPlanChange={setPlanNextMonth}

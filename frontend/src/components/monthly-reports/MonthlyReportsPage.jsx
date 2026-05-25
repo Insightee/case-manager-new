@@ -4,7 +4,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 const REPORTS_EDIT_BASE = '/therapist/reports/edit'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
-import { buildReportWorkbench } from '../../lib/reportWorkbench.js'
+import { useTherapistHome, useTherapistReportsPipeline } from '../../hooks/useTherapistHome.js'
+import { QueryState } from '../shared/QueryState.jsx'
 import { CaseReportsPanel } from '../cases/CaseReportsPanel.jsx'
 import { CalendarModal } from './CalendarModal.jsx'
 import { ChecklistPanel } from './ChecklistPanel.jsx'
@@ -103,34 +104,35 @@ export function MonthlyReportsPage() {
     window.setTimeout(() => setToast((t) => ({ ...t, visible: false })), 3800)
   }, [])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const [reports, cases] = await Promise.all([
-        apiFetch('/api/v1/reports/monthly?page_size=100'),
-        apiFetch('/api/v1/cases?assigned=true&page_size=100'),
-      ])
-      const caseList = unwrapList(cases)
-      setAssignedCases(caseList)
-      setWorkbench(buildReportWorkbench({ reports: unwrapList(reports), cases: caseList }))
-    } catch (err) {
-      setError(err.message || 'Could not load reports')
-      setWorkbench({
-        attention: [],
-        inProgress: [],
-        published: [],
-        pipeline: { draft: 0, underReview: 0, published: 0, overdue: 0 },
-        monthLabel: '',
-      })
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const { data: pipelineData, isLoading: pipeLoading, isError, error: fetchError, refetch } =
+    useTherapistReportsPipeline()
+  const { data: homeData } = useTherapistHome()
 
   useEffect(() => {
-    load()
-  }, [load])
+    if (pipelineData) {
+      setWorkbench({
+        attention: pipelineData.attention || [],
+        inProgress: pipelineData.in_progress || [],
+        published: pipelineData.published || [],
+        pipeline: pipelineData.pipeline || { draft: 0, underReview: 0, published: 0, overdue: 0 },
+        monthLabel: pipelineData.month_label || '',
+      })
+    }
+    if (homeData?.cases_board?.allCases) {
+      setAssignedCases(
+        homeData.cases_board.allCases.map((c) => ({
+          id: c.id,
+          case_code: c.caseId,
+          child_name: c.child,
+        })),
+      )
+    }
+    setLoading(pipeLoading)
+    if (isError) setError(fetchError?.message || 'Could not load reports')
+    else setError('')
+  }, [pipelineData, homeData, pipeLoading, isError, fetchError])
+
+  const load = useCallback(() => refetch(), [refetch])
 
   useEffect(() => {
     if (openCreate && caseFilterId) {

@@ -290,6 +290,10 @@ def dashboard_summary(
 
     total_cases_stmt = apply_case_scope(select(func.count()).select_from(Case), user)
 
+    from app.services import admin_workbench_service as wb_svc
+
+    ops_counts = wb_svc.build_ops_counts(db, user)
+
     return {
         "open_cases": _count_case_status(CaseStatus.ACTIVE),
         "pending_allotment": _count_case_status(CaseStatus.PENDING_ALLOTMENT),
@@ -299,6 +303,13 @@ def dashboard_summary(
         "reports_in_review": reports_in_review,
         "invoices_pending": invoices_pending,
         "open_tickets": open_tickets,
+        "observation_checklists_pending": ops_counts.get("observation_checklists_pending", 0),
+        "observation_checklists_overdue": ops_counts.get("observation_checklists_overdue", 0),
+        "observation_reports_in_review": ops_counts.get("observation_reports_in_review", 0),
+        "status_requests_pending": ops_counts.get("status_requests_pending", 0),
+        "client_payments_pending_review": ops_counts.get("client_payments_pending_review", 0),
+        "iep_attention": ops_counts.get("iep_attention", 0),
+        "iep_plans_draft": ops_counts.get("iep_plans_draft", 0),
         "status_breakdown": {
             "ACTIVE": _count_case_status(CaseStatus.ACTIVE),
             "PENDING_ALLOTMENT": _count_case_status(CaseStatus.PENDING_ALLOTMENT),
@@ -1338,6 +1349,18 @@ def _iep_reader(user: User = Depends(get_current_user)) -> User:
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
     return user
+
+
+@router.get("/iep/plans")
+def admin_list_iep_plans(
+    status: Optional[str] = None,
+    limit: int = 50,
+    user: User = Depends(_iep_reader),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_plan_service as iep_svc
+
+    return iep_svc.list_plans_scoped(db, user, status=status, limit=min(limit, 100))
 
 
 @router.get("/iep/dashboard", response_model=AdminIepDashboard)
