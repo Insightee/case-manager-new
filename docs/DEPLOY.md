@@ -22,7 +22,9 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
 
 ### Railway (Postgres + Docker API)
 
-1. In [Railway](https://railway.com), **New Project** → **Deploy from GitHub repo** → `Insightee/case-manager-new`.
+**Project ID:** `b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4` — full SMTP/Vercel pairing: [`docs/RAILWAY_VERCEL.md`](RAILWAY_VERCEL.md), env template [`backend/env.railway.example`](../backend/env.railway.example).
+
+1. In [Railway](https://railway.com), open that project (or **New Project** → **Deploy from GitHub repo** → `Insightee/case-manager-new`).
 2. Add a **PostgreSQL** plugin to the project.
 3. Create a **service** for the API:
    - **Root directory:** `backend` (monorepo — required)
@@ -61,7 +63,7 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
 ```bash
 export RAILWAY_TOKEN="<your-token>"
 cd backend
-npx @railway/cli link          # pick project
+npx @railway/cli link --project b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4
 npx @railway/cli up --detach
 npx @railway/cli domain
 ```

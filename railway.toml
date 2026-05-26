@@ -1,4 +1,5 @@
 # Monorepo: GitHub deploys from repo root; API lives in backend/
+# Railway project: b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4 (see docs/RAILWAY_VERCEL.md)
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "backend/Dockerfile"

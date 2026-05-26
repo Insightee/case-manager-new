@@ -101,7 +101,7 @@ python3 scripts/send_test_email.py --to your@inbox.com --template password_reset
 python3 scripts/send_test_email.py --to your@inbox.com --from-email verification.noreply@insighte.in --template portal_invite
 ```
 
-Railway variable batch (after `railway login` && `railway link`): see [`backend/scripts/railway_smtp_env.example.sh`](../backend/scripts/railway_smtp_env.example.sh).
+Railway variable batch (project `b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4`): see [`docs/RAILWAY_VERCEL.md`](RAILWAY_VERCEL.md), [`backend/scripts/railway_link_and_configure.example.sh`](../backend/scripts/railway_link_and_configure.example.sh), or [`backend/scripts/railway_smtp_env.example.sh`](../backend/scripts/railway_smtp_env.example.sh).
 
 ## Verify mail is working
 
