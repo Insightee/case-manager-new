@@ -1,0 +1,7 @@
+# Monorepo: deploy only the Vite app (see vercel.json). Do not upload backend/Python tree.
+backend/
+docker-compose.yml
+.github/
+docs/
+*.md
+!frontend/**

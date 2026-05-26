@@ -37,12 +37,12 @@ WIDGET_ITEM_LIMIT = 8
 _HOME_OPERATIONAL_ROLES = frozenset({"SUPER_ADMIN", "MODULE_ADMIN", "ADMIN", "CASE_MANAGER", "SUPERVISOR"})
 
 
-def user_may_see_reschedules_widget(user: User) -> bool:
+def user_may_see_reschedules_widget(user: User, db: Session) -> bool:
     """Scheduling queue — not for HR/FINANCE-only home roles."""
     role_names = set(user.role_names or [])
     if not role_names.intersection(_HOME_OPERATIONAL_ROLES):
         return False
-    if not user_has_feature(user, "cases"):
+    if not user_has_feature(user, "cases", db):
         return False
     return (
         user_has_permission(user, "case.read.team")
@@ -52,7 +52,7 @@ def user_may_see_reschedules_widget(user: User) -> bool:
 
 
 def widget_section_logs(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIMIT) -> dict | None:
-    if not user_has_permission(user, "daily_log.review") or not user_has_feature(user, "session_logs"):
+    if not user_has_permission(user, "daily_log.review") or not user_has_feature(user, "session_logs", db):
         return None
     log_stmt = (
         select(DailyLog, Case, Child)
@@ -89,7 +89,7 @@ def widget_section_logs(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIM
 
 
 def widget_section_reports(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIMIT) -> dict | None:
-    if not user_has_permission(user, "monthly_report.approve") or not user_has_feature(user, "reports"):
+    if not user_has_permission(user, "monthly_report.approve") or not user_has_feature(user, "reports", db):
         return None
     items, queue_meta = list_queue_admin(db, user, page=1, page_size=limit, report_type=None)
     return {
@@ -111,7 +111,7 @@ def widget_section_reports(db: Session, user: User, *, limit: int = WIDGET_ITEM_
 
 
 def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIMIT) -> dict | None:
-    if not user_has_permission(user, "ticket.manage") or not user_has_feature(user, "tickets"):
+    if not user_has_permission(user, "ticket.manage") or not user_has_feature(user, "tickets", db):
         return None
     mine_first = case(
         (SupportTicket.assigned_to_user_id == user.id, 0),
@@ -154,9 +154,9 @@ def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_
 def widget_section_billing(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIMIT) -> dict | None:
     if not user_has_permission(user, "invoice.approve"):
         return None
-    if not (user_has_feature(user, "invoices") or user_has_feature(user, "dashboard")):
+    if not (user_has_feature(user, "invoices", db) or user_has_feature(user, "dashboard", db)):
         return None
-    allowed = get_allowed_case_product_modules(user)
+    allowed = get_allowed_case_product_modules(user, db)
     scoped_therapist_ids = None
     if allowed is not None:
         if not allowed:
@@ -233,7 +233,7 @@ def build_ops_counts(db: Session, user: User) -> dict:
         )
         counts["observation_checklists_overdue"] = _count_scoped(db, user, overdue_stmt)
 
-        if user_has_feature(user, "reports"):
+        if user_has_feature(user, "reports", db):
             obs_rep_stmt = (
                 select(func.count())
                 .select_from(ObservationReport)
@@ -252,7 +252,7 @@ def build_ops_counts(db: Session, user: User) -> dict:
         counts["status_requests_pending"] = _count_scoped(db, user, sr_stmt)
 
     if user_has_permission(user, "invoice.approve") and (
-        user_has_feature(user, "invoices") or user_has_feature(user, "dashboard")
+        user_has_feature(user, "invoices", db) or user_has_feature(user, "dashboard", db)
     ):
         pay_stmt = (
             select(func.count())
@@ -263,7 +263,7 @@ def build_ops_counts(db: Session, user: User) -> dict:
         )
         counts["client_payments_pending_review"] = _count_scoped(db, user, pay_stmt)
 
-    if user_has_permission(user, "iep.read") and user_has_feature(user, "iep"):
+    if user_has_permission(user, "iep.read") and user_has_feature(user, "iep", db):
         iep_data = iep_svc.build_iep_dashboard(db, user, include_closed=False)
         summary = iep_data.get("summary", {})
         counts["iep_attention"] = int(summary.get("missing", 0)) + int(summary.get("internal_only", 0))
@@ -359,7 +359,7 @@ def widget_section_status_requests(db: Session, user: User, *, limit: int = WIDG
 def widget_section_client_claims(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIMIT) -> dict | None:
     if not user_has_permission(user, "invoice.approve"):
         return None
-    if not (user_has_feature(user, "invoices") or user_has_feature(user, "dashboard")):
+    if not (user_has_feature(user, "invoices", db) or user_has_feature(user, "dashboard", db)):
         return None
     stmt = (
         select(ClientPayment, ClientInvoice, Case, Child)
@@ -444,7 +444,7 @@ def build_admin_alerts(db: Session, user: User) -> list[dict]:
 
 
 def widget_section_reschedules(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIMIT) -> dict | None:
-    if not user_may_see_reschedules_widget(user):
+    if not user_may_see_reschedules_widget(user, db):
         return None
     slot_stmt = (
         select(TherapistSlot, Case, Child)
@@ -514,7 +514,7 @@ def build_workbench_summary(db: Session, user: User) -> dict:
     if tickets:
         sections["tickets"] = tickets
 
-    if user_has_permission(user, "incident.read_sensitive") and user_has_feature(user, "incidents"):
+    if user_has_permission(user, "incident.read_sensitive") and user_has_feature(user, "incidents", db):
         inc_stmt = (
             select(Incident, Case, Child)
             .outerjoin(Case, Incident.case_id == Case.id)
@@ -541,7 +541,7 @@ def build_workbench_summary(db: Session, user: User) -> dict:
             ],
         }
 
-    if user_has_permission(user, "iep.read") and user_has_feature(user, "iep"):
+    if user_has_permission(user, "iep.read") and user_has_feature(user, "iep", db):
         iep_data = iep_svc.build_iep_dashboard(db, user, include_closed=False)
         attention = [r for r in iep_data.get("rows", []) if r.get("iep_status") in ("MISSING", "INTERNAL_ONLY")][:8]
         sections["iep"] = {

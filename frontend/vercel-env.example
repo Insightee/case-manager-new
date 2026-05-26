@@ -1,0 +1,3 @@
+# Copy these to Vercel → Project → Environment Variables (Production + Preview).
+# Do not use backend/.env.example on the frontend project.
+VITE_API_URL=https://case-manager-new-production.up.railway.app

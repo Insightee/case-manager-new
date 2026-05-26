@@ -26,7 +26,7 @@ def resolve_primary_role(user: User) -> str:
     return RoleName.ADMIN.value
 
 
-def _landing_route(role: str, user: User) -> str:
+def _landing_route(role: str, user: User, db: Session) -> str:
     if role == RoleName.FINANCE.value:
         return "/admin/invoices"
     if role == RoleName.HR.value:
@@ -36,7 +36,7 @@ def _landing_route(role: str, user: User) -> str:
     if role in (RoleName.VIEWER.value, RoleName.SUPERVISOR.value):
         if getattr(user, "is_view_only", False) or role == RoleName.VIEWER.value:
             return "/admin/cm"
-        if user_has_feature(user, "session_logs"):
+        if user_has_feature(user, "session_logs", db):
             return "/admin/workbench"
     return "/admin"
 
@@ -109,7 +109,7 @@ def build_admin_home(db: Session, user: User) -> dict:
     if w:
         widgets.append(w)
 
-    if admin_workbench_service.user_may_see_reschedules_widget(user):
+    if admin_workbench_service.user_may_see_reschedules_widget(user, db):
         reschedules = admin_workbench_service.widget_section_reschedules(db, user)
         w = _widget(
             widget_id="reschedules",
@@ -154,7 +154,7 @@ def build_admin_home(db: Session, user: User) -> dict:
 
     return {
         "role": role,
-        "landing_route": _landing_route(role, user),
+        "landing_route": _landing_route(role, user, db),
         "dashboard_variant": _dashboard_variant(role),
         "widgets": widgets,
         "alerts": admin_workbench_service.build_admin_alerts(db, user),

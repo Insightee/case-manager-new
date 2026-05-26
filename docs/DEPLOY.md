@@ -97,8 +97,10 @@ Verify: `GET https://your-api.example.com/health` returns `{"status":"ok",...}`.
 ## 2. Deploy the frontend on Vercel
 
 1. Import the GitHub repo in Vercel.
-2. Set **Root Directory** to `frontend`.
-3. Framework preset: **Vite** (or use `frontend/vercel.json`).
+2. **Root Directory:** either set to `frontend`, **or** leave the repo root and rely on root [`vercel.json`](../vercel.json) (`npm ci --prefix frontend` / `npm run build --prefix frontend`).  
+   If you see `ENOENT ... package.json` at `/vercel/path0/`, Vercel is building the monorepo root without one of those fixes.  
+   Do **not** point Vercel env at [`backend/.env.example`](../backend/.env.example) — use [`frontend/vercel-env.example`](../frontend/vercel-env.example) (`VITE_API_URL` only). Root [`.vercelignore`](../.vercelignore) excludes `backend/` from the frontend deployment bundle.
+3. Framework preset: **Vite** (when Root Directory is `frontend`, `frontend/vercel.json` applies).
 4. **Environment variables** (Production + Preview):
 
    | Name | Example |
