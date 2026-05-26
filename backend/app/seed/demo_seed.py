@@ -69,16 +69,27 @@ def seed_roles_permissions(db):
 
 
 def get_or_create_user(db, email, password, full_name, role_name, **kwargs):
+    """Create or refresh a demo user (password and active flag are always reset)."""
+    email = email.lower().strip()
+    role = db.scalars(select(Role).where(Role.name == role_name)).first()
     user = db.scalars(select(User).where(User.email == email)).first()
     if user:
+        user.password_hash = hash_password(password)
+        user.full_name = full_name
+        user.is_active = True
+        if kwargs.get("region") is not None:
+            user.region = kwargs["region"]
         if kwargs.get("module_assignments") is not None:
             user.module_assignments = kwargs["module_assignments"]
+        if role:
+            user.roles = [role]
+        db.flush()
         return user
-    role = db.scalars(select(Role).where(Role.name == role_name)).first()
     user = User(
         email=email,
         password_hash=hash_password(password),
         full_name=full_name,
+        is_active=True,
         region=kwargs.get("region", "south"),
         module_assignments=kwargs.get("module_assignments", []),
     )
@@ -97,13 +108,21 @@ def run():
         seed_roles_permissions(db)
 
         super_admin = get_or_create_user(db, "superadmin@demo.com", "demo123", "Super Admin", RoleName.SUPER_ADMIN.value)
-        get_or_create_user(
+        admin_user = get_or_create_user(
             db,
             "admin@demo.com",
             "demo123",
-            "View Admin",
-            RoleName.ADMIN.value,
+            "Programme Admin",
+            RoleName.MODULE_ADMIN.value,
             module_assignments=["homecare"],
+        )
+        get_or_create_user(
+            db,
+            "moduleadmin@demo.com",
+            "demo123",
+            "Module Admin",
+            RoleName.MODULE_ADMIN.value,
+            module_assignments=["homecare", "shadow_support", "billing"],
         )
         case_mgr = get_or_create_user(
             db,
@@ -125,18 +144,56 @@ def run():
         finance = get_or_create_user(
             db, "finance@demo.com", "demo123", "Finance User", RoleName.FINANCE.value, module_assignments=["billing"]
         )
-        get_or_create_user(
-            db, "supervisor@demo.com", "demo123", "Supervisor", RoleName.SUPERVISOR.value, module_assignments=["shadow_support"]
+        supervisor_cm = get_or_create_user(
+            db,
+            "supervisor@demo.com",
+            "demo123",
+            "Shadow CM (ex-supervisor)",
+            RoleName.CASE_MANAGER.value,
+            module_assignments=["shadow_support"],
         )
-        get_or_create_user(
+        viewer = get_or_create_user(
             db,
             "viewer@demo.com",
             "demo123",
-            "View Only Admin",
-            RoleName.VIEWER.value,
+            "CM View Only",
+            RoleName.CASE_MANAGER.value,
             module_assignments=["homecare", "shadow_support"],
         )
-        get_or_create_user(db, "support@demo.com", "demo123", "Support Admin", RoleName.ADMIN.value, module_assignments=["homecare", "billing"])
+        from app.core.rbac_access import sync_user_access_fields
+
+        sync_user_access_fields(
+            viewer,
+            role_names=[RoleName.CASE_MANAGER.value],
+            module_assignments=["homecare", "shadow_support"],
+            view_only=True,
+        )
+        sync_user_access_fields(
+            supervisor_cm,
+            role_names=[RoleName.CASE_MANAGER.value],
+            module_assignments=["shadow_support"],
+            view_only=False,
+        )
+        sync_user_access_fields(
+            admin_user,
+            role_names=[RoleName.MODULE_ADMIN.value],
+            module_assignments=["homecare"],
+            view_only=False,
+        )
+        support_admin = get_or_create_user(
+            db,
+            "support@demo.com",
+            "demo123",
+            "Support Admin",
+            RoleName.MODULE_ADMIN.value,
+            module_assignments=["homecare", "billing"],
+        )
+        sync_user_access_fields(
+            support_admin,
+            role_names=[RoleName.MODULE_ADMIN.value],
+            module_assignments=["homecare", "billing"],
+            view_only=False,
+        )
         get_or_create_user(
             db, "hr@demo.com", "demo123", "HR Manager Priya", RoleName.HR.value, module_assignments=["homecare", "shadow_support"]
         )
@@ -171,6 +228,7 @@ def run():
         case1.client_rate_per_session_inr = 1000
         case1.compensation_mode = CompensationMode.PERCENTAGE
         case1.pay_share_pct = 60
+        case1.case_manager_user_id = supervisor_cm.id
 
         case2 = db.scalars(select(Case).where(Case.case_code == "IC-2026-053")).first()
         if not case2:
@@ -408,7 +466,10 @@ def run():
             )
         ).first()
         if sample_slot:
-            cal.book_slot(db, sample_slot.id, case1.id, therapist.id, BookingSource.THERAPIST)
+            try:
+                cal.book_slot(db, sample_slot.id, case1.id, therapist.id, BookingSource.THERAPIST)
+            except ValueError:
+                pass  # idempotent re-seed: slot booked or assignment already changed
 
         if not db.scalars(select(MonthlyReport).where(MonthlyReport.case_id == case1.id)).first():
             db.add(

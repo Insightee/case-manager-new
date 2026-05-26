@@ -39,6 +39,8 @@ class CaseManagerMeeting(Base):
         Enum(MeetingType), default=MeetingType.CLIENT_ONLY, nullable=False
     )
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    meeting_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    guest_emails_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     notes_concerns: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes_follow_up: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

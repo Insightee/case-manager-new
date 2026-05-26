@@ -10,6 +10,7 @@ from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.module_access import user_has_feature
+from app.core.module_write import ensure_case_write_access, ensure_feature_write_access
 from app.core.permissions import RoleName, case_scope_check, require_permission, user_has_permission
 from app.models.daily_log import LogApprovalStatus
 from app.models.user import User
@@ -125,6 +126,10 @@ def approve_log(
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     _log_case_scope(db, user, log)
+    case = case_service.get_case(db, log.session.case_id)
+    if case:
+        ensure_case_write_access(user, case, db)
+        ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
     log.approval_status = LogApprovalStatus.APPROVED
     if not log.submitted_at:
         log.submitted_at = datetime.now(timezone.utc)
@@ -147,6 +152,10 @@ def reject_log(
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     _log_case_scope(db, user, log)
+    case = case_service.get_case(db, log.session.case_id)
+    if case:
+        ensure_case_write_access(user, case, db)
+        ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
     log.approval_status = LogApprovalStatus.REJECTED
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="daily_log", entity_id=log.id, **meta)

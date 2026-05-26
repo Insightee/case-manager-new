@@ -7,9 +7,17 @@ from sqlalchemy import select
 from app.core.database import SessionLocal, ensure_sqlite_schema_patches
 from app.main import app
 from app.models.case import Case
+from app.models.iep_plan import IepPlan, IepPlanStatus
 
 client = TestClient(app)
 ensure_sqlite_schema_patches()
+
+
+def _reset_iep_plan(db, case_id: int) -> None:
+    plan = db.scalars(select(IepPlan).where(IepPlan.case_id == case_id).order_by(IepPlan.id.desc())).first()
+    if plan:
+        plan.status = IepPlanStatus.DRAFT.value
+        db.commit()
 
 
 def _login(email: str, password: str = "demo123") -> str:
@@ -25,6 +33,7 @@ def test_iep_plan_save_and_share_with_parent():
         case = db.scalars(select(Case).where(Case.case_code == "IC-2026-041")).first()
         assert case is not None
         case_id = case.id
+        _reset_iep_plan(db, case_id)
 
     headers = {"Authorization": f"Bearer {admin_token}"}
     sections = {

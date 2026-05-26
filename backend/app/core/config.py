@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
+    seed_demo_data: bool = False
     database_url: str = Field(default_factory=default_sqlite_database_url)
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret_key: str = "dev-secret-change-in-production"
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
     support_phone: str = "+91 80 0000 0000"
     ticket_attachment_max_bytes: int = 5 * 1024 * 1024
     ticket_attachment_max_files: int = 3
-    case_document_max_bytes: int = 15 * 1024 * 1024
+    case_document_max_bytes: int = 5 * 1024 * 1024
 
     storage_provider: str = "local"
     storage_prefix: str = "insightcase"

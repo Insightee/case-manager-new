@@ -4,6 +4,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { isToday, todayIso } from '../../lib/therapistSchedule.js'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
+import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
 
 const MODES = [
   { value: 'HOME', label: 'Home' },
@@ -96,8 +97,15 @@ export function TherapistSessionComposer({
     setBusy(true)
     setLocalError('')
     try {
-      await apiFetch(`/api/v1/sessions/${sessionId}/start`, { method: 'POST' })
-      onSessionStarted?.()
+      const started = await apiFetch(`/api/v1/sessions/${sessionId}/start`, { method: 'POST' })
+      if (started?.invite_sent && started?.invite_email) {
+        onSessionStarted?.({
+          inviteSent: true,
+          message: `Invite sent to ${started.invite_email} — they will join the Client portal.`,
+        })
+      } else {
+        onSessionStarted?.()
+      }
     } catch (err) {
       const msg = err.message || 'Could not start session'
       setLocalError(msg)
@@ -129,8 +137,15 @@ export function TherapistSessionComposer({
           status: 'SCHEDULED',
         }),
       })
-      await apiFetch(`/api/v1/sessions/${created.id}/start`, { method: 'POST' })
-      onSessionStarted?.()
+      const started = await apiFetch(`/api/v1/sessions/${created.id}/start`, { method: 'POST' })
+      if (started?.invite_sent && started?.invite_email) {
+        onSessionStarted?.({
+          inviteSent: true,
+          message: `Invite sent to ${started.invite_email} — they will join the Client portal.`,
+        })
+      } else {
+        onSessionStarted?.()
+      }
     } catch (err) {
       const msg = err.message || 'Could not start walk-in session'
       setLocalError(msg)
@@ -167,6 +182,17 @@ export function TherapistSessionComposer({
           >
             Start now
           </button>
+          {!lockCaseId ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'newClient'}
+              className={mode === 'newClient' ? 'active' : ''}
+              onClick={() => setMode('newClient')}
+            >
+              Add new client
+            </button>
+          ) : null}
           <button
             type="button"
             role="tab"
@@ -180,6 +206,29 @@ export function TherapistSessionComposer({
       </div>
 
       {localError ? <p className="ic-session-composer__error">{localError}</p> : null}
+
+      {mode === 'newClient' ? (
+        <NewClientIntakeForm
+          disabled={busy}
+          onCancel={() => setMode('live')}
+          onCreated={(result) => {
+            setCases((prev) => [
+              ...prev,
+              {
+                id: result.case_id,
+                child_name: result.child_name,
+                case_code: result.case_code,
+              },
+            ])
+            setCaseId(String(result.case_id))
+            setMode('live')
+            setLocalError('')
+            onSessionStarted?.({
+              message: `Client ${result.case_code} created. Start a session to send the parent invite.`,
+            })
+          }}
+        />
+      ) : null}
 
       {mode === 'past' ? (
         <ForgotSessionForm
@@ -196,7 +245,7 @@ export function TherapistSessionComposer({
           }}
           onCancel={() => setMode('live')}
         />
-      ) : (
+      ) : mode === 'live' ? (
         <div className="ic-session-composer__body">
           {lockCaseId && lockCaseLabel ? (
             <p className="ic-session-composer__locked-client">
@@ -325,7 +374,7 @@ export function TherapistSessionComposer({
             <p className="ic-session-composer__hint">Select a client to see scheduled visits or start a walk-in.</p>
           )}
         </div>
-      )}
+      ) : null}
     </section>
   )
 }

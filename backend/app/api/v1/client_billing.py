@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import RoleName, require_permission
+from app.core.module_write import ensure_billing_write_access
+from app.core.permissions import RoleName, require_mutation_permission, require_permission
 from app.models.user import User
 from app.schemas.client_billing import (
     AdminClientInvoiceCreate,
@@ -206,11 +207,47 @@ def admin_billing_summary(
     return client_billing_service.admin_summary(db)
 
 
+def _invoice_list_params(
+    month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
+) -> dict:
+    return {
+        "month": month,
+        "year": year,
+        "date_from": date_from,
+        "date_to": date_to,
+        "case_id": case_id,
+        "status": status,
+        "invoice_type": invoice_type,
+        "module": module,
+        "search": search,
+    }
+
+
+@admin_router.get("/invoices/filter-options")
+def admin_invoice_filter_options(
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    return client_billing_service.admin_invoice_filter_options(db)
+
+
 @admin_router.get("/invoices/export/xlsx")
 def admin_export_invoices_xlsx(
     month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     case_id: Optional[int] = None,
     status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
     user: User = Depends(require_permission("invoice.approve")),
@@ -219,9 +256,10 @@ def admin_export_invoices_xlsx(
     import openpyxl
     from io import BytesIO
 
-    rows = client_billing_service.admin_list_invoices(
-        db, month=month, case_id=case_id, status=status, module=module, search=search
-    )
+    rows = client_billing_service.admin_list_invoices(db, **_invoice_list_params(
+        month=month, year=year, date_from=date_from, date_to=date_to,
+        case_id=case_id, status=status, invoice_type=invoice_type, module=module, search=search,
+    ))
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Client Invoices"
@@ -269,8 +307,12 @@ def admin_export_invoices_xlsx(
 @admin_router.get("/invoices/export/pdf")
 def admin_export_invoices_pdf(
     month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     case_id: Optional[int] = None,
     status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
     user: User = Depends(require_permission("invoice.approve")),
@@ -282,9 +324,10 @@ def admin_export_invoices_pdf(
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet
 
-    rows = client_billing_service.admin_list_invoices(
-        db, month=month, case_id=case_id, status=status, module=module, search=search
-    )
+    rows = client_billing_service.admin_list_invoices(db, **_invoice_list_params(
+        month=month, year=year, date_from=date_from, date_to=date_to,
+        case_id=case_id, status=status, invoice_type=invoice_type, module=module, search=search,
+    ))
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=30, rightMargin=30, topMargin=40, bottomMargin=30)
     styles = getSampleStyleSheet()
@@ -332,25 +375,31 @@ def admin_export_invoices_pdf(
 @admin_router.get("/invoices")
 def admin_list_client_invoices(
     month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     case_id: Optional[int] = None,
     status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
     user: User = Depends(require_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
-    return client_billing_service.admin_list_invoices(
-        db, month=month, case_id=case_id, status=status, module=module, search=search
-    )
+    return client_billing_service.admin_list_invoices(db, **_invoice_list_params(
+        month=month, year=year, date_from=date_from, date_to=date_to,
+        case_id=case_id, status=status, invoice_type=invoice_type, module=module, search=search,
+    ))
 
 
 @admin_router.post("/invoices")
 def admin_create_client_invoice(
     payload: AdminClientInvoiceCreate,
     request: Request,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     try:
         inv = client_billing_service.admin_create_invoice(
             db,
@@ -395,9 +444,10 @@ def admin_patch_client_invoice(
     invoice_id: int,
     payload: AdminClientInvoiceUpdate,
     request: Request,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     try:
         inv = client_billing_service.admin_update_invoice(
             db, invoice_id, payload.model_dump(exclude_unset=True)
@@ -455,9 +505,10 @@ def admin_notify_parent_invoice(
     invoice_id: int,
     request: Request,
     resend: bool = Query(False, description="Send again even if already notified"),
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     try:
         result = client_billing_service.notify_parent_invoice_issued(db, invoice_id, resend=resend)
     except ValueError as e:
@@ -480,9 +531,10 @@ def admin_record_payment(
     invoice_id: int,
     payload: ClientPaymentRecord,
     request: Request,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     try:
         client_billing_service.record_payment(
             db,
@@ -505,9 +557,10 @@ def admin_record_payment(
 def admin_confirm_payment_claim(
     payment_id: int,
     request: Request,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     try:
         client_billing_service.confirm_payment_claim(db, payment_id, user.id)
     except ValueError as e:
@@ -523,9 +576,10 @@ def admin_reject_payment_claim(
     payment_id: int,
     payload: PaymentClaimReject,
     request: Request,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     try:
         client_billing_service.reject_payment_claim(db, payment_id, user.id, payload.note)
     except ValueError as e:
@@ -553,9 +607,10 @@ def admin_resolve_dispute(
     dispute_id: int,
     payload: AdminDisputeResolve,
     request: Request,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     try:
         client_billing_service.resolve_dispute(
             db, dispute_id, payload.status, payload.resolution.strip(), payload.adjustment_inr

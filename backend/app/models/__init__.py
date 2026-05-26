@@ -8,6 +8,7 @@ from app.models.case import BillingType, Case, CompensationMode
 from app.models.case_status_request import CaseStatusRequest, CaseStatusRequestStatus
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.iep_plan import IepPlan, IepPlanStatus
+from app.models.iep_plan_suggestion import IepPlanSuggestion
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.client_billing import (
     BillingDispute,

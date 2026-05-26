@@ -9,7 +9,8 @@ from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.module_access import user_has_feature
-from app.core.permissions import require_permission, user_has_permission
+from app.core.module_write import ensure_billing_write_access
+from app.core.permissions import require_mutation_permission, require_permission, user_has_permission
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.review import ReviewDecision
 from app.models.user import User
@@ -48,6 +49,11 @@ def _invoice_read(i: Invoice, db: Optional[Session] = None) -> InvoiceRead:
 @router.get("", response_model=list[InvoiceRead])
 def list_invoices(
     status: Optional[InvoiceStatus] = None,
+    year: Optional[int] = None,
+    month: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    search: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -55,7 +61,9 @@ def list_invoices(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     if user_has_permission(user, "invoice.approve") and not user_has_feature(user, "invoices"):
         raise HTTPException(status_code=403, detail="Billing module access required")
-    invoices = invoice_service.list_invoices(db, status)
+    invoices = invoice_service.list_invoices(
+        db, status, year=year, month=month, date_from=date_from, date_to=date_to, search=search
+    )
     if user_has_permission(user, "invoice.generate") and not user_has_permission(user, "invoice.approve"):
         invoices = [i for i in invoices if i.therapist_user_id == user.id]
     return [_invoice_read(i, db) for i in invoices]
@@ -171,9 +179,10 @@ def approve_invoice(
     invoice_id: int,
     payload: ReviewAction,
     request: Request,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -189,9 +198,10 @@ def reject_invoice(
     invoice_id: int,
     payload: ReviewAction,
     request: Request,
-    user: User = Depends(require_permission("invoice.approve")),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -207,9 +217,10 @@ def update_payment(
     invoice_id: int,
     payload: PaymentUpdate,
     request: Request,
-    user: User = Depends(require_permission("payout.override")),
+    user: User = Depends(require_mutation_permission("payout.override")),
     db: Session = Depends(get_db),
 ):
+    ensure_billing_write_access(user)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")

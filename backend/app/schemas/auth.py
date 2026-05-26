@@ -27,6 +27,7 @@ class ModuleSummary(BaseModel):
     label: str
     description: str
     case_product_modules: list[str] = []
+    access: str = "write"
     features: list[str] = []
 
 
@@ -43,6 +44,7 @@ class UserMeResponse(BaseModel):
     home_address: Optional[AddressRead] = None
     employment_status: str = "ACTIVE"
     module_assignments: list[str] = []
+    is_view_only: bool = False
     features: list[str] = []
     modules: list[ModuleSummary] = []
 

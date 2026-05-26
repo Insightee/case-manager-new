@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminPanel } from './ui/index.js'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 
 export function AdminObservationChecklistsPanel() {
+  const { canReviewReports } = useModuleWrite()
   const [items, setItems] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [detail, setDetail] = useState(null)
@@ -131,6 +133,7 @@ export function AdminObservationChecklistsPanel() {
             placeholder="Optional note on approve; required on reject"
             style={{ width: '100%', marginTop: 8, padding: 8 }}
           />
+          {canReviewReports(detail.product_module || 'homecare') ? (
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button type="button" className="admin-btn admin-btn--primary" disabled={acting} onClick={approve}>
               Approve & share report
@@ -139,6 +142,11 @@ export function AdminObservationChecklistsPanel() {
               Request changes
             </button>
           </div>
+          ) : (
+            <p className="admin-muted" style={{ marginTop: 12, fontSize: '0.8rem' }}>
+              View-only for this programme — cannot approve checklists.
+            </p>
+          )}
         </div>
       ) : null}
     </AdminPanel>

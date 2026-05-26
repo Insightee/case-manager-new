@@ -122,7 +122,7 @@ def test_create_user_requires_modules_for_admin():
             "email": email,
             "password": "demo123",
             "full_name": "Scoped Only",
-            "role_names": ["ADMIN"],
+            "role_names": ["MODULE_ADMIN"],
             "module_assignments": [],
         },
     )
@@ -135,7 +135,7 @@ def test_create_user_requires_modules_for_admin():
             "email": email,
             "password": "demo123",
             "full_name": "Scoped Only",
-            "role_names": ["ADMIN"],
+            "role_names": ["MODULE_ADMIN"],
             "module_assignments": ["shadow_support"],
         },
     )

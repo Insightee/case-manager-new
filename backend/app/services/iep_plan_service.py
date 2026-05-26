@@ -1,24 +1,96 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.attachment import Attachment
 from app.models.case import Case
 from app.models.child import Child
 from app.models.iep_plan import IepPlan, IepPlanStatus
+from app.models.iep_plan_suggestion import IepPlanSuggestion
+from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
-from app.schemas.iep_plan import IepPlanSections, LearningEnvironmentRow
+from app.schemas.iep_plan import (
+    IepGoalStrategyBlock,
+    IepHeaderSection,
+    IepLearningStyleSection,
+    IepPerformanceDomain,
+    IepPlanSections,
+    IepVerificationSection,
+    LearningEnvironmentRow,
+    PERFORMANCE_DOMAINS,
+)
 from app.services import case_service, notification_service
 from app.services.observation_checklist_service import get_or_create_profile, _parse_responses
 from app.models.clinical import ObservationChecklist, ObservationChecklistStatus
 
 DEFAULT_SECTIONS = IepPlanSections()
+EDITABLE_STATUSES = frozenset(
+    {
+        IepPlanStatus.DRAFT.value,
+        IepPlanStatus.INTERNAL_REVIEW.value,
+        IepPlanStatus.EDITS_SUGGESTED.value,
+    }
+)
+
+
+def _age_label(dob: date | None) -> str:
+    if not dob:
+        return ""
+    today = date.today()
+    years = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    return f"{years} years old"
+
+
+def _migrate_v1_sections(data: dict) -> dict:
+    if data.get("schema_version", 1) >= 2 and data.get("header"):
+        return data
+    header = IepHeaderSection(
+        about_child_brief=data.get("about_child") or "",
+    )
+    challenges = data.get("challenges") or data.get("referral") or ""
+    verification = IepVerificationSection()
+    if data.get("signatures"):
+        verification.therapist_name = str(data.get("signatures", ""))[:200]
+    env_rows = []
+    for r in data.get("learning_environments") or []:
+        if isinstance(r, dict):
+            env_rows.append(
+                LearningEnvironmentRow(
+                    environment=r.get("environment", ""),
+                    strengths=r.get("strengths", ""),
+                    goals=r.get("goals", ""),
+                    strategies=r.get("strategies", ""),
+                    supports_needed=r.get("supports_needed", ""),
+                )
+            )
+    perf = [
+        IepPerformanceDomain(domain=d, notes="")
+        for d in PERFORMANCE_DOMAINS
+    ]
+    return {
+        "schema_version": 2,
+        "header": header.model_dump(),
+        "observations": data.get("observations") or "",
+        "learning_environments": [e.model_dump() for e in env_rows],
+        "challenges": challenges,
+        "current_performance": [p.model_dump() for p in perf],
+        "learning_style": IepLearningStyleSection().model_dump(),
+        "interventions": data.get("interventions") or "",
+        "talent_development": IepGoalStrategyBlock().model_dump(),
+        "other_areas_of_need": IepGoalStrategyBlock().model_dump(),
+        "intervention_by_insighte": "",
+        "verification": verification.model_dump(),
+        "about_child": data.get("about_child") or "",
+        "referral": data.get("referral") or "",
+        "signatures": data.get("signatures") or "",
+    }
 
 
 def _parse_sections(raw: str | None) -> IepPlanSections:
@@ -27,9 +99,7 @@ def _parse_sections(raw: str | None) -> IepPlanSections:
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
-            env_rows = data.get("learning_environments") or []
-            if env_rows and isinstance(env_rows[0], dict):
-                data["learning_environments"] = [LearningEnvironmentRow(**r) for r in env_rows]
+            data = _migrate_v1_sections(data)
             return IepPlanSections.model_validate(data)
     except Exception:
         pass
@@ -37,11 +107,12 @@ def _parse_sections(raw: str | None) -> IepPlanSections:
 
 
 def _dump_sections(sections: IepPlanSections) -> str:
+    if not sections.schema_version:
+        sections.schema_version = 2
     return sections.model_dump_json()
 
 
 def observation_text_for_case(db: Session, case_id: int) -> str:
-    """Pull approved checklist or clinical profile text for IEP prefill."""
     checklist = db.scalar(select(ObservationChecklist).where(ObservationChecklist.case_id == case_id))
     if checklist and checklist.status == ObservationChecklistStatus.APPROVED.value:
         responses = _parse_responses(checklist.section_responses_json)
@@ -61,41 +132,136 @@ def observation_text_for_case(db: Session, case_id: int) -> str:
     return ""
 
 
-def _prefill_sections(db: Session, case: Case) -> IepPlanSections:
-    sections = DEFAULT_SECTIONS.model_copy(deep=True)
+def _parent_names_for_child(db: Session, child_id: int) -> str:
+    from app.models.parent import ParentGuardian, parent_child_link
+
+    rows = db.execute(
+        select(User.full_name)
+        .select_from(parent_child_link)
+        .join(ParentGuardian, parent_child_link.c.parent_guardian_id == ParentGuardian.id)
+        .join(User, ParentGuardian.user_id == User.id)
+        .where(parent_child_link.c.child_id == child_id)
+    ).all()
+    names = [n for (n,) in rows if n]
+    return " and ".join(names)
+
+
+def _active_therapist_name(db: Session, case_id: int) -> tuple[str, str]:
+    row = db.execute(
+        select(User, TherapistProfile.license_number)
+        .select_from(CaseAssignment)
+        .join(User, CaseAssignment.therapist_user_id == User.id)
+        .outerjoin(TherapistProfile, TherapistProfile.user_id == User.id)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.start_date.desc())
+        .limit(1)
+    ).first()
+    if not row:
+        return "", ""
+    therapist, license_no = row
+    return therapist.full_name or "", license_no or ""
+
+
+def build_case_context(db: Session, case: Case) -> dict:
     child = case.child
-    if child:
-        sections.about_child = f"{child.full_name}"
-        if child.date_of_birth:
-            sections.about_child += f" (DOB: {child.date_of_birth})"
+    profile = get_or_create_profile(db, case.id)
+    therapist_name, license_no = _active_therapist_name(db, case.id)
+    cm_name = ""
+    if case.case_manager_user_id:
+        cm = db.get(User, case.case_manager_user_id)
+        cm_name = cm.full_name if cm else ""
+    return {
+        "child_name": child.full_name if child else "",
+        "age_label": _age_label(child.date_of_birth if child else None),
+        "diagnosis": profile.diagnosis or "",
+        "service_provided": f"{case.service_type} ({case.product_module})",
+        "parents_names": _parent_names_for_child(db, child.id) if child else "",
+        "therapist_name": therapist_name,
+        "therapist_license_no": license_no,
+        "case_manager_name": cm_name,
+        "case_code": case.case_code,
+        "product_module": case.product_module,
+    }
+
+
+def _prefill_sections(db: Session, case: Case, user: User) -> IepPlanSections:
+    sections = DEFAULT_SECTIONS.model_copy(deep=True)
+    ctx = build_case_context(db, case)
+    sections.header = IepHeaderSection(
+        child_name=ctx["child_name"],
+        age_label=ctx["age_label"],
+        diagnosis=ctx["diagnosis"],
+        service_provided=ctx["service_provided"],
+        parents_names=ctx["parents_names"],
+        therapist_name=ctx["therapist_name"],
+        about_child_brief=profile_brief(db, case),
+    )
     profile = get_or_create_profile(db, case.id)
     if profile.history:
-        sections.referral = profile.history
-    if profile.diagnosis:
-        sections.about_child += f"\n\nDiagnosis notes: {profile.diagnosis}"
+        sections.challenges = profile.history
     obs = observation_text_for_case(db, case.id)
     if obs:
         sections.observations = obs
+    sections.verification.therapist_name = ctx["therapist_name"]
+    sections.verification.therapist_license_no = ctx["therapist_license_no"]
+    sections.verification.case_manager_name = ctx["case_manager_name"]
+    sections.verification.case_manager_date = date.today().isoformat()
     if not sections.learning_environments:
         sections.learning_environments = [
-            LearningEnvironmentRow(environment="Home", strengths="", supports_needed=""),
-            LearningEnvironmentRow(environment="School", strengths="", supports_needed=""),
+            LearningEnvironmentRow(environment="Home"),
+            LearningEnvironmentRow(environment="School"),
         ]
+    sections.current_performance = [IepPerformanceDomain(domain=d) for d in PERFORMANCE_DOMAINS]
     return sections
+
+
+def profile_brief(db: Session, case: Case) -> str:
+    profile = get_or_create_profile(db, case.id)
+    parts = [profile.strengths, profile.interests, profile.goals_summary]
+    return "\n\n".join(p for p in parts if p)
 
 
 def get_latest_plan(db: Session, case_id: int) -> IepPlan | None:
     return db.scalar(
-        select(IepPlan)
-        .where(IepPlan.case_id == case_id)
-        .order_by(IepPlan.id.desc())
-        .limit(1)
+        select(IepPlan).where(IepPlan.case_id == case_id).order_by(IepPlan.id.desc()).limit(1)
     )
 
 
-def plan_to_dict(db: Session, plan: IepPlan, user: User) -> dict:
-    can_edit = plan.status in (IepPlanStatus.DRAFT.value, IepPlanStatus.INTERNAL_REVIEW.value)
-    can_share = plan.status != IepPlanStatus.SHARED_WITH_PARENT.value
+def _list_suggestions(db: Session, plan_id: int) -> list[dict]:
+    rows = db.scalars(
+        select(IepPlanSuggestion)
+        .where(IepPlanSuggestion.iep_plan_id == plan_id)
+        .order_by(IepPlanSuggestion.created_at.desc())
+    ).all()
+    out = []
+    for s in rows:
+        author = db.get(User, s.author_user_id)
+        out.append(
+            {
+                "id": s.id,
+                "author_user_id": s.author_user_id,
+                "author_role": s.author_role,
+                "author_name": author.full_name if author else None,
+                "body": s.body,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "resolved_at": s.resolved_at.isoformat() if s.resolved_at else None,
+            }
+        )
+    return out
+
+
+def plan_to_dict(db: Session, plan: IepPlan, user: User, *, include_context: bool = True) -> dict:
+    can_edit = plan.status in EDITABLE_STATUSES
+    can_share = plan.status not in (
+        IepPlanStatus.SHARED_WITH_PARENT.value,
+        IepPlanStatus.PARENT_ACKNOWLEDGED.value,
+        IepPlanStatus.APPROVED.value,
+    )
+    case = case_service.get_case(db, plan.case_id)
+    ctx = build_case_context(db, case) if case and include_context else None
     return {
         "id": plan.id,
         "case_id": plan.case_id,
@@ -103,6 +269,8 @@ def plan_to_dict(db: Session, plan: IepPlan, user: User) -> dict:
         "status": plan.status,
         "visibility_status": plan.visibility_status,
         "sections": _parse_sections(plan.sections_json).model_dump(),
+        "case_context": ctx,
+        "suggestions": _list_suggestions(db, plan.id),
         "attachment_id": plan.attachment_id,
         "created_by_user_id": plan.created_by_user_id,
         "published_at": plan.published_at.isoformat() if plan.published_at else None,
@@ -117,7 +285,7 @@ def get_or_create_plan(db: Session, case: Case, user: User) -> IepPlan:
     plan = get_latest_plan(db, case.id)
     if plan:
         return plan
-    sections = _prefill_sections(db, case)
+    sections = _prefill_sections(db, case, user)
     plan = IepPlan(
         case_id=case.id,
         version="v1",
@@ -132,41 +300,159 @@ def get_or_create_plan(db: Session, case: Case, user: User) -> IepPlan:
 
 
 def save_plan(db: Session, plan: IepPlan, sections: IepPlanSections, version: str | None = None) -> IepPlan:
-    if plan.status == IepPlanStatus.SHARED_WITH_PARENT.value:
-        raise ValueError("Published IEP cannot be edited; create a new version")
+    if plan.status in (
+        IepPlanStatus.APPROVED.value,
+        IepPlanStatus.SHARED_WITH_PARENT.value,
+        IepPlanStatus.PARENT_ACKNOWLEDGED.value,
+    ):
+        raise ValueError("This IEP version cannot be edited; create a new version")
     plan.sections_json = _dump_sections(sections)
     if version:
         plan.version = version
-    plan.status = IepPlanStatus.DRAFT.value
+    if plan.status == IepPlanStatus.EDITS_SUGGESTED.value:
+        plan.status = IepPlanStatus.DRAFT.value
+    else:
+        plan.status = IepPlanStatus.DRAFT.value
     db.flush()
     return plan
 
 
+def add_suggestion(db: Session, plan: IepPlan, user: User, role: str, body: str) -> IepPlanSuggestion:
+    body = (body or "").strip()
+    if not body:
+        raise ValueError("Suggestion text is required")
+    row = IepPlanSuggestion(
+        iep_plan_id=plan.id,
+        author_user_id=user.id,
+        author_role=role,
+        body=body,
+    )
+    db.add(row)
+    plan.status = IepPlanStatus.EDITS_SUGGESTED.value
+    db.flush()
+    return row
+
+
+def resolve_suggestions(db: Session, plan: IepPlan) -> None:
+    now = datetime.now(timezone.utc)
+    rows = db.scalars(
+        select(IepPlanSuggestion).where(
+            IepPlanSuggestion.iep_plan_id == plan.id,
+            IepPlanSuggestion.resolved_at.is_(None),
+        )
+    ).all()
+    for row in rows:
+        row.resolved_at = now
+    if plan.status == IepPlanStatus.EDITS_SUGGESTED.value:
+        plan.status = IepPlanStatus.DRAFT.value
+    db.flush()
+
+
+def parent_acknowledge_plan(db: Session, plan: IepPlan, parent_user: User) -> IepPlan:
+    sections = _parse_sections(plan.sections_json)
+    sections.verification.client_name = parent_user.full_name or ""
+    sections.verification.client_date = date.today().isoformat()
+    plan.sections_json = _dump_sections(sections)
+    plan.status = IepPlanStatus.PARENT_ACKNOWLEDGED.value
+    db.flush()
+    return plan
+
+
+def approve_plan(db: Session, plan: IepPlan) -> IepPlan:
+    plan.status = IepPlanStatus.APPROVED.value
+    db.flush()
+    return plan
+
+
+def _esc(text: str) -> str:
+    return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+
+
 def _sections_to_html(sections: IepPlanSections) -> str:
     parts = []
-    if sections.about_child.strip():
-        parts.append(f"<h2>About the child</h2><p>{sections.about_child.replace(chr(10), '<br/>')}</p>")
-    if sections.referral.strip():
-        parts.append(f"<h2>Referral</h2><p>{sections.referral.replace(chr(10), '<br/>')}</p>")
+    h = sections.header
+    if h.child_name or h.about_child_brief:
+        parts.append("<h2>About the child</h2>")
+        meta = "<br/>".join(
+            _esc(x)
+            for x in [
+                f"Child: {h.child_name}" if h.child_name else "",
+                f"Age: {h.age_label}" if h.age_label else "",
+                f"Diagnosis: {h.diagnosis}" if h.diagnosis else "",
+                f"Service: {h.service_provided}" if h.service_provided else "",
+                f"Parents: {h.parents_names}" if h.parents_names else "",
+                f"Therapist: {h.therapist_name}" if h.therapist_name else "",
+                f"School/Home: {h.school_or_home_name}" if h.school_or_home_name else "",
+                f"Class: {h.class_grade}" if h.class_grade else "",
+                f"Evaluation date: {h.date_of_evaluation}" if h.date_of_evaluation else "",
+                f"IEP meeting date: {h.date_of_iep_meeting}" if h.date_of_iep_meeting else "",
+                f"Review date: {h.review_date}" if h.review_date else "",
+            ]
+            if x
+        )
+        if meta:
+            parts.append(f"<p>{meta}</p>")
+        if h.about_child_brief.strip():
+            parts.append(f"<p>{_esc(h.about_child_brief)}</p>")
+    elif sections.about_child.strip():
+        parts.append(f"<h2>About the child</h2><p>{_esc(sections.about_child)}</p>")
     if sections.observations.strip():
-        parts.append(f"<h2>Observations</h2><p>{sections.observations.replace(chr(10), '<br/>')}</p>")
+        parts.append(f"<h2>Observations</h2><p>{_esc(sections.observations)}</p>")
     if sections.learning_environments:
         rows = "".join(
-            f"<tr><td>{r.environment}</td><td>{r.strengths}</td><td>{r.supports_needed}</td></tr>"
+            f"<tr><td>{_esc(r.environment)}</td><td>{_esc(r.strengths)}</td>"
+            f"<td>{_esc(r.goals)}</td><td>{_esc(r.strategies)}</td></tr>"
             for r in sections.learning_environments
-            if r.environment or r.strengths or r.supports_needed
+            if r.environment or r.strengths or r.goals or r.strategies
         )
         if rows:
             parts.append(
                 "<h2>Learning environments</h2><table border='1' cellpadding='6'>"
-                "<tr><th>Environment</th><th>Strengths</th><th>Supports needed</th></tr>"
+                "<tr><th>Environment</th><th>Strengths</th><th>Goals</th><th>Strategies</th></tr>"
                 f"{rows}</table>"
             )
+    if sections.challenges.strip():
+        parts.append(f"<h2>Challenges</h2><p>{_esc(sections.challenges)}</p>")
+    elif sections.referral.strip():
+        parts.append(f"<h2>Challenges</h2><p>{_esc(sections.referral)}</p>")
+    for perf in sections.current_performance:
+        if perf.notes.strip():
+            parts.append(f"<h3>Current performance — {perf.domain}</h3><p>{_esc(perf.notes)}</p>")
+    ls = sections.learning_style
+    if ls.styles or ls.elaboration.strip():
+        parts.append(
+            f"<h2>Learning style</h2><p>{_esc(', '.join(ls.styles))}</p><p>{_esc(ls.elaboration)}</p>"
+        )
     if sections.interventions.strip():
-        parts.append(f"<h2>Interventions</h2><p>{sections.interventions.replace(chr(10), '<br/>')}</p>")
-    if sections.signatures.strip():
-        parts.append(f"<h2>Signatures</h2><p>{sections.signatures.replace(chr(10), '<br/>')}</p>")
+        parts.append(f"<h2>Interventions</h2><p>{_esc(sections.interventions)}</p>")
+    td = sections.talent_development
+    if td.strengths or td.goals or td.strategies:
+        parts.append(
+            f"<h2>Talent development</h2><p><b>Strengths:</b> {_esc(td.strengths)}</p>"
+            f"<p><b>Goals:</b> {_esc(td.goals)}</p><p><b>Strategies:</b> {_esc(td.strategies)}</p>"
+        )
+    other = sections.other_areas_of_need
+    if other.areas_of_need or other.goals or other.strategies:
+        parts.append(
+            f"<h2>Other areas of need</h2><p><b>Areas:</b> {_esc(other.areas_of_need)}</p>"
+            f"<p><b>Goals:</b> {_esc(other.goals)}</p><p><b>Strategies:</b> {_esc(other.strategies)}</p>"
+        )
+    if sections.intervention_by_insighte.strip():
+        parts.append(f"<h2>Intervention by Insighte</h2><p>{_esc(sections.intervention_by_insighte)}</p>")
+    v = sections.verification
+    parts.append(
+        "<h2>Verification</h2>"
+        f"<p>Therapist verified: {'Yes' if v.therapist_verified else 'No'} — {_esc(v.therapist_name)} "
+        f"({_esc(v.therapist_date)}) License: {_esc(v.therapist_license_no)}</p>"
+        f"<p>Case manager: {_esc(v.case_manager_name)} ({_esc(v.case_manager_date)})</p>"
+        f"<p>Client: {_esc(v.client_name)} ({_esc(v.client_date)})</p>"
+    )
     return "".join(parts) or "<p>IEP plan</p>"
+
+
+def sections_to_preview_html(db: Session, plan: IepPlan) -> str:
+    sections = _parse_sections(plan.sections_json)
+    return _sections_to_html(sections)
 
 
 def share_plan_with_parent(db: Session, plan: IepPlan, user: User) -> IepPlan:
@@ -225,13 +511,7 @@ def share_plan_with_parent(db: Session, plan: IepPlan, user: User) -> IepPlan:
     return plan
 
 
-def list_plans_scoped(
-    db: Session,
-    user,
-    *,
-    status=None,
-    limit: int = 50,
-) -> list[dict]:
+def list_plans_scoped(db: Session, user, *, status=None, limit: int = 50) -> list[dict]:
     from app.services.admin_scope_service import apply_case_scope
 
     stmt = (

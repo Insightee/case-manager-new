@@ -30,12 +30,17 @@ class TherapistProfile(Base):
     status: Mapped[TherapistProfileStatus] = mapped_column(
         Enum(TherapistProfileStatus), default=TherapistProfileStatus.DRAFT, nullable=False
     )
+    license_number: Mapped[Optional[str]] = mapped_column(String(128))
     admin_note: Mapped[Optional[str]] = mapped_column(Text)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     reviewed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    supervisor_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    mentor_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", foreign_keys=[user_id], backref="therapist_profile")
     reviewer = relationship("User", foreign_keys=[reviewed_by_user_id])
+    supervisor = relationship("User", foreign_keys=[supervisor_user_id])
+    mentor = relationship("User", foreign_keys=[mentor_user_id])

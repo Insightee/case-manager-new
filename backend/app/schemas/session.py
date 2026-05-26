@@ -67,8 +67,27 @@ class SessionRead(BaseModel):
     checkin_lng: Optional[float] = None
     checkout_lat: Optional[float] = None
     checkout_lng: Optional[float] = None
+    invite_sent: bool = False
+    invite_email: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class TherapistClientIntakeCreate(BaseModel):
+    client_name: str = Field(..., min_length=1, max_length=255)
+    client_email: EmailStr
+    child_name: str = Field(..., min_length=1, max_length=255)
+    client_phone: Optional[str] = None
+    product_module: str = "homecare"
+
+
+class TherapistClientIntakeResponse(BaseModel):
+    case_id: int
+    case_code: str
+    child_name: str
+    parent_email: str
+    invite_sent: bool = False
+    invite_url: Optional[str] = None
 
 
 class ManualWalkInSessionResponse(BaseModel):

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { replyStaffTicket } from '../../lib/ticketFormUtils.js'
 import { TicketAttachmentList } from './TicketAttachmentList.jsx'
 import { TicketFileInput } from './TicketFileInput.jsx'
@@ -41,6 +42,8 @@ const STAFF_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER', 'SUPERVISOR
 
 export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiBase = '/api/v1/tickets' }) {
   const { user } = useAuth()
+  const { canManageTickets } = useModuleWrite()
+  const staffWrite = showResolve && canManageTickets(ticket?.product_module || 'homecare')
   const [reply, setReply] = useState('')
   const [replyFiles, setReplyFiles] = useState([])
   const [internalNote, setInternalNote] = useState(false)
@@ -80,7 +83,7 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
     setBusy(true)
     setError('')
     try {
-      if (showResolve) {
+      if (staffWrite) {
         await replyStaffTicket(ticket.id, reply.trim(), replyFiles, { isInternal: internalNote })
       } else {
         await apiFetch(`${apiBase}/${ticket.id}/messages`, {
@@ -166,7 +169,7 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
             {String(ticket.product_module).replace(/_/g, ' ')}
           </span>
         ) : null}
-        {showResolve ? (
+        {staffWrite ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <select
               value={ticket.assigned_to_user_id ?? ''}
@@ -289,8 +292,8 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply(e)
             }}
           />
-          {showResolve ? <TicketFileInput files={replyFiles} onChange={setReplyFiles} disabled={busy} /> : null}
-          {showResolve ? (
+          {staffWrite ? <TicketFileInput files={replyFiles} onChange={setReplyFiles} disabled={busy} /> : null}
+          {staffWrite ? (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#64748b', marginTop: 8 }}>
               <input type="checkbox" checked={internalNote} onChange={(e) => setInternalNote(e.target.checked)} />
               Internal note (staff only)
@@ -302,7 +305,7 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
               {busy ? 'Sending…' : 'Send reply'}
             </button>
 
-            {showResolve && ticket.can_resolve ? (
+            {staffWrite && ticket.can_resolve ? (
               <button
                 type="button"
                 disabled={busy}
@@ -322,7 +325,7 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
               </button>
             ) : null}
 
-            {showResolve && ticket.can_close_staff ? (
+            {staffWrite && ticket.can_close_staff ? (
               <button
                 type="button"
                 disabled={busy}

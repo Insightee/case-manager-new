@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { ReportEditor } from './ReportEditor.jsx'
@@ -14,7 +14,9 @@ function reportsBase(pathname) {
 export function ReportEditPage() {
   const { reportId } = useParams()
   const navigate = useNavigate()
-  const base = reportsBase(window.location.pathname)
+  const location = useLocation()
+  const isAdminEditor = location.pathname.startsWith('/admin')
+  const base = isAdminEditor ? '/admin/reports' : reportsBase(location.pathname)
 
   const [report, setReport] = useState(null)
   const [bodyHtml, setBodyHtml] = useState('')
@@ -34,7 +36,10 @@ export function ReportEditPage() {
   const skipAutosaveRef = useRef(true)
 
   const editable =
-    report && (report.status === 'DRAFT' || report.status === 'REJECTED')
+    report &&
+    (isAdminEditor
+      ? ['DRAFT', 'UNDER_REVIEW', 'REJECTED'].includes(report.status)
+      : report.status === 'DRAFT' || report.status === 'REJECTED')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -71,7 +76,10 @@ export function ReportEditPage() {
       setSaveFailed(false)
       if (!silent) setError('')
       try {
-        const updated = await apiFetch(`/api/v1/reports/monthly/${report.id}`, {
+        const patchUrl = isAdminEditor
+          ? `/api/v1/admin/reports/monthly/${report.id}`
+          : `/api/v1/reports/monthly/${report.id}`
+        const updated = await apiFetch(patchUrl, {
           method: 'PATCH',
           body: JSON.stringify({
             body_html: bodyHtml,
@@ -92,7 +100,7 @@ export function ReportEditPage() {
         setSaving(false)
       }
     },
-    [report, editable, bodyHtml, planNextMonth, category, subCategory, month],
+    [report, editable, bodyHtml, planNextMonth, category, subCategory, month, isAdminEditor],
   )
 
   useEffect(() => {
@@ -116,6 +124,11 @@ export function ReportEditPage() {
   }, [dirty, editable])
 
   async function handleSubmit() {
+    if (isAdminEditor) {
+      await persist(false)
+      setMessage('Saved — report remains in review until you approve for parents from report management.')
+      return
+    }
     setError('')
     if (!(month || '').trim()) {
       setError('Set the report month before submitting.')

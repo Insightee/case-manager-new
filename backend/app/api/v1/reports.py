@@ -11,7 +11,9 @@ from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.db_errors import commit_or_http
-from app.core.permissions import case_scope_check, require_permission
+from app.core.module_write import guard_clinical_case
+from app.core.permissions import case_scope_check, require_mutation_permission, require_permission
+from app.services import case_service
 from app.core.report_constants import PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES
 from app.models.report import MonthlyReport, ObservationReport, ReportCategory, ReportStatus
 from app.models.review import ReviewDecision
@@ -284,12 +286,15 @@ def approve_report(
     report_id: int,
     payload: ReviewAction,
     request: Request,
-    user: User = Depends(require_permission("monthly_report.approve")),
+    user: User = Depends(require_mutation_permission("monthly_report.approve")),
     db: Session = Depends(get_db),
 ):
     report = db.get(MonthlyReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if case:
+        guard_clinical_case(user, case, db, feature="reports")
     report_service.review_monthly_report(
         db, report, user.id, ReviewDecision.APPROVE, payload.comment, payload.visibility_status
     )
@@ -304,12 +309,15 @@ def reject_report(
     report_id: int,
     payload: ReviewAction,
     request: Request,
-    user: User = Depends(require_permission("monthly_report.approve")),
+    user: User = Depends(require_mutation_permission("monthly_report.approve")),
     db: Session = Depends(get_db),
 ):
     report = db.get(MonthlyReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if case:
+        guard_clinical_case(user, case, db, feature="reports")
     report_service.review_monthly_report(db, report, user.id, ReviewDecision.REJECT, payload.comment, None)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="monthly_report", entity_id=report.id, **meta)

@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, getTokens } from '../../lib/apiClient.js'
-import { REPORT_CATEGORIES } from '../../lib/reportCategories.js'
-import { AdminPageHeader, AdminSearchInput } from './ui/index.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import {
+  IEP_CATEGORY_ID,
+  REPORT_KIND_OPTIONS,
+  reportCategoryOptions,
+} from '../../lib/reportFilters.js'
+import { AdminPageHeader, AdminSearchInput, ServiceFilterSelect } from './ui/index.js'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminReportDetailDrawer } from './AdminReportDetailDrawer.jsx'
 import { AdminReportsTable } from './AdminReportsTable.jsx'
 import './admin-reports.css'
@@ -38,10 +44,16 @@ function buildListQuery(filters, page, pageSize) {
   return `?${p.toString()}`
 }
 
+const CATEGORY_OPTIONS = reportCategoryOptions()
+
 export function AdminReportsPage() {
+  const { canReviewReports } = useModuleWrite()
+  const { can } = useAuth()
+  const seesAllCases = can('case.read.all')
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'queue'
-  const typeFilter = searchParams.get('type') || 'all'
+  const typeFilter = searchParams.get('type') || searchParams.get('kind') || 'all'
+  const showReportFilters = tab === 'queue' || tab === 'all'
   const drawerType = searchParams.get('type') === 'observation' ? 'observation' : searchParams.get('type') === 'monthly' ? 'monthly' : null
   const drawerId = searchParams.get('reportId') ? Number(searchParams.get('reportId')) : null
 
@@ -66,6 +78,8 @@ export function AdminReportsPage() {
     () => new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
   )
   const [missingRows, setMissingRows] = useState([])
+  const [iepRows, setIepRows] = useState([])
+  const [iepSummary, setIepSummary] = useState(null)
 
   const filters = useMemo(
     () => ({
@@ -133,6 +147,26 @@ export function AdminReportsPage() {
     loadSummary()
   }, [loadSummary])
 
+  const loadIepPending = useCallback(async () => {
+    if (tab !== 'iep') return
+    setLoading(true)
+    try {
+      const q = new URLSearchParams()
+      if (module) q.set('product_module', module)
+      if (search) q.set('search', search)
+      const data = await apiFetch(`/api/v1/admin/iep/dashboard?${q}`)
+      const pending = (data.rows || []).filter((r) => r.iep_status !== 'ACKNOWLEDGED')
+      setIepRows(pending)
+      setIepSummary(data.summary || null)
+      setMessage('')
+    } catch (err) {
+      setIepRows([])
+      setMessage(err.message || 'Could not load pending IEP')
+    } finally {
+      setLoading(false)
+    }
+  }, [tab, module, search])
+
   const loadMissing = useCallback(async () => {
     if (tab !== 'missing') return
     setLoading(true)
@@ -152,8 +186,9 @@ export function AdminReportsPage() {
 
   useEffect(() => {
     if (tab === 'missing') loadMissing()
+    else if (tab === 'iep') loadIepPending()
     else loadList()
-  }, [tab, loadList, loadMissing])
+  }, [tab, loadList, loadMissing, loadIepPending])
 
   useEffect(() => {
     setPage(1)
@@ -179,10 +214,30 @@ export function AdminReportsPage() {
     setSearchParams(next, { replace: true })
   }
 
-  function setTypeFilter(t) {
+  function setKindFilter(kind) {
     const next = new URLSearchParams(searchParams)
-    if (t === 'all') next.delete('type')
-    else next.set('type', t)
+    if (kind === 'all') {
+      next.delete('type')
+      next.delete('kind')
+    } else {
+      next.set('type', kind)
+    }
+    setSearchParams(next, { replace: true })
+  }
+
+  function setCategoryFilter(cat) {
+    if (cat === IEP_CATEGORY_ID) {
+      const next = new URLSearchParams(searchParams)
+      next.set('tab', 'iep')
+      next.delete('category')
+      setSearchParams(next, { replace: true })
+      setCategory('')
+      return
+    }
+    setCategory(cat)
+    const next = new URLSearchParams(searchParams)
+    if (cat) next.set('category', cat)
+    else next.delete('category')
     setSearchParams(next, { replace: true })
   }
 
@@ -210,6 +265,19 @@ export function AdminReportsPage() {
     }
     return { monthly, observation }
   }
+
+  const selectedRows = useMemo(
+    () =>
+      rows.filter((r) => selected.has(`${r.report_type}:${r.id}`)),
+    [rows, selected],
+  )
+
+  const canBulkReview = useMemo(
+    () =>
+      selectedRows.length > 0 &&
+      selectedRows.every((r) => canReviewReports(r.product_module || 'homecare')),
+    [selectedRows, canReviewReports],
+  )
 
   async function bulkApprove() {
     const { monthly, observation } = selectedByType()
@@ -326,8 +394,19 @@ export function AdminReportsPage() {
     <div>
       <AdminPageHeader
         title="Report management"
-        subtitle="Review monthly and observation reports, approve for parents, and export filtered lists."
+        subtitle={
+          seesAllCases
+            ? 'Review and approve reports across all cases in your programmes.'
+            : 'Review and approve reports for cases assigned to you as case manager.'
+        }
       />
+
+      <p
+        className={`admin-reports__scope ${seesAllCases ? 'admin-reports__scope--all' : 'admin-reports__scope--team'}`}
+        role="status"
+      >
+        {seesAllCases ? 'Showing all cases' : 'Showing your assigned caseload only'}
+      </p>
 
       {summary ? (
         <div className="admin-reports__kpis">
@@ -350,6 +429,10 @@ export function AdminReportsPage() {
           <div className="admin-reports__kpi">
             <div className="admin-reports__kpi-value">{summary.monthly.published + summary.observation.published}</div>
             <div className="admin-reports__kpi-label">Published (combined)</div>
+          </div>
+          <div className="admin-reports__kpi">
+            <div className="admin-reports__kpi-value">{summary.iep_pending ?? 0}</div>
+            <div className="admin-reports__kpi-label">Pending IEP</div>
           </div>
         </div>
       ) : null}
@@ -376,18 +459,54 @@ export function AdminReportsPage() {
         >
           Missing monthly
         </button>
-        <span style={{ marginLeft: 8 }} />
-        {['all', 'monthly', 'observation'].map((t) => (
-          <button
-            key={t}
-            type="button"
-            className={`admin-btn admin-btn--sm ${typeFilter === t ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => setTypeFilter(t)}
-          >
-            {t === 'all' ? 'All types' : t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`admin-btn admin-btn--sm ${tab === 'iep' ? 'admin-btn--primary' : ''}`}
+          onClick={() => setTab('iep')}
+        >
+          Pending IEP
+          {summary?.iep_pending != null ? ` (${summary.iep_pending})` : ''}
+        </button>
       </div>
+
+      {showReportFilters ? (
+        <div className="admin-reports__filters" role="group" aria-label="Report filters">
+          <label className="admin-reports__filter">
+            <span className="admin-reports__filter-label">Report type</span>
+            <select
+              className="admin-select admin-reports__filter-select"
+              value={typeFilter}
+              onChange={(e) => setKindFilter(e.target.value)}
+              aria-label="Report type"
+            >
+              {REPORT_KIND_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="admin-reports__filter">
+            <span className="admin-reports__filter-label">Category</span>
+            <select
+              className="admin-select admin-reports__filter-select"
+              value={category}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="Report category"
+            >
+              {CATEGORY_OPTIONS.map((o) => (
+                <option key={o.value || 'all'} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="admin-reports__filter-hint admin-muted">
+            Categories include client monthly, observation, CM meeting, progress, and incident documents. IEP plans
+            open the Pending IEP tab.
+          </p>
+        </div>
+      ) : null}
 
       <div className="admin-reports__toolbar">
         <AdminSearchInput value={search} onChange={setSearch} placeholder="Child, case, month, therapist…" />
@@ -400,19 +519,7 @@ export function AdminReportsPage() {
             <option value="REJECTED">Rejected</option>
           </select>
         ) : null}
-        <select className="admin-select" value={module} onChange={(e) => setModule(e.target.value)}>
-          <option value="">All modules</option>
-          <option value="homecare">Homecare</option>
-          <option value="shadow_support">Shadow support</option>
-        </select>
-        <select className="admin-select" value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">All categories</option>
-          {REPORT_CATEGORIES.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
+        <ServiceFilterSelect value={module} onChange={setModule} />
         {(typeFilter === 'all' || typeFilter === 'monthly') && tab === 'all' ? (
           <input
             className="admin-input"
@@ -455,12 +562,20 @@ export function AdminReportsPage() {
       {selected.size > 0 ? (
         <div className="admin-reports__bulk-bar">
           <span>{selected.size} selected</span>
+          {canBulkReview ? (
+            <>
           <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={acting} onClick={bulkApprove}>
             Approve for parents
           </button>
           <button type="button" className="admin-btn admin-btn--sm" disabled={acting} onClick={() => setBulkRejectOpen(true)}>
             Reject…
           </button>
+            </>
+          ) : (
+            <span className="admin-muted" style={{ fontSize: '0.8rem' }}>
+              View-only for one or more selected programme modules.
+            </span>
+          )}
           <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setSelected(new Set())}>
             Clear
           </button>
@@ -487,7 +602,76 @@ export function AdminReportsPage() {
         </div>
       ) : null}
 
-      {tab === 'missing' ? (
+      {tab === 'iep' ? (
+        <div style={{ marginBottom: 16 }}>
+          <p className="admin-muted" style={{ marginBottom: 12, fontSize: '0.8125rem' }}>
+            IEP plans are managed in the IEP module — this tab lists cases that still need upload, internal review, or parent acknowledgement.
+          </p>
+          {iepSummary ? (
+            <p style={{ fontSize: '0.8125rem', marginBottom: 12 }}>
+              Missing {iepSummary.missing} · Internal {iepSummary.internal_only} · Awaiting ack {iepSummary.awaiting_ack}
+            </p>
+          ) : null}
+          {loading ? (
+            <p>Loading…</p>
+          ) : iepRows.length === 0 ? (
+            <p className="admin-muted">No pending IEP work for your caseload.</p>
+          ) : (
+            <div className="admin-table-wrap admin-reports__iep-table">
+              <table className="admin-table admin-table--compact">
+                <thead>
+                  <tr>
+                    <th>Case</th>
+                    <th>Child</th>
+                    <th>Programme</th>
+                    <th>IEP status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {iepRows.map((r) => (
+                    <tr key={r.case_id}>
+                      <td>
+                        <span className="admin-table__primary">{r.case_code}</span>
+                      </td>
+                      <td>{r.child_name || '—'}</td>
+                      <td>
+                        <span className="admin-chip admin-chip--sm">{r.product_module}</span>
+                      </td>
+                      <td>
+                        <span
+                          className={`admin-reports__iep-pill ${
+                            r.iep_status === 'MISSING'
+                              ? 'admin-reports__iep-pill--missing'
+                              : r.iep_status === 'INTERNAL_ONLY'
+                                ? 'admin-reports__iep-pill--internal'
+                                : 'admin-reports__iep-pill--awaiting'
+                          }`}
+                        >
+                          {r.iep_status.replaceAll('_', ' ')}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="admin-btn-group">
+                          <Link
+                            to={`/admin/cases/${r.case_id}?tab=iep`}
+                            className="admin-btn admin-btn--primary admin-btn--sm"
+                          >
+                            Open IEP
+                          </Link>
+                          <Link to="/admin/iep" className="admin-btn admin-btn--ghost admin-btn--sm">
+                            IEP hub
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : tab === 'missing' ? (
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Month</span>
@@ -540,10 +724,11 @@ export function AdminReportsPage() {
           onView={openDrawer}
           onApprove={quickApprove}
           onReject={quickReject}
+          canReviewRow={(r) => canReviewReports(r.product_module || 'homecare')}
         />
       )}
 
-      {tab !== 'missing' ? (
+      {tab !== 'missing' && tab !== 'iep' ? (
       <div className="admin-reports__pagination">
         <button
           type="button"

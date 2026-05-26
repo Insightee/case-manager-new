@@ -103,6 +103,7 @@ def build_pipeline_board(db: Session, user: User) -> dict:
         select(
             CaseAssignment.case_id,
             CaseAssignment.end_date,
+            CaseAssignment.therapist_user_id,
             User.full_name,
         )
         .join(User, User.id == CaseAssignment.therapist_user_id)
@@ -111,9 +112,16 @@ def build_pipeline_board(db: Session, user: User) -> dict:
             CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
         )
     ).all()
-    assign_by_case: dict[int, tuple[str | None, date | None]] = {}
+    assign_by_case: dict[int, tuple[int | None, str | None, date | None]] = {}
     for row in active_assignments:
-        assign_by_case[row.case_id] = (row.full_name, row.end_date)
+        assign_by_case[row.case_id] = (row.therapist_user_id, row.full_name, row.end_date)
+
+    cm_ids = {c.case_manager_user_id for c in cases if c.case_manager_user_id}
+    cm_names: dict[int, str] = {}
+    if cm_ids:
+        cm_names = dict(
+            db.execute(select(User.id, User.full_name).where(User.id.in_(cm_ids))).all()
+        )
 
     report_counts = dict(
         db.execute(
@@ -175,7 +183,7 @@ def build_pipeline_board(db: Session, user: User) -> dict:
     buckets: dict[str, list] = {col[0]: [] for col in PIPELINE_COLUMNS}
 
     for case in cases:
-        therapist_name, end_date = assign_by_case.get(case.id, (None, None))
+        therapist_user_id, therapist_name, end_date = assign_by_case.get(case.id, (None, None, None))
         has_active = case.id in assign_by_case
         reports_u = int(report_counts.get(case.id, 0))
         missing = int(missing_log_rows.get(case.id, 0))
@@ -200,13 +208,19 @@ def build_pipeline_board(db: Session, user: User) -> dict:
         card = {
             "id": case.id,
             "case_code": case.case_code,
+            "child_id": case.child_id,
             "child_name": case.child.full_name if case.child else None,
             "service_type": case.service_type,
             "product_module": case.product_module,
             "status": case.status.value,
             "pipeline_column": column,
+            "case_manager_user_id": case.case_manager_user_id,
+            "case_manager_name": cm_names.get(case.case_manager_user_id) if case.case_manager_user_id else None,
+            "therapist_user_id": therapist_user_id,
             "therapist_name": therapist_name,
             "assignment_end_date": end_date.isoformat() if end_date else None,
+            "created_at": case.created_at.isoformat() if case.created_at else None,
+            "operational_stage": case.operational_stage,
             "reports_under_review": reports_u,
             "missing_logs": missing,
             "has_iep": has_iep,

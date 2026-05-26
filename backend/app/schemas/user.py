@@ -12,6 +12,9 @@ class UserCreate(BaseModel):
     role_names: list[str]
     region: Optional[str] = None
     module_assignments: list[str] = []
+    module_access_grants: Optional[dict] = None
+    feature_overrides: Optional[dict] = None
+    view_only: bool = False
 
 
 class UserRead(BaseModel):
@@ -20,21 +23,38 @@ class UserRead(BaseModel):
     full_name: str
     phone: Optional[str] = None
     is_active: bool
+    is_view_only: bool = False
     roles: list[str]
     region: Optional[str]
     module_assignments: list[str]
+    module_access_grants: dict = Field(default_factory=dict)
+    feature_overrides: dict = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
 
 
 class UserUpdate(BaseModel):
     module_assignments: Optional[list[str]] = None
+    module_access_grants: Optional[dict] = None
+    feature_overrides: Optional[dict] = None
     role_names: Optional[list[str]] = None
     region: Optional[str] = None
     is_active: Optional[bool] = None
+    view_only: Optional[bool] = None
+
+
+class UserDirectoryItem(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    roles: list[str] = Field(default_factory=list)
 
 
 class InviteCreate(BaseModel):
     email: EmailStr
     role_name: str
+    full_name: Optional[str] = None
     module_assignments: list[str] = []
+    module_access_grants: Optional[dict] = None
+    feature_overrides: Optional[dict] = None
+    view_only: bool = False

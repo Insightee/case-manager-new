@@ -26,13 +26,44 @@ docker compose exec api python -m app.seed.demo_seed
 | therapist@demo.com | demo123 | THERAPIST |
 | parent@demo.com | demo123 | PARENT |
 | superadmin@demo.com | demo123 | SUPER_ADMIN |
-| casemanager@demo.com | demo123 | CASE_MANAGER |
+| admin@demo.com | demo123 | MODULE_ADMIN (homecare only) |
+| moduleadmin@demo.com | demo123 | MODULE_ADMIN (homecare + shadow + billing) |
+| casemanager@demo.com | demo123 | CASE_MANAGER → `/admin/cm` |
+| viewer@demo.com | demo123 | CASE_MANAGER view-only → `/admin/cm` |
+| supervisor@demo.com | demo123 | CASE_MANAGER (shadow caseload) |
+| support@demo.com | demo123 | MODULE_ADMIN (homecare + billing) |
 | finance@demo.com | demo123 | FINANCE |
+
+Re-run `python3 -m app.seed.demo_seed` to reset demo passwords if sign-in fails after DB changes.
+
+### Staging / production: legacy staff roles
+
+New invites cannot use legacy `ADMIN`, `VIEWER`, or `SUPERVISOR` (see RBAC catalog). Existing users may still have those roles until migrated:
+
+```bash
+cd backend
+python3 -m scripts.migrate_staff_roles          # apply ADMIN → MODULE_ADMIN, VIEWER/SUPERVISOR → CASE_MANAGER
+python3 -m scripts.migrate_staff_roles --dry-run  # preview only
+```
+
+Then verify sign-in and `/api/v1/admin/home` for affected accounts. Re-seed is an alternative for dev only.
+
+## Schema and migrations
+
+| Environment | How schema is applied |
+|-------------|------------------------|
+| **Postgres (staging/production)** | `python scripts/migrate_production.py` only (Alembic). Verify one head: `PYTHONPATH=.:alembic alembic heads` |
+| **SQLite (local dev)** | `bootstrap_schema()` + `ensure_sqlite_schema_patches()` on API startup; Alembic is skipped |
+
+**Core tables (case-centric):** `users`, `cases`, `case_assignments`, `children`, `sessions`, `daily_logs`, `invoices`, `client_billing_profiles`, `iep_plans`, `module_access_grants` (via user JSON / RBAC).
+
+Legacy staff roles (`ADMIN`, `VIEWER`, `SUPERVISOR`) remain in the DB until `migrate_staff_roles.py` is run; new users use `MODULE_ADMIN` / `CASE_MANAGER` only.
 
 ## Tests
 
 ```bash
 python3 -m pytest app/tests -q
+PYTHONPATH=.:alembic alembic heads   # must show exactly one head
 ```
 
 ## API docs

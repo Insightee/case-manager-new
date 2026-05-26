@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area,
@@ -53,6 +53,7 @@ function buildUrl(filters) {
   if (filters.dateTo)        p.set('date_to', filters.dateTo)
   if (filters.therapistId)   p.set('therapist_id', filters.therapistId)
   if (filters.productModule) p.set('product_module', filters.productModule)
+  if (filters.caseId)        p.set('case_id', filters.caseId)
   if (filters.status)        p.set('status', filters.status)
   return `/api/v1/admin/sessions/analytics?${p}`
 }
@@ -346,9 +347,10 @@ function OverviewTab({ data }) {
 }
 
 // ── Sessions table tab ────────────────────────────────────────────────────────
-function SessionsTab({ sessions, filters, onRefresh }) {
+function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
   const [flagSession, setFlagSession] = useState(null)
   const [tableSearch, setTableSearch] = useState('')
+  const highlightRef = useRef(null)
 
   const filtered = useMemo(() => {
     const q = tableSearch.trim().toLowerCase()
@@ -362,12 +364,21 @@ function SessionsTab({ sessions, filters, onRefresh }) {
     )
   }, [sessions, tableSearch])
 
+  useEffect(() => {
+    if (!highlightSessionId || filtered.length === 0) return
+    const t = setTimeout(() => {
+      highlightRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 150)
+    return () => clearTimeout(t)
+  }, [highlightSessionId, filtered.length])
+
   function downloadFile(endpoint) {
     const p = new URLSearchParams()
     if (filters.dateFrom)      p.set('date_from', filters.dateFrom)
     if (filters.dateTo)        p.set('date_to', filters.dateTo)
     if (filters.therapistId)   p.set('therapist_id', filters.therapistId)
     if (filters.productModule) p.set('product_module', filters.productModule)
+    if (filters.caseId)        p.set('case_id', filters.caseId)
     if (filters.status)        p.set('status', filters.status)
     const url = `/api/v1/admin/sessions/export/${endpoint}?${p}`
     const a = document.createElement('a')
@@ -383,39 +394,33 @@ function SessionsTab({ sessions, filters, onRefresh }) {
       <div className="sessions-dash__export-bar">
         <input
           type="search"
-          className="sessions-dash__filter-input"
-          style={{ width: 220 }}
+          className="sessions-dash__filter-input sessions-dash__filter-input--grow"
           value={tableSearch}
           onChange={(e) => setTableSearch(e.target.value)}
-          placeholder="Search table…"
+          placeholder="Filter rows…"
         />
         <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('xlsx')}>
-          ↓ Excel
+          Excel
         </button>
         <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('pdf')}>
-          ↓ PDF
+          PDF
         </button>
       </div>
 
       {filtered.length === 0 ? (
-        <div style={{ padding: '32px 0', textAlign: 'center', color: '#94a3b8', fontSize: '0.875rem' }}>
-          No sessions found for this filter.
-        </div>
+        <div className="sessions-dash__empty">No sessions found for this filter.</div>
       ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
+        <div className="admin-table-wrap sessions-dash__table-wrap">
+          <table className="admin-table admin-table--compact sessions-dash__table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Case</th>
-                <th>Child</th>
+                <th>When</th>
+                <th>Case / client</th>
                 <th>Therapist</th>
-                <th>Module</th>
-                <th>Mode</th>
-                <th>Duration</th>
+                <th>Programme</th>
                 <th>Status</th>
-                <th>Actions</th>
+                <th>Log</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -425,70 +430,68 @@ function SessionsTab({ sessions, filters, onRefresh }) {
                 const isLate = s.actual_start_at && s.start_time &&
                   new Date(s.actual_start_at).toISOString().slice(11, 16) > s.start_time.slice(0, 5)
                 const canFlag = s.status === 'CANCELLED' || s.status === 'NO_SHOW' || s.status === 'CLIENT_ABSENT'
+                const isHighlight = highlightSessionId && String(s.id) === String(highlightSessionId)
+                const durationLabel = s.duration_mins != null
+                  ? (s.duration_mins >= 60
+                    ? `${Math.floor(s.duration_mins / 60)}h${s.duration_mins % 60 > 0 ? ` ${s.duration_mins % 60}m` : ''}`
+                    : `${s.duration_mins}m`)
+                  : null
                 return (
-                  <tr key={s.id}>
-                    <td>
+                  <tr
+                    key={s.id}
+                    ref={isHighlight ? highlightRef : null}
+                    className={isHighlight ? 'sessions-dash__row--highlight' : undefined}
+                  >
+                    <td className="sessions-dash__when">
                       <span className="admin-table__primary">{fmtDate(s.scheduled_date)}</span>
-                    </td>
-                    <td>
-                      <span style={{ fontSize: '0.8rem' }}>
+                      <span className="admin-table__meta">
                         {startDisplay}
-                        {endDisplay !== '—' ? <> – {endDisplay}</> : null}
-                        {isLate ? (
-                          <span className="admin-badge admin-badge--warning" style={{ marginLeft: 4, fontSize: '0.7rem' }}>Late start</span>
-                        ) : null}
+                        {endDisplay !== '—' ? ` – ${endDisplay}` : ''}
+                        {durationLabel ? ` · ${durationLabel}` : ''}
                       </span>
+                      {isLate ? (
+                        <span className="admin-badge admin-badge--warning sessions-dash__pill">Late</span>
+                      ) : null}
                     </td>
                     <td>
                       {s.case_id ? (
-                        <Link to={`/admin/cases/${s.case_id}?tab=logs`} className="admin-table__primary">
+                        <Link to={`/admin/cases/${s.case_id}?tab=logs&session_id=${s.id}`} className="admin-table__primary">
                           {s.case_code || `Case #${s.case_id}`}
                         </Link>
                       ) : '—'}
+                      <span className="admin-table__meta">{s.child_name || '—'}</span>
                     </td>
-                    <td>{s.child_name || '—'}</td>
-                    <td>
-                      <span className="admin-table__primary" style={{ fontWeight: 500 }}>
-                        {s.therapist_name || `#${s.therapist_id}`}
-                      </span>
+                    <td className="sessions-dash__therapist">
+                      {s.therapist_name || (s.therapist_id ? `#${s.therapist_id}` : '—')}
                     </td>
                     <td>
-                      {s.product_module ? (
-                        <span className="admin-chip">{s.product_module}</span>
-                      ) : '—'}
-                    </td>
-                    <td>
-                      <span style={{ fontSize: '0.78rem', color: '#64748b', textTransform: 'capitalize' }}>
-                        {s.mode?.toLowerCase() || '—'}
-                      </span>
-                    </td>
-                    <td>
-                      {s.duration_mins != null ? (
-                        <span style={{ fontSize: '0.8rem', color: '#475569' }}>
-                          {s.duration_mins >= 60
-                            ? `${Math.floor(s.duration_mins / 60)}h${s.duration_mins % 60 > 0 ? ` ${s.duration_mins % 60}m` : ''}`
-                            : `${s.duration_mins}m`}
-                          {s.actual_start_at ? (
-                            <span className="admin-badge admin-badge--success" style={{ marginLeft: 4, fontSize: '0.68rem' }}>actual</span>
-                          ) : null}
-                        </span>
-                      ) : '—'}
+                      {s.product_module ? <span className="admin-chip admin-chip--sm">{s.product_module}</span> : '—'}
+                      <span className="admin-table__meta">{s.mode?.toLowerCase() || ''}</span>
                     </td>
                     <td>
                       <StatusBadge status={s.status} />
                     </td>
                     <td>
-                      <div className="admin-table__actions">
+                      {s.has_daily_log ? (
+                        <span className="admin-badge admin-badge--success sessions-dash__pill">Submitted</span>
+                      ) : (
+                        <span className="admin-muted sessions-dash__log-pending">Pending</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="sessions-dash__row-actions">
                         {s.case_id ? (
-                          <Link to={`/admin/cases/${s.case_id}?tab=logs`} className="admin-btn admin-btn--ghost admin-btn--sm">
+                          <Link
+                            to={`/admin/cases/${s.case_id}?tab=logs&session_id=${s.id}`}
+                            className="admin-btn admin-btn--ghost admin-btn--sm"
+                          >
                             View
                           </Link>
                         ) : null}
                         {canFlag ? (
                           <button
                             type="button"
-                            className="admin-btn admin-btn--sm"
-                            style={{ background: '#fff1f2', color: '#b91c1c', border: '1px solid #fecaca' }}
+                            className="admin-btn admin-btn--sm sessions-dash__flag-btn"
                             onClick={() => setFlagSession(s)}
                           >
                             Flag
@@ -517,18 +520,24 @@ function SessionsTab({ sessions, filters, onRefresh }) {
 
 // ── Main dashboard ────────────────────────────────────────────────────────────
 export function AdminSessionLogsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const today = new Date()
   const thirtyDaysAgo = new Date(today)
   thirtyDaysAgo.setDate(today.getDate() - 29)
+
+  const urlCaseId = searchParams.get('case_id') || ''
+  const urlSessionId = searchParams.get('session_id') || ''
+  const urlTab = searchParams.get('tab') === 'sessions' ? 'sessions' : 'overview'
 
   const [filters, setFilters] = useState({
     dateFrom: toISODate(thirtyDaysAgo),
     dateTo:   toISODate(today),
     therapistId: '',
     productModule: '',
+    caseId: urlCaseId,
     status: '',
   })
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(urlTab)
   const [data, setData]     = useState(null)
   const [loading, setLoading] = useState(true)
   const [therapists, setTherapists] = useState([])
@@ -545,6 +554,13 @@ export function AdminSessionLogsPage() {
   useEffect(() => {
     loadAnalytics()
   }, [loadAnalytics])
+
+  useEffect(() => {
+    const caseId = searchParams.get('case_id') || ''
+    const tab = searchParams.get('tab') === 'sessions' || caseId ? 'sessions' : 'overview'
+    setActiveTab(tab)
+    setFilters((prev) => (prev.caseId === caseId ? prev : { ...prev, caseId }))
+  }, [searchParams])
 
   useEffect(() => {
     apiFetch('/api/v1/admin/allotment/therapists')
@@ -564,21 +580,55 @@ export function AdminSessionLogsPage() {
 
   function setFilter(key, val) {
     setFilters((prev) => ({ ...prev, [key]: val }))
+    if (key === 'caseId') {
+      const next = new URLSearchParams(searchParams)
+      if (val) next.set('case_id', val)
+      else next.delete('case_id')
+      setSearchParams(next, { replace: true })
+    }
+  }
+
+  function switchTab(id) {
+    setActiveTab(id)
+    const next = new URLSearchParams(searchParams)
+    if (id === 'sessions') next.set('tab', 'sessions')
+    else next.delete('tab')
+    setSearchParams(next, { replace: true })
+  }
+
+  function clearCaseFilter() {
+    setFilter('caseId', '')
+    const next = new URLSearchParams(searchParams)
+    next.delete('case_id')
+    next.delete('session_id')
+    setSearchParams(next, { replace: true })
   }
 
   const sc = data?.status_counts || {}
   const totalInRange = Object.values(sc).reduce((a, b) => a + b, 0)
 
   return (
-    <div className="admin-page sessions-dash">
+    <div className="admin-page sessions-dash sessions-dash--compact">
       <AdminPageHeader
         eyebrow="Clinical ops"
-        title="Sessions analytics"
-        subtitle="Live analytics across all sessions — by therapist, product, status, and time."
+        title="Session logs"
+        subtitle="Scheduled sessions and submitted daily logs — filter by case, therapist, and date."
       />
 
+      {filters.caseId ? (
+        <div className="sessions-dash__case-banner">
+          <span>
+            Filtered to case #{filters.caseId}
+            {data?.recent_sessions?.[0]?.case_code ? ` · ${data.recent_sessions[0].case_code}` : ''}
+          </span>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearCaseFilter}>
+            Clear case filter
+          </button>
+        </div>
+      ) : null}
+
       {/* Filter bar */}
-      <div className="sessions-dash__filters">
+      <div className="sessions-dash__filters sessions-dash__filters--compact">
         <span className="sessions-dash__filter-label">Range</span>
         <input
           type="date"
@@ -611,14 +661,14 @@ export function AdminSessionLogsPage() {
 
         {modules.length > 0 ? (
           <>
-            <span className="sessions-dash__filter-label">Module</span>
+            <span className="sessions-dash__filter-label">Service</span>
             <select
               className="sessions-dash__filter-input"
               style={{ width: 140 }}
               value={filters.productModule}
               onChange={(e) => setFilter('productModule', e.target.value)}
             >
-              <option value="">All modules</option>
+              <option value="">All services</option>
               {modules.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </>
@@ -638,35 +688,36 @@ export function AdminSessionLogsPage() {
         </select>
       </div>
 
-      {/* KPI row */}
-      <div className="sessions-dash__kpi-grid">
-        <KpiCard label="Today's sessions" value={data?.today_count} sub="scheduled for today" accent="indigo" />
-        <KpiCard label="This week"         value={data?.week_count}  sub="sessions this week"  accent="blue"   />
-        <KpiCard label="Completed"         value={sc.COMPLETED}      sub={`of ${totalInRange} in range`} accent="green"  />
-        <KpiCard label="Cancelled"         value={(sc.CANCELLED || 0) + (sc.CLIENT_ABSENT || 0)} sub="+ client absent" accent="red"    />
-        <KpiCard label="No-shows"          value={sc.NO_SHOW}        sub="therapist no-shows"  accent="amber"  />
-      </div>
+      {activeTab === 'overview' ? (
+        <div className="sessions-dash__kpi-grid">
+          <KpiCard label="Today" value={data?.today_count} sub="scheduled" accent="indigo" />
+          <KpiCard label="This week" value={data?.week_count} sub="sessions" accent="blue" />
+          <KpiCard label="Completed" value={sc.COMPLETED} sub={`of ${totalInRange}`} accent="green" />
+          <KpiCard label="Cancelled" value={(sc.CANCELLED || 0) + (sc.CLIENT_ABSENT || 0)} sub="in range" accent="red" />
+          <KpiCard label="No-shows" value={sc.NO_SHOW} accent="amber" />
+        </div>
+      ) : null}
 
       {/* Tabs */}
-      <div>
+      <div className="sessions-dash__body">
         <div className="sessions-dash__tabs">
           <button
             type="button"
             className={`sessions-dash__tab ${activeTab === 'overview' ? 'is-active' : ''}`}
-            onClick={() => setActiveTab('overview')}
+            onClick={() => switchTab('overview')}
           >
             Overview
           </button>
           <button
             type="button"
             className={`sessions-dash__tab ${activeTab === 'sessions' ? 'is-active' : ''}`}
-            onClick={() => setActiveTab('sessions')}
+            onClick={() => switchTab('sessions')}
           >
             Sessions ({data?.recent_sessions?.length ?? 0})
           </button>
         </div>
 
-        <div style={{ paddingTop: 20 }}>
+        <div className="sessions-dash__tab-panel">
           {loading ? (
             <div className="sessions-dash__skeleton" />
           ) : !data ? (
@@ -679,6 +730,7 @@ export function AdminSessionLogsPage() {
             <SessionsTab
               sessions={data.recent_sessions || []}
               filters={filters}
+              highlightSessionId={urlSessionId}
               onRefresh={loadAnalytics}
             />
           )}

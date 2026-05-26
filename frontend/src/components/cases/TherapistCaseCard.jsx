@@ -60,6 +60,9 @@ export function TherapistCaseCard({ data }) {
         </div>
       </div>
       <StatusBadge variant={data.badgeVariant}>{data.stage}</StatusBadge>
+      {data.parentSignupPending ? (
+        <span className="ic-card__intake-badge">Pending parent signup</span>
+      ) : null}
       <h3 className="ic-card__name">{data.child}</h3>
       <p className="ic-card__service">{data.service}</p>
       {data.caseManagerName ? (

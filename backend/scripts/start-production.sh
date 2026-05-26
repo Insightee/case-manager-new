@@ -11,8 +11,12 @@ fi
 echo "Running migrations..."
 python scripts/migrate_production.py
 
-echo "Seeding demo data (idempotent)..."
-python -m app.seed.demo_seed
+if [ "${SEED_DEMO_DATA:-false}" = "true" ] || [ "${SEED_DEMO_DATA:-false}" = "1" ]; then
+  echo "SEED_DEMO_DATA is set — running demo seed (idempotent)..."
+  python -m app.seed.demo_seed
+else
+  echo "Skipping demo seed (set SEED_DEMO_DATA=true only for demos/staging)."
+fi
 
 PORT="${PORT:-8000}"
 echo "Starting API on port ${PORT}..."

@@ -12,6 +12,7 @@ test.describe('Therapist portal smoke', () => {
     await expect(page).toHaveURL(/\/therapist\/logs/)
     await expect(page.getByRole('heading', { name: 'Session Logs' })).toBeVisible()
     await expect(page.getByRole('tablist', { name: 'Session log lists' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Add new client' })).toBeVisible()
     await page.getByRole('tab', { name: 'Approved' }).click()
     const viewBtn = page.getByRole('button', { name: 'View log' }).first()
     if (await viewBtn.isVisible()) {

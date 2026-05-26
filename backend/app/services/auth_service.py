@@ -36,6 +36,7 @@ def create_user(
     role_names: list[str],
     region: str | None = None,
     module_assignments: list[str] | None = None,
+    is_view_only: bool = False,
 ) -> User:
     roles = db.scalars(select(Role).where(Role.name.in_(role_names))).all()
     user = User(
@@ -44,6 +45,9 @@ def create_user(
         full_name=full_name,
         region=region,
         module_assignments=module_assignments or [],
+        module_access_grants={},
+        feature_overrides={},
+        is_view_only=is_view_only,
     )
     user.roles = list(roles)
     db.add(user)

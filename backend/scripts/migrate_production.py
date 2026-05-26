@@ -33,10 +33,21 @@ def _current_revision() -> str | None:
     return row[0] if row else None
 
 
+def _resolve_head(cfg: Config, script: ScriptDirectory) -> str:
+    heads = script.get_heads()
+    if len(heads) > 1:
+        print(f"Multiple Alembic heads detected ({heads}); upgrading all branches...")
+        command.upgrade(cfg, "heads")
+        heads = script.get_heads()
+    if len(heads) != 1:
+        raise RuntimeError(f"Expected a single Alembic head after upgrade; got: {heads}")
+    return heads[0]
+
+
 def main() -> None:
     cfg = Config("alembic.ini")
     script = ScriptDirectory.from_config(cfg)
-    head = script.get_current_head()
+    head = _resolve_head(cfg, script)
     insp = inspect(engine)
 
     if not insp.has_table("users"):
@@ -65,6 +76,11 @@ def main() -> None:
 
 if __name__ == "__main__":
     if settings.is_sqlite:
-        command.upgrade(Config("alembic.ini"), "head")
+        from app.core.database import ensure_sqlite_schema_patches
+        from app.db.bootstrap import bootstrap_schema
+
+        bootstrap_schema()
+        ensure_sqlite_schema_patches()
+        print("SQLite dev: applied bootstrap + schema patches (skipped Alembic; use Postgres + main() in prod).")
     else:
         main()

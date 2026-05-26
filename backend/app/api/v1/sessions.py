@@ -57,6 +57,8 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         checkin_lng=s.checkin_lng,
         checkout_lat=s.checkout_lat,
         checkout_lng=s.checkout_lng,
+        invite_sent=getattr(s, "_invite_sent", False),
+        invite_email=getattr(s, "_invite_email", None),
     )
 
 
@@ -134,6 +136,12 @@ def create_session(
     case = case_service.get_case(db, payload.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+    from app.services.case_status_request_service import assert_case_allows_new_session
+
+    try:
+        assert_case_allows_new_session(db, payload.case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     data = payload.model_dump()
     tid = data.get("therapist_user_id")
     if not tid or tid == 0:
@@ -277,6 +285,18 @@ def start_session(
         session = session_service.start_session(db, session, user.id, lat=payload.lat, lng=payload.lng)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    invite_sent, invite_email = (False, None)
+    if session.case_id:
+        from app.services.invite_on_start_service import ensure_parent_portal_invite_for_case
+
+        invite_sent, invite_email = ensure_parent_portal_invite_for_case(
+            db,
+            session.case_id,
+            user.id,
+            therapist_name=user.full_name,
+        )
+    session._invite_sent = invite_sent
+    session._invite_email = invite_email
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="start", entity_type="session", entity_id=session.id, **meta)
     db.commit()

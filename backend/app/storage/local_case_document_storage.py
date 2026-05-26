@@ -17,7 +17,7 @@ ALLOWED_UPLOAD_MIME = frozenset(
     }
 )
 ALLOWED_IMAGE_MIME = frozenset({"image/jpeg", "image/png", "image/webp"})
-MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 def _safe_filename(name: str) -> str:

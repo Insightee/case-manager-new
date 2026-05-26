@@ -14,6 +14,8 @@ from app.core.database import Base
 class ReviewDecision(str, enum.Enum):
     APPROVE = "APPROVE"
     REJECT = "REJECT"
+    REQUEST_REVIEW = "REQUEST_REVIEW"
+    NOTE = "NOTE"
 
 
 class Review(Base):

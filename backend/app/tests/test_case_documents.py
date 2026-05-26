@@ -115,7 +115,7 @@ def test_parent_cannot_see_internal_document():
     assert doc_id not in ids
 
 
-def test_supervisor_approve_and_parent_sees_published():
+def test_cm_review_approve_and_parent_sees_published():
     parent_headers = _login("parent@demo.com")
     case_id = _parent_case_id(parent_headers)
     cm_headers = _login("casemanager@demo.com")
@@ -136,15 +136,15 @@ def test_supervisor_approve_and_parent_sees_published():
         headers=cm_headers,
         json={},
     )
-    sup_headers = _login("supervisor@demo.com")
+    cm_review_headers = _login("supervisor@demo.com")
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/approve",
-        headers=sup_headers,
+        headers=cm_review_headers,
         json={"visibility": "CLIENT_VISIBLE_AFTER_APPROVAL"},
     )
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/publish_client",
-        headers=sup_headers,
+        headers=cm_review_headers,
         json={},
     )
     parent_headers = _login("parent@demo.com")
@@ -154,7 +154,27 @@ def test_supervisor_approve_and_parent_sees_published():
     assert doc_id in ids
 
 
-def test_supervisor_request_changes():
+def test_submit_sets_cm_review_status():
+    headers = _login("therapist@demo.com")
+    case_id = _first_case_id(headers)
+    create = client.post(
+        f"/api/v1/cases/{case_id}/documents",
+        headers=headers,
+        data={
+            "category": "OTHER",
+            "title": "CM queue doc",
+            "source_type": "UPLOAD",
+        },
+        files={"file": ("t.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+    )
+    assert create.status_code == 201
+    doc_id = create.json()["id"]
+    r = client.post(f"/api/v1/documents/{doc_id}/workflow/submit", headers=headers, json={})
+    assert r.status_code == 200
+    assert r.json()["status"] == "CM_REVIEW"
+
+
+def test_cm_request_changes():
     headers = _login("therapist@demo.com")
     case_id = _first_case_id(headers)
     create = client.post(
@@ -169,10 +189,10 @@ def test_supervisor_request_changes():
     )
     doc_id = create.json()["id"]
     client.post(f"/api/v1/documents/{doc_id}/workflow/submit", headers=headers, json={})
-    sup_headers = _login("supervisor@demo.com")
+    cm_headers = _login("supervisor@demo.com")
     r = client.post(
         f"/api/v1/documents/{doc_id}/workflow/request_changes",
-        headers=sup_headers,
+        headers=cm_headers,
         json={"comment": "Add more detail"},
     )
     assert r.status_code == 200

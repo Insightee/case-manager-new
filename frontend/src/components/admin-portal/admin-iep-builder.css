@@ -1,0 +1,121 @@
+.iep-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.iep-builder__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.iep-builder__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.iep-builder__tab {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.iep-builder__tab.is-active {
+  background: #eef2ff;
+  border-color: #a5b4fc;
+  color: #3730a3;
+}
+
+.iep-builder__panel {
+  display: grid;
+  gap: 12px;
+}
+
+.iep-builder__grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.iep-builder__field label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.iep-builder__field input,
+.iep-builder__field textarea,
+.iep-builder__field select {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}
+
+.iep-builder__env-row {
+  border: 1px dashed #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.iep-builder__suggestions {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.iep-builder__suggestion {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.iep-builder__preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.iep-builder__preview {
+  background: #fff;
+  border-radius: 16px;
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 20px;
+}
+
+.iep-builder__preview-body {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #334155;
+}
+
+@media (max-width: 640px) {
+  .iep-builder__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import require_permission, user_has_permission
+from app.core.module_write import ensure_feature_write_access
+from app.core.permissions import require_mutation_permission, require_permission, user_has_permission
 from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage, TicketStatus, TicketTopic
 from app.models.user import User
 from app.services import (
@@ -23,6 +24,15 @@ from app.services import (
 )
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+
+
+def _guard_ticket_staff_write(user: User, ticket: SupportTicket, db: Session) -> None:
+    if not (
+        user_has_permission(user, "ticket.manage")
+        or user_has_permission(user, "admin.override")
+    ):
+        return
+    ensure_feature_write_access(user, "tickets", product_module=ticket.product_module, db=db)
 
 
 class TicketCreate(BaseModel):
@@ -160,12 +170,13 @@ def update_ticket(
     ticket_id: int,
     payload: TicketUpdate,
     request: Request,
-    user: User = Depends(require_permission("ticket.manage")),
+    user: User = Depends(require_mutation_permission("ticket.manage")),
     db: Session = Depends(get_db),
 ):
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    _guard_ticket_staff_write(user, ticket, db)
     if payload.status:
         ticket.status = payload.status
     if payload.assigned_to_user_id is not None:
@@ -181,12 +192,13 @@ def resolve_ticket_endpoint(
     ticket_id: int,
     payload: TicketFlowNote,
     request: Request,
-    user: User = Depends(require_permission("ticket.manage")),
+    user: User = Depends(require_mutation_permission("ticket.manage")),
     db: Session = Depends(get_db),
 ):
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    _guard_ticket_staff_write(user, ticket, db)
     try:
         ticket_flow.resolve_ticket(db, user, ticket, note=payload.note)
     except ValueError as e:
@@ -267,6 +279,8 @@ async def add_message(
         is_internal = raw_internal and (
             user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override")
         )
+        if is_internal:
+            _guard_ticket_staff_write(user, ticket, db)
     else:
         try:
             data = await request.json()
@@ -277,6 +291,8 @@ async def add_message(
         is_internal = payload_msg.is_internal and (
             user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override")
         )
+        if is_internal:
+            _guard_ticket_staff_write(user, ticket, db)
 
     if not body:
         raise HTTPException(status_code=400, detail="Message body is required")

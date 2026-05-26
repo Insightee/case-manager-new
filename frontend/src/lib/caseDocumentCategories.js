@@ -17,7 +17,8 @@ const CATEGORY_LABELS = Object.fromEntries(
 const STATUS_LABELS = {
   DRAFT: 'Draft',
   SUBMITTED: 'Submitted',
-  SUPERVISOR_REVIEW: 'Supervisor review',
+  CM_REVIEW: 'Case manager review',
+  SUPERVISOR_REVIEW: 'Case manager review',
   CHANGES_REQUESTED: 'Changes requested',
   CLIENT_REVIEW: 'With family',
   APPROVED: 'Approved',
@@ -61,7 +62,9 @@ export function workflowActionLabel(action) {
 export function statusTone(status) {
   if (status === 'APPROVED') return 'completed'
   if (status === 'CHANGES_REQUESTED') return 'warning'
-  if (status === 'CLIENT_REVIEW' || status === 'SUPERVISOR_REVIEW') return 'pending'
+  if (status === 'CLIENT_REVIEW' || status === 'CM_REVIEW' || status === 'SUPERVISOR_REVIEW') {
+    return 'pending'
+  }
   if (status === 'ARCHIVED') return 'muted'
   return 'default'
 }

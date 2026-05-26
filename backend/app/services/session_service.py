@@ -87,9 +87,9 @@ def start_session(
         session.checkin_lng = lng
     db.flush()
     if session.case_id:
-        from app.services.invite_on_start_service import ensure_parent_portal_invite_for_case
+        from app.services.case_status_request_service import assert_case_allows_new_session
 
-        ensure_parent_portal_invite_for_case(db, session.case_id, therapist_user_id)
+        assert_case_allows_new_session(db, session.case_id)
     return session
 
 

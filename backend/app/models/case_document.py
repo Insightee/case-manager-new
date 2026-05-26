@@ -34,11 +34,31 @@ class CaseDocumentCategory(str, enum.Enum):
 class CaseDocumentStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     SUBMITTED = "SUBMITTED"
-    SUPERVISOR_REVIEW = "SUPERVISOR_REVIEW"
+    CM_REVIEW = "CM_REVIEW"
     CHANGES_REQUESTED = "CHANGES_REQUESTED"
     CLIENT_REVIEW = "CLIENT_REVIEW"
     APPROVED = "APPROVED"
     ARCHIVED = "ARCHIVED"
+
+
+# Retired enum value kept for reading legacy rows until migration runs.
+_LEGACY_CM_REVIEW = "SUPERVISOR_REVIEW"
+
+
+def normalize_case_document_status(status: str | None) -> str | None:
+    if status == _LEGACY_CM_REVIEW:
+        return CaseDocumentStatus.CM_REVIEW.value
+    return status
+
+
+def statuses_awaiting_cm_review() -> frozenset[str]:
+    return frozenset(
+        {
+            CaseDocumentStatus.SUBMITTED.value,
+            CaseDocumentStatus.CM_REVIEW.value,
+            _LEGACY_CM_REVIEW,
+        }
+    )
 
 
 class CaseDocumentVisibility(str, enum.Enum):

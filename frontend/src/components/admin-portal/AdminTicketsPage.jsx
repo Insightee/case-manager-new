@@ -4,7 +4,15 @@ import { unwrapList } from '../../lib/listApi.js'
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
 import '../support/support-tickets.css'
-import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminToolbar, AdminSearchInput, StatusBadge } from './ui/index.js'
+import {
+  AdminPageHeader,
+  AdminPanel,
+  AdminEmptyState,
+  AdminToolbar,
+  AdminSearchInput,
+  StatusBadge,
+  ServiceFilterSelect,
+} from './ui/index.js'
 
 export function AdminTicketsPage() {
   const [cases, setCases] = useState([])
@@ -107,17 +115,13 @@ export function AdminTicketsPage() {
               <option value="IN_PROGRESS">In progress</option>
               <option value="RESOLVED">Resolved</option>
             </select>
-            <select
+            <ServiceFilterSelect
               className="admin-search__input"
-              style={{ flex: '0 0 auto', width: 'auto', minWidth: 150, paddingLeft: 12, backgroundImage: 'none' }}
+              style={{ flex: '0 0 auto', minWidth: 150, paddingLeft: 12, backgroundImage: 'none' }}
               value={moduleFilter}
-              onChange={(e) => setModuleFilter(e.target.value)}
-            >
-              <option value="">All modules</option>
-              <option value="homecare">Homecare</option>
-              <option value="shadow_support">Shadow support</option>
-              <option value="billing">Billing</option>
-            </select>
+              onChange={setModuleFilter}
+              extraOptions={[{ value: 'billing', label: 'Billing' }]}
+            />
           </AdminToolbar>
 
           {loading ? (

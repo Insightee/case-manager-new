@@ -30,6 +30,15 @@ function parseBulkLines(text) {
   })
 }
 
+function parseCsvFile(text) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length === 0) return ''
+  const headerLine = lines[0].toLowerCase()
+  const isHeader = headerLine.includes('full name') || headerLine.includes('email') || headerLine.includes('name')
+  const dataLines = isHeader ? lines.slice(1) : lines
+  return dataLines.join('\n')
+}
+
 export function AdminTherapistOnboardPanel({
   catalog,
   roleDefaults,
@@ -287,10 +296,45 @@ export function AdminTherapistOnboardPanel({
               </button>
             </header>
             <div className="admin-drawer__body">
-              <p className="admin-muted">
-                One therapist per line: <code>Full name, email, phone, services</code> (services separated by <code>|</code> or <code>;</code>, e.g.{' '}
-                <code>shadow|homecare</code>)
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                <p className="admin-muted" style={{ margin: 0 }}>
+                  One row per therapist: <code>Full Name, Email, Phone, Services (pipe-separated)</code>
+                </p>
+                <a
+                  href="/api/v1/admin/therapists/bulk-template.xlsx"
+                  download="therapist_bulk_template.xlsx"
+                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                >
+                  ↓ Download template
+                </a>
+              </div>
+              <label style={{ marginBottom: 12 }}>
+                Upload file (.csv or .xlsx)
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="admin-input"
+                  style={{ marginTop: 4 }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const isCsv = file.name.endsWith('.csv') || file.type === 'text/csv'
+                    if (isCsv) {
+                      const reader = new FileReader()
+                      reader.onload = (ev) => {
+                        const parsed = parseCsvFile(ev.target.result)
+                        setBulkText(parsed)
+                      }
+                      reader.readAsText(file)
+                    } else {
+                      // For .xlsx, guide user to save-as CSV or use template
+                      setBulkText('')
+                      alert('For XLSX files, open in Excel/Sheets, export as CSV, then re-upload. Or paste rows manually below.')
+                    }
+                    e.target.value = ''
+                  }}
+                />
+              </label>
               <label>
                 Mode
                 <select className="admin-input" value={bulkMode} onChange={(e) => setBulkMode(e.target.value)} style={{ maxWidth: 240 }}>
@@ -302,7 +346,7 @@ export function AdminTherapistOnboardPanel({
                 <textarea
                   className="admin-input"
                   rows={10}
-                  placeholder={'Jane Doe, jane@example.com, +91 98765 43210, shadow|homecare\nJohn Smith, john@example.com,, occupational_therapy'}
+                  placeholder={'Jane Doe, jane@example.com, +91 98765 43210, shadow|homecare\nJohn Smith, john@example.com,, speech_therapy'}
                   value={bulkText}
                   onChange={(e) => setBulkText(e.target.value)}
                   style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem' }}

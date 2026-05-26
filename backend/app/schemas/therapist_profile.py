@@ -15,7 +15,8 @@ class TherapistProfileBase(BaseModel):
 
 
 class TherapistProfileUpdate(TherapistProfileBase):
-    pass
+    supervisor_user_id: Optional[int] = None
+    mentor_user_id: Optional[int] = None
 
 
 class TherapistProfileRead(TherapistProfileBase):
@@ -27,6 +28,10 @@ class TherapistProfileRead(TherapistProfileBase):
     reviewed_at: Optional[datetime] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
+    supervisor_user_id: Optional[int] = None
+    mentor_user_id: Optional[int] = None
+    supervisor_name: Optional[str] = None
+    mentor_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -34,6 +39,8 @@ class TherapistProfileRead(TherapistProfileBase):
 class TherapistProfileAdminCreate(TherapistProfileBase):
     user_id: int
     status: Optional[str] = "APPROVED"
+    supervisor_user_id: Optional[int] = None
+    mentor_user_id: Optional[int] = None
 
 
 class TherapistProfileReview(BaseModel):
@@ -43,3 +50,13 @@ class TherapistProfileReview(BaseModel):
 class ServiceCategoryRead(BaseModel):
     id: str
     label: str
+    description: Optional[str] = None
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class ServiceCategoryCreate(BaseModel):
+    id: Optional[str] = None
+    label: str = Field(min_length=2, max_length=255)
+    description: Optional[str] = None
+    sort_order: int = 0

@@ -34,7 +34,7 @@ def _row(case_code: str | None, child_name: str | None, case_id: int | None, **e
 
 WIDGET_ITEM_LIMIT = 8
 
-_HOME_OPERATIONAL_ROLES = frozenset({"SUPER_ADMIN", "ADMIN", "CASE_MANAGER", "SUPERVISOR"})
+_HOME_OPERATIONAL_ROLES = frozenset({"SUPER_ADMIN", "MODULE_ADMIN", "ADMIN", "CASE_MANAGER", "SUPERVISOR"})
 
 
 def user_may_see_reschedules_widget(user: User) -> bool:

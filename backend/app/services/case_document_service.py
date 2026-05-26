@@ -18,6 +18,7 @@ from app.models.case_document import (
     CaseDocumentStatus,
     CaseDocumentVersion,
     CaseDocumentVisibility,
+    normalize_case_document_status,
 )
 from app.models.document_comment import CommentType, DocumentComment, DocumentEntityType
 from app.models.user import User
@@ -74,7 +75,7 @@ def _serialize_list_item(db: Session, user: User, doc: CaseDocument, version: Ca
         title=doc.title,
         report_month=doc.report_month,
         report_date=doc.report_date,
-        status=doc.status,
+        status=normalize_case_document_status(doc.status) or doc.status,
         visibility=doc.visibility,
         submitted_by_user_id=doc.submitted_by_user_id,
         parent_review_status=doc.parent_review_status,
@@ -123,7 +124,7 @@ async def _read_upload(file: UploadFile, *, allow_images: bool) -> tuple[str, st
     raw = await file.read()
     max_bytes = settings.case_document_max_bytes or MAX_UPLOAD_BYTES
     if len(raw) > max_bytes:
-        raise HTTPException(status_code=400, detail="File exceeds size limit")
+        raise HTTPException(status_code=413, detail="File exceeds 5 MB limit")
     if len(raw) == 0:
         raise HTTPException(status_code=400, detail="Empty file not allowed")
     return file.filename, content_type, raw
@@ -214,7 +215,11 @@ def list_for_case(
     if category:
         stmt = stmt.where(CaseDocument.category == _valid_category(category))
     if status:
-        stmt = stmt.where(CaseDocument.status == status.strip().upper())
+        s = status.strip().upper()
+        if s == CaseDocumentStatus.CM_REVIEW.value:
+            stmt = stmt.where(CaseDocument.status.in_([CaseDocumentStatus.CM_REVIEW.value, "SUPERVISOR_REVIEW"]))
+        else:
+            stmt = stmt.where(CaseDocument.status == s)
     docs = list(db.scalars(stmt).all())
     out: list[CaseDocumentListItem] = []
     for doc in docs:

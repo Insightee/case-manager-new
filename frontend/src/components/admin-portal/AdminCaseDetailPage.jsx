@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
@@ -13,6 +13,7 @@ import { AdminCaseSchedulingPanel } from './AdminCaseSchedulingPanel.jsx'
 import { CaseActivityPanel } from './CaseActivityPanel.jsx'
 import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { IepBuilderPanel } from './IepBuilderPanel.jsx'
+import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -31,11 +32,16 @@ export function AdminCaseDetailPage() {
   const { caseId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
-  const { can } = useAuth()
+  const highlightSessionId = searchParams.get('session_id')
+  const { can, canWriteProduct } = useAuth()
+  const { canReviewLogs } = useModuleWrite()
   const [caseRow, setCaseRow] = useState(null)
   const [assignments, setAssignments] = useState([])
-  const [logs, setLogs] = useState([])
   const [therapistId, setTherapistId] = useState('')
+  const [assignStartDate, setAssignStartDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [assignReason, setAssignReason] = useState('Assigned from case hub')
+  const [assignBusy, setAssignBusy] = useState(false)
+  const [assignSuccess, setAssignSuccess] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actingLogId, setActingLogId] = useState(null)
@@ -44,14 +50,12 @@ export function AdminCaseDetailPage() {
     setLoading(true)
     setError('')
     try {
-      const [c, asg, allLogs] = await Promise.all([
+      const [c, asg] = await Promise.all([
         apiFetch(`/api/v1/cases/${caseId}`),
         apiFetch(`/api/v1/cases/${caseId}/assignments`),
-        apiFetch(`/api/v1/daily-logs?case_id=${caseId}`),
       ])
       setCaseRow(c)
       setAssignments(asg || [])
-      setLogs(Array.isArray(allLogs) ? allLogs : unwrapList(allLogs))
     } catch (err) {
       setError(err.message || 'Case not found')
       setCaseRow(null)
@@ -63,6 +67,12 @@ export function AdminCaseDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (highlightSessionId && tab !== 'logs') {
+      setSearchParams({ tab: 'logs', session_id: highlightSessionId }, { replace: true })
+    }
+  }, [highlightSessionId, tab, setSearchParams])
 
   function setTab(id) {
     setSearchParams({ tab: id }, { replace: true })
@@ -103,6 +113,11 @@ export function AdminCaseDetailPage() {
   }
 
   const isShadowCase = caseRow?.product_module === 'shadow_support'
+  const canEditCase = Boolean(caseRow && can('case.update') && canWriteProduct(caseRow.product_module))
+  const canAssignCase = Boolean(caseRow && can('case.assign') && canWriteProduct(caseRow.product_module))
+  const canReviewCaseLogs = Boolean(
+    caseRow && can('daily_log.review') && canReviewLogs(caseRow.product_module),
+  )
   const visibleTabs = TABS.filter((t) => !t.perm || can(t.perm))
 
   if (loading) return <p className="admin-muted">Loading case…</p>
@@ -164,7 +179,7 @@ export function AdminCaseDetailPage() {
             </div>
           ) : null}
           <CaseBillingForm caseItem={caseRow} readOnly />
-          {can('case.update') ? (
+          {canEditCase ? (
             <>
               <p style={{ fontSize: '0.85rem', margin: '8px 0 0' }}>
                 <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setTab('billing')}>
@@ -173,7 +188,7 @@ export function AdminCaseDetailPage() {
               </p>
             </>
           ) : null}
-          {can('case.update') ? (
+          {canEditCase ? (
             <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} />
           ) : null}
         </section>
@@ -181,8 +196,14 @@ export function AdminCaseDetailPage() {
 
       {tab === 'assignments' && (
         <section>
-          {can('case.assign') ? (
-            <div className="admin-form-grid" style={{ maxWidth: 420, marginBottom: 16 }}>
+          {canAssignCase ? (
+            <div className="admin-form-grid" style={{ maxWidth: 480, marginBottom: 16 }}>
+              {activeAssignment ? (
+                <p className="admin-muted" style={{ gridColumn: '1 / -1', fontSize: '0.875rem' }}>
+                  Active: {activeAssignment.therapist_name || `#${activeAssignment.therapist_user_id}`} since{' '}
+                  {activeAssignment.start_date}. Selecting another therapist will end this assignment.
+                </p>
+              ) : null}
               <label>
                 Assign therapist
                 <AdminTherapistPicker
@@ -193,8 +214,33 @@ export function AdminCaseDetailPage() {
                   onChange={setTherapistId}
                 />
               </label>
-              <button type="button" className="admin-btn admin-btn--primary" onClick={handleAssign} disabled={!therapistId}>
-                Assign / Reassign
+              <label>
+                Start date
+                <input
+                  type="date"
+                  className="admin-input"
+                  value={assignStartDate}
+                  onChange={(e) => setAssignStartDate(e.target.value)}
+                />
+              </label>
+              <label style={{ gridColumn: '1 / -1' }}>
+                Reason for change
+                <input
+                  type="text"
+                  className="admin-input"
+                  value={assignReason}
+                  onChange={(e) => setAssignReason(e.target.value)}
+                  placeholder="e.g. Caseload rebalance"
+                />
+              </label>
+              {assignSuccess ? <p className="admin-alert admin-alert--success" style={{ gridColumn: '1 / -1' }}>{assignSuccess}</p> : null}
+              <button
+                type="button"
+                className="admin-btn admin-btn--primary"
+                onClick={handleAssign}
+                disabled={!therapistId || assignBusy}
+              >
+                {assignBusy ? 'Saving…' : activeAssignment ? 'Reassign therapist' : 'Assign therapist'}
               </button>
             </div>
           ) : null}
@@ -222,57 +268,17 @@ export function AdminCaseDetailPage() {
       {tab === 'logs' && (
         <section>
           <p style={{ marginBottom: 12 }}>
-            <Link to="/admin/logs" className="admin-btn admin-btn--ghost admin-btn--sm">
-              Open full review queue
+            <Link to={`/admin/logs?tab=sessions&case_id=${caseId}`} className="admin-btn admin-btn--ghost admin-btn--sm">
+              Open sessions board for this case
             </Link>
           </p>
-          <ul className="admin-queue">
-            {logs.length === 0 ? (
-              <li className="admin-queue__item">No session logs for this case.</li>
-            ) : (
-              logs.map((log) => (
-                <li key={log.id} className="admin-queue__item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                    <div>
-                      <p className="admin-queue__title">Log #{log.id}</p>
-                      <p className="admin-queue__meta">{log.attendance_status}</p>
-                    </div>
-                    <StatusBadge status={log.approval_status} />
-                  </div>
-                  {log.session_notes ? (
-                    <p style={{ fontSize: '0.8rem', margin: '8px 0 0' }}>
-                      <strong>Internal:</strong> {log.session_notes}
-                    </p>
-                  ) : null}
-                  {log.parent_notes ? (
-                    <p style={{ fontSize: '0.8rem', margin: '4px 0 0' }}>
-                      <strong>For family:</strong> {log.parent_notes}
-                    </p>
-                  ) : null}
-                  {log.approval_status === 'PENDING' ? (
-                    <div className="admin-btn-group" style={{ marginTop: 8 }}>
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--sm admin-btn--primary"
-                        disabled={actingLogId === log.id}
-                        onClick={() => reviewLog(log.id, 'approve')}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--sm"
-                        disabled={actingLogId === log.id}
-                        onClick={() => reviewLog(log.id, 'reject')}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  ) : null}
-                </li>
-              ))
-            )}
-          </ul>
+          <CaseSessionsAndLogsPanel
+            caseId={caseId}
+            highlightSessionId={highlightSessionId}
+            canReview={canReviewCaseLogs}
+            onReviewLog={reviewLog}
+            actingLogId={actingLogId}
+          />
         </section>
       )}
 
@@ -292,7 +298,7 @@ export function AdminCaseDetailPage() {
 
       {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
 
-      {tab === 'billing' && can('case.update') && (
+      {tab === 'billing' && canEditCase && (
         <section className="admin-layout admin-layout--stack">
           <CaseBillingForm caseItem={caseRow} onSave={saveBilling} />
           <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} />

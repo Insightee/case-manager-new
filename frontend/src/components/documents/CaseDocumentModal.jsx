@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CASE_DOCUMENT_CATEGORIES } from '../../lib/caseDocumentCategories.js'
 import { GOOGLE_LINK_WARNING, validateGoogleLink } from '../../lib/googleLinkValidation.js'
 import './case-documents.css'
+
+const MAX_BYTES = 5 * 1024 * 1024
 
 const EMPTY = {
   category: 'OTHER',
@@ -18,6 +20,18 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
   const [file, setFile] = useState(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const previewUrl = useMemo(() => {
+    if (!file) return null
+    if (file.type.startsWith('image/')) return URL.createObjectURL(file)
+    return null
+  }, [file])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   useEffect(() => {
     if (!open) return
@@ -43,6 +57,20 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
+  }
+
+  function onFileChange(next) {
+    setError('')
+    if (!next) {
+      setFile(null)
+      return
+    }
+    if (next.size > MAX_BYTES) {
+      setError('File must be 5 MB or smaller.')
+      setFile(null)
+      return
+    }
+    setFile(next)
   }
 
   async function handleSubmit(e) {
@@ -114,7 +142,7 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
           {mode === 'edit' ? 'Edit document' : 'Add document'}
         </h2>
         <p style={{ fontSize: 13, color: '#6b7280', marginTop: 0 }}>
-          Uploaded files and Google links. For rich-text monthly reports, use Monthly Reports.
+          PDF or Word up to 5 MB. For rich-text monthly reports, use Monthly Reports.
         </p>
 
         {mode === 'create' ? (
@@ -167,14 +195,28 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
         </label>
 
         {mode === 'create' && sourceTab === 'UPLOAD' ? (
-          <label>
-            File (PDF or Word)
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
-          </label>
+          <>
+            <label>
+              File (PDF or Word, max 5 MB)
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={(e) => onFileChange(e.target.files?.[0] || null)}
+              />
+            </label>
+            {file ? (
+              <div className="case-docs-modal__preview">
+                <p style={{ fontSize: 13, margin: '0 0 8px' }}>
+                  <strong>{file.name}</strong> ({(file.size / 1024).toFixed(0)} KB)
+                </p>
+                {previewUrl ? (
+                  <img src={previewUrl} alt="" style={{ maxWidth: '100%', maxHeight: 160, borderRadius: 8 }} />
+                ) : (
+                  <p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>Preview available after upload for PDF/Word.</p>
+                )}
+              </div>
+            ) : null}
+          </>
         ) : null}
 
         {mode === 'create' && sourceTab === 'EXTERNAL_LINK' ? (
@@ -200,14 +242,14 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
           </p>
         ) : null}
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button type="submit" className="ic-btn ic-btn--primary" disabled={saving}>
-            {saving ? 'Saving…' : mode === 'edit' ? 'Save' : 'Add document'}
-          </button>
+        <footer className="case-docs-modal__footer">
           <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose} disabled={saving}>
             Cancel
           </button>
-        </div>
+          <button type="submit" className="ic-btn ic-btn--primary" disabled={saving}>
+            {saving ? 'Uploading…' : mode === 'edit' ? 'Save' : 'Upload'}
+          </button>
+        </footer>
       </form>
     </div>
   )

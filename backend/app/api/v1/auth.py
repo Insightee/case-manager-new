@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.security import decode_refresh_token, is_refresh_token_valid, revoke_refresh_token
 from app.models.role import Role
 from app.models.user import InviteToken, User
-from app.core.module_access import get_user_features, modules_for_api
+from app.core.module_access import get_user_features, is_view_only_user, modules_for_api
 from app.models.user import EmploymentStatus
 from app.schemas.auth import AcceptInviteRequest, LoginRequest, MeUpdate, ModuleSummary, RefreshRequest, TokenResponse, UserMeResponse
 from app.services import address_service, auth_service, avatar_service
@@ -60,6 +60,37 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=access, refresh_token=new_refresh)
 
 
+@router.get("/invite/{token}/preview")
+def invite_preview(token: str, db: Session = Depends(get_db)):
+    invite = db.scalars(select(InviteToken).where(InviteToken.token == token)).first()
+    if not invite or invite.used_at:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Invite expired")
+    meta = invite.invite_metadata or {}
+    child_name = meta.get("child_name")
+    if not child_name and invite.linked_child_id:
+        from app.models.child import Child
+
+        child = db.get(Child, invite.linked_child_id)
+        if child:
+            child_name = child.full_name
+    role_label = {
+        "PARENT": "Client / family portal",
+        "THERAPIST": "Therapist portal",
+        "HR": "HR portal",
+        "ADMIN": "Admin portal",
+    }.get(invite.role_name, "InsightCase portal")
+    return {
+        "email": invite.email,
+        "role": invite.role_name,
+        "roleLabel": role_label,
+        "fullName": meta.get("full_name"),
+        "childName": child_name,
+        "clientName": meta.get("client_name"),
+    }
+
+
 @router.post("/accept-invite", response_model=TokenResponse)
 def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = Depends(get_db)):
     invite = db.scalars(select(InviteToken).where(InviteToken.token == payload.token)).first()
@@ -70,6 +101,7 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
     existing = db.scalars(select(User).where(User.email == invite.email)).first()
     if existing:
         raise HTTPException(status_code=400, detail="User already exists")
+    invite_meta = invite.invite_metadata or {}
     user = auth_service.create_user(
         db,
         email=invite.email,
@@ -77,6 +109,17 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
         full_name=payload.full_name,
         role_names=[invite.role_name],
         module_assignments=invite.module_assignments or [],
+        is_view_only=bool(invite_meta.get("view_only", False)),
+    )
+    from app.core.rbac_access import sync_user_access_fields
+
+    sync_user_access_fields(
+        user,
+        role_names=[invite.role_name],
+        module_assignments=invite.module_assignments or [],
+        module_access_grants=invite_meta.get("module_access_grants"),
+        feature_overrides=invite_meta.get("feature_overrides"),
+        view_only=bool(invite_meta.get("view_only", False)),
     )
     if invite.role_name == "PARENT":
         from app.models.child import Child
@@ -137,6 +180,7 @@ def _user_me_response(user: User) -> UserMeResponse:
         home_address=user_home_address_read(user),
         employment_status=(user.employment_status.value if user.employment_status else "ACTIVE"),
         module_assignments=user.module_assignments or [],
+        is_view_only=is_view_only_user(user),
         features=get_user_features(user),
         modules=module_summaries,
     )

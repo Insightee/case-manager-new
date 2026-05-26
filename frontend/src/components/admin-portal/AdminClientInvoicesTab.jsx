@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch, getTokens } from '../../lib/apiClient.js'
-import { AdminEmptyState, AdminSearchInput, formatCurrency } from './ui/index.js'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import {
+  buildClientInvoiceQuery,
+  CLIENT_INVOICE_STATUSES,
+  INVOICE_TYPES,
+  parseClientInvoiceFilters,
+  writeClientInvoiceFiltersToParams,
+} from '../../lib/invoiceFilters.js'
+import { AdminEmptyState, AdminSearchInput, ServiceFilterSelect, formatCurrency } from './ui/index.js'
 import './admin-client-invoices.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -39,17 +48,6 @@ async function downloadExport(path, filename) {
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
-}
-
-function buildQuery(filters) {
-  const p = new URLSearchParams()
-  if (filters.month) p.set('month', filters.month)
-  if (filters.caseId) p.set('case_id', filters.caseId)
-  if (filters.status) p.set('status', filters.status)
-  if (filters.module) p.set('module', filters.module)
-  if (filters.search) p.set('search', filters.search)
-  const qs = p.toString()
-  return qs ? `?${qs}` : ''
 }
 
 // ── Raise invoice wizard ───────────────────────────────────────────────────────
@@ -270,7 +268,7 @@ function RaiseInvoiceWizard({ onClose, onDone }) {
 }
 
 // ── View / payment drawers ───────────────────────────────────────────────────
-function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh }) {
+function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling }) {
   const [detail, setDetail] = useState(null)
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
@@ -433,6 +431,7 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh }) {
                 </div>
                 <p style={{ fontSize: '0.85rem', marginTop: 12 }}>Parent: {detail.parentName} ({detail.parentEmail})</p>
                 {detail.notes ? <p style={{ fontSize: '0.85rem', color: '#64748b' }}>{detail.notes}</p> : null}
+                {canWriteBilling ? (
                 <div className="admin-btn-group" style={{ marginTop: 16, flexWrap: 'wrap' }}>
                   {detail.status === 'DRAFT' ? (
                     <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={acting} onClick={markGenerated}>
@@ -448,6 +447,9 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh }) {
                     </button>
                   ) : null}
                 </div>
+                ) : (
+                  <p className="admin-muted" style={{ marginTop: 12, fontSize: '0.8rem' }}>View-only billing access.</p>
+                )}
               </div>
             ) : null}
 
@@ -499,7 +501,7 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh }) {
                           View proof
                         </a>
                       ) : null}
-                      {p.paymentStatus === 'pending_review' ? (
+                      {canWriteBilling && p.paymentStatus === 'pending_review' ? (
                         rejectPayId === p.id ? (
                           <div style={{ marginTop: 8 }}>
                             <textarea
@@ -558,7 +560,7 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh }) {
                     <div key={d.id} className="client-inv__dispute-card">
                       <strong>{d.reasonCode}</strong> — {d.status}
                       <p style={{ margin: '6px 0', fontSize: '0.85rem' }}>{d.message}</p>
-                      {d.status === 'OPEN' || d.status === 'UNDER_REVIEW' ? (
+                      {canWriteBilling && (d.status === 'OPEN' || d.status === 'UNDER_REVIEW') ? (
                         resolveId === d.id ? (
                           <div style={{ marginTop: 8 }}>
                             <textarea className="client-inv__filter-input" style={{ width: '100%', minHeight: 50 }} placeholder="Resolution note" value={resolveNote} onChange={(e) => setResolveNote(e.target.value)} />
@@ -588,7 +590,7 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh }) {
           </>
         )}
 
-        {paymentOpen && detail ? (
+        {canWriteBilling && paymentOpen && detail ? (
           <form onSubmit={recordPayment} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
             <h4 style={{ margin: '0 0 10px' }}>Record payment</h4>
             <input type="number" className="client-inv__filter-input" style={{ width: '100%', marginBottom: 8 }} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} required />
@@ -615,15 +617,24 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh }) {
 
 // ── Main tab ─────────────────────────────────────────────────────────────────
 export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInvoiceId = null }) {
+  const { canWriteBilling } = useModuleWrite()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [summary, setSummary] = useState(null)
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filters, setFilters] = useState({ month: '', status: '', module: '', search: '' })
+  const [filters, setFilters] = useState(() => parseClientInvoiceFilters(searchParams))
+  const [filterOptions, setFilterOptions] = useState(null)
   const [viewId, setViewId] = useState(openInvoiceId ? Number(openInvoiceId) : null)
   const [showWizard, setShowWizard] = useState(false)
 
+  useEffect(() => {
+    apiFetch('/api/v1/admin/client-billing/invoices/filter-options')
+      .then(setFilterOptions)
+      .catch(() => setFilterOptions(null))
+  }, [])
+
   const load = useCallback(() => {
-    const qs = buildQuery(filters)
+    const qs = buildClientInvoiceQuery(filters)
     setLoading(true)
     Promise.all([
       apiFetch('/api/v1/admin/client-billing/summary'),
@@ -645,8 +656,27 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
   }, [load])
 
   useEffect(() => {
+    const next = writeClientInvoiceFiltersToParams(searchParams, filters)
+    if (searchParams.toString() !== next.toString()) {
+      setSearchParams(next, { replace: true })
+    }
+  }, [filters])
+
+  useEffect(() => {
+    setFilters((prev) => {
+      const parsed = parseClientInvoiceFilters(searchParams)
+      const same = Object.keys(parsed).every((k) => prev[k] === parsed[k])
+      return same ? prev : parsed
+    })
+  }, [searchParams])
+
+  useEffect(() => {
     if (openInvoiceId) setViewId(Number(openInvoiceId))
   }, [openInvoiceId])
+
+  function patchFilters(patch) {
+    setFilters((f) => ({ ...f, ...patch }))
+  }
 
   const pendingClaimsCount = useMemo(() => {
     let n = 0
@@ -658,10 +688,9 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
     return n
   }, [invoices])
 
-  const months = useMemo(() => {
-    const set = new Set(invoices.map((i) => i.billingMonth).filter(Boolean))
-    return [...set].sort().reverse()
-  }, [invoices])
+  const monthOptions = filterOptions?.billingMonths?.length
+    ? filterOptions.billingMonths
+    : [...new Set(invoices.map((i) => i.billingMonth).filter(Boolean))].sort().reverse()
 
   return (
     <div className="client-inv">
@@ -696,31 +725,107 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
         </div>
       </div>
 
-      <div className="client-inv__filters">
-        <select className="client-inv__filter-input" value={filters.month} onChange={(e) => setFilters((f) => ({ ...f, month: e.target.value }))}>
-          <option value="">All months</option>
-          {months.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-        <select className="client-inv__filter-input" value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-          <option value="">All statuses</option>
-          {['DRAFT', 'GENERATED', 'SENT', 'PARTIALLY_PAID', 'PAID', 'DISPUTED', 'CANCELLED'].map((s) => (
-            <option key={s} value={s}>{s.replaceAll('_', ' ')}</option>
-          ))}
-        </select>
-        <AdminSearchInput value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} placeholder="Search invoice, child, parent…" />
+      <div className="client-inv__filters client-inv__filters--grid">
+        <label className="client-inv__filter-field">
+          <span className="client-inv__filter-label">Year</span>
+          <select
+            className="client-inv__filter-input"
+            value={filters.year}
+            onChange={(e) => patchFilters({ year: e.target.value, month: '' })}
+          >
+            <option value="">All years</option>
+            {(filterOptions?.years || [new Date().getFullYear()]).map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </label>
+        <label className="client-inv__filter-field">
+          <span className="client-inv__filter-label">Month</span>
+          <select
+            className="client-inv__filter-input"
+            value={filters.month}
+            onChange={(e) => patchFilters({ month: e.target.value, year: '' })}
+          >
+            <option value="">All months</option>
+            {monthOptions.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </label>
+        <label className="client-inv__filter-field">
+          <span className="client-inv__filter-label">From</span>
+          <input
+            type="date"
+            className="client-inv__filter-input"
+            value={filters.dateFrom}
+            onChange={(e) => patchFilters({ dateFrom: e.target.value })}
+          />
+        </label>
+        <label className="client-inv__filter-field">
+          <span className="client-inv__filter-label">To</span>
+          <input
+            type="date"
+            className="client-inv__filter-input"
+            value={filters.dateTo}
+            onChange={(e) => patchFilters({ dateTo: e.target.value })}
+          />
+        </label>
+        <label className="client-inv__filter-field">
+          <span className="client-inv__filter-label">Service</span>
+          <ServiceFilterSelect
+            className="client-inv__filter-input"
+            value={filters.module}
+            onChange={(v) => patchFilters({ module: v })}
+          />
+        </label>
+        <label className="client-inv__filter-field">
+          <span className="client-inv__filter-label">Invoice type</span>
+          <select
+            className="client-inv__filter-input"
+            value={filters.invoiceType}
+            onChange={(e) => patchFilters({ invoiceType: e.target.value })}
+          >
+            {INVOICE_TYPES.map((o) => (
+              <option key={o.value || 'all'} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="client-inv__filter-field">
+          <span className="client-inv__filter-label">Status</span>
+          <select
+            className="client-inv__filter-input"
+            value={filters.status}
+            onChange={(e) => patchFilters({ status: e.target.value })}
+          >
+            <option value="">All statuses</option>
+            {CLIENT_INVOICE_STATUSES.map((s) => (
+              <option key={s} value={s}>{s.replaceAll('_', ' ')}</option>
+            ))}
+          </select>
+        </label>
+        <div className="client-inv__filter-field client-inv__filter-field--search">
+          <AdminSearchInput
+            value={filters.search}
+            onChange={(e) => patchFilters({ search: e.target.value })}
+            placeholder="Search invoice, child, parent…"
+          />
+        </div>
       </div>
 
       <div className="client-inv__toolbar">
-        <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowWizard(true)}>
+        <button
+          type="button"
+          className="admin-btn admin-btn--primary admin-btn--sm"
+          disabled={!canWriteBilling}
+          onClick={() => setShowWizard(true)}
+        >
           + Raise invoice
         </button>
         <div className="admin-btn-group">
-          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadExport(`/api/v1/admin/client-billing/invoices/export/xlsx${buildQuery(filters)}`, 'client_invoices.xlsx')}>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadExport(`/api/v1/admin/client-billing/invoices/export/xlsx${buildClientInvoiceQuery(filters)}`, 'client_invoices.xlsx')}>
             Export Excel
           </button>
-          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadExport(`/api/v1/admin/client-billing/invoices/export/pdf${buildQuery(filters)}`, 'client_invoices.pdf')}>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadExport(`/api/v1/admin/client-billing/invoices/export/pdf${buildClientInvoiceQuery(filters)}`, 'client_invoices.pdf')}>
             Export PDF
           </button>
         </div>
@@ -775,7 +880,7 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
                       <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setViewId(inv.id)}>
                         View
                       </button>
-                      {inv.status === 'DRAFT' || inv.status === 'GENERATED' ? (
+                      {canWriteBilling && (inv.status === 'DRAFT' || inv.status === 'GENERATED') ? (
                         <button
                           type="button"
                           className="admin-btn admin-btn--primary admin-btn--sm"
@@ -796,7 +901,14 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
         </div>
       )}
 
-      {viewId ? <InvoiceDetailDrawer invoiceId={viewId} onClose={() => setViewId(null)} onRefresh={load} /> : null}
+      {viewId ? (
+        <InvoiceDetailDrawer
+          invoiceId={viewId}
+          onClose={() => setViewId(null)}
+          onRefresh={load}
+          canWriteBilling={canWriteBilling}
+        />
+      ) : null}
       {showWizard ? <RaiseInvoiceWizard onClose={() => setShowWizard(false)} onDone={load} /> : null}
     </div>
   )

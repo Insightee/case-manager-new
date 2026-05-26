@@ -168,7 +168,7 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status">
             <option value="">All statuses</option>
             <option value="DRAFT">Draft</option>
-            <option value="SUPERVISOR_REVIEW">Supervisor review</option>
+            <option value="CM_REVIEW">Case manager review</option>
             <option value="CLIENT_REVIEW">With family</option>
             <option value="APPROVED">Approved</option>
           </select>

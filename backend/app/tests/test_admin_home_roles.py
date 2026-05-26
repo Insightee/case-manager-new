@@ -23,15 +23,15 @@ HIDDEN_WORKBENCH_KEYS = frozenset(
 FORBIDDEN_HOME_WIDGETS_BY_ROLE: dict[str, frozenset[str]] = {
     "FINANCE": frozenset({"logs", "reports", "reschedules"}),
     "HR": frozenset({"logs", "reports", "billing", "reschedules"}),
-    "SUPERVISOR": frozenset({"billing"}),
 }
 EXPECTED_WIDGETS_BY_ROLE: dict[str, frozenset[str]] = {
     "SUPER_ADMIN": frozenset(
         {"logs", "reports", "billing", "tickets", "reschedules", "observations", "status_requests", "client_claims"}
     ),
-    "ADMIN": frozenset({"logs", "reports", "tickets", "reschedules", "observations", "status_requests"}),
+    "MODULE_ADMIN": frozenset(
+        {"logs", "reports", "billing", "tickets", "reschedules", "observations", "status_requests", "client_claims"}
+    ),
     "CASE_MANAGER": frozenset({"logs", "reports", "tickets", "reschedules", "observations", "status_requests"}),
-    "SUPERVISOR": frozenset({"logs", "reports", "reschedules", "observations"}),
     "FINANCE": frozenset({"billing", "client_claims"}),
     "HR": frozenset({"tickets"}),
 }
@@ -78,9 +78,11 @@ def _assert_no_hidden_workbench_payload(home: dict) -> None:
     "email,expected_role,landing_route",
     [
         ("superadmin@demo.com", "SUPER_ADMIN", "/admin"),
-        ("admin@demo.com", "ADMIN", "/admin"),
-        ("casemanager@demo.com", "CASE_MANAGER", "/admin/workbench"),
-        ("supervisor@demo.com", "SUPERVISOR", "/admin/workbench"),
+        ("admin@demo.com", "MODULE_ADMIN", "/admin"),
+        ("moduleadmin@demo.com", "MODULE_ADMIN", "/admin"),
+        ("casemanager@demo.com", "CASE_MANAGER", "/admin/cm"),
+        ("supervisor@demo.com", "CASE_MANAGER", "/admin/cm"),
+        ("viewer@demo.com", "CASE_MANAGER", "/admin/cm"),
         ("finance@demo.com", "FINANCE", "/admin/invoices"),
         ("hr@demo.com", "HR", "/admin"),
     ],
@@ -93,21 +95,29 @@ def test_admin_home_role_label_and_landing(email, expected_role, landing_route):
 
 
 @pytest.mark.parametrize(
-    "email,expected_role",
+    "email,expected_role,expected_widgets",
     [
-        ("superadmin@demo.com", "SUPER_ADMIN"),
-        ("admin@demo.com", "ADMIN"),
-        ("casemanager@demo.com", "CASE_MANAGER"),
-        ("supervisor@demo.com", "SUPERVISOR"),
-        ("finance@demo.com", "FINANCE"),
-        ("hr@demo.com", "HR"),
+        ("superadmin@demo.com", "SUPER_ADMIN", "SUPER_ADMIN"),
+        ("admin@demo.com", "MODULE_ADMIN", "MODULE_ADMIN_HOME_ONLY"),
+        ("moduleadmin@demo.com", "MODULE_ADMIN", "MODULE_ADMIN"),
+        ("casemanager@demo.com", "CASE_MANAGER", "CASE_MANAGER"),
+        ("supervisor@demo.com", "CASE_MANAGER", "CASE_MANAGER"),
+        ("viewer@demo.com", "CASE_MANAGER", "CASE_MANAGER"),
+        ("finance@demo.com", "FINANCE", "FINANCE"),
+        ("hr@demo.com", "HR", "HR"),
     ],
 )
-def test_admin_home_widget_ids_match_role(email, expected_role):
+def test_admin_home_widget_ids_match_role(email, expected_role, expected_widgets):
     home = _home(email)
     assert home["role"] == expected_role
     widget_ids = {w["id"] for w in home["widgets"]}
-    expected = EXPECTED_WIDGETS_BY_ROLE[expected_role]
+    key = expected_widgets
+    if key == "MODULE_ADMIN_HOME_ONLY":
+        expected = frozenset(
+            {"logs", "reports", "tickets", "reschedules", "observations", "status_requests"}
+        )
+    else:
+        expected = EXPECTED_WIDGETS_BY_ROLE[key]
     assert expected <= widget_ids, f"missing widgets {expected - widget_ids}"
     forbidden = FORBIDDEN_HOME_WIDGETS_BY_ROLE.get(expected_role, frozenset())
     assert not widget_ids.intersection(forbidden)
@@ -217,21 +227,29 @@ def test_school_coordinator_gets_403_on_admin_home():
 
 def test_primary_role_priority_order_documented():
     assert PRIMARY_ROLE_PRIORITY[0] == RoleName.SUPER_ADMIN
+    assert RoleName.MODULE_ADMIN in PRIMARY_ROLE_PRIORITY
+    assert PRIMARY_ROLE_PRIORITY.index(RoleName.MODULE_ADMIN) < PRIMARY_ROLE_PRIORITY.index(RoleName.ADMIN)
     assert RoleName.SUPERVISOR in PRIMARY_ROLE_PRIORITY
     assert PRIMARY_ROLE_PRIORITY.index(RoleName.SUPERVISOR) < PRIMARY_ROLE_PRIORITY.index(
         RoleName.CASE_MANAGER
     )
 
 
-def test_resolve_primary_role_supervisor_not_case_manager():
+def test_migrated_supervisor_demo_is_case_manager():
     db = SessionLocal()
     try:
         user = db.scalars(
             select(User).where(User.email == "supervisor@demo.com").options(selectinload(User.roles))
         ).first()
-        assert resolve_primary_role(user) == "SUPERVISOR"
+        assert resolve_primary_role(user) == "CASE_MANAGER"
     finally:
         db.close()
+
+
+def test_admin_home_includes_dashboard_variant():
+    home = _home("finance@demo.com")
+    assert home.get("dashboard_variant") == "finance"
+    assert _home("moduleadmin@demo.com").get("dashboard_variant") == "module_admin"
 
 
 # TODO(product): If SCHOOL_COORDINATOR is enabled on /admin/home, scope widgets to

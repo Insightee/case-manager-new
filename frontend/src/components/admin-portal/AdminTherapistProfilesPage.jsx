@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
 import { TherapistReviewsSection } from '../therapist/TherapistReviewsSection.jsx'
 import { TherapistServiceProfileForm } from './TherapistServiceProfileForm.jsx'
 import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminStatCard, AdminToolbar, StatusBadge } from './ui/index.js'
@@ -15,6 +16,8 @@ const EMPTY_FORM = {
   academic_qualifications: '',
   professional_certificates: '',
   services_offered: [],
+  supervisor_user_id: '',
+  mentor_user_id: '',
 }
 
 export function AdminTherapistProfilesPage() {
@@ -23,7 +26,8 @@ export function AdminTherapistProfilesPage() {
   const urlUserId = searchParams.get('user_id')
 
   const [profiles, setProfiles] = useState([])
-  const [therapists, setTherapists] = useState([])
+  const { items: therapistDirectory } = useStaffDirectory({ roles: 'THERAPIST' })
+  const { items: mentorDirectory } = useStaffDirectory({ roles: 'CASE_MANAGER,MODULE_ADMIN,SUPER_ADMIN' })
   const [categories, setCategories] = useState([])
   const [summary, setSummary] = useState(null)
   const [statusFilter, setStatusFilter] = useState(urlStatus)
@@ -33,6 +37,8 @@ export function AdminTherapistProfilesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [note, setNote] = useState('')
+  const [editSupervisor, setEditSupervisor] = useState({ supervisorId: '', mentorId: '' })
+  const [editingSupervisor, setEditingSupervisor] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -40,14 +46,12 @@ export function AdminTherapistProfilesPage() {
     setLoading(true)
     try {
       const q = statusFilter !== 'ALL' ? `?status=${statusFilter}` : ''
-      const [rows, users, cats, sum] = await Promise.all([
+      const [rows, cats, sum] = await Promise.all([
         apiFetch(`/api/v1/admin/therapist-profiles${q}`),
-        apiFetch('/api/v1/admin/users'),
         apiFetch('/api/v1/therapist/service-categories'),
         apiFetch('/api/v1/admin/therapist-profiles/summary').catch(() => null),
       ])
       setProfiles(rows)
-      setTherapists(users.filter((u) => u.roles?.includes('THERAPIST')))
       setCategories(cats)
       setSummary(sum)
     } catch {
@@ -91,10 +95,7 @@ export function AdminTherapistProfilesPage() {
     )
   }, [profiles, search])
 
-  const therapistsWithoutProfile = useMemo(() => {
-    const ids = new Set(profiles.map((p) => p.user_id))
-    return therapists.filter((t) => !ids.has(t.id))
-  }, [therapists, profiles])
+  const profileUserIds = useMemo(() => new Set(profiles.map((p) => p.user_id)), [profiles])
 
   async function act(path, profileId) {
     setError('')
@@ -131,6 +132,8 @@ export function AdminTherapistProfilesPage() {
           professional_certificates: certs,
           services_offered: form.services_offered,
           status: 'APPROVED',
+          supervisor_user_id: form.supervisor_user_id ? Number(form.supervisor_user_id) : null,
+          mentor_user_id: form.mentor_user_id ? Number(form.mentor_user_id) : null,
         }),
       })
       setForm(EMPTY_FORM)
@@ -151,6 +154,32 @@ export function AdminTherapistProfilesPage() {
     } catch (err) {
       setError(err.message || 'Delete failed')
     }
+  }
+
+  async function saveSupervisorMentor(profileId) {
+    setError('')
+    try {
+      await apiFetch(`/api/v1/admin/therapist-profiles/${profileId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          supervisor_user_id: editSupervisor.supervisorId ? Number(editSupervisor.supervisorId) : null,
+          mentor_user_id: editSupervisor.mentorId ? Number(editSupervisor.mentorId) : null,
+        }),
+      })
+      setEditingSupervisor(false)
+      setSuccess('Supervisor/mentor updated.')
+      await load()
+    } catch (err) {
+      setError(err.message || 'Could not update supervisor/mentor')
+    }
+  }
+
+  function openSupervisorEdit(p) {
+    setEditSupervisor({
+      supervisorId: p.supervisor_user_id ? String(p.supervisor_user_id) : '',
+      mentorId: p.mentor_user_id ? String(p.mentor_user_id) : '',
+    })
+    setEditingSupervisor(true)
   }
 
   return (
@@ -180,7 +209,7 @@ export function AdminTherapistProfilesPage() {
       ) : null}
 
       {showCreate ? (
-        <form className="admin-form-grid" style={{ maxWidth: 520, marginBottom: 20 }} onSubmit={handleCreate}>
+        <form className="admin-form-grid" style={{ maxWidth: 560, marginBottom: 20 }} onSubmit={handleCreate}>
           <p className="admin-drawer__subtitle" style={{ gridColumn: '1 / -1' }}>
             Create profile for therapist
           </p>
@@ -189,8 +218,37 @@ export function AdminTherapistProfilesPage() {
             setForm={setForm}
             categories={categories}
             showTherapistSelect
-            therapists={therapistsWithoutProfile}
+            therapists={therapistDirectory}
+            profileUserIds={profileUserIds}
           />
+          <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label>
+              Case manager — supervision (optional)
+              <select
+                className="admin-input"
+                value={form.supervisor_user_id}
+                onChange={(e) => setForm((f) => ({ ...f, supervisor_user_id: e.target.value }))}
+              >
+                <option value="">— None —</option>
+                {mentorDirectory.map((u) => (
+                  <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Mentor (optional)
+              <select
+                className="admin-input"
+                value={form.mentor_user_id}
+                onChange={(e) => setForm((f) => ({ ...f, mentor_user_id: e.target.value }))}
+              >
+                <option value="">— None —</option>
+                {mentorDirectory.map((u) => (
+                  <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" style={{ gridColumn: '1 / -1' }}>
             Create & approve
           </button>
@@ -208,9 +266,7 @@ export function AdminTherapistProfilesPage() {
               onChange={(e) => setStatusFilterAndUrl(e.target.value)}
             >
               {STATUS_FILTERS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+                <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </AdminToolbar>
@@ -226,6 +282,7 @@ export function AdminTherapistProfilesPage() {
                   <tr>
                     <th>Therapist</th>
                     <th>Services</th>
+                    <th>CM / mentor</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -239,10 +296,18 @@ export function AdminTherapistProfilesPage() {
                       </td>
                       <td>{(p.services_offered || []).length} selected</td>
                       <td>
-                        <StatusBadge status={p.status} />
+                        {p.supervisor_name ? (
+                          <span>{p.supervisor_name}</span>
+                        ) : (
+                          <span className="admin-muted">—</span>
+                        )}
+                        {p.mentor_name ? (
+                          <span className="admin-table__meta">Mentor: {p.mentor_name}</span>
+                        ) : null}
                       </td>
+                      <td><StatusBadge status={p.status} /></td>
                       <td>
-                        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setSelected(p)}>
+                        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => { setSelected(p); setEditingSupervisor(false) }}>
                           Review
                         </button>
                       </td>
@@ -273,8 +338,74 @@ export function AdminTherapistProfilesPage() {
             </ul>
           ) : null}
           <p style={{ fontSize: '0.8rem' }}>
-            <strong>Services:</strong> {(selected.services_offered || []).join(', ')}
+            <strong>Services:</strong> {(selected.services_offered || []).join(', ') || '—'}
           </p>
+
+          {/* Supervisor / mentor assignment */}
+          <div className="profile-drawer-supervisor-row">
+            <div>
+              <p className="admin-muted" style={{ marginBottom: 4 }}>
+                <strong>Supervisor:</strong>{' '}
+                {selected.supervisor_name || <em>Not assigned</em>}
+              </p>
+              <p className="admin-muted" style={{ marginBottom: 4 }}>
+                <strong>Mentor:</strong>{' '}
+                {selected.mentor_name || <em>Not assigned</em>}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              onClick={() => {
+                if (editingSupervisor) {
+                  setEditingSupervisor(false)
+                } else {
+                  openSupervisorEdit(selected)
+                }
+              }}
+            >
+              {editingSupervisor ? 'Cancel' : 'Edit'}
+            </button>
+          </div>
+
+          {editingSupervisor ? (
+            <div className="profile-drawer-supervisor-edit">
+              <label>
+                Supervisor
+                <select
+                  className="admin-input"
+                  value={editSupervisor.supervisorId}
+                  onChange={(e) => setEditSupervisor((s) => ({ ...s, supervisorId: e.target.value }))}
+                >
+                  <option value="">— None —</option>
+                  {mentorDirectory.map((u) => (
+                    <option key={u.id} value={u.id}>{u.full_name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Mentor
+                <select
+                  className="admin-input"
+                  value={editSupervisor.mentorId}
+                  onChange={(e) => setEditSupervisor((s) => ({ ...s, mentorId: e.target.value }))}
+                >
+                  <option value="">— None —</option>
+                  {mentorDirectory.map((u) => (
+                    <option key={u.id} value={u.id}>{u.full_name}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="admin-btn admin-btn--primary admin-btn--sm"
+                onClick={() => saveSupervisorMentor(selected.id)}
+              >
+                Save
+              </button>
+            </div>
+          ) : null}
+
           <div style={{ marginTop: 16 }}>
             <TherapistReviewsSection
               apiPath={`/api/v1/admin/therapist-profiles/${selected.user_id}/reviews`}
@@ -304,7 +435,7 @@ export function AdminTherapistProfilesPage() {
             <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => handleDelete(selected.id)}>
               Delete
             </button>
-            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setSelected(null)}>
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => { setSelected(null); setEditingSupervisor(false) }}>
               Close
             </button>
           </div>

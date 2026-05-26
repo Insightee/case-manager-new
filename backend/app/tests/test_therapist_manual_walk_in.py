@@ -96,3 +96,46 @@ def test_manual_walk_in_rejects_duplicate_email():
     )
     assert dup.status_code == 400
     assert "email" in dup.json()["detail"].lower()
+
+
+def test_client_intake_deferred_invite_then_start_sends_email():
+    token = _login()
+    headers = _headers(token)
+    email = f"intake{int(datetime.now().timestamp())}@testinsighte.com"
+
+    r = client.post(
+        "/api/v1/therapist/client-intake",
+        headers=headers,
+        json={
+            "client_name": "Intake Parent",
+            "client_email": email,
+            "child_name": "Intake Child",
+            "product_module": "homecare",
+        },
+    )
+    assert r.status_code == 201, r.text
+    data = r.json()
+    assert data["invite_sent"] is False
+    case_id = data["case_id"]
+
+    today = today_ist()
+    r = client.post(
+        "/api/v1/sessions",
+        headers=headers,
+        json={
+            "case_id": case_id,
+            "therapist_user_id": 0,
+            "scheduled_date": today.isoformat(),
+            "start_time": "10:00:00",
+            "end_time": "11:00:00",
+            "mode": "HOME",
+            "status": "SCHEDULED",
+        },
+    )
+    assert r.status_code == 201, r.text
+    session_id = r.json()["id"]
+
+    r = client.post(f"/api/v1/sessions/{session_id}/start", headers=headers, json={})
+    assert r.status_code == 200, r.text
+    assert r.json().get("invite_sent") is True
+    assert r.json().get("invite_email") == email

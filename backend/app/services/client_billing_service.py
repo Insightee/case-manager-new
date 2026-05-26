@@ -548,23 +548,45 @@ def admin_list_invoices(
     db: Session,
     *,
     month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     case_id: Optional[int] = None,
     status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
 ) -> list[dict]:
+    from datetime import date as date_type, datetime, timedelta, timezone
+
     stmt = select(ClientInvoice).order_by(ClientInvoice.created_at.desc())
     if month:
         stmt = stmt.where(ClientInvoice.billing_month == month)
+    elif year:
+        stmt = stmt.where(ClientInvoice.billing_month.contains(str(year)))
     if case_id:
         stmt = stmt.where(ClientInvoice.case_id == case_id)
-    if status:
+    if invoice_type:
         try:
-            stmt = stmt.where(ClientInvoice.status == ClientInvoiceStatus(status))
+            stmt = stmt.where(ClientInvoice.invoice_type == ClientInvoiceType(invoice_type))
         except ValueError:
             pass
     if module:
         stmt = stmt.where(ClientInvoice.product_module == module)
+    if date_from:
+        start = datetime.combine(date_type.fromisoformat(date_from), datetime.min.time()).replace(tzinfo=timezone.utc)
+        stmt = stmt.where(ClientInvoice.created_at >= start)
+    if date_to:
+        end_day = date_type.fromisoformat(date_to) + timedelta(days=1)
+        end = datetime.combine(end_day, datetime.min.time()).replace(tzinfo=timezone.utc)
+        stmt = stmt.where(ClientInvoice.created_at < end)
+
+    filter_overdue = status and status.upper() == "OVERDUE"
+    if status and not filter_overdue:
+        try:
+            stmt = stmt.where(ClientInvoice.status == ClientInvoiceStatus(status))
+        except ValueError:
+            pass
 
     rows = db.scalars(stmt).all()
     case_ids = {r.case_id for r in rows}
@@ -581,6 +603,10 @@ def admin_list_invoices(
             ) or case
         parent = parents.get(inv.parent_user_id)
         item = _admin_invoice_summary_row(inv, case, parent)
+        if filter_overdue:
+            balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
+            if not _invoice_is_overdue(inv, balance):
+                continue
         if search:
             q = search.lower()
             hay = " ".join(
@@ -597,6 +623,26 @@ def admin_list_invoices(
                 continue
         result.append(item)
     return result
+
+
+def admin_invoice_filter_options(db: Session) -> dict:
+    months = [
+        m
+        for (m,) in db.execute(
+            select(ClientInvoice.billing_month)
+            .distinct()
+            .order_by(ClientInvoice.billing_month.desc())
+        ).all()
+        if m
+    ]
+    years = sorted({int(m.split()[-1]) for m in months if m and m.split()[-1].isdigit()}, reverse=True)
+    return {
+        "billingMonths": months,
+        "years": years,
+        "statuses": [s.value for s in ClientInvoiceStatus] + ["OVERDUE"],
+        "invoiceTypes": [t.value for t in ClientInvoiceType],
+        "services": ["homecare", "shadow_support"],
+    }
 
 
 def admin_get_invoice_detail(db: Session, invoice_id: int) -> dict:

@@ -19,42 +19,34 @@ class ProductModule:
     features: tuple[ModuleFeature, ...]
 
 
+_CLINICAL_FEATURES: tuple[ModuleFeature, ...] = (
+    ModuleFeature("cases", "Cases & assignments", ("case.read.all", "case.read.team", "case.read.scoped", "case.update", "case.assign")),
+    ModuleFeature("session_logs", "Session logs", ("session.read",)),
+    ModuleFeature(
+        "reports",
+        "Reports & case documents",
+        ("monthly_report.approve", "case_document.create", "case_document.review"),
+    ),
+    ModuleFeature("iep", "IEP documents", ("attachment.manage", "iep.read")),
+    ModuleFeature("cm_meetings", "CM meetings & case review calls", ("case.read.team", "case.read.scoped")),
+    ModuleFeature("tickets", "Support tickets", ("ticket.manage",)),
+    ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive",)),
+)
+
 PRODUCT_MODULES: tuple[ProductModule, ...] = (
     ProductModule(
         id="homecare",
         label="Homecare",
         description="In-home therapy programmes and guardian-facing reports.",
         case_product_modules=("homecare",),
-        features=(
-            ModuleFeature("cases", "Cases & assignments", ("case.read.all", "case.read.team", "case.read.scoped", "case.update", "case.assign")),
-            ModuleFeature("session_logs", "Session logs", ("session.read",)),
-            ModuleFeature(
-                "reports",
-                "Reports & case documents",
-                ("monthly_report.approve", "case_document.create", "case_document.review"),
-            ),
-            ModuleFeature("iep", "IEP documents", ("attachment.manage", "iep.read")),
-            ModuleFeature("tickets", "Support tickets", ("ticket.manage",)),
-            ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive",)),
-        ),
+        features=_CLINICAL_FEATURES,
     ),
     ProductModule(
         id="shadow_support",
         label="Shadow Support",
         description="School and community shadow support cases.",
         case_product_modules=("shadow_support",),
-        features=(
-            ModuleFeature("cases", "Cases & assignments", ("case.read.all", "case.read.team", "case.read.scoped", "case.update", "case.assign")),
-            ModuleFeature("session_logs", "Session logs", ("session.read",)),
-            ModuleFeature(
-                "reports",
-                "Reports & case documents",
-                ("monthly_report.approve", "case_document.create", "case_document.review"),
-            ),
-            ModuleFeature("iep", "IEP documents", ("attachment.manage", "iep.read")),
-            ModuleFeature("tickets", "Support tickets", ("ticket.manage",)),
-            ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive",)),
-        ),
+        features=_CLINICAL_FEATURES,
     ),
     ProductModule(
         id="billing",
@@ -76,16 +68,26 @@ ALL_FEATURE_IDS: tuple[str, ...] = tuple(
 
 # Roles that must be scoped to at least one product module (unless super admin).
 MODULE_SCOPED_ROLES: frozenset[str] = frozenset(
-    {"ADMIN", "VIEWER", "CASE_MANAGER", "SUPERVISOR", "FINANCE", "HR", "SCHOOL_COORDINATOR"}
+    {
+        "ADMIN",
+        "MODULE_ADMIN",
+        "VIEWER",
+        "CASE_MANAGER",
+        "SUPERVISOR",
+        "FINANCE",
+        "HR",
+        "SCHOOL_COORDINATOR",
+    }
 )
 
 ROLE_DEFAULT_MODULES: dict[str, list[str]] = {
-    "ADMIN": ["homecare"],
+    "MODULE_ADMIN": ["homecare", "shadow_support", "billing"],
+    "ADMIN": ["homecare", "shadow_support"],
     "VIEWER": ["homecare", "shadow_support"],
     "CASE_MANAGER": ["homecare", "shadow_support"],
     "SUPERVISOR": ["homecare", "shadow_support"],
     "FINANCE": ["billing"],
-    "HR": ["homecare"],
+    "HR": ["homecare", "shadow_support"],
     "SCHOOL_COORDINATOR": ["shadow_support"],
 }
 

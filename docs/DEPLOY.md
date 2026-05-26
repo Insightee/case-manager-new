@@ -12,7 +12,9 @@ This app is a **split deployment**: the React UI on Vercel and the FastAPI API o
 | CORS | `CORS_ORIGINS` on API | Include your Vercel preview URL(s), e.g. `https://your-app.vercel.app` |
 | Database | Postgres recommended | SQLite is fine for local demo only |
 | Secrets | `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY` | Change from dev defaults in any shared environment |
-| Demo data | `python3 -m app.seed.demo_seed` | Run once after migrations on the API host |
+| Demo data | `SEED_DEMO_DATA=true` only on staging | **Not** run on production by default |
+| Migrations | `python scripts/migrate_production.py` | Single Alembic head required (`alembic heads`) |
+| Object storage | `STORAGE_PROVIDER=r2` + R2 env vars | Required when `APP_ENV=production` |
 
 ## 1. Deploy the API (required for Vercel UI)
 
@@ -31,7 +33,7 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
      sh scripts/start-production.sh
      ```
 
-     That script runs `alembic upgrade head`, `python -m app.seed.demo_seed`, then `uvicorn` on `$PORT`.
+     That script runs `python scripts/migrate_production.py`, optionally demo seed when `SEED_DEMO_DATA=true`, then `uvicorn` on `$PORT`.
 
 4. **Variables** on the API service (reference Postgres plugin for `DATABASE_URL`):
 
@@ -41,10 +43,14 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
    | `JWT_SECRET_KEY` | long random string |
    | `JWT_REFRESH_SECRET_KEY` | different long random string |
    | `APP_ENV` | `production` |
-   | `CORS_ORIGINS` | `https://frontend-omega-eight-92.vercel.app,http://localhost:5173` (add every Vercel preview URL you use) |
+   | `CORS_ORIGINS` | `https://frontend-omega-eight-92.vercel.app` (add every Vercel preview URL you use) |
    | `FRONTEND_URL` | `https://frontend-omega-eight-92.vercel.app` |
+   | `STORAGE_PROVIDER` | `r2` |
+   | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | Cloudflare R2 credentials |
+   | `REDIS_URL` | `${{Redis.REDIS_URL}}` or Upstash URL (recommended for refresh tokens) |
+   | `SEED_DEMO_DATA` | omit or `false` in production; `true` only for demo/staging |
 
-   Redis is optional; refresh tokens fall back to in-memory if `REDIS_URL` is unset.
+   Redis is strongly recommended in production; without it, refresh tokens are in-memory (single replica only).
 
 5. **Networking** → **Generate domain** (e.g. `https://insightcase-api-production.up.railway.app`).
 6. Verify: `curl https://YOUR-RAILWAY-DOMAIN/health` → `{"status":"ok",...}`.
@@ -71,6 +77,8 @@ JWT_REFRESH_SECRET_KEY=<long-random-string>
 CORS_ORIGINS=https://your-app.vercel.app,https://your-app-*.vercel.app
 FRONTEND_URL=https://your-app.vercel.app
 APP_ENV=production
+STORAGE_PROVIDER=r2
+# R2_* variables — see backend/.env.example
 ```
 
 **Startup (example):**
@@ -78,8 +86,9 @@ APP_ENV=production
 ```bash
 cd backend
 pip install -r requirements.txt
-alembic upgrade head   # or rely on bootstrap on first boot for greenfield
-python3 -m app.seed.demo_seed
+python scripts/migrate_production.py
+# Optional demo accounts (staging only):
+# SEED_DEMO_DATA=true python3 -m app.seed.demo_seed
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -140,7 +149,7 @@ Full matrix: [backend/README.md](../backend/README.md).
 ## Known limitations for preview hosts
 
 - **Email/SMTP** — optional; booking notifications may log only if SMTP is unset.
-- **File uploads** — local `uploads/` on the API server; use persistent volume or object storage for production.
+- **File uploads** — production requires `STORAGE_PROVIDER=r2` (API refuses `local` when `APP_ENV=production`).
 - **Redis** — optional for current MVP features.
 
 ## Troubleshooting

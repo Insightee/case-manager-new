@@ -9,7 +9,8 @@ from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.billing_validation import case_billing_dict
-from app.core.permissions import case_scope_check, require_permission
+from app.core.module_write import ensure_case_write_access
+from app.core.permissions import case_scope_check, require_mutation_permission
 from app.models.assignment import CaseAssignment
 from app.models.case import CaseStatus
 from app.models.user import User
@@ -44,7 +45,7 @@ def assign_therapist(
     case_id: int,
     payload: AssignmentCreate,
     request: Request,
-    user: User = Depends(require_permission("case.assign")),
+    user: User = Depends(require_mutation_permission("case.assign")),
     db: Session = Depends(get_db),
 ):
     case = case_service.get_case(db, case_id)
@@ -52,6 +53,7 @@ def assign_therapist(
         raise HTTPException(status_code=404, detail="Case not found")
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
+    ensure_case_write_access(user, case, db)
     assignment = assignment_service.create_assignment(
         db,
         case_id=case_id,
@@ -79,12 +81,13 @@ def update_assignment_booking(
     case_id: int,
     assignment_id: int,
     payload: AssignmentBookingUpdate,
-    user: User = Depends(require_permission("case.assign")),
+    user: User = Depends(require_mutation_permission("case.assign")),
     db: Session = Depends(get_db),
 ):
     case = case_service.get_case(db, case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_write_access(user, case, db)
     assignment = db.get(CaseAssignment, assignment_id)
     if not assignment or assignment.case_id != case_id:
         raise HTTPException(status_code=404, detail="Assignment not found")

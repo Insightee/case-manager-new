@@ -48,17 +48,32 @@ const PARENT_NAV = [
   { to: '/parent/support', label: 'Support & Incidents' },
 ]
 
+const CLINICAL_MODULE_IDS = ['homecare', 'shadow_support']
+
+/** Nav for users whose only operational role is Case Manager (not module admin / finance / HR). */
+const CASE_MANAGER_NAV = [
+  { to: '/admin/cm', label: 'My caseload', end: true, perm: null, feature: null, icon: 'dashboard' },
+  { to: '/admin/cases', label: 'Cases', perm: 'case.read.team', feature: 'cases', moduleIds: CLINICAL_MODULE_IDS, icon: 'cases' },
+  { to: '/admin/workbench', label: 'Review queues', perm: 'case.read.team', moduleIds: CLINICAL_MODULE_IDS, icon: 'workbench' },
+  { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: CLINICAL_MODULE_IDS, icon: 'grid' },
+  { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: CLINICAL_MODULE_IDS, icon: 'reports' },
+  { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: CLINICAL_MODULE_IDS, icon: 'iep' },
+  { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', moduleIds: CLINICAL_MODULE_IDS, icon: 'meetings' },
+  { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', moduleIds: CLINICAL_MODULE_IDS, icon: 'mail' },
+]
+
 const ADMIN_NAV = [
   { to: '/admin', label: 'Dashboard', end: true, perm: null, feature: null, icon: 'dashboard' },
-  { to: '/admin/workbench', label: 'Workbench', perm: 'case.read.team', feature: null, icon: 'workbench' },
-  { to: '/admin/cases', label: 'Cases', perm: 'case.read.all', feature: 'cases', icon: 'cases' },
-  { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', icon: 'grid' },
-  { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', icon: 'reports' },
-  { to: '/admin/invoices', label: 'Invoices & client payments', perm: 'invoice.approve', feature: 'invoices', icon: 'invoices' },
-  { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', icon: 'iep' },
-  { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', icon: 'mail' },
+  { to: '/admin/workbench', label: 'Workbench', perm: 'case.read.team', moduleIds: CLINICAL_MODULE_IDS, icon: 'workbench' },
+  { to: '/admin/cases', label: 'Cases', perm: 'case.read.all', feature: 'cases', moduleIds: CLINICAL_MODULE_IDS, icon: 'cases' },
+  { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: CLINICAL_MODULE_IDS, icon: 'grid' },
+  { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: CLINICAL_MODULE_IDS, icon: 'reports' },
+  { to: '/admin/invoices', label: 'Invoices & client payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices' },
+  { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: CLINICAL_MODULE_IDS, icon: 'iep' },
+  { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', moduleIds: CLINICAL_MODULE_IDS, icon: 'mail' },
   { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people' },
   { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope' },
+  { to: '/admin/settings/services', label: 'Service categories', perm: 'user.manage', feature: null, icon: 'settings' },
   { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', feature: null, icon: 'meetings' },
   { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave' },
 ]
@@ -122,8 +137,39 @@ function buildMobileTabs(fullNav, portal) {
   return { tabs: unique.slice(0, 3), useMenu: true }
 }
 
+function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
+  if (item.to === '/admin/cm') {
+    return roles.includes('CASE_MANAGER') && can('case.read.team')
+  }
+  if (item.to === '/admin/workbench') {
+    return (
+      navVisible(item)
+      && (can('monthly_report.approve') || can('daily_log.review'))
+    )
+  }
+  if (item.to === '/admin/cases') {
+    return (
+      navVisible(item)
+      && (can('case.read.all') || can('case.read.team') || can('case.read.scoped'))
+    )
+  }
+  if (item.to === '/admin/iep') {
+    return navVisible(item) && (can('attachment.manage') || can('iep.read'))
+  }
+  if (item.to === '/admin/support') {
+    const ticketsOk = can('ticket.manage') && hasFeature('tickets')
+    const incidentsOk = can('incident.read_sensitive') && hasFeature('incidents')
+    if (!ticketsOk && !incidentsOk) return false
+    return !item.moduleIds?.length || navVisible(item)
+  }
+  if (item.perm || item.feature || item.moduleIds?.length) {
+    return navVisible(item)
+  }
+  return true
+}
+
 export function PortalShell({ portal }) {
-  const { user, logout, can, hasFeature, isViewOnly } = useAuth()
+  const { user, logout, can, hasFeature, isViewOnly, navVisible } = useAuth()
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -157,31 +203,14 @@ export function PortalShell({ portal }) {
     nav = HR_NAV.filter((item) => !item.perm || can(item.perm))
   }
   if (portal === 'admin') {
-    nav = ADMIN_NAV.filter((item) => {
-      if (item.to === '/admin/workbench') {
-        return (
-          (can('case.read.team') || can('case.read.scoped'))
-          && (can('monthly_report.approve') || can('daily_log.review'))
-        )
-      }
-      if (item.to === '/admin/cases') {
-        return (
-          (can('case.read.all') || can('case.read.team') || can('case.read.scoped'))
-          && hasFeature('cases')
-        )
-      }
-      if (item.to === '/admin/iep') {
-        return (can('attachment.manage') || can('iep.read')) && hasFeature('iep')
-      }
-      if (item.to === '/admin/support') {
-        const ticketsOk = can('ticket.manage') && hasFeature('tickets')
-        const incidentsOk = can('incident.read_sensitive') && hasFeature('incidents')
-        return ticketsOk || incidentsOk
-      }
-      if (item.perm && !can(item.perm)) return false
-      if (item.feature && !hasFeature(item.feature)) return false
-      return true
-    })
+    const roles = user?.roles || []
+    const cmFocused =
+      roles.includes('CASE_MANAGER') &&
+      !roles.some((r) => ['SUPER_ADMIN', 'ADMIN', 'MODULE_ADMIN', 'FINANCE', 'HR'].includes(r))
+    const baseNav = cmFocused ? CASE_MANAGER_NAV : ADMIN_NAV
+    nav = baseNav.filter((item) =>
+      filterAdminNavItem(item, { roles, navVisible, can, hasFeature }),
+    )
   }
 
   const portalTitle = PORTAL_LABELS[portal] || 'Portal'
@@ -379,6 +408,7 @@ export function PortalShell({ portal }) {
         {portal === 'admin' && isViewOnly ? (
           <div
             role="status"
+            className="admin-view-only-banner"
             style={{
               margin: '0 0 16px',
               padding: '10px 14px',
@@ -389,7 +419,34 @@ export function PortalShell({ portal }) {
               color: '#92400e',
             }}
           >
-            View-only access — you can browse cases and logs but cannot change records.
+            View-only access — you can browse enabled modules but cannot create or update records.
+            {(user?.modules || [])
+              .filter((m) => m.access === 'view')
+              .map((m) => m.label)
+              .join(', ')
+              ? ` (${(user.modules || []).filter((m) => m.access === 'view').map((m) => m.label).join(', ')}: view only)`
+              : null}
+          </div>
+        ) : null}
+        {portal === 'admin' && !isViewOnly && (user?.modules || []).some((m) => m.access === 'view') ? (
+          <div
+            role="status"
+            style={{
+              margin: '0 0 16px',
+              padding: '10px 14px',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 8,
+              fontSize: '0.8125rem',
+              color: '#475569',
+            }}
+          >
+            Some modules are view-only:{' '}
+            {(user.modules || [])
+              .filter((m) => m.access === 'view')
+              .map((m) => m.label)
+              .join(', ')}
+            . Edit actions are disabled for those programmes.
           </div>
         ) : null}
         <Outlet />

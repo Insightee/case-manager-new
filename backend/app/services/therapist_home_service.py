@@ -24,9 +24,10 @@ from app.schemas.therapist_home import (
     TherapistReportsPipelineResponse,
     TherapistSessionsWorkspaceResponse,
 )
-from app.services import session_service
+from app.services import parent_service, session_service
 from app.services.address_service import case_service_address_read
 from app.services import therapist_portal_queries as tpq
+from app.services.invite_on_start_service import _pending_intake_invite
 from sqlalchemy.orm import Session
 
 
@@ -147,6 +148,10 @@ def build_cases_board(
         )
         svc = case_service_address_read(c)
         cm = cm_users.get(c.case_manager_user_id) if c.case_manager_user_id else None
+        parent_pending = False
+        if c.child_id and not parent_service.primary_parent_user_id_for_child(db, c.child_id):
+            inv = _pending_intake_invite(db, c)
+            parent_pending = inv is not None
         enriched.append(
             TherapistCaseBoardRow(
                 id=c.id,
@@ -173,6 +178,7 @@ def build_cases_board(
                 else (draft_report.status if draft_report else (case_reports[0].status.value if case_reports else None)),
                 caseManagerName=cm.full_name if cm else None,
                 caseManagerEmail=cm.email if cm else None,
+                parentSignupPending=parent_pending,
             )
         )
 

@@ -6,8 +6,8 @@
 
 .client-inv__kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--kpi-grid-min, 118px), 1fr));
+  gap: var(--kpi-grid-gap, 8px);
 }
 
 @media (max-width: 1000px) {
@@ -49,7 +49,7 @@
 }
 
 .client-inv__kpi-value {
-  font-size: 1.5rem;
+  font-size: var(--kpi-value-size, 1.25rem);
   font-weight: 800;
   color: #0f172a;
   margin: 0;
@@ -64,6 +64,31 @@
   border: 1px solid #e2e8f0;
   border-radius: 14px;
   padding: 12px 14px;
+}
+
+.client-inv__filters--grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.client-inv__filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.client-inv__filter-field--search {
+  grid-column: 1 / -1;
+}
+
+.client-inv__filter-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
 }
 
 .client-inv__filter-input {

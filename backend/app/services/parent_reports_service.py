@@ -380,8 +380,18 @@ def add_iep_comment(
     }
 
 
-def acknowledge_iep(db: Session, att: Attachment) -> None:
+def acknowledge_iep(db: Session, att: Attachment, parent_user: User | None = None) -> None:
     att.visibility_status = VisibilityStatus.SHARED_WITH_PARENT
+    from app.models.iep_plan import IepPlan
+    from app.services import iep_plan_service as iep_svc
+
+    plan = db.scalars(
+        select(IepPlan).where(IepPlan.attachment_id == att.id).order_by(IepPlan.id.desc())
+    ).first()
+    if not plan and att.entity_id:
+        plan = db.get(IepPlan, att.entity_id)
+    if plan and parent_user and plan.status == "SHARED_WITH_PARENT":
+        iep_svc.parent_acknowledge_plan(db, plan, parent_user)
 
 
 def resend_to_parent(db: Session, report: MonthlyReport) -> MonthlyReport:

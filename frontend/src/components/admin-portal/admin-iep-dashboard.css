@@ -1,13 +1,13 @@
 .admin-iep-dash__kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--kpi-grid-min, 118px), 1fr));
+  gap: var(--kpi-grid-gap, 8px);
+  margin-bottom: 12px;
 }
 
 .admin-iep-dash__kpi {
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: var(--kpi-padding, 10px 12px);
+  border-radius: var(--kpi-radius, 10px);
   border: 1px solid #e2e8f0;
   background: #fff;
   cursor: pointer;
@@ -34,8 +34,8 @@
 }
 
 .admin-iep-dash__kpi-value {
-  margin: 4px 0 0;
-  font-size: 1.5rem;
+  margin: 2px 0 0;
+  font-size: var(--kpi-value-size, 1.25rem);
   font-weight: 700;
   color: #0f172a;
 }

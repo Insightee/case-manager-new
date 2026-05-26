@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import case_scope_check, require_permission, user_has_permission
+from app.core.module_write import ensure_case_write_access, ensure_product_module_write_access
+from app.core.permissions import (
+    case_scope_check,
+    require_mutation_permission,
+    require_permission,
+    user_has_permission,
+)
 from app.models.case import Case, CaseStatus, ClientBillingMode
 from app.models.user import User
 from app.schemas.case import CaseCreate, CaseRead, CaseUpdate
@@ -19,6 +25,7 @@ from app.services import address_service, case_code_service, case_service
 from app.services import case_status_request_service as csr_svc
 from app.services import observation_checklist_service as obs_svc
 from app.schemas.clinical import ClinicalProfileUpdate, ObservationChecklistSave
+from app.schemas.iep_plan import IepPlanSuggestionCreate
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -82,7 +89,7 @@ def list_cases(
 def create_case(
     payload: CaseCreate,
     request: Request,
-    user: User = Depends(require_permission("case.create")),
+    user: User = Depends(require_mutation_permission("case.create")),
     db: Session = Depends(get_db),
 ):
     data = payload.model_dump()
@@ -93,6 +100,7 @@ def create_case(
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
     product_module = data.get("product_module", "homecare")
+    ensure_product_module_write_access(user, product_module, db)
     case_code = (data.get("case_code") or "").strip()
     if not case_code:
         data["case_code"] = case_code_service.generate_case_code(db, product_module)
@@ -133,7 +141,7 @@ def update_case(
     case_id: int,
     payload: CaseUpdate,
     request: Request,
-    user: User = Depends(require_permission("case.update")),
+    user: User = Depends(require_mutation_permission("case.update")),
     db: Session = Depends(get_db),
 ):
     case = case_service.get_case(db, case_id)
@@ -141,6 +149,7 @@ def update_case(
         raise HTTPException(status_code=404, detail="Case not found")
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
+    ensure_case_write_access(user, case, db)
     old = {"status": case.status.value, "case_manager_user_id": case.case_manager_user_id}
     updates = payload.model_dump(exclude_unset=True)
     billing_data = {k: updates.pop(k) for k in list(updates.keys()) if k in (
@@ -175,6 +184,7 @@ def create_case_status_request(
         raise HTTPException(status_code=404, detail="Case not found")
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
+    ensure_case_write_access(user, case, db)
     try:
         req = csr_svc.create_request(db, user, case, payload.to_status, payload.reason)
     except ValueError as e:
@@ -198,10 +208,32 @@ def create_case_status_request(
     }
 
 
+@router.get("/{case_id}/status-requests")
+def list_case_status_requests(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Case access denied")
+    history = csr_svc.list_for_case(db, case_id, limit=10)
+    pending = next((h for h in history if h["status"] == "PENDING"), None)
+    return {"pending": pending, "history": history}
+
+
 def _case_for_user(db: Session, user: User, case_id: int) -> Case:
     case = case_service.get_case(db, case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+def _case_for_user_write(db: Session, user: User, case_id: int) -> Case:
+    case = _case_for_user(db, user, case_id)
+    ensure_case_write_access(user, case, db)
     return case
 
 
@@ -223,7 +255,7 @@ def update_clinical_profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    case = _case_for_user(db, user, case_id)
+    case = _case_for_user_write(db, user, case_id)
     profile = obs_svc.update_profile(db, case, user, payload.model_dump(exclude_unset=True))
     db.commit()
     return obs_svc.profile_to_dict(profile)
@@ -247,7 +279,7 @@ def save_observation_checklist(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    case = _case_for_user(db, user, case_id)
+    case = _case_for_user_write(db, user, case_id)
     try:
         checklist = obs_svc.save_checklist(
             db,
@@ -268,10 +300,47 @@ def submit_observation_checklist(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    case = _case_for_user(db, user, case_id)
+    case = _case_for_user_write(db, user, case_id)
     try:
         checklist = obs_svc.submit_checklist(db, case, user)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     db.commit()
     return obs_svc.checklist_to_dict(db, checklist, case, user)
+
+
+@router.get("/{case_id}/iep-plan")
+def get_case_iep_plan(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_plan_service as iep_svc
+
+    case = _case_for_user(db, user, case_id)
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="IEP plan not found")
+    return iep_svc.plan_to_dict(db, plan, user)
+
+
+@router.post("/{case_id}/iep-plan/suggestions")
+def case_iep_plan_suggestion(
+    case_id: int,
+    payload: IepPlanSuggestionCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_plan_service as iep_svc
+
+    case = _case_for_user_write(db, user, case_id)
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="IEP plan not found")
+    role = user.role_names[0] if user.role_names else "THERAPIST"
+    try:
+        iep_svc.add_suggestion(db, plan, user, role, payload.body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return iep_svc.plan_to_dict(db, plan, user)

@@ -3,17 +3,17 @@ import { ServiceCategoryPicker } from '../shared/ServiceCategoryPicker.jsx'
 /**
  * Shared therapist service profile fields (admin create + therapist edit).
  */
-export function TherapistServiceProfileForm({ form, setForm, categories, showTherapistSelect, therapists = [] }) {
+export function TherapistServiceProfileForm({ form, setForm, categories, showTherapistSelect, therapists = [], profileUserIds = new Set() }) {
   return (
     <>
       {showTherapistSelect ? (
         <label>
           Therapist
-          <select required value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })}>
+          <select className="admin-input" required value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })}>
             <option value="">Select…</option>
             {therapists.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.full_name} ({t.email})
+                {t.full_name} ({t.email}){profileUserIds.has(t.id) ? ' — has profile' : ''}
               </option>
             ))}
           </select>

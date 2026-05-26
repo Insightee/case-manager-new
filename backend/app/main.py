@@ -12,6 +12,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import ensure_sqlite_schema_patches
 from app.core.db_errors import raise_db_write_http_error
+from app.core.production_checks import validate_production_settings
 from app.db.bootstrap import bootstrap_schema
 
 app = FastAPI(title="InsightCase API", version="0.1.0")
@@ -25,10 +26,32 @@ async def operational_error_handler(_request: Request, exc: OperationalError):
         return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
 
 
+def _verify_sqlite_writable() -> None:
+    """Fail fast when the SQLite file cannot accept writes (stale connections are fixed via WAL + restart)."""
+    if not settings.is_sqlite:
+        return
+    from app.core.database import engine
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE IF NOT EXISTS _api_write_probe (id INTEGER PRIMARY KEY)"))
+            conn.execute(text("INSERT INTO _api_write_probe DEFAULT VALUES"))
+    except OperationalError as exc:
+        import logging
+
+        logging.getLogger("insightcase").error(
+            "SQLite write probe failed for %s: %s — restart uvicorn from backend/",
+            settings.database_url,
+            exc,
+        )
+
+
 @app.on_event("startup")
 def _on_startup() -> None:
+    validate_production_settings()
     bootstrap_schema()
     ensure_sqlite_schema_patches()
+    _verify_sqlite_writable()
 
 app.add_middleware(
     CORSMiddleware,

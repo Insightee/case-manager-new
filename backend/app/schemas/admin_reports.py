@@ -76,11 +76,21 @@ class AdminReportSummary(BaseModel):
     monthly: AdminReportTypeSummary
     observation: AdminReportTypeSummary
     queue_total: int
+    iep_pending: int = 0
 
 
 class CmReviewAction(BaseModel):
     comment: str
     request_changes: bool = False
+
+
+class SendForReviewAction(BaseModel):
+    target: Literal["therapist", "case_manager"]
+    comment: str
+
+
+class ReportCommentAction(BaseModel):
+    comment: str
 
 
 class BulkReportAction(BaseModel):

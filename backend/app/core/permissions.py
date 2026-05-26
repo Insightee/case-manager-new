@@ -15,6 +15,7 @@ from app.models.user import User
 
 class RoleName(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
+    MODULE_ADMIN = "MODULE_ADMIN"
     ADMIN = "ADMIN"
     VIEWER = "VIEWER"
     CASE_MANAGER = "CASE_MANAGER"
@@ -58,34 +59,36 @@ ALL_PERMISSIONS = [
     "slot.book_any",
     "slot.book_parent",
     "iep.read",
-    "admin.view_only",
+    "case_document.create",
+    "case_document.review",
+]
+
+_ROLE_MODULE_ADMIN = [
+    "case.read.all",
+    "case.read.scoped",
+    "case.create",
+    "case.update",
+    "case.assign",
+    "therapist.read",
+    "session.read",
+    "daily_log.review",
+    "monthly_report.approve",
+    "invoice.approve",
+    "ticket.manage",
+    "incident.read_sensitive",
+    "parent.read",
+    "slot.read",
+    "slot.book_any",
+    "leave.manage",
+    "user.manage",
     "case_document.create",
     "case_document.review",
 ]
 
 ROLE_PERMISSIONS: dict[str, list[str]] = {
     RoleName.SUPER_ADMIN: ALL_PERMISSIONS,
-    RoleName.ADMIN: [
-        "case.read.all",
-        "case.read.scoped",
-        "case.create",
-        "case.update",
-        "case.assign",
-        "therapist.read",
-        "session.read",
-        "daily_log.review",
-        "monthly_report.approve",
-        "invoice.approve",
-        "ticket.manage",
-        "incident.read_sensitive",
-        "parent.read",
-        "slot.read",
-        "slot.book_any",
-        "leave.manage",
-        "user.manage",
-        "case_document.create",
-        "case_document.review",
-    ],
+    RoleName.MODULE_ADMIN: _ROLE_MODULE_ADMIN,
+    RoleName.ADMIN: _ROLE_MODULE_ADMIN,
     # Team/region scope only — not case.read.all (see admin home scope tests).
     RoleName.CASE_MANAGER: [
         "case.read.team",
@@ -169,6 +172,22 @@ def require_permission(permission: str):
     from app.api.deps import get_current_user
 
     def checker(user: User = Depends(get_current_user)) -> User:
+        if not user_has_permission(user, permission):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return user
+
+    return checker
+
+
+def require_mutation_permission(permission: str):
+    """Like require_permission, but view-only users get a clear read-only error first."""
+    from app.api.deps import get_current_user
+    from app.core.module_access import is_view_only_user
+    from app.core.module_write import _raise_read_only
+
+    def checker(user: User = Depends(get_current_user)) -> User:
+        if is_view_only_user(user):
+            _raise_read_only()
         if not user_has_permission(user, permission):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return user

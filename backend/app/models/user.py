@@ -42,6 +42,9 @@ class User(Base):
     region: Mapped[Optional[str]] = mapped_column(String(64))
     avatar_path: Mapped[Optional[str]] = mapped_column(String(512))
     module_assignments: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    module_access_grants: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
+    feature_overrides: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
+    is_view_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     roles = relationship("Role", secondary=user_roles, back_populates="users")
@@ -57,6 +60,8 @@ class User(Base):
         for role in self.roles:
             for perm in role.permissions:
                 perms.add(perm.name)
+        if getattr(self, "is_view_only", False):
+            perms.add("admin.view_only")
         return perms
 
 

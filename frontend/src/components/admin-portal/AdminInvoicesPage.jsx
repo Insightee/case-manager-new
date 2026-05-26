@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import {
+  buildTherapistInvoiceQuery,
+  parseTherapistInvoiceFilters,
+  writeTherapistInvoiceFiltersToParams,
+} from '../../lib/invoiceFilters.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
   AdminPageHeader,
   AdminPanel,
@@ -13,47 +19,61 @@ import {
 } from './ui/index.js'
 import { InvoiceBreakdownModal } from '../invoices/InvoiceBreakdownModal.jsx'
 import { AdminClientInvoicesTab } from './AdminClientInvoicesTab.jsx'
+import { useAdminHome } from '../../hooks/useAdminHome.js'
+import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
 import './admin-client-invoices.css'
 
 function TherapistPayoutsTab() {
   const { can } = useAuth()
+  const { canWriteBilling } = useModuleWrite()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [invoices, setInvoices] = useState([])
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [filters, setFilters] = useState(() => parseTherapistInvoiceFilters(searchParams))
   const [loading, setLoading] = useState(true)
   const [breakdownId, setBreakdownId] = useState(null)
   const [paymentTarget, setPaymentTarget] = useState(null)
   const [paidAmount, setPaidAmount] = useState('')
   const [acting, setActing] = useState(false)
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      setInvoices(await apiFetch('/api/v1/invoices'))
+      const qs = buildTherapistInvoiceQuery({
+        ...filters,
+        status: filters.status === 'ALL' ? '' : filters.status,
+      })
+      setInvoices(await apiFetch(`/api/v1/invoices${qs}`))
     } catch {
       setInvoices([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [filters])
 
   useEffect(() => {
     load()
-  }, [])
+  }, [load])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return invoices.filter((inv) => {
-      if (statusFilter !== 'ALL' && inv.status !== statusFilter) return false
-      if (!q) return true
-      const name = (inv.therapist_name || '').toLowerCase()
-      return (
-        name.includes(q) ||
-        String(inv.therapist_user_id).includes(q) ||
-        inv.month?.toLowerCase().includes(q)
-      )
+  useEffect(() => {
+    const next = writeTherapistInvoiceFiltersToParams(searchParams, filters)
+    if (searchParams.toString() !== next.toString()) {
+      setSearchParams(next, { replace: true })
+    }
+  }, [filters])
+
+  useEffect(() => {
+    setFilters((prev) => {
+      const parsed = parseTherapistInvoiceFilters(searchParams)
+      const same = Object.keys(parsed).every((k) => prev[k] === parsed[k])
+      return same ? prev : parsed
     })
-  }, [invoices, search, statusFilter])
+  }, [searchParams])
+
+  function patchFilters(patch) {
+    setFilters((f) => ({ ...f, ...patch }))
+  }
+
+  const filtered = invoices
 
   const pendingCount = invoices.filter((i) => i.status === 'IN_REVIEW').length
 
@@ -97,12 +117,43 @@ function TherapistPayoutsTab() {
       <AdminPanel title={`${filtered.length} therapist payout invoices`} padded={false}>
         <div className="admin-panel__body">
           <AdminToolbar>
-            <AdminSearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Therapist name or month…" />
             <select
-              className="admin-search__input"
-              style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              className="admin-select"
+              style={{ width: 'auto', minWidth: 100 }}
+              value={filters.year}
+              onChange={(e) => patchFilters({ year: e.target.value })}
+            >
+              <option value="">All years</option>
+              {[new Date().getFullYear(), new Date().getFullYear() - 1].map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <input
+              className="admin-input"
+              placeholder="Month label"
+              style={{ maxWidth: 140 }}
+              value={filters.month}
+              onChange={(e) => patchFilters({ month: e.target.value })}
+            />
+            <input
+              type="date"
+              className="admin-input"
+              value={filters.dateFrom}
+              onChange={(e) => patchFilters({ dateFrom: e.target.value })}
+              aria-label="From date"
+            />
+            <input
+              type="date"
+              className="admin-input"
+              value={filters.dateTo}
+              onChange={(e) => patchFilters({ dateTo: e.target.value })}
+              aria-label="To date"
+            />
+            <select
+              className="admin-select"
+              style={{ width: 'auto', minWidth: 140 }}
+              value={filters.status}
+              onChange={(e) => patchFilters({ status: e.target.value })}
             >
               <option value="ALL">All statuses</option>
               <option value="IN_REVIEW">In review</option>
@@ -110,6 +161,11 @@ function TherapistPayoutsTab() {
               <option value="PAID">Paid</option>
               <option value="REJECTED">Rejected</option>
             </select>
+            <AdminSearchInput
+              value={filters.search}
+              onChange={(e) => patchFilters({ search: e.target.value })}
+              placeholder="Therapist name or month…"
+            />
           </AdminToolbar>
 
           {loading ? (
@@ -147,13 +203,17 @@ function TherapistPayoutsTab() {
                           <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setBreakdownId(inv.id)}>
                             Breakdown
                           </button>
+                          {canWriteBilling ? (
+                            <>
                           <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => review(inv.id, 'approve')}>
                             Approve
                           </button>
                           <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => review(inv.id, 'reject')}>
                             Reject
                           </button>
-                          {can('payout.override') ? (
+                            </>
+                          ) : null}
+                          {can('payout.override') && canWriteBilling ? (
                             <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => openPayment(inv)}>
                               Record payment
                             </button>
@@ -213,7 +273,17 @@ function TherapistPayoutsTab() {
   )
 }
 
+function financeWidgetFooter(widget) {
+  const map = {
+    billing: '/admin/invoices?tab=therapist',
+    client_claims: '/admin/invoices?tab=client&claims=pending',
+  }
+  return map[widget.id] || '/admin/invoices'
+}
+
 export function AdminInvoicesPage() {
+  const { data: roleHome, isLoading: roleHomeLoading } = useAdminHome()
+  const isFinanceHome = roleHome?.role === 'FINANCE' || roleHome?.dashboard_variant === 'finance'
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') === 'therapist' ? 'therapist' : 'client'
   const [claimsPending, setClaimsPending] = useState(0)
@@ -237,9 +307,21 @@ export function AdminInvoicesPage() {
     <div className="admin-page">
       <AdminPageHeader
         eyebrow="Finance"
-        title="Billing & invoices"
-        subtitle="Manage client invoices sent to families and therapist payout approvals."
+        title={isFinanceHome ? 'Finance home' : 'Billing & invoices'}
+        subtitle={
+          isFinanceHome
+            ? 'Your payment claims and payout queues — therapist and client billing.'
+            : 'Manage client invoices sent to families and therapist payout approvals.'
+        }
       />
+
+      {isFinanceHome ? (
+        <AdminRoleQueueSection
+          roleHome={roleHome}
+          loading={roleHomeLoading}
+          widgetFooter={financeWidgetFooter}
+        />
+      ) : null}
 
       {claimsPending > 0 ? (
         <div className="admin-alert admin-alert--warning" style={{ marginBottom: 16 }}>

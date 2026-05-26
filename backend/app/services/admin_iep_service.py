@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import date as date_type
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.attachment import Attachment
 from app.services.admin_scope_service import apply_case_scope
 from app.models.case import Case, CaseStatus
+from app.models.session import Session as TherapySession
 from app.models.child import Child
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import User
@@ -141,6 +145,9 @@ def build_iep_dashboard(
     status: str | None = None,
     product_module: str | None = None,
     search: str | None = None,
+    therapist_user_id: int | None = None,
+    session_from: str | None = None,
+    session_to: str | None = None,
     include_closed: bool = False,
 ) -> dict:
     stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
@@ -150,6 +157,26 @@ def build_iep_dashboard(
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
     cases = list(db.scalars(stmt).all())
+
+    if therapist_user_id:
+        assigned_ids = set(
+            db.scalars(
+                select(CaseAssignment.case_id).where(
+                    CaseAssignment.therapist_user_id == therapist_user_id,
+                    CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                )
+            ).all()
+        )
+        cases = [c for c in cases if c.id in assigned_ids]
+
+    if session_from or session_to:
+        sess_stmt = select(TherapySession.case_id).distinct()
+        if session_from:
+            sess_stmt = sess_stmt.where(TherapySession.scheduled_date >= date_type.fromisoformat(session_from))
+        if session_to:
+            sess_stmt = sess_stmt.where(TherapySession.scheduled_date <= date_type.fromisoformat(session_to))
+        session_case_ids = set(db.scalars(sess_stmt).all())
+        cases = [c for c in cases if c.id in session_case_ids]
 
     if search:
         q = search.strip().lower()

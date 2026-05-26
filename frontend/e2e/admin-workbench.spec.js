@@ -13,8 +13,9 @@ test.describe('Admin workbench (My caseload)', () => {
   test('workbench loads sections for case manager', async ({ page }) => {
     await loginCaseManager(page)
     await page.locator('.app-sidebar__nav').getByRole('link', { name: 'My caseload', exact: true }).click()
-    await expect(page).toHaveURL(/\/admin\/workbench/)
-    await expect(page.getByRole('heading', { name: 'My caseload', exact: true })).toBeVisible()
+    await expect(page).toHaveURL(/\/admin\/cm/)
+    await expect(page.getByRole('heading', { name: /Good day/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'My caseload' })).toBeVisible()
     await expect(page.getByText('Scheduled CM supervision sessions')).toBeVisible()
   })
 

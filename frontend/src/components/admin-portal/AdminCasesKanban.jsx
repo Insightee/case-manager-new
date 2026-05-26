@@ -122,7 +122,7 @@ function DroppableColumn({ col, children, isDropTarget }) {
 }
 
 export function AdminCasesKanban({ productFilter = 'all' }) {
-  const { can } = useAuth()
+  const { can, canWriteProduct, isViewOnly } = useAuth()
   const navigate = useNavigate()
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -135,8 +135,8 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [toast, setToast] = useState('')
 
-  const canAssign = can('case.assign')
-  const canDnD = canAssign
+  const canAssignGlobal = can('case.assign') && !isViewOnly
+  const canDnD = canAssignGlobal
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -273,7 +273,7 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
           <input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} />
           Hide closed
         </label>
-        {canAssign && selectedIds.size > 0 ? (
+        {canAssignGlobal && selectedIds.size > 0 ? (
           <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setBulkOpen(true)}>
             Bulk assign ({selectedIds.size})
           </button>
@@ -316,7 +316,7 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
                       {col.count}
                     </span>
                   </div>
-                  {canAssign && BULK_SELECT_COLUMNS.has(col.id) && col.cases.length > 0 ? (
+                  {canAssignGlobal && BULK_SELECT_COLUMNS.has(col.id) && col.cases.length > 0 ? (
                     <button
                       type="button"
                       className="admin-btn admin-btn--ghost admin-btn--sm"
@@ -336,8 +336,12 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
                         <DraggableCaseCard
                           key={card.id}
                           card={card}
-                          dragDisabled={false}
-                          selectable={canAssign && BULK_SELECT_COLUMNS.has(col.id)}
+                          dragDisabled={!canWriteProduct(card.product_module)}
+                          selectable={
+                            canAssignGlobal &&
+                            canWriteProduct(card.product_module) &&
+                            BULK_SELECT_COLUMNS.has(col.id)
+                          }
                           selected={selectedIds.has(card.id)}
                           onToggleSelect={toggleSelect}
                         />

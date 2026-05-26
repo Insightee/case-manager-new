@@ -23,7 +23,8 @@ from app.schemas.admin_reports import (
     AdminReportTypeSummary,
     BulkReportResult,
 )
-from app.services import parent_reports_service, report_service
+from app.core.module_write import guard_clinical_case
+from app.services import case_service, parent_reports_service, report_service
 from app.services.admin_scope_service import apply_case_scope
 
 
@@ -381,10 +382,19 @@ def get_summary(db: Session, user: User) -> AdminReportSummary:
     )
     obs_queue_stmt = apply_case_scope(obs_queue_stmt, user)
     obs_queue = db.scalar(obs_queue_stmt) or 0
+    from app.services import admin_iep_service as admin_iep_svc
+
+    iep_summary = admin_iep_svc.build_iep_dashboard(db, user)["summary"]
+    iep_pending = (
+        int(iep_summary.get("missing") or 0)
+        + int(iep_summary.get("internal_only") or 0)
+        + int(iep_summary.get("awaiting_ack") or 0)
+    )
     return AdminReportSummary(
         monthly=monthly_summary,
         observation=obs_summary,
         queue_total=monthly_queue + obs_queue,
+        iep_pending=iep_pending,
     )
 
 
@@ -397,10 +407,15 @@ def _review_history(db: Session, entity_type: str, entity_id: int) -> list[Admin
     out: list[AdminReportReviewHistoryItem] = []
     for r in reviews:
         reviewer = db.get(User, r.reviewer_user_id)
+        decision = r.decision.value
+        if decision == "REQUEST_REVIEW":
+            decision = "SENT_FOR_REVIEW"
+        elif decision == "NOTE":
+            decision = "COMMENT"
         out.append(
             AdminReportReviewHistoryItem(
                 id=r.id,
-                decision=r.decision.value,
+                decision=decision,
                 comment=r.comment,
                 reviewer_name=_therapist_name(reviewer),
                 created_at=r.created_at,
@@ -585,6 +600,9 @@ def bulk_approve(
                     failed += 1
                     errors.append(f"Observation report {rid} not found")
                     continue
+                case = case_service.get_case(db, report.case_id)
+                if case:
+                    guard_clinical_case(user, case, db, feature="reports")
                 if report.status != ReportStatus.UNDER_REVIEW:
                     failed += 1
                     errors.append(f"Observation report {rid} is not under review")
@@ -626,6 +644,9 @@ def bulk_reject(
                     failed += 1
                     errors.append(f"Monthly report {rid} not found")
                     continue
+                case = case_service.get_case(db, report.case_id)
+                if case:
+                    guard_clinical_case(user, case, db, feature="reports")
                 if report.status != ReportStatus.UNDER_REVIEW:
                     failed += 1
                     errors.append(f"Monthly report {rid} is not under review")
@@ -645,6 +666,9 @@ def bulk_reject(
                     failed += 1
                     errors.append(f"Observation report {rid} not found")
                     continue
+                case = case_service.get_case(db, report.case_id)
+                if case:
+                    guard_clinical_case(user, case, db, feature="reports")
                 if report.status != ReportStatus.UNDER_REVIEW:
                     failed += 1
                     errors.append(f"Observation report {rid} is not under review")
@@ -809,3 +833,62 @@ def export_pdf(
     story.append(table)
     doc.build(story)
     return buf.getvalue()
+
+
+_EDITABLE_STATUSES = frozenset(
+    {ReportStatus.DRAFT, ReportStatus.UNDER_REVIEW, ReportStatus.REJECTED}
+)
+
+
+def staff_update_monthly(
+    db: Session,
+    user: User,
+    report_id: int,
+    payload: dict,
+) -> AdminReportDetail | None:
+    from app.services.report_image_service import sync_summary_from_body
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        return None
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        return None
+    guard_clinical_case(user, case, db, feature="reports")
+    if report.status not in _EDITABLE_STATUSES:
+        raise ValueError("Report cannot be edited in its current status")
+    for key, value in payload.items():
+        if value is not None and hasattr(report, key):
+            setattr(report, key, value)
+    if payload.get("body_html") is not None:
+        sync_summary_from_body(report)
+    if report.status == ReportStatus.REJECTED:
+        report.status = ReportStatus.UNDER_REVIEW
+    db.flush()
+    return get_monthly_detail(db, user, report_id)
+
+
+def staff_update_observation(
+    db: Session,
+    user: User,
+    report_id: int,
+    payload: dict,
+) -> AdminReportDetail | None:
+    report = db.get(ObservationReport, report_id)
+    if not report:
+        return None
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        return None
+    guard_clinical_case(user, case, db, feature="reports")
+    if report.status not in _EDITABLE_STATUSES:
+        raise ValueError("Report cannot be edited in its current status")
+    for key, value in payload.items():
+        if value is not None and hasattr(report, key):
+            setattr(report, key, value)
+    if payload.get("body_html") and not report.content:
+        report.content = (report.body_html or "")[:500]
+    if report.status == ReportStatus.REJECTED:
+        report.status = ReportStatus.UNDER_REVIEW
+    db.flush()
+    return get_observation_detail(db, user, report_id)

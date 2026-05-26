@@ -1,11 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { apiFetch, clearTokens, getTokens, setTokens } from '../lib/apiClient.js'
+import {
+  canWriteFeature,
+  canWriteModule,
+  canWriteProduct,
+  hasModule,
+  isGlobalViewOnly,
+  moduleAccess,
+  navItemVisible,
+} from '../lib/moduleAccess.js'
 
 const AuthContext = createContext(null)
 
 const ADMIN_ROLES = [
   'SUPER_ADMIN',
   'ADMIN',
+  'MODULE_ADMIN',
   'VIEWER',
   'CASE_MANAGER',
   'SUPERVISOR',
@@ -82,14 +92,67 @@ export function AuthProvider({ children }) {
     [user],
   )
 
-  const isViewOnly = useMemo(
-    () => Boolean(user?.permissions?.includes('admin.view_only')),
+  const hasModuleAccess = useCallback((moduleId) => hasModule(user, moduleId), [user])
+
+  const getModuleAccess = useCallback((moduleId) => moduleAccess(user, moduleId), [user])
+
+  const canWriteModuleFn = useCallback((moduleId) => canWriteModule(user, moduleId), [user])
+
+  const canWriteProductFn = useCallback(
+    (productModule) => canWriteProduct(user, productModule),
     [user],
   )
 
+  const canWriteFeatureFn = useCallback(
+    (featureId, productModule = null) => canWriteFeature(user, featureId, productModule),
+    [user],
+  )
+
+  const isViewOnly = useMemo(() => isGlobalViewOnly(user), [user])
+
+  const navVisible = useCallback(
+    (item) =>
+      navItemVisible(item, {
+        can,
+        hasFeature,
+        hasModule: hasModuleAccess,
+      }),
+    [can, hasFeature, hasModuleAccess],
+  )
+
   const value = useMemo(
-    () => ({ user, loading, login, logout, portal, can, hasFeature, isViewOnly, reload: loadMe }),
-    [user, loading, portal, can, hasFeature, isViewOnly, loadMe],
+    () => ({
+      user,
+      loading,
+      login,
+      logout,
+      portal,
+      can,
+      hasFeature,
+      hasModule: hasModuleAccess,
+      getModuleAccess,
+      canWriteModule: canWriteModuleFn,
+      canWriteProduct: canWriteProductFn,
+      canWriteFeature: canWriteFeatureFn,
+      navVisible,
+      isViewOnly,
+      reload: loadMe,
+    }),
+    [
+      user,
+      loading,
+      portal,
+      can,
+      hasFeature,
+      hasModuleAccess,
+      getModuleAccess,
+      canWriteModuleFn,
+      canWriteProductFn,
+      canWriteFeatureFn,
+      navVisible,
+      isViewOnly,
+      loadMe,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

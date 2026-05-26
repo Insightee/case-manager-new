@@ -37,6 +37,7 @@ export function CaseDetailPage() {
   const [statusMsg, setStatusMsg] = useState('')
   const [statusBusy, setStatusBusy] = useState(false)
   const [clinicalProfile, setClinicalProfile] = useState(null)
+  const [statusPending, setStatusPending] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -120,6 +121,16 @@ export function CaseDetailPage() {
         <p className="ic-case-detail__meta">
           {caseRow.service_type} · {caseRow.product_module}
         </p>
+        {statusPending ? (
+          <p className="ic-case-detail__pending-banner" role="status">
+            {statusPending.toStatus === 'SUSPENDED'
+              ? 'Pause'
+              : statusPending.toStatus === 'CLOSED'
+                ? 'Close'
+                : 'Status'}{' '}
+            requested — waiting for admin approval. Case stays {statusLabel} until reviewed.
+          </p>
+        ) : null}
       </header>
 
       <nav className="ic-case-tabs" aria-label="Case sections">
@@ -180,6 +191,7 @@ export function CaseDetailPage() {
                     })
                     setStatusMsg('Request submitted. Your case manager will review it.')
                     setStatusReason('')
+                    await load()
                   } catch (err) {
                     setStatusMsg(err.message || 'Could not submit request')
                   } finally {

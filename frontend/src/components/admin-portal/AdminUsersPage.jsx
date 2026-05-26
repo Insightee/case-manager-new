@@ -2,8 +2,8 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
 import { ModulePicker } from './ui/ModulePicker.jsx'
+import { buildRbacPayload, grantsFromAssignments } from './ui/RbacEditor.jsx'
 
-const ROLE_OPTIONS = ['ADMIN', 'CASE_MANAGER', 'SUPERVISOR', 'FINANCE', 'HR', 'THERAPIST']
 const INVITE_ONLY_ROLES = ['THERAPIST']
 
 const EMPTY_FORM = {
@@ -13,6 +13,8 @@ const EMPTY_FORM = {
   role_names: ['THERAPIST'],
   region: '',
   module_assignments: [],
+  feature_overrides: {},
+  view_only: false,
 }
 
 export function AdminUsersPage() {
@@ -20,11 +22,13 @@ export function AdminUsersPage() {
   const [catalog, setCatalog] = useState([])
   const [roleDefaults, setRoleDefaults] = useState({})
   const [search, setSearch] = useState('')
-  const [mode, setMode] = useState('invite') // 'invite' | 'direct'
+  const [mode, setMode] = useState('invite')
   const [form, setForm] = useState(EMPTY_FORM)
   const [inviteUrl, setInviteUrl] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editModules, setEditModules] = useState([])
+  const [editOverrides, setEditOverrides] = useState({})
+  const [editViewOnly, setEditViewOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -47,7 +51,9 @@ export function AdminUsersPage() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -61,6 +67,20 @@ export function AdminUsersPage() {
     )
   }, [users, search])
 
+  function setRoles(roles) {
+    const finalRoles = roles.length ? roles : form.role_names
+    setForm((prev) => ({
+      ...prev,
+      role_names: finalRoles,
+      module_assignments:
+        prev.module_assignments.length && finalRoles.length === 1
+          ? prev.module_assignments
+          : suggestModules(finalRoles),
+    }))
+    if (finalRoles.some((r) => INVITE_ONLY_ROLES.includes(r))) setMode('invite')
+    setInviteUrl('')
+  }
+
   function suggestModules(roles) {
     const suggested = new Set()
     for (const r of roles) {
@@ -69,24 +89,19 @@ export function AdminUsersPage() {
     return [...suggested]
   }
 
-  function toggleRole(role) {
-    setForm((prev) => {
-      const roles = prev.role_names.includes(role)
-        ? prev.role_names.filter((r) => r !== role)
-        : [...prev.role_names, role]
-      const finalRoles = roles.length ? roles : [role]
-      return { ...prev, role_names: finalRoles, module_assignments: suggestModules(finalRoles) }
-    })
-    if (INVITE_ONLY_ROLES.includes(role)) setMode('invite')
-    setInviteUrl('')
-  }
-
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     setSuccess('')
     setSubmitting(true)
     try {
+      const grants = grantsFromAssignments(form.module_assignments, form.view_only)
+      const access = buildRbacPayload({
+        roleNames: form.role_names,
+        grants,
+        featureOverrides: form.feature_overrides,
+        viewOnly: form.view_only,
+      })
       if (mode === 'invite') {
         const role = form.role_names[0] || 'THERAPIST'
         const res = await apiFetch('/api/v1/admin/therapists/invite', {
@@ -94,7 +109,7 @@ export function AdminUsersPage() {
           body: JSON.stringify({
             email: form.email,
             role_name: role,
-            module_assignments: form.module_assignments,
+            ...access,
           }),
         })
         setInviteUrl(res.invite_url)
@@ -106,9 +121,8 @@ export function AdminUsersPage() {
             email: form.email,
             password: form.password,
             full_name: form.full_name,
-            role_names: form.role_names,
             region: form.region || null,
-            module_assignments: form.role_names.includes('SUPER_ADMIN') ? [] : form.module_assignments,
+            ...access,
           }),
         })
         setForm(EMPTY_FORM)
@@ -125,14 +139,22 @@ export function AdminUsersPage() {
   function startEditModules(u) {
     setEditingId(u.id)
     setEditModules(u.module_assignments ?? [])
+    setEditOverrides(u.feature_overrides ?? {})
+    setEditViewOnly(Boolean(u.is_view_only))
   }
 
   async function saveEditModules(userId) {
     setError('')
     try {
+      const access = buildRbacPayload({
+        roleNames: users.find((x) => x.id === userId)?.roles ?? [],
+        grants: grantsFromAssignments(editModules, editViewOnly),
+        featureOverrides: editOverrides,
+        viewOnly: editViewOnly,
+      })
       await apiFetch(`/api/v1/admin/users/${userId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ module_assignments: editModules }),
+        body: JSON.stringify(access),
       })
       setEditingId(null)
       load()
@@ -160,14 +182,20 @@ export function AdminUsersPage() {
           <button
             type="button"
             className={`admin-btn admin-btn--sm ${mode === 'invite' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => { setMode('invite'); setInviteUrl(''); setError(''); setSuccess('') }}
+            onClick={() => {
+              setMode('invite')
+              setInviteUrl('')
+            }}
           >
-            Send invite link
+            Send invite
           </button>
           <button
             type="button"
             className={`admin-btn admin-btn--sm ${mode === 'direct' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => { setMode('direct'); setInviteUrl(''); setError(''); setSuccess('') }}
+            onClick={() => {
+              setMode('direct')
+              setInviteUrl('')
+            }}
           >
             Create directly
           </button>
@@ -177,6 +205,7 @@ export function AdminUsersPage() {
           <label>
             Email
             <input
+              className="admin-input"
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -184,21 +213,23 @@ export function AdminUsersPage() {
             />
           </label>
 
-          {needsFullName && (
+          {needsFullName ? (
             <label>
               Full name
               <input
+                className="admin-input"
                 value={form.full_name}
                 onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                 required
               />
             </label>
-          )}
+          ) : null}
 
           {needsPassword && (
             <label>
               Password
               <input
+                className="admin-input"
                 type="password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -211,36 +242,26 @@ export function AdminUsersPage() {
           {needsFullName && (
             <label>
               Region (optional)
-              <input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
+              <input
+                className="admin-input"
+                value={form.region}
+                onChange={(e) => setForm({ ...form, region: e.target.value })}
+              />
             </label>
           )}
-
-          <fieldset className="module-picker__roles">
-            <legend className="module-picker__title">
-              {mode === 'invite' ? 'Role (single)' : 'Roles'}
-            </legend>
-            <div className="admin-chip-row">
-              {ROLE_OPTIONS.map((role) => (
-                <label key={role} className="admin-chip" style={{ cursor: 'pointer' }}>
-                  <input
-                    type={mode === 'invite' ? 'radio' : 'checkbox'}
-                    name={mode === 'invite' ? 'invite-role' : undefined}
-                    checked={form.role_names.includes(role)}
-                    onChange={() => toggleRole(role)}
-                    style={{ marginRight: 6 }}
-                  />
-                  {role}
-                </label>
-              ))}
-            </div>
-          </fieldset>
 
           <ModulePicker
             catalog={catalog}
             roleDefaults={roleDefaults}
             selectedRoles={form.role_names}
+            onRoleChange={setRoles}
+            allowMultiRole={mode === 'direct'}
             value={form.module_assignments}
             onChange={(module_assignments) => setForm({ ...form, module_assignments })}
+            featureOverrides={form.feature_overrides}
+            onFeatureOverridesChange={(feature_overrides) => setForm({ ...form, feature_overrides })}
+            viewOnly={form.view_only}
+            onViewOnlyChange={(view_only) => setForm({ ...form, view_only })}
           />
 
           <button type="submit" className="admin-btn admin-btn--primary" disabled={submitting}>
@@ -259,7 +280,7 @@ export function AdminUsersPage() {
       <AdminPanel title={`${filtered.length} users`} padded={false}>
         <div className="admin-panel__body">
           <AdminToolbar>
-            <AdminSearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email, role, or module…" />
+            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name, email, role, or module…" />
           </AdminToolbar>
 
           {loading ? (
@@ -290,7 +311,9 @@ export function AdminUsersPage() {
                         <td>
                           <div className="admin-chip-row">
                             {u.roles.map((r) => (
-                              <span key={r} className="admin-chip">{r}</span>
+                              <span key={r} className="admin-chip">
+                                {r}
+                              </span>
                             ))}
                           </div>
                         </td>
@@ -301,6 +324,11 @@ export function AdminUsersPage() {
                                 {m}
                               </span>
                             ))}
+                            {u.is_view_only ? (
+                              <span className="admin-chip" style={{ background: '#f1f5f9', color: '#475569' }}>
+                                view only
+                              </span>
+                            ) : null}
                           </div>
                         </td>
                         <td>
@@ -326,6 +354,10 @@ export function AdminUsersPage() {
                                 selectedRoles={u.roles}
                                 value={editModules}
                                 onChange={setEditModules}
+                                featureOverrides={editOverrides}
+                                onFeatureOverridesChange={setEditOverrides}
+                                viewOnly={editViewOnly}
+                                onViewOnlyChange={setEditViewOnly}
                               />
                               <button
                                 type="button"

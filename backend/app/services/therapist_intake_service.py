@@ -29,21 +29,19 @@ def _split_child_name(child_name: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
-def create_walk_in_manual_session(
+def _create_intake_case(
     db: Session,
     *,
     therapist_user_id: int,
-    therapist_name: str,
     client_name: str,
     client_email: str,
     child_name: str,
     client_phone: str | None,
-    scheduled_date: date,
-    actual_start_at: datetime,
-    actual_end_at: datetime,
-    mode: SessionMode,
-    product_module: str = "homecare",
-) -> dict:
+    product_module: str,
+    intake_source: str,
+    start_date: date,
+    notes_suffix: str,
+) -> tuple[Case, InviteToken, str, object]:
     email = client_email.lower().strip()
     existing = db.scalars(select(User).where(User.email == email)).first()
     if existing:
@@ -61,7 +59,7 @@ def create_walk_in_manual_session(
         service_type=service_label,
         product_module=product_module,
         status=CaseStatus.PENDING_ALLOTMENT,
-        notes=f"Walk-in intake by therapist (forgotten session log). Parent: {client_name.strip()}",
+        notes=f"Therapist intake ({intake_source}). Parent: {client_name.strip()}. {notes_suffix}".strip(),
     )
     db.add(case)
     db.flush()
@@ -71,8 +69,8 @@ def create_walk_in_manual_session(
         case_id=case.id,
         therapist_user_id=therapist_user_id,
         assigned_by_user_id=therapist_user_id,
-        start_date=scheduled_date,
-        reason_for_change="Provisional assignment — walk-in intake pending admin allotment",
+        start_date=start_date,
+        reason_for_change="Provisional assignment — intake pending admin allotment",
     )
 
     token = secrets.token_urlsafe(32)
@@ -87,28 +85,94 @@ def create_walk_in_manual_session(
         invite_metadata={
             "pending_case_id": case.id,
             "therapist_user_id": therapist_user_id,
-            "intake_source": "forgot_session",
+            "intake_source": intake_source,
             "client_name": client_name.strip(),
             "child_name": child_label,
             "client_phone": client_phone.strip() if client_phone else None,
+            "invite_sent_at": None,
         },
     )
     db.add(invite)
     db.flush()
+    return case, invite, f"{settings.frontend_url}/invite/{token}", child
 
-    invite_url = f"{settings.frontend_url}/invite/{token}"
+
+def create_client_intake(
+    db: Session,
+    *,
+    therapist_user_id: int,
+    client_name: str,
+    client_email: str,
+    child_name: str,
+    client_phone: str | None = None,
+    product_module: str = "homecare",
+) -> dict:
+    """Create case + parent invite token without sending email until session start."""
+    today = date.today()
+    case, invite, invite_url, _child = _create_intake_case(
+        db,
+        therapist_user_id=therapist_user_id,
+        client_name=client_name,
+        client_email=client_email,
+        child_name=child_name,
+        client_phone=client_phone,
+        product_module=product_module,
+        intake_source="session_logs_live",
+        start_date=today,
+        notes_suffix="Invite email deferred until first session start.",
+    )
+    return {
+        "case": case,
+        "invite_url": invite_url,
+        "invite_sent": False,
+        "parent_email": invite.email,
+    }
+
+
+def create_walk_in_manual_session(
+    db: Session,
+    *,
+    therapist_user_id: int,
+    therapist_name: str,
+    client_name: str,
+    client_email: str,
+    child_name: str,
+    client_phone: str | None,
+    scheduled_date: date,
+    actual_start_at: datetime,
+    actual_end_at: datetime,
+    mode: SessionMode,
+    product_module: str = "homecare",
+) -> dict:
+    email = client_email.lower().strip()
+    case, invite, invite_url, child = _create_intake_case(
+        db,
+        therapist_user_id=therapist_user_id,
+        client_name=client_name,
+        client_email=email,
+        child_name=child_name,
+        client_phone=client_phone,
+        product_module=product_module,
+        intake_source="forgot_session",
+        start_date=scheduled_date,
+        notes_suffix="Walk-in via forgotten session log.",
+    )
     family_admin_service._send_parent_invite_email(
         email,
         invite_url,
         client_name.strip(),
         child.full_name,
     )
+    meta = dict(invite.invite_metadata or {})
+    meta["invite_sent_at"] = datetime.now(timezone.utc).isoformat()
+    invite.invite_metadata = meta
+    db.flush()
 
     when_label = f"forgotten session log · {scheduled_date.isoformat()}"
     appt_notify.notify_admins_walk_in_invite(
         db,
         therapist_name=therapist_name,
-        client_name=child_label,
+        client_name=child_name or client_name,
         client_email=email,
         slot_when=when_label,
     )

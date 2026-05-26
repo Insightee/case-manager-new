@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from datetime import date, time
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import extract, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.core.module_access import is_view_only_user
+from app.core.module_write import ensure_feature_write_access, guard_clinical_case
 from app.core.permissions import RoleName, user_has_permission
 from app.models.case import Case
 from app.models.child import Child
@@ -34,11 +37,15 @@ class CmMeetingCreate(BaseModel):
     duration_minutes: int = 30
     meeting_type: MeetingType = MeetingType.CLIENT_ONLY
     title: Optional[str] = None
+    meeting_url: Optional[str] = None
+    guest_emails: list[str] = Field(default_factory=list)
 
 
 class CmMeetingNotesUpdate(BaseModel):
     status: Optional[MeetingStatus] = None
     title: Optional[str] = None
+    meeting_url: Optional[str] = None
+    guest_emails: Optional[list[str]] = None
     notes_concerns: Optional[str] = None
     notes_follow_up: Optional[str] = None
     notes_action: Optional[str] = None
@@ -79,6 +86,17 @@ def _require_cm_meetings_write(user: User) -> None:
     allowed = {RoleName.CASE_MANAGER.value, RoleName.ADMIN.value, RoleName.SUPER_ADMIN.value}
     if role not in allowed and not user_has_permission(user, "admin.override"):
         raise HTTPException(status_code=403, detail="Case manager or admin role required")
+    if is_view_only_user(user):
+        raise HTTPException(status_code=403, detail="View-only access — changes are not allowed")
+
+
+def _guard_cm_meeting_write(user: User, case_id: int | None, db: Session) -> None:
+    if case_id:
+        case = db.get(Case, case_id)
+        if case:
+            guard_clinical_case(user, case, db, feature="cm_meetings")
+            return
+    ensure_feature_write_access(user, "cm_meetings", db=db)
 
 
 def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
@@ -114,6 +132,8 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
         "notes_follow_up": meeting.notes_follow_up,
         "notes_action": meeting.notes_action,
         "notes_other": meeting.notes_other,
+        "meeting_url": meeting.meeting_url,
+        "guest_emails": json.loads(meeting.guest_emails_json) if meeting.guest_emails_json else [],
         "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
     }
 
@@ -129,6 +149,7 @@ def create_cm_meeting(
     db: Session = Depends(get_db),
 ):
     _require_cm_meetings_write(user)
+    _guard_cm_meeting_write(user, payload.case_id, db)
     meeting_type = payload.meeting_type
     if payload.therapist_user_id:
         meeting_type = MeetingType.CLIENT_AND_THERAPIST
@@ -139,6 +160,7 @@ def create_cm_meeting(
             raise HTTPException(status_code=404, detail="Case not found")
         if case.child_id:
             parent_user_id = parent_service.primary_parent_user_id_for_child(db, case.child_id)
+    guest_json = json.dumps([e.strip() for e in payload.guest_emails if e and e.strip()]) if payload.guest_emails else None
     meeting = CaseManagerMeeting(
         case_manager_user_id=user.id,
         case_id=payload.case_id,
@@ -149,6 +171,8 @@ def create_cm_meeting(
         duration_minutes=payload.duration_minutes,
         meeting_type=meeting_type,
         title=payload.title,
+        meeting_url=(payload.meeting_url or "").strip() or None,
+        guest_emails_json=guest_json,
         status=MeetingStatus.SCHEDULED,
     )
     db.add(meeting)
@@ -234,6 +258,7 @@ def update_cm_meeting(
     meeting = db.get(CaseManagerMeeting, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    _guard_cm_meeting_write(user, meeting.case_id, db)
     role = user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
     if role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your meeting")
@@ -258,6 +283,12 @@ def update_cm_meeting(
         meeting.scheduled_time = payload.scheduled_time
     if payload.duration_minutes is not None:
         meeting.duration_minutes = payload.duration_minutes
+    if payload.meeting_url is not None:
+        meeting.meeting_url = (payload.meeting_url or "").strip() or None
+    if payload.guest_emails is not None:
+        meeting.guest_emails_json = json.dumps(
+            [e.strip() for e in payload.guest_emails if e and e.strip()]
+        ) or None
     db.commit()
     db.refresh(meeting)
     return _serialize(meeting, db)
@@ -273,6 +304,7 @@ def cancel_cm_meeting(
     meeting = db.get(CaseManagerMeeting, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    _guard_cm_meeting_write(user, meeting.case_id, db)
     role = user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
     if role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your meeting")

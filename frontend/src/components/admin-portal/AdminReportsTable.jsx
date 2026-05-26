@@ -16,6 +16,7 @@ export function AdminReportsTable({
   onView,
   onApprove,
   onReject,
+  canReviewRow = () => true,
 }) {
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(`${r.report_type}:${r.id}`))
 
@@ -105,8 +106,9 @@ export function AdminReportsTable({
                       >
                         View
                       </button>
-                      {(r.status === 'UNDER_REVIEW' ||
-                        r.parent_review_status === 'CHANGES_REQUESTED') && (
+                      {canReviewRow(r) &&
+                      (r.status === 'UNDER_REVIEW' ||
+                        r.parent_review_status === 'CHANGES_REQUESTED') ? (
                         <>
                           <button
                             type="button"
@@ -125,7 +127,7 @@ export function AdminReportsTable({
                             </button>
                           ) : null}
                         </>
-                      )}
+                      ) : null}
                     </div>
                   </td>
                 </tr>

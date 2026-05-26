@@ -25,22 +25,32 @@ from app.core.module_access import (
     user_has_feature,
     validate_module_assignments,
 )
+from app.core.module_write import (
+    ensure_billing_write_access,
+    ensure_case_write_access,
+    ensure_feature_write_access,
+    ensure_product_module_write_access,
+    guard_clinical_case,
+)
 from app.core.modules import ROLE_DEFAULT_MODULES, module_catalog_for_api
-from app.core.permissions import case_scope_check, require_permission, user_has_permission
+from app.core.permissions import case_scope_check, require_mutation_permission, require_permission, user_has_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
 from app.models.child import Child
 from app.models.daily_log import DailyLog
 from app.models.invoice import Invoice, InvoiceStatus
-from app.models.report import MonthlyReport, ReportStatus
+from app.models.report import MonthlyReport, ObservationReport, ReportStatus
 from app.schemas.admin_reports import (
     AdminReportDetail,
     AdminReportListItem,
     AdminReportSummary,
     BulkReportAction,
-    CmReviewAction,
     BulkReportResult,
+    CmReviewAction,
+    ReportCommentAction,
+    SendForReviewAction,
 )
+from app.schemas.report import MonthlyReportUpdate, ObservationReportUpdate
 from app.services import admin_report_service as admin_report_svc
 from app.models.session import Session as TherapySession
 from app.models.support_ticket import SupportTicket, TicketStatus
@@ -49,13 +59,16 @@ from app.models.user import InviteToken, User
 from app.schemas.admin_case_pipeline import AdminCasePipelineBoard
 from app.schemas.admin_iep import AdminIepDashboard
 from app.schemas.clinical import ObservationChecklistReview
-from app.schemas.iep_plan import IepPlanSave
+from app.schemas.iep_plan import IepPlanSave, IepPlanSuggestionCreate
 from app.schemas.therapist_onboarding import (
     TherapistBulkOnboardRequest,
     TherapistOnboardCreate,
     TherapistOnboardResult,
 )
+from app.models.service_category import ServiceCategory
 from app.schemas.therapist_profile import (
+    ServiceCategoryCreate,
+    ServiceCategoryRead,
     TherapistProfileAdminCreate,
     TherapistProfileRead,
     TherapistProfileReview,
@@ -70,7 +83,16 @@ from app.schemas.therapist_review import (
     TherapistSessionReviewRead,
 )
 from app.schemas.allotment import CaseAllotRequest, ChildCreate, FamilyCreate
+from app.schemas.rbac import RbacPreviewRequest
 from app.schemas.user import InviteCreate, UserCreate, UserRead, UserUpdate
+from app.core.rbac_access import (
+    ASSIGNABLE_STAFF_ROLES,
+    DEPRECATED_STAFF_ROLES,
+    validate_assignable_staff_roles,
+    module_catalog_entries,
+    preview_access,
+    sync_user_access_fields,
+)
 from app.services import auth_service, case_service, log_service, therapist_profile_service as profile_svc
 from app.services.admin_scope_service import apply_case_scope
 from app.services import therapist_review_service as review_svc
@@ -98,11 +120,180 @@ def _case_filter(allowed: set[str] | None):
 
 
 @router.get("/modules")
-def list_product_modules(user: User = Depends(require_permission("user.manage"))):
+def list_product_modules(
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.core.modules import _CLINICAL_FEATURES
+
+    fixed = module_catalog_for_api()
+    fixed_ids = {m["id"] for m in fixed}
+
+    # Merge dynamic service-type modules from ServiceCategory table
+    dynamic: list[dict] = []
+    try:
+        svc_cats = db.scalars(
+            select(ServiceCategory)
+            .where(ServiceCategory.is_active.is_(True))
+            .order_by(ServiceCategory.sort_order, ServiceCategory.label)
+        ).all()
+        for cat in svc_cats:
+            if cat.id not in fixed_ids:
+                dynamic.append({
+                    "id": cat.id,
+                    "label": cat.label,
+                    "description": cat.description or f"{cat.label} therapy service module.",
+                    "case_product_modules": [cat.id],
+                    "features": [{"id": f.id, "label": f.label, "permissions": list(f.permissions)} for f in _CLINICAL_FEATURES],
+                    "module_type": "service",
+                })
+    except Exception:
+        pass
+
     return {
-        "modules": module_catalog_for_api(),
+        "modules": fixed + dynamic,
         "role_defaults": ROLE_DEFAULT_MODULES,
     }
+
+
+def _user_to_read(u: User) -> UserRead:
+    return UserRead(
+        id=u.id,
+        email=u.email,
+        full_name=u.full_name,
+        phone=u.phone,
+        is_active=u.is_active,
+        is_view_only=getattr(u, "is_view_only", False),
+        roles=u.role_names,
+        region=u.region,
+        module_assignments=u.module_assignments or [],
+        module_access_grants=getattr(u, "module_access_grants", None) or {},
+        feature_overrides=getattr(u, "feature_overrides", None) or {},
+    )
+
+
+def _ensure_assignable_roles(role_names: list[str]) -> None:
+    try:
+        validate_assignable_staff_roles(role_names)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+def _apply_access_payload(
+    user: User,
+    *,
+    role_names: list[str],
+    module_assignments: list[str] | None = None,
+    module_access_grants: dict | None = None,
+    feature_overrides: dict | None = None,
+    view_only: bool | None = None,
+    db: Session,
+) -> None:
+    if module_assignments is not None and module_access_grants is None:
+        validate_module_assignments(role_names, module_assignments, db)
+    sync_user_access_fields(
+        user,
+        role_names=role_names,
+        module_assignments=module_assignments,
+        module_access_grants=module_access_grants,
+        feature_overrides=feature_overrides,
+        view_only=view_only,
+    )
+    roles_upper = {r.upper() for r in role_names}
+    if "SUPER_ADMIN" not in roles_upper:
+        validate_module_assignments(role_names, user.module_assignments, db)
+
+
+@router.get("/rbac/catalog")
+def rbac_catalog(
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    return {
+        "assignable_roles": list(ASSIGNABLE_STAFF_ROLES),
+        "deprecated_roles": sorted(DEPRECATED_STAFF_ROLES),
+        "modules": module_catalog_entries(db),
+        "role_defaults": ROLE_DEFAULT_MODULES,
+    }
+
+
+@router.post("/rbac/preview")
+def rbac_preview(
+    payload: RbacPreviewRequest,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    return preview_access(
+        role_names=payload.role_names,
+        module_access_grants=payload.module_access_grants,
+        feature_overrides=payload.feature_overrides,
+        view_only=payload.view_only,
+        db=db,
+    )
+
+
+@router.get("/service-categories", response_model=list[ServiceCategoryRead])
+def list_service_categories(
+    include_inactive: bool = False,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    stmt = select(ServiceCategory).order_by(ServiceCategory.sort_order, ServiceCategory.label)
+    if not include_inactive:
+        stmt = stmt.where(ServiceCategory.is_active.is_(True))
+    rows = db.scalars(stmt).all()
+    return [ServiceCategoryRead(id=r.id, label=r.label, description=r.description, sort_order=r.sort_order, is_active=r.is_active) for r in rows]
+
+
+@router.post("/service-categories", response_model=ServiceCategoryRead, status_code=status.HTTP_201_CREATED)
+def create_service_category(
+    payload: ServiceCategoryCreate,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    import re
+    slug = payload.id
+    if not slug:
+        slug = re.sub(r"[^a-z0-9]+", "_", payload.label.strip().lower()).strip("_")
+    existing = db.get(ServiceCategory, slug)
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+            existing.label = payload.label
+            db.commit()
+            db.refresh(existing)
+            return ServiceCategoryRead(id=existing.id, label=existing.label, description=existing.description, sort_order=existing.sort_order, is_active=existing.is_active)
+        raise HTTPException(status_code=400, detail=f"Service category '{slug}' already exists")
+    cat = ServiceCategory(
+        id=slug,
+        label=payload.label,
+        description=payload.description or "",
+        sort_order=payload.sort_order,
+        is_active=True,
+    )
+    db.add(cat)
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="create", entity_type="service_category", entity_id=slug, **meta)
+    db.commit()
+    db.refresh(cat)
+    return ServiceCategoryRead(id=cat.id, label=cat.label, description=cat.description, sort_order=cat.sort_order, is_active=cat.is_active)
+
+
+@router.delete("/service-categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_service_category(
+    category_id: str,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    cat = db.get(ServiceCategory, category_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Service category not found")
+    cat.is_active = False
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="delete", entity_type="service_category", entity_id=category_id, **meta)
+    db.commit()
 
 
 def _workbench_user(user: User = Depends(get_current_user)) -> User:
@@ -135,6 +326,28 @@ def admin_home(
     from app.services import admin_home_service
 
     return admin_home_service.build_admin_home(db, user)
+
+
+def _require_case_manager_home(user: User = Depends(get_current_user)) -> User:
+    if "CASE_MANAGER" not in user.role_names:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Case Manager home requires CASE_MANAGER role",
+        )
+    if not user_has_permission(user, "case.read.team"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return user
+
+
+@router.get("/cm/home")
+def admin_cm_home(
+    user: User = Depends(_require_case_manager_home),
+    db: Session = Depends(get_db),
+):
+    from app.schemas.admin_cm_home import AdminCmHomeResponse
+    from app.services import admin_cm_home_service
+
+    return AdminCmHomeResponse.model_validate(admin_cm_home_service.build_cm_home(db, user))
 
 
 @router.get("/audit")
@@ -365,6 +578,7 @@ def sessions_analytics(
     date_to: Optional[str] = None,
     therapist_id: Optional[int] = None,
     product_module: Optional[str] = None,
+    case_id: Optional[int] = None,
     session_status: Optional[str] = Query(None, alias="status"),
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
@@ -387,6 +601,8 @@ def sessions_analytics(
         base_filters.append(Case.product_module == product_module)
     if session_status:
         base_filters.append(TherapySession.status == session_status)
+    if case_id:
+        base_filters.append(TherapySession.case_id == case_id)
 
     # Base join: session → case
     base_q = (
@@ -548,11 +764,13 @@ def sessions_analytics(
 
     # Recent sessions for the table (last 50 within filter range)
     from sqlalchemy.orm import selectinload
+    recent_limit = 200 if case_id else 50
     sessions_q = (
         select(TherapySession)
         .join(Case, TherapySession.case_id == Case.id)
         .options(
             selectinload(TherapySession.case).selectinload(Case.child),
+            selectinload(TherapySession.daily_log),
         )
         .where(
             TherapySession.scheduled_date >= d_from,
@@ -560,7 +778,7 @@ def sessions_analytics(
             *base_filters,
         )
         .order_by(TherapySession.scheduled_date.desc())
-        .limit(50)
+        .limit(recent_limit)
     )
     sessions_rows = db.scalars(sessions_q).all()
     recent_sessions = []
@@ -595,6 +813,7 @@ def sessions_analytics(
             "mode": s.mode.value if hasattr(s.mode, "value") else s.mode,
             "status": s.status.value if hasattr(s.status, "value") else s.status,
             "duration_mins": duration_mins,
+            "has_daily_log": s.daily_log is not None,
         })
 
     return {
@@ -659,6 +878,7 @@ def export_sessions_xlsx(
     date_to: Optional[str] = None,
     therapist_id: Optional[int] = None,
     product_module: Optional[str] = None,
+    case_id: Optional[int] = None,
     session_status: Optional[str] = Query(None, alias="status"),
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
@@ -682,6 +902,8 @@ def export_sessions_xlsx(
         base_filters.append(Case.product_module == product_module)
     if session_status:
         base_filters.append(TherapySession.status == session_status)
+    if case_id:
+        base_filters.append(TherapySession.case_id == case_id)
 
     from sqlalchemy.orm import selectinload
     sessions_rows = db.scalars(
@@ -742,6 +964,7 @@ def export_sessions_pdf(
     date_to: Optional[str] = None,
     therapist_id: Optional[int] = None,
     product_module: Optional[str] = None,
+    case_id: Optional[int] = None,
     session_status: Optional[str] = Query(None, alias="status"),
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
@@ -767,6 +990,8 @@ def export_sessions_pdf(
         base_filters.append(Case.product_module == product_module)
     if session_status:
         base_filters.append(TherapySession.status == session_status)
+    if case_id:
+        base_filters.append(TherapySession.case_id == case_id)
 
     sessions_rows = db.scalars(
         select(TherapySession)
@@ -892,19 +1117,7 @@ def list_users(
 ):
     stmt = select(User).order_by(User.email)
     users, total = paginate_query(db, stmt, page=page, page_size=page_size)
-    items = [
-        UserRead(
-            id=u.id,
-            email=u.email,
-            full_name=u.full_name,
-            phone=u.phone,
-            is_active=u.is_active,
-            roles=u.role_names,
-            region=u.region,
-            module_assignments=u.module_assignments or [],
-        )
-        for u in users
-    ]
+    items = [_user_to_read(u) for u in users]
     return PaginatedList[UserRead](
         items=items,
         total=total,
@@ -914,24 +1127,75 @@ def list_users(
     )
 
 
+@router.get("/users/directory", response_model=list)
+def users_directory(
+    roles: Optional[str] = Query(None, description="Comma-separated role names e.g. THERAPIST,CASE_MANAGER"),
+    search: Optional[str] = None,
+    active_only: bool = True,
+    limit: int = Query(500, ge=1, le=500),
+    user: User = Depends(require_user_directory_read),
+    db: Session = Depends(get_db),
+):
+    from app.schemas.user import UserDirectoryItem
+
+    role_set = {r.strip().upper() for r in (roles or "").split(",") if r.strip()}
+    stmt = select(User).order_by(User.full_name, User.email)
+    if active_only:
+        stmt = stmt.where(User.is_active.is_(True))
+    rows = list(db.scalars(stmt.limit(limit)).all())
+    out: list[UserDirectoryItem] = []
+    q = (search or "").strip().lower()
+    for u in rows:
+        user_roles = [str(r).upper() for r in (u.role_names or [])]
+        if role_set and not role_set.intersection(user_roles):
+            continue
+        if q:
+            hay = f"{u.full_name} {u.email}".lower()
+            if q not in hay:
+                continue
+        out.append(
+            UserDirectoryItem(
+                id=u.id,
+                email=u.email,
+                full_name=u.full_name or u.email,
+                roles=user_roles,
+            )
+        )
+    return out
+
+
 @router.patch("/users/{user_id}", response_model=UserRead)
 def update_user(
     user_id: int,
     payload: UserUpdate,
     request: Request,
-    current: User = Depends(require_permission("user.manage")),
+    current: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     if payload.role_names is not None:
+        _ensure_assignable_roles(payload.role_names)
         from app.models.role import Role
 
         roles = db.scalars(select(Role).where(Role.name.in_(payload.role_names))).all()
         target.roles = list(roles)
-    if payload.module_assignments is not None:
-        target.module_assignments = validate_module_assignments(target.role_names, payload.module_assignments)
+    if (
+        payload.module_assignments is not None
+        or payload.module_access_grants is not None
+        or payload.feature_overrides is not None
+        or payload.view_only is not None
+    ):
+        _apply_access_payload(
+            target,
+            role_names=target.role_names,
+            module_assignments=payload.module_assignments,
+            module_access_grants=payload.module_access_grants,
+            feature_overrides=payload.feature_overrides,
+            view_only=payload.view_only,
+            db=db,
+        )
     if payload.region is not None:
         target.region = payload.region
     if payload.is_active is not None:
@@ -940,26 +1204,17 @@ def update_user(
     log_audit(db, actor_user_id=current.id, action="update", entity_type="user", entity_id=user_id, **meta)
     db.commit()
     db.refresh(target)
-    return UserRead(
-        id=target.id,
-        email=target.email,
-        full_name=target.full_name,
-        phone=target.phone,
-        is_active=target.is_active,
-        roles=target.role_names,
-        region=target.region,
-        module_assignments=target.module_assignments or [],
-    )
+    return _user_to_read(target)
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreate,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    modules = validate_module_assignments(payload.role_names, payload.module_assignments)
+    _ensure_assignable_roles(payload.role_names)
     new_user = auth_service.create_user(
         db,
         email=payload.email,
@@ -967,22 +1222,21 @@ def create_user(
         full_name=payload.full_name,
         role_names=payload.role_names,
         region=payload.region,
-        module_assignments=modules,
+    )
+    _apply_access_payload(
+        new_user,
+        role_names=payload.role_names,
+        module_assignments=payload.module_assignments,
+        module_access_grants=payload.module_access_grants,
+        feature_overrides=payload.feature_overrides,
+        view_only=payload.view_only,
+        db=db,
     )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="user", entity_id=new_user.id, **meta)
     db.commit()
     db.refresh(new_user)
-    return UserRead(
-        id=new_user.id,
-        email=new_user.email,
-        full_name=new_user.full_name,
-        phone=new_user.phone,
-        is_active=new_user.is_active,
-        roles=new_user.role_names,
-        region=new_user.region,
-        module_assignments=new_user.module_assignments or [],
-    )
+    return _user_to_read(new_user)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1010,7 +1264,9 @@ def invite_therapist(
 ):
     """Legacy generic invite; therapist invites use richer metadata via onboard_therapist_invite."""
     role = payload.role_name or "THERAPIST"
-    modules = validate_module_assignments([role], payload.module_assignments)
+    if role != "THERAPIST":
+        _ensure_assignable_roles([role])
+    modules = validate_module_assignments([role], payload.module_assignments, db)
     if role == "THERAPIST":
         try:
             result = therapist_onboard_svc.onboard_therapist_invite(
@@ -1043,6 +1299,15 @@ def invite_therapist(
             "expires_at": result["expires_at"],
         }
     token = secrets.token_urlsafe(32)
+    invite_meta: dict = {}
+    if payload.full_name and payload.full_name.strip():
+        invite_meta["full_name"] = payload.full_name.strip()
+    if payload.view_only:
+        invite_meta["view_only"] = True
+    if payload.module_access_grants:
+        invite_meta["module_access_grants"] = payload.module_access_grants
+    if payload.feature_overrides:
+        invite_meta["feature_overrides"] = payload.feature_overrides
     invite = InviteToken(
         email=payload.email.lower(),
         role_name=role,
@@ -1050,6 +1315,7 @@ def invite_therapist(
         token=token,
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
         created_by_user_id=user.id,
+        invite_metadata=invite_meta or None,
     )
     db.add(invite)
     meta = get_request_meta(request)
@@ -1095,6 +1361,57 @@ def onboard_therapist(
     log_audit(db, actor_user_id=user.id, action="onboard_therapist", entity_type="user", entity_id=result.get("user_id"), **meta)
     db.commit()
     return result
+
+
+@router.get("/therapists/bulk-template.xlsx")
+def therapist_bulk_template(
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    """Return a pre-formatted Excel workbook for bulk therapist upload."""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl not installed")
+
+    from app.core.therapist_services import get_service_categories
+
+    svc_cats = get_service_categories(db)
+    svc_ids = "|".join(s["id"] for s in svc_cats[:5])
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Therapists"
+
+    headers = ["Full Name", "Email", "Phone", "Services (pipe-separated)", "Notes"]
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="4F46E5")
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        ws.column_dimensions[cell.column_letter].width = max(18, len(header) + 4)
+
+    ws.append(["Jane Doe", "jane@example.com", "+91 98765 43210", svc_ids, "Example row"])
+
+    svc_ws = wb.create_sheet("Service IDs")
+    svc_ws.append(["Service ID", "Label"])
+    svc_ws.cell(1, 1).font = Font(bold=True)
+    svc_ws.cell(1, 2).font = Font(bold=True)
+    for s in svc_cats:
+        svc_ws.append([s["id"], s["label"]])
+    svc_ws.column_dimensions["A"].width = 28
+    svc_ws.column_dimensions["B"].width = 32
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=\"therapist_bulk_template.xlsx\""},
+    )
 
 
 @router.post("/therapists/bulk-onboard", response_model=list[TherapistOnboardResult])
@@ -1181,7 +1498,7 @@ def admin_create_therapist_profile(
     if existing:
         raise HTTPException(status_code=400, detail="Profile already exists for this therapist")
     profile = TherapistProfile(user_id=payload.user_id)
-    profile_svc.apply_profile_fields(profile, payload.model_dump(exclude={"user_id", "status"}))
+    profile_svc.apply_profile_fields(profile, payload.model_dump(exclude={"user_id", "status"}), db)
     try:
         st = TherapistProfileStatus(payload.status or "APPROVED")
     except ValueError:
@@ -1209,7 +1526,7 @@ def admin_update_therapist_profile(
     profile = db.get(TherapistProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    profile_svc.apply_profile_fields(profile, payload.model_dump(exclude_unset=True))
+    profile_svc.apply_profile_fields(profile, payload.model_dump(exclude_unset=True), db)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="therapist_profile", entity_id=profile_id, **meta)
     db.commit()
@@ -1368,6 +1685,9 @@ def admin_iep_dashboard(
     status: Optional[str] = Query(None, description="MISSING | INTERNAL_ONLY | AWAITING_ACK | ACKNOWLEDGED | ALL"),
     product_module: Optional[str] = None,
     search: Optional[str] = None,
+    therapist_user_id: Optional[int] = None,
+    session_from: Optional[str] = Query(None, description="ISO date YYYY-MM-DD"),
+    session_to: Optional[str] = Query(None, description="ISO date YYYY-MM-DD"),
     include_closed: bool = False,
     user: User = Depends(_iep_reader),
     db: Session = Depends(get_db),
@@ -1378,6 +1698,9 @@ def admin_iep_dashboard(
         status=status,
         product_module=product_module,
         search=search,
+        therapist_user_id=therapist_user_id,
+        session_from=session_from,
+        session_to=session_to,
         include_closed=include_closed,
     )
     return AdminIepDashboard(**data)
@@ -1498,10 +1821,17 @@ def admin_approve_status_request(
     request_id: int,
     payload: StatusRequestReview,
     request: Request,
-    user: User = Depends(require_permission("case.update")),
+    user: User = Depends(require_mutation_permission("case.update")),
     db: Session = Depends(get_db),
 ):
-    from app.services import case_status_request_service as csr_svc
+    from app.models.case_status_request import CaseStatusRequest
+    from app.services import case_service, case_status_request_service as csr_svc
+
+    req_row = db.get(CaseStatusRequest, request_id)
+    if req_row:
+        case = case_service.get_case(db, req_row.case_id)
+        if case:
+            guard_clinical_case(user, case, db)
 
     try:
         case = csr_svc.approve_request(db, request_id, user, payload.note)
@@ -1526,13 +1856,19 @@ def admin_reject_status_request(
     request_id: int,
     payload: StatusRequestReview,
     request: Request,
-    user: User = Depends(require_permission("case.update")),
+    user: User = Depends(require_mutation_permission("case.update")),
     db: Session = Depends(get_db),
 ):
-    from app.services import case_status_request_service as csr_svc
+    from app.models.case_status_request import CaseStatusRequest
+    from app.services import case_service, case_status_request_service as csr_svc
 
     if not payload.note or len(payload.note.strip()) < 3:
         raise HTTPException(status_code=400, detail="Review note is required to reject")
+    req_row = db.get(CaseStatusRequest, request_id)
+    if req_row:
+        case = case_service.get_case(db, req_row.case_id)
+        if case:
+            guard_clinical_case(user, case, db)
     try:
         csr_svc.reject_request(db, request_id, user, payload.note)
     except ValueError as e:
@@ -1590,9 +1926,14 @@ def admin_approve_observation_checklist(
     from app.schemas.clinical import ObservationChecklistReview
     from app.services import observation_checklist_service as obs_svc
 
+    from app.services import case_service
+
     checklist = db.get(ObservationChecklist, checklist_id)
     if not checklist:
         raise HTTPException(status_code=404, detail="Checklist not found")
+    case = case_service.get_case(db, checklist.case_id)
+    if case:
+        guard_clinical_case(user, case, db, feature="reports")
     try:
         obs_svc.approve_checklist(
             db,
@@ -1614,9 +1955,8 @@ def admin_approve_observation_checklist(
         **meta,
     )
     db.commit()
-    from app.services import case_service
-
-    case = case_service.get_case(db, checklist.case_id)
+    if not case:
+        case = case_service.get_case(db, checklist.case_id)
     return obs_svc.checklist_to_dict(db, checklist, case, user)
 
 
@@ -1635,6 +1975,9 @@ def admin_reject_observation_checklist(
     checklist = db.get(ObservationChecklist, checklist_id)
     if not checklist:
         raise HTTPException(status_code=404, detail="Checklist not found")
+    case = case_service.get_case(db, checklist.case_id)
+    if case:
+        guard_clinical_case(user, case, db, feature="reports")
     if not payload.comment or len(payload.comment.strip()) < 3:
         raise HTTPException(status_code=400, detail="Reviewer comment is required")
     try:
@@ -1687,7 +2030,7 @@ def admin_get_iep_plan(
 def admin_save_iep_plan(
     case_id: int,
     payload: IepPlanSave,
-    user: User = Depends(require_permission("iep.read")),
+    user: User = Depends(require_mutation_permission("iep.read")),
     db: Session = Depends(get_db),
 ):
     from app.services import case_service, iep_plan_service as iep_svc
@@ -1695,6 +2038,7 @@ def admin_save_iep_plan(
     case = case_service.get_case(db, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    guard_clinical_case(user, case, db, feature="iep")
     plan = iep_svc.get_or_create_plan(db, case, user)
     try:
         iep_svc.save_plan(db, plan, payload.sections, payload.version)
@@ -1708,7 +2052,7 @@ def admin_save_iep_plan(
 def admin_share_iep_plan(
     case_id: int,
     request: Request,
-    user: User = Depends(require_permission("iep.read")),
+    user: User = Depends(require_mutation_permission("iep.read")),
     db: Session = Depends(get_db),
 ):
     from app.services import case_service, iep_plan_service as iep_svc
@@ -1716,6 +2060,7 @@ def admin_share_iep_plan(
     case = case_service.get_case(db, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    guard_clinical_case(user, case, db, feature="iep")
     plan = iep_svc.get_or_create_plan(db, case, user)
     try:
         iep_svc.share_plan_with_parent(db, plan, user)
@@ -1731,6 +2076,87 @@ def admin_share_iep_plan(
         case_id=case_id,
         **meta,
     )
+    db.commit()
+    return iep_svc.plan_to_dict(db, plan, user)
+
+
+@router.get("/cases/{case_id}/iep-plan/preview")
+def admin_iep_plan_preview(
+    case_id: int,
+    user: User = Depends(require_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="IEP plan not found")
+    html = iep_svc.sections_to_preview_html(db, plan)
+    return {"html": html}
+
+
+@router.post("/cases/{case_id}/iep-plan/suggestions")
+def admin_iep_plan_suggestion(
+    case_id: int,
+    payload: IepPlanSuggestionCreate,
+    user: User = Depends(require_mutation_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    guard_clinical_case(user, case, db, feature="iep")
+    plan = iep_svc.get_or_create_plan(db, case, user)
+    role = user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "ADMIN")
+    try:
+        row = iep_svc.add_suggestion(db, plan, user, role, payload.body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return iep_svc.plan_to_dict(db, plan, user)
+
+
+@router.post("/cases/{case_id}/iep-plan/suggestions/resolve")
+def admin_resolve_iep_suggestions(
+    case_id: int,
+    user: User = Depends(require_mutation_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    guard_clinical_case(user, case, db, feature="iep")
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="IEP plan not found")
+    iep_svc.resolve_suggestions(db, plan)
+    db.commit()
+    return iep_svc.plan_to_dict(db, plan, user)
+
+
+@router.post("/cases/{case_id}/iep-plan/approve")
+def admin_approve_iep_plan(
+    case_id: int,
+    user: User = Depends(require_mutation_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    guard_clinical_case(user, case, db, feature="iep")
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="IEP plan not found")
+    iep_svc.approve_plan(db, plan)
     db.commit()
     return iep_svc.plan_to_dict(db, plan, user)
 
@@ -1780,13 +2206,15 @@ def admin_link_parent_child(
 def admin_allot_case(
     payload: CaseAllotRequest,
     request: Request,
-    user: User = Depends(require_permission("case.create")),
+    user: User = Depends(require_mutation_permission("case.create")),
     db: Session = Depends(get_db),
 ):
     from app.services import allotment_service
 
+    data = payload.model_dump()
+    ensure_product_module_write_access(user, data.get("product_module") or "homecare", db)
     try:
-        result = allotment_service.allot_case(db, user, payload.model_dump())
+        result = allotment_service.allot_case(db, user, data)
     except HTTPException:
         raise
     except ValueError as e:
@@ -1804,11 +2232,19 @@ def admin_allot_case(
     return result
 
 
-def _reports_admin_user(user: User = Depends(get_current_user)) -> User:
+def _reports_reader(user: User = Depends(get_current_user)) -> User:
     if not user_has_permission(user, "monthly_report.approve"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
     if not user_has_feature(user, "reports"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reports module not enabled")
+    return user
+
+
+def _reports_admin_user(user: User = Depends(_reports_reader)) -> User:
+    from app.core.module_access import is_view_only_user
+
+    if is_view_only_user(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="View-only access — changes are not allowed")
     return user
 
 
@@ -1823,7 +2259,7 @@ def _parse_report_status(value: Optional[str]) -> ReportStatus | None:
 
 @router.get("/reports/summary", response_model=AdminReportSummary)
 def admin_reports_summary(
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     return admin_report_svc.get_summary(db, user)
@@ -1837,7 +2273,7 @@ def admin_reports_queue(
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     items, meta = admin_report_svc.list_queue_admin(
@@ -1871,7 +2307,7 @@ def admin_reports_monthly_list(
     queue_only: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     items, meta = admin_report_svc.list_monthly_admin(
@@ -1907,7 +2343,7 @@ def admin_reports_observation_list(
     queue_only: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     items, meta = admin_report_svc.list_observation_admin(
@@ -1934,7 +2370,7 @@ def admin_reports_observation_list(
 @router.get("/reports/monthly/{report_id}", response_model=AdminReportDetail)
 def admin_reports_monthly_detail(
     report_id: int,
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     detail = admin_report_svc.get_monthly_detail(db, user, report_id)
@@ -1946,7 +2382,7 @@ def admin_reports_monthly_detail(
 @router.get("/reports/observation/{report_id}", response_model=AdminReportDetail)
 def admin_reports_observation_detail(
     report_id: int,
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     detail = admin_report_svc.get_observation_detail(db, user, report_id)
@@ -1971,6 +2407,7 @@ def admin_reports_monthly_cm_review(
     case = case_service.get_case(db, report.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Report not found")
+    guard_clinical_case(user, case, db, feature="reports")
     if report.status != ReportStatus.UNDER_REVIEW:
         raise HTTPException(status_code=400, detail="Report is not awaiting review")
     if not payload.comment.strip():
@@ -1996,6 +2433,232 @@ def admin_reports_monthly_cm_review(
     detail = admin_report_svc.get_monthly_detail(db, user, report_id)
     if not detail:
         raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+@router.post("/reports/observation/{report_id}/cm-review", response_model=AdminReportDetail)
+def admin_reports_observation_cm_review(
+    report_id: int,
+    payload: CmReviewAction,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, report_service
+
+    report = db.get(ObservationReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    guard_clinical_case(user, case, db, feature="reports")
+    if report.status != ReportStatus.UNDER_REVIEW:
+        raise HTTPException(status_code=400, detail="Report is not awaiting review")
+    if not payload.comment.strip():
+        raise HTTPException(status_code=400, detail="Comment is required")
+    report_service.cm_review_observation_report(
+        db,
+        report,
+        user.id,
+        comment=payload.comment,
+        request_changes=payload.request_changes,
+    )
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="cm_review",
+        entity_type="observation_report",
+        entity_id=report_id,
+        **meta,
+    )
+    db.commit()
+    detail = admin_report_svc.get_observation_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+def _report_send_for_review(
+    db: Session,
+    user: User,
+    report_type: str,
+    report_id: int,
+    payload: SendForReviewAction,
+):
+    from app.services import case_service, report_service
+
+    if report_type == "monthly":
+        report = db.get(MonthlyReport, report_id)
+        entity_type = "monthly_report"
+    else:
+        report = db.get(ObservationReport, report_id)
+        entity_type = "observation_report"
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    guard_clinical_case(user, case, db, feature="reports")
+    if report.status not in (ReportStatus.UNDER_REVIEW, ReportStatus.DRAFT, ReportStatus.REJECTED):
+        raise HTTPException(status_code=400, detail="Report cannot be sent for review in its current status")
+    if not payload.comment.strip():
+        raise HTTPException(status_code=400, detail="Comment is required")
+    if report_type == "monthly":
+        report_service.send_monthly_for_review(
+            db, report, user.id, target=payload.target, comment=payload.comment
+        )
+    else:
+        report_service.send_observation_for_review(
+            db, report, user.id, target=payload.target, comment=payload.comment
+        )
+    return entity_type, report
+
+
+@router.post("/reports/monthly/{report_id}/send-for-review", response_model=AdminReportDetail)
+def admin_reports_monthly_send_for_review(
+    report_id: int,
+    payload: SendForReviewAction,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    entity_type, _report = _report_send_for_review(db, user, "monthly", report_id, payload)
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="send_for_review", entity_type=entity_type, entity_id=report_id, **meta)
+    db.commit()
+    detail = admin_report_svc.get_monthly_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+@router.post("/reports/observation/{report_id}/send-for-review", response_model=AdminReportDetail)
+def admin_reports_observation_send_for_review(
+    report_id: int,
+    payload: SendForReviewAction,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    entity_type, _report = _report_send_for_review(db, user, "observation", report_id, payload)
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="send_for_review", entity_type=entity_type, entity_id=report_id, **meta)
+    db.commit()
+    detail = admin_report_svc.get_observation_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+def _report_add_comment(
+    db: Session,
+    user: User,
+    report_type: str,
+    report_id: int,
+    payload: ReportCommentAction,
+):
+    from app.services import case_service, report_service
+
+    if report_type == "monthly":
+        report = db.get(MonthlyReport, report_id)
+        entity_type = "monthly_report"
+    else:
+        report = db.get(ObservationReport, report_id)
+        entity_type = "observation_report"
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    guard_clinical_case(user, case, db, feature="reports")
+    if not payload.comment.strip():
+        raise HTTPException(status_code=400, detail="Comment is required")
+    if report_type == "monthly":
+        report_service.add_monthly_review_note(db, report, user.id, payload.comment)
+    else:
+        report_service.add_observation_review_note(db, report, user.id, payload.comment)
+    return entity_type
+
+
+@router.post("/reports/monthly/{report_id}/comment", response_model=AdminReportDetail)
+def admin_reports_monthly_comment(
+    report_id: int,
+    payload: ReportCommentAction,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    entity_type = _report_add_comment(db, user, "monthly", report_id, payload)
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="review_comment", entity_type=entity_type, entity_id=report_id, **meta)
+    db.commit()
+    detail = admin_report_svc.get_monthly_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+@router.post("/reports/observation/{report_id}/comment", response_model=AdminReportDetail)
+def admin_reports_observation_comment(
+    report_id: int,
+    payload: ReportCommentAction,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    entity_type = _report_add_comment(db, user, "observation", report_id, payload)
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="review_comment", entity_type=entity_type, entity_id=report_id, **meta)
+    db.commit()
+    detail = admin_report_svc.get_observation_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+@router.patch("/reports/monthly/{report_id}", response_model=AdminReportDetail)
+def admin_reports_monthly_update(
+    report_id: int,
+    payload: MonthlyReportUpdate,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        detail = admin_report_svc.staff_update_monthly(
+            db, user, report_id, payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="update", entity_type="monthly_report", entity_id=report_id, **meta)
+    db.commit()
+    return detail
+
+
+@router.patch("/reports/observation/{report_id}", response_model=AdminReportDetail)
+def admin_reports_observation_update(
+    report_id: int,
+    payload: ObservationReportUpdate,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        detail = admin_report_svc.staff_update_observation(
+            db, user, report_id, payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="update", entity_type="observation_report", entity_id=report_id, **meta)
+    db.commit()
     return detail
 
 
@@ -2065,7 +2728,7 @@ def admin_reports_export_xlsx(
     month: Optional[str] = None,
     search: Optional[str] = None,
     queue_only: bool = False,
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     data = admin_report_svc.export_xlsx(
@@ -2095,7 +2758,7 @@ def admin_reports_export_pdf(
     month: Optional[str] = None,
     search: Optional[str] = None,
     queue_only: bool = False,
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     data = admin_report_svc.export_pdf(
@@ -2120,7 +2783,7 @@ def admin_reports_export_pdf(
 def admin_reports_missing_monthly(
     month: str = Query(..., description="Month label e.g. May 2026"),
     product_module: Optional[str] = None,
-    user: User = Depends(_reports_admin_user),
+    user: User = Depends(_reports_reader),
     db: Session = Depends(get_db),
 ):
     from app.schemas.report import MissingMonthlyCaseItem

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import settings
@@ -15,6 +15,17 @@ if not settings.is_sqlite:
 
 engine = create_engine(settings.database_url, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_connect_pragmas(dbapi_connection, _connection_record) -> None:
+    """WAL + busy_timeout reduce readonly/locked errors when seed runs alongside the API."""
+    if not settings.is_sqlite:
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 
 class Base(DeclarativeBase):
@@ -30,7 +41,10 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def ensure_sqlite_schema_patches() -> None:
-    """Apply additive SQLite columns when DB predates a migration (dev/test only)."""
+    """Apply additive SQLite columns when DB predates a migration (local dev only).
+
+    Production Postgres must use Alembic via ``scripts/migrate_production.py`` only.
+    """
     if not settings.is_sqlite or not settings.is_development:
         return
     insp = inspect(engine)
@@ -67,6 +81,53 @@ def ensure_sqlite_schema_patches() -> None:
         if "avatar_path" not in user_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN avatar_path VARCHAR(512)"))
+        if "is_view_only" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_view_only INTEGER NOT NULL DEFAULT 0"))
+        if "module_access_grants" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN module_access_grants JSON"))
+        if "feature_overrides" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN feature_overrides JSON"))
+
+    if insp.has_table("therapist_profiles"):
+        tp_cols = {c["name"] for c in insp.get_columns("therapist_profiles")}
+        with engine.begin() as conn:
+            if "supervisor_user_id" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN supervisor_user_id INTEGER"))
+            if "mentor_user_id" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN mentor_user_id INTEGER"))
+
+    if not insp.has_table("service_categories"):
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE service_categories ("
+                "  id VARCHAR(64) PRIMARY KEY,"
+                "  label VARCHAR(255) NOT NULL,"
+                "  description TEXT DEFAULT '',"
+                "  is_active INTEGER NOT NULL DEFAULT 1,"
+                "  sort_order INTEGER NOT NULL DEFAULT 0,"
+                "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+                ")"
+            ))
+            _seed = [
+                ("shadow", "Shadow support", 0),
+                ("homecare", "Homecare", 1),
+                ("occupational_therapy", "Occupational therapy", 2),
+                ("speech_therapy", "Speech therapy", 3),
+                ("special_educator", "Special educator", 4),
+                ("behavior_therapy", "Behavior therapy", 5),
+                ("play_therapy", "Play therapy", 6),
+                ("customised_employment", "Customised employment", 7),
+                ("subject_tutor", "Subject tutor", 8),
+                ("sports", "Sports", 9),
+                ("counselling", "Counselling", 10),
+            ]
+            for sid, label, order in _seed:
+                conn.execute(text(
+                    "INSERT OR IGNORE INTO service_categories (id, label, sort_order) VALUES (:id, :label, :order)"
+                ), {"id": sid, "label": label, "order": order})
 
     if insp.has_table("daily_logs"):
         log_cols = {c["name"] for c in insp.get_columns("daily_logs")}
@@ -394,6 +455,67 @@ def ensure_sqlite_schema_patches() -> None:
             )
             conn.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_iep_plans_case_id ON iep_plans (case_id)")
+            )
+
+    if not insp.has_table("iep_plan_suggestions"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE iep_plan_suggestions (
+                        id INTEGER PRIMARY KEY,
+                        iep_plan_id INTEGER NOT NULL REFERENCES iep_plans(id),
+                        author_user_id INTEGER NOT NULL REFERENCES users(id),
+                        author_role VARCHAR(32) NOT NULL,
+                        body TEXT NOT NULL,
+                        resolved_at DATETIME,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_iep_plan_suggestions_iep_plan_id "
+                    "ON iep_plan_suggestions (iep_plan_id)"
+                )
+            )
+
+    if insp.has_table("case_manager_meetings"):
+        cols = {c["name"] for c in insp.get_columns("case_manager_meetings")}
+        with engine.begin() as conn:
+            if "meeting_url" not in cols:
+                conn.execute(text("ALTER TABLE case_manager_meetings ADD COLUMN meeting_url VARCHAR(512)"))
+            if "guest_emails_json" not in cols:
+                conn.execute(text("ALTER TABLE case_manager_meetings ADD COLUMN guest_emails_json TEXT"))
+
+    if insp.has_table("therapist_profiles"):
+        tp_cols = {c["name"] for c in insp.get_columns("therapist_profiles")}
+        if "license_number" not in tp_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN license_number VARCHAR(64)"))
+
+    if insp.has_table("case_documents"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE case_documents SET status = 'CM_REVIEW' "
+                    "WHERE status = 'SUPERVISOR_REVIEW'"
+                )
+            )
+    if insp.has_table("case_document_workflow_events"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE case_document_workflow_events SET from_status = 'CM_REVIEW' "
+                    "WHERE from_status = 'SUPERVISOR_REVIEW'"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE case_document_workflow_events SET to_status = 'CM_REVIEW' "
+                    "WHERE to_status = 'SUPERVISOR_REVIEW'"
+                )
             )
 
 

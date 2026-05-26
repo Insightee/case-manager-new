@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiUpload, getTokens } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
 import {
   AdminPageHeader,
   AdminPanel,
   AdminEmptyState,
   AdminToolbar,
   AdminSearchInput,
+  PortalTabBar,
+  ServiceFilterSelect,
 } from './ui/index.js'
 import './admin-iep-dashboard.css'
 
@@ -251,17 +254,60 @@ function StructuredIepPlansPanel() {
   )
 }
 
+const IEP_TABS = new Set(['dashboard', 'plans', 'upload'])
+
+function readIepFilters(sp) {
+  const tab = sp.get('tab')
+  return {
+    tab: IEP_TABS.has(tab) ? tab : 'dashboard',
+    statusFilter: sp.get('iep_status') || 'ALL',
+    moduleFilter: sp.get('service') || 'all',
+    search: sp.get('search') || '',
+    includeClosed: sp.get('include_closed') === 'true',
+    therapistFilter: sp.get('therapist') || '',
+    sessionFrom: sp.get('session_from') || '',
+    sessionTo: sp.get('session_to') || '',
+  }
+}
+
+function writeIepFilters(sp, state) {
+  const next = new URLSearchParams(sp)
+  if (state.tab && state.tab !== 'dashboard') next.set('tab', state.tab)
+  else next.delete('tab')
+  if (state.statusFilter && state.statusFilter !== 'ALL') next.set('iep_status', state.statusFilter)
+  else next.delete('iep_status')
+  if (state.moduleFilter && state.moduleFilter !== 'all') next.set('service', state.moduleFilter)
+  else next.delete('service')
+  if (state.search) next.set('search', state.search)
+  else next.delete('search')
+  if (state.includeClosed) next.set('include_closed', 'true')
+  else next.delete('include_closed')
+  if (state.therapistFilter) next.set('therapist', state.therapistFilter)
+  else next.delete('therapist')
+  if (state.sessionFrom) next.set('session_from', state.sessionFrom)
+  else next.delete('session_from')
+  if (state.sessionTo) next.set('session_to', state.sessionTo)
+  else next.delete('session_to')
+  return next
+}
+
 export function AdminIepPage() {
-  const [tab, setTab] = useState('dashboard')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initial = readIepFilters(searchParams)
+  const [tab, setTab] = useState(initial.tab)
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [statusFilter, setStatusFilter] = useState('ALL')
-  const [moduleFilter, setModuleFilter] = useState('all')
-  const [search, setSearch] = useState('')
-  const [includeClosed, setIncludeClosed] = useState(false)
+  const [statusFilter, setStatusFilter] = useState(initial.statusFilter)
+  const [moduleFilter, setModuleFilter] = useState(initial.moduleFilter)
+  const [search, setSearch] = useState(initial.search)
+  const [includeClosed, setIncludeClosed] = useState(initial.includeClosed)
+  const [therapistFilter, setTherapistFilter] = useState(initial.therapistFilter)
+  const [sessionFrom, setSessionFrom] = useState(initial.sessionFrom)
+  const [sessionTo, setSessionTo] = useState(initial.sessionTo)
   const [actingId, setActingId] = useState(null)
+  const { items: therapists } = useStaffDirectory({ roles: 'THERAPIST' })
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -272,6 +318,9 @@ export function AdminIepPage() {
       if (moduleFilter !== 'all') p.set('product_module', moduleFilter)
       if (search.trim()) p.set('search', search.trim())
       if (includeClosed) p.set('include_closed', 'true')
+      if (therapistFilter) p.set('therapist_user_id', therapistFilter)
+      if (sessionFrom) p.set('session_from', sessionFrom)
+      if (sessionTo) p.set('session_to', sessionTo)
       const data = await apiFetch(`/api/v1/admin/iep/dashboard?${p}`)
       setDashboard(data)
     } catch (err) {
@@ -280,11 +329,39 @@ export function AdminIepPage() {
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, moduleFilter, search, includeClosed])
+  }, [statusFilter, moduleFilter, search, includeClosed, therapistFilter, sessionFrom, sessionTo])
 
   useEffect(() => {
     if (tab === 'dashboard') loadDashboard()
   }, [tab, loadDashboard])
+
+  useEffect(() => {
+    const next = writeIepFilters(searchParams, {
+      tab,
+      statusFilter,
+      moduleFilter,
+      search,
+      includeClosed,
+      therapistFilter,
+      sessionFrom,
+      sessionTo,
+    })
+    if (searchParams.toString() !== next.toString()) {
+      setSearchParams(next, { replace: true })
+    }
+  }, [tab, statusFilter, moduleFilter, search, includeClosed, therapistFilter, sessionFrom, sessionTo])
+
+  useEffect(() => {
+    const parsed = readIepFilters(searchParams)
+    setTab((t) => (t === parsed.tab ? t : parsed.tab))
+    setStatusFilter((s) => (s === parsed.statusFilter ? s : parsed.statusFilter))
+    setModuleFilter((m) => (m === parsed.moduleFilter ? m : parsed.moduleFilter))
+    setSearch((q) => (q === parsed.search ? q : parsed.search))
+    setIncludeClosed((c) => (c === parsed.includeClosed ? c : parsed.includeClosed))
+    setTherapistFilter((t) => (t === parsed.therapistFilter ? t : parsed.therapistFilter))
+    setSessionFrom((d) => (d === parsed.sessionFrom ? d : parsed.sessionFrom))
+    setSessionTo((d) => (d === parsed.sessionTo ? d : parsed.sessionTo))
+  }, [searchParams])
 
   const summary = dashboard?.summary
 
@@ -325,32 +402,23 @@ export function AdminIepPage() {
         subtitle="Org-wide status for uploads, parent sharing, and acknowledgements."
       />
 
-      <nav style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button
-          type="button"
-          className={`admin-btn admin-btn--sm ${tab === 'dashboard' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-          onClick={() => setTab('dashboard')}
-        >
-          Status dashboard
-        </button>
-        <button
-          type="button"
-          className={`admin-btn admin-btn--sm ${tab === 'plans' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-          onClick={() => setTab('plans')}
-        >
-          Structured plans
-        </button>
-        <button
-          type="button"
-          className={`admin-btn admin-btn--sm ${tab === 'upload' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-          onClick={() => setTab('upload')}
-        >
-          Upload & versions
-        </button>
-        <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm" style={{ marginLeft: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <PortalTabBar
+            ariaLabel="IEP sections"
+            activeId={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'dashboard', label: 'Status dashboard' },
+              { id: 'plans', label: 'Structured plans' },
+              { id: 'upload', label: 'Legacy file upload' },
+            ]}
+          />
+        </div>
+        <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
           Case pipeline
         </Link>
-      </nav>
+      </div>
 
       {message ? <p className="admin-alert admin-alert--success">{message}</p> : null}
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
@@ -379,16 +447,40 @@ export function AdminIepPage() {
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search case, child, service…"
                 />
+                <ServiceFilterSelect
+                  value={moduleFilter === 'all' ? '' : moduleFilter}
+                  onChange={(v) => setModuleFilter(v || 'all')}
+                />
                 <select
                   className="admin-input"
                   style={{ width: 'auto', minWidth: 160 }}
-                  value={moduleFilter}
-                  onChange={(e) => setModuleFilter(e.target.value)}
+                  value={therapistFilter}
+                  onChange={(e) => setTherapistFilter(e.target.value)}
+                  aria-label="Therapist"
                 >
-                  <option value="all">All modules</option>
-                  <option value="homecare">Homecare</option>
-                  <option value="shadow_support">Shadow support</option>
+                  <option value="">All therapists</option>
+                  {therapists.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.full_name}
+                    </option>
+                  ))}
                 </select>
+                <input
+                  type="date"
+                  className="admin-input"
+                  style={{ width: 'auto' }}
+                  value={sessionFrom}
+                  onChange={(e) => setSessionFrom(e.target.value)}
+                  aria-label="Session from"
+                />
+                <input
+                  type="date"
+                  className="admin-input"
+                  style={{ width: 'auto' }}
+                  value={sessionTo}
+                  onChange={(e) => setSessionTo(e.target.value)}
+                  aria-label="Session to"
+                />
                 <select
                   className="admin-input"
                   style={{ width: 'auto', minWidth: 180 }}
@@ -421,7 +513,7 @@ export function AdminIepPage() {
                       <tr>
                         <th>Case</th>
                         <th>Child</th>
-                        <th>Module</th>
+                        <th>Service</th>
                         <th>IEP status</th>
                         <th>Document</th>
                         <th>Parents</th>
@@ -484,17 +576,12 @@ export function AdminIepPage() {
                                   Share with parent
                                 </button>
                               ) : null}
-                              {row.iep_status === 'MISSING' ? (
-                                <button
-                                  type="button"
-                                  className="admin-btn admin-btn--secondary admin-btn--sm"
-                                  onClick={() => {
-                                    setTab('upload')
-                                  }}
-                                >
-                                  Upload
-                                </button>
-                              ) : null}
+                              <Link
+                                to={`/admin/cases/${row.case_id}?tab=iep`}
+                                className="admin-btn admin-btn--primary admin-btn--sm"
+                              >
+                                Open IEP editor
+                              </Link>
                               <Link to={`/admin/cases/${row.case_id}`} className="admin-btn admin-btn--ghost admin-btn--sm">
                                 Case
                               </Link>

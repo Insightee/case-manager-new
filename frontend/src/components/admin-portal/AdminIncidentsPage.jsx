@@ -3,7 +3,15 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { IncidentDetailPanel } from '../support/IncidentDetailPanel.jsx'
-import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminToolbar, AdminSearchInput, StatusBadge } from './ui/index.js'
+import {
+  AdminPageHeader,
+  AdminPanel,
+  AdminEmptyState,
+  AdminToolbar,
+  AdminSearchInput,
+  StatusBadge,
+  ServiceFilterSelect,
+} from './ui/index.js'
 import '../support/support-tickets.css'
 
 const STATUS_FILTERS = ['ALL', 'REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
@@ -107,17 +115,13 @@ export function AdminIncidentsPage() {
                 </option>
               ))}
             </select>
-            <select
+            <ServiceFilterSelect
               className="admin-search__input"
-              style={{ flex: '0 0 auto', width: 'auto', minWidth: 150, paddingLeft: 12, backgroundImage: 'none' }}
+              style={{ flex: '0 0 auto', minWidth: 150, paddingLeft: 12, backgroundImage: 'none' }}
               value={moduleFilter}
-              onChange={(e) => setModuleFilter(e.target.value)}
-            >
-              <option value="">All modules</option>
-              <option value="homecare">Homecare</option>
-              <option value="shadow_support">Shadow support</option>
-              <option value="billing">Billing</option>
-            </select>
+              onChange={setModuleFilter}
+              extraOptions={[{ value: 'billing', label: 'Billing' }]}
+            />
           </AdminToolbar>
 
           {loading ? (

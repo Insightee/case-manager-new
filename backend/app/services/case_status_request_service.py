@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.case import Case, CaseStatus
 from app.models.case_status_request import CaseStatusRequest, CaseStatusRequestStatus
+from app.models.session import Session as TherapySession
+from app.models.session import SessionStatus
+from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
 from app.services import notification_service
 
@@ -53,6 +56,74 @@ def create_request(db: Session, user: User, case: Case, to_status: str, reason: 
     return req
 
 
+def get_pending_for_case(db: Session, case_id: int) -> CaseStatusRequest | None:
+    return db.scalars(
+        select(CaseStatusRequest).where(
+            CaseStatusRequest.case_id == case_id,
+            CaseStatusRequest.status == CaseStatusRequestStatus.PENDING,
+        )
+    ).first()
+
+
+def assert_case_allows_new_session(db: Session, case_id: int) -> None:
+    pending = get_pending_for_case(db, case_id)
+    if not pending:
+        return
+    if pending.to_status in (CaseStatus.SUSPENDED.value, CaseStatus.CLOSED.value):
+        raise ValueError(
+            "A pause or close request is pending admin approval — you cannot start a new session until it is reviewed"
+        )
+
+
+def list_for_case(db: Session, case_id: int, limit: int = 10) -> list[dict]:
+    rows = db.scalars(
+        select(CaseStatusRequest)
+        .where(CaseStatusRequest.case_id == case_id)
+        .order_by(CaseStatusRequest.created_at.desc())
+        .limit(limit)
+    ).all()
+    out = []
+    for r in rows:
+        requester = db.get(User, r.requested_by_user_id)
+        out.append(
+            {
+                "id": r.id,
+                "fromStatus": r.from_status,
+                "toStatus": r.to_status,
+                "reason": r.reason,
+                "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+                "requestedBy": requester.full_name if requester else None,
+                "createdAt": r.created_at.isoformat() if r.created_at else None,
+                "reviewedAt": r.reviewed_at.isoformat() if r.reviewed_at else None,
+                "reviewNote": r.review_note,
+            }
+        )
+    return out
+
+
+def _cancel_future_bookings(db: Session, case_id: int) -> None:
+    today = date.today()
+    slots = db.scalars(
+        select(TherapistSlot).where(
+            TherapistSlot.case_id == case_id,
+            TherapistSlot.status == SlotStatus.BOOKED,
+            TherapistSlot.slot_date >= today,
+        )
+    ).all()
+    for slot in slots:
+        slot.status = SlotStatus.CANCELLED
+    sessions = db.scalars(
+        select(TherapySession).where(
+            TherapySession.case_id == case_id,
+            TherapySession.status == SessionStatus.SCHEDULED,
+            TherapySession.scheduled_date >= today,
+        )
+    ).all()
+    for session in sessions:
+        session.status = SessionStatus.CANCELLED
+    db.flush()
+
+
 def list_pending(db: Session, limit: int = 50) -> list[dict]:
     rows = db.scalars(
         select(CaseStatusRequest)
@@ -69,6 +140,7 @@ def list_pending(db: Session, limit: int = 50) -> list[dict]:
                 "id": r.id,
                 "caseId": case.case_code if case else "",
                 "caseDbId": r.case_id,
+                "productModule": case.product_module if case else None,
                 "childName": case.child.full_name if case and case.child else "",
                 "fromStatus": r.from_status,
                 "toStatus": r.to_status,
@@ -88,6 +160,8 @@ def approve_request(db: Session, request_id: int, admin_user: User, note: str | 
     if not case:
         raise ValueError("Case not found")
     case.status = CaseStatus(req.to_status)
+    if req.to_status in (CaseStatus.SUSPENDED.value, CaseStatus.CLOSED.value):
+        _cancel_future_bookings(db, case.id)
     req.status = CaseStatusRequestStatus.APPROVED
     req.reviewed_by_user_id = admin_user.id
     req.review_note = (note or "").strip() or None

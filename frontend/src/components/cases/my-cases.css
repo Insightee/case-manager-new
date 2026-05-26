@@ -1980,6 +1980,34 @@
   color: #0f3d2e;
 }
 
+.ic-card__intake-badge {
+  display: inline-block;
+  margin: 4px 0 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.ic-case-detail__pending-banner {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 0.85rem;
+}
+
+.ic-session-composer__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
 .ic-card__cm--muted {
   color: #94a3b8;
   font-style: italic;

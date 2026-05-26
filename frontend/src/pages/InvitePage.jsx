@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../lib/apiClient.js'
 import { setTokens } from '../lib/apiClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
 
@@ -24,11 +25,21 @@ export function InvitePage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  // Detect role from token claims without an extra API call — fall back to default copy
   const [roleHint, setRoleHint] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [previewError, setPreviewError] = useState('')
 
-  // Attempt to decode role from the invite path / the JWT sub is not available yet,
-  // so we derive it lazily from the first 200ms of the accept response.
+  useEffect(() => {
+    if (!token) return
+    apiFetch(`/api/v1/auth/invite/${token}/preview`)
+      .then((data) => {
+        setPreview(data)
+        if (data.role === 'PARENT') setRoleHint('PARENT')
+        else if (data.role) setRoleHint(data.role)
+      })
+      .catch((err) => setPreviewError(err.message || 'Invite link is invalid or expired'))
+  }, [token])
+
   const copy = ROLE_LABELS[roleHint] || ROLE_LABELS.default
 
   async function handleSubmit(e) {
@@ -75,7 +86,16 @@ export function InvitePage() {
         <div className="login-main">
           <p className="login-brand">InsightCase</p>
           <h1>Welcome — activate your account</h1>
-          <p className="login-sub">{copy.sub}</p>
+          <p className="login-sub">
+            {preview?.roleLabel || copy.sub}
+            {preview?.childName ? ` for ${preview.childName}` : ''}
+          </p>
+          {previewError ? <p className="login-error">{previewError}</p> : null}
+          {preview?.email ? (
+            <p className="login-sub" style={{ fontSize: '0.85rem' }}>
+              Signing in as <strong>{preview.email}</strong>
+            </p>
+          ) : null}
 
           <form onSubmit={handleSubmit} className="login-form">
             <label>

@@ -8,6 +8,8 @@ from app.models.case_document import (
     CaseDocument,
     CaseDocumentStatus,
     CaseDocumentVisibility,
+    normalize_case_document_status,
+    statuses_awaiting_cm_review,
 )
 from app.models.user import User
 from app.services import case_service, parent_service
@@ -15,9 +17,9 @@ from app.services import case_service, parent_service
 OPERATIONAL_ROLES = frozenset(
     {
         RoleName.SUPER_ADMIN.value,
+        RoleName.MODULE_ADMIN.value,
         RoleName.ADMIN.value,
         RoleName.CASE_MANAGER.value,
-        RoleName.SUPERVISOR.value,
         RoleName.THERAPIST.value,
     }
 )
@@ -139,10 +141,7 @@ def allowed_actions(db, user: User, doc: CaseDocument, case: Case | None = None)
     ):
         actions.append("submit")
     if can_review(db, user, doc, case):
-        if doc.status in (
-            CaseDocumentStatus.SUBMITTED.value,
-            CaseDocumentStatus.SUPERVISOR_REVIEW.value,
-        ):
+        if normalize_case_document_status(doc.status) in statuses_awaiting_cm_review():
             actions.extend(["approve", "request_changes"])
         if doc.status == CaseDocumentStatus.APPROVED.value:
             actions.append("publish_client")

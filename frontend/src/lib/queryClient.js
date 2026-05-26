@@ -17,6 +17,7 @@ export const queryKeys = {
   therapistReportsPipeline: ['therapist', 'reports', 'pipeline'],
   parentHome: ['parent', 'home'],
   adminHome: ['admin', 'home'],
+  adminCmHome: ['admin', 'cm', 'home'],
   notifications: (unreadOnly) => ['notifications', { unreadOnly }],
   caseTimeline: (caseId) => ['admin', 'case', caseId, 'timeline'],
   auditEntity: (entityType, entityId) => ['admin', 'audit', entityType, entityId],

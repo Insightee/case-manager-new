@@ -20,6 +20,16 @@ def _normalize_certs(certs: list[str] | None) -> list[str]:
 
 def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict:
     u = user or profile.user
+    supervisor_name = None
+    mentor_name = None
+    if getattr(profile, "supervisor_user_id", None):
+        sup = getattr(profile, "supervisor", None)
+        if sup:
+            supervisor_name = sup.full_name
+    if getattr(profile, "mentor_user_id", None):
+        men = getattr(profile, "mentor", None)
+        if men:
+            mentor_name = men.full_name
     return {
         "id": profile.id,
         "user_id": profile.user_id,
@@ -34,6 +44,10 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         "reviewed_at": profile.reviewed_at,
         "email": u.email if u else None,
         "full_name": u.full_name if u else None,
+        "supervisor_user_id": getattr(profile, "supervisor_user_id", None),
+        "mentor_user_id": getattr(profile, "mentor_user_id", None),
+        "supervisor_name": supervisor_name,
+        "mentor_name": mentor_name,
     }
 
 
@@ -47,7 +61,7 @@ def get_or_create_profile(db: Session, user_id: int) -> TherapistProfile:
     return profile
 
 
-def apply_profile_fields(profile: TherapistProfile, data: dict) -> None:
+def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | None = None) -> None:
     if "display_name" in data:
         profile.display_name = data["display_name"]
     if "short_bio" in data:
@@ -58,9 +72,13 @@ def apply_profile_fields(profile: TherapistProfile, data: dict) -> None:
         profile.professional_certificates = _normalize_certs(data["professional_certificates"])
     if "services_offered" in data:
         try:
-            profile.services_offered = validate_service_ids(data["services_offered"] or [])
+            profile.services_offered = validate_service_ids(data["services_offered"] or [], db)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+    if "supervisor_user_id" in data:
+        profile.supervisor_user_id = data["supervisor_user_id"]
+    if "mentor_user_id" in data:
+        profile.mentor_user_id = data["mentor_user_id"]
 
 
 def therapist_save_profile(db: Session, user: User, data: dict) -> TherapistProfile:
@@ -69,7 +87,7 @@ def therapist_save_profile(db: Session, user: User, data: dict) -> TherapistProf
     profile = get_or_create_profile(db, user.id)
     if profile.status == TherapistProfileStatus.PAUSED:
         raise HTTPException(status_code=400, detail="Profile is paused. Contact admin to resume.")
-    apply_profile_fields(profile, data)
+    apply_profile_fields(profile, data, db)
     if profile.status == TherapistProfileStatus.APPROVED:
         profile.status = TherapistProfileStatus.DRAFT
     db.flush()

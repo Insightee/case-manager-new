@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
+import {
+  AdminPageHeader,
+  AdminPanel,
+  AdminEmptyState,
+  AdminToolbar,
+  PortalTabBar,
+  StatusBadge,
+} from '../admin-portal/ui/index.js'
+import './leave-management.css'
 
 const STATUS_COLORS = {
   PENDING: { bg: '#fefce8', color: '#a16207', border: '#fde047' },
@@ -16,10 +26,12 @@ const REVIEW_TABS = [
 ]
 
 export function LeaveManagementPage({ portal = 'hr' }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const mainTab = searchParams.get('tab') === 'report' ? 'report' : 'approvals'
+  const tab = searchParams.get('status') || 'PENDING'
+
   const [leaves, setLeaves] = useState([])
   const [loading, setLoading] = useState(true)
-  const [mainTab, setMainTab] = useState('review')
-  const [tab, setTab] = useState('PENDING')
   const [reviewNote, setReviewNote] = useState({})
   const [processing, setProcessing] = useState({})
   const [error, setError] = useState('')
@@ -29,7 +41,6 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   const [reportLoading, setReportLoading] = useState(false)
 
   const eyebrow = portal === 'admin' ? 'Admin' : 'HR'
-  const title = 'Leave Management'
 
   async function load() {
     setLoading(true)
@@ -66,6 +77,21 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   useEffect(() => {
     if (mainTab === 'report') loadReport()
   }, [mainTab, reportYear, reportGranularity])
+
+  function setMainTab(next) {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tab', next)
+    if (next === 'report') nextParams.delete('status')
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function setStatusTab(next) {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tab', 'approvals')
+    if (next === 'PENDING') nextParams.delete('status')
+    else nextParams.set('status', next)
+    setSearchParams(nextParams, { replace: true })
+  }
 
   async function reviewLeave(id, status) {
     setProcessing((p) => ({ ...p, [id]: true }))
@@ -109,327 +135,197 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   }
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '2rem 1rem' }}>
-      <header style={{ marginBottom: 24 }}>
-        <p
-          style={{
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            color: '#6366f1',
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            marginBottom: 4,
-          }}
-        >
-          {eyebrow}
-        </p>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>{title}</h1>
-        <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>
-          Review therapist leave requests and export monthly or yearly reports.
-        </p>
-      </header>
+    <div className="admin-page leave-mgmt">
+      <AdminPageHeader
+        eyebrow={eyebrow}
+        title="Leave management"
+        subtitle="Review therapist leave requests and export monthly or yearly reports."
+      />
 
-      {error ? (
-        <div
-          style={{
-            background: '#fef2f2',
-            border: '1px solid #fca5a5',
-            borderRadius: 8,
-            padding: '10px 14px',
-            marginBottom: 16,
-            color: '#b91c1c',
-            fontSize: '0.875rem',
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
+      {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        {[
-          ['review', 'Approvals'],
-          ['report', 'Report'],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setMainTab(id)}
-            style={{
-              padding: '8px 18px',
-              borderRadius: 8,
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              border: 'none',
-              cursor: 'pointer',
-              background: mainTab === id ? '#6366f1' : '#f3f4f6',
-              color: mainTab === id ? '#fff' : '#374151',
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <PortalTabBar
+        ariaLabel="Leave sections"
+        activeId={mainTab}
+        onChange={setMainTab}
+        tabs={[
+          { id: 'approvals', label: 'Approvals', badge: counts.PENDING || null },
+          { id: 'report', label: 'Report' },
+        ]}
+      />
 
-      {mainTab === 'review' ? (
+      {mainTab === 'approvals' ? (
         <>
-          <div
-            style={{
-              display: 'flex',
-              gap: 8,
-              marginBottom: 20,
-              borderBottom: '1px solid #e5e7eb',
-              paddingBottom: 12,
-              flexWrap: 'wrap',
-            }}
-          >
+          <div className="leave-mgmt__status-row" role="group" aria-label="Filter by status">
             {REVIEW_TABS.map(([val, label]) => (
               <button
                 key={val}
                 type="button"
-                onClick={() => setTab(val)}
-                style={{
-                  padding: '6px 16px',
-                  borderRadius: 20,
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  border: 'none',
-                  background: tab === val ? '#6366f1' : '#f3f4f6',
-                  color: tab === val ? '#fff' : '#374151',
-                }}
+                className={`leave-mgmt__status-pill ${tab === val ? 'is-active' : ''}`}
+                onClick={() => setStatusTab(val)}
               >
                 {label} ({counts[val]})
               </button>
             ))}
           </div>
 
-          {loading ? (
-            <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>Loading…</div>
-          ) : displayed.length === 0 ? (
-            <div
-              style={{
-                padding: 48,
-                textAlign: 'center',
-                background: '#fff',
-                borderRadius: 12,
-                border: '1px solid #e5e7eb',
-                color: '#6b7280',
-              }}
-            >
-              <p style={{ fontWeight: 600 }}>No leave requests</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {displayed.map((l) => {
-                const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
-                return (
-                  <div
-                    key={l.id}
-                    style={{
-                      background: '#fff',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: 12,
-                      padding: '18px 20px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                      <span
-                        style={{
-                          background: sc.bg,
-                          color: sc.color,
-                          border: `1px solid ${sc.border}`,
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 20,
-                        }}
-                      >
-                        {l.status}
-                      </span>
-                      <span
-                        style={{
-                          background: '#eef2ff',
-                          color: '#3730a3',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 20,
-                        }}
-                      >
-                        {l.leave_type}
-                      </span>
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
-                        {l.therapist_name || `Therapist #${l.therapist_user_id}`}
-                      </span>
-                      <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#9ca3af' }}>
-                        {l.day_count} day{l.day_count === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                      <div>
-                        <p style={{ fontSize: '0.72rem', color: '#9ca3af', marginBottom: 2 }}>From</p>
-                        <p style={{ fontWeight: 600, margin: 0 }}>{l.start_date}</p>
-                      </div>
-                      <div>
-                        <p style={{ fontSize: '0.72rem', color: '#9ca3af', marginBottom: 2 }}>To</p>
-                        <p style={{ fontWeight: 600, margin: 0 }}>{l.end_date}</p>
-                      </div>
-                    </div>
-                    {l.reason ? (
-                      <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: 10 }}>{l.reason}</p>
-                    ) : null}
-                    {l.review_note ? (
-                      <p
-                        style={{
-                          fontSize: '0.8rem',
-                          color: '#6b7280',
-                          background: '#f9fafb',
-                          padding: '6px 10px',
-                          borderRadius: 6,
-                        }}
-                      >
-                        <strong>Review note:</strong> {l.review_note}
-                        {l.reviewer_name ? ` (${l.reviewer_name})` : ''}
-                      </p>
-                    ) : null}
-
-                    {l.status === 'PENDING' && (
-                      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <input
-                          value={reviewNote[l.id] || ''}
-                          onChange={(e) => setReviewNote((n) => ({ ...n, [l.id]: e.target.value }))}
-                          placeholder="Add a review note (optional)…"
-                          style={{
-                            padding: '7px 12px',
-                            borderRadius: 8,
-                            border: '1px solid #d1d5db',
-                            fontSize: '0.875rem',
-                          }}
-                        />
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button
-                            type="button"
-                            onClick={() => reviewLeave(l.id, 'APPROVED')}
-                            disabled={processing[l.id]}
+          <AdminPanel title={`${displayed.length} requests`} padded={false}>
+            <div className="admin-panel__body" style={{ padding: '0 16px 16px' }}>
+              {loading ? (
+                <div className="admin-skeleton" />
+              ) : displayed.length === 0 ? (
+                <AdminEmptyState title="No leave requests" description="Nothing matches this filter." />
+              ) : (
+                <div>
+                  {displayed.map((l) => {
+                    const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
+                    return (
+                      <div key={l.id} className="leave-mgmt__card">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                          <span
                             style={{
-                              flex: 1,
-                              padding: '8px',
-                              background: '#f0fdf4',
-                              color: '#15803d',
-                              border: '1px solid #86efac',
-                              borderRadius: 8,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              fontSize: '0.875rem',
+                              background: sc.bg,
+                              color: sc.color,
+                              border: `1px solid ${sc.border}`,
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: 20,
                             }}
                           >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => reviewLeave(l.id, 'REJECTED')}
-                            disabled={processing[l.id]}
-                            style={{
-                              flex: 1,
-                              padding: '8px',
-                              background: '#fef2f2',
-                              color: '#b91c1c',
-                              border: '1px solid #fca5a5',
-                              borderRadius: 8,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              fontSize: '0.875rem',
-                            }}
-                          >
-                            Reject
-                          </button>
+                            {l.status}
+                          </span>
+                          <span className="admin-chip admin-chip--sm">{l.leave_type}</span>
+                          <span className="admin-table__primary">
+                            {l.therapist_name || `Therapist #${l.therapist_user_id}`}
+                          </span>
+                          <span className="admin-muted" style={{ marginLeft: 'auto', fontSize: '0.75rem' }}>
+                            {l.day_count} day{l.day_count === 1 ? '' : 's'}
+                          </span>
                         </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div>
+                            <p className="admin-muted" style={{ fontSize: '0.72rem', margin: 0 }}>From</p>
+                            <p style={{ fontWeight: 600, margin: '2px 0 0' }}>{l.start_date}</p>
+                          </div>
+                          <div>
+                            <p className="admin-muted" style={{ fontSize: '0.72rem', margin: 0 }}>To</p>
+                            <p style={{ fontWeight: 600, margin: '2px 0 0' }}>{l.end_date}</p>
+                          </div>
+                        </div>
+                        {l.reason ? (
+                          <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>{l.reason}</p>
+                        ) : null}
+                        {l.status === 'PENDING' ? (
+                          <div style={{ marginTop: 12 }}>
+                            <input
+                              className="admin-input"
+                              value={reviewNote[l.id] || ''}
+                              onChange={(e) => setReviewNote((n) => ({ ...n, [l.id]: e.target.value }))}
+                              placeholder="Review note (optional)…"
+                              style={{ marginBottom: 8 }}
+                            />
+                            <div className="admin-btn-group">
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--primary admin-btn--sm"
+                                disabled={processing[l.id]}
+                                onClick={() => reviewLeave(l.id, 'APPROVED')}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--sm"
+                                disabled={processing[l.id]}
+                                onClick={() => reviewLeave(l.id, 'REJECTED')}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                    )}
-                  </div>
-                )
-              })}
+                    )
+                  })}
+                </div>
+              )}
             </div>
-          )}
+          </AdminPanel>
         </>
       ) : (
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.8rem' }}>
-              Year
-              <select
-                value={reportYear}
-                onChange={(e) => setReportYear(Number(e.target.value))}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db' }}
-              >
-                {[reportYear - 1, reportYear, reportYear + 1].map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.8rem' }}>
-              View
-              <select
-                value={reportGranularity}
-                onChange={(e) => setReportGranularity(e.target.value)}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db' }}
-              >
-                <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={exportCsv}
-              style={{
-                padding: '8px 16px',
-                background: '#6366f1',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-              }}
-            >
-              Export CSV
-            </button>
-          </div>
-          {reportLoading ? (
-            <p style={{ color: '#9ca3af' }}>Loading report…</p>
-          ) : reportRows.length === 0 ? (
-            <p style={{ color: '#6b7280' }}>No leave data for this period.</p>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                <thead>
-                  <tr style={{ background: '#f9fafb', textAlign: 'left' }}>
-                    {['Therapist', 'Period', 'Type', 'Status', 'Days', 'From', 'To'].map((h) => (
-                      <th key={h} style={{ padding: '10px 12px', fontWeight: 600, color: '#6b7280' }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportRows.map((r, idx) => (
-                    <tr key={`${r.therapist_user_id}-${r.period}-${r.leave_type}-${idx}`} style={{ borderTop: '1px solid #f3f4f6' }}>
-                      <td style={{ padding: '10px 12px' }}>{r.therapist_name}</td>
-                      <td style={{ padding: '10px 12px' }}>{r.period}</td>
-                      <td style={{ padding: '10px 12px' }}>{r.leave_type}</td>
-                      <td style={{ padding: '10px 12px' }}>{r.status}</td>
-                      <td style={{ padding: '10px 12px' }}>{r.days}</td>
-                      <td style={{ padding: '10px 12px' }}>{r.start_date}</td>
-                      <td style={{ padding: '10px 12px' }}>{r.end_date}</td>
-                    </tr>
+        <AdminPanel title="Leave report" padded={false}>
+          <div className="admin-panel__body">
+            <AdminToolbar>
+              <label className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                Year
+                <select
+                  className="admin-select"
+                  style={{ display: 'block', marginTop: 4 }}
+                  value={reportYear}
+                  onChange={(e) => setReportYear(Number(e.target.value))}
+                >
+                  {[reportYear - 1, reportYear, reportYear + 1].map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                </select>
+              </label>
+              <label className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                View
+                <select
+                  className="admin-select"
+                  style={{ display: 'block', marginTop: 4 }}
+                  value={reportGranularity}
+                  onChange={(e) => setReportGranularity(e.target.value)}
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </label>
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={exportCsv}>
+                Export CSV
+              </button>
+            </AdminToolbar>
+            {reportLoading ? (
+              <div className="admin-skeleton" />
+            ) : reportRows.length === 0 ? (
+              <AdminEmptyState title="No data" description="No leave records for this period." />
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table admin-table--compact">
+                  <thead>
+                    <tr>
+                      <th>Therapist</th>
+                      <th>Period</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Days</th>
+                      <th>From</th>
+                      <th>To</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportRows.map((r, idx) => (
+                      <tr key={`${r.therapist_user_id}-${r.period}-${idx}`}>
+                        <td>{r.therapist_name}</td>
+                        <td>{r.period}</td>
+                        <td>{r.leave_type}</td>
+                        <td>
+                          <StatusBadge status={r.status} />
+                        </td>
+                        <td>{r.days}</td>
+                        <td>{r.start_date}</td>
+                        <td>{r.end_date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </AdminPanel>
       )}
     </div>
   )

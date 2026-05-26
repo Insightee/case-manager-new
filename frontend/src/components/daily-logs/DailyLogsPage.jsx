@@ -251,12 +251,16 @@ export function DailyLogsPage() {
 
   async function handleStart(sessionId) {
     setError('')
+    setSuccess('')
     try {
       const pos = await getGeoCoords()
-      await apiFetch(`/api/v1/sessions/${sessionId}/start`, {
+      const started = await apiFetch(`/api/v1/sessions/${sessionId}/start`, {
         method: 'POST',
         body: JSON.stringify(pos ? { lat: pos.lat, lng: pos.lng } : {}),
       })
+      if (started?.invite_sent && started?.invite_email) {
+        setSuccess(`Invite sent to ${started.invite_email} — they will join the Client portal.`)
+      }
       void loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not start session')
@@ -434,7 +438,10 @@ export function DailyLogsPage() {
           upcomingSessions={upcoming}
           bookedSlots={bookedSlots}
           disabled={!!active}
-          onSessionStarted={() => void loadAll({ silent: true })}
+          onSessionStarted={(info) => {
+            if (info?.message) setSuccess(info.message)
+            void loadAll({ silent: true })
+          }}
           onManualSession={handleManualSession}
           onError={setError}
         />

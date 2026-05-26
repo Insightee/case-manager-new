@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminPageHeader, AdminSearchInput } from './ui/index.js'
 import './admin-reports.css'
@@ -36,17 +37,52 @@ function BookMeetingModal({ cases, onClose, onCreated }) {
     duration_minutes: 30,
     meeting_type: 'CLIENT_ONLY',
     title: '',
+    meeting_url: '',
   })
+  const [caseSearch, setCaseSearch] = useState('')
+  const [guestInput, setGuestInput] = useState('')
+  const [guestEmails, setGuestEmails] = useState([])
+  const [caseDetail, setCaseDetail] = useState(null)
   const [therapists, setTherapists] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const filteredCases = useMemo(() => {
+    const q = caseSearch.trim().toLowerCase()
+    if (!q) return cases
+    return cases.filter(
+      (c) =>
+        String(c.childName || '').toLowerCase().includes(q)
+        || String(c.caseCode || c.caseId || c.id).toLowerCase().includes(q)
+    )
+  }, [cases, caseSearch])
+
+  const selectedCase = cases.find((c) => String(c.id) === String(form.case_id))
+
   useEffect(() => {
-    if (!form.case_id) { setTherapists([]); return }
+    if (!form.case_id) {
+      setTherapists([])
+      setCaseDetail(null)
+      return
+    }
     apiFetch(`/api/v1/booking/therapists?case_id=${form.case_id}`)
       .then(setTherapists)
       .catch(() => setTherapists([]))
+    apiFetch(`/api/v1/cases/${form.case_id}`)
+      .then(setCaseDetail)
+      .catch(() => setCaseDetail(null))
   }, [form.case_id])
+
+  function addGuestEmail() {
+    const email = guestInput.trim()
+    if (!email || !email.includes('@')) {
+      setError('Enter a valid guest email')
+      return
+    }
+    if (!guestEmails.includes(email)) setGuestEmails((g) => [...g, email])
+    setGuestInput('')
+    setError('')
+  }
 
   function set(k, v) {
     setForm((f) => {
@@ -69,6 +105,8 @@ function BookMeetingModal({ cases, onClose, onCreated }) {
         duration_minutes: Number(form.duration_minutes) || 30,
         meeting_type: form.meeting_type,
         title: form.title || null,
+        meeting_url: form.meeting_url?.trim() || null,
+        guest_emails: guestEmails,
       }
       if (form.case_id) body.case_id = Number(form.case_id)
       if (form.therapist_user_id) body.therapist_user_id = Number(form.therapist_user_id)
@@ -94,13 +132,81 @@ function BookMeetingModal({ cases, onClose, onCreated }) {
         {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
         <form onSubmit={submit}>
           <label style={labelStyle}>
+            Search case
+            <input
+              type="search"
+              style={inputStyle}
+              placeholder="Child name or case code"
+              value={caseSearch}
+              onChange={(e) => setCaseSearch(e.target.value)}
+            />
+          </label>
+          <label style={labelStyle}>
             Case (optional)
             <select style={inputStyle} value={form.case_id} onChange={(e) => set('case_id', e.target.value)}>
               <option value="">— No specific case —</option>
-              {cases.map((c) => (
+              {filteredCases.map((c) => (
                 <option key={c.id} value={c.id}>{c.childName} ({c.caseCode || c.caseId || c.id})</option>
               ))}
             </select>
+          </label>
+
+          {selectedCase || caseDetail ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div style={{ background: '#f8fafc', borderRadius: 10, padding: 10, fontSize: '0.8rem' }}>
+                <strong>Client</strong>
+                <p style={{ margin: '4px 0 0' }}>{caseDetail?.child_name || selectedCase?.childName}</p>
+                <p style={{ margin: 0, color: '#64748b' }}>{caseDetail?.case_code || selectedCase?.caseCode}</p>
+              </div>
+              <div style={{ background: '#f8fafc', borderRadius: 10, padding: 10, fontSize: '0.8rem' }}>
+                <strong>Therapist / CM</strong>
+                <p style={{ margin: '4px 0 0' }}>{caseDetail?.active_therapist_name || '—'}</p>
+                <p style={{ margin: 0, color: '#64748b' }}>{caseDetail?.case_manager_name || '—'}</p>
+              </div>
+            </div>
+          ) : null}
+
+          <label style={labelStyle}>
+            Meeting link (optional)
+            <input
+              type="url"
+              style={inputStyle}
+              placeholder="https://meet.google.com/..."
+              value={form.meeting_url}
+              onChange={(e) => set('meeting_url', e.target.value)}
+            />
+          </label>
+
+          <label style={labelStyle}>
+            Guest emails
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <input
+                type="email"
+                style={{ ...inputStyle, marginTop: 0, flex: 1 }}
+                placeholder="coordinator@school.edu"
+                value={guestInput}
+                onChange={(e) => setGuestInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addGuestEmail()
+                  }
+                }}
+              />
+              <button type="button" style={{ border: '1px solid #c7d2fe', background: '#eef2ff', borderRadius: 10, padding: '8px 12px', fontWeight: 600, cursor: 'pointer' }} onClick={addGuestEmail}>
+                Add
+              </button>
+            </div>
+            {guestEmails.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                {guestEmails.map((email) => (
+                  <span key={email} style={{ background: '#e0e7ff', color: '#3730a3', borderRadius: 99, padding: '4px 10px', fontSize: '0.75rem', fontWeight: 600 }}>
+                    {email}
+                    <button type="button" style={{ marginLeft: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: '#6366f1' }} onClick={() => setGuestEmails((g) => g.filter((x) => x !== email))}>×</button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </label>
 
           {form.case_id && therapists.length > 0 ? (
@@ -278,6 +384,16 @@ function MeetingCard({ meeting, onAddNotes, onCancel }) {
         {meeting.therapist_name ? <span>Therapist: {meeting.therapist_name}</span> : null}
         {!meeting.child_name && !meeting.parent_name ? <span>{typeLabel}</span> : null}
       </div>
+      {meeting.meeting_url ? (
+        <p style={{ fontSize: '0.8rem', margin: '0 0 8px' }}>
+          <a href={meeting.meeting_url} target="_blank" rel="noreferrer">Join meeting</a>
+        </p>
+      ) : null}
+      {meeting.guest_emails?.length > 0 ? (
+        <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 8px' }}>
+          Guests: {meeting.guest_emails.join(', ')}
+        </p>
+      ) : null}
 
       {hasNotes ? (
         <div style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 12px', marginBottom: 10, fontSize: '0.8rem', color: '#334155' }}>
@@ -365,15 +481,20 @@ export function CaseManagerMeetingsPage() {
   }, [meetings])
 
   useEffect(() => {
-    apiFetch('/api/v1/admin/cases').catch(() => apiFetch('/api/v1/cases')).then((data) => {
-      const arr = Array.isArray(data) ? data : data?.cases || []
-      setCases(arr.map((c) => ({
-        id: c.id,
-        childName: c.childName || c.child_name || c.child?.full_name || `Case ${c.id}`,
-        caseCode: c.caseCode || c.case_code,
-        caseId: c.case_code || c.caseId,
-      })))
-    }).catch(() => setCases([]))
+    apiFetch('/api/v1/cases?page_size=100')
+      .catch(() => apiFetch('/api/v1/admin/cases?page_size=100'))
+      .then((data) => {
+        const arr = unwrapList(data)
+        setCases(
+          arr.map((c) => ({
+            id: c.id,
+            childName: c.childName || c.child_name || c.child?.full_name || `Case ${c.id}`,
+            caseCode: c.caseCode || c.case_code,
+            caseId: c.case_code || c.caseId,
+          }))
+        )
+      })
+      .catch(() => setCases([]))
   }, [])
 
   useEffect(() => {

@@ -13,8 +13,9 @@ from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.incident_catalog import meta_payload
 from app.core.pagination import paginate_query, paginated_response
-from app.core.module_access import user_has_feature
-from app.core.permissions import case_scope_check, require_permission, user_has_permission
+from app.core.module_access import is_view_only_user, user_has_feature
+from app.core.module_write import ensure_feature_write_access, guard_clinical_case
+from app.core.permissions import case_scope_check, require_mutation_permission, require_permission, user_has_permission
 from app.models.incident import Incident, IncidentMessage, IncidentStatus, normalize_incident_status
 from app.models.user import User
 from app.models.case import Case
@@ -67,6 +68,18 @@ class IncidentEscalateRequest(BaseModel):
 
 def _has_manage(user: User) -> bool:
     return user_has_permission(user, "incident.read_sensitive") and user_has_feature(user, "incidents")
+
+
+def _guard_incident_write(user: User, incident: Incident, db: Session) -> None:
+    if is_view_only_user(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="View-only access — changes are not allowed")
+    if incident.case_id:
+        case = case_service.get_case(db, incident.case_id)
+        if case:
+            guard_clinical_case(user, case, db, feature="incidents")
+            return
+    product = (incident.service_type or "homecare").strip().lower()
+    ensure_feature_write_access(user, "incidents", product_module=product, db=db)
 
 
 def _can_access(incident: Incident, user: User, db: Session) -> bool:
@@ -254,6 +267,8 @@ def create_incident(
         case = case_service.get_case(db, payload.case_id)
         if not case or not case_scope_check(db, user, case):
             raise HTTPException(status_code=404, detail="Case not found")
+        if _has_manage(user):
+            guard_clinical_case(user, case, db, feature="incidents")
 
     try:
         incident = inc_svc.create_incident(
@@ -364,6 +379,8 @@ def add_incident_message(
 
     is_reporter = incident.reported_by_user_id == user.id
     is_owner = incident.assigned_to_user_id == user.id and _has_manage(user)
+    if is_owner:
+        _guard_incident_write(user, incident, db)
 
     msg = IncidentMessage(
         incident_id=incident_id,
@@ -392,7 +409,7 @@ def update_incident(
     incident_id: int,
     payload: IncidentUpdate,
     request: Request,
-    user: User = Depends(require_permission("incident.read_sensitive")),
+    user: User = Depends(require_mutation_permission("incident.read_sensitive")),
     db: Session = Depends(get_db),
 ):
     if not user_has_feature(user, "incidents"):
@@ -404,6 +421,7 @@ def update_incident(
         case = case_service.get_case(db, incident.case_id)
         if case and not case_scope_check(db, user, case):
             raise HTTPException(status_code=403, detail="Case access denied")
+    _guard_incident_write(user, incident, db)
 
     is_owner = incident.assigned_to_user_id == user.id or user_has_permission(user, "admin.override")
     try:

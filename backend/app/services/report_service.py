@@ -110,6 +110,133 @@ def list_observation_reports(
     return scoped, meta
 
 
+def _record_review(
+    db: Session,
+    *,
+    entity_type: str,
+    entity_id: int,
+    reviewer_user_id: int,
+    decision: ReviewDecision,
+    comment: str,
+) -> Review:
+    review = Review(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        reviewer_user_id=reviewer_user_id,
+        decision=decision,
+        comment=comment.strip(),
+    )
+    db.add(review)
+    db.flush()
+    return review
+
+
+def send_monthly_for_review(
+    db: Session,
+    report: MonthlyReport,
+    reviewer_user_id: int,
+    *,
+    target: str,
+    comment: str,
+) -> MonthlyReport:
+    label = "case manager" if target == "case_manager" else "therapist"
+    _record_review(
+        db,
+        entity_type="monthly_report",
+        entity_id=report.id,
+        reviewer_user_id=reviewer_user_id,
+        decision=ReviewDecision.REQUEST_REVIEW,
+        comment=f"[To {label}] {comment.strip()}",
+    )
+    report.reviewer_comment = comment.strip()
+    report.status = ReportStatus.UNDER_REVIEW
+    db.flush()
+    return report
+
+
+def send_observation_for_review(
+    db: Session,
+    report: ObservationReport,
+    reviewer_user_id: int,
+    *,
+    target: str,
+    comment: str,
+) -> ObservationReport:
+    label = "case manager" if target == "case_manager" else "therapist"
+    _record_review(
+        db,
+        entity_type="observation_report",
+        entity_id=report.id,
+        reviewer_user_id=reviewer_user_id,
+        decision=ReviewDecision.REQUEST_REVIEW,
+        comment=f"[To {label}] {comment.strip()}",
+    )
+    report.status = ReportStatus.UNDER_REVIEW
+    db.flush()
+    return report
+
+
+def add_monthly_review_note(
+    db: Session,
+    report: MonthlyReport,
+    reviewer_user_id: int,
+    comment: str,
+) -> MonthlyReport:
+    _record_review(
+        db,
+        entity_type="monthly_report",
+        entity_id=report.id,
+        reviewer_user_id=reviewer_user_id,
+        decision=ReviewDecision.NOTE,
+        comment=comment.strip(),
+    )
+    report.reviewer_comment = comment.strip()
+    db.flush()
+    return report
+
+
+def add_observation_review_note(
+    db: Session,
+    report: ObservationReport,
+    reviewer_user_id: int,
+    comment: str,
+) -> ObservationReport:
+    _record_review(
+        db,
+        entity_type="observation_report",
+        entity_id=report.id,
+        reviewer_user_id=reviewer_user_id,
+        decision=ReviewDecision.NOTE,
+        comment=comment.strip(),
+    )
+    db.flush()
+    return report
+
+
+def cm_review_observation_report(
+    db: Session,
+    report: ObservationReport,
+    reviewer_user_id: int,
+    *,
+    comment: str,
+    request_changes: bool,
+) -> ObservationReport:
+    if request_changes:
+        return review_observation_report(
+            db, report, reviewer_user_id, ReviewDecision.REJECT, comment, None
+        )
+    _record_review(
+        db,
+        entity_type="observation_report",
+        entity_id=report.id,
+        reviewer_user_id=reviewer_user_id,
+        decision=ReviewDecision.APPROVE,
+        comment=f"[CM reviewed] {comment.strip()}",
+    )
+    db.flush()
+    return report
+
+
 def cm_review_monthly_report(
     db: Session,
     report: MonthlyReport,

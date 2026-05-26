@@ -11,8 +11,25 @@ import {
   StatusBadge,
   formatCurrency,
 } from './ui/index.js'
+import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
+import './admin-dashboard.css'
 
-export function AdminDashboardPage() {
+const DASHBOARD_COPY = {
+  module_admin: {
+    eyebrow: 'Programme operations',
+    subtitle: 'Cross-module queues, billing, and case lifecycle — configured per your grants.',
+  },
+  legacy_admin: {
+    eyebrow: 'Operations (legacy admin role)',
+    subtitle: 'This account uses the retired ADMIN role. Prefer MODULE_ADMIN for new staff.',
+  },
+  operations: {
+    eyebrow: 'Operations',
+    subtitle: 'Case lifecycle, reviews, billing, and support — at a glance.',
+  },
+}
+
+export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRole }) {
   const { user, can } = useAuth()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -38,8 +55,9 @@ export function AdminDashboardPage() {
   }, [breakdown])
 
   const canNavigate = can('case.read.all') || can('case.read.team')
-  const { data: roleHome } = useAdminHome()
-  const role = roleHome?.role || user?.roles?.[0]
+  const { data: roleHome, isLoading: roleHomeLoading } = useAdminHome()
+  const role = primaryRole || roleHome?.role || user?.roles?.[0]
+  const copy = DASHBOARD_COPY[dashboardVariant] || DASHBOARD_COPY.operations
 
   const kpis = useMemo(
     () => buildAdminKpis({ summary, role, canNavigate, can }),
@@ -61,66 +79,20 @@ export function AdminDashboardPage() {
   }
 
   return (
-    <div className="admin-page">
-      {roleHome?.alerts?.length ? (
-        <section className="admin-alerts-strip" style={{ marginBottom: 16 }}>
-          {roleHome.alerts.map((alert) => (
-            <Link
-              key={alert.id}
-              to={alert.href || '/admin/workbench'}
-              className={`admin-alert admin-alert--${alert.severity || 'warning'}`}
-              style={{ display: 'block', marginBottom: 8, textDecoration: 'none' }}
-            >
-              <strong>{alert.title}</strong>
-              {alert.message ? ` — ${alert.message}` : ''}
-            </Link>
-          ))}
-        </section>
-      ) : null}
-
-      {roleHome?.widgets?.length ? (
-        <section className="admin-role-widgets" style={{ marginBottom: 24 }}>
-          <p className="admin-page__eyebrow">Your queue · {roleHome.role?.replace('_', ' ')}</p>
-          <div className="admin-role-widgets__grid">
-            {roleHome.widgets.map((w) => (
-              <AdminPanel key={w.id} title={w.title}>
-                {w.section?.items?.length ? (
-                  <ul className="admin-queue-list">
-                    {w.section.items.slice(0, 5).map((item) => (
-                      <li key={item.id || item.href}>
-                        <Link to={item.href || '/admin'}>
-                          {item.child_name || item.label || item.case_code}
-                          {item.case_code ? ` · ${item.case_code}` : ''}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <AdminEmptyState message="Nothing in this queue right now." />
-                )}
-                {w.section?.count > 5 ? (
-                  <Link to={widgetFooter(w)} className="admin-btn admin-btn--ghost admin-btn--sm">
-                    View all ({w.section.count})
-                  </Link>
-                ) : null}
-              </AdminPanel>
-            ))}
-          </div>
-          {roleHome.landing_route && roleHome.landing_route !== '/admin' ? (
-            <p style={{ marginTop: 12, fontSize: '0.875rem' }}>
-              <Link to={roleHome.landing_route}>Go to your primary workspace →</Link>
-            </p>
-          ) : null}
-        </section>
+    <div className="admin-page admin-dashboard">
+      {dashboardVariant === 'legacy_admin' ? (
+        <p className="admin-alert admin-alert--warning" style={{ marginBottom: 16 }}>
+          Legacy ADMIN role detected. New staff should use <strong>Module Admin</strong> with programme grants in People → Staff.
+        </p>
       ) : null}
 
       <AdminPageHeader
-        eyebrow="Operations"
+        eyebrow={copy.eyebrow}
         title={`Welcome back${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`}
-        subtitle="Case lifecycle, reviews, billing, and support — at a glance."
+        subtitle={copy.subtitle}
         actions={
           canNavigate ? (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="admin-btn-group">
               {can('case.create') ? (
                 <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary">
                   Allot new case
@@ -132,6 +104,27 @@ export function AdminDashboardPage() {
             </div>
           ) : null
         }
+      />
+
+      {roleHome?.alerts?.length ? (
+        <section className="admin-home-alerts" aria-label="Alerts">
+          {roleHome.alerts.map((alert) => (
+            <Link
+              key={alert.id}
+              to={alert.href || '/admin/workbench'}
+              className={`admin-alert admin-alert--${alert.severity || 'warning'}`}
+            >
+              <strong>{alert.title}</strong>
+              {alert.message ? <span> — {alert.message}</span> : null}
+            </Link>
+          ))}
+        </section>
+      ) : null}
+
+      <AdminRoleQueueSection
+        roleHome={roleHome}
+        loading={roleHomeLoading}
+        widgetFooter={widgetFooter}
       />
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}

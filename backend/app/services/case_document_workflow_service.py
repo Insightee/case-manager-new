@@ -10,6 +10,8 @@ from app.models.case_document import (
     CaseDocumentStatus,
     CaseDocumentVisibility,
     CaseDocumentWorkflowEvent,
+    normalize_case_document_status,
+    statuses_awaiting_cm_review,
 )
 from app.models.user import User
 from app.services import case_document_access_service as access
@@ -48,7 +50,7 @@ def submit(db: Session, user: User, doc: CaseDocument, comment: str | None = Non
     if not doc.current_version_id:
         raise ValueError("Add a file or link before submitting")
     old = doc.status
-    doc.status = CaseDocumentStatus.SUPERVISOR_REVIEW.value
+    doc.status = CaseDocumentStatus.CM_REVIEW.value
     _record(db, doc, action="submit", actor_user_id=user.id, from_status=old, to_status=doc.status, comment=comment)
     db.flush()
     return doc
@@ -64,10 +66,7 @@ def approve(
 ) -> CaseDocument:
     if not access.can_review(db, user, doc):
         raise PermissionError("Cannot approve this document")
-    if doc.status not in (
-        CaseDocumentStatus.SUBMITTED.value,
-        CaseDocumentStatus.SUPERVISOR_REVIEW.value,
-    ):
+    if normalize_case_document_status(doc.status) not in statuses_awaiting_cm_review():
         raise ValueError("Document is not awaiting review")
     old = doc.status
     doc.status = CaseDocumentStatus.APPROVED.value
@@ -87,10 +86,7 @@ def request_changes(
 ) -> CaseDocument:
     if not access.can_review(db, user, doc):
         raise PermissionError("Cannot request changes")
-    if doc.status not in (
-        CaseDocumentStatus.SUBMITTED.value,
-        CaseDocumentStatus.SUPERVISOR_REVIEW.value,
-    ):
+    if normalize_case_document_status(doc.status) not in statuses_awaiting_cm_review():
         raise ValueError("Document is not under review")
     old = doc.status
     doc.status = CaseDocumentStatus.CHANGES_REQUESTED.value

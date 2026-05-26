@@ -18,10 +18,12 @@ export function AdminPeoplePage() {
   const [tab, setTab] = useState(() => searchParams.get('tab') || 'staff')
   const [users, setUsers] = useState([])
   const [profiles, setProfiles] = useState([])
-  const [families, setFamilies] = useState([])
+  const [clients, setClients] = useState([])
   const [invites, setInvites] = useState([])
   const [catalog, setCatalog] = useState([])
   const [roleDefaults, setRoleDefaults] = useState({})
+  const [assignableRoles, setAssignableRoles] = useState([])
+  const [deprecatedRoles, setDeprecatedRoles] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -34,11 +36,11 @@ export function AdminPeoplePage() {
 
   useEffect(() => {
     const t = searchParams.get('tab')
-    if (t && ['staff', 'therapists', 'families'].includes(t)) setTab(t)
+    if (t && ['staff', 'therapists', 'clients'].includes(t)) setTab(t)
   }, [searchParams])
 
   useEffect(() => {
-    if (tab !== 'families') return
+    if (tab !== 'clients') return
     const t = setTimeout(() => setFamilySearchDebounced(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search, tab])
@@ -48,25 +50,31 @@ export function AdminPeoplePage() {
     setError('')
     try {
       const familyQs =
-        tab === 'families' && familySearchDebounced
+        tab === 'clients' && familySearchDebounced
           ? `?search=${encodeURIComponent(familySearchDebounced)}`
           : ''
       const userFetch = canManageUsers
         ? apiFetch('/api/v1/admin/users?page_size=100')
         : Promise.resolve([])
       const modulesFetch = canManageUsers ? apiFetch('/api/v1/admin/modules') : Promise.resolve({ modules: [], role_defaults: {} })
-      const [userRows, moduleMeta, profileRows, familyRows, inviteRows] = await Promise.all([
+      const rbacFetch = canManageUsers
+        ? apiFetch('/api/v1/admin/rbac/catalog').catch(() => null)
+        : Promise.resolve(null)
+      const [userRows, moduleMeta, rbacMeta, profileRows, clientRows, inviteRows] = await Promise.all([
         userFetch,
         modulesFetch,
+        rbacFetch,
         canManageUsers ? apiFetch('/api/v1/admin/therapist-profiles') : Promise.resolve([]),
         apiFetch(`/api/v1/admin/families${familyQs}`),
         canManageUsers ? apiFetch('/api/v1/admin/invites').catch(() => []) : Promise.resolve([]),
       ])
       setUsers(unwrapList(userRows))
-      setCatalog(moduleMeta.modules ?? [])
-      setRoleDefaults(moduleMeta.role_defaults ?? {})
+      setCatalog(rbacMeta?.modules ?? moduleMeta.modules ?? [])
+      setRoleDefaults(rbacMeta?.role_defaults ?? moduleMeta.role_defaults ?? {})
+      setAssignableRoles(rbacMeta?.assignable_roles ?? [])
+      setDeprecatedRoles(rbacMeta?.deprecated_roles ?? [])
       setProfiles(profileRows)
-      setFamilies(familyRows)
+      setClients(clientRows)
       setInvites(Array.isArray(inviteRows) ? inviteRows : [])
     } catch (err) {
       setError(err.message || 'Could not load people data')
@@ -99,7 +107,7 @@ export function AdminPeoplePage() {
     (u) => filterText(`${u.full_name} ${u.email} ${(u.roles || []).join(' ')}`),
   )
   const filteredTherapists = therapists.filter((u) => filterText(`${u.full_name} ${u.email}`))
-  const filteredFamilies = tab === 'families' ? families : families.filter((f) =>
+  const filteredClients = tab === 'clients' ? clients : clients.filter((f) =>
     filterText(`${f.childName} ${f.parents?.map((p) => p.parentEmail).join(' ')} ${(f.caseCodes || []).join(' ')}`),
   )
   const parentPendingInvites = useMemo(
@@ -109,6 +117,10 @@ export function AdminPeoplePage() {
   const therapistPendingInvites = useMemo(
     () => invites.filter((i) => i.role_name === 'THERAPIST' && filterText(i.email)),
     [invites, search],
+  )
+  const staffPendingInvites = useMemo(
+    () => invites.filter((i) => !['THERAPIST', 'PARENT'].includes(i.role_name)),
+    [invites],
   )
 
   async function addChild(e) {
@@ -153,8 +165,8 @@ export function AdminPeoplePage() {
 
   const tabs = [
     { id: 'staff', label: 'Staff' },
-    { id: 'therapists', label: 'Therapists' },
-    { id: 'families', label: 'Families' },
+    { id: 'therapists', label: 'Therapist profiles' },
+    { id: 'clients', label: 'Clients' },
   ]
 
   return (
@@ -162,7 +174,7 @@ export function AdminPeoplePage() {
       <AdminPageHeader
         eyebrow="Directory"
         title="People"
-        subtitle="Staff, therapists, and client families — add therapists with invite or bulk upload."
+        subtitle="Staff, therapist profiles, and client records — add therapists with invite or bulk upload."
       />
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
@@ -197,26 +209,26 @@ export function AdminPeoplePage() {
         <AdminSearchInput value={search} onChange={setSearch} placeholder="Search…" />
       </AdminToolbar>
 
-      {tab === 'families' && showFamilyWizard ? (
+      {tab === 'clients' && showFamilyWizard ? (
         <AdminAddFamilyWizard
           onCancel={() => setShowFamilyWizard(false)}
           onComplete={(result) => {
             setShowFamilyWizard(false)
             if (result?.inviteUrl) setInviteUrl(result.inviteUrl)
-            setSuccess(result?.case ? 'Family and case created' : 'Family created')
+            setSuccess(result?.case ? 'Client record and case created' : 'Client record created')
             load()
           }}
         />
       ) : null}
 
-      {tab === 'families' && !showFamilyWizard ? (
+      {tab === 'clients' && !showFamilyWizard ? (
         <>
           <div className="admin-btn-group" style={{ marginBottom: 12 }}>
             <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowFamilyWizard(true)}>
-              Add family
+              Add client
             </button>
           </div>
-          <AdminPanel title="Quick add child" subtitle="Or use Add family to include parent and optional case">
+          <AdminPanel title="Quick add client" subtitle="Or use Add client to include a parent/guardian and optional case">
             <form onSubmit={addChild} className="admin-form-grid" style={{ maxWidth: 420, marginBottom: 16 }}>
               <label>
                 First name
@@ -278,7 +290,10 @@ export function AdminPeoplePage() {
             <AdminStaffManageSection
               catalog={catalog}
               roleDefaults={roleDefaults}
+              assignableRoles={assignableRoles}
+              deprecatedRoles={deprecatedRoles}
               staff={filteredStaff}
+              pendingInvites={staffPendingInvites}
               onReload={load}
               onSuccess={setSuccess}
               onError={setError}
@@ -363,13 +378,13 @@ export function AdminPeoplePage() {
             </>
           )}
 
-          {tab === 'families' && (
-            <AdminPanel title={`Families (${filteredFamilies.length})`}>
-              {filteredFamilies.length === 0 ? (
-                <AdminEmptyState title="No families" description="Use Add family or quick add child to get started." />
+          {tab === 'clients' && (
+            <AdminPanel title={`Clients (${filteredClients.length})`}>
+              {filteredClients.length === 0 ? (
+                <AdminEmptyState title="No clients" description="Use Add client or quick add above to get started." />
               ) : (
                 <ul className="admin-queue">
-                  {filteredFamilies.map((f) => (
+                  {filteredClients.map((f) => (
                     <li key={f.childId} className="admin-queue__item">
                       <div>
                         <p className="admin-queue__title">

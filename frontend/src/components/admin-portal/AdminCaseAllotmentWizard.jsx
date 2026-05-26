@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AddressFormFields, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 
 const MODULES = [
   { id: 'homecare', label: 'Homecare' },
@@ -25,6 +26,7 @@ const EMPTY_BILLING = {
 }
 
 export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
+  const { canCreateProductCase } = useModuleWrite()
   const [step, setStep] = useState(1)
   const [families, setFamilies] = useState([])
   const [familyMode, setFamilyMode] = useState('existing')
@@ -37,6 +39,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
     send_invite: true,
   })
   const [productModule, setProductModule] = useState('homecare')
+  const canSubmitAllot = canCreateProductCase(productModule)
   const [caseCode, setCaseCode] = useState('')
   const [serviceType, setServiceType] = useState('Homecare')
   const [serviceAddr, setServiceAddr] = useState(emptyAddress())
@@ -442,10 +445,20 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             Next
           </button>
         ) : (
-          <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={saving || !therapistId} onClick={handleSubmit}>
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            disabled={saving || !therapistId || !canSubmitAllot}
+            onClick={handleSubmit}
+          >
             {saving ? 'Creating…' : 'Create case & assign'}
           </button>
         )}
+        {step === 4 && !canSubmitAllot ? (
+          <p className="admin-muted" style={{ width: '100%', fontSize: '0.8rem' }}>
+            You have view-only access for {productModule.replace(/_/g, ' ')} — cannot allot new cases.
+          </p>
+        ) : null}
       </div>
     </section>
   )

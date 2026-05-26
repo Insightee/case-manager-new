@@ -10,6 +10,7 @@ from app.services import admin_workbench_service
 # When a user has multiple roles, the first match in this tuple wins.
 PRIMARY_ROLE_PRIORITY: tuple[RoleName, ...] = (
     RoleName.SUPER_ADMIN,
+    RoleName.MODULE_ADMIN,
     RoleName.FINANCE,
     RoleName.HR,
     RoleName.SUPERVISOR,
@@ -28,11 +29,26 @@ def resolve_primary_role(user: User) -> str:
 def _landing_route(role: str, user: User) -> str:
     if role == RoleName.FINANCE.value:
         return "/admin/invoices"
-    if role in (RoleName.CASE_MANAGER.value, RoleName.SUPERVISOR.value) and user_has_feature(
-        user, "session_logs"
-    ):
-        return "/admin/workbench"
+    if role == RoleName.CASE_MANAGER.value:
+        return "/admin/cm"
+    if role in (RoleName.VIEWER.value, RoleName.SUPERVISOR.value):
+        if getattr(user, "is_view_only", False) or role == RoleName.VIEWER.value:
+            return "/admin/cm"
+        if user_has_feature(user, "session_logs"):
+            return "/admin/workbench"
     return "/admin"
+
+
+def _dashboard_variant(role: str) -> str:
+    if role == RoleName.FINANCE.value:
+        return "finance"
+    if role == RoleName.CASE_MANAGER.value:
+        return "caseload"
+    if role in (RoleName.MODULE_ADMIN.value, RoleName.SUPER_ADMIN.value):
+        return "module_admin"
+    if role == RoleName.ADMIN.value:
+        return "legacy_admin"
+    return "operations"
 
 
 def _widget(
@@ -60,7 +76,7 @@ def build_admin_home(db: Session, user: User) -> dict:
     w = _widget(
         widget_id="logs",
         title="Session logs queue",
-        priority=1 if role in ("CASE_MANAGER", "SUPERVISOR", "SUPER_ADMIN", "ADMIN") else 3,
+        priority=1 if role in ("CASE_MANAGER", "SUPERVISOR", "SUPER_ADMIN", "MODULE_ADMIN", "ADMIN") else 3,
         section=logs,
     )
     if w:
@@ -70,7 +86,7 @@ def build_admin_home(db: Session, user: User) -> dict:
     w = _widget(
         widget_id="reports",
         title="Reports queue",
-        priority=2 if role in ("CASE_MANAGER", "SUPERVISOR", "SUPER_ADMIN", "ADMIN") else 3,
+        priority=2 if role in ("CASE_MANAGER", "SUPERVISOR", "SUPER_ADMIN", "MODULE_ADMIN", "ADMIN") else 3,
         section=reports,
     )
     if w:
@@ -106,7 +122,7 @@ def build_admin_home(db: Session, user: User) -> dict:
     w = _widget(
         widget_id="observations",
         title="Observation checklists",
-        priority=1 if role in ("CASE_MANAGER", "SUPERVISOR", "SUPER_ADMIN", "ADMIN") else 4,
+        priority=1 if role in ("CASE_MANAGER", "SUPERVISOR", "SUPER_ADMIN", "MODULE_ADMIN", "ADMIN") else 4,
         section=observations,
     )
     if w:
@@ -116,7 +132,7 @@ def build_admin_home(db: Session, user: User) -> dict:
     w = _widget(
         widget_id="status_requests",
         title="Status change requests",
-        priority=2 if role in ("CASE_MANAGER", "SUPERVISOR", "SUPER_ADMIN", "ADMIN") else 5,
+        priority=2 if role in ("CASE_MANAGER", "SUPERVISOR", "SUPER_ADMIN", "MODULE_ADMIN", "ADMIN") else 5,
         section=status_requests,
     )
     if w:
@@ -137,6 +153,7 @@ def build_admin_home(db: Session, user: User) -> dict:
     return {
         "role": role,
         "landing_route": _landing_route(role, user),
+        "dashboard_variant": _dashboard_variant(role),
         "widgets": widgets,
         "alerts": admin_workbench_service.build_admin_alerts(db, user),
     }

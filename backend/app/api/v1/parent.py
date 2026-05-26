@@ -33,6 +33,7 @@ from app.schemas.notification import NotificationRead
 from app.schemas.parent_reports import ParentMonthlyFeedback, ParentReportCommentCreate
 from app.core.config import settings
 from app.schemas.parent_home import ParentHomeResponse
+from app.schemas.iep_plan import IepPlanSuggestionCreate
 from app.services import (
     address_service,
     appointment_booking_service as appt_booking,
@@ -600,11 +601,33 @@ def parent_acknowledge_iep_via_reports(
     _parent_case_or_404(db, user, att.case_id)
     if att.visibility_status not in PARENT_VISIBLE:
         raise HTTPException(status_code=404, detail="IEP document not found")
-    parent_reports_service.acknowledge_iep(db, att)
+    parent_reports_service.acknowledge_iep(db, att, parent_user=user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="acknowledge", entity_type="iep", entity_id=att.id, **meta)
     db.commit()
     return {"status": "acknowledged"}
+
+
+@router.post("/cases/{case_id}/iep-plan/suggestions")
+def parent_iep_plan_suggestion(
+    case_id: int,
+    payload: IepPlanSuggestionCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_plan_service as iep_svc
+
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan or plan.status not in ("SHARED_WITH_PARENT", "EDITS_SUGGESTED"):
+        raise HTTPException(status_code=404, detail="IEP plan not available for suggestions")
+    try:
+        iep_svc.add_suggestion(db, plan, user, "PARENT", payload.body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return {"status": plan.status, "suggestions": iep_svc.plan_to_dict(db, plan, user, include_context=False)["suggestions"]}
 
 
 @router.get("/reports")
@@ -701,7 +724,7 @@ def parent_acknowledge_iep(
     _parent_case_or_404(db, user, att.case_id)
     if att.visibility_status not in PARENT_VISIBLE:
         raise HTTPException(status_code=404, detail="IEP document not found")
-    att.visibility_status = VisibilityStatus.SHARED_WITH_PARENT
+    parent_reports_service.acknowledge_iep(db, att, parent_user=user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="acknowledge", entity_type="iep", entity_id=att.id, **meta)
     db.commit()

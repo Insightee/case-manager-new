@@ -9,3 +9,4 @@ dist/
 /blob-report/
 /playwright/.cache/
 .playwright-browsers/
+.vercel

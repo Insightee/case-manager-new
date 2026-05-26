@@ -7,12 +7,13 @@ from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.permissions import user_has_permission
 from app.models.user import User
+from app.schemas.session import TherapistClientIntakeCreate, TherapistClientIntakeResponse
 from app.schemas.therapist_home import (
     TherapistHomeResponse,
     TherapistReportsPipelineResponse,
     TherapistSessionsWorkspaceResponse,
 )
-from app.services import therapist_home_service
+from app.services import therapist_home_service, therapist_intake_service
 
 router = APIRouter(prefix="/therapist", tags=["therapist-portal"])
 
@@ -47,3 +48,42 @@ def therapist_reports_pipeline(
 ):
     _require_therapist(user)
     return therapist_home_service.build_reports_pipeline(db, user)
+
+
+@router.post("/client-intake", response_model=TherapistClientIntakeResponse, status_code=201)
+def therapist_client_intake(
+    payload: TherapistClientIntakeCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.core.permissions import user_has_permission
+
+    if not user_has_permission(user, "session.create"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    _require_therapist(user)
+    try:
+        result = therapist_intake_service.create_client_intake(
+            db,
+            therapist_user_id=user.id,
+            client_name=payload.client_name,
+            client_email=str(payload.client_email),
+            child_name=payload.child_name,
+            client_phone=payload.client_phone,
+            product_module=payload.product_module,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    case = result["case"]
+    db.commit()
+    from app.services import case_service
+
+    case = case_service.get_case(db, case.id)
+    child_name = case.child.full_name if case and case.child else payload.child_name
+    return TherapistClientIntakeResponse(
+        case_id=case.id,
+        case_code=case.case_code,
+        child_name=child_name,
+        parent_email=result["parent_email"],
+        invite_sent=result["invite_sent"],
+        invite_url=result.get("invite_url"),
+    )

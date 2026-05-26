@@ -6,6 +6,127 @@
   gap: 24px;
 }
 
+.sessions-dash--compact {
+  gap: 14px;
+}
+
+.sessions-dash__case-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #4338ca;
+}
+
+.sessions-dash__filters--compact {
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.sessions-dash__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.sessions-dash__tab-panel {
+  padding-top: 12px;
+}
+
+.sessions-dash__empty {
+  padding: 24px 0;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+}
+
+.sessions-dash__filter-input--grow {
+  flex: 1;
+  min-width: 140px;
+  max-width: 280px;
+}
+
+.sessions-dash__table-wrap {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+}
+
+.sessions-dash__table.admin-table--compact th,
+.sessions-dash__table.admin-table--compact td {
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  vertical-align: top;
+}
+
+.sessions-dash__when {
+  min-width: 108px;
+  white-space: nowrap;
+}
+
+.sessions-dash__when .admin-table__meta {
+  display: block;
+}
+
+.sessions-dash__therapist {
+  max-width: 120px;
+}
+
+.sessions-dash__pill {
+  font-size: 0.625rem !important;
+  padding: 1px 6px !important;
+  margin-top: 4px;
+  display: inline-block;
+}
+
+.sessions-dash__log-pending {
+  font-size: 0.6875rem;
+}
+
+.sessions-dash__row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.sessions-dash__flag-btn {
+  background: #fff1f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+}
+
+.sessions-dash__row--highlight {
+  background: #fef9c3 !important;
+  box-shadow: inset 3px 0 0 #eab308;
+}
+
+.admin-chip--sm {
+  font-size: 0.625rem;
+  padding: 1px 6px;
+}
+
+.case-sessions-logs__item.is-highlight {
+  background: #fef9c3;
+  border-color: #fde047;
+  box-shadow: inset 3px 0 0 #eab308;
+}
+
+.case-sessions-logs__pending {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+  font-style: italic;
+}
+
 /* ── Filter bar ─────────────────────────────────────────────────────────── */
 
 .sessions-dash__filters {
@@ -84,32 +205,22 @@
 
 .sessions-dash__kpi-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 14px;
-}
-
-@media (max-width: 1100px) {
-  .sessions-dash__kpi-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (max-width: 700px) {
-  .sessions-dash__kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  grid-template-columns: repeat(auto-fill, minmax(var(--kpi-grid-min, 118px), 1fr));
+  gap: var(--kpi-grid-gap, 8px);
+  margin-bottom: 4px;
 }
 
 .sessions-dash__kpi {
   background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 18px 20px 16px;
+  border-radius: var(--kpi-radius, 10px);
+  padding: var(--kpi-padding, 10px 12px);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   position: relative;
   overflow: hidden;
+  min-height: 56px;
 }
 
 .sessions-dash__kpi::before {
@@ -118,8 +229,8 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 3px;
-  border-radius: 14px 14px 0 0;
+  height: 2px;
+  border-radius: var(--kpi-radius, 10px) var(--kpi-radius, 10px) 0 0;
 }
 
 .sessions-dash__kpi--indigo::before { background: #6366f1; }
@@ -129,7 +240,7 @@
 .sessions-dash__kpi--amber::before  { background: #f59e0b; }
 
 .sessions-dash__kpi-label {
-  font-size: 0.72rem;
+  font-size: var(--kpi-label-size, 0.625rem);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -137,15 +248,21 @@
 }
 
 .sessions-dash__kpi-value {
-  font-size: 2rem;
+  font-size: var(--kpi-value-size, 1.25rem);
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.1;
   color: #0f172a;
 }
 
 .sessions-dash__kpi-sub {
-  font-size: 0.75rem;
+  font-size: var(--kpi-sub-size, 0.6875rem);
   color: #94a3b8;
+}
+
+@media (max-width: 480px) {
+  .sessions-dash__kpi-sub {
+    display: none;
+  }
 }
 
 /* ── Chart grid ─────────────────────────────────────────────────────────── */

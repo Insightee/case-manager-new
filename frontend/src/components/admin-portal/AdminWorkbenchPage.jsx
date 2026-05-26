@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
 import { AdminObservationChecklistsPanel } from './AdminObservationChecklistsPanel.jsx'
 import './admin-reports.css'
@@ -56,6 +57,7 @@ function WorkbenchSection({ id, section }) {
 }
 
 function StatusRequestsPanel() {
+  const { canEditProductCase } = useModuleWrite()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(null)
@@ -112,7 +114,9 @@ function StatusRequestsPanel() {
           <p className="admin-muted" style={{ padding: 12 }}>No pending status change requests.</p>
         ) : (
           <ul className="admin-queue">
-            {rows.map((r) => (
+            {rows.map((r) => {
+              const canAct = canEditProductCase(r.productModule || 'homecare')
+              return (
               <li key={r.id} className="admin-queue__item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <p className="admin-queue__title">
                   {r.caseId} · {r.childName}: {r.fromStatus} → {r.toStatus}
@@ -127,6 +131,7 @@ function StatusRequestsPanel() {
                     onChange={(e) => setRejectNote(e.target.value)}
                   />
                 ) : null}
+                {canAct ? (
                 <div className="admin-btn-group" style={{ marginTop: 8 }}>
                   <button
                     type="button"
@@ -156,8 +161,13 @@ function StatusRequestsPanel() {
                     </Link>
                   ) : null}
                 </div>
+                ) : (
+                  <p className="admin-muted" style={{ marginTop: 8, fontSize: '0.8rem' }}>
+                    View-only for this programme module.
+                  </p>
+                )}
               </li>
-            ))}
+            )})}
           </ul>
         )}
       </div>
@@ -167,6 +177,7 @@ function StatusRequestsPanel() {
 
 export function AdminWorkbenchPage() {
   const { can } = useAuth()
+  const { canReviewReports, canWriteBilling } = useModuleWrite()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -191,12 +202,12 @@ export function AdminWorkbenchPage() {
     'meetings',
   ]
   const order = baseOrder.filter((id) => {
-    if (id === 'observations' && !can('monthly_report.approve')) return false
+    if (id === 'observations' && !canReviewReports('homecare') && !canReviewReports('shadow_support')) return false
     if (id === 'status_requests' && !can('case.update')) return false
-    if (id === 'client_claims' && !can('invoice.approve')) return false
+    if (id === 'client_claims' && !canWriteBilling) return false
     if (id === 'tickets' && !can('ticket.manage')) return false
     if (id === 'incidents' && !can('incident.read_sensitive')) return false
-    if (id === 'reports' && !can('monthly_report.approve')) return false
+    if (id === 'reports' && !canReviewReports('homecare') && !canReviewReports('shadow_support')) return false
     if (id === 'logs' && !can('daily_log.review')) return false
     if (id === 'iep' && !can('iep.read')) return false
     return sections[id]
@@ -220,7 +231,9 @@ export function AdminWorkbenchPage() {
       </p>
 
       {can('case.update') && !hasStatusSection ? <StatusRequestsPanel /> : null}
-      {can('monthly_report.approve') ? <AdminObservationChecklistsPanel /> : null}
+      {(canReviewReports('homecare') || canReviewReports('shadow_support')) ? (
+        <AdminObservationChecklistsPanel />
+      ) : null}
 
       {loading ? (
         <p className="admin-muted">Loading workbench…</p>
