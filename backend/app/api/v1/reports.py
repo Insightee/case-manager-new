@@ -170,6 +170,8 @@ def create_monthly_report(
         )
     db.add(report)
     db.flush()
+    commit_or_http(db)
+    db.refresh(report)
     return _report_read(db, report)
 
 

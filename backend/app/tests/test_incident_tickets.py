@@ -27,9 +27,34 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _demo_case_id() -> int:
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.user import User
+
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assert therapist is not None
+        case_id = db.scalars(
+            select(CaseAssignment.case_id)
+            .where(
+                CaseAssignment.therapist_user_id == therapist.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+            .limit(1)
+        ).first()
+        assert case_id is not None, "seed must assign therapist to an active case"
+        return int(case_id)
+    finally:
+        db.close()
+
+
 def _create_payload(**overrides):
     base = {
-        "case_id": None,
+        "case_id": _demo_case_id(),
         "primary_category": "LEGAL_POSH_CPP_POCSO",
         "subcategory": "pocso_concern",
         "what_happened": "Test incident description for routing.",
@@ -80,6 +105,7 @@ def test_close_requires_action_note():
         "/api/v1/incidents",
         headers=headers,
         json=_create_payload(
+            case_id=None,
             primary_category="SESSION_CLASSROOM_PROGRAM",
             subcategory="session_disrupted",
         ),

@@ -181,7 +181,7 @@ def test_parent_cannot_access_draft_report_image():
 
 def test_parent_can_access_published_report_image():
     th_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
-    admin_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
+    cm_headers = {"Authorization": f"Bearer {_login('casemanager@demo.com')}"}
     case_id = _therapist_case_id(th_headers)
     created = client.post(
         "/api/v1/reports/monthly",
@@ -199,7 +199,7 @@ def test_parent_can_access_published_report_image():
     client.post(f"/api/v1/reports/monthly/{rid}/submit", headers=th_headers)
     approve = client.post(
         f"/api/v1/reports/monthly/{rid}/approve",
-        headers=admin_headers,
+        headers=cm_headers,
         json={"comment": "ok", "visibility_status": "APPROVED_FOR_PARENT"},
     )
     assert approve.status_code == 200, approve.text

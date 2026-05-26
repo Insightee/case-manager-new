@@ -37,14 +37,26 @@ def test_iep_plan_save_and_share_with_parent():
 
     headers = {"Authorization": f"Bearer {admin_token}"}
     sections = {
-        "about_child": "Aarav is a bright student.",
-        "referral": "Referred for shadow support.",
+        "schema_version": 2,
+        "header": {"child_name": "Aarav M.", "about_child_brief": "Bright student."},
         "observations": "Engaged in classroom activities.",
         "learning_environments": [
             {"environment": "School", "strengths": "Peer interaction", "supports_needed": "Visual schedule"},
         ],
+        "challenges": "",
+        "current_performance": [],
+        "learning_style": {"styles": [], "elaboration": ""},
         "interventions": "Weekly shadow sessions.",
-        "signatures": "Case manager — Insighte",
+        "talent_development": {"strengths": "", "goals": "", "strategies": "", "areas_of_need": ""},
+        "other_areas_of_need": {"strengths": "", "goals": "", "strategies": "", "areas_of_need": ""},
+        "intervention_by_insighte": "",
+        "verification": {
+            "therapist_verified": True,
+            "therapist_name": "Therapist Neha",
+            "prepared_by_name": "Super Admin",
+            "prepared_at": "2026-05-25",
+        },
+        "supplementary_attachment_ids": [],
     }
     r = client.put(
         f"/api/v1/admin/cases/{case_id}/iep-plan",

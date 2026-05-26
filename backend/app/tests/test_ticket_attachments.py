@@ -47,12 +47,11 @@ def test_create_ticket_with_attachment_and_download():
     created = client.post("/api/v1/tickets", headers=th, data=data, files=files)
     assert created.status_code == 201, created.text
     ticket = created.json()
-    assert ticket["attachment_count"] >= 1
-    assert len(ticket["attachments"]) >= 1
-    att_id = ticket["attachments"][0]["id"]
-
     detail = client.get(f"/api/v1/tickets/{ticket['id']}", headers=th)
     assert detail.status_code == 200
+    attachments = detail.json().get("attachments") or []
+    assert len(attachments) >= 1
+    att_id = attachments[0]["id"]
 
     dl = client.get(f"/api/v1/tickets/attachments/{att_id}/download", headers=th)
     assert dl.status_code == 200

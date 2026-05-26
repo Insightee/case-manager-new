@@ -56,7 +56,7 @@ def user_can_write_feature(
         return True
     if is_view_only_user(user):
         return False
-    if not user_has_feature(user, feature_id):
+    if not user_has_feature(user, feature_id, db):
         return False
     primary = FEATURE_PRIMARY_MODULE.get(feature_id)
     if primary:

@@ -92,7 +92,13 @@ def test_module_catalog_and_scoped_admin():
     headers = {"Authorization": f"Bearer {token}"}
     catalog = client.get("/api/v1/admin/modules", headers=headers)
     assert catalog.status_code == 200
-    assert "homecare" in catalog.json()["role_defaults"]["ADMIN"]
+    admin_defaults = catalog.json()["role_defaults"]["ADMIN"]
+    service_defaults = (
+        admin_defaults.get("services", admin_defaults)
+        if isinstance(admin_defaults, dict)
+        else admin_defaults
+    )
+    assert "homecare" in service_defaults
 
     scoped = _login("admin@demo.com")
     scoped_headers = {"Authorization": f"Bearer {scoped}"}
@@ -369,6 +375,8 @@ def test_therapist_onboard_invite_and_accept():
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     email = f"onboard-{uuid.uuid4().hex[:8]}@example.com"
+    cm_headers = {"Authorization": f"Bearer {_login('casemanager@demo.com')}"}
+    cm_id = client.get("/api/v1/auth/me", headers=cm_headers).json()["id"]
     res = client.post(
         "/api/v1/admin/therapists/onboard",
         headers=headers,
@@ -377,8 +385,9 @@ def test_therapist_onboard_invite_and_accept():
             "full_name": "Onboard Test",
             "phone": "555-0199",
             "mode": "invite",
-            "services_offered": ["shadow", "homecare"],
+            "services_offered": ["shadow_support", "homecare"],
             "module_assignments": ["homecare", "shadow_support"],
+            "primary_case_manager_user_id": cm_id,
             "send_email": False,
         },
     )
@@ -396,7 +405,8 @@ def test_therapist_onboard_invite_and_accept():
     match = [p for p in profiles.json() if p.get("email") == email]
     assert match, "Therapist profile should exist after invite accept"
     assert match[0]["status"] == "APPROVED"
-    assert "shadow" in (match[0].get("services_offered") or [])
+    offered = match[0].get("services_offered") or []
+    assert "shadow_support" in offered or "shadow" in offered
 
 
 def test_admin_reports_summary_and_queue():

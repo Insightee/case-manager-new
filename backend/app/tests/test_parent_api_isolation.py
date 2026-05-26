@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -172,6 +173,7 @@ def test_parent_cannot_see_internal_notes():
             therapist_id = get_or_create_user(
                 db, "therapist@demo.com", "demo123", "Therapist", RoleName.THERAPIST.value
             ).id
+        now = datetime.now(timezone.utc)
         report = MonthlyReport(
             case_id=case_id,
             therapist_user_id=therapist_id,
@@ -182,6 +184,7 @@ def test_parent_cannot_see_internal_notes():
             visibility_status=VisibilityStatus.APPROVED_FOR_PARENT,
             parent_review_status=ParentReviewStatus.APPROVED.value,
             reviewer_comment="INTERNAL_STAFF_NOTE_XYZ",
+            cm_published_at=now,
         )
         db.add(report)
         db.commit()

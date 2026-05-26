@@ -56,7 +56,7 @@ def list_daily_logs(
 ):
     if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.review"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    if user_has_permission(user, "session.read") and not user_has_feature(user, "session_logs") and not user_has_permission(user, "daily_log.create"):
+    if user_has_permission(user, "session.read") and not user_has_feature(user, "session_logs", db) and not user_has_permission(user, "daily_log.create"):
         raise HTTPException(status_code=403, detail="Session logs module access required")
     own_logs_only = _therapist_lists_own_logs_only(user)
     if therapist_user_id is None and own_logs_only:

@@ -1607,12 +1607,12 @@ def onboard_therapist(
     user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    validate_module_assignments(["THERAPIST"], payload.module_assignments)
+    validate_module_assignments(["THERAPIST"], payload.module_assignments, db)
     if payload.services_offered:
         from app.core.therapist_services import validate_service_ids
 
         try:
-            validate_service_ids(payload.services_offered)
+            validate_service_ids(payload.services_offered, db)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     try:
@@ -1723,10 +1723,10 @@ def bulk_onboard_therapists(
 
     rows = []
     for row in payload.therapists:
-        validate_module_assignments(["THERAPIST"], row.module_assignments)
+        validate_module_assignments(["THERAPIST"], row.module_assignments, db)
         if row.services_offered:
             try:
-                validate_service_ids(row.services_offered)
+                validate_service_ids(row.services_offered, db)
             except ValueError as exc:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         rows.append(row.model_dump())
@@ -2694,10 +2694,13 @@ def admin_allot_case(
     return result
 
 
-def _reports_reader(user: User = Depends(get_current_user)) -> User:
+def _reports_reader(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
     if not user_has_permission(user, "monthly_report.approve"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    if not user_has_feature(user, "reports"):
+    if not user_has_feature(user, "reports", db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reports module not enabled")
     return user
 

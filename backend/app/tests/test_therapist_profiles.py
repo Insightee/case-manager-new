@@ -1,33 +1,16 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.config import settings
-from app.core.database import engine
 from app.main import app
 from app.seed.demo_seed import run as seed_run
 
 client = TestClient(app)
 
 
-def _reset_sqlite_db() -> None:
-    url = settings.database_url
-    if not url.startswith("sqlite"):
-        return
-    rel = url.replace("sqlite:///", "")
-    db_path = Path(rel) if os.path.isabs(rel) else Path(__file__).resolve().parents[2] / rel.lstrip("./")
-    engine.dispose()
-    if db_path.exists():
-        db_path.unlink()
-
-
 @pytest.fixture(scope="module", autouse=True)
 def setup_db():
-    _reset_sqlite_db()
     seed_run()
 
 
@@ -51,7 +34,7 @@ def test_therapist_saves_and_submits_profile():
         json={
             "display_name": "Neha K.",
             "short_bio": "Passionate therapist.",
-            "services_offered": ["homecare", "shadow"],
+            "services_offered": ["homecare", "shadow_support"],
         },
     )
     assert save.status_code == 200

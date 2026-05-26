@@ -16,14 +16,21 @@ def test_normalize_grants_from_module_ids():
 
 
 def test_preview_access_case_manager():
-    result = preview_access(
-        role_names=["CASE_MANAGER"],
-        module_access_grants={
-            "homecare": {"enabled": True, "access": "write"},
-        },
-        feature_overrides={"homecare": ["incidents"]},
-        view_only=False,
-    )
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        result = preview_access(
+            role_names=["CASE_MANAGER"],
+            module_access_grants={
+                "homecare": {"enabled": True, "access": "write"},
+            },
+            feature_overrides={"homecare": ["incidents"]},
+            view_only=False,
+            db=db,
+        )
+    finally:
+        db.close()
     assert "homecare" in result["module_assignments"]
     assert "incidents" not in result["features"]
     assert any("Cases" in a for a in result["portal_areas"])
