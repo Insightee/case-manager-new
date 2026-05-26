@@ -81,10 +81,10 @@ def _assert_no_hidden_workbench_payload(home: dict) -> None:
         ("admin@demo.com", "MODULE_ADMIN", "/admin"),
         ("moduleadmin@demo.com", "MODULE_ADMIN", "/admin"),
         ("casemanager@demo.com", "CASE_MANAGER", "/admin/cm"),
-        ("supervisor@demo.com", "CASE_MANAGER", "/admin/cm"),
-        ("viewer@demo.com", "CASE_MANAGER", "/admin/cm"),
+        ("shadowcm@demo.com", "CASE_MANAGER", "/admin/cm"),
+        ("viewonly@demo.com", "CASE_MANAGER", "/admin/cm"),
         ("finance@demo.com", "FINANCE", "/admin/invoices"),
-        ("hr@demo.com", "HR", "/admin"),
+        ("hr@demo.com", "HR", "/admin/people"),
     ],
 )
 def test_admin_home_role_label_and_landing(email, expected_role, landing_route):
@@ -101,8 +101,8 @@ def test_admin_home_role_label_and_landing(email, expected_role, landing_route):
         ("admin@demo.com", "MODULE_ADMIN", "MODULE_ADMIN_HOME_ONLY"),
         ("moduleadmin@demo.com", "MODULE_ADMIN", "MODULE_ADMIN"),
         ("casemanager@demo.com", "CASE_MANAGER", "CASE_MANAGER"),
-        ("supervisor@demo.com", "CASE_MANAGER", "CASE_MANAGER"),
-        ("viewer@demo.com", "CASE_MANAGER", "CASE_MANAGER"),
+        ("shadowcm@demo.com", "CASE_MANAGER", "CASE_MANAGER"),
+        ("viewonly@demo.com", "CASE_MANAGER", "CASE_MANAGER"),
         ("finance@demo.com", "FINANCE", "FINANCE"),
         ("hr@demo.com", "HR", "HR"),
     ],
@@ -182,7 +182,7 @@ def test_case_manager_widget_cases_subset_of_superadmin():
 def test_case_manager_and_supervisor_widget_cases_pass_team_scope():
     db = SessionLocal()
     try:
-        for email in ("casemanager@demo.com", "supervisor@demo.com"):
+        for email in ("casemanager@demo.com", "shadowcm@demo.com"):
             user = db.scalars(
                 select(User).where(User.email == email).options(selectinload(User.roles))
             ).first()
@@ -239,7 +239,7 @@ def test_migrated_supervisor_demo_is_case_manager():
     db = SessionLocal()
     try:
         user = db.scalars(
-            select(User).where(User.email == "supervisor@demo.com").options(selectinload(User.roles))
+            select(User).where(User.email == "shadowcm@demo.com").options(selectinload(User.roles))
         ).first()
         assert resolve_primary_role(user) == "CASE_MANAGER"
     finally:

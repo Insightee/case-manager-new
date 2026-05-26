@@ -205,7 +205,10 @@ def reject_invoice(
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    invoice_service.review_invoice(db, invoice, user.id, ReviewDecision.REJECT, payload.comment)
+    comment = (payload.comment or "").strip()
+    if not comment:
+        raise HTTPException(status_code=400, detail="Rejection comment is required")
+    invoice_service.review_invoice(db, invoice, user.id, ReviewDecision.REJECT, comment)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="invoice", entity_id=invoice.id, **meta)
     db.commit()

@@ -31,6 +31,11 @@ class ModuleSummary(BaseModel):
     features: list[str] = []
 
 
+class ClinicalProductModuleRead(BaseModel):
+    id: str
+    label: str
+
+
 class UserMeResponse(BaseModel):
     id: int
     email: str
@@ -54,6 +59,25 @@ class UserMeResponse(BaseModel):
 class AcceptInviteRequest(BaseModel):
     token: str
     full_name: str
+    password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str = (
+        "If an account exists for that email, you will receive password reset instructions shortly."
+    )
+
+
+class ResetPasswordPreviewResponse(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
     password: str
 
 

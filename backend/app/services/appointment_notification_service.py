@@ -227,6 +227,37 @@ def notify_parents_session_rescheduled(
     return count
 
 
+def notify_therapist_admin_booking_pending(
+    db: Session,
+    slot: TherapistSlot,
+    *,
+    admin_name: str,
+    comment: str | None = None,
+) -> None:
+    case = db.get(Case, slot.case_id) if slot.case_id else None
+    child = case.child.full_name if case and case.child else "a client"
+    extra = f"\nNote from admin: {comment}" if comment else ""
+    body = (
+        f"{admin_name} booked {child} for {_slot_when(slot)} and needs your confirmation."
+        f"{extra}"
+    )
+    notification_service.create_notification(
+        db,
+        user_id=slot.therapist_user_id,
+        title="Session booking needs your confirmation",
+        body=body,
+        entity_type="appointment",
+        entity_id=slot.id,
+    )
+    therapist = db.get(User, slot.therapist_user_id)
+    if therapist:
+        email_service.send_email(
+            to=therapist.email,
+            subject="Admin booked a session — please confirm",
+            body_text=body + f"\n{settings.frontend_url}/therapist/slots\n",
+        )
+
+
 def notify_therapist_reschedule_pending(
     db: Session,
     *,

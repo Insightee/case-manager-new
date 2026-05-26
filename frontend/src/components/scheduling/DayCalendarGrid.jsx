@@ -130,7 +130,9 @@ export function DayCalendarGrid({
                           ? s.is_mine
                             ? `My session · ${s.start_time}`
                             : `Available · ${s.start_time}`
-                          : s.event_type === 'session'
+                          : s.event_type === 'cm_meeting'
+                            ? `CM · ${s.title || s.child_name || s.case_code || 'Meeting'}`
+                            : s.event_type === 'session'
                             ? `${s.status === 'IN_PROGRESS' ? 'In progress · ' : 'Session · '}${s.child_name || s.case_code || 'Visit'}`
                             : s.status === 'BOOKED'
                               ? `${s.approval_status === 'PENDING_THERAPIST' ? '⏳ ' : ''}${s.booking_source === 'PARENT' ? 'Parent · ' : ''}${s.child_name || s.case_code || 'Booked'}`

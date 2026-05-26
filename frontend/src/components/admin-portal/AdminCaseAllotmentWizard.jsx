@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { AddressFormFields, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { AddressFormFields, addressFromApi, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
+import { AdminFamilyCombobox } from './AdminFamilyCombobox.jsx'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
+import { CaseSchedulingHub } from './CaseSchedulingHub.jsx'
+import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 
-const MODULES = [
-  { id: 'homecare', label: 'Homecare' },
-  { id: 'shadow_support', label: 'Shadow support' },
-]
-
-const SERVICE_PRESETS = {
-  homecare: ['Homecare', 'Occupational therapy', 'Speech therapy', 'Physiotherapy'],
-  shadow_support: ['Shadow support', 'School inclusion', 'Community support'],
-}
+const TOTAL_STEPS = 5
 
 const EMPTY_BILLING = {
   billing_type: 'PER_SESSION',
@@ -23,59 +19,104 @@ const EMPTY_BILLING = {
   package_amount_inr: '12000',
   compensation_mode: 'PERCENTAGE',
   therapist_fixed_pay_inr: '',
+  product_billing_rule_id: '',
 }
 
 export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
+  const { user } = useAuth()
   const { canCreateProductCase } = useModuleWrite()
   const [step, setStep] = useState(1)
-  const [families, setFamilies] = useState([])
   const [familyMode, setFamilyMode] = useState('existing')
   const [childId, setChildId] = useState('')
+  const [selectedFamily, setSelectedFamily] = useState(null)
   const [newChild, setNewChild] = useState({ first_name: '', last_name: '' })
+  const [parentIsExisting, setParentIsExisting] = useState(false)
+  const [existingParentId, setExistingParentId] = useState('')
+  const [parentSearch, setParentSearch] = useState('')
+  const [parentMatches, setParentMatches] = useState([])
   const [newParent, setNewParent] = useState({
     email: '',
     full_name: '',
     phone: '',
     send_invite: true,
   })
+  const { options: clinicalOptions } = useClinicalProductModules()
+  const moduleOptions = useMemo(
+    () => clinicalOptions.filter((o) => o.value).map((o) => ({ id: o.value, label: o.label })),
+    [clinicalOptions],
+  )
   const [productModule, setProductModule] = useState('homecare')
   const canSubmitAllot = canCreateProductCase(productModule)
   const [caseCode, setCaseCode] = useState('')
-  const [serviceType, setServiceType] = useState('Homecare')
+  const [serviceType, setServiceType] = useState('')
+  const [serviceCategories, setServiceCategories] = useState([])
+  const [clinicalCatalog, setClinicalCatalog] = useState([])
+  const [serviceProductId, setServiceProductId] = useState('')
   const [serviceAddr, setServiceAddr] = useState(emptyAddress())
+  const [addressSource, setAddressSource] = useState('manual')
   const [billing, setBilling] = useState(EMPTY_BILLING)
   const [therapistId, setTherapistId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
-  const [showQuickChild, setShowQuickChild] = useState(false)
-  const [quickChild, setQuickChild] = useState({ first_name: '', last_name: '' })
-  const [familySearch, setFamilySearch] = useState('')
-
-  const filteredFamilies = useMemo(() => {
-    const q = familySearch.trim().toLowerCase()
-    const byId = new Map()
-    for (const f of families) {
-      if (!byId.has(f.childId)) byId.set(f.childId, f)
-    }
-    const unique = [...byId.values()]
-    if (!q) return unique
-    return unique.filter((f) => {
-      const parentBit = (f.parents || []).map((p) => `${p.parentName} ${p.parentEmail}`).join(' ')
-      const hay = `${f.childName} ${parentBit} ${(f.caseCodes || []).join(' ')}`.toLowerCase()
-      return hay.includes(q)
-    })
-  }, [families, familySearch])
-
-  const loadFamilies = useCallback(() => {
-    apiFetch('/api/v1/admin/families')
-      .then(setFamilies)
-      .catch(() => setFamilies([]))
-  }, [])
+  const [createdCase, setCreatedCase] = useState(null)
+  const [createdAssignments, setCreatedAssignments] = useState([])
 
   useEffect(() => {
-    loadFamilies()
-  }, [loadFamilies])
+    apiFetch('/api/v1/admin/service-categories')
+      .then((rows) => {
+        const active = (rows || []).filter((r) => r.is_active !== false)
+        setServiceCategories(active)
+        if (active.length && !serviceType) setServiceType(active[0].label)
+      })
+      .catch(() => setServiceCategories([]))
+    apiFetch('/api/v1/auth/catalog/clinical-services')
+      .then((rows) => setClinicalCatalog(Array.isArray(rows) ? rows : []))
+      .catch(() => setClinicalCatalog([]))
+  }, [])
+
+  const productsForModule = useMemo(() => {
+    const cat = clinicalCatalog.find((c) => c.id === productModule)
+    return (cat?.products || []).filter((p) => p.active !== false)
+  }, [clinicalCatalog, productModule])
+
+  useEffect(() => {
+    const cat = serviceCategories.find((c) => c.id === productModule)
+    if (cat?.label) setServiceType(cat.label)
+    setServiceProductId('')
+  }, [productModule, serviceCategories])
+
+  useEffect(() => {
+    if (!serviceProductId) return
+    const product = productsForModule.find((p) => String(p.id) === String(serviceProductId))
+    if (!product) return
+    const model = (product.billing_model || 'PER_SESSION').toUpperCase()
+    const isPackage = model.includes('PACKAGE') || model.includes('PREPAID')
+    setBilling((b) => ({
+      ...b,
+      product_billing_rule_id: product.product_billing_rule_id
+        ? String(product.product_billing_rule_id)
+        : '',
+      billing_type: isPackage ? 'PACKAGE' : 'PER_SESSION',
+      client_billing_mode: isPackage ? 'PREPAID' : 'POSTPAID',
+      client_rate_per_session_inr:
+        product.price_inr != null ? String(product.price_inr) : b.client_rate_per_session_inr,
+      package_session_count:
+        product.package_sessions != null ? String(product.package_sessions) : b.package_session_count,
+      package_amount_inr: product.total_inr != null ? String(product.total_inr) : b.package_amount_inr,
+    }))
+  }, [serviceProductId, productsForModule])
+
+  useEffect(() => {
+    if (familyMode !== 'new' || !parentIsExisting) return
+    const t = setTimeout(() => {
+      const qs = parentSearch.trim() ? `?search=${encodeURIComponent(parentSearch.trim())}` : ''
+      apiFetch(`/api/v1/admin/parents/lookup${qs}`)
+        .then(setParentMatches)
+        .catch(() => setParentMatches([]))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [parentSearch, parentIsExisting, familyMode])
 
   useEffect(() => {
     apiFetch(`/api/v1/admin/cases/next-code?product_module=${encodeURIComponent(productModule)}`)
@@ -84,9 +125,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   }, [productModule])
 
   useEffect(() => {
-    const presets = SERVICE_PRESETS[productModule] || []
-    if (presets.length) setServiceType(presets[0])
-  }, [productModule])
+    if (!moduleOptions.find((m) => m.id === productModule) && moduleOptions.length) {
+      setProductModule(moduleOptions[0].id)
+    }
+  }, [moduleOptions, productModule])
 
   function setBill(key, value) {
     setBilling((b) => {
@@ -106,6 +148,17 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
     if (!newChild.first_name.trim() || !newChild.last_name.trim()) {
       throw new Error('Child first and last name required')
     }
+    if (parentIsExisting && existingParentId) {
+      const res = await apiFetch('/api/v1/admin/children', {
+        method: 'POST',
+        body: JSON.stringify({
+          parent_user_id: Number(existingParentId),
+          first_name: newChild.first_name.trim(),
+          last_name: newChild.last_name.trim(),
+        }),
+      })
+      return res.id
+    }
     if (!newParent.email.trim() || !newParent.full_name.trim()) {
       throw new Error('Parent name and email required for new families')
     }
@@ -123,7 +176,6 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       }),
     })
     if (fam.inviteUrl) setInviteUrl(fam.inviteUrl)
-    loadFamilies()
     return fam.childId
   }
 
@@ -143,6 +195,9 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         pay_share_pct: Number(billing.pay_share_pct),
         therapist_user_id: Number(therapistId),
       }
+      if (billing.product_billing_rule_id) {
+        payload.product_billing_rule_id = Number(billing.product_billing_rule_id)
+      }
       if (billing.billing_type === 'PER_SESSION') {
         payload.client_rate_per_session_inr = Number(billing.client_rate_per_session_inr)
       } else {
@@ -152,7 +207,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
           payload.therapist_fixed_pay_inr = Number(billing.therapist_fixed_pay_inr)
         }
       }
-      if (productModule === 'homecare' && serviceAddr.address_line1) {
+      if (serviceAddr.address_line1) {
         const base = addressToPayload(serviceAddr)
         Object.assign(payload, {
           service_address_line1: base.address_line1,
@@ -167,7 +222,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         method: 'POST',
         body: JSON.stringify(payload),
       })
-      onComplete?.(result.case, inviteUrl)
+      setCreatedCase(result.case)
+      const asg = await apiFetch(`/api/v1/cases/${result.case.id}/assignments`).catch(() => [])
+      setCreatedAssignments(asg || [])
+      setStep(5)
     } catch (err) {
       setError(err.message || 'Allotment failed')
     } finally {
@@ -177,7 +235,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
 
   return (
     <section className="admin-panel" style={{ marginBottom: 20, padding: 16 }}>
-      <p className="admin-drawer__subtitle">Case allotment — step {step} of 4</p>
+      <p className="admin-drawer__subtitle">Case allotment — step {step} of {TOTAL_STEPS}</p>
       {error ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{error}</p> : null}
       {inviteUrl ? (
         <p style={{ fontSize: '0.875rem', color: '#047857', wordBreak: 'break-all' }}>
@@ -208,91 +266,14 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             </div>
           </fieldset>
           {familyMode === 'existing' ? (
-            <>
-              <label style={{ gridColumn: '1 / -1' }}>
-                Search child or parent
-                <input
-                  className="admin-input"
-                  type="search"
-                  placeholder="Name, email, or case code…"
-                  value={familySearch}
-                  onChange={(e) => setFamilySearch(e.target.value)}
-                />
-              </label>
-              <label style={{ gridColumn: '1 / -1' }}>
-                Child
-                <select className="admin-input" value={childId} onChange={(e) => setChildId(e.target.value)} required>
-                  <option value="">
-                    {filteredFamilies.length ? 'Select child…' : 'No matches — add a child below'}
-                  </option>
-                  {filteredFamilies.map((f) => (
-                    <option key={f.childId} value={f.childId}>
-                      {f.childName} (#{f.childId})
-                      {f.parents?.[0]?.parentEmail ? ` · ${f.parents[0].parentEmail}` : ' · no parent linked'}
-                      {f.caseCodes?.length ? ` · ${f.caseCodes.join(', ')}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {families.length > 0 && filteredFamilies.length === 0 ? (
-                <p style={{ gridColumn: '1 / -1', fontSize: '0.8rem', color: '#b45309' }}>
-                  No children match your search. Try another term or add a new child.
-                </p>
-              ) : null}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--ghost admin-btn--sm"
-                  onClick={() => setShowQuickChild((v) => !v)}
-                >
-                  {showQuickChild ? 'Cancel' : '+ Add child'}
-                </button>
-                {showQuickChild ? (
-                  <div className="admin-form-grid" style={{ marginTop: 8, maxWidth: 400 }}>
-                    <label>
-                      First name
-                      <input
-                        className="admin-input"
-                        value={quickChild.first_name}
-                        onChange={(e) => setQuickChild((c) => ({ ...c, first_name: e.target.value }))}
-                      />
-                    </label>
-                    <label>
-                      Last name
-                      <input
-                        className="admin-input"
-                        value={quickChild.last_name}
-                        onChange={(e) => setQuickChild((c) => ({ ...c, last_name: e.target.value }))}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="admin-btn admin-btn--secondary admin-btn--sm"
-                      onClick={async () => {
-                        setError('')
-                        try {
-                          const res = await apiFetch('/api/v1/admin/children', {
-                            method: 'POST',
-                            body: JSON.stringify({
-                              first_name: quickChild.first_name.trim(),
-                              last_name: quickChild.last_name.trim(),
-                            }),
-                          })
-                          loadFamilies()
-                          setChildId(String(res.id))
-                          setShowQuickChild(false)
-                          setQuickChild({ first_name: '', last_name: '' })
-                        } catch (err) {
-                          setError(err.message || 'Could not add child')
-                        }
-                      }}
-                    >
-                      Save child
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </>
+            <label style={{ gridColumn: '1 / -1' }}>
+              Search child or parent
+              <AdminFamilyCombobox
+                value={childId}
+                onChange={setChildId}
+                onSelectFamily={setSelectedFamily}
+              />
+            </label>
           ) : (
             <>
               <label>
@@ -303,26 +284,65 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                 Child last name
                 <input className="admin-input" value={newChild.last_name} onChange={(e) => setNewChild((c) => ({ ...c, last_name: e.target.value }))} />
               </label>
-              <label>
-                Parent name
-                <input className="admin-input" value={newParent.full_name} onChange={(e) => setNewParent((p) => ({ ...p, full_name: e.target.value }))} />
-              </label>
-              <label>
-                Parent email
-                <input type="email" className="admin-input" value={newParent.email} onChange={(e) => setNewParent((p) => ({ ...p, email: e.target.value }))} />
-              </label>
-              <label>
-                Parent phone
-                <input className="admin-input" value={newParent.phone} onChange={(e) => setNewParent((p) => ({ ...p, phone: e.target.value }))} />
-              </label>
               <label style={{ gridColumn: '1 / -1' }}>
                 <input
                   type="checkbox"
-                  checked={newParent.send_invite}
-                  onChange={(e) => setNewParent((p) => ({ ...p, send_invite: e.target.checked }))}
+                  checked={parentIsExisting}
+                  onChange={(e) => setParentIsExisting(e.target.checked)}
                 />{' '}
-                Send portal invite email (link shown after submit)
+                Link to existing parent account
               </label>
+              {parentIsExisting ? (
+                <>
+                  <label style={{ gridColumn: '1 / -1' }}>
+                    Search parent email or name
+                    <input
+                      className="admin-input"
+                      value={parentSearch}
+                      onChange={(e) => setParentSearch(e.target.value)}
+                      placeholder="parent@email.com"
+                    />
+                  </label>
+                  <label style={{ gridColumn: '1 / -1' }}>
+                    Parent account
+                    <select
+                      className="admin-input"
+                      value={existingParentId}
+                      onChange={(e) => setExistingParentId(e.target.value)}
+                    >
+                      <option value="">Select parent…</option>
+                      {parentMatches.map((p) => (
+                        <option key={p.userId} value={p.userId}>
+                          {p.fullName} · {p.email} ({p.children?.length || 0} children)
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    Parent name
+                    <input className="admin-input" value={newParent.full_name} onChange={(e) => setNewParent((p) => ({ ...p, full_name: e.target.value }))} />
+                  </label>
+                  <label>
+                    Parent email
+                    <input type="email" className="admin-input" value={newParent.email} onChange={(e) => setNewParent((p) => ({ ...p, email: e.target.value }))} />
+                  </label>
+                  <label>
+                    Parent phone
+                    <input className="admin-input" value={newParent.phone} onChange={(e) => setNewParent((p) => ({ ...p, phone: e.target.value }))} />
+                  </label>
+                  <label style={{ gridColumn: '1 / -1' }}>
+                    <input
+                      type="checkbox"
+                      checked={newParent.send_invite}
+                      onChange={(e) => setNewParent((p) => ({ ...p, send_invite: e.target.checked }))}
+                    />{' '}
+                    Send portal invite email (link shown after submit)
+                  </label>
+                </>
+              )}
             </>
           )}
         </div>
@@ -333,7 +353,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
           <label>
             Module
             <select className="admin-input" value={productModule} onChange={(e) => setProductModule(e.target.value)}>
-              {MODULES.map((m) => (
+              {moduleOptions.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
                 </option>
@@ -346,19 +366,75 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
           </label>
           <label>
             Service type
-            <input className="admin-input" list="service-presets" value={serviceType} onChange={(e) => setServiceType(e.target.value)} />
-            <datalist id="service-presets">
-              {(SERVICE_PRESETS[productModule] || []).map((s) => (
-                <option key={s} value={s} />
+            <select className="admin-input" value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
+              {serviceCategories.map((c) => (
+                <option key={c.id} value={c.label}>
+                  {c.label}
+                </option>
               ))}
-            </datalist>
+            </select>
           </label>
-          {productModule === 'homecare' ? (
-            <div style={{ gridColumn: '1 / -1' }}>
-              <p className="admin-drawer__subtitle">Service address (optional)</p>
-              <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="wiz-svc" showLocationButton={false} />
-            </div>
+          {productsForModule.length > 0 ? (
+            <label style={{ gridColumn: '1 / -1' }}>
+              Commercial product (billing rule)
+              <select
+                className="admin-input"
+                value={serviceProductId}
+                onChange={(e) => setServiceProductId(e.target.value)}
+              >
+                <option value="">Select product (optional)…</option>
+                {productsForModule.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} · {p.billing_model}
+                    {p.price_inr != null ? ` · ₹${p.price_inr}` : ''}
+                  </option>
+                ))}
+              </select>
+              <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                Prefills client billing and links the ledger rule from Settings.
+              </span>
+            </label>
           ) : null}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <p className="admin-drawer__subtitle">Service address (optional)</p>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+              {['manual', 'parent_home'].map((src) => (
+                <label key={src} style={{ fontSize: '0.85rem' }}>
+                  <input
+                    type="radio"
+                    name="addrSrc"
+                    checked={addressSource === src}
+                    onChange={() => setAddressSource(src)}
+                  />{' '}
+                  {src === 'manual' ? 'Enter manually' : 'Copy parent home (when available)'}
+                </label>
+              ))}
+            </div>
+            {addressSource === 'parent_home' && selectedFamily?.parents?.[0]?.userId ? (
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                style={{ marginBottom: 8 }}
+                onClick={async () => {
+                  try {
+                    const rows = await apiFetch(
+                      `/api/v1/admin/families?search=${encodeURIComponent(selectedFamily.parents[0].parentEmail || '')}`,
+                    )
+                    const match = (rows || []).find((r) => r.childId === Number(childId))
+                    if (match?.parents?.[0]?.userId) {
+                      const u = await apiFetch(`/api/v1/admin/users/${match.parents[0].userId}`).catch(() => null)
+                      if (u?.home_address) setServiceAddr(addressFromApi(u.home_address))
+                    }
+                  } catch {
+                    setError('Could not load parent address')
+                  }
+                }}
+              >
+                Load parent home address
+              </button>
+            ) : null}
+            <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="wiz-svc" showLocationButton={false} />
+          </div>
         </div>
       ) : null}
 
@@ -428,13 +504,22 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         </div>
       ) : null}
 
+      {step === 5 && createdCase ? (
+        <div>
+          <p className="admin-muted" style={{ marginBottom: 12 }}>
+            Case {createdCase.case_code} created. Book sessions now or finish later from the case page.
+          </p>
+          <CaseSchedulingHub caseItem={createdCase} assignments={createdAssignments} onDone={() => {}} />
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {step > 1 ? (
+        {step > 1 && step < 5 ? (
           <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => setStep((s) => s - 1)}>
             Back
           </button>
         ) : (
-          onCancel && (
+          onCancel && step < 5 && (
             <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={onCancel}>
               Cancel
             </button>
@@ -444,7 +529,8 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
           <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setStep((s) => s + 1)}>
             Next
           </button>
-        ) : (
+        ) : null}
+        {step === 4 ? (
           <button
             type="button"
             className="admin-btn admin-btn--primary admin-btn--sm"
@@ -453,7 +539,16 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
           >
             {saving ? 'Creating…' : 'Create case & assign'}
           </button>
-        )}
+        ) : null}
+        {step === 5 ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            onClick={() => onComplete?.(createdCase, inviteUrl)}
+          >
+            Done
+          </button>
+        ) : null}
         {step === 4 && !canSubmitAllot ? (
           <p className="admin-muted" style={{ width: '100%', fontSize: '0.8rem' }}>
             You have view-only access for {productModule.replace(/_/g, ' ')} — cannot allot new cases.

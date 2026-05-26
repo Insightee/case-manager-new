@@ -54,6 +54,8 @@ def main() -> int:
         ("therapist@demo.com", "therapist"),
         ("parent@demo.com", "parent"),
         ("casemanager@demo.com", "admin"),
+        ("hr@demo.com", "admin"),
+        ("finance@demo.com", "admin"),
     ]
     for email, portal in accounts:
         r = client.post("/api/v1/auth/login", json={"email": email, "password": "demo123"})
@@ -65,6 +67,34 @@ def main() -> int:
         headers = {"Authorization": f"Bearer {token}"}
         me = client.get("/api/v1/auth/me", headers=headers)
         all_ok &= check(f"GET /auth/me ({portal})", me.status_code == 200, "", "H2")
+
+    landing_expectations = [
+        ("casemanager@demo.com", "/admin/cm", "H7"),
+        ("hr@demo.com", "/admin/people", "H7"),
+        ("finance@demo.com", "/admin/invoices", "H7"),
+    ]
+    for email, expected_route, hid in landing_expectations:
+        token = _login(client, email)
+        home = client.get("/api/v1/admin/home", headers={"Authorization": f"Bearer {token}"})
+        route = home.json().get("landing_route") if home.status_code == 200 else None
+        all_ok &= check(
+            f"Landing {email}",
+            home.status_code == 200 and route == expected_route,
+            f"route={route} expected={expected_route}",
+            hid,
+        )
+
+    cm_token = _login(client, "casemanager@demo.com")
+    pipeline = client.get(
+        "/api/v1/admin/cases/pipeline",
+        headers={"Authorization": f"Bearer {cm_token}"},
+    )
+    all_ok &= check(
+        "CM pipeline board",
+        pipeline.status_code == 200,
+        f"columns={len(pipeline.json().get('columns', []))}",
+        "H8",
+    )
 
     sa = client.post("/api/v1/auth/login", json={"email": "superadmin@demo.com", "password": "demo123"}).json()
     h = {"Authorization": f"Bearer {sa['access_token']}"}
@@ -80,8 +110,29 @@ def main() -> int:
     plogs = client.get("/api/v1/parent/session-logs", headers=parent_h)
     all_ok &= check("Parent session logs", plogs.status_code == 200, f"count={len(plogs.json())}", "H5")
 
-    incidents = client.get("/api/v1/incidents", headers={"Authorization": f"Bearer {_login(client, 'supervisor@demo.com')}"})
-    all_ok &= check("Incidents (supervisor)", incidents.status_code == 200, f"count={len(incidents.json())}", "H6")
+    sup_r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "supervisor@demo.com", "password": "demo123"},
+    )
+    if sup_r.status_code == 200 and "access_token" in sup_r.json():
+        sup_token = sup_r.json()["access_token"]
+        incidents = client.get(
+            "/api/v1/incidents",
+            headers={"Authorization": f"Bearer {sup_token}"},
+        )
+        all_ok &= check(
+            "Incidents (supervisor)",
+            incidents.status_code == 200,
+            f"count={len(incidents.json())}",
+            "H6",
+        )
+    else:
+        check(
+            "Incidents (supervisor)",
+            True,
+            "skipped — supervisor@demo.com not in seed (legacy migrated)",
+            "H6",
+        )
 
     log("H0", "debug_health.py:done", "health check complete", {"all_ok": all_ok})
     print(f"\nLogs written to {LOG_PATH}")

@@ -11,6 +11,36 @@ export const PIPELINE_COLUMN_META = {
   closed: { label: 'Closed', tone: 'muted', priority: 7 },
 }
 
+/** Unified case state filter options (replaces separate case status + pipeline stage). */
+export const CASE_STATE_OPTIONS = [
+  { value: 'all', label: 'All states' },
+  { value: 'pending_allotment', label: 'Pending allotment' },
+  { value: 'needs_therapist', label: 'Needs therapist' },
+  { value: 'reassignment', label: 'Reassignment' },
+  { value: 'reports_logs', label: 'Reports & logs' },
+  { value: 'iep', label: 'IEP' },
+  { value: 'compliance', label: 'Compliance' },
+  { value: 'active', label: 'Active (in service)' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'suspended', label: 'Suspended' },
+]
+
+export const OPENED_DATE_PRESETS = [
+  { value: 'all', label: 'Any time' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_30', label: 'Last 30 days' },
+  { value: 'last_90', label: 'Last 90 days' },
+  { value: 'custom', label: 'Custom range' },
+]
+
+/** Map legacy ?status= query params to unified caseState. */
+const LEGACY_STATUS_TO_CASE_STATE = {
+  PENDING_ALLOTMENT: 'pending_allotment',
+  ACTIVE: 'active',
+  SUSPENDED: 'suspended',
+  CLOSED: 'closed',
+}
+
 const ACTIONABLE_COLUMNS = new Set([
   'pending_allotment',
   'needs_therapist',
@@ -63,12 +93,11 @@ const EMPTY_FILTERS = {
   queue: 'needs_action',
   search: '',
   productModule: 'all',
-  caseStatus: 'all',
-  pipelineStage: 'all',
+  caseState: 'all',
   caseManagerId: 'all',
   therapistId: 'all',
   childId: 'all',
-  month: 'all',
+  openedPreset: 'all',
   dateFrom: '',
   dateTo: '',
   operationalStage: 'all',
@@ -77,7 +106,88 @@ const EMPTY_FILTERS = {
 }
 
 export function defaultPipelineFilters(overrides = {}) {
-  return { ...EMPTY_FILTERS, ...overrides }
+  const merged = { ...EMPTY_FILTERS, ...overrides }
+  if (merged.caseStatus && merged.caseStatus !== 'all' && merged.caseState === 'all') {
+    merged.caseState = LEGACY_STATUS_TO_CASE_STATE[merged.caseStatus] || 'all'
+  }
+  if (merged.pipelineStage && merged.pipelineStage !== 'all' && merged.caseState === 'all') {
+    merged.caseState = merged.pipelineStage
+  }
+  if (merged.month && merged.month !== 'all' && merged.openedPreset === 'all') {
+    merged.openedPreset = 'custom'
+    if (!merged.dateFrom) merged.dateFrom = `${merged.month}-01`
+    const [y, m] = merged.month.split('-').map(Number)
+    const lastDay = new Date(y, m, 0).getDate()
+    if (!merged.dateTo) merged.dateTo = `${merged.month}-${String(lastDay).padStart(2, '0')}`
+  }
+  delete merged.caseStatus
+  delete merged.pipelineStage
+  delete merged.month
+  return merged
+}
+
+const STAFF_ROLES_BLOCKING_CM_ONLY = new Set([
+  'SUPER_ADMIN',
+  'MODULE_ADMIN',
+  'FINANCE',
+  'HR',
+  'ADMIN',
+])
+
+/** True when the user should see only their own caseload by default (CM without broader staff roles). */
+export function isCaseManagerOnlyRole(roles = []) {
+  if (!roles.includes('CASE_MANAGER')) return false
+  return !roles.some((r) => STAFF_ROLES_BLOCKING_CM_ONLY.has(r))
+}
+
+export function defaultCaseManagerFilterId(user) {
+  if (!isCaseManagerOnlyRole(user?.roles || [])) return null
+  return user?.id ? String(user.id) : null
+}
+
+export function caseStateFromLegacyStatus(status) {
+  if (!status) return 'all'
+  return LEGACY_STATUS_TO_CASE_STATE[status] || 'all'
+}
+
+function matchesCaseState(row, caseState) {
+  if (caseState === 'all') return true
+  if (caseState === 'suspended') return row.status === 'SUSPENDED'
+  if (caseState === 'closed') {
+    return row.pipeline_column === 'closed' || row.status === 'CLOSED'
+  }
+  if (caseState === 'pending_allotment') {
+    return row.pipeline_column === 'pending_allotment' || row.status === 'PENDING_ALLOTMENT'
+  }
+  return row.pipeline_column === caseState
+}
+
+function isoDay(d) {
+  return d.toISOString().slice(0, 10)
+}
+
+function openedDateBounds(preset, dateFrom, dateTo) {
+  if (preset === 'all') return { from: null, to: null }
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  if (preset === 'this_month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1)
+    return { from: isoDay(start), to: isoDay(today) }
+  }
+  if (preset === 'last_30') {
+    const start = new Date(today)
+    start.setDate(start.getDate() - 30)
+    return { from: isoDay(start), to: isoDay(today) }
+  }
+  if (preset === 'last_90') {
+    const start = new Date(today)
+    start.setDate(start.getDate() - 90)
+    return { from: isoDay(start), to: isoDay(today) }
+  }
+  if (preset === 'custom') {
+    return { from: dateFrom || null, to: dateTo || null }
+  }
+  return { from: null, to: null }
 }
 
 /** @param {ReturnType<typeof flattenPipelineBoard>} rows */
@@ -86,7 +196,6 @@ export function derivePipelineFilterOptions(rows) {
   const caseManagers = new Map()
   const children = new Map()
   const stages = new Set()
-  const months = new Set()
   for (const r of rows) {
     if (r.therapist_user_id) {
       therapists.set(r.therapist_user_id, r.therapist_name || `Therapist #${r.therapist_user_id}`)
@@ -98,14 +207,12 @@ export function derivePipelineFilterOptions(rows) {
       children.set(r.child_id, r.child_name || `Client #${r.child_id}`)
     }
     if (r.operational_stage) stages.add(r.operational_stage)
-    if (r.created_at) months.add(r.created_at.slice(0, 7))
   }
   return {
     therapists: [...therapists.entries()].map(([id, label]) => ({ id: String(id), label })).sort((a, b) => a.label.localeCompare(b.label)),
     caseManagers: [...caseManagers.entries()].map(([id, label]) => ({ id: String(id), label })).sort((a, b) => a.label.localeCompare(b.label)),
     children: [...children.entries()].map(([id, label]) => ({ id: String(id), label })).sort((a, b) => a.label.localeCompare(b.label)),
     stages: [...stages].sort(),
-    months: [...months].sort().reverse(),
   }
 }
 
@@ -115,17 +222,14 @@ function rowCreatedDay(row) {
 }
 
 export function filterPipelineRows(rows, filters = {}) {
-  const f = { ...EMPTY_FILTERS, ...filters }
+  const f = defaultPipelineFilters(filters)
   let list = rows
 
   if (f.productModule !== 'all') {
     list = list.filter((r) => r.product_module === f.productModule)
   }
-  if (f.caseStatus !== 'all') {
-    list = list.filter((r) => r.status === f.caseStatus)
-  }
-  if (f.pipelineStage !== 'all') {
-    list = list.filter((r) => r.pipeline_column === f.pipelineStage)
+  if (f.caseState !== 'all') {
+    list = list.filter((r) => matchesCaseState(r, f.caseState))
   }
   if (f.caseManagerId === 'unassigned') {
     list = list.filter((r) => !r.case_manager_user_id)
@@ -143,21 +247,21 @@ export function filterPipelineRows(rows, filters = {}) {
   if (f.operationalStage !== 'all') {
     list = list.filter((r) => r.operational_stage === f.operationalStage)
   }
-  if (f.month !== 'all') {
-    list = list.filter((r) => r.created_at?.startsWith(f.month))
-  }
-  if (f.dateFrom) {
+
+  const { from: openedFrom, to: openedTo } = openedDateBounds(f.openedPreset, f.dateFrom, f.dateTo)
+  if (openedFrom) {
     list = list.filter((r) => {
       const d = rowCreatedDay(r)
-      return d && d >= f.dateFrom
+      return d && d >= openedFrom
     })
   }
-  if (f.dateTo) {
+  if (openedTo) {
     list = list.filter((r) => {
       const d = rowCreatedDay(r)
-      return d && d <= f.dateTo
+      return d && d <= openedTo
     })
   }
+
   if (f.unassignedCmOnly) {
     list = list.filter((r) => !r.case_manager_user_id)
   }
@@ -205,16 +309,14 @@ export function filterPipelineRows(rows, filters = {}) {
 }
 
 export function countActivePipelineFilters(filters = {}) {
-  const f = { ...EMPTY_FILTERS, ...filters }
+  const f = defaultPipelineFilters(filters)
   let n = 0
   if (f.productModule !== 'all') n += 1
-  if (f.caseStatus !== 'all') n += 1
-  if (f.pipelineStage !== 'all') n += 1
+  if (f.caseState !== 'all') n += 1
   if (f.caseManagerId !== 'all') n += 1
   if (f.therapistId !== 'all') n += 1
   if (f.childId !== 'all') n += 1
-  if (f.month !== 'all') n += 1
-  if (f.dateFrom || f.dateTo) n += 1
+  if (f.openedPreset !== 'all') n += 1
   if (f.operationalStage !== 'all') n += 1
   if (f.unassignedCmOnly) n += 1
   if (f.unassignedTherapistOnly) n += 1

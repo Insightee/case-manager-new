@@ -421,6 +421,28 @@ export function WeeklyScheduleDrawer({
 
           {tab === 'recurring' && (
             <>
+              <div className="rounded-xl border border-slate-200 p-4">
+                {fixedCaseId ? (
+                  <p className="text-sm text-slate-600">Case #{fixedCaseId}</p>
+                ) : (
+                  <label className="block text-sm font-medium text-slate-700">
+                    Case
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      value={caseId}
+                      onChange={(e) => setCaseId(e.target.value)}
+                    >
+                      <option value="">Select case…</option>
+                      {cases.map((c) => (
+                        <option key={c.case_id} value={c.case_id}>
+                          {c.case_code} · {c.child_name || 'Client'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+
               <div className="rounded-xl border border-slate-200 p-4 space-y-4">
                 <ScheduleWeekdayPicker value={bookWeekdays} onChange={setBookWeekdays} label="Repeat on" compact />
                 <div className="grid grid-cols-2 gap-3">
@@ -492,29 +514,7 @@ export function WeeklyScheduleDrawer({
                     running again or end via case assignment changes.
                   </p>
                 ) : null}
-              </div>
-
-              <div className="rounded-xl border border-slate-200 p-4">
-                {fixedCaseId ? (
-                  <p className="text-sm text-slate-600">Case #{fixedCaseId}</p>
-                ) : (
-                  <label className="block text-sm font-medium text-slate-700">
-                    Case
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      value={caseId}
-                      onChange={(e) => setCaseId(e.target.value)}
-                    >
-                      <option value="">Select case…</option>
-                      {cases.map((c) => (
-                        <option key={c.case_id} value={c.case_id}>
-                          {c.case_code} · {c.child_name || 'Client'}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <p className="mt-2 text-xs text-slate-500">~{bookPreview.length} session dates (before conflicts).</p>
+                <p className="text-xs text-slate-500">~{bookPreview.length} session dates (before conflicts).</p>
               </div>
             </>
           )}

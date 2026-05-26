@@ -1,9 +1,10 @@
 import { useCallback, useMemo } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
+import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
 
 /** Per-module write helpers for admin mutation buttons. */
 export function useModuleWrite() {
-  const { can, canWriteProduct, canWriteFeature, isViewOnly } = useAuth()
+  const { user, can, canWriteProduct, canWriteFeature, isViewOnly } = useAuth()
 
   const canWriteBilling = useMemo(
     () => can('invoice.approve') && !isViewOnly && canWriteFeature('invoices'),
@@ -46,8 +47,21 @@ export function useModuleWrite() {
     [can, isViewOnly, canWriteFeature],
   )
 
+  const canManageUsers = useMemo(
+    () => can('user.manage') && !isViewOnly,
+    [can, isViewOnly],
+  )
+
+  const canReviewAnyClinicalReports = useCallback(() => {
+    for (const pid of clinicalProductModuleIds(user)) {
+      if (canReviewReports(pid)) return true
+    }
+    return false
+  }, [user, canReviewReports])
+
   return {
     isViewOnly,
+    canManageUsers,
     canWriteBilling,
     canCreateProductCase,
     canEditProductCase,
@@ -56,5 +70,6 @@ export function useModuleWrite() {
     canEditIep,
     canReviewLogs,
     canManageTickets,
+    canReviewAnyClinicalReports,
   }
 }

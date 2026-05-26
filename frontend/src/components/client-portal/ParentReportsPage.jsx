@@ -59,6 +59,7 @@ export function ParentReportsPage() {
   const [feedbackText, setFeedbackText] = useState('')
   const [commentBody, setCommentBody] = useState('')
   const [commentType, setCommentType] = useState('GENERAL')
+  const [goalSuggestionText, setGoalSuggestionText] = useState('')
   const [acting, setActing] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -149,9 +150,12 @@ export function ParentReportsPage() {
           : `/api/v1/parent/reports/monthly/${item.id}`
       const data = await apiFetch(path)
       setDetail({ ...data, kind: item.kind || (tab === 'iep' ? 'iep' : 'monthly') })
-      if (data.kind === 'iep' && data.downloadPath) {
-        const blobUrl = await fetchBlobUrl(data.downloadPath)
-        setPdfUrl(blobUrl)
+      if (data.kind === 'iep' && data.downloadPath && !data.bodyHtml) {
+        const isPdf = (data.fileName || '').toLowerCase().endsWith('.pdf')
+        if (isPdf) {
+          const blobUrl = await fetchBlobUrl(data.downloadPath)
+          setPdfUrl(blobUrl)
+        }
       }
     } catch (err) {
       setError(err.message || 'Could not open document')
@@ -256,9 +260,28 @@ export function ParentReportsPage() {
       await apiFetch(`/api/v1/parent/reports/iep/${detail.id}/acknowledge`, { method: 'POST' })
       setMessage('IEP acknowledged.')
       await loadHub()
-      closeDetail()
+      const refreshed = await apiFetch(`/api/v1/parent/reports/iep/${detail.id}`)
+      setDetail({ ...refreshed, kind: 'iep' })
     } catch (err) {
       setError(err.message || 'Acknowledge failed')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function submitGoalSuggestion() {
+    if (!detail?.caseDbId || !goalSuggestionText.trim()) return
+    setActing(true)
+    setError('')
+    try {
+      await apiFetch(`/api/v1/parent/cases/${detail.caseDbId}/iep-plan/suggestions`, {
+        method: 'POST',
+        body: JSON.stringify({ body: goalSuggestionText.trim() }),
+      })
+      setGoalSuggestionText('')
+      setMessage('Goal suggestion sent to your care team.')
+    } catch (err) {
+      setError(err.message || 'Could not send suggestion')
     } finally {
       setActing(false)
     }
@@ -540,6 +563,10 @@ export function ParentReportsPage() {
                     </div>
                   ) : null}
                 </>
+              ) : detail?.kind === 'iep' && detail.bodyHtml ? (
+                <div className="parent-reports__iep-doc">
+                  <ReportHtmlView html={detail.bodyHtml} />
+                </div>
               ) : pdfUrl ? (
                 <iframe
                   title={detail.fileName || 'IEP document'}
@@ -565,6 +592,31 @@ export function ParentReportsPage() {
                       </li>
                     ))}
                   </ul>
+                </section>
+              ) : null}
+
+              {detail?.kind === 'iep' && detail.canSuggestGoals ? (
+                <section className="parent-reports__goal-suggest" style={{ marginTop: 16 }}>
+                  <h3 style={{ fontSize: 15 }}>Suggest goal changes</h3>
+                  <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 8px' }}>
+                    Share ideas for IEP goals. Your case manager will review suggestions.
+                  </p>
+                  <textarea
+                    value={goalSuggestionText}
+                    onChange={(e) => setGoalSuggestionText(e.target.value)}
+                    rows={3}
+                    placeholder="Describe a goal or change you would like considered"
+                    style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                  />
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary"
+                    style={{ marginTop: 8 }}
+                    disabled={acting || !goalSuggestionText.trim()}
+                    onClick={submitGoalSuggestion}
+                  >
+                    Send goal suggestion
+                  </button>
                 </section>
               ) : null}
 
@@ -661,7 +713,7 @@ export function ParentReportsPage() {
                     Suggest changes
                   </button>
                 ) : null}
-                {detail.kind === 'iep' && detail.status === 'pending' ? (
+                {detail.kind === 'iep' && (detail.canAcknowledge || detail.status === 'pending') ? (
                   <button type="button" className="admin-btn admin-btn--primary" disabled={acting} onClick={acknowledgeIep}>
                     Acknowledge IEP
                   </button>

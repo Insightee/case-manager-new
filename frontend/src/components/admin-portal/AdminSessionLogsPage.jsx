@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area,
 } from 'recharts'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 import { AdminPageHeader, StatusBadge } from './ui/index.js'
 import './admin-sessions-dashboard.css'
 
@@ -372,21 +372,24 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
     return () => clearTimeout(t)
   }, [highlightSessionId, filtered.length])
 
-  function downloadFile(endpoint) {
+  async function downloadFile(endpoint) {
     const p = new URLSearchParams()
-    if (filters.dateFrom)      p.set('date_from', filters.dateFrom)
-    if (filters.dateTo)        p.set('date_to', filters.dateTo)
-    if (filters.therapistId)   p.set('therapist_id', filters.therapistId)
+    if (filters.dateFrom) p.set('date_from', filters.dateFrom)
+    if (filters.dateTo) p.set('date_to', filters.dateTo)
+    if (filters.therapistId) p.set('therapist_id', filters.therapistId)
     if (filters.productModule) p.set('product_module', filters.productModule)
-    if (filters.caseId)        p.set('case_id', filters.caseId)
-    if (filters.status)        p.set('status', filters.status)
-    const url = `/api/v1/admin/sessions/export/${endpoint}?${p}`
-    const a = document.createElement('a')
-    a.href = url
-    a.download = ''
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    if (filters.caseId) p.set('case_id', filters.caseId)
+    if (filters.status) p.set('status', filters.status)
+    const qs = p.toString()
+    const path = `/api/v1/admin/sessions/export/${endpoint}${qs ? `?${qs}` : ''}`
+    const ext = endpoint === 'pdf' ? 'pdf' : 'xlsx'
+    const from = filters.dateFrom || 'export'
+    const to = filters.dateTo || 'export'
+    try {
+      await apiDownload(path, `sessions_${from}_${to}.${ext}`)
+    } catch (err) {
+      window.alert(err.message || 'Export failed')
+    }
   }
 
   return (

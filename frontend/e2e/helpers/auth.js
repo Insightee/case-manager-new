@@ -32,7 +32,7 @@ export async function loginParent(page) {
 /** @param {import('@playwright/test').Page} page */
 export async function loginAdmin(page) {
   await page.goto('/login')
-  await page.getByRole('tab', { name: 'Admin' }).click()
+  await page.getByRole('tab', { name: 'Staff' }).click()
   await page.getByRole('textbox', { name: 'Email' }).fill('superadmin@demo.com')
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
@@ -42,7 +42,7 @@ export async function loginAdmin(page) {
 /** @param {import('@playwright.test').Page} page */
 export async function loginCaseManager(page) {
   await page.goto('/login')
-  await page.getByRole('tab', { name: 'Admin' }).click()
+  await page.getByRole('tab', { name: 'Staff' }).click()
   await page.getByRole('textbox', { name: 'Email' }).fill('casemanager@demo.com')
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()

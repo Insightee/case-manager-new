@@ -17,9 +17,18 @@ export function reportEditPath(detail, reportType) {
     return `/admin/cases/${detail.case_id}?tab=reports`
   }
   if (detail.id) {
-    return `/admin/reports/edit/${detail.id}`
+    return `/admin/reports/view/${detail.id}`
   }
   return `/admin/cases/${detail.case_id}?tab=reports`
+}
+
+export function reportViewPath(detail) {
+  if (!detail?.id) return '/admin/reports'
+  return `/admin/reports/view/${detail.id}`
+}
+
+export function reportAdminEditPath(reportId) {
+  return `/admin/reports/edit/${reportId}?edit=1`
 }
 
 export function reportModuleLabel(category, reportType) {

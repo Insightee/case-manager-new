@@ -16,6 +16,22 @@ Parents see **what they pay for**, which sessions were billed, package balance, 
 
 Therapist payout invoices (`invoices`, `invoice_case_lines`, `invoice_session_lines`) remain separate.
 
+## Ledger-first client billing (addendum)
+
+| Table | Purpose |
+|-------|---------|
+| `product_billing_rules` | Catalog: product module, billing model, rates, GST/HSN, cancellation flags |
+| `billing_ledger` | Source of truth before client invoice lines; one row per billable clinical event |
+| `organisations` | B2B billing entity (GSTIN, address) linked from `client_invoices` |
+
+**Flow:** approved session/daily log → `billing_ledger` (via product rule on case) → finance review → `generate-draft` → `client_invoices` DRAFT with GST snapshot on lines → send / payment / disputes.
+
+**Case link:** `cases.product_billing_rule_id` overrides catalog defaults; per-case rates still live on `cases.client_rate_per_session_inr` etc.
+
+**Service SSOT (2026):** Commercial products are authored under **Settings → Service categories** as `service_products` rows. Each product syncs a linked `product_billing_rules` record (`service_product_id` on the rule). Case allotment and the invoice composer should prefer rules from the selected service line’s active products. Clinical access (which service lines a user sees) is separate from org capabilities (`billing`, `people_admin`, `hr_ops`) stored in `service_access_grants` / `org_capability_grants`.
+
+**Therapist payouts:** unchanged; reconciliation API compares ledger billable totals vs `invoice_session_lines` per case/month.
+
 ## Invoice workflow
 
 ```mermaid
@@ -60,9 +76,18 @@ Filters: `month`, `case_id`, `service`, `payment_bucket` (`paid` \| `unpaid` \| 
 
 | Method | Path |
 |--------|------|
+| GET | `/admin/client-billing/composer-cases` |
+| GET | `/admin/client-billing/composer-preview` |
+| POST | `/admin/client-billing/cases/{id}/build-from-ledger` |
+| POST | `/admin/client-billing/remind-therapist` |
+| POST/PATCH/DELETE | `/admin/client-billing/invoices/{id}/lines` |
+| POST | `/admin/client-billing/invoices/{id}/recalculate` |
+| GET | `/admin/client-billing/invoices/{id}/audit-trail` |
 | GET | `/admin/client-billing/disputes` |
 | POST | `/admin/client-billing/invoices/{id}/payments` |
 | POST | `/admin/client-billing/disputes/{id}/resolve` |
+
+Finance UI entry: `/admin/invoices/compose` (Billing Composer). Replaces separate “raise invoice” and “generate from ledger” flows.
 
 ## Dispute workflow
 

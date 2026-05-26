@@ -26,6 +26,9 @@ class AdminReportListItem(BaseModel):
     content_preview: Optional[str] = None
     category: Optional[str] = None
     updated_at: Optional[datetime] = None
+    can_cm_publish: bool = False
+    can_admin_override_publish: bool = False
+    days_until_admin_override: Optional[int] = None
 
 
 class AdminReportReviewHistoryItem(BaseModel):
@@ -34,6 +37,19 @@ class AdminReportReviewHistoryItem(BaseModel):
     comment: Optional[str] = None
     reviewer_name: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class ReportDocumentCommentRead(BaseModel):
+    id: int
+    comment_type: str
+    body: str
+    author_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class ReportDocumentCommentCreate(BaseModel):
+    body: str
+    comment_type: Literal["GENERAL", "CHANGE_REQUEST"] = "GENERAL"
 
 
 class AdminReportDetail(BaseModel):
@@ -59,9 +75,16 @@ class AdminReportDetail(BaseModel):
     parent_review_status: Optional[str] = None
     parent_feedback: Optional[str] = None
     parent_reviewed_at: Optional[datetime] = None
+    submitted_for_review_at: Optional[datetime] = None
+    cm_published_at: Optional[datetime] = None
+    admin_published_at: Optional[datetime] = None
+    can_cm_publish: bool = False
+    can_admin_override_publish: bool = False
+    days_until_admin_override: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     review_history: list[AdminReportReviewHistoryItem] = Field(default_factory=list)
+    comments: list[ReportDocumentCommentRead] = Field(default_factory=list)
 
 
 class AdminReportTypeSummary(BaseModel):
@@ -90,7 +113,7 @@ class SendForReviewAction(BaseModel):
 
 
 class ReportCommentAction(BaseModel):
-    comment: str
+    comment: str = ""
 
 
 class BulkReportAction(BaseModel):

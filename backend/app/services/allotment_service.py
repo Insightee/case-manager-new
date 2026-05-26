@@ -49,6 +49,7 @@ def list_allotment_therapists(
         for p in db.scalars(select(TherapistProfile)).all()
     }
     q = (search or "").strip().lower()
+    tokens = [tok for tok in q.split() if tok]
     result = []
     for t in therapists:
         mods = t.module_assignments or []
@@ -58,8 +59,10 @@ def list_allotment_therapists(
             prof = profiles.get(t.id)
             if prof and prof.status != TherapistProfileStatus.APPROVED:
                 continue
-        if q and q not in t.full_name.lower() and q not in t.email.lower():
-            continue
+        if tokens:
+            hay = f"{(t.full_name or '').lower()} {(t.email or '').lower()}"
+            if not all(tok in hay for tok in tokens):
+                continue
         prof = profiles.get(t.id)
         result.append(
             {
@@ -83,8 +86,8 @@ def allot_case(
     start = data.pop("assignment_start_date", None) or date.today()
     reason = data.pop("reason_for_change", "Initial allotment")
     billing_data = {k: data.pop(k) for k in list(data.keys()) if k in (
-        "billing_type", "client_rate_per_session_inr", "package_session_count",
-        "package_amount_inr", "compensation_mode", "pay_share_pct",
+        "product_billing_rule_id", "billing_type", "client_billing_mode", "client_rate_per_session_inr",
+        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_pct",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}

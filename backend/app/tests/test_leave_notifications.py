@@ -64,6 +64,7 @@ def test_tentative_notification_on_leave_submit():
         "/api/v1/leave",
         headers=th,
         json={
+            "service_line": "shadow_support",
             "leave_type": "CASUAL",
             "start_date": day.isoformat(),
             "end_date": day.isoformat(),
@@ -111,6 +112,7 @@ def test_approve_cancels_slot_and_confirms_parent():
         "/api/v1/leave",
         headers=th,
         json={
+            "service_line": "shadow_support",
             "leave_type": "ANNUAL",
             "start_date": day.isoformat(),
             "end_date": day.isoformat(),
@@ -169,6 +171,7 @@ def test_reject_keeps_booking_and_notifies_parent():
         "/api/v1/leave",
         headers=th,
         json={
+            "service_line": "shadow_support",
             "leave_type": "SICK",
             "start_date": day.isoformat(),
             "end_date": day.isoformat(),
@@ -179,7 +182,7 @@ def test_reject_keeps_booking_and_notifies_parent():
     review = client.patch(
         f"/api/v1/leave/{leave_id}",
         headers=_headers(hr),
-        json={"status": "REJECTED"},
+        json={"status": "REJECTED", "review_note": "Slot must stay booked for client session"},
     )
     assert review.status_code == 200
 
@@ -209,6 +212,7 @@ def test_hr_notified_on_leave_submit():
         "/api/v1/leave",
         headers=_headers(therapist),
         json={
+            "service_line": "shadow_support",
             "leave_type": "ANNUAL",
             "start_date": day.isoformat(),
             "end_date": day.isoformat(),
@@ -235,6 +239,7 @@ def test_therapist_notified_on_reject_with_note():
         "/api/v1/leave",
         headers=th,
         json={
+            "service_line": "shadow_support",
             "leave_type": "CASUAL",
             "start_date": day.isoformat(),
             "end_date": day.isoformat(),

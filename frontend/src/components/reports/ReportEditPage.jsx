@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { ReportEditor } from './ReportEditor.jsx'
@@ -11,11 +11,29 @@ function reportsBase(pathname) {
   return '/reports'
 }
 
+function htmlFromPlain(text) {
+  if (!text || !String(text).trim()) return ''
+  const escaped = String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return escaped
+    .split(/\n\n+/)
+    .map((p) => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+    .join('')
+}
+
+function draftKey(reportId) {
+  return `report-draft-${reportId}`
+}
+
 export function ReportEditPage() {
   const { reportId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const isAdminEditor = location.pathname.startsWith('/admin')
+  const adminEditMode = searchParams.get('edit') === '1'
   const base = isAdminEditor ? '/admin/reports' : reportsBase(location.pathname)
 
   const [report, setReport] = useState(null)
@@ -32,6 +50,7 @@ export function ReportEditPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [documentVersion, setDocumentVersion] = useState(0)
+  const [localDraft, setLocalDraft] = useState(null)
   const saveTimer = useRef(null)
   const skipAutosaveRef = useRef(true)
 
@@ -46,8 +65,22 @@ export function ReportEditPage() {
     setError('')
     try {
       const row = await apiFetch(`/api/v1/reports/monthly/${reportId}`)
+      if (isAdminEditor && !adminEditMode) {
+        navigate(`/admin/reports/view/${reportId}`, { replace: true })
+        return
+      }
       setReport(row)
-      setBodyHtml(row.body_html || '')
+      const serverHtml = row.body_html || htmlFromPlain(row.summary)
+      const stored = localStorage.getItem(draftKey(reportId))
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          setLocalDraft(parsed)
+        } catch {
+          setLocalDraft(null)
+        }
+      }
+      setBodyHtml(serverHtml)
       setPlanNextMonth(row.plan_next_month || '')
       setCategory(row.category || 'CLIENT_MONTHLY')
       setSubCategory(row.sub_category || '')
@@ -63,11 +96,41 @@ export function ReportEditPage() {
         skipAutosaveRef.current = false
       })
     }
-  }, [reportId])
+  }, [reportId, isAdminEditor, adminEditMode, navigate])
 
   useEffect(() => {
     load()
   }, [load])
+
+  function saveLocalDraft() {
+    const payload = {
+      bodyHtml,
+      planNextMonth,
+      category,
+      subCategory,
+      month,
+      savedAt: new Date().toISOString(),
+    }
+    localStorage.setItem(draftKey(reportId), JSON.stringify(payload))
+    setLocalDraft(payload)
+    setMessage('Draft saved on this device.')
+  }
+
+  function restoreLocalDraft() {
+    if (!localDraft) return
+    setBodyHtml(localDraft.bodyHtml || '')
+    setPlanNextMonth(localDraft.planNextMonth || '')
+    setCategory(localDraft.category || category)
+    setSubCategory(localDraft.subCategory || '')
+    setMonth(localDraft.month || month)
+    setDocumentVersion((v) => v + 1)
+    setMessage('Restored local draft.')
+  }
+
+  function clearLocalDraft() {
+    localStorage.removeItem(draftKey(reportId))
+    setLocalDraft(null)
+  }
 
   const persist = useCallback(
     async (silent = true) => {
@@ -92,7 +155,8 @@ export function ReportEditPage() {
         setReport(updated)
         setSavedAt(new Date())
         setDirty(false)
-        if (!silent) setMessage('Saved.')
+        clearLocalDraft()
+        if (!silent) setMessage('Saved to server.')
       } catch (err) {
         setSaveFailed(true)
         setError(err.message || 'Could not save')
@@ -183,8 +247,17 @@ export function ReportEditPage() {
             onClick={() => persist(false)}
             disabled={!editable || saving}
           >
-            {saving ? 'Saving…' : 'Save now'}
+            {saving ? 'Saving…' : 'Save to server'}
           </button>
+          {editable ? (
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+              onClick={saveLocalDraft}
+            >
+              Save draft on device
+            </button>
+          ) : null}
           <button
             type="button"
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
@@ -210,6 +283,19 @@ export function ReportEditPage() {
         </div>
       ) : null}
 
+      {localDraft ? (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+          Local draft from {localDraft.savedAt ? new Date(localDraft.savedAt).toLocaleString() : 'this device'}.
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className="text-sm font-semibold underline" onClick={restoreLocalDraft}>
+              Restore draft
+            </button>
+            <button type="button" className="text-sm font-semibold underline" onClick={clearLocalDraft}>
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
       {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {editable ? (
@@ -295,6 +381,10 @@ export function ReportEditPage() {
           reportId={Number(reportId)}
           caseId={report.case_id}
           month={month}
+          onInsertIepGoals={(html) => {
+            setBodyHtml((prev) => `${prev || ''}${html}`)
+            setDocumentVersion((v) => v + 1)
+          }}
         />
       </div>
     </div>

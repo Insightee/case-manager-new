@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -37,6 +37,15 @@ class TherapistProfile(Base):
     reviewed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     supervisor_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     mentor_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    employment_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    leave_balance_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    leave_paid_days_backfill: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
+    leave_carry_forward_days_backfill: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, server_default="0"
+    )
+    leave_backfill_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    leave_backfill_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    leave_backfill_updated_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

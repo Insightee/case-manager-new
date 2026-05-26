@@ -17,6 +17,12 @@ class LeaveType(str, enum.Enum):
     UNPAID = "UNPAID"
 
 
+class LeaveBillingCategory(str, enum.Enum):
+    PAID = "PAID"
+    UNPAID = "UNPAID"
+    CARRY_FORWARD = "CARRY_FORWARD"
+
+
 class LeaveStatus(str, enum.Enum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -30,6 +36,10 @@ class TherapistLeave(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     therapist_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     leave_type: Mapped[LeaveType] = mapped_column(Enum(LeaveType), nullable=False)
+    service_line: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    billing_category: Mapped[Optional[LeaveBillingCategory]] = mapped_column(
+        Enum(LeaveBillingCategory), nullable=True
+    )
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     reason: Mapped[Optional[str]] = mapped_column(Text)

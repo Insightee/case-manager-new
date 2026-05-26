@@ -9,13 +9,13 @@ import app.models  # noqa: F401
 
 
 def bootstrap_schema() -> None:
-    """Create tables on empty SQLite dev DB only; production uses Alembic on Postgres."""
+    """SQLite dev: create any missing tables from models; Postgres uses Alembic."""
     if not settings.is_sqlite:
         return
-    insp = inspect(engine)
-    if not insp.has_table("users"):
-        Base.metadata.create_all(bind=engine)
+    # Safe on existing DBs — only creates tables that are not present yet.
+    Base.metadata.create_all(bind=engine)
 
+    insp = inspect(engine)
     with engine.connect() as conn:
         if not insp.has_table("alembic_version"):
             conn.execute(

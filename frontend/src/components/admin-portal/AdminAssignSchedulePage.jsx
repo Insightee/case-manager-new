@@ -78,7 +78,13 @@ export function AdminAssignSchedulePanel({ caseItem, assignments, onDone }) {
           <p className="admin-form-hint">Child: {caseItem.child_name || caseItem.case_code}</p>
           <label className="admin-label">
             Therapist
-            <AdminTherapistPicker value={therapistId} onChange={setTherapistId} />
+            <AdminTherapistPicker
+              mode="allotment"
+              productModule={caseItem?.product_module}
+              caseId={caseItem?.id}
+              value={therapistId}
+              onChange={setTherapistId}
+            />
           </label>
           <button type="button" className="admin-btn admin-btn--primary" disabled={!therapistId} onClick={() => setStep(1)}>
             Next

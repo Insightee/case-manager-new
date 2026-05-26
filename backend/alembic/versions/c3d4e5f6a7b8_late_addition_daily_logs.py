@@ -17,12 +17,27 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("daily_logs") as batch_op:
-        batch_op.add_column(sa.Column("late_addition", sa.Boolean(), nullable=False, server_default=sa.false()))
-        batch_op.add_column(sa.Column("late_reason", sa.Text(), nullable=True))
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if not insp.has_table("daily_logs"):
+        return
+    cols = {c["name"] for c in insp.get_columns("daily_logs")}
+    if "late_addition" not in cols:
+        op.add_column(
+            "daily_logs",
+            sa.Column("late_addition", sa.Boolean(), nullable=False, server_default=sa.false()),
+        )
+    if "late_reason" not in cols:
+        op.add_column("daily_logs", sa.Column("late_reason", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("daily_logs") as batch_op:
-        batch_op.drop_column("late_reason")
-        batch_op.drop_column("late_addition")
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if not insp.has_table("daily_logs"):
+        return
+    cols = {c["name"] for c in insp.get_columns("daily_logs")}
+    if "late_reason" in cols:
+        op.drop_column("daily_logs", "late_reason")
+    if "late_addition" in cols:
+        op.drop_column("daily_logs", "late_addition")

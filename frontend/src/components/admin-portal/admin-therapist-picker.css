@@ -1,0 +1,126 @@
+.admin-therapist-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-therapist-picker__search {
+  width: 100%;
+}
+
+.admin-therapist-picker__selected {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+}
+
+.admin-therapist-picker__selected-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-therapist-picker__selected-text strong {
+  font-size: 0.9rem;
+  color: #1e293b;
+}
+
+.admin-therapist-picker__selected-text span {
+  font-size: 0.75rem;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-therapist-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.admin-therapist-picker__card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.admin-therapist-picker__card:hover:not(:disabled) {
+  border-color: #a5b4fc;
+  box-shadow: 0 1px 4px rgba(99, 102, 241, 0.12);
+}
+
+.admin-therapist-picker__card--selected {
+  border-color: #6366f1;
+  background: #eef2ff;
+  box-shadow: 0 0 0 1px #6366f1;
+}
+
+.admin-therapist-picker__card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-therapist-picker__avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.admin-therapist-picker__card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-therapist-picker__name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-therapist-picker__email {
+  font-size: 0.6875rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-therapist-picker__hint {
+  font-size: 0.8125rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin: 0;
+}
+
+.admin-therapist-picker__hint--warn {
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}

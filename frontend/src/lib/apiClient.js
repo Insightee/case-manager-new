@@ -110,16 +110,46 @@ export async function apiFetchBlob(path) {
   return res.blob()
 }
 
-export async function apiUpload(path, formData) {
+export async function apiUpload(path, formData, { timeoutMs = 60000 } = {}) {
   const headers = {}
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
-  let res = await fetch(`${API_URL}${path}`, { method: 'POST', headers, body: formData })
-  if (res.status === 401 && access) {
+  const controller = timeoutMs > 0 ? new AbortController() : null
+  const timer =
+    controller &&
+    setTimeout(() => {
+      controller.abort()
+    }, timeoutMs)
+  let res
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: controller?.signal,
+    })
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Upload timed out. Try fewer or smaller files.')
+    }
+    throw err
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+  if (res.status === 401 && !path.includes('/auth/login') && !path.includes('/auth/refresh')) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetch(`${API_URL}${path}`, { method: 'POST', headers, body: formData })
+      res = await fetch(`${API_URL}${path}`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        signal: controller?.signal,
+      })
+    }
+    if (res.status === 401) {
+      clearTokens()
+      throw new Error('Session expired. Please log in again.')
     }
   }
   if (!res.ok) {

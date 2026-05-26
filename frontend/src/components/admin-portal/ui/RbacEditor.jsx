@@ -22,13 +22,43 @@ function assignmentsFromGrants(grants) {
     .map(([id]) => id)
 }
 
-export function buildRbacPayload({ roleNames, grants, featureOverrides, viewOnly }) {
+const ORG_IDS = new Set(['billing', 'people_admin', 'hr_ops', 'service_catalog_admin'])
+
+export function splitGrants(grants = {}) {
+  const service = {}
+  const org = {}
+  for (const [id, g] of Object.entries(grants)) {
+    if (ORG_IDS.has(id)) org[id] = g
+    else service[id] = g
+  }
+  return { service, org }
+}
+
+export function mergeGrants(serviceGrants = {}, orgGrants = {}) {
+  return { ...serviceGrants, ...orgGrants }
+}
+
+export function buildRbacPayload({ roleNames, grants, serviceGrants, orgGrants, featureOverrides, viewOnly }) {
+  const split = grants ? splitGrants(grants) : { service: serviceGrants || {}, org: orgGrants || {} }
+  const merged = mergeGrants(split.service, split.org)
   return {
     role_names: roleNames,
-    module_assignments: assignmentsFromGrants(grants),
-    module_access_grants: grants,
+    module_assignments: assignmentsFromGrants(merged),
+    module_access_grants: merged,
+    service_access_grants: split.service,
+    org_capability_grants: split.org,
     feature_overrides: featureOverrides,
     view_only: viewOnly,
+  }
+}
+
+function defaultGrantsForRole(role, roleDefaults, viewOnly) {
+  const def = roleDefaults?.[role]
+  if (!def) return { service: {}, org: {} }
+  if (Array.isArray(def)) return splitGrants(grantsFromAssignments(def, viewOnly))
+  return {
+    service: grantsFromAssignments(def.services || [], viewOnly),
+    org: grantsFromAssignments(def.org || [], viewOnly),
   }
 }
 
@@ -64,17 +94,36 @@ export function RbacEditor({
   }, [assignableRoles])
 
   const suggested = useMemo(() => {
-    const ids = new Set()
+    let service = {}
+    let org = {}
     for (const role of roles) {
-      for (const mid of roleDefaults[role] || []) ids.add(mid)
+      const d = defaultGrantsForRole(role, roleDefaults, viewOnly)
+      service = { ...service, ...d.service }
+      org = { ...org, ...d.org }
     }
-    return [...ids]
-  }, [roles, roleDefaults])
+    return mergeGrants(service, org)
+  }, [roles, roleDefaults, viewOnly])
+
+  const serviceCatalog = useMemo(() => {
+    if (!Array.isArray(catalog) && catalog?.service_categories?.length) {
+      return catalog.service_categories
+    }
+    const mods = Array.isArray(catalog) ? catalog : catalog?.modules || []
+    return mods.filter((m) => m.module_type === 'service' || (!ORG_IDS.has(m.id) && m.id !== 'billing'))
+  }, [catalog])
+
+  const orgCatalog = useMemo(() => {
+    if (!Array.isArray(catalog) && catalog?.org_capabilities?.length) {
+      return catalog.org_capabilities
+    }
+    const mods = Array.isArray(catalog) ? catalog : catalog?.modules || []
+    return mods.filter((m) => ORG_IDS.has(m.id) || m.module_type === 'org')
+  }, [catalog])
 
   const applySuggested = useCallback(() => {
-    if (!onGrantsChange || !suggested.length) return
-    onGrantsChange(grantsFromAssignments(suggested, viewOnly))
-  }, [onGrantsChange, suggested, viewOnly])
+    if (!onGrantsChange || !Object.keys(suggested).length) return
+    onGrantsChange(suggested)
+  }, [onGrantsChange, suggested])
 
   const toggleModule = (moduleId) => {
     if (!onGrantsChange || disabled) return
@@ -165,8 +214,14 @@ export function RbacEditor({
       return
     }
     onRoleChange([id])
+    if (id === 'SUPER_ADMIN') {
+      onGrantsChange?.({})
+      onOverridesChange?.({})
+      return
+    }
     if (onGrantsChange && roleDefaults[id]) {
-      onGrantsChange(grantsFromAssignments(roleDefaults[id], viewOnly))
+      const d = defaultGrantsForRole(id, roleDefaults, viewOnly)
+      onGrantsChange(mergeGrants(d.service, d.org))
     }
   }
 
@@ -204,18 +259,28 @@ export function RbacEditor({
       </fieldset>
 
       {isSuperAdmin ? (
-        <p className="admin-muted rbac-editor__hint">Super Admin has full access; module grants are not required.</p>
+        <div className="capability-preview rbac-preview">
+          <p className="admin-muted rbac-editor__hint">Super Admin has full access to all services and org capabilities.</p>
+          <p className="capability-preview__label">Effective access (read-only)</p>
+          <ul className="capability-preview__list">
+            <li>All service lines</li>
+            <li>Billing, people, HR, and settings</li>
+          </ul>
+        </div>
       ) : (
         <>
           <fieldset className="rbac-editor__section" disabled={disabled}>
-            <legend className="rbac-editor__legend">Programme modules</legend>
+            <legend className="rbac-editor__legend">Service access</legend>
+            <p className="admin-muted rbac-editor__hint" style={{ marginTop: 0 }}>
+              Service lines from Settings → Service categories. Same clinical features per service unless customized below.
+            </p>
             {suggested.length ? (
               <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={applySuggested}>
                 Apply defaults for role
               </button>
             ) : null}
             <ul className="rbac-module-list">
-              {catalog.map((mod) => {
+              {serviceCatalog.map((mod) => {
                 const grant = grants[mod.id] || {}
                 const enabled = Boolean(grant.enabled)
                 return (
@@ -302,6 +367,68 @@ export function RbacEditor({
               })}
             </ul>
           </fieldset>
+
+          {orgCatalog.length > 0 ? (
+            <fieldset className="rbac-editor__section" disabled={disabled}>
+              <legend className="rbac-editor__legend">Org capabilities</legend>
+              <ul className="rbac-module-list">
+                {orgCatalog.map((mod) => {
+                  const grant = grants[mod.id] || {}
+                  const enabled = Boolean(grant.enabled)
+                  return (
+                    <li key={mod.id} className={`rbac-module-list__item ${enabled ? 'is-enabled' : ''}`}>
+                      <label className="rbac-module-list__toggle">
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={() => toggleModule(mod.id)}
+                        />
+                        <span>
+                          <strong>{mod.label}</strong>
+                          <small>{mod.description}</small>
+                        </span>
+                      </label>
+                      {enabled ? (
+                        <div className="access-level-toggle access-level-toggle--inline">
+                          <div className="access-level-toggle__options">
+                            <label
+                              className={`access-level-toggle__option ${grant.access === 'view' ? 'is-active' : ''}`}
+                            >
+                              <input
+                                type="radio"
+                                name={`access-${mod.id}`}
+                                checked={grant.access === 'view'}
+                                onChange={() => setModuleAccess(mod.id, 'view')}
+                              />
+                              <span>
+                                <strong>View</strong>
+                                <small>Read-only</small>
+                              </span>
+                            </label>
+                            <label
+                              className={`access-level-toggle__option ${grant.access !== 'view' ? 'is-active' : ''}`}
+                            >
+                              <input
+                                type="radio"
+                                name={`access-${mod.id}`}
+                                checked={grant.access !== 'view'}
+                                onChange={() => setModuleAccess(mod.id, 'write')}
+                                disabled={viewOnly}
+                              />
+                              <span>
+                                <strong>Edit</strong>
+                                <small>Full access</small>
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            </fieldset>
+          ) : null}
 
           {onViewOnlyChange ? (
             <div className="access-level-toggle">

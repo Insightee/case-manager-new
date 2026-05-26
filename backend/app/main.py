@@ -26,6 +26,28 @@ async def operational_error_handler(_request: Request, exc: OperationalError):
         return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
 
 
+def _log_schema_health() -> None:
+    """Warn in logs when ledger-billing columns are missing (common after pull without API restart)."""
+    import logging
+
+    from sqlalchemy import inspect
+
+    from app.core.database import engine
+
+    log = logging.getLogger("insightcase")
+    try:
+        insp = inspect(engine)
+        if insp.has_table("cases"):
+            cols = {c["name"] for c in insp.get_columns("cases")}
+            if "product_billing_rule_id" not in cols:
+                log.error(
+                    "Schema drift: cases.product_billing_rule_id missing. "
+                    "Restart uvicorn from backend/ or run alembic upgrade head."
+                )
+    except Exception as exc:
+        log.warning("Schema health check skipped: %s", exc)
+
+
 def _verify_sqlite_writable() -> None:
     """Fail fast when the SQLite file cannot accept writes (stale connections are fixed via WAL + restart)."""
     if not settings.is_sqlite:
@@ -46,12 +68,45 @@ def _verify_sqlite_writable() -> None:
         )
 
 
+def _maybe_seed_demo_on_empty_db() -> None:
+    """First-run local dev: create demo users when the database has no accounts."""
+    if settings.app_env not in ("development", "dev", "local"):
+        return
+    import logging
+
+    from sqlalchemy import func, select
+
+    from app.core.database import SessionLocal
+    from app.models.user import User
+
+    log = logging.getLogger("insightcase")
+    db = SessionLocal()
+    try:
+        user_count = db.scalar(select(func.count()).select_from(User)) or 0
+    finally:
+        db.close()
+    if user_count > 0 and not settings.seed_demo_data:
+        return
+    if user_count > 0 and settings.seed_demo_data:
+        log.info("SEED_DEMO_DATA=true — refreshing demo seed")
+    elif user_count == 0:
+        log.warning("No users in database — running demo seed (superadmin@demo.com / demo123)")
+    else:
+        return
+    from app.seed.demo_seed import run
+
+    run()
+    log.info("Demo seed completed")
+
+
 @app.on_event("startup")
 def _on_startup() -> None:
     validate_production_settings()
     bootstrap_schema()
     ensure_sqlite_schema_patches()
+    _maybe_seed_demo_on_empty_db()
     _verify_sqlite_writable()
+    _log_schema_health()
 
 app.add_middleware(
     CORSMiddleware,

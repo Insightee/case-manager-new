@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminTherapistOnboardPanel } from './AdminTherapistOnboardPanel.jsx'
-import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
 import { AdminStaffManageSection } from './AdminStaffManageSection.jsx'
 import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
 
-const EMPTY_CHILD = { first_name: '', last_name: '', date_of_birth: '' }
-
 export function AdminPeoplePage() {
-  const { can, portal } = useAuth()
-  const isHrPortal = portal === 'hr'
-  const canManageUsers = can('user.manage')
+  const navigate = useNavigate()
+  const { can, user, isViewOnly } = useAuth()
+  const isHrPortal = (user?.roles || []).includes('HR')
+  const canManageUsers = can('user.manage') && !isViewOnly
+  const canReadTherapists = canManageUsers || can('therapist.read')
   const [searchParams] = useSearchParams()
   const [tab, setTab] = useState(() => searchParams.get('tab') || 'staff')
   const [users, setUsers] = useState([])
@@ -29,9 +28,6 @@ export function AdminPeoplePage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
-  const [childForm, setChildForm] = useState(EMPTY_CHILD)
-  const [submitting, setSubmitting] = useState(false)
-  const [showFamilyWizard, setShowFamilyWizard] = useState(false)
   const [familySearchDebounced, setFamilySearchDebounced] = useState('')
 
   useEffect(() => {
@@ -55,7 +51,9 @@ export function AdminPeoplePage() {
           : ''
       const userFetch = canManageUsers
         ? apiFetch('/api/v1/admin/users?page_size=100')
-        : Promise.resolve([])
+        : canReadTherapists
+          ? apiFetch('/api/v1/admin/users/directory?roles=THERAPIST&active_only=false')
+          : Promise.resolve([])
       const modulesFetch = canManageUsers ? apiFetch('/api/v1/admin/modules') : Promise.resolve({ modules: [], role_defaults: {} })
       const rbacFetch = canManageUsers
         ? apiFetch('/api/v1/admin/rbac/catalog').catch(() => null)
@@ -64,12 +62,29 @@ export function AdminPeoplePage() {
         userFetch,
         modulesFetch,
         rbacFetch,
-        canManageUsers ? apiFetch('/api/v1/admin/therapist-profiles') : Promise.resolve([]),
+        canReadTherapists ? apiFetch('/api/v1/admin/therapist-profiles') : Promise.resolve([]),
         apiFetch(`/api/v1/admin/families${familyQs}`),
         canManageUsers ? apiFetch('/api/v1/admin/invites').catch(() => []) : Promise.resolve([]),
       ])
-      setUsers(unwrapList(userRows))
-      setCatalog(rbacMeta?.modules ?? moduleMeta.modules ?? [])
+      const normalizedUsers = canManageUsers
+        ? unwrapList(userRows)
+        : (Array.isArray(userRows) ? userRows : []).map((u) => ({
+            id: u.id,
+            email: u.email,
+            full_name: u.full_name,
+            roles: u.roles || ['THERAPIST'],
+            is_active: u.is_active ?? true,
+            module_assignments: u.module_assignments || [],
+          }))
+      setUsers(normalizedUsers)
+      setCatalog(
+        rbacMeta ?? {
+          modules: moduleMeta.modules ?? [],
+          service_categories: moduleMeta.modules ?? [],
+          org_capabilities: [],
+          role_defaults: moduleMeta.role_defaults ?? {},
+        },
+      )
       setRoleDefaults(rbacMeta?.role_defaults ?? moduleMeta.role_defaults ?? {})
       setAssignableRoles(rbacMeta?.assignable_roles ?? [])
       setDeprecatedRoles(rbacMeta?.deprecated_roles ?? [])
@@ -81,7 +96,7 @@ export function AdminPeoplePage() {
     } finally {
       setLoading(false)
     }
-  }, [tab, familySearchDebounced, canManageUsers])
+  }, [tab, familySearchDebounced, canManageUsers, canReadTherapists])
 
   useEffect(() => {
     load()
@@ -122,29 +137,6 @@ export function AdminPeoplePage() {
     () => invites.filter((i) => !['THERAPIST', 'PARENT'].includes(i.role_name)),
     [invites],
   )
-
-  async function addChild(e) {
-    e.preventDefault()
-    setError('')
-    setSubmitting(true)
-    try {
-      await apiFetch('/api/v1/admin/children', {
-        method: 'POST',
-        body: JSON.stringify({
-          first_name: childForm.first_name.trim(),
-          last_name: childForm.last_name.trim(),
-          date_of_birth: childForm.date_of_birth || null,
-        }),
-      })
-      setChildForm(EMPTY_CHILD)
-      setSuccess('Child added')
-      load()
-    } catch (err) {
-      setError(err.message || 'Could not add child')
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   async function inviteParent(userId, childId) {
     setError('')
@@ -209,59 +201,29 @@ export function AdminPeoplePage() {
         <AdminSearchInput value={search} onChange={setSearch} placeholder="Search…" />
       </AdminToolbar>
 
-      {tab === 'clients' && showFamilyWizard ? (
-        <AdminAddFamilyWizard
-          onCancel={() => setShowFamilyWizard(false)}
-          onComplete={(result) => {
-            setShowFamilyWizard(false)
-            if (result?.inviteUrl) setInviteUrl(result.inviteUrl)
-            setSuccess(result?.case ? 'Client record and case created' : 'Client record created')
-            load()
-          }}
-        />
-      ) : null}
-
-      {tab === 'clients' && !showFamilyWizard ? (
+      {tab === 'clients' ? (
         <>
           <div className="admin-btn-group" style={{ marginBottom: 12 }}>
-            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowFamilyWizard(true)}>
-              Add client
-            </button>
+            <div className="admin-btn-group" style={{ marginBottom: 12 }}>
+              {can('case.create') ? (
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--primary admin-btn--sm"
+                  onClick={() => navigate('/admin/cases?allot=1')}
+                >
+                  Add client & case (allotment)
+                </button>
+              ) : null}
+              <Link to="/admin/client-profiles" className="admin-btn admin-btn--secondary admin-btn--sm">
+                Client profiles & bulk import
+              </Link>
+            </div>
           </div>
-          <AdminPanel title="Quick add client" subtitle="Or use Add client to include a parent/guardian and optional case">
-            <form onSubmit={addChild} className="admin-form-grid" style={{ maxWidth: 420, marginBottom: 16 }}>
-              <label>
-                First name
-                <input
-                  className="admin-input"
-                  value={childForm.first_name}
-                  onChange={(e) => setChildForm((c) => ({ ...c, first_name: e.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                Last name
-                <input
-                  className="admin-input"
-                  value={childForm.last_name}
-                  onChange={(e) => setChildForm((c) => ({ ...c, last_name: e.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                Date of birth
-                <input
-                  type="date"
-                  className="admin-input"
-                  value={childForm.date_of_birth}
-                  onChange={(e) => setChildForm((c) => ({ ...c, date_of_birth: e.target.value }))}
-                />
-              </label>
-              <button type="submit" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={submitting}>
-                Add child
-              </button>
-            </form>
-          </AdminPanel>
+          {!canManageUsers ? (
+            <p className="admin-muted" style={{ marginBottom: 12, fontSize: '0.85rem' }}>
+              Families are read-only here. Use case allotment to add a child with a parent account.
+            </p>
+          ) : null}
           {parentPendingInvites.length > 0 ? (
             <AdminPanel title="Pending parent invites" subtitle="Invites not yet accepted">
               <ul className="admin-queue">
@@ -311,20 +273,34 @@ export function AdminPeoplePage() {
 
           {tab === 'therapists' && (
             <>
-              <AdminTherapistOnboardPanel
-                catalog={catalog}
-                roleDefaults={roleDefaults}
-                pendingInvites={therapistPendingInvites}
-                onSuccess={setSuccess}
-                onError={setError}
-                onReload={load}
-              />
+              {canManageUsers ? (
+                <AdminTherapistOnboardPanel
+                  roleDefaults={roleDefaults}
+                  pendingInvites={therapistPendingInvites}
+                  onSuccess={setSuccess}
+                  onError={setError}
+                  onReload={load}
+                />
+              ) : (
+                <AdminPanel title="Therapists">
+                  <AdminEmptyState
+                    title="View-only access"
+                    description="You cannot add therapists or use bulk upload. Open Profile editor to review listings."
+                  />
+                </AdminPanel>
+              )}
               <AdminPanel
                 title={`Therapists (${filteredTherapists.length})`}
                 actions={
-                  <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
-                    Profile editor
-                  </Link>
+                  canManageUsers ? (
+                    <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
+                      Profile editor
+                    </Link>
+                  ) : (
+                    <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
+                      View profiles
+                    </Link>
+                  )
                 }
               >
                 {filteredTherapists.length === 0 ? (
@@ -338,7 +314,8 @@ export function AdminPeoplePage() {
                         <th>Email</th>
                         <th>Phone</th>
                         <th>Profile</th>
-                        <th>Modules</th>
+                        <th>Primary CM</th>
+                        <th>Services</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -367,7 +344,8 @@ export function AdminPeoplePage() {
                                 </Link>
                               )}
                             </td>
-                            <td>{(u.module_assignments || []).join(', ') || '—'}</td>
+                            <td>{prof?.supervisor_name || '—'}</td>
+                            <td>{(prof?.services_offered || u.module_assignments || []).join(', ') || '—'}</td>
                           </tr>
                         )
                       })}

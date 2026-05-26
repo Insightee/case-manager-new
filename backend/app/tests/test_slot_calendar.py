@@ -139,6 +139,7 @@ def test_leave_blocks_parent_availability():
         "/api/v1/leave",
         headers=th,
         json={
+            "service_line": "shadow_support",
             "leave_type": "CASUAL",
             "start_date": day.isoformat(),
             "end_date": day.isoformat(),

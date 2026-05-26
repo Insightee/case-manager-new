@@ -27,14 +27,45 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import inspect, text
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    script = ScriptDirectory.from_config(config)
+    heads = script.get_heads()
+    if len(heads) != 1:
+        head_rev = "heads"
+    else:
+        head_rev = heads[0]
+
     with connectable.connect() as connection:
+        insp = inspect(connection)
+        is_sqlite = connection.dialect.name == "sqlite"
+        empty = not insp.has_table("users")
+
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
+            if is_sqlite and empty:
+                # Greenfield SQLite: create_all matches current models; incremental revisions
+                # mostly duplicate columns and fail. Stamp head (same as migrate_production.py).
+                target_metadata.create_all(bind=connection)
+                if not insp.has_table("alembic_version"):
+                    connection.execute(
+                        text(
+                            "CREATE TABLE alembic_version "
+                            "(version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+                        )
+                    )
+                connection.execute(text("DELETE FROM alembic_version"))
+                connection.execute(
+                    text("INSERT INTO alembic_version (version_num) VALUES (:rev)"),
+                    {"rev": head_rev},
+                )
+                return
             context.run_migrations()
 
 

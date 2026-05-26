@@ -20,6 +20,7 @@ const ADMIN_ROLES = [
   'CASE_MANAGER',
   'SUPERVISOR',
   'FINANCE',
+  'HR',
   'SCHOOL_COORDINATOR',
 ]
 
@@ -50,6 +51,7 @@ export function AuthProvider({ children }) {
   }, [loadMe])
 
   const login = async (email, password) => {
+    clearTokens()
     const data = await apiFetch('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
@@ -67,7 +69,6 @@ export function AuthProvider({ children }) {
   const portal = useMemo(() => {
     if (!user?.roles?.length) return null
     if (user.roles.includes('PARENT')) return 'parent'
-    if (user.roles.includes('HR')) return 'hr'
     if (user.roles.some((r) => ADMIN_ROLES.includes(r))) return 'admin'
     if (user.roles.includes('THERAPIST')) return 'therapist'
     return 'admin'

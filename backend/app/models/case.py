@@ -57,6 +57,9 @@ class Case(Base):
     client_billing_mode: Mapped[Optional[ClientBillingMode]] = mapped_column(Enum(ClientBillingMode))
     billing_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     billing_updated_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    product_billing_rule_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("product_billing_rules.id"), index=True
+    )
     service_address_line1: Mapped[Optional[str]] = mapped_column(String(255))
     service_address_line2: Mapped[Optional[str]] = mapped_column(String(255))
     service_city: Mapped[Optional[str]] = mapped_column(String(128))

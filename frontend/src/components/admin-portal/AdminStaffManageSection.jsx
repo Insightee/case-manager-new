@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminEmptyState, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
-import { RbacEditor, buildRbacPayload, grantsFromAssignments } from './ui/RbacEditor.jsx'
+import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
 import {
   hasDeprecatedStaffRole,
   moduleAccessSummary,
@@ -123,6 +123,32 @@ export function AdminStaffManageSection({
       onError?.(err.message || 'Action failed')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function deactivateUser(userId, name) {
+    if (!window.confirm(`Deactivate ${name}? They will not be able to sign in.`)) return
+    onError?.('')
+    try {
+      await apiFetch(`/api/v1/admin/users/${userId}`, { method: 'DELETE' })
+      onReload?.()
+      onSuccess?.('User deactivated.')
+    } catch (err) {
+      onError?.(err.message || 'Could not deactivate user')
+    }
+  }
+
+  async function toggleActive(userId, isActive) {
+    onError?.('')
+    try {
+      await apiFetch(`/api/v1/admin/users/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: isActive }),
+      })
+      onReload?.()
+      onSuccess?.(isActive ? 'User reactivated.' : 'User deactivated.')
+    } catch (err) {
+      onError?.(err.message || 'Could not update status')
     }
   }
 
@@ -315,7 +341,8 @@ export function AdminStaffManageSection({
                     <th>Name</th>
                     <th>Email</th>
                     <th>Role</th>
-                    <th>Programme access</th>
+                    <th>Access</th>
+                    <th>Status</th>
                     <th />
                   </tr>
                 </thead>
@@ -360,6 +387,12 @@ export function AdminStaffManageSection({
                           </div>
                         </td>
                         <td>
+                          <StatusBadge tone={u.is_active ? 'success' : 'neutral'}>
+                            {u.is_active ? 'Active' : 'Inactive'}
+                          </StatusBadge>
+                        </td>
+                        <td>
+                          <div className="admin-btn-group">
                           <button
                             type="button"
                             className="admin-btn admin-btn--ghost admin-btn--sm"
@@ -369,9 +402,12 @@ export function AdminStaffManageSection({
                               } else {
                                 setEditingId(u.id)
                                 setEditGrants(
-                                  Object.keys(u.module_access_grants || {}).length
-                                    ? u.module_access_grants
-                                    : grantsFromAssignments(u.module_assignments ?? [], u.is_view_only),
+                                  Object.keys(u.service_access_grants || {}).length ||
+                                    Object.keys(u.org_capability_grants || {}).length
+                                    ? mergeGrants(u.service_access_grants || {}, u.org_capability_grants || {})
+                                    : Object.keys(u.module_access_grants || {}).length
+                                      ? u.module_access_grants
+                                      : grantsFromAssignments(u.module_assignments ?? [], u.is_view_only),
                                 )
                                 setEditOverrides(u.feature_overrides ?? {})
                                 setEditViewOnly(u.is_view_only ?? false)
@@ -381,11 +417,29 @@ export function AdminStaffManageSection({
                           >
                             {editingId === u.id ? 'Cancel' : 'Edit access'}
                           </button>
+                          {u.is_active ? (
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--ghost admin-btn--sm"
+                              onClick={() => deactivateUser(u.id, u.full_name)}
+                            >
+                              Deactivate
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--ghost admin-btn--sm"
+                              onClick={() => toggleActive(u.id, true)}
+                            >
+                              Reactivate
+                            </button>
+                          )}
+                          </div>
                         </td>
                       </tr>
                       {editingId === u.id ? (
                         <tr>
-                          <td colSpan={5} style={{ padding: '12px 16px', background: '#f8fafc' }}>
+                          <td colSpan={6} style={{ padding: '12px 16px', background: '#f8fafc' }}>
                             {hasDeprecatedStaffRole(u.roles) ? (
                               <p className="admin-alert admin-alert--warn rbac-editor__hint">
                                 Legacy role detected. Prefer Module Admin, Case Manager, or Finance when re-provisioning access.

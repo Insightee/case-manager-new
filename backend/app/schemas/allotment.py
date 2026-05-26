@@ -14,6 +14,7 @@ class ChildCreate(BaseModel):
     first_name: str = Field(min_length=1)
     last_name: str = Field(min_length=1)
     date_of_birth: Optional[date] = None
+    parent_user_id: Optional[int] = None
 
 
 class FamilyCreate(BaseModel):
@@ -23,6 +24,7 @@ class FamilyCreate(BaseModel):
     child: ChildCreate
     send_invite: bool = True
     password: Optional[str] = None
+    link_existing_parent: bool = False
 
 
 class CaseAllotRequest(CaseBillingFields, CaseServiceAddressFields):

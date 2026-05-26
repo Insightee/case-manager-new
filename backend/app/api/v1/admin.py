@@ -7,8 +7,8 @@ import io
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,7 @@ from app.core.module_write import (
     ensure_product_module_write_access,
     guard_clinical_case,
 )
-from app.core.modules import ROLE_DEFAULT_MODULES, module_catalog_for_api
+from app.core.modules import legacy_role_defaults_flat, role_defaults_for_api
 from app.core.permissions import case_scope_check, require_mutation_permission, require_permission, user_has_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
@@ -48,6 +48,7 @@ from app.schemas.admin_reports import (
     BulkReportResult,
     CmReviewAction,
     ReportCommentAction,
+    ReportDocumentCommentCreate,
     SendForReviewAction,
 )
 from app.schemas.report import MonthlyReportUpdate, ObservationReportUpdate
@@ -69,6 +70,7 @@ from app.models.service_category import ServiceCategory
 from app.schemas.therapist_profile import (
     ServiceCategoryCreate,
     ServiceCategoryRead,
+    ServiceCategoryUpdate,
     TherapistProfileAdminCreate,
     TherapistProfileRead,
     TherapistProfileReview,
@@ -124,36 +126,13 @@ def list_product_modules(
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    from app.core.modules import _CLINICAL_FEATURES
+    from app.core.rbac_access import module_catalog_entries
 
-    fixed = module_catalog_for_api()
-    fixed_ids = {m["id"] for m in fixed}
+    from app.core.rbac_access import rbac_catalog_payload
 
-    # Merge dynamic service-type modules from ServiceCategory table
-    dynamic: list[dict] = []
-    try:
-        svc_cats = db.scalars(
-            select(ServiceCategory)
-            .where(ServiceCategory.is_active.is_(True))
-            .order_by(ServiceCategory.sort_order, ServiceCategory.label)
-        ).all()
-        for cat in svc_cats:
-            if cat.id not in fixed_ids:
-                dynamic.append({
-                    "id": cat.id,
-                    "label": cat.label,
-                    "description": cat.description or f"{cat.label} therapy service module.",
-                    "case_product_modules": [cat.id],
-                    "features": [{"id": f.id, "label": f.label, "permissions": list(f.permissions)} for f in _CLINICAL_FEATURES],
-                    "module_type": "service",
-                })
-    except Exception:
-        pass
-
-    return {
-        "modules": fixed + dynamic,
-        "role_defaults": ROLE_DEFAULT_MODULES,
-    }
+    payload = rbac_catalog_payload(db)
+    payload["role_defaults_flat"] = legacy_role_defaults_flat(db)
+    return payload
 
 
 def _user_to_read(u: User) -> UserRead:
@@ -168,6 +147,8 @@ def _user_to_read(u: User) -> UserRead:
         region=u.region,
         module_assignments=u.module_assignments or [],
         module_access_grants=getattr(u, "module_access_grants", None) or {},
+        service_access_grants=getattr(u, "service_access_grants", None) or {},
+        org_capability_grants=getattr(u, "org_capability_grants", None) or {},
         feature_overrides=getattr(u, "feature_overrides", None) or {},
     )
 
@@ -185,19 +166,24 @@ def _apply_access_payload(
     role_names: list[str],
     module_assignments: list[str] | None = None,
     module_access_grants: dict | None = None,
+    service_access_grants: dict | None = None,
+    org_capability_grants: dict | None = None,
     feature_overrides: dict | None = None,
     view_only: bool | None = None,
     db: Session,
 ) -> None:
-    if module_assignments is not None and module_access_grants is None:
+    if module_assignments is not None and module_access_grants is None and service_access_grants is None:
         validate_module_assignments(role_names, module_assignments, db)
     sync_user_access_fields(
         user,
         role_names=role_names,
         module_assignments=module_assignments,
         module_access_grants=module_access_grants,
+        service_access_grants=service_access_grants,
+        org_capability_grants=org_capability_grants,
         feature_overrides=feature_overrides,
         view_only=view_only,
+        db=db,
     )
     roles_upper = {r.upper() for r in role_names}
     if "SUPER_ADMIN" not in roles_upper:
@@ -209,11 +195,12 @@ def rbac_catalog(
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
+    from app.core.rbac_access import rbac_catalog_payload
+
     return {
         "assignable_roles": list(ASSIGNABLE_STAFF_ROLES),
         "deprecated_roles": sorted(DEPRECATED_STAFF_ROLES),
-        "modules": module_catalog_entries(db),
-        "role_defaults": ROLE_DEFAULT_MODULES,
+        **rbac_catalog_payload(db),
     }
 
 
@@ -238,11 +225,13 @@ def list_service_categories(
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
+    from app.services.service_category_service import category_to_read_dict
+
     stmt = select(ServiceCategory).order_by(ServiceCategory.sort_order, ServiceCategory.label)
     if not include_inactive:
         stmt = stmt.where(ServiceCategory.is_active.is_(True))
     rows = db.scalars(stmt).all()
-    return [ServiceCategoryRead(id=r.id, label=r.label, description=r.description, sort_order=r.sort_order, is_active=r.is_active) for r in rows]
+    return [ServiceCategoryRead(**category_to_read_dict(r)) for r in rows]
 
 
 @router.post("/service-categories", response_model=ServiceCategoryRead, status_code=status.HTTP_201_CREATED)
@@ -253,23 +242,42 @@ def create_service_category(
     db: Session = Depends(get_db),
 ):
     import re
+
+    from app.services.service_category_service import (
+        category_to_read_dict,
+        normalize_product_modules_payload,
+    )
+
     slug = payload.id
     if not slug:
         slug = re.sub(r"[^a-z0-9]+", "_", payload.label.strip().lower()).strip("_")
+    try:
+        product_modules = normalize_product_modules_payload(
+            payload.product_modules,
+            default_id=slug,
+            default_label=payload.label.strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     existing = db.get(ServiceCategory, slug)
     if existing:
         if not existing.is_active:
             existing.is_active = True
             existing.label = payload.label
+            existing.description = payload.description or ""
+            existing.sort_order = payload.sort_order
+            existing.product_modules = product_modules
             db.commit()
             db.refresh(existing)
-            return ServiceCategoryRead(id=existing.id, label=existing.label, description=existing.description, sort_order=existing.sort_order, is_active=existing.is_active)
+            return ServiceCategoryRead(**category_to_read_dict(existing))
         raise HTTPException(status_code=400, detail=f"Service category '{slug}' already exists")
     cat = ServiceCategory(
         id=slug,
         label=payload.label,
         description=payload.description or "",
         sort_order=payload.sort_order,
+        product_modules=product_modules,
         is_active=True,
     )
     db.add(cat)
@@ -277,7 +285,44 @@ def create_service_category(
     log_audit(db, actor_user_id=user.id, action="create", entity_type="service_category", entity_id=slug, **meta)
     db.commit()
     db.refresh(cat)
-    return ServiceCategoryRead(id=cat.id, label=cat.label, description=cat.description, sort_order=cat.sort_order, is_active=cat.is_active)
+    return ServiceCategoryRead(**category_to_read_dict(cat))
+
+
+@router.patch("/service-categories/{category_id}", response_model=ServiceCategoryRead)
+def update_service_category(
+    category_id: str,
+    payload: ServiceCategoryUpdate,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.service_category_service import category_to_read_dict, normalize_product_modules_payload
+
+    cat = db.get(ServiceCategory, category_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Service category not found")
+    if payload.label is not None:
+        cat.label = payload.label
+    if payload.description is not None:
+        cat.description = payload.description
+    if payload.sort_order is not None:
+        cat.sort_order = payload.sort_order
+    if payload.is_active is not None:
+        cat.is_active = payload.is_active
+    if payload.product_modules is not None:
+        try:
+            cat.product_modules = normalize_product_modules_payload(
+                payload.product_modules,
+                default_id=cat.id,
+                default_label=cat.label,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="update", entity_type="service_category", entity_id=category_id, **meta)
+    db.commit()
+    db.refresh(cat)
+    return ServiceCategoryRead(**category_to_read_dict(cat))
 
 
 @router.delete("/service-categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -294,6 +339,172 @@ def delete_service_category(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="delete", entity_type="service_category", entity_id=category_id, **meta)
     db.commit()
+
+
+class ServiceProductCreate(BaseModel):
+    name: str
+    billing_model: str = "PER_SESSION"
+    price_inr: Optional[float] = None
+    package_sessions: Optional[int] = None
+    discount_percent: Optional[float] = None
+    total_inr: Optional[float] = None
+    taxable: bool = True
+    gst_rate_percent: Optional[float] = None
+    gst_split: Optional[str] = None
+    leave_policy: Optional[str] = None
+    active: bool = True
+    sort_order: int = 0
+
+
+class ServiceProductUpdate(BaseModel):
+    name: Optional[str] = None
+    billing_model: Optional[str] = None
+    price_inr: Optional[float] = None
+    package_sessions: Optional[int] = None
+    discount_percent: Optional[float] = None
+    total_inr: Optional[float] = None
+    taxable: Optional[bool] = None
+    gst_rate_percent: Optional[float] = None
+    gst_split: Optional[str] = None
+    leave_policy: Optional[str] = None
+    active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+@router.get("/service-categories/{category_id}/products")
+def list_service_products(
+    category_id: str,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.service_product_service import list_products_for_category
+
+    return list_products_for_category(db, category_id)
+
+
+@router.post("/service-categories/{category_id}/products", status_code=status.HTTP_201_CREATED)
+def create_service_product(
+    category_id: str,
+    payload: ServiceProductCreate,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.service_product_service import create_product
+
+    try:
+        row = create_product(db, category_id, payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="create",
+        entity_type="service_product",
+        entity_id=row["id"],
+        **meta,
+    )
+    db.commit()
+    return row
+
+
+@router.patch("/service-products/{product_id}")
+def update_service_product(
+    product_id: int,
+    payload: ServiceProductUpdate,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.service_product_service import update_product
+
+    try:
+        row = update_product(db, product_id, payload.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="update", entity_type="service_product", entity_id=product_id, **meta)
+    db.commit()
+    return row
+
+
+@router.delete("/service-products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_service_product(
+    product_id: int,
+    request: Request,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.service_product_service import delete_product
+
+    try:
+        delete_product(db, product_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="delete", entity_type="service_product", entity_id=product_id, **meta)
+    db.commit()
+
+
+class PrimaryCmUpdate(BaseModel):
+    primary_case_manager_user_id: int
+    mentor_user_id: Optional[int] = None
+    update_active_cases: bool = False
+
+
+@router.patch("/therapists/{user_id}/primary-cm")
+def update_therapist_primary_cm(
+    user_id: int,
+    payload: PrimaryCmUpdate,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.models.therapist_profile import TherapistProfile
+
+    target = db.get(User, user_id)
+    if not target or "THERAPIST" not in target.role_names:
+        raise HTTPException(status_code=404, detail="Therapist not found")
+    cm = db.get(User, payload.primary_case_manager_user_id)
+    if not cm:
+        raise HTTPException(status_code=400, detail="Case manager not found")
+    if not {"CASE_MANAGER", "MODULE_ADMIN", "ADMIN", "SUPER_ADMIN"} & set(cm.role_names):
+        raise HTTPException(status_code=400, detail="Selected user cannot be a primary case manager")
+    profile = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == user_id)).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Therapist profile not found")
+    old_cm = profile.supervisor_user_id
+    profile.supervisor_user_id = payload.primary_case_manager_user_id
+    if payload.mentor_user_id is not None:
+        profile.mentor_user_id = payload.mentor_user_id
+    if payload.update_active_cases and old_cm:
+        from app.models.case import Case, CaseStatus
+
+        cases = db.scalars(
+            select(Case).where(
+                Case.status == CaseStatus.ACTIVE,
+                Case.case_manager_user_id == old_cm,
+            )
+        ).all()
+        for case in cases:
+            case.case_manager_user_id = payload.primary_case_manager_user_id
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="change_primary_cm",
+        entity_type="therapist_profile",
+        entity_id=profile.id,
+        old_value={"primary_cm_user_id": old_cm},
+        new_value={
+            "primary_cm_user_id": payload.primary_case_manager_user_id,
+            "update_active_cases": payload.update_active_cases,
+        },
+        **meta,
+    )
+    db.commit()
+    return {"user_id": user_id, "primary_case_manager_user_id": profile.supervisor_user_id}
 
 
 def _workbench_user(user: User = Depends(get_current_user)) -> User:
@@ -323,7 +534,12 @@ def admin_home(
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
 ):
+    from app.core.config import settings
+    from app.core.database import ensure_sqlite_schema_patches
     from app.services import admin_home_service
+
+    if settings.is_sqlite:
+        ensure_sqlite_schema_patches()
 
     return admin_home_service.build_admin_home(db, user)
 
@@ -396,6 +612,12 @@ def dashboard_summary(
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
 ):
+    from app.core.config import settings
+    from app.core.database import ensure_sqlite_schema_patches
+
+    if settings.is_sqlite:
+        ensure_sqlite_schema_patches()
+
     allowed_cases = get_allowed_case_product_modules(user)
 
     def _count_case_status(status: CaseStatus) -> int:
@@ -914,9 +1136,18 @@ def export_sessions_xlsx(
         .order_by(TherapySession.scheduled_date.desc())
     ).all()
 
+    from app.services.export_document_service import export_meta, xlsx_footer_rows, xlsx_preamble_rows
+
+    meta = export_meta(user)
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Sessions"
+    for row in xlsx_preamble_rows(
+        "Session logs export",
+        f"Period: {d_from.isoformat()} to {d_to.isoformat()}",
+        meta,
+    ):
+        ws.append(row)
     headers = ["Session ID", "Date", "Start", "End", "Actual Start", "Actual End", "Duration (min)",
                "Case Code", "Child", "Therapist ID", "Product Module", "Mode", "Status"]
     ws.append(headers)
@@ -947,6 +1178,8 @@ def export_sessions_xlsx(
             s.mode.value if hasattr(s.mode, "value") else str(s.mode),
             s.status.value if hasattr(s.status, "value") else str(s.status),
         ])
+    for row in xlsx_footer_rows(meta):
+        ws.append(row)
 
     buf = BytesIO()
     wb.save(buf)
@@ -1002,11 +1235,18 @@ def export_sessions_pdf(
         .limit(500)
     ).all()
 
+    from app.services.export_document_service import export_meta
+
+    meta = export_meta(user)
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=30, rightMargin=30, topMargin=40, bottomMargin=30)
     styles = getSampleStyleSheet()
     elements = []
-    elements.append(Paragraph(f"Session Report: {d_from} to {d_to}", styles["Title"]))
+    elements.append(Paragraph("Session logs export", styles["Title"]))
+    elements.append(Paragraph(f"Period: {d_from.isoformat()} to {d_to.isoformat()}", styles["Normal"]))
+    elements.append(
+        Paragraph(f"Generated by {meta['generated_by']} · {meta['generated_at']}", styles["Normal"])
+    )
     elements.append(Spacer(1, 12))
 
     table_data = [["Date", "Case", "Child", "Therapist", "Module", "Mode", "Status", "Duration"]]
@@ -1043,6 +1283,13 @@ def export_sessions_pdf(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     elements.append(t)
+    elements.append(Spacer(1, 16))
+    elements.append(
+        Paragraph(
+            f"Document generated by {meta['generated_by']} on {meta['generated_at']}",
+            styles["Normal"],
+        )
+    )
     doc.build(elements)
     buf.seek(0)
     return Response(
@@ -1184,6 +1431,8 @@ def update_user(
     if (
         payload.module_assignments is not None
         or payload.module_access_grants is not None
+        or payload.service_access_grants is not None
+        or payload.org_capability_grants is not None
         or payload.feature_overrides is not None
         or payload.view_only is not None
     ):
@@ -1192,6 +1441,8 @@ def update_user(
             role_names=target.role_names,
             module_assignments=payload.module_assignments,
             module_access_grants=payload.module_access_grants,
+            service_access_grants=payload.service_access_grants,
+            org_capability_grants=payload.org_capability_grants,
             feature_overrides=payload.feature_overrides,
             view_only=payload.view_only,
             db=db,
@@ -1228,6 +1479,8 @@ def create_user(
         role_names=payload.role_names,
         module_assignments=payload.module_assignments,
         module_access_grants=payload.module_access_grants,
+        service_access_grants=payload.service_access_grants,
+        org_capability_grants=payload.org_capability_grants,
         feature_overrides=payload.feature_overrides,
         view_only=payload.view_only,
         db=db,
@@ -1259,6 +1512,7 @@ def deactivate_user(
 def invite_therapist(
     payload: InviteCreate,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
@@ -1269,16 +1523,19 @@ def invite_therapist(
     modules = validate_module_assignments([role], payload.module_assignments, db)
     if role == "THERAPIST":
         try:
+            display_name = (payload.full_name or "").strip() or payload.email.split("@")[0]
             result = therapist_onboard_svc.onboard_therapist_invite(
                 db,
                 email=payload.email,
-                full_name=payload.email.split("@")[0],
+                full_name=display_name,
                 phone=None,
                 module_assignments=modules,
                 services_offered=[],
                 short_bio=None,
                 created_by_user_id=user.id,
-                send_email=False,
+                send_email=payload.send_email,
+                background_tasks=background_tasks,
+                primary_case_manager_user_id=user.id,
             )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -1318,11 +1575,27 @@ def invite_therapist(
         invite_metadata=invite_meta or None,
     )
     db.add(invite)
+    db.flush()
+    url = f"{settings.frontend_url.rstrip('/')}/invite/{token}"
+    if payload.send_email:
+        from app.services.email.service import enqueue_portal_invite_email
+
+        display_name = (payload.full_name or "").strip() or payload.email.split("@")[0]
+        role_label = role.replace("_", " ").title()
+        enqueue_portal_invite_email(
+            background_tasks,
+            db,
+            to=invite.email,
+            invite_url=url,
+            full_name=display_name,
+            role_label=role_label,
+            recipient_role=role.lower(),
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="invite", entity_type="invite_token", entity_id=invite.id, **meta)
     db.commit()
-    url = f"{settings.frontend_url}/invite/{token}"
-    print(f"[DEV INVITE] {payload.email} -> {url}")
+    if not payload.send_email:
+        print(f"[DEV INVITE] {payload.email} -> {url}")
     return {"invite_url": url, "email": payload.email, "expires_at": invite.expires_at.isoformat()}
 
 
@@ -1330,7 +1603,8 @@ def invite_therapist(
 def onboard_therapist(
     payload: TherapistOnboardCreate,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    background_tasks: BackgroundTasks,
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     validate_module_assignments(["THERAPIST"], payload.module_assignments)
@@ -1347,13 +1621,16 @@ def onboard_therapist(
             email=str(payload.email),
             full_name=payload.full_name,
             phone=payload.phone,
-            module_assignments=payload.module_assignments,
+            module_assignments=payload.module_assignments or payload.services_offered,
             services_offered=payload.services_offered,
             mode=payload.mode,
             password=payload.password,
             send_email=payload.send_email,
             short_bio=payload.short_bio,
             created_by_user_id=user.id,
+            primary_case_manager_user_id=payload.primary_case_manager_user_id,
+            mentor_user_id=payload.mentor_user_id,
+            background_tasks=background_tasks,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -1414,11 +1691,32 @@ def therapist_bulk_template(
     )
 
 
+@router.get("/therapists/bulk-template.csv")
+def therapist_bulk_template_csv(
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.core.therapist_services import get_service_categories
+
+    svc_cats = get_service_categories(db)
+    svc_ids = "|".join(s["id"] for s in svc_cats[:5])
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Full Name", "Email", "Phone", "Services (pipe-separated)", "Notes"])
+    writer.writerow(["Jane Doe", "jane@example.com", "+91 98765 43210", svc_ids, "Example row"])
+    writer.writerow(["John Smith", "john@example.com", "", "shadow_support", ""])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=\"therapist_bulk_template.csv\""},
+    )
+
+
 @router.post("/therapists/bulk-onboard", response_model=list[TherapistOnboardResult])
 def bulk_onboard_therapists(
     payload: TherapistBulkOnboardRequest,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     from app.core.therapist_services import validate_service_ids
@@ -1438,6 +1736,8 @@ def bulk_onboard_therapists(
         mode=payload.mode,
         send_email=payload.send_email,
         created_by_user_id=user.id,
+        primary_case_manager_user_id=payload.primary_case_manager_user_id,
+        mentor_user_id=payload.mentor_user_id,
     )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="bulk_onboard_therapists", entity_type="user", entity_id=None, **meta)
@@ -1486,7 +1786,7 @@ def list_therapist_profiles(
 def admin_create_therapist_profile(
     payload: TherapistProfileAdminCreate,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     target = db.get(User, payload.user_id)
@@ -1520,7 +1820,7 @@ def admin_update_therapist_profile(
     profile_id: int,
     payload: TherapistProfileUpdate,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     profile = db.get(TherapistProfile, profile_id)
@@ -1557,7 +1857,7 @@ def admin_approve_profile(
     profile_id: int,
     payload: TherapistProfileReview,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     profile = db.get(TherapistProfile, profile_id)
@@ -1580,7 +1880,7 @@ def admin_pause_profile(
     profile_id: int,
     payload: TherapistProfileReview,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     profile = db.get(TherapistProfile, profile_id)
@@ -1602,7 +1902,7 @@ def admin_pause_profile(
 def admin_resume_profile(
     profile_id: int,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     profile = db.get(TherapistProfile, profile_id)
@@ -1622,7 +1922,7 @@ def admin_resume_profile(
 def admin_delete_therapist_profile(
     profile_id: int,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     profile = db.get(TherapistProfile, profile_id)
@@ -1719,10 +2019,16 @@ def admin_allotment_therapists(
     return allotment_service.list_allotment_therapists(db, user, product_module, search, approved_only)
 
 
+def _require_family_read(user: User = Depends(get_current_user)) -> User:
+    if user_has_permission(user, "user.manage") or user_has_permission(user, "case.create"):
+        return user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Family directory access required")
+
+
 @router.get("/families")
 def admin_list_families(
     search: Optional[str] = None,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(_require_family_read),
     db: Session = Depends(get_db),
 ):
     from app.services import family_admin_service
@@ -1730,29 +2036,94 @@ def admin_list_families(
     return family_admin_service.list_families(db, search)
 
 
-@router.post("/children", status_code=status.HTTP_201_CREATED)
-def admin_create_child(
-    payload: ChildCreate,
+class ClientBulkRow(BaseModel):
+    child_first: str
+    child_last: str = ""
+    parent_email: str
+    parent_full_name: str = ""
+    parent_phone: Optional[str] = None
+
+
+class ClientBulkImportRequest(BaseModel):
+    rows: list[ClientBulkRow] = Field(min_length=1, max_length=200)
+
+
+@router.post("/clients/bulk-import")
+def admin_bulk_import_clients(
+    payload: ClientBulkImportRequest,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import family_admin_service
 
-    child = family_admin_service.create_child(
-        db, payload.first_name, payload.last_name, payload.date_of_birth
-    )
+    results = []
+    for row in payload.rows:
+        try:
+            family_admin_service.create_family(
+                db,
+                parent_email=row.parent_email.strip().lower(),
+                parent_full_name=(row.parent_full_name or row.parent_email).strip(),
+                parent_phone=row.parent_phone,
+                child_first=row.child_first.strip(),
+                child_last=(row.child_last or "").strip(),
+            )
+            results.append({"email": row.parent_email, "success": True, "error": None})
+        except Exception as exc:
+            results.append({"email": row.parent_email, "success": False, "error": str(exc)})
     meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="create", entity_type="child", entity_id=child.id, **meta)
+    log_audit(db, actor_user_id=user.id, action="bulk_import_clients", entity_type="child", entity_id=None, **meta)
     db.commit()
-    return {"id": child.id, "fullName": child.full_name}
+    ok = sum(1 for r in results if r["success"])
+    return {"total": len(results), "success_count": ok, "results": results}
+
+
+@router.get("/parents/lookup")
+def admin_lookup_parents(
+    search: Optional[str] = None,
+    user: User = Depends(_require_family_read),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    return family_admin_service.lookup_parents(db, search)
+
+
+@router.post("/children", status_code=status.HTTP_201_CREATED)
+def admin_create_child(
+    payload: ChildCreate,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    if not payload.parent_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="parent_user_id is required — children must be linked to a parent",
+        )
+    try:
+        result = family_admin_service.add_child_to_parent(
+            db,
+            parent_user_id=payload.parent_user_id,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            date_of_birth=payload.date_of_birth,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="create", entity_type="child", entity_id=result["id"], **meta)
+    db.commit()
+    return result
 
 
 @router.post("/families", status_code=status.HTTP_201_CREATED)
 def admin_create_family(
     payload: FamilyCreate,
     request: Request,
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import family_admin_service
@@ -1785,7 +2156,7 @@ def admin_invite_parent(
     parent_user_id: int,
     request: Request,
     child_id: Optional[int] = Query(None),
-    user: User = Depends(require_permission("user.manage")),
+    user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import family_admin_service
@@ -2030,6 +2401,7 @@ def admin_get_iep_plan(
 def admin_save_iep_plan(
     case_id: int,
     payload: IepPlanSave,
+    request: Request,
     user: User = Depends(require_mutation_permission("iep.read")),
     db: Session = Depends(get_db),
 ):
@@ -2041,9 +2413,50 @@ def admin_save_iep_plan(
     guard_clinical_case(user, case, db, feature="iep")
     plan = iep_svc.get_or_create_plan(db, case, user)
     try:
-        iep_svc.save_plan(db, plan, payload.sections, payload.version)
+        iep_svc.save_plan(db, plan, payload.sections, user, payload.version)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="save_iep_plan",
+        entity_type="iep_plan",
+        entity_id=plan.id,
+        case_id=case_id,
+        **meta,
+    )
+    db.commit()
+    return iep_svc.plan_to_dict(db, plan, user)
+
+
+@router.post("/cases/{case_id}/iep-plan/new-version")
+def admin_new_iep_plan_version(
+    case_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    guard_clinical_case(user, case, db, feature="iep")
+    try:
+        plan = iep_svc.create_new_version(db, case, user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="create_iep_revision",
+        entity_type="iep_plan",
+        entity_id=plan.id,
+        case_id=case_id,
+        **meta,
+    )
     db.commit()
     return iep_svc.plan_to_dict(db, plan, user)
 
@@ -2096,6 +2509,34 @@ def admin_iep_plan_preview(
         raise HTTPException(status_code=404, detail="IEP plan not found")
     html = iep_svc.sections_to_preview_html(db, plan)
     return {"html": html}
+
+
+@router.get("/cases/{case_id}/iep-plan/export/pdf")
+def admin_iep_plan_export_pdf(
+    case_id: int,
+    user: User = Depends(require_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import Response
+
+    from app.services import case_service, iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="IEP plan not found")
+    try:
+        data = iep_svc.sections_to_pdf_bytes(db, plan)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF export failed: {e}") from e
+    filename = f"IEP_{case.case_code}_{plan.version}.pdf"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/cases/{case_id}/iep-plan/suggestions")
@@ -2159,6 +2600,27 @@ def admin_approve_iep_plan(
     iep_svc.approve_plan(db, plan)
     db.commit()
     return iep_svc.plan_to_dict(db, plan, user)
+
+
+@router.post("/iep/purge-old-versions")
+def admin_purge_old_iep_versions(
+    case_id: Optional[int] = Query(None),
+    user: User = Depends(require_permission("iep.read")),
+    db: Session = Depends(get_db),
+):
+    from app.models.iep_plan import IepPlan
+    from app.services import iep_plan_service as iep_svc
+
+    if case_id is not None:
+        removed = iep_svc.purge_superseded_iep_plans(db, case_id)
+        db.commit()
+        return {"caseId": case_id, "removed": removed}
+    total = 0
+    case_ids = db.scalars(select(IepPlan.case_id).distinct()).all()
+    for cid in case_ids:
+        total += iep_svc.purge_superseded_iep_plans(db, cid)
+    db.commit()
+    return {"removed": total}
 
 
 @router.post("/families/link-by-email")
@@ -2391,6 +2853,134 @@ def admin_reports_observation_detail(
     return detail
 
 
+@router.post("/reports/monthly/{report_id}/publish-to-parent", response_model=AdminReportDetail)
+def admin_reports_monthly_publish_to_parent(
+    report_id: int,
+    payload: ReportCommentAction,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, report_service
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    guard_clinical_case(user, case, db, feature="reports")
+    report_service.sync_published_status(report)
+    if report.status != ReportStatus.UNDER_REVIEW:
+        raise HTTPException(status_code=400, detail="Report is not awaiting review")
+    cm_ready = report_service.user_can_cm_publish(user) and report_service.can_cm_publish(report)
+    admin_ready = (
+        report_service.user_can_admin_override_publish(user)
+        and report_service.can_admin_override_publish(report)
+    )
+    if cm_ready:
+        override = False
+    elif admin_ready:
+        override = True
+    elif report_service.user_can_admin_override_publish(user):
+        days = report_service.days_until_admin_override(report)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Admin override available in {days} day(s)" if days is not None else "Admin override not available",
+        )
+    elif report_service.user_can_cm_publish(user):
+        raise HTTPException(status_code=400, detail="Report is not ready for case manager publish")
+    else:
+        raise HTTPException(status_code=403, detail="Case manager approval required to publish to parents")
+    try:
+        report_service.publish_monthly_to_parent(
+            db,
+            report,
+            user,
+            override=override,
+            comment=payload.comment.strip() if payload.comment else None,
+        )
+        report_service.notify_parents_monthly_report_published(
+            db, background_tasks, report=report, case=case
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="publish_to_parent",
+        entity_type="monthly_report",
+        entity_id=report_id,
+        new_value={"override": override},
+        **meta,
+    )
+    db.commit()
+    detail = admin_report_svc.get_monthly_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
+@router.get("/reports/monthly/{report_id}/comments", response_model=list)
+def admin_reports_monthly_list_comments(
+    report_id: int,
+    user: User = Depends(_reports_reader),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, report_comment_service
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report_comment_service.list_monthly_comments(db, report_id)
+
+
+@router.post("/reports/monthly/{report_id}/comments", response_model=AdminReportDetail)
+def admin_reports_monthly_document_comment(
+    report_id: int,
+    payload: ReportDocumentCommentCreate,
+    request: Request,
+    user: User = Depends(_reports_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_service, report_comment_service
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    guard_clinical_case(user, case, db, feature="reports")
+    try:
+        report_comment_service.add_monthly_comment(
+            db, report, user, body=payload.body, comment_type=payload.comment_type
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="document_comment",
+        entity_type="monthly_report",
+        entity_id=report_id,
+        **meta,
+    )
+    db.commit()
+    detail = admin_report_svc.get_monthly_detail(db, user, report_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return detail
+
+
 @router.post("/reports/monthly/{report_id}/cm-review", response_model=AdminReportDetail)
 def admin_reports_monthly_cm_review(
     report_id: int,
@@ -2507,7 +3097,12 @@ def _report_send_for_review(
         raise HTTPException(status_code=400, detail="Comment is required")
     if report_type == "monthly":
         report_service.send_monthly_for_review(
-            db, report, user.id, target=payload.target, comment=payload.comment
+            db,
+            report,
+            user.id,
+            target=payload.target,
+            comment=payload.comment,
+            case=case,
         )
     else:
         report_service.send_observation_for_review(

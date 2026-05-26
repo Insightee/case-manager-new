@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
 import { AdminCaseAllotmentWizard } from './AdminCaseAllotmentWizard.jsx'
 import { AdminCasesPipelineTable } from './AdminCasesPipelineTable.jsx'
-import { defaultPipelineFilters } from '../../lib/adminCasePipeline.js'
+import { caseStateFromLegacyStatus, defaultPipelineFilters } from '../../lib/adminCasePipeline.js'
 
 export function AdminCasesPage() {
   const [searchParams] = useSearchParams()
@@ -22,7 +22,7 @@ export function AdminCasesPage() {
     const status = searchParams.get('status')
     const queue = searchParams.get('queue')
     const next = defaultPipelineFilters()
-    if (status) next.caseStatus = status
+    if (status) next.caseState = caseStateFromLegacyStatus(status)
     if (queue) next.queue = queue
     if (status || queue) setInitialFilters(next)
   }, [searchParams, canCreateCase])

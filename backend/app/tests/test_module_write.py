@@ -19,7 +19,7 @@ def _login(email: str) -> dict[str, str]:
 
 
 def test_me_includes_module_access_and_view_only():
-    r = client.get("/api/v1/auth/me", headers=_login("viewer@demo.com"))
+    r = client.get("/api/v1/auth/me", headers=_login("viewonly@demo.com"))
     assert r.status_code == 200
     body = r.json()
     assert body["is_view_only"] is True
@@ -28,7 +28,7 @@ def test_me_includes_module_access_and_view_only():
 
 
 def test_view_only_user_cannot_patch_case():
-    headers = _login("viewer@demo.com")
+    headers = _login("viewonly@demo.com")
     cases = client.get("/api/v1/cases?page_size=5", headers=headers)
     assert cases.status_code == 200
     items = cases.json()["items"]
@@ -45,7 +45,7 @@ def test_view_only_user_cannot_patch_case():
 
 
 def test_view_only_user_cannot_bulk_approve_reports():
-    headers = _login("viewer@demo.com")
+    headers = _login("viewonly@demo.com")
     r = client.post(
         "/api/v1/admin/reports/bulk/approve",
         headers=headers,
@@ -75,7 +75,7 @@ def test_super_admin_can_mutate_client_billing():
 
 
 def test_view_only_user_cannot_save_iep():
-    headers = _login("viewer@demo.com")
+    headers = _login("viewonly@demo.com")
     cases = client.get("/api/v1/cases?page_size=5", headers=headers)
     if cases.status_code != 200 or not cases.json()["items"]:
         return

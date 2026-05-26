@@ -20,6 +20,23 @@ THERAPIST_ALLOWED = {
 }
 
 
+def _assert_no_blocking_invoices_for_close(db: Session, case_id: int) -> None:
+    from app.models.client_billing import ClientInvoice, ClientInvoiceStatus
+
+    blocking = db.scalars(
+        select(ClientInvoice).where(
+            ClientInvoice.case_id == case_id,
+            ClientInvoice.status.in_(
+                (ClientInvoiceStatus.DRAFT, ClientInvoiceStatus.GENERATED),
+            ),
+        )
+    ).first()
+    if blocking:
+        raise ValueError(
+            "Finalize or void draft client invoices before closing this case"
+        )
+
+
 def create_request(db: Session, user: User, case: Case, to_status: str, reason: str) -> CaseStatusRequest:
     from_status = case.status.value if hasattr(case.status, "value") else str(case.status)
     to_status = to_status.upper()
@@ -35,6 +52,8 @@ def create_request(db: Session, user: User, case: Case, to_status: str, reason: 
     ).first()
     if pending:
         raise ValueError("A status change request is already pending for this case")
+    if to_status == CaseStatus.CLOSED.value:
+        _assert_no_blocking_invoices_for_close(db, case.id)
     req = CaseStatusRequest(
         case_id=case.id,
         requested_by_user_id=user.id,
@@ -159,6 +178,8 @@ def approve_request(db: Session, request_id: int, admin_user: User, note: str | 
     case = db.get(Case, req.case_id)
     if not case:
         raise ValueError("Case not found")
+    if req.to_status == CaseStatus.CLOSED.value:
+        _assert_no_blocking_invoices_for_close(db, case.id)
     case.status = CaseStatus(req.to_status)
     if req.to_status in (CaseStatus.SUSPENDED.value, CaseStatus.CLOSED.value):
         _cancel_future_bookings(db, case.id)

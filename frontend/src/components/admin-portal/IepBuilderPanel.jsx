@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiDownload, apiFetch, apiUpload } from '../../lib/apiClient.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
   emptySections,
+  IEP_TAB_ORDER,
   LEARNING_STYLES,
   normalizeSections,
   PERFORMANCE_DOMAINS,
+  validateSectionsForShare,
 } from './iepBuilderDefaults.js'
 import './admin-iep-builder.css'
 
@@ -16,18 +19,21 @@ const TABS = [
   { id: 'verification', label: 'Verification' },
 ]
 
-function Field({ label, children }) {
+function Field({ label, children, hint }) {
   return (
     <div className="iep-builder__field">
       <label>{label}</label>
       {children}
+      {hint ? <p className="iep-builder__hint">{hint}</p> : null}
     </div>
   )
 }
 
 export function IepBuilderPanel({ caseId }) {
+  const { user } = useAuth()
   const { canEditIep } = useModuleWrite()
   const [plan, setPlan] = useState(null)
+  const [versionHistory, setVersionHistory] = useState([])
   const [sections, setSections] = useState(emptySections)
   const [tab, setTab] = useState('header')
   const [loading, setLoading] = useState(true)
@@ -36,14 +42,27 @@ export function IepBuilderPanel({ caseId }) {
   const [message, setMessage] = useState('')
   const [previewHtml, setPreviewHtml] = useState(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [shareFlowOpen, setShareFlowOpen] = useState(false)
+  const [shareStep, setShareStep] = useState(0)
+  const [previewAcknowledged, setPreviewAcknowledged] = useState(false)
+  const [attachmentNames, setAttachmentNames] = useState({})
+  const [auditItems, setAuditItems] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const data = await apiFetch(`/api/v1/admin/cases/${caseId}/iep-plan`)
+      const [data, versions, audit] = await Promise.all([
+        apiFetch(`/api/v1/admin/cases/${caseId}/iep-plan`),
+        apiFetch(`/api/v1/admin/cases/${caseId}/iep-plans`).catch(() => []),
+        apiFetch(`/api/v1/admin/audit?case_id=${caseId}&entity_type=iep_plan&limit=15`).catch(() => ({
+          items: [],
+        })),
+      ])
       setPlan(data)
       setSections(normalizeSections(data.sections, data.case_context))
+      setVersionHistory(Array.isArray(versions) ? versions : [])
+      setAuditItems(audit?.items || [])
     } catch (err) {
       setError(err.message || 'Could not load IEP plan')
     } finally {
@@ -55,8 +74,14 @@ export function IepBuilderPanel({ caseId }) {
     load()
   }, [load])
 
+  useEffect(() => {
+    if (!plan?.case_context) return
+    setSections((s) => normalizeSections(s, plan.case_context))
+  }, [plan?.id, plan?.case_context])
+
   const productModule = plan?.case_context?.product_module || 'homecare'
   const canEdit = Boolean(plan?.can_edit && canEditIep(productModule))
+  const tabIndex = IEP_TAB_ORDER.indexOf(tab)
 
   function patch(path, value) {
     setSections((s) => {
@@ -95,6 +120,18 @@ export function IepBuilderPanel({ caseId }) {
     })
   }
 
+  function goNext() {
+    if (tabIndex < IEP_TAB_ORDER.length - 1) {
+      setTab(IEP_TAB_ORDER[tabIndex + 1])
+    }
+  }
+
+  function goBack() {
+    if (tabIndex > 0) {
+      setTab(IEP_TAB_ORDER[tabIndex - 1])
+    }
+  }
+
   async function save() {
     setSaving(true)
     setError('')
@@ -129,6 +166,48 @@ export function IepBuilderPanel({ caseId }) {
     }
   }
 
+  async function downloadPdf() {
+    setSaving(true)
+    try {
+      if (canEdit) await save()
+      await apiDownload(
+        `/api/v1/admin/cases/${caseId}/iep-plan/export/pdf`,
+        `IEP_${plan?.version || 'draft'}.pdf`
+      )
+    } catch (err) {
+      setError(err.message || 'PDF download failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function startShareFlow() {
+    const errs = validateSectionsForShare(sections)
+    if (errs.length) {
+      setError(errs.join(' '))
+      setTab('verification')
+      return
+    }
+    setShareFlowOpen(true)
+    setShareStep(0)
+    setPreviewAcknowledged(false)
+    await openPreviewForShare()
+  }
+
+  async function openPreviewForShare() {
+    setSaving(true)
+    setError('')
+    try {
+      if (canEdit) await save()
+      const data = await apiFetch(`/api/v1/admin/cases/${caseId}/iep-plan/preview`)
+      setPreviewHtml(data.html || '')
+    } catch (err) {
+      setError(err.message || 'Preview failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function shareWithParent() {
     setSaving(true)
     setError('')
@@ -138,6 +217,7 @@ export function IepBuilderPanel({ caseId }) {
         method: 'POST',
       })
       setPlan(data)
+      setShareFlowOpen(false)
       setMessage('IEP shared with parent for acknowledgement.')
       await load()
     } catch (err) {
@@ -145,6 +225,45 @@ export function IepBuilderPanel({ caseId }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function createRevision() {
+    setSaving(true)
+    setError('')
+    try {
+      const data = await apiFetch(`/api/v1/admin/cases/${caseId}/iep-plan/new-version`, {
+        method: 'POST',
+      })
+      setPlan(data)
+      setSections(normalizeSections(data.sections, data.case_context))
+      setTab('header')
+      setMessage(`Revision ${data.version} created. You can edit and share when ready.`)
+      await load()
+    } catch (err) {
+      setError(err.message || 'Could not create revision')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function uploadSupplement(file) {
+    const fd = new FormData()
+    fd.append('case_id', String(caseId))
+    fd.append('entity_type', 'iep_plan_supplement')
+    fd.append('visibility_status', 'INTERNAL_ONLY')
+    fd.append('file', file)
+    const res = await apiUpload('/api/v1/attachments', fd)
+    const ids = [...(sections.supplementary_attachment_ids || []), res.id]
+    setAttachmentNames((m) => ({ ...m, [res.id]: res.file_name }))
+    setSections((s) => ({ ...s, supplementary_attachment_ids: ids }))
+    return res
+  }
+
+  async function removeSupplement(id) {
+    setSections((s) => ({
+      ...s,
+      supplementary_attachment_ids: (s.supplementary_attachment_ids || []).filter((x) => x !== id),
+    }))
   }
 
   async function resolveSuggestions() {
@@ -169,6 +288,7 @@ export function IepBuilderPanel({ caseId }) {
       const data = await apiFetch(`/api/v1/admin/cases/${caseId}/iep-plan/approve`, { method: 'POST' })
       setPlan(data)
       setMessage('IEP marked approved.')
+      await load()
     } catch (err) {
       setError(err.message || 'Approve failed')
     } finally {
@@ -181,6 +301,7 @@ export function IepBuilderPanel({ caseId }) {
   const h = sections.header
   const v = sections.verification
   const openSuggestions = (plan?.suggestions || []).filter((s) => !s.resolved_at)
+  const suppIds = sections.supplementary_attachment_ids || []
 
   return (
     <section className="card iep-builder">
@@ -190,6 +311,7 @@ export function IepBuilderPanel({ caseId }) {
           {plan ? (
             <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 0' }}>
               Version {plan.version} · {plan.status.replace(/_/g, ' ')}
+              {plan.status === 'INTERNAL_REVIEW' ? ' · awaiting CM review' : ''}
             </p>
           ) : null}
         </div>
@@ -199,6 +321,7 @@ export function IepBuilderPanel({ caseId }) {
               key={t.id}
               type="button"
               role="tab"
+              aria-selected={tab === t.id}
               className={`iep-builder__tab${tab === t.id ? ' is-active' : ''}`}
               onClick={() => setTab(t.id)}
             >
@@ -208,12 +331,32 @@ export function IepBuilderPanel({ caseId }) {
         </div>
       </div>
 
+      {versionHistory.length > 1 ? (
+        <div className="iep-builder__versions">
+          <span className="iep-builder__versions-label">Versions:</span>
+          {versionHistory.map((ver) => (
+            <span key={ver.id} className="iep-builder__version-chip">
+              {ver.version} ({ver.status.replace(/_/g, ' ')})
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c' }}>
+        <p role="alert" className="iep-builder__alert iep-builder__alert--error">
           {error}
         </p>
       ) : null}
-      {message ? <p style={{ color: '#047857' }}>{message}</p> : null}
+      {message ? <p className="iep-builder__alert iep-builder__alert--ok">{message}</p> : null}
+
+      {!canEdit && plan?.can_create_revision ? (
+        <div className="iep-builder__banner">
+          <p>This version was shared with the parent. Create a new revision to make changes.</p>
+          <button type="button" className="admin-btn admin-btn--primary" disabled={saving} onClick={createRevision}>
+            Create new revision
+          </button>
+        </div>
+      ) : null}
 
       {tab === 'header' ? (
         <div className="iep-builder__panel iep-builder__grid-2">
@@ -232,7 +375,7 @@ export function IepBuilderPanel({ caseId }) {
           <Field label="Parents">
             <input value={h.parents_names} disabled={!canEdit} onChange={(e) => patch('header.parents_names', e.target.value)} />
           </Field>
-          <Field label="Therapist">
+          <Field label="Therapist (header)">
             <input value={h.therapist_name} disabled={!canEdit} onChange={(e) => patch('header.therapist_name', e.target.value)} />
           </Field>
           <Field label="School / home">
@@ -309,16 +452,16 @@ export function IepBuilderPanel({ caseId }) {
                   <input value={row.environment} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'environment', e.target.value)} />
                 </Field>
                 <Field label="Strengths">
-                  <input value={row.strengths} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'strengths', e.target.value)} />
+                  <textarea rows={3} className="iep-builder__textarea-lg" value={row.strengths} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'strengths', e.target.value)} />
                 </Field>
                 <Field label="Goals">
-                  <input value={row.goals} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'goals', e.target.value)} />
+                  <textarea rows={3} className="iep-builder__textarea-lg" value={row.goals} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'goals', e.target.value)} />
                 </Field>
                 <Field label="Strategies">
-                  <input value={row.strategies} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'strategies', e.target.value)} />
+                  <textarea rows={4} className="iep-builder__textarea-lg" value={row.strategies} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'strategies', e.target.value)} />
                 </Field>
                 <Field label="Supports needed">
-                  <input value={row.supports_needed} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'supports_needed', e.target.value)} />
+                  <textarea rows={4} className="iep-builder__textarea-lg" value={row.supports_needed} disabled={!canEdit} onChange={(e) => patchEnv(idx, 'supports_needed', e.target.value)} />
                 </Field>
               </div>
             </div>
@@ -366,22 +509,39 @@ export function IepBuilderPanel({ caseId }) {
               disabled={!canEdit}
               onChange={(e) => patch('verification.therapist_verified', e.target.checked)}
             />
-            Therapist verified (replaces legacy signature line)
+            I verify this document
+            {user?.full_name ? ` (${user.full_name})` : ''}
           </label>
-          <Field label="Therapist name">
-            <input value={v.therapist_name} disabled={!canEdit} onChange={(e) => patch('verification.therapist_name', e.target.value)} />
+          <Field label="Verified by" hint="Set when you check the box above and save.">
+            <input value={v.prepared_by_name || ''} disabled readOnly />
           </Field>
-          <Field label="Therapist date">
-            <input type="date" value={v.therapist_date || ''} disabled={!canEdit} onChange={(e) => patch('verification.therapist_date', e.target.value)} />
+          <Field label="Verification date">
+            <input value={v.prepared_at || ''} disabled readOnly />
+          </Field>
+          <Field label="Your role">
+            <input value={v.prepared_by_role || user?.roles?.[0] || ''} disabled readOnly />
+          </Field>
+          <Field label="IEP meeting date">
+            <input type="date" value={h.date_of_iep_meeting || ''} disabled={!canEdit} onChange={(e) => patch('header.date_of_iep_meeting', e.target.value)} />
+          </Field>
+          <Field label="Assigned therapist">
+            <input value={v.therapist_name} disabled readOnly />
           </Field>
           <Field label="License no.">
-            <input value={v.therapist_license_no} disabled={!canEdit} onChange={(e) => patch('verification.therapist_license_no', e.target.value)} />
+            <input value={v.therapist_license_no} disabled readOnly />
           </Field>
-          <Field label="Case manager">
-            <input value={v.case_manager_name} disabled={!canEdit} onChange={(e) => patch('verification.case_manager_name', e.target.value)} />
+          <Field label="Case manager (on case)">
+            <input value={v.case_manager_name} disabled readOnly />
           </Field>
-          <Field label="Client name (parent ack)">
-            <input value={v.client_name} disabled onChange={() => {}} />
+          <Field
+            label="Parent acknowledgement"
+            hint={v.client_name ? 'Parent has acknowledged.' : 'Filled when the parent acknowledges in their portal.'}
+          >
+            <input
+              value={v.client_name ? `${v.client_name}${v.client_date ? ` · ${v.client_date}` : ''}` : 'Pending parent acknowledgement'}
+              disabled
+              readOnly
+            />
           </Field>
         </div>
       ) : null}
@@ -404,18 +564,50 @@ export function IepBuilderPanel({ caseId }) {
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {auditItems.length > 0 ? (
+        <details className="iep-builder__audit">
+          <summary>Audit trail</summary>
+          <ul>
+            {auditItems.map((ev) => (
+              <li key={ev.id}>
+                <strong>{ev.action}</strong>
+                {ev.created_at ? ` · ${new Date(ev.created_at).toLocaleString()}` : ''}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      <div className="iep-builder__footer">
+        {tabIndex > 0 ? (
+          <button type="button" className="admin-btn admin-btn--ghost" disabled={saving} onClick={goBack}>
+            Back
+          </button>
+        ) : null}
         {canEdit ? (
           <button type="button" className="admin-btn admin-btn--secondary" disabled={saving} onClick={save}>
             Save draft
           </button>
         ) : null}
+        {tabIndex < IEP_TAB_ORDER.length - 1 ? (
+          <button type="button" className="admin-btn admin-btn--secondary" disabled={saving} onClick={goNext}>
+            Next
+          </button>
+        ) : null}
         <button type="button" className="admin-btn admin-btn--ghost" disabled={saving} onClick={openPreview}>
           Preview
         </button>
+        <button type="button" className="admin-btn admin-btn--ghost" disabled={saving} onClick={downloadPdf}>
+          Download PDF
+        </button>
         {plan?.can_share_with_parent && canEdit ? (
-          <button type="button" className="admin-btn admin-btn--primary" disabled={saving} onClick={shareWithParent}>
+          <button type="button" className="admin-btn admin-btn--primary" disabled={saving} onClick={startShareFlow}>
             Share with parent
+          </button>
+        ) : null}
+        {plan?.status === 'INTERNAL_REVIEW' ? (
+          <button type="button" className="admin-btn admin-btn--primary" disabled={saving} onClick={approvePlan}>
+            Approve revision (CM)
           </button>
         ) : null}
         {plan?.status === 'PARENT_ACKNOWLEDGED' ? (
@@ -434,7 +626,113 @@ export function IepBuilderPanel({ caseId }) {
                 Close
               </button>
             </div>
-            <div className="iep-builder__preview-body" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <div className="iep-builder__preview-body report-html-view" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          </div>
+        </div>
+      ) : null}
+
+      {shareFlowOpen ? (
+        <div className="iep-builder__preview-backdrop" role="dialog" aria-modal="true">
+          <div className="iep-builder__preview iep-builder__share-flow">
+            <h3 style={{ margin: '0 0 12px' }}>Share IEP with parent</h3>
+            <div className="iep-builder__share-steps">
+              <span className={shareStep === 0 ? 'is-active' : ''}>1. Preview</span>
+              <span className={shareStep === 1 ? 'is-active' : ''}>2. Attachments</span>
+              <span className={shareStep === 2 ? 'is-active' : ''}>3. Confirm</span>
+            </div>
+
+            {shareStep === 0 ? (
+              <>
+                <div className="iep-builder__preview-body report-html-view" dangerouslySetInnerHTML={{ __html: previewHtml || '' }} />
+                <label style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={previewAcknowledged}
+                    onChange={(e) => setPreviewAcknowledged(e.target.checked)}
+                  />
+                  I have reviewed this preview and it is ready to share
+                </label>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary"
+                    disabled={!previewAcknowledged}
+                    onClick={() => setShareStep(1)}
+                  >
+                    Continue
+                  </button>
+                  <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setShareFlowOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {shareStep === 1 ? (
+              <>
+                <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Optional: attach supporting documents before sharing.</p>
+                {canEdit ? (
+                  <input
+                    type="file"
+                    multiple
+                    onChange={async (e) => {
+                      const files = [...(e.target.files || [])]
+                      for (const f of files) {
+                        try {
+                          await uploadSupplement(f)
+                        } catch (err) {
+                          setError(err.message || 'Upload failed')
+                        }
+                      }
+                      e.target.value = ''
+                    }}
+                  />
+                ) : null}
+                {suppIds.length > 0 ? (
+                  <ul className="iep-builder__attach-list">
+                    {suppIds.map((id) => (
+                      <li key={id}>
+                        {attachmentNames[id] || `Attachment #${id}`}
+                        {canEdit ? (
+                          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => removeSupplement(id)}>
+                            Remove
+                          </button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button type="button" className="admin-btn admin-btn--secondary" onClick={() => setShareStep(0)}>
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary"
+                    onClick={async () => {
+                      if (canEdit) await save()
+                      setShareStep(2)
+                    }}
+                  >
+                    Continue
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {shareStep === 2 ? (
+              <>
+                <p>The parent will receive a notification and can acknowledge the IEP in their portal.</p>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button type="button" className="admin-btn admin-btn--secondary" onClick={() => setShareStep(1)}>
+                    Back
+                  </button>
+                  <button type="button" className="admin-btn admin-btn--primary" disabled={saving} onClick={shareWithParent}>
+                    Confirm and share
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}

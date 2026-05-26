@@ -25,7 +25,7 @@ REVIEW_ROLES = [
     ("parent@demo.com", "parent"),
     ("casemanager@demo.com", "admin"),
     ("finance@demo.com", "admin"),
-    ("viewer@demo.com", "admin"),
+    ("viewonly@demo.com", "admin"),
     ("hr@demo.com", "hr"),
 ]
 
@@ -236,7 +236,7 @@ def test_staff_ticket_escalate():
 
 
 def test_viewer_cannot_create_assignment():
-    viewer_h = _headers("viewer@demo.com")
+    viewer_h = _headers("viewonly@demo.com")
     cases = client.get("/api/v1/cases", headers=viewer_h)
     assert cases.status_code == 200
     case_id = api_items(cases.json())[0]["id"]

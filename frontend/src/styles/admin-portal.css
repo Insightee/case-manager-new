@@ -1245,3 +1245,94 @@
   border-color: #a5b4fc;
   color: #4338ca;
 }
+
+/* Filter bar controls (pipeline, toolbars) */
+.admin-filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-filter-field__label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.admin-filter-select {
+  position: relative;
+  display: block;
+}
+
+.admin-filter-select__input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 36px 10px 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #0f172a;
+  background: #fff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  appearance: none;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.admin-filter-select__input:hover {
+  border-color: #94a3b8;
+}
+
+.admin-filter-select__input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.admin-filter-select__chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.admin-filter-date-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-filter-date-range__input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.admin-filter-date-range__sep {
+  font-size: 0.8125rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.app-sidebar__nav-section {
+  margin: 14px 0 6px;
+  padding: 0 12px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.app-sidebar__nav-section:first-child {
+  margin-top: 0;
+}
+
+.app-sidebar__nav-item-wrap {
+  display: block;
+}

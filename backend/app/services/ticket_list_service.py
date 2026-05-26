@@ -67,10 +67,12 @@ def list_tickets_for_user(
         cases_by_id = {c.id: c for c in cases}
 
     assignee_ids = {t.assigned_to_user_id for t in rows if t.assigned_to_user_id}
-    assignees_by_id: dict[int, User] = {}
-    if assignee_ids:
-        for u in db.scalars(select(User).where(User.id.in_(assignee_ids))).all():
-            assignees_by_id[u.id] = u
+    raiser_ids = {t.raised_by_user_id for t in rows}
+    user_ids = assignee_ids | raiser_ids
+    users_by_id: dict[int, User] = {}
+    if user_ids:
+        for u in db.scalars(select(User).where(User.id.in_(user_ids))).all():
+            users_by_id[u.id] = u
 
     ticket_ids = [t.id for t in rows]
     att_counts: dict[int, int] = {}
@@ -91,18 +93,40 @@ def list_tickets_for_user(
         elif t.product_module and not case_product_module_allowed(user, t.product_module):
             if not user_has_permission(user, "admin.override"):
                 continue
-        assignee = assignees_by_id.get(t.assigned_to_user_id) if t.assigned_to_user_id else None
-        items.append(_ticket_row(t, att_counts.get(t.id, 0), assignee_name=assignee.full_name if assignee else None))
+        assignee = users_by_id.get(t.assigned_to_user_id) if t.assigned_to_user_id else None
+        raiser = users_by_id.get(t.raised_by_user_id)
+        items.append(
+            _ticket_row(
+                t,
+                att_counts.get(t.id, 0),
+                assignee=assignee,
+                raiser=raiser,
+                case=cases_by_id.get(t.case_id) if t.case_id else None,
+            )
+        )
 
     return paginated_response(items, total, page, page_size)
 
 
-def _ticket_row(t: SupportTicket, attachment_count: int = 0, assignee_name: str | None = None) -> dict:
-    return {
+def _ticket_row(
+    t: SupportTicket,
+    attachment_count: int = 0,
+    *,
+    assignee: User | None = None,
+    raiser: User | None = None,
+    case: Case | None = None,
+) -> dict:
+    from app.services import case_service
+    from app.services.ticket_participant_service import primary_portal_label, role_labels, user_summary
+
+    row = {
         "id": t.id,
         "case_id": t.case_id,
         "product_module": t.product_module,
         "raised_by_user_id": t.raised_by_user_id,
+        "raised_by_name": raiser.full_name if raiser else None,
+        "raised_by_portal": primary_portal_label(list(raiser.role_names)) if raiser else None,
+        "raised_by_role_labels": role_labels(list(raiser.role_names)) if raiser else [],
         "subject": t.subject,
         "body": t.body,
         "category": t.category.value,
@@ -110,9 +134,14 @@ def _ticket_row(t: SupportTicket, attachment_count: int = 0, assignee_name: str 
         "topic_label": ticket_esc.TOPIC_LABELS.get(t.topic, "Other") if t.topic else "Other",
         "status": t.status.value,
         "assigned_to_user_id": t.assigned_to_user_id,
-        "assigned_to_name": assignee_name,
+        "assigned_to_name": assignee.full_name if assignee else None,
+        "assignee_role_labels": role_labels(list(assignee.role_names)) if assignee else [],
         "escalation_level": getattr(t, "escalation_level", 0) or 0,
         "attachment_count": attachment_count,
         "created_at": t.created_at.isoformat(),
         "updated_at": t.updated_at.isoformat(),
     }
+    if case:
+        row["case_code"] = case.case_code
+        row["child_name"] = case_service.case_child_display_name(case)
+    return row

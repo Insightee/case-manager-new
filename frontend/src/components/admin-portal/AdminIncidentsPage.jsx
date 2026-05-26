@@ -100,7 +100,7 @@ export function AdminIncidentsPage() {
           <AdminToolbar>
             <AdminSearchInput
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={setSearch}
               placeholder="Search title, reporter…"
             />
             <select
@@ -142,6 +142,7 @@ export function AdminIncidentsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%' }}>
                     <button
                       type="button"
+                      aria-expanded={expandedId === inc.id}
                       onClick={() => toggleExpand(inc)}
                       style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                     >
@@ -172,17 +173,7 @@ export function AdminIncidentsPage() {
                         ) : null}
                       </p>
                     </button>
-                    <div className="admin-btn-group">
-                      <StatusBadge status={inc.status} />
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--sm"
-                        style={expandedId === inc.id ? { background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' } : {}}
-                        onClick={() => toggleExpand(inc)}
-                      >
-                        {expandedId === inc.id ? 'Close' : 'Open →'}
-                      </button>
-                    </div>
+                    <StatusBadge status={inc.status} />
                   </div>
 
                   {expandedId === inc.id ? (

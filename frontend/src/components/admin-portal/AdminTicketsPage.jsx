@@ -18,7 +18,7 @@ export function AdminTicketsPage() {
   const [cases, setCases] = useState([])
   const [tickets, setTickets] = useState([])
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('OPEN')
+  const [statusFilter, setStatusFilter] = useState('ALL')
   const [moduleFilter, setModuleFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
@@ -103,7 +103,7 @@ export function AdminTicketsPage() {
       <AdminPanel title={`${filtered.length} tickets`} padded={false}>
         <div className="admin-panel__body">
           <AdminToolbar>
-            <AdminSearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search subject or ID…" />
+            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search subject or ID…" />
             <select
               className="admin-search__input"
               style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
@@ -127,7 +127,10 @@ export function AdminTicketsPage() {
           {loading ? (
             <div className="admin-skeleton" />
           ) : filtered.length === 0 ? (
-            <AdminEmptyState title="No tickets" description="Support requests will appear here." />
+            <AdminEmptyState
+              title="No tickets"
+              description="No support tickets match this filter. Tickets raised from the therapist or client portals appear here — try All statuses, or create a test ticket as therapist@demo.com."
+            />
           ) : (
             <ul className="admin-queue">
               {filtered.map((t) => (
@@ -135,12 +138,17 @@ export function AdminTicketsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%' }}>
                     <button
                       type="button"
+                      aria-expanded={expandedId === t.id}
                       onClick={() => toggleExpand(t)}
                       style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                     >
                       <p className="admin-queue__title">{t.subject}</p>
                       <p className="admin-queue__meta">
                         #{t.id}
+                        {t.raised_by_name
+                          ? ` · ${t.raised_by_name}${t.raised_by_portal ? ` (${t.raised_by_portal})` : ''}`
+                          : ''}
+                        {t.assigned_to_name ? ` → ${t.assigned_to_name}` : ' · Unassigned'}
                         {t.case_id && caseById[t.case_id]
                           ? ` · ${caseById[t.case_id].case_code} (${caseById[t.case_id].child_name})`
                           : ''}
@@ -148,28 +156,14 @@ export function AdminTicketsPage() {
                         {t.attachment_count > 0 ? ` · ${t.attachment_count} attachment(s)` : ''}
                       </p>
                     </button>
-                    <div className="admin-btn-group">
-                      <StatusBadge status={t.status} />
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--sm"
-                        style={expandedId === t.id ? { background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' } : {}}
-                        onClick={() => toggleExpand(t)}
-                      >
-                        {expandedId === t.id ? 'Close' : 'Open →'}
-                      </button>
-                    </div>
+                    <StatusBadge status={t.status} />
                   </div>
                   {expandedId === t.id ? (
                     <div style={{ marginTop: 12, width: '100%' }}>
                       {detailLoading ? (
                         <p className="admin-queue__meta">Loading…</p>
                       ) : detail ? (
-                        <TicketDetailPanel
-                          ticket={detail}
-                          showResolve={detail.status !== 'RESOLVED' && detail.status !== 'CLOSED'}
-                          onUpdated={onDetailUpdated}
-                        />
+                        <TicketDetailPanel ticket={detail} showResolve onUpdated={onDetailUpdated} />
                       ) : null}
                     </div>
                   ) : null}

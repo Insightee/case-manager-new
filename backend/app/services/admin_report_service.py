@@ -8,6 +8,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.module_access import get_allowed_case_product_modules
+from app.core.permissions import case_scope_check
+from app.models.report import ReportCategory
 from app.core.pagination import normalize_pagination, paginated_response
 from app.models.case import Case
 from app.models.child import Child
@@ -26,6 +28,13 @@ from app.schemas.admin_reports import (
 from app.core.module_write import guard_clinical_case
 from app.services import case_service, parent_reports_service, report_service
 from app.services.admin_scope_service import apply_case_scope
+
+_REPORTS_HUB_EXCLUDED_CATEGORIES = frozenset(
+    {
+        ReportCategory.INCIDENT_DOCUMENT.value,
+        ReportCategory.IEP_PLAN.value,
+    }
+)
 
 
 def _allowed_modules(user: User) -> list[str] | None:
@@ -76,6 +85,12 @@ def _monthly_base_stmt(db: Session, user: User):
         .join(Case, MonthlyReport.case_id == Case.id)
         .join(Child, Case.child_id == Child.id)
         .join(User, MonthlyReport.therapist_user_id == User.id)
+        .where(
+            or_(
+                MonthlyReport.category.is_(None),
+                MonthlyReport.category.not_in(_REPORTS_HUB_EXCLUDED_CATEGORIES),
+            )
+        )
     )
     return apply_case_scope(stmt, user)
 
@@ -173,8 +188,12 @@ def _apply_observation_filters(
     return stmt
 
 
-def _serialize_monthly_row(row: tuple) -> AdminReportListItem:
+def _serialize_monthly_row(db: Session, user: User, row: tuple) -> AdminReportListItem:
     report, case, child, therapist = row
+    if report_service.sync_published_status(report):
+        db.flush()
+    status_val = report.status.value
+    flags = report_service.publish_workflow_flags(db, user, report, case)
     return AdminReportListItem(
         report_type="monthly",
         id=report.id,
@@ -185,13 +204,16 @@ def _serialize_monthly_row(row: tuple) -> AdminReportListItem:
         therapist_user_id=report.therapist_user_id,
         therapist_name=_therapist_name(therapist),
         label=report.month,
-        status=report.status.value,
+        status=status_val,
         visibility_status=report.visibility_status.value if report.visibility_status else None,
         parent_review_status=report.parent_review_status,
         parent_feedback=report.parent_feedback,
         content_preview=_preview(report.summary or report.body_html),
         category=report.category,
         updated_at=report.updated_at or report.created_at,
+        can_cm_publish=flags["can_cm_publish"],
+        can_admin_override_publish=flags["can_admin_override_publish"],
+        days_until_admin_override=flags["days_until_admin_override"],
     )
 
 
@@ -244,7 +266,7 @@ def list_monthly_admin(
     )
     stmt = stmt.order_by(MonthlyReport.updated_at.desc().nullslast(), MonthlyReport.created_at.desc())
     rows, total = _paginate_joined(db, stmt, page=page, page_size=page_size)
-    items = [_serialize_monthly_row(r) for r in rows]
+    items = [_serialize_monthly_row(db, user, r) for r in rows]
     return items, paginated_response(items, total, page, page_size)
 
 
@@ -279,6 +301,13 @@ def list_observation_admin(
 
 def _status_counts(db: Session, model, user: User) -> AdminReportTypeSummary:
     base = select(model.status, func.count(model.id)).join(Case, model.case_id == Case.id)
+    if model is MonthlyReport:
+        base = base.where(
+            or_(
+                MonthlyReport.category.is_(None),
+                MonthlyReport.category.not_in(_REPORTS_HUB_EXCLUDED_CATEGORIES),
+            )
+        )
     base = apply_case_scope(base, user)
     base = base.group_by(model.status)
     rows = db.execute(base).all()
@@ -370,7 +399,11 @@ def get_summary(db: Session, user: User) -> AdminReportSummary:
             or_(
                 MonthlyReport.status == ReportStatus.UNDER_REVIEW,
                 MonthlyReport.parent_review_status == ParentReviewStatus.CHANGES_REQUESTED.value,
-            )
+            ),
+            or_(
+                MonthlyReport.category.is_(None),
+                MonthlyReport.category.not_in(_REPORTS_HUB_EXCLUDED_CATEGORIES),
+            ),
         )
     )
     queue_m = apply_case_scope(queue_m, user)
@@ -425,11 +458,22 @@ def _review_history(db: Session, entity_type: str, entity_id: int) -> list[Admin
 
 
 def get_monthly_detail(db: Session, user: User, report_id: int) -> AdminReportDetail | None:
+    from app.services import report_comment_service
+
     stmt = _monthly_base_stmt(db, user).where(MonthlyReport.id == report_id)
     row = db.execute(stmt).first()
     if not row:
-        return None
-    report, case, child, therapist = row
+        report = db.get(MonthlyReport, report_id)
+        if not report or (report.category or "") in _REPORTS_HUB_EXCLUDED_CATEGORIES:
+            return None
+        case = case_service.get_case(db, report.case_id)
+        if not case or not case_scope_check(db, user, case):
+            return None
+        child = case.child
+        therapist = db.get(User, report.therapist_user_id)
+    else:
+        report, case, child, therapist = row
+    flags = report_service.publish_workflow_flags(db, user, report, case)
     return AdminReportDetail(
         report_type="monthly",
         id=report.id,
@@ -453,9 +497,16 @@ def get_monthly_detail(db: Session, user: User, report_id: int) -> AdminReportDe
         parent_review_status=report.parent_review_status,
         parent_feedback=report.parent_feedback,
         parent_reviewed_at=report.parent_reviewed_at,
+        submitted_for_review_at=flags["submitted_for_review_at"],
+        cm_published_at=flags["cm_published_at"],
+        admin_published_at=flags["admin_published_at"],
+        can_cm_publish=flags["can_cm_publish"],
+        can_admin_override_publish=flags["can_admin_override_publish"],
+        days_until_admin_override=flags["days_until_admin_override"],
         created_at=report.created_at,
         updated_at=report.updated_at,
         review_history=_review_history(db, "monthly_report", report.id),
+        comments=report_comment_service.list_monthly_comments(db, report.id),
     )
 
 
@@ -585,14 +636,54 @@ def bulk_approve(
                     parent_reports_service.resend_to_parent(db, report)
                     succeeded += 1
                 else:
-                    report_service.review_monthly_report(
-                        db,
-                        report,
-                        user.id,
-                        ReviewDecision.APPROVE,
-                        comment,
-                        visibility,
-                    )
+                    case = case_service.get_case(db, report.case_id)
+                    vis = visibility or VisibilityStatus.APPROVED_FOR_PARENT
+                    if vis in report_service.PARENT_PUBLISH_VISIBILITY:
+                        cm_ready = (
+                            report_service.user_can_cm_publish(user)
+                            and report_service.can_cm_publish(report)
+                        )
+                        admin_ready = (
+                            report_service.user_can_admin_override_publish(user)
+                            and report_service.can_admin_override_publish(report)
+                        )
+                        if cm_ready:
+                            override = False
+                        elif admin_ready:
+                            override = True
+                        elif report_service.user_can_admin_override_publish(user):
+                            days = report_service.days_until_admin_override(report)
+                            failed += 1
+                            errors.append(
+                                f"Monthly report {rid}: admin override in {days} day(s)"
+                                if days is not None
+                                else f"Monthly report {rid}: admin override not available"
+                            )
+                            continue
+                        elif report_service.user_can_cm_publish(user):
+                            failed += 1
+                            errors.append(f"Monthly report {rid}: not ready for case manager publish")
+                            continue
+                        else:
+                            failed += 1
+                            errors.append(f"Monthly report {rid}: case manager must publish to parents")
+                            continue
+                        report_service.publish_monthly_to_parent(
+                            db, report, user, override=override, comment=comment
+                        )
+                        if case:
+                            report_service.notify_parents_monthly_report_published(
+                                db, None, report=report, case=case
+                            )
+                    else:
+                        report_service.review_monthly_report(
+                            db,
+                            report,
+                            user.id,
+                            ReviewDecision.APPROVE,
+                            comment,
+                            visibility,
+                        )
                     succeeded += 1
             else:
                 report = db.get(ObservationReport, rid)
@@ -766,10 +857,15 @@ def export_xlsx(
 ) -> bytes:
     from openpyxl import Workbook
 
+    from app.services.export_document_service import export_meta, xlsx_footer_rows, xlsx_preamble_rows
+
     rows = _export_rows(db, user, **filters)
+    meta = export_meta(user)
     wb = Workbook()
     ws = wb.active
     ws.title = "Reports"
+    for row in xlsx_preamble_rows("Report management export", "Monthly and observation reports", meta):
+        ws.append(row)
     headers = ["Type", "ID", "Case", "Child", "Label", "Status", "Therapist", "Parent review", "Updated"]
     ws.append(headers)
     for r in rows:
@@ -786,6 +882,8 @@ def export_xlsx(
                 r["updated_at"],
             ]
         )
+    for row in xlsx_footer_rows(meta):
+        ws.append(row)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -801,11 +899,19 @@ def export_pdf(
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+    from app.services.export_document_service import export_meta
+
     rows = _export_rows(db, user, **filters)
+    meta = export_meta(user)
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(letter))
     styles = getSampleStyleSheet()
-    story = [Paragraph("Report management export", styles["Title"]), Spacer(1, 12)]
+    story = [
+        Paragraph("Report management export", styles["Title"]),
+        Paragraph("Monthly and observation reports", styles["Normal"]),
+        Paragraph(f"Generated by {meta['generated_by']} · {meta['generated_at']}", styles["Normal"]),
+        Spacer(1, 12),
+    ]
     data = [["Type", "Case", "Child", "Label", "Status", "Therapist", "Updated"]]
     for r in rows[:200]:
         data.append(
@@ -831,6 +937,13 @@ def export_pdf(
         )
     )
     story.append(table)
+    story.append(Spacer(1, 16))
+    story.append(
+        Paragraph(
+            f"Document generated by {meta['generated_by']} on {meta['generated_at']}",
+            styles["Normal"],
+        )
+    )
     doc.build(story)
     return buf.getvalue()
 
@@ -857,11 +970,18 @@ def staff_update_monthly(
     guard_clinical_case(user, case, db, feature="reports")
     if report.status not in _EDITABLE_STATUSES:
         raise ValueError("Report cannot be edited in its current status")
+    allowed = {"month", "summary", "body_html", "plan_next_month", "category", "sub_category", "report_date"}
     for key, value in payload.items():
-        if value is not None and hasattr(report, key):
-            setattr(report, key, value)
+        if key not in allowed or value is None:
+            continue
+        if key == "category" and value in _REPORTS_HUB_EXCLUDED_CATEGORIES:
+            raise ValueError("This category is managed outside the reports hub")
+        setattr(report, key, value)
     if payload.get("body_html") is not None:
-        sync_summary_from_body(report)
+        try:
+            sync_summary_from_body(report)
+        except Exception as exc:
+            raise ValueError(f"Could not sync report summary: {exc}") from exc
     if report.status == ReportStatus.REJECTED:
         report.status = ReportStatus.UNDER_REVIEW
     db.flush()

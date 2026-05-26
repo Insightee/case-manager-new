@@ -57,7 +57,7 @@
 
 .admin-cases-pipeline__filters {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px 12px;
   margin-bottom: 14px;
   padding: 12px 14px;
@@ -66,21 +66,39 @@
   border-radius: 10px;
 }
 
-.admin-cases-pipeline__filter-field {
-  display: grid;
-  gap: 4px;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #64748b;
+@media (min-width: 640px) {
+  .admin-cases-pipeline__filters {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-.admin-cases-pipeline__filter-field .admin-input {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: normal;
+@media (min-width: 1024px) {
+  .admin-cases-pipeline__filters {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.admin-cases-pipeline__filter-span-2 {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 640px) {
+  .admin-cases-pipeline__filter-span-2 {
+    grid-column: span 2;
+  }
+}
+
+.admin-cases-pipeline__sort {
+  min-width: 160px;
+  flex-shrink: 0;
+}
+
+.admin-cases-pipeline__sort .admin-filter-field__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
 }
 
 .admin-cases-pipeline__hint {

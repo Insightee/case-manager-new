@@ -1614,6 +1614,12 @@ th {
   background: #f8fffe;
 }
 
+.login-demo-btn.is-selected {
+  border-color: #6366f1;
+  background: #eef2ff;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
 .login-demo-btn span {
   color: #64748b;
   font-weight: 600;

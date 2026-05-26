@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import require_permission, user_has_permission
+from app.core.permissions import RoleName, require_permission, user_has_permission
 from app.models.memo import Memo
 from app.models.user import EmploymentStatus, User
 
@@ -25,10 +26,19 @@ class TherapistStatusUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class TherapistLeaveBackfillUpdate(BaseModel):
+    year: int = Field(..., ge=2000, le=2100)
+    leave_paid_days_backfill: int = Field(0, ge=0)
+    leave_carry_forward_days_backfill: int = Field(0, ge=0)
+    leave_backfill_note: Optional[str] = None
+    employment_start_date: Optional[date] = None
+
+
 class MemoCreate(BaseModel):
     to_user_ids: list[int]
     subject: str
     body: str
+    send_as_email: bool = False
 
 
 def _serialise_user(u: User) -> dict:
@@ -56,10 +66,49 @@ def hr_ops_snapshot(
     return build_hr_ops_snapshot(db, user)
 
 
+@router.get("/recipients")
+def list_memo_recipients(
+    search: Optional[str] = None,
+    user: User = Depends(require_permission("memo.send")),
+    db: Session = Depends(get_db),
+):
+    from app.models.role import Role
+    from sqlalchemy.orm import selectinload
+
+    stmt = (
+        select(User)
+        .join(User.roles)
+        .where(Role.name.in_(("THERAPIST", "CASE_MANAGER", "MODULE_ADMIN", "HR", "FINANCE", "ADMIN")))
+        .options(selectinload(User.roles))
+        .order_by(User.full_name)
+    )
+    rows = db.scalars(stmt).unique().all()
+    out = []
+    q = (search or "").strip().lower()
+    for u in rows:
+        if not u.is_active:
+            continue
+        hay = f"{u.full_name} {u.email} {' '.join(u.role_names)}".lower()
+        if q and q not in hay:
+            continue
+        out.append(
+            {
+                "id": u.id,
+                "full_name": u.full_name,
+                "email": u.email,
+                "roles": u.role_names,
+                "kind": "therapist" if "THERAPIST" in u.role_names else "staff",
+            }
+        )
+    return out
+
+
 @router.get("/therapists")
 def list_therapists(
     search: Optional[str] = None,
     employment_status: Optional[str] = None,
+    include_leave_balance: bool = False,
+    year: Optional[int] = None,
     user: User = Depends(require_permission("therapist.read")),
     db: Session = Depends(get_db),
 ):
@@ -80,8 +129,55 @@ def list_therapists(
             continue
         if employment_status and (t.employment_status.value if t.employment_status else "ACTIVE") != employment_status:
             continue
-        result.append(_serialise_user(t))
+        row = _serialise_user(t)
+        if include_leave_balance and user_has_permission(user, "leave.manage"):
+            from app.services import leave_policy_service as policy
+
+            bal_year = year or date.today().year
+            row["leave_balance"] = policy.get_leave_balance(db, t, year=bal_year)
+        result.append(row)
     return result
+
+
+@router.patch("/therapists/{user_id}/leave-backfill")
+def update_therapist_leave_backfill(
+    user_id: int,
+    payload: TherapistLeaveBackfillUpdate,
+    request: Request,
+    user: User = Depends(require_permission("leave.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.models.role import Role
+    from app.services import leave_policy_service as policy
+    from app.services.therapist_profile_service import apply_leave_backfill, get_or_create_profile
+
+    target = db.get(User, user_id)
+    if not target or RoleName.THERAPIST.value not in target.role_names:
+        raise HTTPException(status_code=404, detail="Therapist not found")
+    profile = get_or_create_profile(db, user_id)
+    apply_leave_backfill(
+        profile,
+        year=payload.year,
+        paid_backfill=payload.leave_paid_days_backfill,
+        carry_backfill=payload.leave_carry_forward_days_backfill,
+        note=payload.leave_backfill_note,
+        employment_start_date=payload.employment_start_date,
+        actor_user_id=user.id,
+    )
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="update_leave_backfill",
+        entity_type="therapist_profile",
+        entity_id=profile.id,
+        **meta,
+    )
+    db.commit()
+    return {
+        "user_id": user_id,
+        "leave_balance": policy.get_leave_balance(db, target, year=payload.year),
+    }
 
 
 @router.patch("/therapists/{user_id}")
@@ -158,10 +254,43 @@ def send_memo(
         to_user_ids=payload.to_user_ids,
         subject=payload.subject,
         body=payload.body,
+        send_as_email=payload.send_as_email,
     )
     db.add(memo)
+    db.flush()
+    email_sent = False
+    if payload.send_as_email:
+        from datetime import datetime, timezone
+
+        from app.services import email_service
+
+        recipients = []
+        for uid in payload.to_user_ids:
+            target = db.get(User, uid)
+            if target and target.email:
+                recipients.append(target.email)
+        if recipients:
+            email_sent = email_service.send_email(
+                to=recipients,
+                subject=payload.subject,
+                body_text=payload.body,
+            )
+            if email_sent:
+                memo.email_sent_at = datetime.now(timezone.utc)
     meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="send_memo", entity_type="memo", entity_id=memo.id, **meta)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="send_memo",
+        entity_type="memo",
+        entity_id=memo.id,
+        new_value={"send_as_email": payload.send_as_email, "email_sent": email_sent},
+        **meta,
+    )
     db.commit()
     db.refresh(memo)
-    return {"id": memo.id, "created_at": memo.created_at.isoformat()}
+    return {
+        "id": memo.id,
+        "created_at": memo.created_at.isoformat(),
+        "email_sent": bool(memo.email_sent_at),
+    }

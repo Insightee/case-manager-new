@@ -84,10 +84,14 @@ def _notify_escalation(db: Session, incident: Incident, body: str) -> None:
     if incident.assigned_to_user_id:
         uids.add(incident.assigned_to_user_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+    from app.services.ticket_escalation_service import resolve_users_for_role_tag
+
     for role in incident.tagged_roles or []:
-        uid = find_assignee_for_role(db, role if role != "CASE_MANAGER" else RoleName.CASE_MANAGER.value, case)
-        if uid:
+        for uid in resolve_users_for_role_tag(db, role, case):
             uids.add(uid)
+    for uid in incident.tagged_user_ids or []:
+        if uid is not None:
+            uids.add(int(uid))
     if incident.primary_owner_role == "HR":
         uid = find_assignee_for_role(db, RoleName.HR.value, case)
         if uid:

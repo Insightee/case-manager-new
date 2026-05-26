@@ -65,6 +65,18 @@
   box-sizing: border-box;
 }
 
+.iep-builder__field textarea,
+.iep-builder__textarea-lg {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.iep-builder__hint {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
 .iep-builder__env-row {
   border: 1px dashed #e2e8f0;
   border-radius: 10px;
@@ -111,6 +123,111 @@
   font-size: 0.9rem;
   line-height: 1.5;
   color: #334155;
+}
+
+.iep-builder__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.iep-builder__banner {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.iep-builder__banner p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #92400e;
+}
+
+.iep-builder__versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.iep-builder__versions-label {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.iep-builder__version-chip {
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #475569;
+}
+
+.iep-builder__alert {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.iep-builder__alert--error {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.iep-builder__alert--ok {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.iep-builder__audit {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.iep-builder__audit ul {
+  margin: 8px 0 0;
+  padding-left: 1.2rem;
+}
+
+.iep-builder__share-flow {
+  max-width: 720px;
+}
+
+.iep-builder__share-steps {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.iep-builder__share-steps .is-active {
+  color: #3730a3;
+}
+
+.iep-builder__attach-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.iep-builder__attach-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.85rem;
 }
 
 @media (max-width: 640px) {

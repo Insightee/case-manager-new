@@ -6,7 +6,14 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core.modules import MODULE_BY_ID, MODULE_SCOPED_ROLES, PRODUCT_MODULES, ROLE_DEFAULT_MODULES, ModuleFeature, ProductModule
+from app.core.modules import CLINICAL_FEATURES, MODULE_BY_ID, MODULE_SCOPED_ROLES, ModuleFeature, ProductModule, org_catalog_for_api
+from app.core.service_access import (
+    legacy_module_assignments_to_service_grants,
+    normalize_org_capability_grants,
+    normalize_service_access_grants,
+    normalize_service_id,
+    service_grants_to_module_assignments,
+)
 
 # Staff roles configurable in the access editor (not therapist/parent/school).
 ASSIGNABLE_STAFF_ROLES: tuple[dict[str, str], ...] = (
@@ -51,7 +58,7 @@ NAV_BY_FEATURE: dict[str, str] = {
 
 
 def build_module_registry(db: Session | None = None) -> dict[str, ProductModule]:
-    """Fixed modules plus active service categories."""
+    """Org capabilities plus active service categories (clinical scope)."""
     registry: dict[str, ProductModule] = dict(MODULE_BY_ID)
     if db is None:
         return registry
@@ -60,7 +67,6 @@ def build_module_registry(db: Session | None = None) -> dict[str, ProductModule]
         from sqlalchemy import select
 
         from app.core.database import engine
-        from app.core.modules import _CLINICAL_FEATURES
         from app.models.service_category import ServiceCategory
 
         insp = sa_inspect(engine)
@@ -71,37 +77,107 @@ def build_module_registry(db: Session | None = None) -> dict[str, ProductModule]
             .where(ServiceCategory.is_active.is_(True))
             .order_by(ServiceCategory.sort_order, ServiceCategory.label)
         ).all()
+        from app.services.service_category_service import resolved_product_modules
+
         for cat in rows:
-            if cat.id in registry:
-                continue
-            registry[cat.id] = ProductModule(
-                id=cat.id,
-                label=cat.label,
-                description=cat.description or f"{cat.label} service programme.",
-                case_product_modules=(cat.id,),
-                features=_CLINICAL_FEATURES,
-            )
+            sid = normalize_service_id(cat.id)
+            pms = resolved_product_modules(cat)
+            case_pm_ids = tuple(pm["id"] for pm in pms) or (sid,)
+            if sid not in registry:
+                registry[sid] = ProductModule(
+                    id=sid,
+                    label=cat.label,
+                    description=cat.description or f"{cat.label} service line.",
+                    case_product_modules=case_pm_ids,
+                    features=CLINICAL_FEATURES,
+                )
+            for pm in pms:
+                pid = normalize_service_id(pm["id"])
+                if pid in registry:
+                    continue
+                registry[pid] = ProductModule(
+                    id=pid,
+                    label=pm["label"],
+                    description=f"{pm['label']} ({cat.label})",
+                    case_product_modules=(pid,),
+                    features=CLINICAL_FEATURES,
+                )
     except Exception:
         pass
     return registry
 
 
-def module_catalog_entries(db: Session | None = None) -> list[dict]:
+def _service_category_id_for_module(db: Session | None, module_id: str) -> str | None:
+    if db is None:
+        return None
+    try:
+        from sqlalchemy import inspect as sa_inspect
+        from sqlalchemy import select
+
+        from app.core.database import engine
+        from app.models.service_category import ServiceCategory
+        from app.services.service_category_service import resolved_product_modules
+
+        insp = sa_inspect(engine)
+        if not insp.has_table("service_categories"):
+            return None
+        for cat in db.scalars(select(ServiceCategory).where(ServiceCategory.is_active.is_(True))).all():
+            for pm in resolved_product_modules(cat):
+                if pm["id"] == module_id:
+                    return cat.id
+    except Exception:
+        return None
+    return None
+
+
+def service_catalog_entries(db: Session | None = None) -> list[dict]:
+    """Service lines for RBAC service access section."""
     registry = build_module_registry(db)
-    return [
-        {
-            "id": m.id,
-            "label": m.label,
-            "description": m.description,
-            "case_product_modules": list(m.case_product_modules),
-            "module_type": "service" if m.id not in MODULE_BY_ID else "programme",
-            "features": [
-                {"id": f.id, "label": f.label, "permissions": list(f.permissions)}
-                for f in m.features
-            ],
-        }
-        for m in registry.values()
-    ]
+    out: list[dict] = []
+    for mid, m in registry.items():
+        if mid in MODULE_BY_ID:
+            continue
+        group = "Clinical"
+        if db is not None:
+            try:
+                from app.models.service_category import ServiceCategory
+
+                cat = db.get(ServiceCategory, mid)
+                if cat and getattr(cat, "access_group", None):
+                    group = cat.access_group
+            except Exception:
+                pass
+        out.append(
+            {
+                "id": m.id,
+                "label": m.label,
+                "description": m.description,
+                "access_group": group,
+                "case_product_modules": list(m.case_product_modules),
+                "module_type": "service",
+                "features": [
+                    {"id": f.id, "label": f.label, "permissions": list(f.permissions)}
+                    for f in m.features
+                ],
+            }
+        )
+    return out
+
+
+def module_catalog_entries(db: Session | None = None) -> list[dict]:
+    """Combined catalog for legacy consumers."""
+    return [*service_catalog_entries(db), *org_catalog_for_api()]
+
+
+def rbac_catalog_payload(db: Session | None = None) -> dict:
+    from app.core.modules import role_defaults_for_api
+
+    return {
+        "service_categories": service_catalog_entries(db),
+        "org_capabilities": org_catalog_for_api(),
+        "modules": module_catalog_entries(db),
+        "role_defaults": role_defaults_for_api(db),
+    }
 
 
 def _normalize_grant_entry(raw: Any) -> dict:
@@ -168,44 +244,91 @@ def sync_user_access_fields(
     role_names: list[str],
     module_assignments: list[str] | None = None,
     module_access_grants: dict | None = None,
+    service_access_grants: dict | None = None,
+    org_capability_grants: dict | None = None,
     feature_overrides: dict | None = None,
     view_only: bool | None = None,
+    db: Session | None = None,
 ) -> None:
     """Persist grants/overrides and keep module_assignments in sync."""
     roles = {r.upper() for r in role_names}
+    vo = bool(view_only) if view_only is not None else getattr(user, "is_view_only", False)
     if "SUPER_ADMIN" in roles:
         user.module_assignments = []
         user.module_access_grants = {}
+        user.service_access_grants = {}
+        user.org_capability_grants = {}
         user.feature_overrides = {}
         if view_only is not None:
             user.is_view_only = view_only
         return
 
-    grants = normalize_module_access_grants(
-        module_access_grants,
-        module_ids=module_assignments,
-        view_only=bool(view_only) if view_only is not None else getattr(user, "is_view_only", False),
+    svc = normalize_service_access_grants(
+        service_access_grants,
+        view_only=vo,
     )
-    user.module_access_grants = grants
+    org = normalize_org_capability_grants(org_capability_grants)
+    if not svc and (module_access_grants or module_assignments):
+        svc = legacy_module_assignments_to_service_grants(
+            module_assignments,
+            module_access_grants,
+            db=db,
+            view_only=vo,
+        )
+        if module_access_grants and not org:
+            from app.core.modules import is_org_capability
+
+            org = normalize_org_capability_grants(
+                {k: v for k, v in module_access_grants.items() if is_org_capability(k)}
+            )
+    if not org and module_access_grants:
+        from app.core.modules import is_org_capability
+
+        org = normalize_org_capability_grants(
+            {k: v for k, v in (module_access_grants or {}).items() if is_org_capability(k)}
+        )
+
+    user.service_access_grants = svc
+    user.org_capability_grants = org
+    combined = {**svc, **org}
+    user.module_access_grants = combined
     user.feature_overrides = normalize_feature_overrides(feature_overrides)
-    user.module_assignments = grants_to_module_assignments(grants)
+    base_assignments = service_grants_to_module_assignments(svc, org)
+    if module_assignments is not None:
+        registry = build_module_registry(db)
+        extras: list[str] = []
+        for raw in module_assignments:
+            mid = normalize_service_id(raw)
+            if mid in MODULE_BY_ID:
+                continue
+            if mid in registry and mid not in base_assignments:
+                extras.append(mid)
+        user.module_assignments = list(dict.fromkeys([*base_assignments, *extras]))
+    else:
+        user.module_assignments = base_assignments
     if view_only is not None:
         user.is_view_only = view_only
         if view_only:
-            for mid in list(user.module_access_grants.keys()):
-                user.module_access_grants[mid] = {
-                    **user.module_access_grants[mid],
-                    "access": "view",
-                }
+            for key in ("service_access_grants", "org_capability_grants", "module_access_grants"):
+                grants = getattr(user, key, None) or {}
+                for mid in list(grants.keys()):
+                    grants[mid] = {**grants[mid], "access": "view"}
+                setattr(user, key, grants)
 
 
 def user_module_grant(user, module_id: str) -> dict | None:
+    mid = normalize_service_id(module_id)
+    if mid in MODULE_BY_ID:
+        org = getattr(user, "org_capability_grants", None) or {}
+        if mid in org:
+            return _normalize_grant_entry(org[mid])
+    svc = getattr(user, "service_access_grants", None) or {}
+    if svc and mid in svc:
+        return _normalize_grant_entry(svc[mid])
     grants = getattr(user, "module_access_grants", None) or {}
-    mid = module_id.strip().lower()
     if mid in grants:
         return _normalize_grant_entry(grants[mid])
-    # Legacy: enabled if in module_assignments
-    assigned = [str(m).strip().lower() for m in (user.module_assignments or [])]
+    assigned = [normalize_service_id(m) for m in (user.module_assignments or [])]
     if mid in assigned:
         access = "view" if getattr(user, "is_view_only", False) else "write"
         return {"enabled": True, "access": access}
@@ -256,8 +379,17 @@ def effective_features_for_user(user, db: Session | None = None) -> list[str]:
         return ["*"]
     registry = build_module_registry(db)
     feats: set[str] = set()
-    for mid in user.module_assignments or []:
-        mod = registry.get(str(mid).strip().lower())
+    enabled_ids: set[str] = set()
+    for mid, g in (getattr(user, "service_access_grants", None) or {}).items():
+        if g.get("enabled"):
+            enabled_ids.add(normalize_service_id(mid))
+    for mid, g in (getattr(user, "org_capability_grants", None) or {}).items():
+        if g.get("enabled"):
+            enabled_ids.add(str(mid).strip().lower())
+    if not enabled_ids:
+        enabled_ids = {normalize_service_id(m) for m in (user.module_assignments or [])}
+    for mid in enabled_ids:
+        mod = registry.get(mid)
         if not mod:
             continue
         if not user_module_enabled(user, mod.id):

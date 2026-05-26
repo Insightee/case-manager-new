@@ -61,6 +61,7 @@ export function resolveNotificationLink(entityType, entityId, portal) {
     case 'case_manager_meeting':
     case 'cm_meeting':
       if (portal === 'parent') return '/parent/book'
+      if (portal === 'therapist') return '/therapist/cm-meetings'
       return '/admin/cm-meetings'
     case 'user':
     case 'invite_token':

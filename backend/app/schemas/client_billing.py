@@ -63,3 +63,62 @@ class AdminClientInvoiceUpdate(BaseModel):
     discount_inr: Optional[float] = Field(default=None, ge=0)
     adjustment_inr: Optional[float] = None
     status: Optional[Literal["DRAFT", "GENERATED"]] = None
+    payment_policy_snapshot: Optional[str] = None
+    gateway_enabled: Optional[bool] = None
+    gateway_payment_url: Optional[str] = None
+
+
+class ClientInvoiceLineUpsert(BaseModel):
+    session_date: date
+    therapist_name: str = Field(min_length=1, max_length=128)
+    service_label: str = Field(min_length=1, max_length=128)
+    session_status: str = Field(default="COMPLETED", max_length=64)
+    amount_inr: float
+    line_item_type: Optional[str] = "SESSION_CHARGE"
+    quantity: Optional[float] = Field(default=1, gt=0)
+    unit_rate_inr: Optional[float] = None
+    gst_rate_percent: Optional[float] = None
+    gst_amount_inr: Optional[float] = None
+    taxable_amount_inr: Optional[float] = None
+    session_id: Optional[int] = None
+    daily_log_id: Optional[int] = None
+    billing_ledger_id: Optional[int] = None
+    therapist_user_id: Optional[int] = None
+    finance_note: Optional[str] = None
+    parent_summary: Optional[str] = None
+
+
+class ClientInvoiceLinePatch(BaseModel):
+    session_date: Optional[date] = None
+    therapist_name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    service_label: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    session_status: Optional[str] = None
+    amount_inr: Optional[float] = None
+    line_item_type: Optional[str] = None
+    quantity: Optional[float] = Field(default=None, gt=0)
+    unit_rate_inr: Optional[float] = None
+    gst_rate_percent: Optional[float] = None
+    gst_amount_inr: Optional[float] = None
+    taxable_amount_inr: Optional[float] = None
+    finance_note: Optional[str] = None
+    parent_summary: Optional[str] = None
+
+
+class RemindTherapistRequest(BaseModel):
+    case_id: int
+    billing_month: str
+    message: Optional[str] = None
+
+
+class BuildFromLedgerRequest(BaseModel):
+    include_pending: bool = False
+    force: bool = False
+
+
+class SaveCaseBillingPreferences(BaseModel):
+    invoice_type: Optional[str] = None
+    gst_applicable: Optional[bool] = None
+    gst_rate_percent: Optional[float] = None
+    gateway_enabled: Optional[bool] = None
+    due_date_offset_days: Optional[int] = None
+    payment_policy_template: Optional[str] = None

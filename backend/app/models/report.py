@@ -56,6 +56,11 @@ class MonthlyReport(Base):
     parent_review_status: Mapped[Optional[str]] = mapped_column(String(32))
     parent_feedback: Mapped[Optional[str]] = mapped_column(Text)
     parent_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    submitted_for_review_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    cm_published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    cm_published_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    admin_published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    admin_published_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

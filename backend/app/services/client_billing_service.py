@@ -6,7 +6,7 @@ from typing import Optional
 import secrets
 import shutil
 
-from fastapi import UploadFile
+from fastapi import BackgroundTasks, UploadFile
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -30,7 +30,8 @@ from app.models.client_billing import (
 from app.models.daily_log import DailyLog
 from app.models.user import User
 from app.core.config import settings
-from app.services import email_service, notification_service, parent_service
+from app.services import billing_composer_service, notification_service, parent_service
+from app.services.email.service import enqueue_parent_invoice_email, parent_invoice_ready_email
 
 
 def _parent_case_ids(db: Session, user_id: int) -> list[int]:
@@ -450,7 +451,13 @@ def resolve_dispute(
     return dispute
 
 
-def notify_parent_invoice_issued(db: Session, invoice_id: int, *, resend: bool = False) -> dict:
+def notify_parent_invoice_issued(
+    db: Session,
+    invoice_id: int,
+    background_tasks: BackgroundTasks | None = None,
+    *,
+    resend: bool = False,
+) -> dict:
     """Email + in-app notice. Idempotent unless resend=True. Sets sent_at and promotes GENERATED → SENT."""
     inv = db.get(ClientInvoice, invoice_id)
     if not inv:
@@ -461,6 +468,11 @@ def notify_parent_invoice_issued(db: Session, invoice_id: int, *, resend: bool =
     if inv.sent_at and not resend:
         return {"status": "already_sent", "sent_at": inv.sent_at.isoformat()}
 
+    if not inv.payment_policy_snapshot:
+        from app.services.billing_composer_service import DEFAULT_PAYMENT_POLICY
+
+        inv.payment_policy_snapshot = DEFAULT_PAYMENT_POLICY
+
     case = db.get(Case, inv.case_id)
     child_name = case.child.full_name if case and case.child else "Your child"
     balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
@@ -468,7 +480,7 @@ def notify_parent_invoice_issued(db: Session, invoice_id: int, *, resend: bool =
     due_str = inv.due_date.strftime("%d %b %Y") if inv.due_date else None
     url = f"{settings.frontend_url.rstrip('/')}/parent/billing"
 
-    email_service.parent_invoice_ready_email(
+    email_kwargs = dict(
         to=parent.email,
         parent_name=parent.full_name or "there",
         invoice_number=inv.invoice_number,
@@ -479,6 +491,10 @@ def notify_parent_invoice_issued(db: Session, invoice_id: int, *, resend: bool =
         is_overdue=is_overdue,
         payments_url=url,
     )
+    if background_tasks is not None:
+        enqueue_parent_invoice_email(background_tasks, db, **email_kwargs)
+    else:
+        parent_invoice_ready_email(**email_kwargs)
     now = datetime.now(timezone.utc)
     inv.sent_at = now
     if inv.status == ClientInvoiceStatus.GENERATED:
@@ -556,10 +572,15 @@ def admin_list_invoices(
     invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
+    claims_pending: bool = False,
 ) -> list[dict]:
     from datetime import date as date_type, datetime, timedelta, timezone
 
-    stmt = select(ClientInvoice).order_by(ClientInvoice.created_at.desc())
+    stmt = (
+        select(ClientInvoice)
+        .options(selectinload(ClientInvoice.payments))
+        .order_by(ClientInvoice.created_at.desc())
+    )
     if month:
         stmt = stmt.where(ClientInvoice.billing_month == month)
     elif year:
@@ -603,6 +624,17 @@ def admin_list_invoices(
             ) or case
         parent = parents.get(inv.parent_user_id)
         item = _admin_invoice_summary_row(inv, case, parent)
+        item["payments"] = [
+            {
+                "id": p.id,
+                "amountInr": float(p.amount_inr),
+                "paymentStatus": p.payment_status.value.lower(),
+            }
+            for p in (inv.payments or [])
+        ]
+        if claims_pending:
+            if not any(p.payment_status == ClientPaymentStatus.PENDING_REVIEW for p in (inv.payments or [])):
+                continue
         if filter_overdue:
             balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
             if not _invoice_is_overdue(inv, balance):
@@ -636,12 +668,15 @@ def admin_invoice_filter_options(db: Session) -> dict:
         if m
     ]
     years = sorted({int(m.split()[-1]) for m in months if m and m.split()[-1].isdigit()}, reverse=True)
+    service_rows = db.scalars(select(Case.product_module).distinct().order_by(Case.product_module)).all()
+    services = sorted({s for s in service_rows if s})
     return {
         "billingMonths": months,
         "years": years,
         "statuses": [s.value for s in ClientInvoiceStatus] + ["OVERDUE"],
         "invoiceTypes": [t.value for t in ClientInvoiceType],
-        "services": ["homecare", "shadow_support"],
+        "services": services,
+        "composerQueues": list(billing_composer_service.COMPOSER_QUEUES),
     }
 
 
@@ -668,21 +703,13 @@ def admin_get_invoice_detail(db: Session, invoice_id: int) -> dict:
             "discountInr": float(inv.discount_inr or 0),
             "packageDeductionInr": float(inv.package_deduction_inr or 0),
             "adjustmentInr": float(inv.adjustment_inr or 0),
-            "lines": [
-                {
-                    "id": line.id,
-                    "sessionDate": line.session_date.isoformat(),
-                    "therapistName": line.therapist_name,
-                    "serviceLabel": line.service_label,
-                    "sessionStatus": line.session_status,
-                    "amountInr": float(line.amount_inr),
-                    "packageDeducted": line.package_deducted,
-                    "parentSummary": line.parent_summary,
-                    "sessionId": line.session_id,
-                    "dailyLogId": line.daily_log_id,
-                }
-                for line in lines
-            ],
+            "organisationId": inv.organisation_id,
+            "purchaseOrderRef": inv.purchase_order_ref,
+            "contractRef": inv.contract_ref,
+            "lines": [_serialize_line(line) for line in lines],
+            "paymentPolicySnapshot": inv.payment_policy_snapshot,
+            "gatewayEnabled": bool(getattr(inv, "gateway_enabled", False)),
+            "gatewayPaymentUrl": getattr(inv, "gateway_payment_url", None),
             "payments": [
                 {
                     "id": p.id,
@@ -807,8 +834,188 @@ def admin_update_invoice(db: Session, invoice_id: int, updates: dict) -> ClientI
         )
     if updates.get("status") == "GENERATED" and inv.status == ClientInvoiceStatus.DRAFT:
         inv.status = ClientInvoiceStatus.GENERATED
+    if "payment_policy_snapshot" in updates:
+        inv.payment_policy_snapshot = updates["payment_policy_snapshot"]
+    if "gateway_enabled" in updates and updates["gateway_enabled"] is not None:
+        inv.gateway_enabled = bool(updates["gateway_enabled"])
+    if "gateway_payment_url" in updates:
+        inv.gateway_payment_url = updates["gateway_payment_url"]
     db.flush()
     return inv
+
+
+def _require_draft_invoice(inv: ClientInvoice) -> None:
+    if inv.status != ClientInvoiceStatus.DRAFT:
+        raise ValueError("Only draft invoices can be edited")
+
+
+def _serialize_line(line: ClientInvoiceLine) -> dict:
+    return {
+        "id": line.id,
+        "sessionDate": line.session_date.isoformat(),
+        "therapistName": line.therapist_name,
+        "serviceLabel": line.service_label,
+        "sessionStatus": line.session_status,
+        "amountInr": float(line.amount_inr),
+        "lineItemType": line.line_item_type or "SESSION_CHARGE",
+        "quantity": float(line.quantity) if line.quantity is not None else 1,
+        "unitRateInr": float(line.unit_rate_inr) if line.unit_rate_inr is not None else None,
+        "packageDeducted": line.package_deducted,
+        "parentSummary": line.parent_summary,
+        "sessionId": line.session_id,
+        "dailyLogId": line.daily_log_id,
+        "gstRatePercent": float(line.gst_rate_percent) if line.gst_rate_percent is not None else None,
+        "gstAmountInr": float(line.gst_amount_inr) if line.gst_amount_inr is not None else None,
+        "hsnSacCode": line.hsn_sac_code,
+        "taxableAmountInr": float(line.taxable_amount_inr) if line.taxable_amount_inr is not None else None,
+        "billingLedgerId": line.billing_ledger_id,
+        "therapistUserId": line.therapist_user_id,
+        "financeNote": line.finance_note,
+        "sortOrder": line.sort_order,
+    }
+
+
+def recalculate_client_invoice(db: Session, invoice_id: int) -> ClientInvoice:
+    inv = db.scalar(
+        select(ClientInvoice)
+        .where(ClientInvoice.id == invoice_id)
+        .options(selectinload(ClientInvoice.lines))
+    )
+    if not inv:
+        raise ValueError("Invoice not found")
+    subtotal = 0.0
+    tax = 0.0
+    for line in inv.lines or []:
+        if line.line_item_type == "DISCOUNT":
+            continue
+        taxable = float(line.taxable_amount_inr if line.taxable_amount_inr is not None else line.amount_inr)
+        if line.line_item_type != "TAX":
+            subtotal += taxable
+        tax += float(line.gst_amount_inr or 0)
+    inv.subtotal_inr = round(subtotal, 2)
+    inv.tax_inr = round(tax, 2)
+    inv.total_inr = max(
+        0,
+        round(
+            float(inv.subtotal_inr)
+            + float(inv.tax_inr)
+            - float(inv.discount_inr or 0)
+            - float(inv.package_deduction_inr or 0)
+            + float(inv.adjustment_inr or 0),
+            2,
+        ),
+    )
+    db.flush()
+    return inv
+
+
+def admin_add_invoice_line(db: Session, invoice_id: int, data: dict) -> ClientInvoiceLine:
+    inv = db.get(ClientInvoice, invoice_id)
+    if not inv:
+        raise ValueError("Invoice not found")
+    _require_draft_invoice(inv)
+    sort = max((ln.sort_order for ln in (inv.lines or [])), default=-1) + 1
+    qty = float(data.get("quantity") or 1)
+    rate = data.get("unit_rate_inr")
+    amount = float(data["amount_inr"])
+    if rate is not None:
+        amount = round(qty * float(rate), 2)
+    line = ClientInvoiceLine(
+        client_invoice_id=invoice_id,
+        session_id=data.get("session_id"),
+        daily_log_id=data.get("daily_log_id"),
+        session_date=data["session_date"],
+        therapist_name=data["therapist_name"],
+        service_label=data["service_label"],
+        session_status=data.get("session_status", "COMPLETED"),
+        amount_inr=amount,
+        line_item_type=data.get("line_item_type") or "SESSION_CHARGE",
+        quantity=qty,
+        unit_rate_inr=rate,
+        gst_rate_percent=data.get("gst_rate_percent"),
+        gst_amount_inr=data.get("gst_amount_inr"),
+        taxable_amount_inr=data.get("taxable_amount_inr") or amount,
+        billing_ledger_id=data.get("billing_ledger_id"),
+        therapist_user_id=data.get("therapist_user_id"),
+        finance_note=data.get("finance_note"),
+        parent_summary=data.get("parent_summary"),
+        sort_order=sort,
+    )
+    db.add(line)
+    db.flush()
+    recalculate_client_invoice(db, invoice_id)
+    return line
+
+
+def admin_patch_invoice_line(
+    db: Session, invoice_id: int, line_id: int, data: dict
+) -> ClientInvoiceLine:
+    inv = db.get(ClientInvoice, invoice_id)
+    if not inv:
+        raise ValueError("Invoice not found")
+    _require_draft_invoice(inv)
+    line = db.get(ClientInvoiceLine, line_id)
+    if not line or line.client_invoice_id != invoice_id:
+        raise ValueError("Line not found")
+    before = _serialize_line(line)
+    for key, attr in (
+        ("session_date", "session_date"),
+        ("therapist_name", "therapist_name"),
+        ("service_label", "service_label"),
+        ("session_status", "session_status"),
+        ("amount_inr", "amount_inr"),
+        ("line_item_type", "line_item_type"),
+        ("quantity", "quantity"),
+        ("unit_rate_inr", "unit_rate_inr"),
+        ("gst_rate_percent", "gst_rate_percent"),
+        ("gst_amount_inr", "gst_amount_inr"),
+        ("taxable_amount_inr", "taxable_amount_inr"),
+        ("finance_note", "finance_note"),
+        ("parent_summary", "parent_summary"),
+    ):
+        if key in data and data[key] is not None:
+            setattr(line, attr, data[key])
+    if line.quantity and line.unit_rate_inr:
+        line.amount_inr = round(float(line.quantity) * float(line.unit_rate_inr), 2)
+        if line.taxable_amount_inr is None:
+            line.taxable_amount_inr = line.amount_inr
+    db.flush()
+    recalculate_client_invoice(db, invoice_id)
+    line._audit_before = before  # noqa: SLF001 — consumed by API layer
+    return line
+
+
+def admin_delete_invoice_line(db: Session, invoice_id: int, line_id: int) -> None:
+    inv = db.get(ClientInvoice, invoice_id)
+    if not inv:
+        raise ValueError("Invoice not found")
+    _require_draft_invoice(inv)
+    line = db.get(ClientInvoiceLine, line_id)
+    if not line or line.client_invoice_id != invoice_id:
+        raise ValueError("Line not found")
+    db.delete(line)
+    db.flush()
+    recalculate_client_invoice(db, invoice_id)
+
+
+def save_case_billing_preferences(db: Session, case_id: int, data: dict) -> None:
+    from app.models.case_billing_preference import CaseBillingPreference
+
+    pref = db.scalar(select(CaseBillingPreference).where(CaseBillingPreference.case_id == case_id))
+    if not pref:
+        pref = CaseBillingPreference(case_id=case_id)
+        db.add(pref)
+    for key in (
+        "invoice_type",
+        "gst_applicable",
+        "gst_rate_percent",
+        "gateway_enabled",
+        "due_date_offset_days",
+        "payment_policy_template",
+    ):
+        if key in data and data[key] is not None:
+            setattr(pref, key, data[key])
+    db.flush()
 
 
 def admin_summary(db: Session) -> dict:
@@ -952,6 +1159,7 @@ def confirm_payment_claim(db: Session, payment_id: int, admin_user_id: int) -> C
         inv.status = ClientInvoiceStatus.PAID
     elif float(inv.amount_paid_inr) > 0:
         inv.status = ClientInvoiceStatus.PARTIALLY_PAID
+    _activate_packages_for_invoice(db, inv)
     notification_service.create_notification(
         db,
         user_id=inv.parent_user_id,
@@ -1061,3 +1269,109 @@ def client_invoice_pdf_bytes(inv_detail: dict) -> bytes:
     story.append(tbl)
     doc.build(story)
     return buf.getvalue()
+
+
+def _activate_packages_for_invoice(db: Session, inv: ClientInvoice) -> None:
+    if inv.status not in (ClientInvoiceStatus.PAID, ClientInvoiceStatus.PARTIALLY_PAID):
+        return
+    packages = db.scalars(
+        select(CarePackage).where(
+            CarePackage.client_invoice_id == inv.id,
+            CarePackage.status == CarePackageStatus.PENDING_PAYMENT,
+        )
+    ).all()
+    for pkg in packages:
+        pkg.status = CarePackageStatus.ACTIVE
+        if not pkg.valid_from:
+            pkg.valid_from = date.today()
+    db.flush()
+
+
+def admin_list_packages(db: Session, *, case_id: Optional[int] = None) -> list[dict]:
+    stmt = select(CarePackage).order_by(CarePackage.created_at.desc())
+    if case_id:
+        stmt = stmt.where(CarePackage.case_id == case_id)
+    rows = db.scalars(stmt).all()
+    return [
+        {
+            "id": p.id,
+            "caseId": p.case_id,
+            "parentUserId": p.parent_user_id,
+            "name": p.name,
+            "totalSessions": p.total_sessions,
+            "usedSessions": p.used_sessions,
+            "remainingSessions": max(0, p.total_sessions - p.used_sessions),
+            "validityEnd": p.validity_end.isoformat() if p.validity_end else None,
+            "validFrom": p.valid_from.isoformat() if p.valid_from else None,
+            "status": p.status.value,
+            "serviceLabel": p.service_label,
+            "amountInr": float(p.amount_inr) if p.amount_inr is not None else None,
+            "productBillingRuleId": p.product_billing_rule_id,
+            "clientInvoiceId": p.client_invoice_id,
+        }
+        for p in rows
+    ]
+
+
+def admin_create_package(db: Session, data: dict) -> dict:
+    case = db.get(Case, data["case_id"])
+    if not case:
+        raise ValueError("Case not found")
+    pkg = CarePackage(
+        case_id=data["case_id"],
+        parent_user_id=data["parent_user_id"],
+        name=data["name"],
+        total_sessions=data["total_sessions"],
+        validity_end=data.get("validity_end"),
+        service_label=data.get("service_label") or case.service_type,
+        status=CarePackageStatus.PENDING_PAYMENT,
+        product_billing_rule_id=data.get("product_billing_rule_id"),
+        amount_inr=data.get("amount_inr"),
+    )
+    db.add(pkg)
+    db.flush()
+    return {
+        "id": pkg.id,
+        "caseId": pkg.case_id,
+        "parentUserId": pkg.parent_user_id,
+        "name": pkg.name,
+        "totalSessions": pkg.total_sessions,
+        "usedSessions": pkg.used_sessions,
+        "remainingSessions": pkg.total_sessions,
+        "status": pkg.status.value,
+    }
+
+
+def admin_update_package(db: Session, package_id: int, updates: dict) -> dict:
+    pkg = db.get(CarePackage, package_id)
+    if not pkg:
+        raise ValueError("Package not found")
+    for key, value in updates.items():
+        if value is None:
+            continue
+        if key == "status":
+            pkg.status = CarePackageStatus(value)
+        else:
+            setattr(pkg, key, value)
+    db.flush()
+    rows = admin_list_packages(db, case_id=pkg.case_id)
+    return next((r for r in rows if r["id"] == package_id), rows[0] if rows else {})
+
+
+def admin_list_disputes(db: Session) -> list[dict]:
+    rows = db.scalars(
+        select(BillingDispute).order_by(BillingDispute.created_at.desc()).limit(200)
+    ).all()
+    return [
+        {
+            "id": d.id,
+            "clientInvoiceId": d.client_invoice_id,
+            "lineId": d.client_invoice_line_id,
+            "parentUserId": d.parent_user_id,
+            "reasonCode": d.reason_code,
+            "message": d.message,
+            "status": d.status.value,
+            "createdAt": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in rows
+    ]

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { usePageMeta } from '../hooks/usePageMeta.js'
@@ -25,16 +25,9 @@ const PORTALS = [
     demos: [{ email: 'parent@demo.com', label: 'Parent / Guardian', hint: 'Client portal' }],
   },
   {
-    id: 'hr',
-    label: 'HR',
-    subtitle: 'Therapists, families, leave, and people management.',
-    placeholder: 'hr@demo.com',
-    demos: [{ email: 'hr@demo.com', label: 'HR', hint: 'HR portal' }],
-  },
-  {
     id: 'admin',
-    label: 'Admin',
-    subtitle: 'Module admins, case managers, and finance — password demo123 for all.',
+    label: 'Staff',
+    subtitle: 'Case managers, module admins, finance, and HR — password demo123 for all.',
     placeholder: 'moduleadmin@demo.com',
     demoGroups: [
       {
@@ -49,14 +42,18 @@ const PORTALS = [
       {
         title: 'Case managers',
         accounts: [
-          { email: 'casemanager@demo.com', label: 'Case Manager', hint: 'CM dashboard · homecare + shadow' },
-          { email: 'supervisor@demo.com', label: 'CM · Shadow caseload', hint: 'CM dashboard · shadow only' },
-          { email: 'viewer@demo.com', label: 'CM · View only', hint: 'Read-only · no mutations' },
+          { email: 'casemanager@demo.com', label: 'Case Manager', hint: 'My caseload · homecare + shadow' },
+          { email: 'shadowcm@demo.com', label: 'CM · Shadow caseload', hint: 'My caseload · shadow only' },
+          { email: 'viewonly@demo.com', label: 'CM · View only', hint: 'Read-only · no mutations' },
         ],
       },
       {
         title: 'Finance',
         accounts: [{ email: 'finance@demo.com', label: 'Finance', hint: 'Invoices & payouts' }],
+      },
+      {
+        title: 'People & HR',
+        accounts: [{ email: 'hr@demo.com', label: 'HR', hint: 'People, leave, memos' }],
       },
     ],
   },
@@ -69,6 +66,14 @@ function flattenDemos(portal) {
   return portal.demos ?? []
 }
 
+function formatLoginError(err) {
+  const msg = err?.message || 'Sign-in failed.'
+  if (/invalid credentials/i.test(msg)) {
+    return `${msg} For local dev, run: cd backend && python3 -m app.seed.demo_seed (resets demo123 passwords).`
+  }
+  return msg
+}
+
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -77,6 +82,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [selectedDemoEmail, setSelectedDemoEmail] = useState('')
 
   const active = useMemo(() => PORTALS.find((p) => p.id === portal) ?? PORTALS[0], [portal])
   const activeDemos = useMemo(() => flattenDemos(active), [active])
@@ -89,12 +95,14 @@ export function LoginPage() {
   function selectPortal(id) {
     setPortal(id)
     setError('')
+    setSelectedDemoEmail('')
     const next = PORTALS.find((p) => p.id === id)
     const first = next ? flattenDemos(next)[0] : null
     if (first) setEmail(first.email)
   }
 
   async function signInDemo(demoEmail) {
+    setSelectedDemoEmail(demoEmail)
     setEmail(demoEmail)
     setPassword(DEMO_PASSWORD)
     setError('')
@@ -103,7 +111,7 @@ export function LoginPage() {
       await login(demoEmail.trim().toLowerCase(), DEMO_PASSWORD)
       navigate('/')
     } catch (err) {
-      setError(err.message || 'Invalid credentials.')
+      setError(formatLoginError(err))
     } finally {
       setSubmitting(false)
     }
@@ -117,13 +125,17 @@ export function LoginPage() {
       await login(email.trim().toLowerCase(), password)
       navigate('/')
     } catch (err) {
-      setError(err.message || 'Invalid credentials.')
+      setError(formatLoginError(err))
     } finally {
       setSubmitting(false)
     }
   }
 
-  const isAdminPortal = portal === 'admin'
+  const isStaffPortal = portal === 'admin'
+
+  function demoButtonClass(demoEmail) {
+    return `login-demo-btn${selectedDemoEmail === demoEmail ? ' is-selected' : ''}`
+  }
 
   return (
     <div className="login-page">
@@ -137,7 +149,7 @@ export function LoginPage() {
               <p className="login-sub">{active.subtitle}</p>
             </header>
 
-            <div className="portal-tabs portal-tabs--four" role="tablist" aria-label="Select portal">
+            <div className="portal-tabs portal-tabs--three" role="tablist" aria-label="Select portal">
               {PORTALS.map((p) => (
                 <button
                   key={p.id}
@@ -173,6 +185,9 @@ export function LoginPage() {
                   autoComplete="current-password"
                 />
               </label>
+              <p className="login-sub" style={{ marginTop: '-0.5rem', textAlign: 'right' }}>
+                <Link to="/forgot-password">Forgot password?</Link>
+              </p>
               {error ? (
                 <p className="login-error" role="alert">
                   {error}
@@ -183,7 +198,7 @@ export function LoginPage() {
               </button>
             </form>
 
-            <div className={`login-hint ${isAdminPortal ? 'login-hint--admin' : ''}`}>
+            <div className={`login-hint ${isStaffPortal ? 'login-hint--admin' : ''}`}>
               <p className="login-hint__label">
                 Demo password: <code>{DEMO_PASSWORD}</code>. Pick a role below to sign in instantly.
               </p>
@@ -199,7 +214,7 @@ export function LoginPage() {
                           <li key={d.email}>
                             <button
                               type="button"
-                              className="login-demo-btn"
+                              className={demoButtonClass(d.email)}
                               disabled={submitting}
                               onClick={() => signInDemo(d.email)}
                             >
@@ -221,7 +236,7 @@ export function LoginPage() {
                     <li key={d.email}>
                       <button
                         type="button"
-                        className="login-demo-btn"
+                        className={demoButtonClass(d.email)}
                         disabled={submitting}
                         onClick={() => signInDemo(d.email)}
                       >
@@ -248,9 +263,9 @@ export function LoginPage() {
                 </li>
               ))}
             </ul>
-            {isAdminPortal ? (
+            {isStaffPortal ? (
               <p className="login-aside__note">
-                Legacy ADMIN / SUPERVISOR / VIEWER roles are retired — use Module Admin or Case Manager demos above.
+                Finance, HR, and case managers all use the staff portal with role-based navigation.
               </p>
             ) : null}
           </aside>

@@ -142,6 +142,7 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
         "approval_status": log.approval_status,
         "late_addition": bool(log.late_addition),
         "late_reason": log.late_reason,
+        "review_note": log.review_note,
         "can_edit": is_log_editable(log),
         "editable_until": log_editable_until(log),
     }

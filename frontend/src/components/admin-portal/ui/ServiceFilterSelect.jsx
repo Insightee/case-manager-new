@@ -1,4 +1,4 @@
-import { SERVICE_OPTIONS } from '../../../lib/serviceFilters.js'
+import { useClinicalProductModules } from '../../../hooks/useClinicalProductModules.js'
 
 export function ServiceFilterSelect({
   value,
@@ -8,6 +8,8 @@ export function ServiceFilterSelect({
   id = 'service-filter',
   extraOptions = [],
 }) {
+  const { options, loading } = useClinicalProductModules()
+
   return (
     <select
       id={id}
@@ -15,9 +17,10 @@ export function ServiceFilterSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       aria-label="Service"
+      disabled={loading && options.length <= 1}
       style={{ width: 'auto', minWidth: 160, ...style }}
     >
-      {SERVICE_OPTIONS.map((o) => (
+      {options.map((o) => (
         <option key={o.value || 'all'} value={o.value}>
           {o.label}
         </option>

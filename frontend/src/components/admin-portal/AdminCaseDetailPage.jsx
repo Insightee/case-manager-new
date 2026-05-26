@@ -33,7 +33,7 @@ export function AdminCaseDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
   const highlightSessionId = searchParams.get('session_id')
-  const { can, canWriteProduct } = useAuth()
+  const { can, canWriteProduct, isViewOnly } = useAuth()
   const { canReviewLogs } = useModuleWrite()
   const [caseRow, setCaseRow] = useState(null)
   const [assignments, setAssignments] = useState([])
@@ -92,9 +92,15 @@ export function AdminCaseDetailPage() {
     await load()
   }
 
+  const [billingMsg, setBillingMsg] = useState('')
+  const [billingErr, setBillingErr] = useState('')
+
   async function saveBilling(payload) {
+    setBillingErr('')
+    setBillingMsg('')
     const updated = await apiFetch(`/api/v1/cases/${caseId}`, { method: 'PATCH', body: JSON.stringify(payload) })
     setCaseRow(updated)
+    setBillingMsg('Billing saved.')
   }
 
   async function saveServiceAddress(payload) {
@@ -102,18 +108,24 @@ export function AdminCaseDetailPage() {
     setCaseRow(updated)
   }
 
-  async function reviewLog(logId, action) {
+  async function reviewLog(logId, action, comment = null) {
     setActingLogId(logId)
     try {
-      await apiFetch(`/api/v1/daily-logs/${logId}/${action}`, { method: 'POST' })
+      const opts = { method: 'POST' }
+      if (action === 'reject') {
+        opts.body = JSON.stringify({ comment: comment || '' })
+      }
+      await apiFetch(`/api/v1/daily-logs/${logId}/${action}`, opts)
       await load()
     } finally {
       setActingLogId(null)
     }
   }
 
-  const isShadowCase = caseRow?.product_module === 'shadow_support'
-  const canEditCase = Boolean(caseRow && can('case.update') && canWriteProduct(caseRow.product_module))
+  const activeAssignment = assignments.find((a) => a.status === 'ACTIVE') || assignments[0]
+  const canEditCase = Boolean(
+    caseRow && can('case.update') && !isViewOnly && canWriteProduct(caseRow.product_module),
+  )
   const canAssignCase = Boolean(caseRow && can('case.assign') && canWriteProduct(caseRow.product_module))
   const canReviewCaseLogs = Boolean(
     caseRow && can('daily_log.review') && canReviewLogs(caseRow.product_module),
@@ -298,20 +310,27 @@ export function AdminCaseDetailPage() {
 
       {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
 
-      {tab === 'billing' && canEditCase && (
+      {tab === 'billing' && can('case.update') && (
         <section className="admin-layout admin-layout--stack">
-          <CaseBillingForm caseItem={caseRow} onSave={saveBilling} />
-          <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} />
+          {!canEditCase ? (
+            <p className="admin-alert" style={{ color: '#b45309' }}>
+              View-only access — you cannot change billing for this module.
+            </p>
+          ) : null}
+          {billingErr ? <p className="admin-alert" style={{ color: '#b91c1c' }}>{billingErr}</p> : null}
+          {billingMsg ? <p className="admin-alert admin-alert--success">{billingMsg}</p> : null}
+          <CaseBillingForm
+            caseItem={caseRow}
+            onSave={saveBilling}
+            readOnly={!canEditCase}
+            onError={setBillingErr}
+          />
+          <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} readOnly={!canEditCase} />
         </section>
       )}
 
       {tab === 'scheduling' && can('slot.book_any') && (
-        <AdminCaseSchedulingPanel
-          caseItem={caseRow}
-          assignments={assignments}
-          onDone={load}
-          isShadow={isShadowCase}
-        />
+        <AdminCaseSchedulingPanel caseItem={caseRow} assignments={assignments} onDone={load} />
       )}
     </div>
   )

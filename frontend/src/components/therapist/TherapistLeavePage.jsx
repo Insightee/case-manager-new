@@ -4,7 +4,17 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import './therapist-leave.css'
 
-const LEAVE_TYPES = ['ANNUAL', 'SICK', 'CASUAL', 'UNPAID']
+const BILLING_CATEGORIES = [
+  { value: 'PAID', label: 'Paid' },
+  { value: 'CARRY_FORWARD', label: 'Carry forward' },
+  { value: 'UNPAID', label: 'Unpaid' },
+]
+const SERVICE_LINES = [
+  { value: 'shadow_support', label: 'Shadow support' },
+  { value: 'homecare', label: 'Homecare' },
+  { value: 'counselling', label: 'Counselling' },
+  { value: 'occupational_therapy', label: 'Occupational therapy' },
+]
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
@@ -20,6 +30,18 @@ const TYPE_COLORS = {
   SICK: '#fce7f3',
   CASUAL: '#d1fae5',
   UNPAID: '#fde8d8',
+  PAID: '#dbeafe',
+  CARRY_FORWARD: '#ede9fe',
+}
+
+function leaveRowLabel(l) {
+  if (l.billing_category) return l.billing_category.replace('_', ' ')
+  return l.leave_type || '—'
+}
+
+function leaveRowColor(l) {
+  const key = l.billing_category || l.leave_type
+  return TYPE_COLORS[key] || '#f3f4f6'
 }
 
 function daysInMonth(year, month) {
@@ -73,10 +95,18 @@ export function TherapistLeavePage() {
   const [calMonth, setCalMonth] = useState(now.getMonth())
   const [leaves, setLeaves] = useState([])
   const [summary, setSummary] = useState(null)
+  const [balance, setBalance] = useState(null)
+  const [suggestion, setSuggestion] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ leave_type: 'ANNUAL', start_date: '', end_date: '', reason: '' })
+  const [form, setForm] = useState({
+    service_line: 'shadow_support',
+    billing_category: 'PAID',
+    start_date: '',
+    end_date: '',
+    reason: '',
+  })
   const [pickStart, setPickStart] = useState(null)
   const [pickEnd, setPickEnd] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -87,12 +117,14 @@ export function TherapistLeavePage() {
     setLoading(true)
     setLoadError('')
     try {
-      const [data, sum] = await Promise.all([
+      const [data, sum, bal] = await Promise.all([
         apiFetch('/api/v1/leave'),
         apiFetch(`/api/v1/leave/summary?year=${calYear}`),
+        apiFetch(`/api/v1/leave/balance?year=${calYear}`).catch(() => null),
       ])
       setLeaves(Array.isArray(data) ? data : [])
       setSummary(sum)
+      setBalance(bal || sum?.leave_balance || null)
     } catch (err) {
       setLeaves([])
       setSummary(null)
@@ -106,6 +138,26 @@ export function TherapistLeavePage() {
     if (authLoading || !user) return
     loadLeaves()
   }, [authLoading, user, loadLeaves])
+
+  useEffect(() => {
+    if (!form.start_date || !form.end_date || form.end_date < form.start_date) {
+      setSuggestion(null)
+      return
+    }
+    const q = new URLSearchParams({
+      start_date: form.start_date,
+      end_date: form.end_date,
+      service_line: form.service_line,
+    })
+    apiFetch(`/api/v1/leave/suggest?${q}`)
+      .then((s) => {
+        setSuggestion(s)
+        if (s.paid_days > 0) setForm((f) => ({ ...f, billing_category: 'PAID' }))
+        else if (s.carry_forward_days > 0) setForm((f) => ({ ...f, billing_category: 'CARRY_FORWARD' }))
+        else setForm((f) => ({ ...f, billing_category: 'UNPAID' }))
+      })
+      .catch(() => setSuggestion(null))
+  }, [form.start_date, form.end_date, form.service_line])
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {
@@ -177,13 +229,21 @@ export function TherapistLeavePage() {
       await apiFetch('/api/v1/leave', {
         method: 'POST',
         body: JSON.stringify({
-          leave_type: form.leave_type,
+          service_line: form.service_line,
+          billing_category: form.billing_category,
           start_date: form.start_date,
           end_date: form.end_date,
           reason: form.reason || null,
         }),
       })
-      setForm({ leave_type: 'ANNUAL', start_date: '', end_date: '', reason: '' })
+      setForm({
+        service_line: 'shadow_support',
+        billing_category: 'PAID',
+        start_date: '',
+        end_date: '',
+        reason: '',
+      })
+      setSuggestion(null)
       setShowForm(false)
       clearPickRange()
       setSuccess('Leave request submitted.')
@@ -310,6 +370,26 @@ export function TherapistLeavePage() {
           ))}
         </div>
       </div>
+
+      {balance ? (
+        <div style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem' }}>
+          <p style={{ margin: '0 0 6px', fontWeight: 700, color: '#3730a3' }}>
+            Paid leave remaining ({calYear}): {balance.paid_remaining} / {balance.entitlement_paid}
+          </p>
+          <p style={{ margin: 0, color: '#4f46e5', fontSize: '0.8rem' }}>
+            Used {balance.paid_used_effective} paid days
+            {balance.backfill_paid_used > 0 ? ` (includes ${balance.backfill_paid_used} HR adjustment)` : ''}
+            {' · '}
+            Carry forward {balance.carry_forward_used_display}
+          </p>
+          {balance.requires_employment_start_date ? (
+            <p style={{ margin: '8px 0 0', color: '#b45309', fontSize: '0.8rem' }}>
+              Employment start date must be set by HR before you can submit leave.
+            </p>
+          ) : null}
+          <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '0.75rem' }}>Balances refresh each January.</p>
+        </div>
+      ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
@@ -487,19 +567,46 @@ export function TherapistLeavePage() {
           <p style={{ fontWeight: 600, marginBottom: 16 }}>New leave request</p>
           <form onSubmit={submitLeave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-              Leave type
+              Service line
               <select
-                value={form.leave_type}
-                onChange={(e) => setForm({ ...form, leave_type: e.target.value })}
+                value={form.service_line}
+                onChange={(e) => setForm({ ...form, service_line: e.target.value })}
                 style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
               >
-                {LEAVE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {SERVICE_LINES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
                   </option>
                 ))}
               </select>
             </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+              Category
+              <select
+                value={form.billing_category}
+                onChange={(e) => setForm({ ...form, billing_category: e.target.value })}
+                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+              >
+                {BILLING_CATEGORIES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {suggestion ? (
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#4f46e5', background: '#eef2ff', padding: '8px 12px', borderRadius: 8 }}>
+                {suggestion.message}
+                {suggestion.paid_days > 0 || suggestion.carry_forward_days > 0
+                  ? ` (${suggestion.paid_days} paid, ${suggestion.carry_forward_days} carry forward, ${suggestion.unpaid_days} unpaid)`
+                  : ''}
+              </p>
+            ) : null}
+            {form.service_line !== 'shadow_support' && form.billing_category === 'PAID' ? (
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#b45309' }}>
+                No paid leaves for this service line — choose unpaid or carry forward.
+              </p>
+            ) : null}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
                 From date
@@ -543,7 +650,7 @@ export function TherapistLeavePage() {
             </label>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || balance?.requires_employment_start_date}
               style={{
                 padding: '10px',
                 background: '#6366f1',
@@ -586,7 +693,7 @@ export function TherapistLeavePage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ background: '#f9fafb' }}>
-                  {['Type', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', ''].map((h) => (
+                  {['Category', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', ''].map((h) => (
                     <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>
                       {h}
                     </th>
@@ -596,12 +703,13 @@ export function TherapistLeavePage() {
               <tbody>
                 {leaves.map((l) => {
                   const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
-                  const tc = TYPE_COLORS[l.leave_type] || '#f3f4f6'
+                  const tc = leaveRowColor(l)
                   return (
                     <tr key={l.id} style={{ borderTop: '1px solid #f3f4f6' }}>
                       <td style={{ padding: '10px 16px' }}>
-                        <span style={{ background: tc, color: '#374151', fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>{l.leave_type}</span>
+                        <span style={{ background: tc, color: '#374151', fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>{leaveRowLabel(l)}</span>
                       </td>
+                      <td style={{ padding: '10px 16px', color: '#6b7280', fontSize: '0.8rem' }}>{l.service_line || '—'}</td>
                       <td style={{ padding: '10px 16px' }}>{l.start_date}</td>
                       <td style={{ padding: '10px 16px' }}>{l.end_date}</td>
                       <td style={{ padding: '10px 16px' }}>{l.day_count ?? '—'}</td>

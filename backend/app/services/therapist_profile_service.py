@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from typing import Optional
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -48,6 +49,11 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         "mentor_user_id": getattr(profile, "mentor_user_id", None),
         "supervisor_name": supervisor_name,
         "mentor_name": mentor_name,
+        "employment_start_date": profile.employment_start_date,
+        "leave_balance_year": profile.leave_balance_year,
+        "leave_paid_days_backfill": int(profile.leave_paid_days_backfill or 0),
+        "leave_carry_forward_days_backfill": int(profile.leave_carry_forward_days_backfill or 0),
+        "leave_backfill_note": profile.leave_backfill_note,
     }
 
 
@@ -79,6 +85,40 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
         profile.supervisor_user_id = data["supervisor_user_id"]
     if "mentor_user_id" in data:
         profile.mentor_user_id = data["mentor_user_id"]
+    if "employment_start_date" in data:
+        profile.employment_start_date = data["employment_start_date"]
+    if "leave_balance_year" in data:
+        profile.leave_balance_year = data["leave_balance_year"]
+    if "leave_paid_days_backfill" in data:
+        profile.leave_paid_days_backfill = int(data["leave_paid_days_backfill"] or 0)
+    if "leave_carry_forward_days_backfill" in data:
+        profile.leave_carry_forward_days_backfill = int(data["leave_carry_forward_days_backfill"] or 0)
+    if "leave_backfill_note" in data:
+        profile.leave_backfill_note = (data["leave_backfill_note"] or "").strip() or None
+
+
+def apply_leave_backfill(
+    profile: TherapistProfile,
+    *,
+    year: int,
+    paid_backfill: int,
+    carry_backfill: int,
+    note: Optional[str],
+    employment_start_date: Optional[date],
+    actor_user_id: int,
+) -> None:
+    if paid_backfill < 0 or carry_backfill < 0:
+        raise HTTPException(status_code=400, detail="Backfill days cannot be negative")
+    if (paid_backfill > 0 or carry_backfill > 0) and not (note or "").strip():
+        raise HTTPException(status_code=400, detail="Note is required when backfill days are set")
+    profile.leave_balance_year = year
+    profile.leave_paid_days_backfill = paid_backfill
+    profile.leave_carry_forward_days_backfill = carry_backfill
+    profile.leave_backfill_note = (note or "").strip() or None
+    if employment_start_date is not None:
+        profile.employment_start_date = employment_start_date
+    profile.leave_backfill_updated_at = datetime.now(timezone.utc)
+    profile.leave_backfill_updated_by_user_id = actor_user_id
 
 
 def therapist_save_profile(db: Session, user: User, data: dict) -> TherapistProfile:

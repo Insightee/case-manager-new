@@ -35,6 +35,8 @@ def parent_can_see_monthly(report: MonthlyReport) -> bool:
         return False
     if report.status in (ReportStatus.DRAFT, ReportStatus.REJECTED):
         return False
+    if not (report.cm_published_at or report.admin_published_at):
+        return False
     if report.parent_review_status:
         return report.status in (ReportStatus.PUBLISHED, ReportStatus.UNDER_REVIEW)
     return report.status == ReportStatus.PUBLISHED
@@ -69,8 +71,22 @@ def _serialize_monthly_list_item(report: MonthlyReport, case: Case | None) -> di
     }
 
 
-def _serialize_iep_list_item(att: Attachment, case: Case | None) -> dict:
-    acknowledged = att.visibility_status == VisibilityStatus.SHARED_WITH_PARENT
+def _iep_ack_status(db: Session, att: Attachment) -> str:
+    from app.services import iep_plan_service as iep_svc
+
+    plan = iep_svc._plan_for_attachment(db, att)
+    if plan and plan.status == "PARENT_ACKNOWLEDGED":
+        return "acknowledged"
+    if att.visibility_status == VisibilityStatus.SHARED_WITH_PARENT:
+        return "acknowledged"
+    return "pending"
+
+
+def _serialize_iep_list_item(db: Session, att: Attachment, case: Case | None) -> dict:
+    acknowledged = _iep_ack_status(db, att) == "acknowledged"
+    from app.services import iep_plan_service as iep_svc
+
+    plan = iep_svc._plan_for_attachment(db, att)
     return {
         "kind": "iep",
         "id": str(att.id),
@@ -81,6 +97,7 @@ def _serialize_iep_list_item(att: Attachment, case: Case | None) -> dict:
         "label": f"Version {att.version}",
         "fileName": att.file_name,
         "status": "acknowledged" if acknowledged else "pending",
+        "planId": plan.id if plan else None,
         "issuedAt": att.created_at.isoformat() if att.created_at else None,
     }
 
@@ -179,7 +196,7 @@ def list_hub(db: Session, user_id: int) -> dict:
             Attachment.visibility_status.in_(PARENT_VISIBLE),
         )
     ).all()
-    iep = [_serialize_iep_list_item(a, cases.get(a.case_id)) for a in attachments]
+    iep = [_serialize_iep_list_item(db, a, cases.get(a.case_id)) for a in attachments]
     items = sorted(
         monthly + iep,
         key=lambda x: x.get("issuedAt") or x.get("month") or "",
@@ -246,6 +263,15 @@ def get_iep_detail(db: Session, user: User, attachment_id: int) -> dict:
     case = parent_service.get_parent_case(db, user, att.case_id)
     if not case:
         raise ValueError("IEP document not found")
+    from app.services import iep_plan_service as iep_svc
+
+    plan = iep_svc._plan_for_attachment(db, att)
+    ack_status = _iep_ack_status(db, att)
+    can_acknowledge = bool(plan and plan.status == "SHARED_WITH_PARENT")
+    can_suggest_goals = bool(plan and plan.status in ("SHARED_WITH_PARENT", "PARENT_ACKNOWLEDGED"))
+    preview_html = None
+    if plan:
+        preview_html = iep_svc.sections_to_preview_html(db, plan)
     return {
         "kind": "iep",
         "id": str(att.id),
@@ -255,7 +281,11 @@ def get_iep_detail(db: Session, user: User, attachment_id: int) -> dict:
         "version": att.version,
         "fileName": att.file_name,
         "downloadPath": f"/api/v1/parent/attachments/{att.id}/download",
-        "status": "acknowledged" if att.visibility_status == VisibilityStatus.SHARED_WITH_PARENT else "pending",
+        "status": ack_status,
+        "planId": plan.id if plan else None,
+        "canAcknowledge": can_acknowledge,
+        "canSuggestGoals": can_suggest_goals,
+        "bodyHtml": preview_html,
         "issuedAt": att.created_at.isoformat() if att.created_at else None,
         "comments": _comment_rows(db, DocumentEntityType.IEP.value, att.id),
     }

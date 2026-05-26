@@ -61,6 +61,58 @@ def escalation_roles(topic: TicketTopic) -> list[str]:
     return ESCALATION_MATRIX.get(topic, ESCALATION_MATRIX[TicketTopic.OTHER])
 
 
+_ADMIN_TAG_ROLES = frozenset(
+    {RoleName.ADMIN.value, RoleName.MODULE_ADMIN.value, RoleName.SUPER_ADMIN.value}
+)
+_CM_TAG_ROLES = frozenset({RoleName.CASE_MANAGER.value, RoleName.SUPERVISOR.value})
+
+
+def role_names_matching_tag(role_tag: str) -> frozenset[str]:
+    if role_tag == RoleName.ADMIN.value:
+        return _ADMIN_TAG_ROLES
+    if role_tag == RoleName.CASE_MANAGER.value:
+        return _CM_TAG_ROLES
+    return frozenset({role_tag})
+
+
+def user_matches_role_tag(user: User, role_tag: str) -> bool:
+    names = set(user.role_names)
+    return bool(names & role_names_matching_tag(role_tag))
+
+
+def _module_scoped_for_case(user: User, case: Case | None, role_tag: str) -> bool:
+    if not case or not case.product_module:
+        return True
+    mods = user.module_assignments or []
+    if not mods:
+        return True
+    if case.product_module in mods:
+        return True
+    if role_tag == RoleName.ADMIN.value:
+        return bool(set(user.role_names) & _ADMIN_TAG_ROLES)
+    if role_tag in (RoleName.FINANCE.value, RoleName.SUPER_ADMIN.value):
+        return True
+    return False
+
+
+def resolve_users_for_role_tag(db: Session, role_tag: str, case: Case | None = None) -> list[int]:
+    """All active users matching an incident role tag (ADMIN includes MODULE_ADMIN)."""
+    ids: list[int] = []
+    if case and role_tag == RoleName.CASE_MANAGER.value and case.case_manager_user_id:
+        cm = db.get(User, case.case_manager_user_id)
+        if cm and cm.is_active:
+            ids.append(cm.id)
+    for user in db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.id)).all():
+        if user.id in ids:
+            continue
+        if not user_matches_role_tag(user, role_tag):
+            continue
+        if not _module_scoped_for_case(user, case, role_tag):
+            continue
+        ids.append(user.id)
+    return ids
+
+
 def find_assignee_for_role(db: Session, role_name: str, case: Case | None = None) -> int | None:
     """Pick an active user with the role; prefer case manager / module match when relevant."""
     if case and role_name == RoleName.CASE_MANAGER.value and case.case_manager_user_id:
@@ -82,19 +134,8 @@ def find_assignee_for_role(db: Session, role_name: str, case: Case | None = None
             if t and t.is_active:
                 return t.id
 
-    stmt = select(User).where(User.is_active.is_(True)).order_by(User.id)
-    for user in db.scalars(stmt).all():
-        if role_name in user.role_names:
-            if case and case.product_module:
-                mods = user.module_assignments or []
-                if mods and case.product_module not in mods and role_name not in (
-                    RoleName.FINANCE.value,
-                    RoleName.SUPER_ADMIN.value,
-                    RoleName.ADMIN.value,
-                ):
-                    continue
-            return user.id
-    return None
+    resolved = resolve_users_for_role_tag(db, role_name, case)
+    return resolved[0] if resolved else None
 
 
 def assign_ticket(db: Session, ticket: SupportTicket, case: Case | None = None) -> None:

@@ -2,10 +2,12 @@ import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminTicketsPage } from './AdminTicketsPage.jsx'
 import { AdminIncidentsPage } from './AdminIncidentsPage.jsx'
+import { AdminSupportReportsPage } from './AdminSupportReportsPage.jsx'
 
 const TABS = [
   { id: 'tickets', label: '✉ Support Tickets', perm: 'ticket.manage' },
   { id: 'incidents', label: '⚠ Incident Reports', perm: 'incident.read_sensitive' },
+  { id: 'reports', label: '📊 Reports', permAny: ['ticket.manage', 'incident.read_sensitive'] },
 ]
 
 export function AdminSupportHubPage() {
@@ -17,7 +19,10 @@ export function AdminSupportHubPage() {
     setSearchParams({ tab: id }, { replace: true })
   }
 
-  const visibleTabs = TABS.filter((t) => can(t.perm))
+  const visibleTabs = TABS.filter((t) => {
+    if (t.permAny) return t.permAny.some((p) => can(p))
+    return can(t.perm)
+  })
 
   return (
     <div>
@@ -63,6 +68,9 @@ export function AdminSupportHubPage() {
       </div>
       <div style={{ display: tab === 'incidents' ? 'block' : 'none' }}>
         <AdminIncidentsPage />
+      </div>
+      <div style={{ display: tab === 'reports' ? 'block' : 'none' }}>
+        <AdminSupportReportsPage />
       </div>
     </div>
   )

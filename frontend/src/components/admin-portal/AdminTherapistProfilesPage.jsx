@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
+import { TherapistLeaveBalancePanel } from '../hr-portal/TherapistLeaveBalancePanel.jsx'
 import { TherapistReviewsSection } from '../therapist/TherapistReviewsSection.jsx'
 import { TherapistServiceProfileForm } from './TherapistServiceProfileForm.jsx'
 import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminStatCard, AdminToolbar, StatusBadge } from './ui/index.js'
@@ -21,6 +23,7 @@ const EMPTY_FORM = {
 }
 
 export function AdminTherapistProfilesPage() {
+  const { canManageUsers } = useModuleWrite()
   const [searchParams, setSearchParams] = useSearchParams()
   const urlStatus = searchParams.get('status') || 'PENDING'
   const urlUserId = searchParams.get('user_id')
@@ -117,6 +120,10 @@ export function AdminTherapistProfilesPage() {
   async function handleCreate(e) {
     e.preventDefault()
     setError('')
+    if (!form.supervisor_user_id) {
+      setError('Select a primary case manager')
+      return
+    }
     try {
       const certs = form.professional_certificates
         .split('\n')
@@ -189,9 +196,11 @@ export function AdminTherapistProfilesPage() {
         title="Service profiles"
         subtitle="Review, approve, pause, or create therapist service listings."
         actions={
-          <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? 'Close' : '+ Add profile'}
-          </button>
+          canManageUsers ? (
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowCreate((v) => !v)}>
+              {showCreate ? 'Close' : '+ Add profile'}
+            </button>
+          ) : null
         }
       />
 
@@ -208,7 +217,13 @@ export function AdminTherapistProfilesPage() {
         </div>
       ) : null}
 
-      {showCreate ? (
+      {!canManageUsers ? (
+        <p className="admin-alert" style={{ color: '#b45309', marginBottom: 16 }}>
+          View-only access — you can review profiles but cannot create or approve listings.
+        </p>
+      ) : null}
+
+      {showCreate && canManageUsers ? (
         <form className="admin-form-grid" style={{ maxWidth: 560, marginBottom: 20 }} onSubmit={handleCreate}>
           <p className="admin-drawer__subtitle" style={{ gridColumn: '1 / -1' }}>
             Create profile for therapist
@@ -223,13 +238,14 @@ export function AdminTherapistProfilesPage() {
           />
           <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label>
-              Case manager — supervision (optional)
+              Primary case manager
               <select
                 className="admin-input"
                 value={form.supervisor_user_id}
                 onChange={(e) => setForm((f) => ({ ...f, supervisor_user_id: e.target.value }))}
+                required
               >
-                <option value="">— None —</option>
+                <option value="">Select case manager…</option>
                 {mentorDirectory.map((u) => (
                   <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
                 ))}
@@ -258,7 +274,7 @@ export function AdminTherapistProfilesPage() {
       <AdminPanel title="Profiles" padded={false}>
         <div className="admin-panel__body">
           <AdminToolbar>
-            <AdminSearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or email…" />
+            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
             <select
               className="admin-search__input"
               style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
@@ -282,7 +298,7 @@ export function AdminTherapistProfilesPage() {
                   <tr>
                     <th>Therapist</th>
                     <th>Services</th>
-                    <th>CM / mentor</th>
+                    <th>Primary CM</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -345,7 +361,7 @@ export function AdminTherapistProfilesPage() {
           <div className="profile-drawer-supervisor-row">
             <div>
               <p className="admin-muted" style={{ marginBottom: 4 }}>
-                <strong>Supervisor:</strong>{' '}
+                <strong>Primary case manager:</strong>{' '}
                 {selected.supervisor_name || <em>Not assigned</em>}
               </p>
               <p className="admin-muted" style={{ marginBottom: 4 }}>
@@ -371,13 +387,13 @@ export function AdminTherapistProfilesPage() {
           {editingSupervisor ? (
             <div className="profile-drawer-supervisor-edit">
               <label>
-                Supervisor
+                Primary case manager
                 <select
                   className="admin-input"
                   value={editSupervisor.supervisorId}
                   onChange={(e) => setEditSupervisor((s) => ({ ...s, supervisorId: e.target.value }))}
                 >
-                  <option value="">— None —</option>
+                  <option value="">Select case manager…</option>
                   {mentorDirectory.map((u) => (
                     <option key={u.id} value={u.id}>{u.full_name}</option>
                   ))}
@@ -406,6 +422,8 @@ export function AdminTherapistProfilesPage() {
             </div>
           ) : null}
 
+          <TherapistLeaveBalancePanel therapistUserId={selected.user_id} canEdit={canManageUsers} />
+
           <div style={{ marginTop: 16 }}>
             <TherapistReviewsSection
               apiPath={`/api/v1/admin/therapist-profiles/${selected.user_id}/reviews`}
@@ -417,24 +435,26 @@ export function AdminTherapistProfilesPage() {
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="admin-search__input" style={{ width: '100%', marginTop: 4 }} />
           </label>
           <div className="admin-btn-group" style={{ marginTop: 12, flexWrap: 'wrap' }}>
-            {selected.status === 'PENDING' ? (
+            {canManageUsers && selected.status === 'PENDING' ? (
               <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('approve', selected.id)}>
                 Approve
               </button>
             ) : null}
-            {selected.status === 'APPROVED' ? (
+            {canManageUsers && selected.status === 'APPROVED' ? (
               <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => act('pause', selected.id)}>
                 Pause
               </button>
             ) : null}
-            {selected.status === 'PAUSED' ? (
+            {canManageUsers && selected.status === 'PAUSED' ? (
               <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('resume', selected.id)}>
                 Resume
               </button>
             ) : null}
-            <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => handleDelete(selected.id)}>
-              Delete
-            </button>
+            {canManageUsers ? (
+              <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => handleDelete(selected.id)}>
+                Delete
+              </button>
+            ) : null}
             <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => { setSelected(null); setEditingSupervisor(false) }}>
               Close
             </button>

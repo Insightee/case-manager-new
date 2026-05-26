@@ -74,7 +74,7 @@ def test_daily_log_requires_session():
 
 
 def test_supervisor_dashboard():
-    token = _login("supervisor@demo.com")
+    token = _login("shadowcm@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     dash = client.get("/api/v1/admin/dashboard/summary", headers=headers)
     assert dash.status_code == 200
@@ -171,7 +171,7 @@ def test_scoped_admin_dashboard_invoices_module():
 
 
 def test_incident_patch():
-    token = _login("supervisor@demo.com")
+    token = _login("shadowcm@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     incidents = client.get("/api/v1/incidents", headers=headers)
     assert incidents.status_code == 200
@@ -264,14 +264,6 @@ def test_admin_create_child_and_family():
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     suffix = uuid.uuid4().hex[:8]
-    child = client.post(
-        "/api/v1/admin/children",
-        headers=headers,
-        json={"first_name": "Test", "last_name": f"Child{suffix}"},
-    )
-    assert child.status_code == 201
-    assert child.json()["id"]
-
     fam = client.post(
         "/api/v1/admin/families",
         headers=headers,
@@ -302,13 +294,18 @@ def test_allotment_therapists_and_allot_case():
     admin_token = _login("superadmin@demo.com")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     suffix = uuid.uuid4().hex[:8]
-    child = client.post(
-        "/api/v1/admin/children",
+    fam = client.post(
+        "/api/v1/admin/families",
         headers=admin_headers,
-        json={"first_name": "Allot", "last_name": suffix},
+        json={
+            "parent_email": f"allot-parent-{suffix}@demo.com",
+            "parent_full_name": "Allot Parent",
+            "child": {"first_name": "Allot", "last_name": suffix},
+            "send_invite": False,
+        },
     )
-    assert child.status_code == 201
-    child_id = child.json()["id"]
+    assert fam.status_code == 201, fam.text
+    child_id = fam.json()["childId"]
 
     allot = client.post(
         "/api/v1/admin/cases/allot",
@@ -478,23 +475,75 @@ def test_admin_families_search_and_link_by_email():
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     suffix = uuid.uuid4().hex[:8]
-    child = client.post(
-        "/api/v1/admin/children",
+    fam = client.post(
+        "/api/v1/admin/families",
         headers=headers,
-        json={"first_name": "Orphan", "last_name": suffix},
+        json={
+            "parent_email": f"link-{suffix}@demo.com",
+            "parent_full_name": "Link Parent",
+            "child": {"first_name": "Search", "last_name": suffix},
+            "send_invite": False,
+        },
     )
-    assert child.status_code == 201
-    child_id = child.json()["id"]
+    assert fam.status_code == 201, fam.text
+    child_id = fam.json()["childId"]
 
-    listed = client.get("/api/v1/admin/families?search=Orphan", headers=headers)
+    listed = client.get(f"/api/v1/admin/families?search={suffix}", headers=headers)
     assert listed.status_code == 200
     assert any(r.get("childId") == child_id for r in listed.json())
 
-    link = client.post(
-        f"/api/v1/admin/families/link-by-email?child_id={child_id}&parent_email=link-{suffix}@demo.com",
+    fam2 = client.post(
+        "/api/v1/admin/families",
         headers=headers,
+        json={
+            "parent_email": f"link-{suffix}@demo.com",
+            "parent_full_name": "Link Parent",
+            "child": {"first_name": "Second", "last_name": suffix},
+            "send_invite": False,
+        },
     )
-    assert link.status_code == 200, link.text
+    assert fam2.status_code == 201, fam2.text
+    assert fam2.json().get("linkedExistingParent") is True
+
+
+def test_cm_meetings_bookable_cases_for_case_manager():
+    cm_token = _login("casemanager@demo.com")
+    cm_headers = {"Authorization": f"Bearer {cm_token}"}
+    listed = client.get("/api/v1/cm-meetings/bookable-cases", headers=cm_headers)
+    assert listed.status_code == 200, listed.text
+    items = listed.json()
+    assert isinstance(items, list)
+    assert len(items) >= 1
+    for row in items:
+        assert row.get("id")
+        assert row.get("case_code")
+        assert row.get("child_name")
+
+
+def test_therapist_can_book_cm_meeting_on_assigned_case():
+    th_token = _login("therapist@demo.com")
+    th_headers = {"Authorization": f"Bearer {th_token}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    assert cases.status_code == 200, cases.text
+    case_rows = cases.json()
+    assert case_rows, "Therapist should have at least one bookable case in demo seed"
+    case_id = case_rows[0]["id"]
+    created = client.post(
+        "/api/v1/cm-meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": "2026-06-01",
+            "scheduled_time": "10:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "CLIENT_AND_THERAPIST",
+            "title": "Therapist-requested CM sync",
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body.get("case_id") == case_id
+    assert body.get("therapist_name")
 
 
 def test_cm_meetings_filters_and_case_code():
@@ -511,6 +560,23 @@ def test_cm_meetings_filters_and_case_code():
         assert row.get("meeting_type") == "SUPERVISION"
         if row.get("case_id"):
             assert row.get("case_code")
+
+
+def test_cm_meetings_search_query_param():
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    all_rows = client.get("/api/v1/cm-meetings", headers=headers)
+    assert all_rows.status_code == 200
+    if not all_rows.json():
+        return
+    sample = all_rows.json()[0]
+    needle = (sample.get("child_name") or sample.get("title") or "IC")[:4]
+    searched = client.get(
+        f"/api/v1/cm-meetings?search={needle}",
+        headers=headers,
+    )
+    assert searched.status_code == 200, searched.text
+    assert isinstance(searched.json(), list)
 
 
 def test_ticket_assign_patch_and_internal_note():
@@ -573,7 +639,7 @@ def test_workbench_summary_scoped():
 
 
 def test_viewer_cannot_patch_case():
-    token = _login("viewer@demo.com")
+    token = _login("viewonly@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     cases = client.get("/api/v1/cases", headers=headers)
     assert cases.status_code == 200
@@ -587,7 +653,7 @@ def test_viewer_cannot_patch_case():
 
 
 def test_supervisor_can_list_cm_meetings():
-    token = _login("supervisor@demo.com")
+    token = _login("shadowcm@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     listed = client.get("/api/v1/cm-meetings", headers=headers)
     assert listed.status_code == 200

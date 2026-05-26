@@ -128,7 +128,7 @@ export function NotificationBell({ portal }) {
   }
 
   const n = data.unread_count || 0
-  const isAdmin = portal === 'admin' || portal === 'hr'
+  const isAdmin = portal === 'admin'
 
   return (
     <>

@@ -5,6 +5,8 @@ import { apiFetch } from '../lib/apiClient.js'
 import { PortalShell } from '../layouts/PortalShell.jsx'
 import { LoginPage } from '../pages/LoginPage.jsx'
 import { InvitePage } from '../pages/InvitePage.jsx'
+import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.jsx'
+import { ResetPasswordPage } from '../pages/ResetPasswordPage.jsx'
 import { TherapistDashboardPage } from '../pages/TherapistDashboardPage.jsx'
 import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
 import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
@@ -23,7 +25,12 @@ const ReportEditPage = lazy(() =>
 const ParentRoutes = lazy(() =>
   import('./ParentRoutes.jsx').then((m) => ({ default: m.ParentRoutes }))
 )
-const HRRoutes = lazy(() => import('./HRRoutes.jsx').then((m) => ({ default: m.HRRoutes })))
+const HRMemosPage = lazy(() =>
+  import('../components/hr-portal/HRMemosPage.jsx').then((m) => ({ default: m.HRMemosPage }))
+)
+const HRCasesPage = lazy(() =>
+  import('../components/hr-portal/HRCasesPage.jsx').then((m) => ({ default: m.HRCasesPage }))
+)
 const AdminIndexPage = lazy(() =>
   import('../components/admin-portal/AdminIndexPage.jsx').then((m) => ({ default: m.AdminIndexPage }))
 )
@@ -39,8 +46,17 @@ const AdminSessionLogsPage = lazy(() =>
 const AdminReportsPage = lazy(() =>
   import('../components/admin-portal/AdminReportsPage.jsx').then((m) => ({ default: m.AdminReportsPage }))
 )
+const AdminReportViewPage = lazy(() =>
+  import('../components/admin-portal/AdminReportViewPage.jsx').then((m) => ({ default: m.AdminReportViewPage }))
+)
 const AdminInvoicesPage = lazy(() =>
   import('../components/admin-portal/AdminInvoicesPage.jsx').then((m) => ({ default: m.AdminInvoicesPage }))
+)
+const AdminClientInvoicePage = lazy(() =>
+  import('../components/admin-portal/AdminClientInvoicePage.jsx').then((m) => ({ default: m.AdminClientInvoicePage }))
+)
+const InvoiceComposer = lazy(() =>
+  import('../components/admin-portal/InvoiceComposer.jsx').then((m) => ({ default: m.InvoiceComposer }))
 )
 const AdminPeoplePage = lazy(() =>
   import('../components/admin-portal/AdminPeoplePage.jsx').then((m) => ({ default: m.AdminPeoplePage }))
@@ -59,6 +75,11 @@ const AdminTherapistProfilesPage = lazy(() =>
 const AdminServiceCategoriesPage = lazy(() =>
   import('../components/admin-portal/AdminServiceCategoriesPage.jsx').then((m) => ({
     default: m.AdminServiceCategoriesPage,
+  }))
+)
+const AdminClientProfilesPage = lazy(() =>
+  import('../components/admin-portal/AdminClientProfilesPage.jsx').then((m) => ({
+    default: m.AdminClientProfilesPage,
   }))
 )
 const CaseManagerMeetingsPage = lazy(() =>
@@ -115,7 +136,6 @@ function PortalRedirect() {
   }
   if (portal === 'parent') return <Navigate to="/parent" replace />
   if (portal === 'therapist') return <Navigate to="/therapist" replace />
-  if (portal === 'hr') return <Navigate to="/hr" replace />
   return <Navigate to="/login" replace />
 }
 
@@ -131,6 +151,8 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
       <Route path="/invite/:token" element={<InvitePage />} />
       <Route path="/" element={<PortalRedirect />} />
 
@@ -161,6 +183,14 @@ export function AppRoutes() {
         <Route path="incidents" element={<Navigate to="/therapist/support?tab=incidents" replace />} />
         <Route path="leave" element={<TherapistLeavePage />} />
         <Route path="slots" element={<TherapistSlotsPage />} />
+        <Route
+          path="cm-meetings"
+          element={
+            <Lazy>
+              <CaseManagerMeetingsPage portal="therapist" />
+            </Lazy>
+          }
+        />
         <Route path="profile" element={<TherapistProfilePage />} />
         <Route path="notifications" element={<NotificationCenterPage portal="therapist" />} />
       </Route>
@@ -248,6 +278,14 @@ export function AppRoutes() {
           }
         />
         <Route
+          path="reports/view/:reportId"
+          element={
+            <Lazy>
+              <AdminReportViewPage />
+            </Lazy>
+          }
+        />
+        <Route
           path="reports/edit/:reportId"
           element={
             <Lazy>
@@ -260,6 +298,22 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminInvoicesPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="invoices/compose"
+          element={
+            <Lazy>
+              <InvoiceComposer />
+            </Lazy>
+          }
+        />
+        <Route
+          path="invoices/client/:invoiceId"
+          element={
+            <Lazy>
+              <AdminClientInvoicePage />
             </Lazy>
           }
         />
@@ -286,6 +340,14 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminPeoplePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="client-profiles"
+          element={
+            <Lazy>
+              <AdminClientProfilesPage />
             </Lazy>
           }
         />
@@ -322,26 +384,33 @@ export function AppRoutes() {
             </Lazy>
           }
         />
-        <Route path="notifications" element={<NotificationCenterPage portal="admin" />} />
-      </Route>
-
-      <Route
-        path="/hr/*"
-        element={
-          <Protected portal="hr">
-            <PortalShell portal="hr" />
-          </Protected>
-        }
-      >
         <Route
-          path="*"
+          path="memos"
           element={
             <Lazy>
-              <HRRoutes />
+              <HRMemosPage />
             </Lazy>
           }
         />
+        <Route
+          path="hr-cases"
+          element={
+            <Lazy>
+              <HRCasesPage />
+            </Lazy>
+          }
+        />
+        <Route path="notifications" element={<NotificationCenterPage portal="admin" />} />
       </Route>
+
+      <Route path="/hr" element={<Navigate to="/admin/people" replace />} />
+      <Route path="/hr/people" element={<Navigate to="/admin/people" replace />} />
+      <Route path="/hr/therapists" element={<Navigate to="/admin/therapist-profiles" replace />} />
+      <Route path="/hr/cases" element={<Navigate to="/admin/hr-cases" replace />} />
+      <Route path="/hr/leave" element={<Navigate to="/admin/leave" replace />} />
+      <Route path="/hr/memos" element={<Navigate to="/admin/memos" replace />} />
+      <Route path="/hr/tickets" element={<Navigate to="/admin/support?tab=tickets" replace />} />
+      <Route path="/hr/*" element={<Navigate to="/admin/people" replace />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

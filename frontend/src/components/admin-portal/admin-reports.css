@@ -28,8 +28,30 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  align-items: center;
+  align-items: flex-end;
   margin-bottom: 16px;
+}
+
+.admin-meetings-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px 14px;
+  align-items: end;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: var(--admin-surface, #fff);
+  border: 1px solid var(--admin-border, #e2e8f0);
+  border-radius: 12px;
+}
+
+.admin-meetings-filters .admin-search {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .admin-meetings-filters {
+    grid-template-columns: 1fr;
+  }
 }
 
 .admin-reports__tabs {
@@ -391,4 +413,86 @@
   gap: 12px;
   margin-top: 16px;
   font-size: 0.85rem;
+}
+
+.admin-reports__action-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.admin-reports__action-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.admin-reports__action-card--publish {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+
+.admin-reports__action-card h3 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}
+
+.admin-reports__card-help {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0 0 8px;
+}
+
+.admin-reports__tabs {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.admin-reports__tabs button {
+  font-size: 0.8125rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+}
+
+.admin-reports__tab--active {
+  background: #1e3a5f !important;
+  color: #fff !important;
+  border-color: #1e3a5f !important;
+}
+
+.admin-reports__comments-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.admin-reports__comments-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+}
+
+.admin-reports__comments-meta {
+  display: block;
+  font-size: 0.6875rem;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.admin-reports-view__header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.admin-reports-view__case-link {
+  margin-top: 24px;
 }

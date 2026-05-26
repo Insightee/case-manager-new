@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch, getTokens } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
@@ -10,7 +10,9 @@ import {
   writeClientInvoiceFiltersToParams,
 } from '../../lib/invoiceFilters.js'
 import { AdminEmptyState, AdminSearchInput, ServiceFilterSelect, formatCurrency } from './ui/index.js'
+import { InvoiceLineItemEditor } from './InvoiceLineItemEditor.jsx'
 import './admin-client-invoices.css'
+import './admin-client-invoices-composer.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -50,225 +52,8 @@ async function downloadExport(path, filename) {
   URL.revokeObjectURL(url)
 }
 
-// ── Raise invoice wizard ───────────────────────────────────────────────────────
-function RaiseInvoiceWizard({ onClose, onDone }) {
-  const [step, setStep] = useState(1)
-  const [cases, setCases] = useState([])
-  const [familySearch, setFamilySearch] = useState('')
-  const [selectedCase, setSelectedCase] = useState(null)
-  const [invoiceType, setInvoiceType] = useState('POSTPAID')
-  const [billingMonth, setBillingMonth] = useState(() => {
-    const d = new Date()
-    return d.toLocaleString('en-US', { month: 'short', year: 'numeric' })
-  })
-  const [dueDate, setDueDate] = useState('')
-  const [notes, setNotes] = useState('')
-  const [discount, setDiscount] = useState('0')
-  const [lines, setLines] = useState([
-    { session_date: new Date().toISOString().slice(0, 10), therapist_name: '', service_label: '', amount_inr: '' },
-  ])
-  const [submitting, setSubmitting] = useState(false)
-  const [err, setErr] = useState('')
-
-  useEffect(() => {
-    apiFetch('/api/v1/cases?page_size=100')
-      .then((data) => {
-        const rows = data?.items ?? (Array.isArray(data) ? data : [])
-        setCases(rows)
-      })
-      .catch(() => setCases([]))
-  }, [])
-
-  const caseOptions = useMemo(() => {
-    const q = familySearch.trim().toLowerCase()
-    return cases.filter((c) => {
-      if (!q) return true
-      return (
-        c.case_code?.toLowerCase().includes(q) ||
-        c.child_name?.toLowerCase().includes(q) ||
-        c.service_type?.toLowerCase().includes(q)
-      )
-    }).map((c) => ({
-      caseDbId: c.id,
-      caseCode: c.case_code,
-      childName: c.child_name,
-      serviceType: c.service_type,
-      productModule: c.product_module,
-    }))
-  }, [cases, familySearch])
-
-  const lineTotal = lines.reduce((s, l) => s + (Number(l.amount_inr) || 0), 0)
-  const totalAfterDiscount = Math.max(0, lineTotal - (Number(discount) || 0))
-
-  function addLine() {
-    setLines((prev) => [
-      ...prev,
-      { session_date: new Date().toISOString().slice(0, 10), therapist_name: '', service_label: '', amount_inr: '' },
-    ])
-  }
-
-  async function submit() {
-    setErr('')
-    setSubmitting(true)
-    try {
-      const payload = {
-        case_id: selectedCase.caseDbId,
-        invoice_type: invoiceType,
-        billing_month: billingMonth,
-        due_date: dueDate || null,
-        notes: notes || null,
-        discount_inr: Number(discount) || 0,
-        lines: lines.map((l) => ({
-          session_date: l.session_date,
-          therapist_name: l.therapist_name.trim(),
-          service_label: l.service_label.trim() || selectedCase.serviceType,
-          session_status: 'COMPLETED',
-          amount_inr: Number(l.amount_inr),
-        })),
-      }
-      await apiFetch('/api/v1/admin/client-billing/invoices', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-      onDone()
-      onClose()
-    } catch (e) {
-      setErr(e.message)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="client-inv__overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="client-inv__wizard" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ margin: '0 0 16px' }}>Raise client invoice</h3>
-        <div className="client-inv__wizard-steps">
-          {[1, 2, 3].map((n) => (
-            <div
-              key={n}
-              className={`client-inv__wizard-step ${step === n ? 'is-active' : ''} ${step > n ? 'is-done' : ''}`}
-            >
-              {n === 1 ? 'Case' : n === 2 ? 'Details' : 'Line items'}
-            </div>
-          ))}
-        </div>
-
-        {step === 1 ? (
-          <>
-            <AdminSearchInput value={familySearch} onChange={(e) => setFamilySearch(e.target.value)} placeholder="Search case, child, parent…" />
-            <div style={{ maxHeight: 280, overflowY: 'auto', marginTop: 12 }}>
-              {caseOptions.length === 0 ? (
-                <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>No cases found.</p>
-              ) : (
-                caseOptions.map((c) => (
-                  <button
-                    key={c.caseDbId}
-                    type="button"
-                    onClick={() => setSelectedCase(c)}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '10px 12px',
-                      marginBottom: 6,
-                      borderRadius: 10,
-                      border: selectedCase?.caseDbId === c.caseDbId ? '2px solid #6366f1' : '1px solid #e2e8f0',
-                      background: selectedCase?.caseDbId === c.caseDbId ? '#eef2ff' : '#fff',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <strong>{c.caseCode}</strong> — {c.childName}
-                    <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>{c.parentName}</span>
-                  </button>
-                ))
-              )}
-            </div>
-            <div className="admin-btn-group" style={{ marginTop: 16 }}>
-              <button type="button" className="admin-btn admin-btn--primary" disabled={!selectedCase} onClick={() => setStep(2)}>
-                Next
-              </button>
-              <button type="button" className="admin-btn admin-btn--ghost" onClick={onClose}>
-                Cancel
-              </button>
-            </div>
-          </>
-        ) : null}
-
-        {step === 2 ? (
-          <>
-            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: 12 }}>
-              {selectedCase?.caseCode} — {selectedCase?.childName}
-            </p>
-            <label style={{ display: 'block', marginBottom: 10 }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Invoice type</span>
-              <select className="client-inv__filter-input" style={{ width: '100%', marginTop: 4 }} value={invoiceType} onChange={(e) => setInvoiceType(e.target.value)}>
-                <option value="PREPAID">Prepaid (start of service)</option>
-                <option value="POSTPAID">Postpaid (end of period)</option>
-              </select>
-            </label>
-            <label style={{ display: 'block', marginBottom: 10 }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Billing month</span>
-              <input className="client-inv__filter-input" style={{ width: '100%', marginTop: 4 }} value={billingMonth} onChange={(e) => setBillingMonth(e.target.value)} placeholder="May 2026" />
-            </label>
-            <label style={{ display: 'block', marginBottom: 10 }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Due date</span>
-              <input type="date" className="client-inv__filter-input" style={{ width: '100%', marginTop: 4 }} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </label>
-            <label style={{ display: 'block', marginBottom: 10 }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Notes (optional)</span>
-              <textarea className="client-inv__filter-input" style={{ width: '100%', marginTop: 4, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
-            </label>
-            <div className="admin-btn-group" style={{ marginTop: 16 }}>
-              <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setStep(1)}>
-                Back
-              </button>
-              <button type="button" className="admin-btn admin-btn--primary" onClick={() => setStep(3)}>
-                Next
-              </button>
-            </div>
-          </>
-        ) : null}
-
-        {step === 3 ? (
-          <>
-            <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Add session lines. Total: {formatCurrency(totalAfterDiscount)}</p>
-            {lines.map((l, i) => (
-              <div key={i} className="client-inv__line-row">
-                <input type="date" className="client-inv__filter-input" value={l.session_date} onChange={(e) => setLines((prev) => prev.map((x, j) => (j === i ? { ...x, session_date: e.target.value } : x)))} />
-                <input className="client-inv__filter-input" placeholder="Therapist" value={l.therapist_name} onChange={(e) => setLines((prev) => prev.map((x, j) => (j === i ? { ...x, therapist_name: e.target.value } : x)))} />
-                <input className="client-inv__filter-input" placeholder="Service" value={l.service_label} onChange={(e) => setLines((prev) => prev.map((x, j) => (j === i ? { ...x, service_label: e.target.value } : x)))} />
-                <input type="number" className="client-inv__filter-input" placeholder="₹" value={l.amount_inr} onChange={(e) => setLines((prev) => prev.map((x, j) => (j === i ? { ...x, amount_inr: e.target.value } : x)))} />
-                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setLines((prev) => prev.filter((_, j) => j !== i))} disabled={lines.length <= 1}>
-                  ×
-                </button>
-              </div>
-            ))}
-            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" style={{ marginBottom: 12 }} onClick={addLine}>
-              + Add line
-            </button>
-            <label style={{ display: 'block', marginBottom: 12 }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Discount (INR)</span>
-              <input type="number" className="client-inv__filter-input" style={{ width: '100%', marginTop: 4 }} value={discount} onChange={(e) => setDiscount(e.target.value)} />
-            </label>
-            {err ? <p style={{ color: '#b91c1c', fontSize: '0.85rem' }}>{err}</p> : null}
-            <div className="admin-btn-group">
-              <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setStep(2)}>
-                Back
-              </button>
-              <button type="button" className="admin-btn admin-btn--primary" disabled={submitting || lineTotal <= 0} onClick={submit}>
-                {submitting ? 'Creating…' : 'Create draft invoice'}
-              </button>
-            </div>
-          </>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
 // ── View / payment drawers ───────────────────────────────────────────────────
-function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling }) {
+export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling }) {
   const [detail, setDetail] = useState(null)
   const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
@@ -369,13 +154,17 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling })
   }
 
   async function resolveDispute(disputeId, status) {
+    const resolution = resolveNote.trim()
+    if (status === 'REJECTED' && !resolution) {
+      return
+    }
     setActing(true)
     try {
       await apiFetch(`/api/v1/admin/client-billing/disputes/${disputeId}/resolve`, {
         method: 'POST',
         body: JSON.stringify({
           status,
-          resolution: resolveNote,
+          resolution,
           adjustment_inr: resolveAdj ? Number(resolveAdj) : null,
         }),
       })
@@ -393,13 +182,18 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling })
 
   return (
     <div className="client-inv__overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="client-inv__drawer" onClick={(e) => e.stopPropagation()}>
+      <div className="client-inv__drawer client-inv__drawer--wide" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div>
             <h3 style={{ margin: 0 }}>{detail?.invoiceNumber || 'Invoice'}</h3>
             <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>
               {detail?.childName} · {detail?.caseId}
             </p>
+            {detail?.id ? (
+              <Link to={`/admin/invoices/client/${detail.id}`} style={{ fontSize: '0.8rem' }}>
+                Open full view
+              </Link>
+            ) : null}
           </div>
           <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={onClose}>
             Close
@@ -430,6 +224,10 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling })
                   <div><span style={{ color: '#64748b' }}>Due</span><br />{detail.dueDate || '—'}</div>
                 </div>
                 <p style={{ fontSize: '0.85rem', marginTop: 12 }}>Parent: {detail.parentName} ({detail.parentEmail})</p>
+                <p style={{ fontSize: '0.85rem', marginTop: 8 }}>
+                  {detail.invoiceType} · {detail.serviceType} · Tax {formatCurrency(detail.taxInr)}
+                  {detail.gatewayEnabled ? ' · Payment gateway on' : ''}
+                </p>
                 {detail.notes ? <p style={{ fontSize: '0.85rem', color: '#64748b' }}>{detail.notes}</p> : null}
                 {canWriteBilling ? (
                 <div className="admin-btn-group" style={{ marginTop: 16, flexWrap: 'wrap' }}>
@@ -454,28 +252,12 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling })
             ) : null}
 
             {tab === 'lines' ? (
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Therapist</th>
-                      <th>Service</th>
-                      <th>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(detail.lines || []).map((l) => (
-                      <tr key={l.id}>
-                        <td>{l.sessionDate}</td>
-                        <td>{l.therapistName}</td>
-                        <td>{l.serviceLabel}</td>
-                        <td>{formatCurrency(l.amountInr)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <InvoiceLineItemEditor
+                invoiceId={invoiceId}
+                lines={detail.lines || []}
+                canWrite={canWriteBilling && detail.status === 'DRAFT'}
+                onUpdated={load}
+              />
             ) : null}
 
             {tab === 'payments' ? (
@@ -563,14 +345,19 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling })
                       {canWriteBilling && (d.status === 'OPEN' || d.status === 'UNDER_REVIEW') ? (
                         resolveId === d.id ? (
                           <div style={{ marginTop: 8 }}>
-                            <textarea className="client-inv__filter-input" style={{ width: '100%', minHeight: 50 }} placeholder="Resolution note" value={resolveNote} onChange={(e) => setResolveNote(e.target.value)} />
+                            <textarea className="client-inv__filter-input" style={{ width: '100%', minHeight: 50 }} placeholder="Resolution or rejection note (required if rejecting)" value={resolveNote} onChange={(e) => setResolveNote(e.target.value)} />
                             <input type="number" className="client-inv__filter-input" style={{ width: '100%', marginTop: 6 }} placeholder="Adjustment INR (optional)" value={resolveAdj} onChange={(e) => setResolveAdj(e.target.value)} />
                             <div className="admin-btn-group" style={{ marginTop: 8 }}>
                               <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={acting} onClick={() => resolveDispute(d.id, 'RESOLVED')}>
                                 Resolve
                               </button>
-                              <button type="button" className="admin-btn admin-btn--sm" disabled={acting} onClick={() => resolveDispute(d.id, 'REJECTED')}>
-                                Reject
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--sm"
+                                disabled={acting || !resolveNote.trim()}
+                                onClick={() => resolveDispute(d.id, 'REJECTED')}
+                              >
+                                Confirm reject
                               </button>
                             </div>
                           </div>
@@ -615,8 +402,12 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBilling })
   )
 }
 
-// ── Main tab ─────────────────────────────────────────────────────────────────
-export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInvoiceId = null }) {
+export function AdminClientInvoicesTab({
+  highlightClaimsPending = false,
+  claimsOnly = false,
+  openInvoiceId = null,
+}) {
+  const navigate = useNavigate()
   const { canWriteBilling } = useModuleWrite()
   const [searchParams, setSearchParams] = useSearchParams()
   const [summary, setSummary] = useState(null)
@@ -625,7 +416,6 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
   const [filters, setFilters] = useState(() => parseClientInvoiceFilters(searchParams))
   const [filterOptions, setFilterOptions] = useState(null)
   const [viewId, setViewId] = useState(openInvoiceId ? Number(openInvoiceId) : null)
-  const [showWizard, setShowWizard] = useState(false)
 
   useEffect(() => {
     apiFetch('/api/v1/admin/client-billing/invoices/filter-options')
@@ -634,7 +424,10 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
   }, [])
 
   const load = useCallback(() => {
-    const qs = buildClientInvoiceQuery(filters)
+    const qs = buildClientInvoiceQuery({
+      ...filters,
+      claimsPending: claimsOnly || filters.claimsPending,
+    })
     setLoading(true)
     Promise.all([
       apiFetch('/api/v1/admin/client-billing/summary'),
@@ -649,7 +442,7 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
         setInvoices([])
       })
       .finally(() => setLoading(false))
-  }, [filters])
+  }, [filters, claimsOnly])
 
   useEffect(() => {
     load()
@@ -803,10 +596,10 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
             ))}
           </select>
         </label>
-        <div className="client-inv__filter-field client-inv__filter-field--search">
+        <div className="client-inv__filter-field client-inv__filter-field--search client-inv__filter-field--search-compact">
           <AdminSearchInput
             value={filters.search}
-            onChange={(e) => patchFilters({ search: e.target.value })}
+            onChange={(value) => patchFilters({ search: value })}
             placeholder="Search invoice, child, parent…"
           />
         </div>
@@ -817,10 +610,13 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
           type="button"
           className="admin-btn admin-btn--primary admin-btn--sm"
           disabled={!canWriteBilling}
-          onClick={() => setShowWizard(true)}
+          onClick={() => navigate('/admin/invoices/compose')}
         >
-          + Raise invoice
+          Compose invoice
         </button>
+        <Link to="/admin/invoices/compose?queue=not_invoiced_this_month" className="admin-btn admin-btn--ghost admin-btn--sm">
+          Not invoiced this month
+        </Link>
         <div className="admin-btn-group">
           <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadExport(`/api/v1/admin/client-billing/invoices/export/xlsx${buildClientInvoiceQuery(filters)}`, 'client_invoices.xlsx')}>
             Export Excel
@@ -909,7 +705,6 @@ export function AdminClientInvoicesTab({ highlightClaimsPending = false, openInv
           canWriteBilling={canWriteBilling}
         />
       ) : null}
-      {showWizard ? <RaiseInvoiceWizard onClose={() => setShowWizard(false)} onDone={load} /> : null}
     </div>
   )
 }

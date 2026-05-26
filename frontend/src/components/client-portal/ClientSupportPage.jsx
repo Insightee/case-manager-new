@@ -17,6 +17,8 @@ function statusClass(status) {
   return 'parent-support__status parent-support__status--closed'
 }
 
+const MIN_MESSAGE_CHARS = 3
+
 function TicketThread({ ticket, onRefresh }) {
   const [reply, setReply] = useState('')
   const [replyFiles, setReplyFiles] = useState([])
@@ -26,8 +28,13 @@ function TicketThread({ ticket, onRefresh }) {
   const [error, setError] = useState('')
   const [dialog, setDialog] = useState(null)
 
+  const replyOk = reply.trim().length >= MIN_MESSAGE_CHARS
+
   async function sendReply() {
-    if (!reply.trim()) return
+    if (!replyOk) {
+      setError(`Please enter at least ${MIN_MESSAGE_CHARS} characters before sending.`)
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -59,33 +66,42 @@ function TicketThread({ ticket, onRefresh }) {
     }
   }
 
-  async function accept(feedback) {
+  async function closeWithFeedback(feedback) {
+    if (!rate) {
+      setError('Please rate the resolution (1–5 stars) before closing.')
+      return
+    }
     setBusy(true)
     setDialog(null)
+    setError('')
     try {
       await apiFetch(`/api/v1/parent/support/tickets/${ticket.id}/accept`, {
         method: 'POST',
-        body: JSON.stringify({ feedback: feedback || undefined }),
+        body: JSON.stringify({
+          rating: rate,
+          feedback: (feedback || rateNote || '').trim() || undefined,
+        }),
       })
       await onRefresh()
     } catch (err) {
-      setError(err.message || 'Could not accept resolution')
+      setError(err.message || 'Could not close ticket')
     } finally {
       setBusy(false)
     }
   }
 
-  async function submitRating() {
-    if (!rate) return
+  async function reopenTicket(note) {
     setBusy(true)
+    setDialog(null)
+    setError('')
     try {
-      await apiFetch(`/api/v1/parent/support/tickets/${ticket.id}/rate`, {
+      await apiFetch(`/api/v1/parent/support/tickets/${ticket.id}/reopen`, {
         method: 'POST',
-        body: JSON.stringify({ rating: rate, feedback: rateNote.trim() || undefined }),
+        body: JSON.stringify({ note }),
       })
       await onRefresh()
     } catch (err) {
-      setError(err.message || 'Could not submit rating')
+      setError(err.message || 'Could not reopen ticket')
     } finally {
       setBusy(false)
     }
@@ -126,33 +142,85 @@ function TicketThread({ ticket, onRefresh }) {
         ))}
       </div>
 
-      {/* Resolution prompt banner */}
       {ticket.can_accept ? (
         <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 12, padding: '14px 16px', marginTop: 14 }}>
-          <p style={{ fontWeight: 700, color: '#166534', fontSize: '0.9rem', margin: '0 0 4px' }}>The care team has resolved your ticket</p>
+          <p style={{ fontWeight: 700, color: '#166534', fontSize: '0.9rem', margin: '0 0 4px' }}>How was the resolution?</p>
           <p style={{ fontSize: '0.8rem', color: '#166534', margin: '0 0 12px' }}>
-            If the issue is sorted, accept the resolution to close this ticket. Not satisfied? Send a reply and it will reopen for the team.
+            Rate your experience, add comments, then close the ticket — or reopen it if the issue is not fixed.
           </p>
-          <button
-            type="button"
-            className="parent-support__btn parent-support__btn--primary"
-            onClick={() =>
-              setDialog({
-                type: 'accept',
-                title: 'Accept resolution & close',
-                description: 'Confirm that support has addressed your issue. You can add optional feedback below.',
-              })
-            }
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className="parent-support__star"
+                style={{
+                  width: 36,
+                  height: 36,
+                  opacity: rate >= n ? 1 : 0.35,
+                  color: rate >= n ? '#ca8a04' : '#94a3b8',
+                }}
+                onClick={() => setRate(n)}
+                disabled={busy}
+                aria-label={`Rate ${n} out of 5`}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+          <textarea
+            className="parent-support__field"
+            style={{ width: '100%', minHeight: 64, boxSizing: 'border-box', marginBottom: 10 }}
+            placeholder="Comments on how we handled this (optional)"
+            value={rateNote}
+            onChange={(e) => setRateNote(e.target.value)}
             disabled={busy}
-            style={{ width: '100%' }}
-          >
-            Accept resolution & close…
-          </button>
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              type="button"
+              className="parent-support__btn parent-support__btn--primary"
+              disabled={busy || !rate}
+              onClick={() =>
+                setDialog({
+                  type: 'accept',
+                  title: 'Close ticket with feedback',
+                  description: 'Your rating and comments will be saved and this ticket will show as closed.',
+                })
+              }
+            >
+              Submit feedback & close ticket
+            </button>
+            <button
+              type="button"
+              className="parent-support__btn"
+              disabled={busy}
+              onClick={() =>
+                setDialog({
+                  type: 'reopen',
+                  title: 'Reopen ticket',
+                  description: 'Tell the team why this needs more attention. The ticket will open again for them.',
+                  requireNote: true,
+                })
+              }
+            >
+              Reopen ticket…
+            </button>
+          </div>
         </div>
       ) : null}
 
-      {/* Reply compose */}
-      {open ? (
+      {ticket.status === 'CLOSED' ? (
+        <div style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', marginTop: 14, fontSize: '0.85rem', color: '#475569' }}>
+          <strong>Closed.</strong>
+          {ticket.parent_satisfaction_rating ? ` You rated this ${ticket.parent_satisfaction_rating}/5.` : ''}
+          {ticket.parent_resolution_feedback ? (
+            <p style={{ margin: '8px 0 0', fontSize: '0.8rem' }}>{ticket.parent_resolution_feedback}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {open && !ticket.can_accept ? (
         <div style={{ marginTop: 14 }}>
           <textarea
             className="parent-support__field"
@@ -167,7 +235,7 @@ function TicketThread({ ticket, onRefresh }) {
               type="button"
               className="parent-support__btn parent-support__btn--primary"
               onClick={sendReply}
-              disabled={busy || !reply.trim()}
+              disabled={busy || !replyOk}
             >
               {busy ? 'Sending…' : 'Send reply'}
             </button>
@@ -198,51 +266,26 @@ function TicketThread({ ticket, onRefresh }) {
 
       {error ? <p style={{ color: '#b91c1c', fontSize: '0.8rem', marginTop: 8 }}>{error}</p> : null}
 
-      {(ticket.can_rate || ticket.parent_satisfaction_rating) && ticket.status !== 'OPEN' ? (
-        <div style={{ marginTop: 16 }}>
-          <p style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 8 }}>Rate support</p>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                className="parent-support__star"
-                style={{ width: 32, height: 32 }}
-                onClick={() => setRate(n)}
-                disabled={!!ticket.parent_satisfaction_rating}
-              >
-                ★
-              </button>
-            ))}
-          </div>
-          <textarea
-            style={{ width: '100%', marginTop: 8, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1' }}
-            placeholder="Optional feedback on how we handled this"
-            value={rateNote}
-            onChange={(e) => setRateNote(e.target.value)}
-            disabled={!!ticket.parent_satisfaction_rating}
-          />
-          {!ticket.parent_satisfaction_rating ? (
-            <button type="button" className="parent-support__btn" onClick={submitRating} disabled={busy || !rate}>
-              Submit rating
-            </button>
-          ) : (
-            <p style={{ fontSize: '0.8rem', color: '#15803d' }}>Rated {ticket.parent_satisfaction_rating}/5</p>
-          )}
-        </div>
-      ) : null}
-
       <TicketFlowDialog
         open={!!dialog}
         title={dialog?.title}
         description={dialog?.description}
-        confirmLabel={dialog?.type === 'escalate' ? 'Escalate' : 'Accept & close'}
-        requireNote={false}
-        noteLabel={dialog?.type === 'escalate' ? 'What was missing? (optional)' : 'Feedback (optional)'}
+        confirmLabel={
+          dialog?.type === 'escalate' ? 'Escalate' : dialog?.type === 'reopen' ? 'Reopen ticket' : 'Close ticket'
+        }
+        requireNote={dialog?.requireNote || dialog?.type === 'reopen'}
+        noteLabel={
+          dialog?.type === 'escalate'
+            ? 'What was missing? (optional)'
+            : dialog?.type === 'reopen'
+              ? 'Why are you reopening? (required)'
+              : 'Additional comments (optional)'
+        }
         onCancel={() => setDialog(null)}
         onConfirm={(note) => {
           if (dialog?.type === 'escalate') escalate(note)
-          else accept(note)
+          else if (dialog?.type === 'reopen') reopenTicket(note)
+          else closeWithFeedback(note)
         }}
       />
     </div>

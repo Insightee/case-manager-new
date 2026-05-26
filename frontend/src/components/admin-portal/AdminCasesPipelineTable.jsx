@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
-  PIPELINE_COLUMN_META,
+  CASE_STATE_OPTIONS,
+  OPENED_DATE_PRESETS,
   buildPipelineActions,
   countActivePipelineFilters,
+  defaultCaseManagerFilterId,
   defaultPipelineFilters,
   derivePipelineFilterOptions,
   filterPipelineRows,
@@ -14,7 +16,8 @@ import {
   pipelineStatusBadgeVariant,
   sortPipelineRows,
 } from '../../lib/adminCasePipeline.js'
-import { AdminEmptyState, AdminSearchInput, AdminToolbar } from './ui/index.js'
+import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
+import { AdminEmptyState, AdminSearchInput, AdminToolbar, FilterDateRange, FilterSelect } from './ui/index.js'
 import { AdminCaseAssignDrawer } from './AdminCaseAssignDrawer.jsx'
 import { AdminBulkAssignModal } from './AdminBulkAssignModal.jsx'
 import './admin-cases-pipeline.css'
@@ -28,22 +31,15 @@ const QUEUE_TABS = [
   { id: 'all', label: 'All cases' },
 ]
 
-const CASE_STATUSES = [
-  { value: 'all', label: 'All case statuses' },
-  { value: 'PENDING_ALLOTMENT', label: 'Pending allotment' },
-  { value: 'ACTIVE', label: 'Active' },
-  { value: 'SUSPENDED', label: 'Suspended' },
-  { value: 'CLOSED', label: 'Closed' },
-]
-
-const PRODUCT_MODULES = [
-  { value: 'all', label: 'All programmes' },
-  { value: 'homecare', label: 'Homecare' },
-  { value: 'shadow_support', label: 'Shadow support' },
+const SORT_OPTIONS = [
+  { value: 'priority', label: 'Action priority' },
+  { value: 'case', label: 'Case code' },
+  { value: 'child', label: 'Child name' },
 ]
 
 export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilters() }) {
-  const { can, canWriteProduct, isViewOnly } = useAuth()
+  const { can, canWriteProduct, isViewOnly, user } = useAuth()
+  const { options: programmeOptions } = useClinicalProductModules()
   const navigate = useNavigate()
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -79,8 +75,15 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   }, [load])
 
   useEffect(() => {
-    setFilters((prev) => ({ ...defaultPipelineFilters(initialFilters), search: prev.search }))
-  }, [initialFilters])
+    if (!user?.roles?.length) return
+    const cmId = defaultCaseManagerFilterId(user)
+    setFilters((prev) => {
+      const next = defaultPipelineFilters(initialFilters)
+      if (prev.search) next.search = prev.search
+      if (cmId && next.caseManagerId === 'all') next.caseManagerId = cmId
+      return next
+    })
+  }, [initialFilters, user?.id, user?.roles])
 
   useEffect(() => {
     if (!toast) return
@@ -104,6 +107,14 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   )
 
   const bulkEligible = filters.queue === 'assignment' || filters.queue === 'needs_action'
+
+  const programmeFilterOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All programmes' },
+      ...programmeOptions.filter((o) => o.value).map((o) => ({ value: o.value, label: o.label })),
+    ],
+    [programmeOptions],
+  )
 
   function patchFilters(patch) {
     setFilters((prev) => ({ ...prev, ...patch }))
@@ -230,145 +241,73 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
 
       {filtersOpen ? (
         <div className="admin-cases-pipeline__filters" role="region" aria-label="Case filters">
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Case status</span>
-            <select
-              className="admin-input"
-              value={filters.caseStatus}
-              onChange={(e) => patchFilters({ caseStatus: e.target.value })}
-            >
-              {CASE_STATUSES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Pipeline stage</span>
-            <select
-              className="admin-input"
-              value={filters.pipelineStage}
-              onChange={(e) => patchFilters({ pipelineStage: e.target.value })}
-            >
-              <option value="all">All stages</option>
-              {Object.entries(PIPELINE_COLUMN_META).map(([id, meta]) => (
-                <option key={id} value={id}>
-                  {meta.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Programme</span>
-            <select
-              className="admin-input"
-              value={filters.productModule}
-              onChange={(e) => patchFilters({ productModule: e.target.value })}
-            >
-              {PRODUCT_MODULES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Case manager</span>
-            <select
-              className="admin-input"
-              value={filters.caseManagerId}
-              onChange={(e) => patchFilters({ caseManagerId: e.target.value })}
-            >
-              <option value="all">All case managers</option>
-              <option value="unassigned">Unassigned CM</option>
-              {filterOptions.caseManagers.map((cm) => (
-                <option key={cm.id} value={cm.id}>
-                  {cm.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Therapist</span>
-            <select
-              className="admin-input"
-              value={filters.therapistId}
-              onChange={(e) => patchFilters({ therapistId: e.target.value })}
-            >
-              <option value="all">All therapists</option>
-              <option value="unassigned">Unassigned therapist</option>
-              {filterOptions.therapists.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Client</span>
-            <select
-              className="admin-input"
-              value={filters.childId}
-              onChange={(e) => patchFilters({ childId: e.target.value })}
-            >
-              <option value="all">All clients</option>
-              {filterOptions.children.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Opened month</span>
-            <select
-              className="admin-input"
-              value={filters.month}
-              onChange={(e) => patchFilters({ month: e.target.value })}
-            >
-              <option value="all">Any month</option>
-              {filterOptions.months.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Opened from</span>
-            <input
-              type="date"
-              className="admin-input"
-              value={filters.dateFrom}
-              onChange={(e) => patchFilters({ dateFrom: e.target.value })}
+          <FilterSelect
+            label="Case state"
+            value={filters.caseState}
+            onChange={(e) => patchFilters({ caseState: e.target.value })}
+            options={CASE_STATE_OPTIONS}
+          />
+          <FilterSelect
+            label="Opened"
+            value={filters.openedPreset}
+            onChange={(e) => patchFilters({ openedPreset: e.target.value })}
+            options={OPENED_DATE_PRESETS}
+          />
+          {filters.openedPreset === 'custom' ? (
+            <FilterDateRange
+              label="Date range"
+              from={filters.dateFrom}
+              to={filters.dateTo}
+              onFromChange={(e) => patchFilters({ dateFrom: e.target.value })}
+              onToChange={(e) => patchFilters({ dateTo: e.target.value })}
+              className="admin-cases-pipeline__filter-span-2"
             />
-          </label>
-          <label className="admin-cases-pipeline__filter-field">
-            <span>Opened to</span>
-            <input
-              type="date"
-              className="admin-input"
-              value={filters.dateTo}
-              onChange={(e) => patchFilters({ dateTo: e.target.value })}
-            />
-          </label>
+          ) : null}
+          <FilterSelect
+            label="Programme"
+            value={filters.productModule}
+            onChange={(e) => patchFilters({ productModule: e.target.value })}
+            options={programmeFilterOptions}
+          />
+          <FilterSelect
+            label="Case manager"
+            value={filters.caseManagerId}
+            onChange={(e) => patchFilters({ caseManagerId: e.target.value })}
+            options={[
+              { value: 'all', label: 'All case managers' },
+              { value: 'unassigned', label: 'Unassigned CM' },
+              ...filterOptions.caseManagers.map((cm) => ({ value: cm.id, label: cm.label })),
+            ]}
+          />
+          <FilterSelect
+            label="Therapist"
+            value={filters.therapistId}
+            onChange={(e) => patchFilters({ therapistId: e.target.value })}
+            options={[
+              { value: 'all', label: 'All therapists' },
+              { value: 'unassigned', label: 'Unassigned therapist' },
+              ...filterOptions.therapists.map((t) => ({ value: t.id, label: t.label })),
+            ]}
+          />
+          <FilterSelect
+            label="Client"
+            value={filters.childId}
+            onChange={(e) => patchFilters({ childId: e.target.value })}
+            options={[
+              { value: 'all', label: 'All clients' },
+              ...filterOptions.children.map((c) => ({ value: c.id, label: c.label })),
+            ]}
+          />
           {filterOptions.stages.length > 0 ? (
-            <label className="admin-cases-pipeline__filter-field">
-              <span>Operational stage</span>
-              <select
-                className="admin-input"
-                value={filters.operationalStage}
-                onChange={(e) => patchFilters({ operationalStage: e.target.value })}
-              >
-                <option value="all">All stages</option>
-                {filterOptions.stages.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <FilterSelect
+              label="Operational stage"
+              value={filters.operationalStage}
+              onChange={(e) => patchFilters({ operationalStage: e.target.value })}
+              options={[
+                { value: 'all', label: 'All stages' },
+                ...filterOptions.stages.map((s) => ({ value: s, label: s })),
+              ]}
+            />
           ) : null}
         </div>
       ) : null}
@@ -376,20 +315,16 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
       <AdminToolbar>
         <AdminSearchInput
           value={filters.search}
-          onChange={(e) => patchFilters({ search: e.target.value })}
+          onChange={(value) => patchFilters({ search: value })}
           placeholder="Search case, client, therapist, CM…"
         />
-        <select
-          className="admin-input"
-          style={{ width: 'auto', minWidth: 140 }}
+        <FilterSelect
+          label="Sort by"
           value={sort}
           onChange={(e) => setSort(e.target.value)}
-          aria-label="Sort order"
-        >
-          <option value="priority">Sort: action priority</option>
-          <option value="case">Sort: case code</option>
-          <option value="child">Sort: child name</option>
-        </select>
+          options={SORT_OPTIONS}
+          className="admin-cases-pipeline__sort"
+        />
         {canAssign && bulkEligible && selectedIds.size > 0 ? (
           <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setBulkOpen(true)}>
             Bulk assign ({selectedIds.size})

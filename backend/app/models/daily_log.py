@@ -45,6 +45,7 @@ class DailyLog(Base):
     approval_status: Mapped[LogApprovalStatus] = mapped_column(Enum(LogApprovalStatus), default=LogApprovalStatus.PENDING)
     late_addition: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     late_reason: Mapped[Optional[str]] = mapped_column(Text)
+    review_note: Mapped[Optional[str]] = mapped_column(Text)
     visibility_status: Mapped[VisibilityStatus] = mapped_column(
         Enum(VisibilityStatus), default=VisibilityStatus.INTERNAL_ONLY, index=True
     )

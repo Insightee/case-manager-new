@@ -43,6 +43,8 @@ class User(Base):
     avatar_path: Mapped[Optional[str]] = mapped_column(String(512))
     module_assignments: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     module_access_grants: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
+    service_access_grants: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
+    org_capability_grants: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     feature_overrides: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     is_view_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

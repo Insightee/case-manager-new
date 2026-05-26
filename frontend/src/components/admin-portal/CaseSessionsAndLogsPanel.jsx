@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
-import { StatusBadge } from './ui/index.js'
+import { RejectWithComment, StatusBadge } from './ui/index.js'
 
 function fmtDate(s) {
   if (!s) return '—'
@@ -21,6 +21,8 @@ export function CaseSessionsAndLogsPanel({
   const [sessions, setSessions] = useState([])
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [rejectingLogId, setRejectingLogId] = useState(null)
+  const [rejectComment, setRejectComment] = useState('')
   const highlightRef = useRef(null)
 
   useEffect(() => {
@@ -130,25 +132,35 @@ export function CaseSessionsAndLogsPanel({
                       <strong>For family:</strong> {log.parent_notes}
                     </p>
                   ) : null}
+                  {log.approval_status === 'REJECTED' && log.review_note ? (
+                    <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: 8 }}>
+                      <strong>Rejection:</strong> {log.review_note}
+                    </p>
+                  ) : null}
                   {log.approval_status === 'PENDING' && canReview ? (
-                    <div className="admin-btn-group" style={{ marginTop: 8 }}>
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--sm admin-btn--primary"
-                        disabled={actingLogId === log.id}
-                        onClick={() => onReviewLog(log.id, 'approve')}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--sm"
-                        disabled={actingLogId === log.id}
-                        onClick={() => onReviewLog(log.id, 'reject')}
-                      >
-                        Reject
-                      </button>
-                    </div>
+                    <RejectWithComment
+                      rejecting={rejectingLogId === log.id}
+                      comment={rejectingLogId === log.id ? rejectComment : ''}
+                      onCommentChange={setRejectComment}
+                      onStartReject={() => {
+                        setRejectingLogId(log.id)
+                        setRejectComment('')
+                      }}
+                      onCancelReject={() => {
+                        setRejectingLogId(null)
+                        setRejectComment('')
+                      }}
+                      onConfirmReject={() => {
+                        const note = rejectComment.trim()
+                        if (!note) return
+                        onReviewLog(log.id, 'reject', note)
+                        setRejectingLogId(null)
+                        setRejectComment('')
+                      }}
+                      onApprove={() => onReviewLog(log.id, 'approve')}
+                      processing={actingLogId === log.id}
+                      placeholder="Why is this log rejected? (required)"
+                    />
                   ) : null}
                 </>
               )}

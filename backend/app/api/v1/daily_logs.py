@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -12,13 +13,18 @@ from app.core.database import get_db
 from app.core.module_access import user_has_feature
 from app.core.module_write import ensure_case_write_access, ensure_feature_write_access
 from app.core.permissions import RoleName, case_scope_check, require_permission, user_has_permission
+from app.models.case import ClientBillingMode
 from app.models.daily_log import LogApprovalStatus
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.schemas.daily_log import DailyLogCreate, DailyLogFinanceRead, DailyLogRead, DailyLogUpdate
-from app.services import case_service, log_service
+from app.services import billing_ledger_service, case_service, log_service
 
 router = APIRouter(prefix="/daily-logs", tags=["daily-logs"])
+
+
+class LogRejectAction(BaseModel):
+    comment: str
 
 
 def _log_case_scope(db: Session, user: User, log) -> None:
@@ -137,6 +143,12 @@ def approve_log(
         log.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve", entity_type="daily_log", entity_id=log.id, **meta)
+    try:
+        billing_ledger_service.upsert_from_daily_log_approved(db, log)
+        if case and case.client_billing_mode == ClientBillingMode.PREPAID:
+            billing_ledger_service.consume_package_session(db, case_id=case.id, session=log.session)
+    except Exception:
+        pass
     db.commit()
     return {"status": "approved"}
 
@@ -144,10 +156,14 @@ def approve_log(
 @router.post("/{log_id}/reject")
 def reject_log(
     log_id: int,
+    payload: LogRejectAction,
     request: Request,
     user: User = Depends(require_permission("daily_log.review")),
     db: Session = Depends(get_db),
 ):
+    comment = (payload.comment or "").strip()
+    if not comment:
+        raise HTTPException(status_code=400, detail="Rejection comment is required")
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
@@ -157,6 +173,7 @@ def reject_log(
         ensure_case_write_access(user, case, db)
         ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
     log.approval_status = LogApprovalStatus.REJECTED
+    log.review_note = comment
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()

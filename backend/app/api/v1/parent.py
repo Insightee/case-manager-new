@@ -83,6 +83,11 @@ class ParentTicketRateRequest(BaseModel):
 
 class ParentTicketAcceptRequest(BaseModel):
     feedback: Optional[str] = None
+    rating: Optional[int] = None
+
+
+class ParentTicketReopenRequest(BaseModel):
+    note: str
 
 
 class ParentRescheduleRequest(BaseModel):
@@ -518,6 +523,62 @@ def parent_monthly_report_detail(
         raise HTTPException(status_code=404, detail="Report not found")
 
 
+@router.get("/reports/monthly/{report_id}/comments")
+def parent_monthly_report_comments(
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    from app.services import report_comment_service
+
+    report = db.get(MonthlyReport, report_id)
+    if not report or not parent_reports_service.parent_can_see_monthly(report):
+        raise HTTPException(status_code=404, detail="Report not found")
+    if not parent_service.get_parent_case(db, user, report.case_id):
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report_comment_service.list_monthly_comments(db, report_id)
+
+
+@router.post("/reports/monthly/{report_id}/comments")
+def parent_monthly_report_comment(
+    report_id: int,
+    payload: ParentReportCommentCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    from app.services import report_comment_service
+
+    report = db.get(MonthlyReport, report_id)
+    if not report or not parent_reports_service.parent_can_see_monthly(report):
+        raise HTTPException(status_code=404, detail="Report not found")
+    if not parent_service.get_parent_case(db, user, report.case_id):
+        raise HTTPException(status_code=404, detail="Report not found")
+    try:
+        row = report_comment_service.add_monthly_comment(
+            db,
+            report,
+            user,
+            body=payload.body,
+            comment_type=payload.comment_type or "GENERAL",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="document_comment",
+        entity_type="monthly_report",
+        entity_id=report_id,
+        **meta,
+    )
+    db.commit()
+    return row
+
+
 @router.post("/reports/monthly/{report_id}/approve")
 def parent_approve_monthly_report(
     report_id: int,
@@ -608,6 +669,26 @@ def parent_acknowledge_iep_via_reports(
     return {"status": "acknowledged"}
 
 
+@router.get("/cases/{case_id}/iep-plan")
+def parent_get_iep_plan(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_plan_service as iep_svc
+
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan or plan.status not in (
+        "SHARED_WITH_PARENT",
+        "PARENT_ACKNOWLEDGED",
+        "EDITS_SUGGESTED",
+    ):
+        raise HTTPException(status_code=404, detail="IEP plan not available")
+    return iep_svc.plan_to_dict(db, plan, user, include_context=False)
+
+
 @router.post("/cases/{case_id}/iep-plan/suggestions")
 def parent_iep_plan_suggestion(
     case_id: int,
@@ -620,7 +701,11 @@ def parent_iep_plan_suggestion(
     _require_parent(user)
     _parent_case_or_404(db, user, case_id)
     plan = iep_svc.get_latest_plan(db, case_id)
-    if not plan or plan.status not in ("SHARED_WITH_PARENT", "EDITS_SUGGESTED"):
+    if not plan or plan.status not in (
+        "SHARED_WITH_PARENT",
+        "PARENT_ACKNOWLEDGED",
+        "EDITS_SUGGESTED",
+    ):
         raise HTTPException(status_code=404, detail="IEP plan not available for suggestions")
     try:
         iep_svc.add_suggestion(db, plan, user, "PARENT", payload.body)
@@ -1007,7 +1092,12 @@ async def parent_ticket_reply(
         raise HTTPException(status_code=400, detail=str(e))
     from app.services import ticket_flow_service as ticket_flow
 
+    was_resolved = ticket.status == TicketStatus.RESOLVED
     ticket_flow.on_ticket_message(db, user, ticket)
+    if was_resolved and ticket.status == TicketStatus.IN_PROGRESS:
+        from app.services import ticket_notify_service as ticket_notify
+
+        ticket_notify.notify_ticket_reopened(db, ticket, actor_user_id=user.id)
     db.commit()
     return parent_ticket_service.get_parent_ticket(db, user, ticket.id)
 
@@ -1025,6 +1115,14 @@ def parent_ticket_accept(
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket or ticket.raised_by_user_id != user.id:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if payload.rating is not None:
+        if payload.rating < 1 or payload.rating > 5:
+            raise HTTPException(status_code=400, detail="Rating must be 1–5")
+        ticket.parent_satisfaction_rating = payload.rating
+    elif ticket.parent_satisfaction_rating is None:
+        raise HTTPException(status_code=400, detail="Please rate the resolution (1–5) before closing")
+    if payload.feedback and payload.feedback.strip():
+        ticket.parent_resolution_feedback = payload.feedback.strip()
     try:
         ticket_flow.close_ticket(
             db,
@@ -1035,6 +1133,29 @@ def parent_ticket_accept(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return parent_ticket_service.get_parent_ticket(db, user, ticket.id)
+
+
+@router.post("/support/tickets/{ticket_id}/reopen")
+def parent_ticket_reopen(
+    ticket_id: int,
+    payload: ParentTicketReopenRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import ticket_flow_service as ticket_flow
+    from app.services import ticket_notify_service as ticket_notify
+
+    _require_parent(user)
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket or ticket.raised_by_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        ticket_flow.reopen_ticket_by_raiser(db, user, ticket, note=payload.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    ticket_notify.notify_ticket_reopened(db, ticket, actor_user_id=user.id)
     db.commit()
     return parent_ticket_service.get_parent_ticket(db, user, ticket.id)
 
@@ -1144,7 +1265,7 @@ def parent_get_incident(
     if not incident or incident.reported_by_user_id != user.id:
         raise HTTPException(status_code=404, detail="Not found")
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)
 
 
 @router.post("/incidents", status_code=201)
@@ -1209,7 +1330,7 @@ def parent_create_incident(
     db.commit()
     db.refresh(incident)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    detail = inc_svc.incident_to_detail_dict(incident, case)
+    detail = inc_svc.incident_to_detail_dict(db, incident, case)
     detail["confirmation"] = f"Incident {incident.ticket_code} submitted — {assignee_name} will review."
     return detail
 
@@ -1278,7 +1399,7 @@ def parent_add_incident_message(
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)
 
 
 @router.post("/incidents/{incident_id}/close")
@@ -1304,7 +1425,7 @@ def parent_close_incident(
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)
 
 
 @router.post("/incidents/{incident_id}/escalate")
@@ -1330,4 +1451,4 @@ def parent_escalate_incident(
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)

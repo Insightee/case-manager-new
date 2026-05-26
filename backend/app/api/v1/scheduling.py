@@ -69,6 +69,9 @@ class HolidayRequest(BaseModel):
 
 class BookSlotRequest(BaseModel):
     case_id: int
+    require_therapist_approval: bool = False
+    admin_request_comment: Optional[str] = None
+    force_unavailable: bool = False
 
 
 class InviteClientRequest(BaseModel):
@@ -104,7 +107,14 @@ def get_calendar(
     db: Session = Depends(get_db),
 ):
     tid = _resolve_therapist_id(user, therapist_id)
-    return sched.get_unified_calendar(db, tid, from_date, to_date, case_id=case_id)
+    from app.services.cm_meeting_service import fetch_cm_meetings_for_therapist_calendar, meeting_to_calendar_dict
+
+    cal = sched.get_unified_calendar(db, tid, from_date, to_date, case_id=case_id)
+    cm_rows = fetch_cm_meetings_for_therapist_calendar(
+        db, tid, from_date=from_date, to_date=to_date, case_id=case_id
+    )
+    cal["cm_meetings"] = [meeting_to_calendar_dict(m, db) for m in cm_rows]
+    return cal
 
 
 @router.post("/slots", status_code=status.HTTP_201_CREATED)
@@ -202,9 +212,25 @@ def book_slot(
     else:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     try:
-        slot = appt_booking.book_with_session(db, slot_id, payload.case_id, user.id, source)
+        slot = appt_booking.book_with_session(
+            db,
+            slot_id,
+            payload.case_id,
+            user.id,
+            source,
+            require_therapist_approval=payload.require_therapist_approval,
+            admin_request_comment=payload.admin_request_comment,
+            force_unavailable=payload.force_unavailable and source == BookingSource.ADMIN,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if slot.approval_status == "PENDING_THERAPIST" and source == BookingSource.ADMIN:
+        appt_notify.notify_therapist_admin_booking_pending(
+            db,
+            slot,
+            admin_name=user.full_name,
+            comment=payload.admin_request_comment,
+        )
     if source == BookingSource.THERAPIST:
         appt_notify.notify_parents_therapist_booked(db, slot, therapist_name=user.full_name)
     elif source == BookingSource.ADMIN:
@@ -273,6 +299,31 @@ def block_slot(
         raise HTTPException(status_code=400, detail=str(e))
     db.commit()
     return _serialise(slot)
+
+
+@router.post("/assign-recurring/preview")
+def assign_recurring_preview(
+    payload: AssignRecurringRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    can_admin = user_has_permission(user, "slot.book_any")
+    can_self = user_has_permission(user, "slot.book") and payload.therapist_user_id == user.id
+    if not can_admin and not can_self:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    try:
+        return sched.preview_recurring_schedule(
+            db,
+            case_id=payload.case_id,
+            therapist_user_id=payload.therapist_user_id,
+            weekdays=payload.weekdays,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/assign-recurring", status_code=status.HTTP_201_CREATED)

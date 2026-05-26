@@ -34,6 +34,7 @@ def apply_billing_payload(case: Case, data: dict, user_id: int | None = None) ->
     from datetime import datetime, timezone
 
     billing_keys = {
+        "product_billing_rule_id",
         "client_billing_mode",
         "billing_type",
         "client_rate_per_session_inr",
@@ -65,6 +66,7 @@ def apply_billing_payload(case: Case, data: dict, user_id: int | None = None) ->
 
 def case_billing_dict(case: Case) -> dict:
     return {
+        "product_billing_rule_id": case.product_billing_rule_id,
         "billing_type": case.billing_type.value if case.billing_type else None,
         "client_rate_per_session_inr": float(case.client_rate_per_session_inr) if case.client_rate_per_session_inr else None,
         "package_session_count": case.package_session_count,

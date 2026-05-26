@@ -222,6 +222,68 @@ def reschedule_appointment(
     return booked
 
 
+def preview_recurring_schedule(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_id: int,
+    weekdays: list[str],
+    start_time: time,
+    end_time: time,
+    start_date: date,
+    end_date: date,
+) -> dict:
+    """Dry-run recurring assignment; returns planned bookings and conflicts."""
+    conflicts: list[dict] = []
+    planned: list[dict] = []
+    if end_date < start_date:
+        raise ValueError("end_date must be on or after start_date")
+    if end_time <= start_time:
+        raise ValueError("end_time must be after start_time")
+    if not weekdays:
+        raise ValueError("Select at least one weekday")
+    d = start_date
+    while d <= end_date:
+        if cal._weekday_key(d) not in weekdays:
+            d += timedelta(days=1)
+            continue
+        if cal.is_day_on_leave(db, therapist_user_id, d):
+            planned.append({"date": d.isoformat(), "status": "skipped_leave"})
+            d += timedelta(days=1)
+            continue
+        slot = db.scalars(
+            select(TherapistSlot).where(
+                TherapistSlot.therapist_user_id == therapist_user_id,
+                TherapistSlot.slot_date == d,
+                TherapistSlot.start_time == start_time,
+            )
+        ).first()
+        if slot and slot.status == SlotStatus.BOOKED and slot.case_id != case_id:
+            conflicts.append(
+                {
+                    "date": d.isoformat(),
+                    "start": start_time.strftime("%H:%M"),
+                    "end": end_time.strftime("%H:%M"),
+                    "slot_id": slot.id,
+                    "status": slot.status.value,
+                    "other_case_id": slot.case_id,
+                }
+            )
+        elif slot and slot.status not in (SlotStatus.AVAILABLE, SlotStatus.CANCELLED, SlotStatus.BOOKED):
+            conflicts.append(
+                {
+                    "date": d.isoformat(),
+                    "start": start_time.strftime("%H:%M"),
+                    "status": slot.status.value,
+                    "slot_id": slot.id,
+                }
+            )
+        else:
+            planned.append({"date": d.isoformat(), "start": start_time.strftime("%H:%M"), "status": "ok"})
+        d += timedelta(days=1)
+    return {"conflicts": conflicts, "planned": planned, "planned_count": len([p for p in planned if p.get("status") == "ok"])}
+
+
 def assign_recurring_schedule(
     db: Session,
     *,

@@ -13,6 +13,19 @@ from app.core.database import Base
 class ClientInvoiceType(str, enum.Enum):
     PREPAID = "PREPAID"
     POSTPAID = "POSTPAID"
+    MONTHLY_FIXED = "MONTHLY_FIXED"
+    B2B = "B2B"
+    MANUAL = "MANUAL"
+
+
+class ClientInvoiceLineType(str, enum.Enum):
+    SESSION_CHARGE = "SESSION_CHARGE"
+    PACKAGE_CHARGE = "PACKAGE_CHARGE"
+    LEAVE_ADJUSTMENT = "LEAVE_ADJUSTMENT"
+    DISCOUNT = "DISCOUNT"
+    MANUAL_FEE = "MANUAL_FEE"
+    TAX = "TAX"
+    OTHER = "OTHER"
 
 
 class ClientInvoiceStatus(str, enum.Enum):
@@ -24,9 +37,11 @@ class ClientInvoiceStatus(str, enum.Enum):
     OVERDUE = "OVERDUE"
     DISPUTED = "DISPUTED"
     CANCELLED = "CANCELLED"
+    VOID = "VOID"
 
 
 class CarePackageStatus(str, enum.Enum):
+    PENDING_PAYMENT = "PENDING_PAYMENT"
     ACTIVE = "ACTIVE"
     EXPIRED = "EXPIRED"
     EXHAUSTED = "EXHAUSTED"
@@ -79,6 +94,13 @@ class ClientInvoice(Base):
     amount_paid_inr: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
     notes: Mapped[Optional[str]] = mapped_column(Text)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    approved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    payment_policy_snapshot: Mapped[Optional[str]] = mapped_column(Text)
+    gateway_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    gateway_payment_url: Mapped[Optional[str]] = mapped_column(String(512))
+    organisation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("organisations.id"), index=True)
+    purchase_order_ref: Mapped[Optional[str]] = mapped_column(String(64))
+    contract_ref: Mapped[Optional[str]] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -102,6 +124,16 @@ class ClientInvoiceLine(Base):
     package_deducted: Mapped[bool] = mapped_column(Boolean, default=False)
     parent_summary: Mapped[Optional[str]] = mapped_column(Text)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    billing_ledger_id: Mapped[Optional[int]] = mapped_column(ForeignKey("billing_ledger.id"), index=True)
+    gst_rate_percent: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
+    gst_amount_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
+    hsn_sac_code: Mapped[Optional[str]] = mapped_column(String(16))
+    taxable_amount_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
+    line_item_type: Mapped[Optional[str]] = mapped_column(String(32))
+    quantity: Mapped[Optional[float]] = mapped_column(Numeric(10, 2))
+    unit_rate_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
+    finance_note: Mapped[Optional[str]] = mapped_column(Text)
+    therapist_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
 
     invoice = relationship("ClientInvoice", back_populates="lines")
 
@@ -118,6 +150,12 @@ class CarePackage(Base):
     validity_end: Mapped[Optional[date]] = mapped_column(Date)
     service_label: Mapped[Optional[str]] = mapped_column(String(128))
     status: Mapped[CarePackageStatus] = mapped_column(Enum(CarePackageStatus), default=CarePackageStatus.ACTIVE)
+    product_billing_rule_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("product_billing_rules.id"), index=True
+    )
+    client_invoice_id: Mapped[Optional[int]] = mapped_column(ForeignKey("client_invoices.id"), index=True)
+    valid_from: Mapped[Optional[date]] = mapped_column(Date)
+    amount_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

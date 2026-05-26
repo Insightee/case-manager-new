@@ -7,6 +7,11 @@ export const REPORT_CATEGORIES = [
   { id: 'PROGRESS', label: 'Progress / milestone report' },
 ]
 
+/** Categories shown in admin Report management hub (IEP/incidents live elsewhere). */
+export const REPORTS_HUB_CATEGORIES = REPORT_CATEGORIES.filter(
+  (c) => c.id !== 'IEP_PLAN' && c.id !== 'INCIDENT_DOCUMENT',
+)
+
 export const PROGRESS_SUB_CATEGORIES = [
   { id: 'TERMINATION', label: 'Termination report' },
   { id: 'ANNUAL', label: 'Annual progress report' },

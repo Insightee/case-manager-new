@@ -109,6 +109,51 @@
   margin-top: 1rem;
 }
 
+.report-html-view h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 0.75rem;
+  color: #1e293b;
+}
+
+.report-html-view table,
+.report-html-view .iep-doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 20px;
+  font-size: 0.875rem;
+}
+
+.report-html-view table th,
+.report-html-view table td,
+.report-html-view .iep-doc-table th,
+.report-html-view .iep-doc-table td {
+  border: 1px solid #cbd5e1;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.report-html-view table th,
+.report-html-view .iep-doc-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+  color: #334155;
+}
+
+.report-html-view table tbody tr:nth-child(even),
+.report-html-view .iep-doc-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.report-html-view p {
+  margin: 0.5em 0;
+}
+
+.report-html-view .iep-doc-section {
+  margin-bottom: 1.25rem;
+}
+
 .report-plan-block {
   margin-top: 16px;
   padding: 14px 16px;

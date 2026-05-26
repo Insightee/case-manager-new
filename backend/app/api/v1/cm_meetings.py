@@ -11,15 +11,17 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.core.module_access import is_view_only_user
+from app.core.module_access import get_allowed_case_product_modules, is_view_only_user
 from app.core.module_write import ensure_feature_write_access, guard_clinical_case
-from app.core.permissions import RoleName, user_has_permission
-from app.models.case import Case
+from app.core.permissions import RoleName, case_scope_check, user_has_permission
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+from app.models.case import Case, CaseStatus
 from app.models.child import Child
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.user import User
+from app.core.rbac_access import build_module_registry
 from app.services import parent_service
-from app.services.admin_scope_service import apply_case_scope, scoped_case_ids_subquery
+from app.services.admin_scope_service import apply_case_scope, scoped_case_ids_subquery, user_sees_global_cases
 
 router = APIRouter(tags=["cm-meetings"])
 
@@ -39,6 +41,10 @@ class CmMeetingCreate(BaseModel):
     title: Optional[str] = None
     meeting_url: Optional[str] = None
     guest_emails: list[str] = Field(default_factory=list)
+    invite_client: bool = True
+    invite_therapist: bool = False
+    invite_case_manager: bool = True
+    admin_user_ids: list[int] = Field(default_factory=list)
 
 
 class CmMeetingNotesUpdate(BaseModel):
@@ -73,7 +79,77 @@ def _can_read_cm_meetings(user: User) -> bool:
         RoleName.ADMIN.value,
         RoleName.SUPER_ADMIN.value,
         RoleName.SUPERVISOR.value,
+        RoleName.THERAPIST.value,
     }
+
+
+def _all_case_product_modules(db: Session) -> set[str]:
+    allowed: set[str] = set()
+    for mod in build_module_registry(db).values():
+        allowed.update(mod.case_product_modules)
+    return allowed
+
+
+def _bookable_cases_stmt(
+    db: Session,
+    user: User,
+    *,
+    case_manager_user_id: int | None = None,
+):
+    stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
+    allowed_modules = get_allowed_case_product_modules(user, db)
+    if allowed_modules is not None and not allowed_modules and user_sees_global_cases(user):
+        allowed_modules = _all_case_product_modules(db)
+    if allowed_modules is not None:
+        if not allowed_modules:
+            return stmt.where(Case.id < 0)
+        stmt = stmt.where(Case.product_module.in_(allowed_modules))
+
+    role = _role_name(user)
+    if case_manager_user_id is not None:
+        if role == RoleName.CASE_MANAGER.value and not user_has_permission(user, "admin.override"):
+            if case_manager_user_id != user.id:
+                raise HTTPException(status_code=403, detail="Cannot view another case manager's caseload")
+        elif role == RoleName.THERAPIST.value:
+            raise HTTPException(status_code=403, detail="Not allowed")
+        stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
+    elif role == RoleName.CASE_MANAGER.value and not user_has_permission(user, "admin.override"):
+        stmt = stmt.where(Case.case_manager_user_id == user.id)
+    elif role == RoleName.THERAPIST.value:
+        stmt = (
+            stmt.join(
+                CaseAssignment,
+                (CaseAssignment.case_id == Case.id)
+                & (CaseAssignment.therapist_user_id == user.id)
+                & (CaseAssignment.status == CaseAssignmentStatus.ACTIVE),
+            )
+            .distinct()
+        )
+    elif user_has_permission(user, "case.read.team") and not user_sees_global_cases(user):
+        stmt = stmt.where(Case.case_manager_user_id == user.id)
+    elif not user_sees_global_cases(user):
+        stmt = apply_case_scope(stmt, user)
+    stmt = stmt.where(Case.status != CaseStatus.CLOSED)
+    return stmt
+
+
+def _resolve_meeting_case_manager_id(
+    user: User,
+    db: Session,
+    *,
+    case_id: int | None,
+) -> int:
+    if case_id:
+        case = db.get(Case, case_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if case.case_manager_user_id:
+            return case.case_manager_user_id
+        raise HTTPException(status_code=400, detail="Case has no assigned case manager")
+    role = _role_name(user)
+    if role in {RoleName.CASE_MANAGER.value, RoleName.ADMIN.value, RoleName.SUPER_ADMIN.value}:
+        return user.id
+    raise HTTPException(status_code=400, detail="Select a case with an assigned case manager")
 
 
 def _require_cm_meetings_read(user: User) -> None:
@@ -83,23 +159,35 @@ def _require_cm_meetings_read(user: User) -> None:
 
 def _require_cm_meetings_write(user: User) -> None:
     role = _role_name(user)
-    allowed = {RoleName.CASE_MANAGER.value, RoleName.ADMIN.value, RoleName.SUPER_ADMIN.value}
+    allowed = {
+        RoleName.CASE_MANAGER.value,
+        RoleName.ADMIN.value,
+        RoleName.SUPER_ADMIN.value,
+        RoleName.THERAPIST.value,
+    }
     if role not in allowed and not user_has_permission(user, "admin.override"):
-        raise HTTPException(status_code=403, detail="Case manager or admin role required")
+        raise HTTPException(status_code=403, detail="Not allowed to book CM meetings")
     if is_view_only_user(user):
         raise HTTPException(status_code=403, detail="View-only access — changes are not allowed")
 
 
 def _guard_cm_meeting_write(user: User, case_id: int | None, db: Session) -> None:
+    role = _role_name(user)
     if case_id:
         case = db.get(Case, case_id)
         if case:
+            if role == RoleName.THERAPIST.value:
+                if not case_scope_check(db, user, case):
+                    raise HTTPException(status_code=403, detail="Not your case")
+                return
             guard_clinical_case(user, case, db, feature="cm_meetings")
             return
     ensure_feature_write_access(user, "cm_meetings", db=db)
 
 
 def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
+    from app.services.cm_meeting_service import build_attendee_rows, parse_staff_attendee_ids
+
     cm = db.get(User, meeting.case_manager_user_id)
     parent = db.get(User, meeting.parent_user_id) if meeting.parent_user_id else None
     therapist = db.get(User, meeting.therapist_user_id) if meeting.therapist_user_id else None
@@ -111,6 +199,7 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
             case_code = case.case_code
             if case.child:
                 child_name = case.child.full_name
+    attendees = build_attendee_rows(meeting, db)
     return {
         "id": meeting.id,
         "case_manager_user_id": meeting.case_manager_user_id,
@@ -134,6 +223,8 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
         "notes_other": meeting.notes_other,
         "meeting_url": meeting.meeting_url,
         "guest_emails": json.loads(meeting.guest_emails_json) if meeting.guest_emails_json else [],
+        "admin_user_ids": parse_staff_attendee_ids(meeting.staff_attendee_user_ids_json),
+        "attendees": attendees,
         "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
     }
 
@@ -142,30 +233,56 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
 # CM / Admin endpoints
 # ---------------------------------------------------------------------------
 
+@router.get("/cm-meetings/bookable-cases")
+def list_bookable_cases_for_cm_meetings(
+    case_manager_user_id: Optional[int] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_cm_meetings_read(user)
+    stmt = _bookable_cases_stmt(db, user, case_manager_user_id=case_manager_user_id)
+    rows = db.scalars(stmt.limit(500)).all()
+    return [
+        {
+            "id": c.id,
+            "case_code": c.case_code,
+            "child_name": c.child.full_name if c.child else None,
+            "case_manager_user_id": c.case_manager_user_id,
+            "product_module": c.product_module,
+        }
+        for c in rows
+    ]
+
+
 @router.post("/cm-meetings", status_code=201)
 def create_cm_meeting(
     payload: CmMeetingCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    from app.services.cm_meeting_service import (
+        apply_attendee_selection,
+        notify_meeting_invites_respecting_flags,
+    )
+
     _require_cm_meetings_write(user)
     _guard_cm_meeting_write(user, payload.case_id, db)
+    role = _role_name(user)
     meeting_type = payload.meeting_type
-    if payload.therapist_user_id:
-        meeting_type = MeetingType.CLIENT_AND_THERAPIST
-    parent_user_id = payload.parent_user_id
-    if payload.case_id and not parent_user_id:
-        case = db.get(Case, payload.case_id)
-        if not case:
-            raise HTTPException(status_code=404, detail="Case not found")
-        if case.child_id:
-            parent_user_id = parent_service.primary_parent_user_id_for_child(db, case.child_id)
+    invite_therapist = payload.invite_therapist
+    therapist_user_id = payload.therapist_user_id
+    invite_client = payload.invite_client
+    if role == RoleName.THERAPIST.value:
+        therapist_user_id = user.id
+        invite_therapist = True
+        invite_client = True
+    cm_user_id = _resolve_meeting_case_manager_id(user, db, case_id=payload.case_id)
     guest_json = json.dumps([e.strip() for e in payload.guest_emails if e and e.strip()]) if payload.guest_emails else None
     meeting = CaseManagerMeeting(
-        case_manager_user_id=user.id,
+        case_manager_user_id=cm_user_id,
         case_id=payload.case_id,
-        parent_user_id=parent_user_id,
-        therapist_user_id=payload.therapist_user_id,
+        parent_user_id=None,
+        therapist_user_id=None,
         scheduled_date=payload.scheduled_date,
         scheduled_time=payload.scheduled_time,
         duration_minutes=payload.duration_minutes,
@@ -175,7 +292,23 @@ def create_cm_meeting(
         guest_emails_json=guest_json,
         status=MeetingStatus.SCHEDULED,
     )
+    apply_attendee_selection(
+        db,
+        meeting,
+        invite_client=invite_client,
+        invite_therapist=invite_therapist,
+        therapist_user_id=therapist_user_id,
+        admin_user_ids=payload.admin_user_ids,
+        case_id=payload.case_id,
+    )
     db.add(meeting)
+    db.flush()
+    notify_meeting_invites_respecting_flags(
+        db,
+        meeting,
+        actor_user_id=user.id,
+        invite_case_manager=payload.invite_case_manager,
+    )
     db.commit()
     db.refresh(meeting)
     return _serialize(meeting, db)
@@ -211,6 +344,22 @@ def list_cm_meetings(
                     CaseManagerMeeting.case_manager_user_id == user.id,
                 )
             )
+    elif role == RoleName.THERAPIST.value:
+        assigned_case_ids = list(
+            db.scalars(
+                select(CaseAssignment.case_id).where(
+                    CaseAssignment.therapist_user_id == user.id,
+                    CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                )
+            ).all()
+        )
+        therapist_clauses = [
+            CaseManagerMeeting.therapist_user_id == user.id,
+            CaseManagerMeeting.parent_user_id == user.id,
+        ]
+        if assigned_case_ids:
+            therapist_clauses.append(CaseManagerMeeting.case_id.in_(assigned_case_ids))
+        stmt = stmt.where(or_(*therapist_clauses))
     if case_id is not None:
         stmt = stmt.where(CaseManagerMeeting.case_id == case_id)
     if status:
@@ -244,6 +393,14 @@ def list_cm_meetings(
             )
         )
     meetings = db.scalars(stmt).all()
+    if role in {
+        RoleName.ADMIN.value,
+        RoleName.SUPER_ADMIN.value,
+        RoleName.MODULE_ADMIN.value,
+    } and not user_has_permission(user, "admin.override") and not user_sees_global_cases(user):
+        from app.services.cm_meeting_service import user_can_view_meeting
+
+        meetings = [m for m in meetings if user_can_view_meeting(m, user.id)]
     return [_serialize(m, db) for m in meetings]
 
 

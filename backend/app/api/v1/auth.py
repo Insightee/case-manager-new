@@ -4,7 +4,7 @@ from typing import Optional
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -14,10 +14,28 @@ from app.core.database import get_db
 from app.core.security import decode_refresh_token, is_refresh_token_valid, revoke_refresh_token
 from app.models.role import Role
 from app.models.user import InviteToken, User
-from app.core.module_access import get_user_features, is_view_only_user, modules_for_api
+from app.core.module_access import (
+    clinical_product_modules_for_user,
+    get_user_features,
+    is_view_only_user,
+    modules_for_api,
+)
 from app.models.user import EmploymentStatus
-from app.schemas.auth import AcceptInviteRequest, LoginRequest, MeUpdate, ModuleSummary, RefreshRequest, TokenResponse, UserMeResponse
-from app.services import address_service, auth_service, avatar_service
+from app.schemas.auth import (
+    AcceptInviteRequest,
+    ClinicalProductModuleRead,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    LoginRequest,
+    MeUpdate,
+    ModuleSummary,
+    RefreshRequest,
+    ResetPasswordPreviewResponse,
+    ResetPasswordRequest,
+    TokenResponse,
+    UserMeResponse,
+)
+from app.services import address_service, auth_service, avatar_service, password_reset_service
 from app.services.address_service import user_home_address_read
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -58,6 +76,42 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     revoke_refresh_token(data["jti"])
     db.commit()
     return TokenResponse(access_token=access, refresh_token=new_refresh)
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    password_reset_service.request_password_reset(db, payload.email, background_tasks)
+    db.commit()
+    return ForgotPasswordResponse()
+
+
+@router.get("/reset-password/{token}/preview", response_model=ResetPasswordPreviewResponse)
+def reset_password_preview(token: str, db: Session = Depends(get_db)):
+    row = password_reset_service.get_valid_token_row(db, token)
+    if not row:
+        raise HTTPException(status_code=404, detail="Reset link not found or expired")
+    user = db.get(User, row.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Reset link not found or expired")
+    return ResetPasswordPreviewResponse(email=password_reset_service.mask_email(user.email))
+
+
+@router.post("/reset-password", response_model=ForgotPasswordResponse)
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    try:
+        password_reset_service.reset_password(db, payload.token, payload.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return ForgotPasswordResponse(
+        message="Your password has been updated. You can sign in with your new password."
+    )
 
 
 @router.get("/invite/{token}/preview")
@@ -165,8 +219,8 @@ def _avatar_url(user: User) -> Optional[str]:
     return None
 
 
-def _user_me_response(user: User) -> UserMeResponse:
-    module_summaries = [ModuleSummary(**m) for m in modules_for_api(user)]
+def _user_me_response(user: User, db: Session) -> UserMeResponse:
+    module_summaries = [ModuleSummary(**m) for m in modules_for_api(user, db)]
     return UserMeResponse(
         id=user.id,
         email=user.email,
@@ -181,14 +235,45 @@ def _user_me_response(user: User) -> UserMeResponse:
         employment_status=(user.employment_status.value if user.employment_status else "ACTIVE"),
         module_assignments=user.module_assignments or [],
         is_view_only=is_view_only_user(user),
-        features=get_user_features(user),
+        features=get_user_features(user, db),
         modules=module_summaries,
     )
 
 
+@router.get("/clinical-product-modules", response_model=list[ClinicalProductModuleRead])
+def clinical_product_modules(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return [ClinicalProductModuleRead(**row) for row in clinical_product_modules_for_user(user, db)]
+
+
+@router.get("/catalog/clinical-services")
+def clinical_services_catalog(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.service_category import ServiceCategory
+    from app.services.service_category_service import category_to_read_dict
+    from app.services.service_product_service import list_products_for_category
+
+    rows = db.scalars(
+        select(ServiceCategory)
+        .where(ServiceCategory.is_active.is_(True))
+        .order_by(ServiceCategory.sort_order, ServiceCategory.label)
+    ).all()
+    return [
+        {
+            **category_to_read_dict(cat),
+            "products": list_products_for_category(db, cat.id),
+        }
+        for cat in rows
+    ]
+
+
 @router.get("/me", response_model=UserMeResponse)
-def me(user: User = Depends(get_current_user)):
-    return _user_me_response(user)
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _user_me_response(user, db)
 
 
 @router.patch("/me", response_model=UserMeResponse)
@@ -218,7 +303,7 @@ def update_me(
     log_audit(db, actor_user_id=user.id, action="update_profile", entity_type="user", entity_id=user.id, **meta)
     db.commit()
     db.refresh(user)
-    return _user_me_response(user)
+    return _user_me_response(user, db)
 
 
 @router.post("/me/avatar")

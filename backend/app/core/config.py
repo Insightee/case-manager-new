@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     ticket_attachment_max_bytes: int = 5 * 1024 * 1024
     ticket_attachment_max_files: int = 3
     case_document_max_bytes: int = 5 * 1024 * 1024
+    billing_ledger_drafts: bool = True
 
     storage_provider: str = "local"
     storage_prefix: str = "insightcase"
@@ -54,13 +55,20 @@ class Settings(BaseSettings):
     r2_bucket_name: str = ""
     r2_endpoint_url: str = ""
 
+    email_provider: str = "smtp"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
-    smtp_from: str = "noreply@insighte.com"
+    smtp_from: str = ""
+    smtp_from_email: str = "noreply@insighte.in"
+    smtp_from_billing_email: str = "billing.noreply@insighte.in"
+    smtp_from_verification_email: str = "verification.noreply@insighte.in"
+    smtp_from_name: str = "Insighte"
     smtp_tls: bool = True
     admin_notification_emails: str = ""
+    password_reset_expire_hours: int = 1
+    password_reset_rate_limit_per_hour: int = 3
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -84,6 +92,27 @@ class Settings(BaseSettings):
     @property
     def admin_notification_email_list(self) -> list[str]:
         return [e.strip() for e in self.admin_notification_emails.split(",") if e.strip()]
+
+    def format_from_header(self, email: str) -> str:
+        """Build RFC5322 From header for a bare sender address."""
+        legacy = (self.smtp_from or "").strip()
+        if legacy and email == (self.smtp_from_email or "").strip():
+            if "<" in legacy:
+                return legacy
+            return legacy
+        name = (self.smtp_from_name or "Insighte").strip()
+        addr = (email or self.smtp_from_email or "noreply@insighte.in").strip()
+        if "<" in addr:
+            return addr
+        return f"{name} <{addr}>"
+
+    @property
+    def smtp_from_header(self) -> str:
+        """Default From header (general transactional)."""
+        legacy = (self.smtp_from or "").strip()
+        if legacy:
+            return legacy
+        return self.format_from_header(self.smtp_from_email)
 
     @property
     def storage_r2_endpoint(self) -> str:

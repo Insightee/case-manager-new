@@ -136,7 +136,7 @@ def test_cm_review_approve_and_parent_sees_published():
         headers=cm_headers,
         json={},
     )
-    cm_review_headers = _login("supervisor@demo.com")
+    cm_review_headers = _login("shadowcm@demo.com")
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/approve",
         headers=cm_review_headers,
@@ -189,7 +189,7 @@ def test_cm_request_changes():
     )
     doc_id = create.json()["id"]
     client.post(f"/api/v1/documents/{doc_id}/workflow/submit", headers=headers, json={})
-    cm_headers = _login("supervisor@demo.com")
+    cm_headers = _login("shadowcm@demo.com")
     r = client.post(
         f"/api/v1/documents/{doc_id}/workflow/request_changes",
         headers=cm_headers,

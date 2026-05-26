@@ -360,6 +360,10 @@ def book_slot(
     case_id: int,
     booked_by_user_id: int,
     booking_source: BookingSource,
+    *,
+    require_therapist_approval: bool = False,
+    admin_request_comment: str | None = None,
+    force_unavailable: bool = False,
 ) -> TherapistSlot:
     slot = db.scalars(
         select(TherapistSlot)
@@ -368,8 +372,10 @@ def book_slot(
     ).first()
     if not slot:
         raise ValueError("Slot not found")
-    if not is_slot_bookable(db, slot):
+    if not force_unavailable and not is_slot_bookable(db, slot):
         raise ValueError("Slot is not available for booking")
+    if slot.status == SlotStatus.BOOKED and slot.case_id != case_id and not force_unavailable:
+        raise ValueError("Slot is already booked for another case")
     if not get_active_assignment(db, case_id, slot.therapist_user_id):
         raise ValueError("Therapist is not actively assigned to this case")
     case = db.get(Case, case_id)
@@ -379,7 +385,12 @@ def book_slot(
     slot.case_id = case_id
     slot.booked_by_user_id = booked_by_user_id
     slot.booking_source = booking_source
-    slot.approval_status = "CONFIRMED"
+    if require_therapist_approval or force_unavailable:
+        slot.approval_status = "PENDING_THERAPIST"
+        if admin_request_comment:
+            slot.notes = admin_request_comment
+    else:
+        slot.approval_status = "CONFIRMED"
     db.flush()
     return slot
 

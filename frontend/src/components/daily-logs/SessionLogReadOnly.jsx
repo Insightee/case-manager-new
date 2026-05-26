@@ -45,7 +45,8 @@ export function SessionLogReadOnly({ log, session, childName, caseCode, onClose 
       ) : null}
       {log?.approval_status === 'REJECTED' ? (
         <p className="ic-session-log-readonly__notice ic-session-log-readonly__notice--warn" role="status">
-          This log was rejected. Contact your case manager to discuss next steps.
+          This log was rejected.
+          {log.review_note ? ` Note: ${log.review_note}` : ' Contact your case manager to discuss next steps.'}
         </p>
       ) : null}
       <dl className="ic-session-log-readonly__dl">

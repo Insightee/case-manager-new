@@ -29,6 +29,8 @@ def resolve_primary_role(user: User) -> str:
 def _landing_route(role: str, user: User) -> str:
     if role == RoleName.FINANCE.value:
         return "/admin/invoices"
+    if role == RoleName.HR.value:
+        return "/admin/people"
     if role == RoleName.CASE_MANAGER.value:
         return "/admin/cm"
     if role in (RoleName.VIEWER.value, RoleName.SUPERVISOR.value):

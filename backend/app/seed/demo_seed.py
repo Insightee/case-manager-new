@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.database import Base, SessionLocal, engine, ensure_sqlite_schema_patches
 from app.core.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS, RoleName
@@ -51,6 +52,35 @@ from app.services import slot_calendar_service as cal
 from app.models.incident import Incident, IncidentStatus
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.visibility import VisibilityStatus
+from app.models.service_category import ServiceCategory
+from app.core.therapist_services import SERVICE_CATEGORIES
+
+
+def seed_service_categories(db) -> None:
+    """Ensure canonical clinical service lines exist for RBAC and case assignment."""
+    for order, item in enumerate(SERVICE_CATEGORIES):
+        sid = item["id"]
+        label = item["label"]
+        pm = [{"id": sid, "label": label}]
+        cat = db.get(ServiceCategory, sid)
+        if not cat:
+            db.add(
+                ServiceCategory(
+                    id=sid,
+                    label=label,
+                    sort_order=order,
+                    is_active=True,
+                    access_group="Clinical",
+                    product_modules=pm,
+                )
+            )
+        else:
+            cat.label = label
+            cat.sort_order = order
+            cat.is_active = True
+            if not cat.product_modules:
+                cat.product_modules = pm
+    db.flush()
 
 
 def seed_roles_permissions(db):
@@ -106,6 +136,7 @@ def run():
     db = SessionLocal()
     try:
         seed_roles_permissions(db)
+        seed_service_categories(db)
 
         super_admin = get_or_create_user(db, "superadmin@demo.com", "demo123", "Super Admin", RoleName.SUPER_ADMIN.value)
         admin_user = get_or_create_user(
@@ -144,17 +175,17 @@ def run():
         finance = get_or_create_user(
             db, "finance@demo.com", "demo123", "Finance User", RoleName.FINANCE.value, module_assignments=["billing"]
         )
-        supervisor_cm = get_or_create_user(
+        shadow_cm = get_or_create_user(
             db,
-            "supervisor@demo.com",
+            "shadowcm@demo.com",
             "demo123",
-            "Shadow CM (ex-supervisor)",
+            "Shadow Case Manager",
             RoleName.CASE_MANAGER.value,
             module_assignments=["shadow_support"],
         )
-        viewer = get_or_create_user(
+        view_only_cm = get_or_create_user(
             db,
-            "viewer@demo.com",
+            "viewonly@demo.com",
             "demo123",
             "CM View Only",
             RoleName.CASE_MANAGER.value,
@@ -163,13 +194,13 @@ def run():
         from app.core.rbac_access import sync_user_access_fields
 
         sync_user_access_fields(
-            viewer,
+            view_only_cm,
             role_names=[RoleName.CASE_MANAGER.value],
             module_assignments=["homecare", "shadow_support"],
             view_only=True,
         )
         sync_user_access_fields(
-            supervisor_cm,
+            shadow_cm,
             role_names=[RoleName.CASE_MANAGER.value],
             module_assignments=["shadow_support"],
             view_only=False,
@@ -228,7 +259,7 @@ def run():
         case1.client_rate_per_session_inr = 1000
         case1.compensation_mode = CompensationMode.PERCENTAGE
         case1.pay_share_pct = 60
-        case1.case_manager_user_id = supervisor_cm.id
+        case1.case_manager_user_id = shadow_cm.id
 
         case2 = db.scalars(select(Case).where(Case.case_code == "IC-2026-053")).first()
         if not case2:
@@ -271,8 +302,14 @@ def run():
                 professional_certificates=["RCI Registered", "First Aid Certified"],
                 services_offered=["shadow", "homecare", "behavior_therapy"],
                 status=TherapistProfileStatus.APPROVED,
+                employment_start_date=date(2019, 6, 1),
+                leave_balance_year=date.today().year,
             )
             db.add(tp)
+        elif tp.employment_start_date is None:
+            tp.employment_start_date = date(2019, 6, 1)
+            if tp.leave_balance_year is None:
+                tp.leave_balance_year = date.today().year
 
         if not db.scalars(select(TherapistLeave).where(TherapistLeave.therapist_user_id == therapist.id)).first():
             db.add(
@@ -818,6 +855,22 @@ def run():
                     status=IncidentStatus.IN_REVIEW,
                 )
             )
+
+        from app.seed.product_billing_rules_seed import seed_product_billing_rules
+
+        seed_product_billing_rules(db)
+
+        _LEGACY_ROLE_NAMES = frozenset(
+            {RoleName.ADMIN.value, RoleName.VIEWER.value, RoleName.SUPERVISOR.value}
+        )
+        for u in db.scalars(select(User).options(selectinload(User.roles))).all():
+            names = {r.name for r in (u.roles or [])}
+            if names and names <= _LEGACY_ROLE_NAMES:
+                u.is_active = False
+        for legacy_email in ("supervisor@demo.com", "viewer@demo.com"):
+            legacy = db.scalars(select(User).where(User.email == legacy_email)).first()
+            if legacy:
+                legacy.is_active = False
 
         db.commit()
         print("Demo seed completed successfully.")

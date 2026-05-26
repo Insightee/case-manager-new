@@ -38,9 +38,17 @@ flowchart TB
 | `SUPER_ADMIN` | Super Admin | Admin | All (bypass) |
 | `MODULE_ADMIN` | Module Admin | Admin | Homecare + Shadow + Billing (configure per user) |
 | `ADMIN` | Legacy operations admin | Admin | Same as Module Admin (migrate to MODULE_ADMIN) |
-| `CASE_MANAGER` | Case Manager | Admin | Homecare + Shadow (clinical) |
-| `FINANCE` | Finance | Admin | Billing |
-| `HR` | HR | HR portal | Homecare + Shadow (people ops) |
+| `CASE_MANAGER` | Case Manager | Staff (`/admin/cm` landing) | Clinical programmes (one or many; defaults include all active service categories) |
+| `FINANCE` | Finance | Staff (`/admin/invoices` landing) | Billing |
+| `HR` | HR | Staff (`/admin/people` landing) | Clinical programmes + people/leave permissions |
+
+### Case Manager visibility
+
+- **Cases:** `case_manager_user_id = me` OR `case.region = my region`, filtered by granted `product_module`.
+- **Clients:** children on in-scope cases only (not global client admin).
+- **Therapists:** on in-scope case assignments.
+- **Reports / logs / IEP:** scoped via the same case rules.
+- **Not included:** org-wide People admin, billing module, service category configuration (unless also `MODULE_ADMIN` / `HR` / etc.).
 
 **Not created via this editor:** `THERAPIST`, `PARENT`, `SCHOOL_COORDINATOR` (separate onboarding flows).
 
@@ -58,7 +66,9 @@ flowchart TB
 
 ### Dynamic service modules
 
-Active rows in `service_categories` appear as modules with the same clinical feature set as Homecare (cases, session logs, reports, IEP, CM meetings, tickets, incidents).
+Active rows in `service_categories` appear as modules with the same clinical feature set as Homecare (cases, session logs, reports, IEP, CM meetings, tickets, incidents). `GET /admin/rbac/catalog` returns expanded `role_defaults` including dynamic programme IDs when the database is available.
+
+Use **Settings → Service categories** to define `product_modules[].id` (this is the RBAC/case slug). Then assign modules in **People → Staff** access editor.
 
 ### Features (per clinical module)
 

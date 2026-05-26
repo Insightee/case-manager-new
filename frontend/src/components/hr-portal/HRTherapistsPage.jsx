@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { TherapistLeaveBalancePanel } from './TherapistLeaveBalancePanel.jsx'
 
 const STATUS_OPTIONS = ['ACTIVE', 'SUSPENDED', 'ARCHIVED']
 
@@ -193,6 +194,8 @@ export function HRTherapistsPage() {
                 {saving ? 'Saving…' : 'Save changes'}
               </button>
             </div>
+
+            <TherapistLeaveBalancePanel therapistUserId={drawerUser.id} canEdit />
           </div>
         </div>
       )}

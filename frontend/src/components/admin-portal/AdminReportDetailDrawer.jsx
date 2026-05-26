@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { categoryLabel } from '../../lib/reportCategories.js'
-import { reportEditPath, reportModuleLabel } from '../../lib/reportManagementPaths.js'
+import { reportAdminEditPath, reportViewPath } from '../../lib/reportManagementPaths.js'
+import { ReportCommentsThread } from '../reports/ReportCommentsThread.jsx'
 import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
 import '../reports/report-editor.css'
 import './admin-reports.css'
@@ -17,10 +18,19 @@ function statusPillClass(status) {
 function workflowHint(detail) {
   if (!detail) return null
   if (detail.status === 'UNDER_REVIEW') {
-    return 'Open review — add comments, send to therapist or case manager, or approve for parents when ready.'
+    if (detail.can_cm_publish) {
+      return 'Case manager approval publishes this report to the parent portal.'
+    }
+    if (detail.can_admin_override_publish) {
+      return 'Admin override: CM has not published within 10 days — you may approve for parents.'
+    }
+    if (detail.days_until_admin_override != null) {
+      return `Admin override available in ${detail.days_until_admin_override} day(s) if CM has not published.`
+    }
+    return 'Add internal notes or send back to therapist or case manager for changes.'
   }
   if (detail.status === 'PUBLISHED' && detail.parent_review_status === 'CHANGES_REQUESTED') {
-    return 'Parent requested changes — edit in the report module, then resend when ready.'
+    return 'Parent requested changes — edit the report, then resend when ready.'
   }
   if (detail.status === 'REJECTED') {
     return 'Rejected — therapist may revise; you can edit and send back for review.'
@@ -42,11 +52,14 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
   const [sendTarget, setSendTarget] = useState('case_manager')
   const [sendComment, setSendComment] = useState('')
   const [cmComment, setCmComment] = useState('')
+  const [publishComment, setPublishComment] = useState('')
+  const [activeTab, setActiveTab] = useState('comments')
   const { can } = useAuth()
   const { canReviewReports } = useModuleWrite()
-  const canPublishToParent = can('case.read.all')
+  const isSuperAdmin = can('case.read.all')
   const productModule = detail?.product_module || 'homecare'
   const canReviewThis = canReviewReports(productModule)
+  const isMonthly = reportType === 'monthly'
 
   const loadDetail = useCallback(async () => {
     if (!reportId || !reportType) return
@@ -73,34 +86,43 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
     if (closeAfter) onClose()
   }
 
-  async function approve() {
+  async function publishToParent(override = false) {
+    if (!isMonthly) return
     setActing(true)
     setErr('')
     try {
       if (
-        reportType === 'monthly' &&
         detail?.status === 'PUBLISHED' &&
         detail?.parent_review_status === 'CHANGES_REQUESTED'
       ) {
         await apiFetch(`/api/v1/reports/monthly/${reportId}/resend-to-parent`, { method: 'POST' })
-      } else if (reportType === 'observation') {
-        await apiFetch('/api/v1/admin/reports/bulk/approve', {
-          method: 'POST',
-          body: JSON.stringify({
-            report_type: 'observation',
-            ids: [reportId],
-            visibility_status: 'APPROVED_FOR_PARENT',
-          }),
-        })
       } else {
-        await apiFetch(`/api/v1/reports/monthly/${reportId}/approve`, {
+        await apiFetch(`/api/v1/admin/reports/monthly/${reportId}/publish-to-parent`, {
           method: 'POST',
-          body: JSON.stringify({
-            comment: 'Approved from report management',
-            visibility_status: 'APPROVED_FOR_PARENT',
-          }),
+          body: JSON.stringify({ comment: publishComment.trim() || undefined }),
         })
       }
+      setPublishComment('')
+      await refreshAfterAction(true)
+    } catch (e) {
+      setErr(e.message || 'Publish failed')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function approveObservation() {
+    setActing(true)
+    setErr('')
+    try {
+      await apiFetch('/api/v1/admin/reports/bulk/approve', {
+        method: 'POST',
+        body: JSON.stringify({
+          report_type: 'observation',
+          ids: [reportId],
+          visibility_status: 'APPROVED_FOR_PARENT',
+        }),
+      })
       await refreshAfterAction(true)
     } catch (e) {
       setErr(e.message || 'Approve failed')
@@ -203,25 +225,20 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
     }
   }
 
-  const canApprove =
-    detail?.status === 'UNDER_REVIEW' ||
-    (reportType === 'monthly' &&
-      detail?.status === 'PUBLISHED' &&
-      detail?.parent_review_status === 'CHANGES_REQUESTED')
-  const canReject = canPublishToParent && detail?.status === 'UNDER_REVIEW'
+  const canResend =
+    isMonthly &&
+    detail?.status === 'PUBLISHED' &&
+    detail?.parent_review_status === 'CHANGES_REQUESTED'
+  const canCmPublish = isMonthly && detail?.can_cm_publish && canReviewThis
+  const canAdminOverride = isMonthly && detail?.can_admin_override_publish && canReviewThis
   const canCmReview =
-    !canPublishToParent && can('monthly_report.approve') && detail?.status === 'UNDER_REVIEW'
+    !isSuperAdmin && can('monthly_report.approve') && detail?.status === 'UNDER_REVIEW'
   const canWorkflow =
-    canReviewThis &&
-    detail &&
-    ['UNDER_REVIEW', 'DRAFT', 'REJECTED'].includes(detail.status)
-  const editPath = detail ? reportEditPath(detail, reportType) : null
-  const editLabel = reportModuleLabel(detail?.category, reportType)
-
-  const pdfPath =
-    reportType === 'monthly'
-      ? `/api/v1/reports/monthly/${reportId}/download`
-      : `/api/v1/reports/observation/${reportId}/download`
+    canReviewThis && detail && ['UNDER_REVIEW', 'DRAFT', 'REJECTED'].includes(detail.status)
+  const viewPath = detail && isMonthly ? reportViewPath(detail) : null
+  const pdfPath = isMonthly
+    ? `/api/v1/reports/monthly/${reportId}/download`
+    : `/api/v1/reports/observation/${reportId}/download`
 
   return (
     <>
@@ -267,12 +284,14 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
             ) : null}
 
             <div className="admin-reports__drawer-links">
-              <Link to={`/admin/cases/${detail.case_id}?tab=reports`} className="admin-btn admin-btn--ghost admin-btn--sm">
-                Case hub
-              </Link>
-              {editPath ? (
-                <Link to={editPath} className="admin-btn admin-btn--secondary admin-btn--sm">
-                  Open {editLabel}
+              {viewPath ? (
+                <Link to={viewPath} className="admin-btn admin-btn--secondary admin-btn--sm">
+                  View full report
+                </Link>
+              ) : null}
+              {isMonthly && detail.status !== 'PUBLISHED' ? (
+                <Link to={reportAdminEditPath(reportId)} className="admin-btn admin-btn--ghost admin-btn--sm">
+                  Edit report
                 </Link>
               ) : null}
               <button
@@ -304,16 +323,33 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
               </section>
             ) : null}
 
-            {detail.reviewer_comment ? (
-              <section className="admin-reports__drawer-section">
-                <h3>Latest review note</h3>
-                <p className="admin-reports__drawer-note">{detail.reviewer_comment}</p>
-              </section>
+            <div className="admin-reports__tabs">
+              <button
+                type="button"
+                className={activeTab === 'comments' ? 'admin-reports__tab--active' : ''}
+                onClick={() => setActiveTab('comments')}
+              >
+                Comments
+              </button>
+              <button
+                type="button"
+                className={activeTab === 'history' ? 'admin-reports__tab--active' : ''}
+                onClick={() => setActiveTab('history')}
+              >
+                Decision history
+              </button>
+            </div>
+
+            {activeTab === 'comments' && isMonthly ? (
+              <ReportCommentsThread
+                commentsPath={`/api/v1/admin/reports/monthly/${reportId}/comments`}
+                postPath={`/api/v1/admin/reports/monthly/${reportId}/comments`}
+                canPost={canWorkflow}
+              />
             ) : null}
 
-            {detail.review_history?.length > 0 ? (
+            {activeTab === 'history' && detail.review_history?.length > 0 ? (
               <section className="admin-reports__drawer-section">
-                <h3>Review history</h3>
                 <ul className="admin-reports__history-list">
                   {detail.review_history.map((h) => (
                     <li key={h.id} className="admin-reports__history-item">
@@ -330,37 +366,43 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
             ) : null}
 
             {canWorkflow ? (
-              <section className="admin-reports__drawer-section admin-reports__drawer-actions-panel">
-                <h3>Review actions</h3>
-                <label className="admin-reports__field-label">
-                  Add comment (stays under review)
+              <div className="admin-reports__action-cards">
+                <article className="admin-reports__action-card">
+                  <h3>Internal comment</h3>
+                  <p className="admin-reports__card-help">Saved to review history; report stays under review.</p>
                   <textarea
                     className="admin-input"
                     rows={2}
-                    placeholder="Internal note visible in history…"
+                    placeholder="Internal note…"
                     value={noteComment}
                     onChange={(e) => setNoteComment(e.target.value)}
                   />
-                </label>
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--secondary admin-btn--sm"
-                  disabled={acting}
-                  onClick={addComment}
-                >
-                  Save comment
-                </button>
-
-                <label className="admin-reports__field-label" style={{ marginTop: 12 }}>
-                  Send for review
-                  <select
-                    className="admin-input"
-                    value={sendTarget}
-                    onChange={(e) => setSendTarget(e.target.value)}
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary admin-btn--sm"
+                    disabled={acting}
+                    onClick={addComment}
                   >
-                    <option value="case_manager">Case manager</option>
-                    <option value="therapist">Therapist</option>
-                  </select>
+                    Save comment
+                  </button>
+                </article>
+
+                <article className="admin-reports__action-card">
+                  <h3>Send back for changes</h3>
+                  <p className="admin-reports__card-help">
+                    Send for review keeps the report under review and notifies the selected role.
+                  </p>
+                  <label className="admin-reports__field-label">
+                    Send to
+                    <select
+                      className="admin-input"
+                      value={sendTarget}
+                      onChange={(e) => setSendTarget(e.target.value)}
+                    >
+                      <option value="case_manager">Case manager</option>
+                      <option value="therapist">Therapist</option>
+                    </select>
+                  </label>
                   <textarea
                     className="admin-input"
                     rows={2}
@@ -368,19 +410,20 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
                     value={sendComment}
                     onChange={(e) => setSendComment(e.target.value)}
                   />
-                </label>
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--sm"
-                  disabled={acting}
-                  onClick={sendForReview}
-                >
-                  Send for review
-                </button>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary admin-btn--sm"
+                    disabled={acting}
+                    onClick={sendForReview}
+                  >
+                    Send for review
+                  </button>
+                </article>
 
                 {canCmReview ? (
-                  <div className="admin-reports__cm-block">
-                    <p className="admin-reports__field-label">Case manager sign-off</p>
+                  <article className="admin-reports__action-card">
+                    <h3>Case manager sign-off</h3>
+                    <p className="admin-reports__card-help">Internal CM note or request correction (does not publish).</p>
                     <textarea
                       className="admin-input"
                       rows={2}
@@ -391,7 +434,7 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
                     <div className="admin-btn-group">
                       <button
                         type="button"
-                        className="admin-btn admin-btn--primary admin-btn--sm"
+                        className="admin-btn admin-btn--secondary admin-btn--sm"
                         disabled={acting}
                         onClick={() => cmReview(false)}
                       >
@@ -406,28 +449,62 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
                         Request correction
                       </button>
                     </div>
-                  </div>
+                  </article>
                 ) : null}
-              </section>
+
+                {(canCmPublish || canAdminOverride) && isMonthly ? (
+                  <article className="admin-reports__action-card admin-reports__action-card--publish">
+                    <h3>Publish to parents</h3>
+                    {canCmPublish ? (
+                      <p className="admin-reports__card-help">Case manager approval makes this visible on the parent portal.</p>
+                    ) : (
+                      <p className="admin-reports__card-help">Admin override (10+ days without CM publish).</p>
+                    )}
+                    <textarea
+                      className="admin-input"
+                      rows={2}
+                      placeholder="Optional note for history…"
+                      value={publishComment}
+                      onChange={(e) => setPublishComment(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--primary admin-btn--sm"
+                      disabled={acting}
+                      onClick={() => publishToParent(canAdminOverride)}
+                    >
+                      {canAdminOverride ? 'Override approve for parents' : 'Approve for parents'}
+                    </button>
+                  </article>
+                ) : null}
+              </div>
             ) : null}
 
             <div className="admin-reports__drawer-footer">
-              {canApprove && canPublishToParent && canReviewThis ? (
+              {canResend && canReviewThis ? (
                 <button
                   type="button"
                   className="admin-btn admin-btn--primary admin-btn--sm"
                   disabled={acting}
-                  onClick={approve}
+                  onClick={() => publishToParent(false)}
                 >
-                  {detail.parent_review_status === 'CHANGES_REQUESTED'
-                    ? 'Resend to parent'
-                    : 'Approve for parents'}
+                  Resend to parent
                 </button>
               ) : null}
-              {canReject && canReviewThis ? (
+              {reportType === 'observation' && detail.status === 'UNDER_REVIEW' && isSuperAdmin && canReviewThis ? (
                 <button
                   type="button"
-                  className="admin-btn admin-btn--sm admin-reports__reject-btn"
+                  className="admin-btn admin-btn--primary admin-btn--sm"
+                  disabled={acting}
+                  onClick={approveObservation}
+                >
+                  Approve for parents
+                </button>
+              ) : null}
+              {isSuperAdmin && detail.status === 'UNDER_REVIEW' && canReviewThis && !canAdminOverride && !canCmPublish ? (
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--sm"
                   disabled={acting}
                   onClick={() => setRejectOpen((v) => !v)}
                 >

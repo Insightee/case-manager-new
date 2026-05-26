@@ -32,6 +32,18 @@ def raise_db_write_http_error(exc: OperationalError) -> None:
             status_code=503,
             detail="Database is busy. Wait a moment and try again.",
         ) from exc
+    if "no such column" in lowered or "no such table" in lowered:
+        hint = (
+            "Database schema is out of date (missing table or column). "
+            "Restart the API from backend/ so migrations run on startup. "
+            "SQLite: python3 -m app.seed.demo_seed after restart. "
+            "Postgres: alembic upgrade head from backend/."
+        )
+        if settings.is_development:
+            hint += f" Technical detail: {message[:240]}"
+        raise HTTPException(status_code=503, detail=hint) from exc
+    if settings.is_development:
+        raise HTTPException(status_code=500, detail=f"Database error: {message[:320]}") from exc
     raise HTTPException(status_code=500, detail="Database error") from exc
 
 

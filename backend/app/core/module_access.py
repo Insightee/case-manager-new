@@ -17,6 +17,7 @@ from app.core.rbac_access import (
     effective_features_for_user as rbac_effective_features,
     user_module_enabled,
 )
+from app.services.service_category_service import product_module_label_map
 from app.models.user import User
 
 
@@ -66,18 +67,35 @@ def get_allowed_case_product_modules(user: User, db: Session | None = None) -> s
     if module_bypass(user):
         return None
     registry = build_module_registry(db)
+    from app.core.service_access import normalize_service_id
+
+    svc = getattr(user, "service_access_grants", None) or {}
+    if svc:
+        allowed: set[str] = set()
+        for k, g in svc.items():
+            if not g.get("enabled"):
+                continue
+            sid = normalize_service_id(k)
+            mod = registry.get(sid)
+            if mod:
+                allowed.update(mod.case_product_modules)
+            else:
+                allowed.add(sid)
+        return allowed
     assigned = normalize_module_ids(user.module_assignments)
     if not assigned:
         return set()
     allowed: set[str] = set()
     for mid in assigned:
+        if mid in MODULE_BY_ID:
+            continue
         if not user_module_enabled(user, mid):
             continue
         mod = registry.get(mid)
         if mod:
             allowed.update(mod.case_product_modules)
-        elif mid not in MODULE_BY_ID:
-            allowed.add(mid)
+        else:
+            allowed.add(normalize_service_id(mid))
     return allowed
 
 
@@ -130,10 +148,25 @@ def require_feature(feature_id: str):
     return checker
 
 
+def _module_summary_dict(user: User, m, grant: dict, disabled: set[str]) -> dict:
+    return {
+        "id": m.id,
+        "label": m.label,
+        "description": m.description,
+        "case_product_modules": list(m.case_product_modules),
+        "access": grant.get("access", "write"),
+        "features": [
+            f.id
+            for f in m.features
+            if f.id not in disabled and _feature_granted_by_role(user, f)
+        ],
+    }
+
+
 def modules_for_api(user: User, db: Session | None = None) -> list[dict]:
-    from app.core.modules import PRODUCT_MODULES
     from app.core.rbac_access import user_module_grant
 
+    registry = build_module_registry(db)
     if module_bypass(user):
         return [
             {
@@ -143,9 +176,8 @@ def modules_for_api(user: User, db: Session | None = None) -> list[dict]:
                 "case_product_modules": list(m.case_product_modules),
                 "features": [f.id for f in m.features],
             }
-            for m in PRODUCT_MODULES
+            for m in registry.values()
         ]
-    registry = build_module_registry(db)
     assigned = normalize_module_ids(user.module_assignments)
     out = []
     for mid in assigned:
@@ -156,18 +188,19 @@ def modules_for_api(user: User, db: Session | None = None) -> list[dict]:
             continue
         grant = user_module_grant(user, mid) or {}
         disabled = disabled_features_for_module(user, mid)
-        out.append(
-            {
-                "id": m.id,
-                "label": m.label,
-                "description": m.description,
-                "case_product_modules": list(m.case_product_modules),
-                "access": grant.get("access", "write"),
-                "features": [
-                    f.id
-                    for f in m.features
-                    if f.id not in disabled and _feature_granted_by_role(user, f)
-                ],
-            }
-        )
+        out.append(_module_summary_dict(user, m, grant, disabled))
     return out
+
+
+def clinical_product_modules_for_user(user: User, db: Session) -> list[dict[str, str]]:
+    """Distinct case product_module ids the user may filter or create cases under."""
+    registry = build_module_registry(db)
+    labels = product_module_label_map(registry)
+    allowed = get_allowed_case_product_modules(user, db)
+    if allowed is None:
+        ids = sorted(labels.keys())
+    elif not allowed:
+        return []
+    else:
+        ids = sorted(allowed)
+    return [{"id": pid, "label": labels.get(pid, pid.replace("_", " ").title())} for pid in ids]

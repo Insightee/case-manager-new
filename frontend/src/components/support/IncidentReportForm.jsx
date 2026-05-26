@@ -25,6 +25,7 @@ function toLocalDatetimeInput(d = new Date()) {
 export function IncidentReportForm({
   cases = [],
   caseRequired = false,
+  hideServiceType = false,
   onSubmit,
   submitting = false,
   error = '',
@@ -57,13 +58,12 @@ export function IncidentReportForm({
   async function handleSubmit(e) {
     e.preventDefault()
     const incidentAt = form.incident_at ? new Date(form.incident_at).toISOString() : new Date().toISOString()
-    await onSubmit({
+    const payload = {
       case_id: form.case_id ? Number(form.case_id) : undefined,
       primary_category: form.primary_category,
       subcategory: form.subcategory,
       what_happened: form.what_happened.trim(),
       priority: form.priority,
-      service_type: form.service_type,
       incident_at: incidentAt,
       location: form.location,
       immediate_action: form.immediate_action.trim() || undefined,
@@ -71,7 +71,11 @@ export function IncidentReportForm({
       parent_informed: form.parent_informed,
       files,
       attachment_note: form.attachment_note.trim() || undefined,
-    })
+    }
+    if (!hideServiceType) {
+      payload.service_type = form.service_type
+    }
+    await onSubmit(payload)
   }
 
   if (!meta) {
@@ -82,7 +86,7 @@ export function IncidentReportForm({
     <form onSubmit={handleSubmit} className="incident-report-form">
       {cases.length > 0 ? (
         <label className="parent-support__field">
-          Child / client {caseRequired ? '(required)' : '(optional)'}
+          Case {caseRequired ? '(required)' : '(optional)'}
           <select
             required={caseRequired}
             value={form.case_id}
@@ -98,16 +102,20 @@ export function IncidentReportForm({
             ))}
           </select>
         </label>
+      ) : caseRequired ? (
+        <p style={{ color: '#b45309', fontSize: '0.875rem' }}>You have no active cases assigned. Contact your case manager before filing an incident.</p>
       ) : null}
 
-      <label className="parent-support__field">
-        Service type
-        <select value={form.service_type} onChange={(e) => setForm({ ...form, service_type: e.target.value })}>
-          {meta.service_types.map((s) => (
-            <option key={s.key} value={s.key}>{s.label}</option>
-          ))}
-        </select>
-      </label>
+      {!hideServiceType ? (
+        <label className="parent-support__field">
+          Service type
+          <select value={form.service_type} onChange={(e) => setForm({ ...form, service_type: e.target.value })}>
+            {meta.service_types.map((s) => (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <label className="parent-support__field">

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import './admin-therapist-picker.css'
 
 function initials(name) {
   if (!name) return '?'
@@ -24,6 +25,14 @@ function avatarColor(id) {
   return AVATAR_COLORS[Number(id) % AVATAR_COLORS.length]
 }
 
+function therapistMatchesSearch(t, query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const hay = `${t.therapist_name || t.full_name || ''} ${t.email || ''} ${t.therapist_user_id || ''}`.toLowerCase()
+  const tokens = q.split(/\s+/).filter(Boolean)
+  return tokens.every((tok) => hay.includes(tok))
+}
+
 export function AdminTherapistPicker({
   caseId,
   productModule,
@@ -31,106 +40,161 @@ export function AdminTherapistPicker({
   onChange,
   disabled,
   mode = 'allotment',
+  compactThreshold = 80,
 }) {
   const [therapists, setTherapists] = useState([])
   const [loading, setLoading] = useState(false)
+  const [search, setSearch] = useState('')
+  const [searchDebounced, setSearchDebounced] = useState('')
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 250)
+    return () => clearTimeout(t)
+  }, [search])
 
   useEffect(() => {
     setLoading(true)
-    const url =
-      mode === 'allotment' && productModule
-        ? `/api/v1/admin/allotment/therapists?product_module=${encodeURIComponent(productModule)}`
-        : caseId
-          ? `/api/v1/booking/therapists?case_id=${caseId}`
-          : null
-    if (!url) {
-      setTherapists([])
-      setLoading(false)
+    const params = new URLSearchParams()
+    if (mode === 'allotment' && productModule) {
+      params.set('product_module', productModule)
+      if (searchDebounced) params.set('search', searchDebounced)
+      apiFetch(`/api/v1/admin/allotment/therapists?${params}`)
+        .then(setTherapists)
+        .catch(() => setTherapists([]))
+        .finally(() => setLoading(false))
       return
     }
-    apiFetch(url)
-      .then(setTherapists)
-      .catch(() => setTherapists([]))
-      .finally(() => setLoading(false))
-  }, [caseId, productModule, mode])
-
-  // Card-based picker for allotment — gives admin a richer view
-  if (mode === 'allotment') {
-    if (loading) {
-      return (
-        <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
-          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-          </svg>
-          Loading therapists…
-        </div>
-      )
+    if (caseId) {
+      const qs = searchDebounced ? `&search=${encodeURIComponent(searchDebounced)}` : ''
+      apiFetch(`/api/v1/booking/therapists?case_id=${caseId}${qs}`)
+        .then(setTherapists)
+        .catch(() => setTherapists([]))
+        .finally(() => setLoading(false))
+      return
     }
-    if (!therapists.length) {
+    setTherapists([])
+    setLoading(false)
+  }, [caseId, productModule, mode, searchDebounced])
+
+  const filtered = useMemo(() => {
+    return therapists.filter((t) => therapistMatchesSearch(t, search))
+  }, [therapists, search])
+
+  const selected = useMemo(() => {
+    if (!value) return null
+    return therapists.find((t) => String(t.therapist_user_id) === String(value)) || null
+  }, [therapists, value])
+
+  const useDropdown = filtered.length > compactThreshold
+
+  const searchInput = (
+    <div className="admin-therapist-picker__search">
+      <input
+        type="search"
+        className="admin-input"
+        placeholder="Search by name or email…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        disabled={disabled}
+        aria-label="Search therapists"
+      />
+    </div>
+  )
+
+  if (mode === 'allotment') {
+    if (!productModule) {
       return (
-        <p className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          No therapists are approved for this module yet.
+        <p className="admin-therapist-picker__hint admin-therapist-picker__hint--warn">
+          Select a service module first.
         </p>
       )
     }
     return (
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {therapists.map((t) => {
-          const tid = String(t.therapist_user_id)
-          const name = t.therapist_name || t.full_name || `Therapist #${tid}`
-          const selected = value === tid
-          return (
-            <button
-              key={tid}
-              type="button"
-              disabled={disabled}
-              onClick={() => onChange(selected ? '' : tid)}
-              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
-                selected
-                  ? 'border-indigo-500 bg-indigo-50 shadow-sm ring-1 ring-indigo-400'
-                  : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-slate-50'
-              } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            >
-              <span
-                className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(tid)}`}
+      <div className="admin-therapist-picker">
+        {selected ? (
+          <div className="admin-therapist-picker__selected">
+            <span className={`admin-therapist-picker__avatar ${avatarColor(value)}`}>{initials(selected.therapist_name || selected.full_name)}</span>
+            <span className="admin-therapist-picker__selected-text">
+              <strong>{selected.therapist_name || selected.full_name}</strong>
+              <span>{selected.email || `ID #${value}`}</span>
+            </span>
+            {!disabled ? (
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => onChange('')}>
+                Change
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {!selected || search ? (
+          <>
+            {searchInput}
+            {loading ? <p className="admin-muted" style={{ fontSize: '0.85rem' }}>Loading therapists…</p> : null}
+            {!loading && !filtered.length ? (
+              <p className="admin-therapist-picker__hint admin-therapist-picker__hint--warn">
+                No therapists match — try another search or approve profiles for this module.
+              </p>
+            ) : null}
+            {!loading && filtered.length > 0 && useDropdown ? (
+              <select
+                className="admin-input"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                disabled={disabled}
               >
-                {initials(name)}
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block truncate text-sm font-semibold text-slate-800">{name}</span>
-                <span className="block text-xs text-slate-400">ID #{tid}</span>
-              </span>
-              {selected && (
-                <svg className="h-4 w-4 flex-shrink-0 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
-                  <path
-                    fillRule="evenodd"
-                    d="M16.707 5.293a1 1 0 010 1.414L8.414 15l-4.121-4.121a1 1 0 111.414-1.414L8.414 12.172l7.293-7.293a1 1 0 011.414 0z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              )}
-            </button>
-          )
-        })}
+                <option value="">Select therapist…</option>
+                {filtered.map((t) => (
+                  <option key={t.therapist_user_id} value={String(t.therapist_user_id)}>
+                    {t.therapist_name || t.full_name} · {t.email || `#${t.therapist_user_id}`}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {!loading && filtered.length > 0 && !useDropdown ? (
+              <div className="admin-therapist-picker__grid">
+                {filtered.map((t) => {
+                  const tid = String(t.therapist_user_id)
+                  const name = t.therapist_name || t.full_name || `Therapist #${tid}`
+                  const isSelected = value === tid
+                  return (
+                    <button
+                      key={tid}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => onChange(isSelected ? '' : tid)}
+                      className={`admin-therapist-picker__card ${isSelected ? 'admin-therapist-picker__card--selected' : ''}`}
+                    >
+                      <span className={`admin-therapist-picker__avatar ${avatarColor(tid)}`}>{initials(name)}</span>
+                      <span className="admin-therapist-picker__card-body">
+                        <span className="admin-therapist-picker__name">{name}</span>
+                        <span className="admin-therapist-picker__email">{t.email || `ID #${tid}`}</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </div>
     )
   }
 
-  // Default dropdown for other modes (assigned, etc.)
   return (
-    <select
-      className="admin-input"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled || loading || (mode === 'assigned' && !caseId)}
-    >
-      <option value="">{loading ? 'Loading therapists…' : 'Select therapist…'}</option>
-      {therapists.map((t) => (
-        <option key={t.therapist_user_id} value={String(t.therapist_user_id)}>
-          {t.therapist_name || t.full_name || `Therapist #${t.therapist_user_id}`}
-        </option>
-      ))}
-    </select>
+    <div className="admin-therapist-picker">
+      {searchInput}
+      <select
+        className="admin-input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled || loading || !caseId}
+      >
+        <option value="">{loading ? 'Loading therapists…' : 'Select therapist…'}</option>
+        {filtered.map((t) => (
+          <option key={t.therapist_user_id} value={String(t.therapist_user_id)}>
+            {t.therapist_name || t.full_name || `Therapist #${t.therapist_user_id}`}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }

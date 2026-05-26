@@ -223,7 +223,11 @@ def build_cases_board(
     }
 
 
-def merge_schedule_preview(sessions: list[SessionRead], slots: list[dict]) -> list[SchedulePreviewItem]:
+def merge_schedule_preview(
+    sessions: list[SessionRead],
+    slots: list[dict],
+    cm_meetings: list[dict] | None = None,
+) -> list[SchedulePreviewItem]:
     today = _today_iso()
     items: list[SchedulePreviewItem] = []
     for s in sessions:
@@ -272,6 +276,25 @@ def merge_schedule_preview(sessions: list[SessionRead], slots: list[dict]) -> li
                 endTime=_format_time(sl.get("end_time") or sl.get("endTime")),
                 bookingSource=src,
                 subtitle="Parent booking" if src == "PARENT" else "Calendar booking",
+            )
+        )
+    for m in cm_meetings or []:
+        m_date = m.get("date")
+        if not m_date or m_date < today:
+            continue
+        st = m.get("start_time") or "09:00"
+        items.append(
+            SchedulePreviewItem(
+                kind="cm_meeting",
+                key=f"cm-meeting-{m.get('id')}",
+                meetingId=m.get("id"),
+                caseId=m.get("case_id"),
+                childName=m.get("child_name"),
+                caseCode=m.get("case_code"),
+                date=m_date,
+                startTime=st,
+                endTime=m.get("end_time") or st,
+                subtitle=m.get("title") or "CM meeting",
             )
         )
     items.sort(key=lambda i: f"{i.date}{i.startTime}")
@@ -333,7 +356,13 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
         reports_by_case=reports_by_case,
         slots=slots,
     )
-    schedule = merge_schedule_preview(upcoming_reads, slot_dicts)
+    from app.services.cm_meeting_service import fetch_cm_meetings_for_user, meeting_to_calendar_dict
+
+    cm_rows = fetch_cm_meetings_for_user(
+        db, user.id, from_date=today, to_date=slot_end
+    )
+    cm_dicts = [meeting_to_calendar_dict(m, db) for m in cm_rows]
+    schedule = merge_schedule_preview(upcoming_reads, slot_dicts, cm_dicts)
 
     return TherapistHomeResponse(
         greeting_context=greeting,

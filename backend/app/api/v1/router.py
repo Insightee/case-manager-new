@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     admin,
+    admin_support,
     assignments,
     attachments,
     auth,
@@ -28,6 +29,7 @@ from app.api.v1 import (
     geocode,
     files,
     client_billing,
+    ledger_billing,
     case_documents,
 )
 
@@ -42,9 +44,11 @@ api_router.include_router(daily_logs.router)
 api_router.include_router(reports.router)
 api_router.include_router(invoices.router)
 api_router.include_router(admin.router)
+api_router.include_router(admin_support.router)
 api_router.include_router(parent.router)
 api_router.include_router(client_billing.parent_router)
 api_router.include_router(client_billing.admin_router)
+api_router.include_router(ledger_billing.router)
 api_router.include_router(tickets.router)
 api_router.include_router(support.router)
 api_router.include_router(attachments.router)

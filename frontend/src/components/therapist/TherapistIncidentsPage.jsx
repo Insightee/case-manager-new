@@ -181,6 +181,8 @@ export function TherapistIncidentsPage() {
           <div style={{ marginTop: 12 }}>
             <IncidentReportForm
               cases={cases}
+              caseRequired
+              hideServiceType={cases.length > 0}
               onSubmit={submitReport}
               submitting={submitting}
               error={formError}

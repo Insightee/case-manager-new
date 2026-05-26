@@ -177,7 +177,7 @@ function StatusRequestsPanel() {
 
 export function AdminWorkbenchPage() {
   const { can } = useAuth()
-  const { canReviewReports, canWriteBilling } = useModuleWrite()
+  const { canReviewAnyClinicalReports, canWriteBilling } = useModuleWrite()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -202,12 +202,12 @@ export function AdminWorkbenchPage() {
     'meetings',
   ]
   const order = baseOrder.filter((id) => {
-    if (id === 'observations' && !canReviewReports('homecare') && !canReviewReports('shadow_support')) return false
+    if (id === 'observations' && !canReviewAnyClinicalReports()) return false
     if (id === 'status_requests' && !can('case.update')) return false
     if (id === 'client_claims' && !canWriteBilling) return false
     if (id === 'tickets' && !can('ticket.manage')) return false
     if (id === 'incidents' && !can('incident.read_sensitive')) return false
-    if (id === 'reports' && !canReviewReports('homecare') && !canReviewReports('shadow_support')) return false
+    if (id === 'reports' && !canReviewAnyClinicalReports()) return false
     if (id === 'logs' && !can('daily_log.review')) return false
     if (id === 'iep' && !can('iep.read')) return false
     return sections[id]
@@ -223,15 +223,15 @@ export function AdminWorkbenchPage() {
       />
 
       <p className="admin-muted" style={{ marginBottom: 16, fontSize: '0.875rem' }}>
-        Scheduled CM supervision sessions are on{' '}
-        <Link to="/admin/cm-meetings?queue=supervision" style={{ color: '#4f46e5', fontWeight: 600 }}>
-          CM meetings (supervision filter)
+        Scheduled CM meetings are on{' '}
+        <Link to="/admin/cm-meetings?status=SCHEDULED" style={{ color: '#4f46e5', fontWeight: 600 }}>
+          CM meetings
         </Link>
         — not a separate supervisor request inbox.
       </p>
 
       {can('case.update') && !hasStatusSection ? <StatusRequestsPanel /> : null}
-      {(canReviewReports('homecare') || canReviewReports('shadow_support')) ? (
+      {canReviewAnyClinicalReports() ? (
         <AdminObservationChecklistsPanel />
       ) : null}
 

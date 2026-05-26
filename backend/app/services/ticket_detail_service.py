@@ -7,10 +7,11 @@ from sqlalchemy.orm import Session
 from app.core.permissions import user_has_permission
 from app.models.support_ticket import SupportTicket, TicketMessage
 from app.models.user import User
-from app.services import ticket_attachment_service as att_svc
+from app.services import case_service, ticket_attachment_service as att_svc
 from app.services import ticket_escalation_service as ticket_esc
 from app.services import ticket_flow_service as flow
 from app.services import ticket_list_service
+from app.services.ticket_participant_service import ESCALATION_TARGET_ROLES, user_summary
 
 
 def _can_view_ticket(db: Session, user: User, ticket: SupportTicket) -> bool:
@@ -28,7 +29,16 @@ def get_ticket_detail(db: Session, user: User, ticket_id: int) -> dict:
     if not ticket or not _can_view_ticket(db, user, ticket):
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    row = ticket_list_service._ticket_row(ticket, att_svc.count_for_ticket(db, ticket.id))
+    raiser = db.get(User, ticket.raised_by_user_id)
+    assignee = db.get(User, ticket.assigned_to_user_id) if ticket.assigned_to_user_id else None
+    case = case_service.get_case(db, ticket.case_id) if ticket.case_id else None
+    row = ticket_list_service._ticket_row(
+        ticket,
+        att_svc.count_for_ticket(db, ticket.id),
+        assignee=assignee,
+        raiser=raiser,
+        case=case,
+    )
 
     attachments = att_svc.list_for_ticket(db, ticket.id)
     ticket_level = [att_svc.attachment_to_dict(a) for a in attachments if a.message_id is None]
@@ -62,9 +72,10 @@ def get_ticket_detail(db: Session, user: User, ticket_id: int) -> dict:
     row["messages"] = messages
     row["attachments"] = ticket_level
     row["topic_label"] = ticket_esc.TOPIC_LABELS.get(ticket.topic, "Other") if ticket.topic else "Other"
-    if ticket.assigned_to_user_id:
-        assignee = db.get(User, ticket.assigned_to_user_id)
-        row["assigned_to_name"] = assignee.full_name if assignee else None
+    row["category_label"] = ticket.category.value.replace("_", " ").title() if ticket.category else "Other"
+    row["raised_by"] = user_summary(raiser)
+    row["assignee"] = user_summary(assignee)
+    row["escalation_targets"] = [{"role": r, "label": lbl} for r, lbl in ESCALATION_TARGET_ROLES]
     row.update(flow.ticket_flow_flags(db, user, ticket))
     row["resolved_at"] = ticket.resolved_at.isoformat() if ticket.resolved_at else None
     row["parent_satisfaction_rating"] = ticket.parent_satisfaction_rating

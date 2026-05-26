@@ -2,25 +2,32 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.module_write import ensure_billing_write_access
 from app.core.permissions import RoleName, require_mutation_permission, require_permission
+from app.models.client_billing import ClientInvoice, ClientInvoiceLine
 from app.models.user import User
 from app.schemas.client_billing import (
     AdminClientInvoiceCreate,
     AdminClientInvoiceUpdate,
     AdminDisputeResolve,
     BillingDisputeCreate,
+    ClientInvoiceLinePatch,
+    ClientInvoiceLineUpsert,
     ClientPaymentRecord,
     PaymentClaimReject,
+    RemindTherapistRequest,
+    SaveCaseBillingPreferences,
 )
-from app.services import client_billing_service
+from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service
+from app.services import audit_service
 
 parent_router = APIRouter(prefix="/parent/billing", tags=["parent-billing"])
 admin_router = APIRouter(prefix="/admin/client-billing", tags=["admin-client-billing"])
@@ -217,6 +224,7 @@ def _invoice_list_params(
     invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
+    claims_pending: Optional[bool] = None,
 ) -> dict:
     return {
         "month": month,
@@ -228,6 +236,7 @@ def _invoice_list_params(
         "invoice_type": invoice_type,
         "module": module,
         "search": search,
+        "claims_pending": bool(claims_pending),
     }
 
 
@@ -383,12 +392,14 @@ def admin_list_client_invoices(
     invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
+    claims_pending: Optional[bool] = Query(None),
     user: User = Depends(require_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
     return client_billing_service.admin_list_invoices(db, **_invoice_list_params(
         month=month, year=year, date_from=date_from, date_to=date_to,
         case_id=case_id, status=status, invoice_type=invoice_type, module=module, search=search,
+        claims_pending=claims_pending,
     ))
 
 
@@ -500,17 +511,265 @@ def admin_list_disputes(
     return result
 
 
+@admin_router.get("/composer-cases")
+def admin_composer_cases(
+    billing_month: str = Query(..., description="YYYY-MM or Mon YYYY"),
+    queue: str = Query("all"),
+    module: Optional[str] = None,
+    search: Optional[str] = None,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    return billing_composer_service.list_composer_cases(
+        db, billing_month=billing_month, queue=queue, module=module, search=search
+    )
+
+
+@admin_router.get("/composer-preview")
+def admin_composer_preview(
+    case_id: int = Query(...),
+    billing_month: str = Query(...),
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return billing_composer_service.get_composer_preview(
+            db, case_id=case_id, billing_month=billing_month
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@admin_router.post("/cases/{case_id}/build-from-ledger", status_code=201)
+def admin_build_draft_from_ledger_for_case(
+    case_id: int,
+    request: Request,
+    billing_month: str = Query(...),
+    include_pending: bool = Query(False),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    ym = billing_composer_service.normalize_billing_month(billing_month)
+    try:
+        result = client_invoice_draft_service.generate_draft_from_ledger(
+            db,
+            case_id=case_id,
+            billing_month=ym,
+            actor_user_id=user.id,
+            include_pending=include_pending,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="build_from_ledger",
+        entity_type="client_invoice",
+        entity_id=result["id"],
+        case_id=case_id,
+        **meta,
+    )
+    db.commit()
+    return client_billing_service.admin_get_invoice_detail(db, result["id"])
+
+
+@admin_router.post("/remind-therapist")
+def admin_remind_therapist(
+    payload: RemindTherapistRequest,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        result = billing_composer_service.remind_therapist(
+            db,
+            case_id=payload.case_id,
+            billing_month=payload.billing_month,
+            actor_user_id=user.id,
+            message=payload.message,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="remind_therapist_billing",
+        entity_type="case",
+        entity_id=payload.case_id,
+        new_value={"billing_month": payload.billing_month},
+        **meta,
+    )
+    db.commit()
+    return result
+
+
+@admin_router.post("/invoices/{invoice_id}/lines", status_code=201)
+def admin_add_invoice_line(
+    invoice_id: int,
+    payload: ClientInvoiceLineUpsert,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        line = client_billing_service.admin_add_invoice_line(
+            db, invoice_id, payload.model_dump()
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="add_invoice_line",
+        entity_type="client_invoice_line",
+        entity_id=line.id,
+        new_value=client_billing_service._serialize_line(line),
+        case_id=db.get(ClientInvoice, invoice_id).case_id if db.get(ClientInvoice, invoice_id) else None,
+        **meta,
+    )
+    db.commit()
+    return client_billing_service.admin_get_invoice_detail(db, invoice_id)
+
+
+@admin_router.patch("/invoices/{invoice_id}/lines/{line_id}")
+def admin_patch_invoice_line(
+    invoice_id: int,
+    line_id: int,
+    payload: ClientInvoiceLinePatch,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        line = client_billing_service.admin_patch_invoice_line(
+            db, invoice_id, line_id, payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    before = getattr(line, "_audit_before", None)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="update_invoice_line",
+        entity_type="client_invoice_line",
+        entity_id=line_id,
+        old_value=before,
+        new_value=client_billing_service._serialize_line(line),
+        **meta,
+    )
+    db.commit()
+    return client_billing_service.admin_get_invoice_detail(db, invoice_id)
+
+
+@admin_router.delete("/invoices/{invoice_id}/lines/{line_id}")
+def admin_delete_invoice_line(
+    invoice_id: int,
+    line_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    line = db.get(ClientInvoiceLine, line_id)
+    old = client_billing_service._serialize_line(line) if line else None
+    try:
+        client_billing_service.admin_delete_invoice_line(db, invoice_id, line_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="delete_invoice_line",
+        entity_type="client_invoice_line",
+        entity_id=line_id,
+        old_value=old,
+        **meta,
+    )
+    db.commit()
+    return client_billing_service.admin_get_invoice_detail(db, invoice_id)
+
+
+@admin_router.post("/invoices/{invoice_id}/recalculate")
+def admin_recalculate_invoice(
+    invoice_id: int,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        client_billing_service.recalculate_client_invoice(db, invoice_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return client_billing_service.admin_get_invoice_detail(db, invoice_id)
+
+
+@admin_router.get("/invoices/{invoice_id}/audit-trail")
+def admin_invoice_audit_trail(
+    invoice_id: int,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    inv = db.scalar(
+        select(ClientInvoice)
+        .where(ClientInvoice.id == invoice_id)
+        .options(selectinload(ClientInvoice.lines))
+    )
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    try:
+        payload = audit_service.list_audit_events(
+            db, user, case_id=inv.case_id, limit=100
+        )
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    line_ids = {str(ln.id) for ln in (inv.lines or [])}
+    items = [
+        it
+        for it in payload.get("items", [])
+        if it.get("entity_type") == "client_invoice" and it.get("entity_id") == str(invoice_id)
+        or it.get("entity_type") == "client_invoice_line" and it.get("entity_id") in line_ids
+        or it.get("action") in ("build_from_ledger", "create_client_invoice", "notify_parent_invoice")
+    ]
+    return {"items": items[:50], "next_cursor": payload.get("next_cursor")}
+
+
+@admin_router.put("/cases/{case_id}/billing-preferences")
+def admin_save_billing_preferences(
+    case_id: int,
+    payload: SaveCaseBillingPreferences,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    client_billing_service.save_case_billing_preferences(db, case_id, payload.model_dump(exclude_unset=True))
+    db.commit()
+    return billing_composer_service.get_saved_preferences(db, case_id)
+
+
 @admin_router.post("/invoices/{invoice_id}/notify-parent")
 def admin_notify_parent_invoice(
     invoice_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     resend: bool = Query(False, description="Send again even if already notified"),
     user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
     try:
-        result = client_billing_service.notify_parent_invoice_issued(db, invoice_id, resend=resend)
+        result = client_billing_service.notify_parent_invoice_issued(
+            db, invoice_id, background_tasks, resend=resend
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     meta = get_request_meta(request)
@@ -611,9 +870,12 @@ def admin_resolve_dispute(
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
+    resolution = (payload.resolution or "").strip()
+    if payload.status.upper() == "REJECTED" and not resolution:
+        raise HTTPException(status_code=400, detail="Rejection comment is required")
     try:
         client_billing_service.resolve_dispute(
-            db, dispute_id, payload.status, payload.resolution.strip(), payload.adjustment_inr
+            db, dispute_id, payload.status, resolution, payload.adjustment_inr
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

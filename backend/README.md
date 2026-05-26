@@ -29,8 +29,8 @@ docker compose exec api python -m app.seed.demo_seed
 | admin@demo.com | demo123 | MODULE_ADMIN (homecare only) |
 | moduleadmin@demo.com | demo123 | MODULE_ADMIN (homecare + shadow + billing) |
 | casemanager@demo.com | demo123 | CASE_MANAGER → `/admin/cm` |
-| viewer@demo.com | demo123 | CASE_MANAGER view-only → `/admin/cm` |
-| supervisor@demo.com | demo123 | CASE_MANAGER (shadow caseload) |
+| viewonly@demo.com | demo123 | CASE_MANAGER view-only → `/admin/cm` |
+| shadowcm@demo.com | demo123 | CASE_MANAGER (shadow caseload) |
 | support@demo.com | demo123 | MODULE_ADMIN (homecare + billing) |
 | finance@demo.com | demo123 | FINANCE |
 
@@ -70,6 +70,54 @@ PYTHONPATH=.:alembic alembic heads   # must show exactly one head
 
 - Health: `GET /health`
 - Swagger: `http://localhost:8000/docs`
+
+## Auth, Redis, and email (SMTP)
+
+Copy [`backend/.env.example`](.env.example) to `.env` and set:
+
+| Variable | Purpose |
+|----------|---------|
+| `JWT_SECRET_KEY` / `JWT_REFRESH_SECRET_KEY` | Sign access and refresh tokens (use long random values in production) |
+| `FRONTEND_URL` | Base URL for invite and password-reset links in email |
+| `CORS_ORIGINS` | Comma-separated browser origins allowed to call the API |
+| `REDIS_URL` | Refresh-token storage (`redis://localhost:6379/0` locally; Upstash/Railway in prod) |
+| `EMAIL_PROVIDER` | `zeptomail` or `smtp` (label only; sending uses SMTP below) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | Outbound mail transport |
+| `SMTP_FROM_EMAIL` | General mail (`noreply@insighte.in`) — invites, reports |
+| `SMTP_FROM_BILLING_EMAIL` | Billing mail (`billing.noreply@insighte.in`) |
+| `SMTP_FROM_VERIFICATION_EMAIL` | Password reset (`verification.noreply@insighte.in`) |
+| `SMTP_FROM_NAME` | Display name (e.g. `Insighte`) |
+| `SMTP_FROM` | Optional legacy full From header (overrides default email when set) |
+| `ADMIN_NOTIFICATION_EMAILS` | Comma-separated ops inboxes for some scheduling alerts |
+
+When `SMTP_HOST` is unset, transactional email is **logged only** (no failure) — fine for local dev. Sent messages are recorded in the `email_logs` table when migrations are applied.
+
+### ZeptoMail (production SMTP)
+
+1. In [ZeptoMail](https://www.zoho.com/zeptomail/), verify domain `insighte.in` and create a **Send Mail** SMTP credential.
+2. On Railway (API service only — never on Vercel frontend):
+
+   | Variable | Example |
+   |----------|---------|
+   | `EMAIL_PROVIDER` | `zeptomail` |
+   | `SMTP_HOST` | `smtp.zeptomail.com` |
+   | `SMTP_PORT` | `587` |
+   | `SMTP_USER` | `emailapikey` |
+   | `SMTP_PASSWORD` | *(paste token in Railway secrets)* |
+   | `SMTP_FROM_EMAIL` | `noreply@insighte.in` |
+   | `SMTP_FROM_BILLING_EMAIL` | `billing.noreply@insighte.in` |
+   | `SMTP_FROM_VERIFICATION_EMAIL` | `verification.noreply@insighte.in` |
+   | `SMTP_FROM_NAME` | `Insighte` |
+   | `SMTP_TLS` | `true` |
+
+3. Add SPF/DKIM/DMARC in Cloudflare per ZeptoMail’s domain DNS page (see [`docs/EMAIL_DNS.md`](../docs/EMAIL_DNS.md)). Do not remove existing Hostinger MX records for business mail.
+4. Redeploy API after `alembic upgrade head` so `email_logs` exists.
+
+**Docker Compose:** `api` service sets `FRONTEND_URL`, `REDIS_URL`, and JWT vars; set `SMTP_*` in `.env` to send real mail.
+
+**Railway / Vercel:** Set SMTP and JWT on the API service only; frontend needs `VITE_API_URL` pointing at the API.
+
+**Password reset:** `POST /api/v1/auth/forgot-password`, `GET /api/v1/auth/reset-password/{token}/preview`, `POST /api/v1/auth/reset-password`. Frontend routes `/forgot-password` and `/reset-password/:token`.
 
 ## Support tickets (attachments & policies bot)
 

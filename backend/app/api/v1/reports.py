@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -12,7 +12,7 @@ from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.db_errors import commit_or_http
 from app.core.module_write import guard_clinical_case
-from app.core.permissions import case_scope_check, require_mutation_permission, require_permission
+from app.core.permissions import case_scope_check, require_mutation_permission, require_permission, user_has_permission
 from app.services import case_service
 from app.core.report_constants import PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES
 from app.models.report import MonthlyReport, ObservationReport, ReportCategory, ReportStatus
@@ -20,6 +20,7 @@ from app.models.review import ReviewDecision
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.schemas.pagination import PaginatedList
+from app.schemas.admin_reports import ReportDocumentCommentCreate
 from app.schemas.report import (
     MonthlyReportCreate,
     MonthlyReportRead,
@@ -95,6 +96,40 @@ def _report_read(db: Session, report: MonthlyReport) -> MonthlyReportRead:
     )
 
 
+@router.get("/monthly/iep-context")
+def monthly_iep_context(
+    case_id: int = Query(..., ge=1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_plan_service as iep_svc
+
+    case = case_service.get_case(db, case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Case not found")
+    plan = iep_svc.get_latest_plan(db, case_id)
+    if not plan:
+        return {"caseId": case_id, "hasPlan": False, "learningEnvironments": []}
+    sections = iep_svc._parse_sections(plan.sections_json)
+    rows = [
+        {
+            "environment": r.environment,
+            "strengths": r.strengths,
+            "goals": r.goals,
+            "strategies": r.strategies,
+            "supportsNeeded": r.supports_needed,
+        }
+        for r in (sections.learning_environments or [])
+    ]
+    return {
+        "caseId": case_id,
+        "hasPlan": True,
+        "planId": plan.id,
+        "planStatus": plan.status,
+        "learningEnvironments": rows,
+    }
+
+
 @router.get("/monthly/{report_id}", response_model=MonthlyReportRead)
 def get_monthly_report(
     report_id: int,
@@ -127,14 +162,57 @@ def create_monthly_report(
         body_html=payload.body_html,
         plan_next_month=payload.plan_next_month,
         category=payload.category or ReportCategory.CLIENT_MONTHLY.value,
-        sub_category=payload.sub_category,
-        report_date=payload.report_date,
     )
-    sync_summary_from_body(report)
+    if report.category in {ReportCategory.INCIDENT_DOCUMENT.value, ReportCategory.IEP_PLAN.value}:
+        raise HTTPException(
+            status_code=400,
+            detail="Incident and IEP plan documents are managed outside the reports hub",
+        )
     db.add(report)
-    commit_or_http(db)
-    db.refresh(report)
+    db.flush()
     return _report_read(db, report)
+
+
+@router.get("/monthly/{report_id}/comments")
+def therapist_monthly_report_comments(
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import report_comment_service
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.therapist_user_id != user.id and not user_has_permission(user, "monthly_report.approve"):
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report_comment_service.list_monthly_comments(db, report_id)
+
+
+@router.post("/monthly/{report_id}/comments")
+def therapist_monthly_report_comment(
+    report_id: int,
+    payload: ReportDocumentCommentCreate,
+    user: User = Depends(require_permission("monthly_report.create")),
+    db: Session = Depends(get_db),
+):
+    from app.services import report_comment_service
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case) or report.therapist_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Report not found")
+    try:
+        return report_comment_service.add_monthly_comment(
+            db, report, user, body=payload.body, comment_type=payload.comment_type
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.patch("/monthly/{report_id}", response_model=MonthlyReportRead)
@@ -227,8 +305,17 @@ def download_monthly_report_pdf(
     case = case_service.get_case(db, report.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Report not found")
+    from app.services.export_document_service import export_meta
+
     child_name = case.child.full_name if case.child else ""
-    pdf = report_pdf_service.monthly_report_pdf(report, case.case_code, child_name)
+    meta = export_meta(user)
+    pdf = report_pdf_service.monthly_report_pdf(
+        report,
+        case.case_code,
+        child_name,
+        generated_by=meta["generated_by"],
+        generated_at=meta["generated_at"],
+    )
     safe = (report.month or "report").replace(" ", "_")[:40]
     return Response(
         content=pdf,
@@ -277,6 +364,7 @@ def submit_monthly_report(
     if not has_body:
         raise HTTPException(status_code=400, detail="Add report content before submitting")
     report.status = ReportStatus.UNDER_REVIEW
+    report_service.mark_submitted_for_review(report)
     commit_or_http(db)
     return {"status": "under_review"}
 
@@ -286,6 +374,7 @@ def approve_report(
     report_id: int,
     payload: ReviewAction,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: User = Depends(require_mutation_permission("monthly_report.approve")),
     db: Session = Depends(get_db),
 ):
@@ -295,9 +384,41 @@ def approve_report(
     case = case_service.get_case(db, report.case_id)
     if case:
         guard_clinical_case(user, case, db, feature="reports")
-    report_service.review_monthly_report(
-        db, report, user.id, ReviewDecision.APPROVE, payload.comment, payload.visibility_status
-    )
+    vis = payload.visibility_status or VisibilityStatus.APPROVED_FOR_PARENT
+    if vis in report_service.PARENT_PUBLISH_VISIBILITY:
+        try:
+            override = report_service.user_can_admin_override_publish(user)
+            if override and not report_service.can_admin_override_publish(report):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Admin override publish is available {report_service.ADMIN_OVERRIDE_DAYS} "
+                        "days after submit if the case manager has not published"
+                    ),
+                )
+            if not override and not report_service.user_can_cm_publish(user):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only the case manager can publish to parents; admins may override after 10 days",
+                )
+            report_service.publish_monthly_to_parent(
+                db, report, user, override=override, comment=payload.comment
+            )
+            if case:
+                report_service.notify_parents_monthly_report_published(
+                    db, background_tasks, report=report, case=case
+                )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+    else:
+        try:
+            report_service.review_monthly_report(
+                db, report, user.id, ReviewDecision.APPROVE, payload.comment, payload.visibility_status
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve", entity_type="monthly_report", entity_id=report.id, **meta)
     db.commit()
@@ -493,8 +614,17 @@ def download_observation_report_pdf(
     case = case_service.get_case(db, report.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Report not found")
+    from app.services.export_document_service import export_meta
+
     child_name = case.child.full_name if case.child else ""
-    pdf = report_pdf_service.observation_report_pdf(report, case.case_code, child_name)
+    meta = export_meta(user)
+    pdf = report_pdf_service.observation_report_pdf(
+        report,
+        case.case_code,
+        child_name,
+        generated_by=meta["generated_by"],
+        generated_at=meta["generated_at"],
+    )
     safe = (report.title or "report").replace(" ", "_")[:40]
     return Response(
         content=pdf,

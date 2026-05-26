@@ -279,23 +279,33 @@ export function AdminReportsPage() {
     [selectedRows, canReviewReports],
   )
 
+  function assertBulkResult(result, label) {
+    if (!result) return
+    if (result.failed > 0) {
+      const detail = result.errors?.[0] || `${result.failed} item(s) failed`
+      throw new Error(`${label}: ${detail}`)
+    }
+  }
+
   async function bulkApprove() {
     const { monthly, observation } = selectedByType()
     setActing(true)
     setMessage('')
     try {
       if (monthly.length) {
-        await apiFetch('/api/v1/admin/reports/bulk/approve', {
+        const result = await apiFetch('/api/v1/admin/reports/bulk/approve', {
           method: 'POST',
           body: JSON.stringify({
             report_type: 'monthly',
             ids: monthly,
             visibility_status: 'APPROVED_FOR_PARENT',
+            comment: 'Approved from report management',
           }),
         })
+        assertBulkResult(result, 'Monthly approve')
       }
       if (observation.length) {
-        await apiFetch('/api/v1/admin/reports/bulk/approve', {
+        const result = await apiFetch('/api/v1/admin/reports/bulk/approve', {
           method: 'POST',
           body: JSON.stringify({
             report_type: 'observation',
@@ -303,6 +313,7 @@ export function AdminReportsPage() {
             visibility_status: 'APPROVED_FOR_PARENT',
           }),
         })
+        assertBulkResult(result, 'Observation approve')
       }
       setSelected(new Set())
       setMessage('Bulk approve completed.')
@@ -350,15 +361,38 @@ export function AdminReportsPage() {
 
   async function quickApprove(row) {
     setActing(true)
+    setMessage('')
     try {
-      await apiFetch('/api/v1/admin/reports/bulk/approve', {
-        method: 'POST',
-        body: JSON.stringify({
-          report_type: row.report_type,
-          ids: [row.id],
-          visibility_status: 'APPROVED_FOR_PARENT',
-        }),
-      })
+      if (row.report_type === 'monthly') {
+        if (row.parent_review_status === 'CHANGES_REQUESTED') {
+          await apiFetch(`/api/v1/reports/monthly/${row.id}/resend-to-parent`, { method: 'POST' })
+        } else {
+          if (!row.can_cm_publish && !row.can_admin_override_publish) {
+            const days = row.days_until_admin_override
+            throw new Error(
+              days != null
+                ? `Publish for parents is available in ${days} day(s) after submit (case manager publishes first).`
+                : 'This report is not ready to publish for parents yet.',
+            )
+          }
+          await apiFetch(`/api/v1/admin/reports/monthly/${row.id}/publish-to-parent`, {
+            method: 'POST',
+            body: JSON.stringify({ comment: 'Published from report list' }),
+          })
+        }
+        setMessage('Report published for parents.')
+      } else {
+        const result = await apiFetch('/api/v1/admin/reports/bulk/approve', {
+          method: 'POST',
+          body: JSON.stringify({
+            report_type: 'observation',
+            ids: [row.id],
+            visibility_status: 'APPROVED_FOR_PARENT',
+          }),
+        })
+        assertBulkResult(result, 'Approve')
+        setMessage('Report approved for parents.')
+      }
       loadList()
       loadSummary()
     } catch (err) {
@@ -502,8 +536,7 @@ export function AdminReportsPage() {
             </select>
           </label>
           <p className="admin-reports__filter-hint admin-muted">
-            Categories include client monthly, observation, CM meeting, progress, and incident documents. IEP plans
-            open the Pending IEP tab.
+            Incident documents and IEP plans are managed under Support and Case IEP — not in this hub.
           </p>
         </div>
       ) : null}

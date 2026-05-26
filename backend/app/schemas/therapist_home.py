@@ -51,7 +51,8 @@ class SchedulePreviewItem(BaseModel):
     key: str
     sessionId: Optional[int] = None
     slotId: Optional[int] = None
-    caseId: int
+    meetingId: Optional[int] = None
+    caseId: Optional[int] = None
     childName: Optional[str] = None
     caseCode: Optional[str] = None
     date: str

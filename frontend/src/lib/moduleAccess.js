@@ -26,8 +26,13 @@ export function moduleAccess(user, moduleId) {
 
 export function isGlobalViewOnly(user) {
   if (!user) return false
-  if (user.is_view_only) return true
   const feats = user.features || []
+  if (feats.includes('*')) return false
+  const roles = user.roles || []
+  if (roles.includes('SUPER_ADMIN') || roles.includes('MODULE_ADMIN')) {
+    return Boolean(user.is_view_only)
+  }
+  if (user.is_view_only) return true
   return feats.includes('view_only')
 }
 
@@ -67,6 +72,32 @@ export function canWriteFeature(user, featureId, productModule = null) {
     if ((m.features || []).includes(featureId) && canWriteModule(user, m.id)) return true
   }
   return false
+}
+
+/** Case product_module ids from assigned clinical modules (for nav gating). */
+export function clinicalProductModuleIds(user) {
+  if (!user) return []
+  const feats = user.features || []
+  const ids = new Set()
+  if (feats.includes('*')) {
+    for (const m of user?.modules || []) {
+      for (const pid of m.case_product_modules || []) {
+        if (pid && pid !== 'billing') ids.add(pid)
+      }
+      if (m.id && m.id !== 'billing' && (m.case_product_modules || []).includes(m.id)) {
+        ids.add(m.id)
+      }
+    }
+    return [...ids]
+  }
+  for (const m of user?.modules || []) {
+    if (m.id === 'billing') continue
+    for (const pid of m.case_product_modules || []) {
+      if (pid && pid !== 'billing') ids.add(pid)
+    }
+    if (m.id && m.id !== 'billing') ids.add(m.id)
+  }
+  return [...ids]
 }
 
 /** Nav item may declare moduleIds: all must be enabled; feature optional. */

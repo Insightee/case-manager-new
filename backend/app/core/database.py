@@ -90,6 +90,12 @@ def ensure_sqlite_schema_patches() -> None:
         if "feature_overrides" not in user_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN feature_overrides JSON"))
+        if "service_access_grants" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN service_access_grants JSON"))
+        if "org_capability_grants" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN org_capability_grants JSON"))
 
     if insp.has_table("therapist_profiles"):
         tp_cols = {c["name"] for c in insp.get_columns("therapist_profiles")}
@@ -98,8 +104,79 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN supervisor_user_id INTEGER"))
             if "mentor_user_id" not in tp_cols:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN mentor_user_id INTEGER"))
+            if "employment_start_date" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN employment_start_date DATE"))
+            if "leave_balance_year" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_balance_year INTEGER"))
+            if "leave_paid_days_backfill" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_paid_days_backfill INTEGER DEFAULT 0"))
+            if "leave_carry_forward_days_backfill" not in tp_cols:
+                conn.execute(
+                    text("ALTER TABLE therapist_profiles ADD COLUMN leave_carry_forward_days_backfill INTEGER DEFAULT 0")
+                )
+            if "leave_backfill_note" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_backfill_note TEXT"))
+            if "leave_backfill_updated_at" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_backfill_updated_at DATETIME"))
+            if "leave_backfill_updated_by_user_id" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_backfill_updated_by_user_id INTEGER"))
 
-    if not insp.has_table("service_categories"):
+    if insp.has_table("therapist_leaves"):
+        tl_cols = {c["name"] for c in insp.get_columns("therapist_leaves")}
+        with engine.begin() as conn:
+            if "service_line" not in tl_cols:
+                conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN service_line VARCHAR(64)"))
+            if "billing_category" not in tl_cols:
+                conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN billing_category VARCHAR(32)"))
+
+    _service_category_seed = [
+        ("shadow_support", "Shadow support", 0),
+        ("homecare", "Homecare", 1),
+        ("occupational_therapy", "Occupational therapy", 2),
+        ("speech_therapy", "Speech therapy", 3),
+        ("special_educator", "Special educator", 4),
+        ("behavior_therapy", "Behavior therapy", 5),
+        ("play_therapy", "Play therapy", 6),
+        ("customised_employment", "Customised employment", 7),
+        ("subject_tutor", "Subject tutor", 8),
+        ("sports", "Sports", 9),
+        ("counselling", "Counselling", 10),
+    ]
+
+    if insp.has_table("service_categories"):
+        sc_cols = {c["name"] for c in insp.get_columns("service_categories")}
+        with engine.begin() as conn:
+            if "product_modules" not in sc_cols:
+                conn.execute(text("ALTER TABLE service_categories ADD COLUMN product_modules JSON"))
+            if "access_group" not in sc_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE service_categories ADD COLUMN access_group VARCHAR(64) "
+                        "NOT NULL DEFAULT 'Clinical'"
+                    )
+                )
+            if conn.execute(text("SELECT COUNT(*) FROM service_categories")).scalar() == 0:
+                for sid, label, order in _service_category_seed:
+                    pm = f'[{{"id": "{sid}", "label": "{label}"}}]'
+                    conn.execute(
+                        text(
+                            "INSERT INTO service_categories "
+                            "(id, label, description, sort_order, is_active, access_group, product_modules) "
+                            "VALUES (:id, :label, '', :order, 1, 'Clinical', :pm)"
+                        ),
+                        {"id": sid, "label": label, "order": order, "pm": pm},
+                    )
+            if conn.execute(text("SELECT 1 FROM service_categories WHERE id = 'shadow'")).first():
+                if not conn.execute(text("SELECT 1 FROM service_categories WHERE id = 'shadow_support'")).first():
+                    conn.execute(
+                        text(
+                            "UPDATE service_categories SET id = 'shadow_support', label = 'Shadow support' "
+                            "WHERE id = 'shadow'"
+                        )
+                    )
+                else:
+                    conn.execute(text("UPDATE service_categories SET is_active = 0 WHERE id = 'shadow'"))
+    elif not insp.has_table("service_categories"):
         with engine.begin() as conn:
             conn.execute(text(
                 "CREATE TABLE service_categories ("
@@ -108,26 +185,64 @@ def ensure_sqlite_schema_patches() -> None:
                 "  description TEXT DEFAULT '',"
                 "  is_active INTEGER NOT NULL DEFAULT 1,"
                 "  sort_order INTEGER NOT NULL DEFAULT 0,"
+                "  product_modules JSON,"
                 "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
                 ")"
             ))
-            _seed = [
-                ("shadow", "Shadow support", 0),
-                ("homecare", "Homecare", 1),
-                ("occupational_therapy", "Occupational therapy", 2),
-                ("speech_therapy", "Speech therapy", 3),
-                ("special_educator", "Special educator", 4),
-                ("behavior_therapy", "Behavior therapy", 5),
-                ("play_therapy", "Play therapy", 6),
-                ("customised_employment", "Customised employment", 7),
-                ("subject_tutor", "Subject tutor", 8),
-                ("sports", "Sports", 9),
-                ("counselling", "Counselling", 10),
-            ]
-            for sid, label, order in _seed:
-                conn.execute(text(
-                    "INSERT OR IGNORE INTO service_categories (id, label, sort_order) VALUES (:id, :label, :order)"
-                ), {"id": sid, "label": label, "order": order})
+            for sid, label, order in _service_category_seed:
+                pm = f'[{{"id": "{sid}", "label": "{label}"}}]'
+                conn.execute(
+                    text(
+                        "INSERT OR IGNORE INTO service_categories "
+                        "(id, label, description, sort_order, is_active, access_group, product_modules) "
+                        "VALUES (:id, :label, '', :order, 1, 'Clinical', :pm)"
+                    ),
+                    {"id": sid, "label": label, "order": order, "pm": pm},
+                )
+
+    if not insp.has_table("service_products"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE service_products (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        service_category_id VARCHAR(64) NOT NULL REFERENCES service_categories(id),
+                        name VARCHAR(128) NOT NULL,
+                        billing_model VARCHAR(32) NOT NULL DEFAULT 'PER_SESSION',
+                        price_inr NUMERIC(12, 2),
+                        package_sessions INTEGER,
+                        discount_percent NUMERIC(5, 2),
+                        total_inr NUMERIC(12, 2),
+                        taxable INTEGER NOT NULL DEFAULT 1,
+                        gst_rate_percent NUMERIC(5, 2),
+                        gst_split VARCHAR(16),
+                        leave_policy VARCHAR(32),
+                        active INTEGER NOT NULL DEFAULT 1,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        product_billing_rule_id INTEGER REFERENCES product_billing_rules(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_service_products_category "
+                    "ON service_products (service_category_id)"
+                )
+            )
+
+    if insp.has_table("memos"):
+        memo_cols = {c["name"] for c in insp.get_columns("memos")}
+        with engine.begin() as conn:
+            if "email_sent_at" not in memo_cols:
+                conn.execute(text("ALTER TABLE memos ADD COLUMN email_sent_at DATETIME"))
+            if "send_as_email" not in memo_cols:
+                conn.execute(
+                    text("ALTER TABLE memos ADD COLUMN send_as_email INTEGER NOT NULL DEFAULT 0")
+                )
 
     if insp.has_table("daily_logs"):
         log_cols = {c["name"] for c in insp.get_columns("daily_logs")}
@@ -142,6 +257,8 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(
                     text("ALTER TABLE daily_logs ADD COLUMN parent_feedback_public BOOLEAN NOT NULL DEFAULT 0")
                 )
+            if "review_note" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN review_note TEXT"))
 
     if insp.has_table("support_tickets"):
         t_cols = {c["name"] for c in insp.get_columns("support_tickets")}
@@ -203,6 +320,7 @@ def ensure_sqlite_schema_patches() -> None:
                 ("parent_informed", "VARCHAR(8)"),
                 ("primary_owner_role", "VARCHAR(32)"),
                 ("tagged_roles", "TEXT"),
+                ("tagged_user_ids", "TEXT"),
                 ("action_taken_note", "TEXT"),
                 ("last_owner_activity_at", "DATETIME"),
                 ("sla_reminder_sent_at", "DATETIME"),
@@ -272,9 +390,26 @@ def ensure_sqlite_schema_patches() -> None:
                 ("category", "VARCHAR(32)"),
                 ("sub_category", "VARCHAR(32)"),
                 ("report_date", "DATE"),
+                ("submitted_for_review_at", "DATETIME"),
+                ("cm_published_at", "DATETIME"),
+                ("cm_published_by_user_id", "INTEGER"),
+                ("admin_published_at", "DATETIME"),
+                ("admin_published_by_user_id", "INTEGER"),
             ):
                 if col not in mr_cols:
                     conn.execute(text(f"ALTER TABLE monthly_reports ADD COLUMN {col} {ddl}"))
+            conn.execute(
+                text(
+                    """
+                    UPDATE monthly_reports
+                    SET cm_published_at = COALESCE(updated_at, created_at)
+                    WHERE status = 'PUBLISHED'
+                      AND visibility_status IN ('APPROVED_FOR_PARENT', 'SHARED_WITH_PARENT')
+                      AND cm_published_at IS NULL
+                      AND admin_published_at IS NULL
+                    """
+                )
+            )
 
     if insp.has_table("observation_reports"):
         ob_cols = {c["name"] for c in insp.get_columns("observation_reports")}
@@ -488,12 +623,206 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE case_manager_meetings ADD COLUMN meeting_url VARCHAR(512)"))
             if "guest_emails_json" not in cols:
                 conn.execute(text("ALTER TABLE case_manager_meetings ADD COLUMN guest_emails_json TEXT"))
+            if "staff_attendee_user_ids_json" not in cols:
+                conn.execute(
+                    text("ALTER TABLE case_manager_meetings ADD COLUMN staff_attendee_user_ids_json TEXT")
+                )
 
     if insp.has_table("therapist_profiles"):
         tp_cols = {c["name"] for c in insp.get_columns("therapist_profiles")}
         if "license_number" not in tp_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN license_number VARCHAR(64)"))
+
+    if not insp.has_table("organisations"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE organisations (
+                        id INTEGER PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        gstin VARCHAR(32),
+                        billing_address TEXT,
+                        contact_email VARCHAR(255),
+                        contact_phone VARCHAR(32),
+                        active BOOLEAN,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("product_billing_rules"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE product_billing_rules (
+                        id INTEGER PRIMARY KEY,
+                        product_name VARCHAR(128) NOT NULL,
+                        product_category VARCHAR(64) NOT NULL,
+                        product_module VARCHAR(64) NOT NULL,
+                        billing_model VARCHAR(32) NOT NULL,
+                        default_rate_inr NUMERIC(12, 2),
+                        monthly_fee_inr NUMERIC(12, 2),
+                        package_sessions INTEGER,
+                        package_validity_days INTEGER,
+                        gst_applicable BOOLEAN,
+                        gst_rate_percent NUMERIC(5, 2),
+                        hsn_sac_code VARCHAR(16),
+                        payment_terms VARCHAR(64),
+                        client_no_show_billable BOOLEAN,
+                        therapist_cancel_billable BOOLEAN,
+                        included_paid_leaves INTEGER,
+                        unpaid_leave_deduction_method VARCHAR(64),
+                        active BOOLEAN,
+                        notes TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if insp.has_table("cases"):
+        case_cols = {c["name"] for c in insp.get_columns("cases")}
+        if "product_billing_rule_id" not in case_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE cases ADD COLUMN product_billing_rule_id INTEGER"))
+
+    if not insp.has_table("billing_ledger"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE billing_ledger (
+                        id INTEGER PRIMARY KEY,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        parent_user_id INTEGER REFERENCES users(id),
+                        therapist_user_id INTEGER REFERENCES users(id),
+                        product_billing_rule_id INTEGER REFERENCES product_billing_rules(id),
+                        source_type VARCHAR(32) NOT NULL,
+                        source_id INTEGER,
+                        session_id INTEGER REFERENCES sessions(id),
+                        daily_log_id INTEGER REFERENCES daily_logs(id),
+                        ledger_month VARCHAR(32) NOT NULL,
+                        event_date DATE NOT NULL,
+                        event_type VARCHAR(32) NOT NULL,
+                        billable_status VARCHAR(32) NOT NULL,
+                        quantity NUMERIC(8, 2),
+                        rate_inr NUMERIC(12, 2),
+                        amount_inr NUMERIC(12, 2),
+                        gst_rate_percent NUMERIC(5, 2),
+                        gst_amount_inr NUMERIC(12, 2),
+                        hsn_sac_code VARCHAR(16),
+                        total_inr NUMERIC(12, 2),
+                        payout_amount_inr NUMERIC(12, 2),
+                        insighte_margin_inr NUMERIC(12, 2),
+                        client_invoice_id INTEGER REFERENCES client_invoices(id),
+                        care_package_id INTEGER REFERENCES care_packages(id),
+                        dispute_status VARCHAR(16),
+                        admin_note TEXT,
+                        overridden_by_user_id INTEGER REFERENCES users(id),
+                        override_reason TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if insp.has_table("client_invoices"):
+        inv_cols = {c["name"] for c in insp.get_columns("client_invoices")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("approved_by_user_id", "INTEGER"),
+                ("payment_policy_snapshot", "TEXT"),
+                ("gateway_enabled", "BOOLEAN DEFAULT 0"),
+                ("gateway_payment_url", "VARCHAR(512)"),
+                ("organisation_id", "INTEGER"),
+                ("purchase_order_ref", "VARCHAR(64)"),
+                ("contract_ref", "VARCHAR(64)"),
+            ):
+                if col not in inv_cols:
+                    conn.execute(text(f"ALTER TABLE client_invoices ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("client_invoice_lines"):
+        line_cols = {c["name"] for c in insp.get_columns("client_invoice_lines")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("billing_ledger_id", "INTEGER"),
+                ("gst_rate_percent", "NUMERIC(5, 2)"),
+                ("gst_amount_inr", "NUMERIC(12, 2)"),
+                ("hsn_sac_code", "VARCHAR(16)"),
+                ("taxable_amount_inr", "NUMERIC(12, 2)"),
+                ("line_item_type", "VARCHAR(32)"),
+                ("quantity", "NUMERIC(10, 2)"),
+                ("unit_rate_inr", "NUMERIC(12, 2)"),
+                ("finance_note", "TEXT"),
+                ("therapist_user_id", "INTEGER"),
+            ):
+                if col not in line_cols:
+                    conn.execute(text(f"ALTER TABLE client_invoice_lines ADD COLUMN {col} {ddl}"))
+
+    if not insp.has_table("case_billing_preferences"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE case_billing_preferences ("
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "  case_id INTEGER NOT NULL UNIQUE,"
+                    "  invoice_type VARCHAR(32),"
+                    "  gst_applicable BOOLEAN,"
+                    "  gst_rate_percent NUMERIC(5, 2),"
+                    "  gateway_enabled BOOLEAN DEFAULT 0,"
+                    "  due_date_offset_days INTEGER,"
+                    "  payment_policy_template TEXT,"
+                    "  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                    "  FOREIGN KEY(case_id) REFERENCES cases(id)"
+                    ")"
+                )
+            )
+
+    if insp.has_table("care_packages"):
+        pkg_cols = {c["name"] for c in insp.get_columns("care_packages")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("product_billing_rule_id", "INTEGER"),
+                ("client_invoice_id", "INTEGER"),
+                ("valid_from", "DATE"),
+                ("amount_inr", "NUMERIC(12, 2)"),
+            ):
+                if col not in pkg_cols:
+                    conn.execute(text(f"ALTER TABLE care_packages ADD COLUMN {col} {ddl}"))
+
+    if not insp.has_table("password_reset_tokens"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE password_reset_tokens ("
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "  user_id INTEGER NOT NULL,"
+                    "  token_hash VARCHAR(64) NOT NULL UNIQUE,"
+                    "  expires_at DATETIME NOT NULL,"
+                    "  used_at DATETIME,"
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                    "  FOREIGN KEY(user_id) REFERENCES users(id)"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_password_reset_tokens_user_id "
+                    "ON password_reset_tokens (user_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_password_reset_tokens_token_hash "
+                    "ON password_reset_tokens (token_hash)"
+                )
+            )
 
     if insp.has_table("case_documents"):
         with engine.begin() as conn:

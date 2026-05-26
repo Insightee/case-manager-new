@@ -84,10 +84,22 @@ export function InvoiceBreakdownView({
   }
 
   const leaveDetails = data.leave_details || []
+  const leaveBalance = data.leave_balance
   const pendingCount = data.pending_late_count ?? 0
 
   return (
     <div className="space-y-6">
+      {leaveBalance ? (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-slate-700">
+          <p className="text-xs font-semibold uppercase text-indigo-700">Leave balance ({leaveBalance.year})</p>
+          <p className="mt-1">
+            Paid remaining: <strong>{leaveBalance.paid_remaining}</strong> of {leaveBalance.entitlement_paid}
+            {' · '}
+            Used: {leaveBalance.paid_used_effective} (system {leaveBalance.computed_paid_used}
+            {leaveBalance.backfill_paid_used > 0 ? ` + HR backfill ${leaveBalance.backfill_paid_used}` : ''})
+          </p>
+        </div>
+      ) : null}
       <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-slate-50/80 p-4 sm:grid-cols-2">
         <div>
           <p className="text-xs font-semibold uppercase text-slate-500">Subtotal (approved)</p>

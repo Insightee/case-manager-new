@@ -9,8 +9,11 @@ class TherapistOnboardCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=255)
     phone: Optional[str] = Field(None, max_length=32)
-    module_assignments: list[str] = Field(default_factory=lambda: ["homecare", "shadow_support"])
+    module_assignments: list[str] = Field(default_factory=list)
     services_offered: list[str] = Field(default_factory=list)
+    primary_case_manager_user_id: int = Field(..., description="Primary case manager (supervisor)")
+    mentor_user_id: Optional[int] = None
+    service_access_grants: Optional[dict] = None
     mode: Literal["invite", "direct"] = "invite"
     password: Optional[str] = Field(None, min_length=6)
     send_email: bool = True
@@ -29,6 +32,8 @@ class TherapistBulkOnboardRequest(BaseModel):
     therapists: list[TherapistBulkRow] = Field(min_length=1, max_length=100)
     mode: Literal["invite", "direct"] = "invite"
     send_email: bool = True
+    primary_case_manager_user_id: int = Field(..., description="Primary case manager for all rows")
+    mentor_user_id: Optional[int] = None
 
 
 class TherapistOnboardResult(BaseModel):

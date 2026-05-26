@@ -13,6 +13,8 @@ class UserCreate(BaseModel):
     region: Optional[str] = None
     module_assignments: list[str] = []
     module_access_grants: Optional[dict] = None
+    service_access_grants: Optional[dict] = None
+    org_capability_grants: Optional[dict] = None
     feature_overrides: Optional[dict] = None
     view_only: bool = False
 
@@ -28,6 +30,8 @@ class UserRead(BaseModel):
     region: Optional[str]
     module_assignments: list[str]
     module_access_grants: dict = Field(default_factory=dict)
+    service_access_grants: dict = Field(default_factory=dict)
+    org_capability_grants: dict = Field(default_factory=dict)
     feature_overrides: dict = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
@@ -36,6 +40,8 @@ class UserRead(BaseModel):
 class UserUpdate(BaseModel):
     module_assignments: Optional[list[str]] = None
     module_access_grants: Optional[dict] = None
+    service_access_grants: Optional[dict] = None
+    org_capability_grants: Optional[dict] = None
     feature_overrides: Optional[dict] = None
     role_names: Optional[list[str]] = None
     region: Optional[str] = None
@@ -54,7 +60,10 @@ class InviteCreate(BaseModel):
     email: EmailStr
     role_name: str
     full_name: Optional[str] = None
+    send_email: bool = True
     module_assignments: list[str] = []
     module_access_grants: Optional[dict] = None
+    service_access_grants: Optional[dict] = None
+    org_capability_grants: Optional[dict] = None
     feature_overrides: Optional[dict] = None
     view_only: bool = False

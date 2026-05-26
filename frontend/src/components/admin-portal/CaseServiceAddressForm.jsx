@@ -30,7 +30,8 @@ export function CaseServiceAddressForm({ caseItem, onSave, readOnly }) {
     }
   }, [caseItem])
 
-  if (!isHomecare) return null
+  const showForm = isHomecare || caseItem?.service_address?.address_line1
+  if (!showForm) return null
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -46,7 +47,7 @@ export function CaseServiceAddressForm({ caseItem, onSave, readOnly }) {
   return (
     <form className="admin-form-grid" style={{ maxWidth: 480, marginTop: 16 }} onSubmit={handleSubmit}>
       <p className="admin-drawer__subtitle" style={{ gridColumn: '1 / -1' }}>
-        Service address (homecare)
+        Service address
       </p>
       <div style={{ gridColumn: '1 / -1' }}>
         <AddressFormFields value={addr} onChange={setAddr} idPrefix="admin-svc" showLocationButton={false} />

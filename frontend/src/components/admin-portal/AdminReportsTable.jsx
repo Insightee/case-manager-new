@@ -110,13 +110,18 @@ export function AdminReportsTable({
                       (r.status === 'UNDER_REVIEW' ||
                         r.parent_review_status === 'CHANGES_REQUESTED') ? (
                         <>
+                          {(r.report_type !== 'monthly' ||
+                            r.can_cm_publish ||
+                            r.can_admin_override_publish ||
+                            r.parent_review_status === 'CHANGES_REQUESTED') ? (
                           <button
                             type="button"
                             className="admin-btn admin-btn--primary admin-btn--sm"
                             onClick={() => onApprove(r)}
                           >
-                            Approve
+                            {r.report_type === 'monthly' ? 'Publish' : 'Approve'}
                           </button>
+                          ) : null}
                           {r.status === 'UNDER_REVIEW' ? (
                             <button
                               type="button"

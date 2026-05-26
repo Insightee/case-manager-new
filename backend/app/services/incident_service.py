@@ -158,6 +158,7 @@ def update_incident(
     priority: str | None = None,
     assigned_to_user_id: int | None = None,
     tagged_roles: list[str] | None = None,
+    tagged_user_ids: list[int] | None = None,
     action_taken_note: str | None = None,
 ) -> Incident:
     if status is not None:
@@ -189,6 +190,9 @@ def update_incident(
     if tagged_roles is not None:
         incident.tagged_roles = tagged_roles
 
+    if tagged_user_ids is not None:
+        incident.tagged_user_ids = [int(x) for x in tagged_user_ids]
+
     if action_taken_note is not None and not status:
         incident.action_taken_note = action_taken_note.strip()
         if is_owner:
@@ -202,6 +206,21 @@ def mark_in_review_on_owner_open(incident: Incident, actor_user_id: int) -> None
     if incident.status == IncidentStatus.REPORTED and incident.assigned_to_user_id == actor_user_id:
         incident.status = IncidentStatus.IN_REVIEW
         incident.last_owner_activity_at = datetime.now(timezone.utc)
+
+
+def _tagged_users_for_detail(db: Session, incident: Incident) -> list[dict]:
+    from app.services.incident_notify_service import collect_tagged_user_ids
+
+    ids = collect_tagged_user_ids(db, incident)
+    if not ids:
+        return []
+    users = db.scalars(select(User).where(User.id.in_(ids))).all()
+    by_id = {u.id: u for u in users}
+    return [
+        {"id": uid, "full_name": by_id[uid].full_name, "email": by_id[uid].email}
+        for uid in sorted(ids)
+        if uid in by_id
+    ]
 
 
 def incident_to_list_dict(incident: Incident, case: Case | None) -> dict:
@@ -228,7 +247,12 @@ def incident_to_list_dict(incident: Incident, case: Case | None) -> dict:
     }
 
 
-def incident_to_detail_dict(incident: Incident, case: Case | None, user: User | None = None) -> dict:
+def incident_to_detail_dict(
+    db: Session,
+    incident: Incident,
+    case: Case | None,
+    user: User | None = None,
+) -> dict:
     from app.services import incident_attachment_service as att_svc
     from app.services import incident_flow_service as inc_flow
 
@@ -242,6 +266,8 @@ def incident_to_detail_dict(incident: Incident, case: Case | None, user: User | 
             "child_safe": incident.child_safe,
             "parent_informed": incident.parent_informed,
             "tagged_roles": incident.tagged_roles or [],
+            "tagged_user_ids": incident.tagged_user_ids or [],
+            "tagged_users": _tagged_users_for_detail(db, incident),
             "action_taken_note": incident.action_taken_note,
             "escalated_at": incident.escalated_at.isoformat() if incident.escalated_at else None,
             "messages": [

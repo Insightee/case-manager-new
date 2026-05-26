@@ -15,7 +15,7 @@ from app.core.incident_catalog import meta_payload
 from app.core.pagination import paginate_query, paginated_response
 from app.core.module_access import is_view_only_user, user_has_feature
 from app.core.module_write import ensure_feature_write_access, guard_clinical_case
-from app.core.permissions import case_scope_check, require_mutation_permission, require_permission, user_has_permission
+from app.core.permissions import RoleName, case_scope_check, require_mutation_permission, require_permission, user_has_permission
 from app.models.incident import Incident, IncidentMessage, IncidentStatus, normalize_incident_status
 from app.models.user import User
 from app.models.case import Case
@@ -51,6 +51,7 @@ class IncidentUpdate(BaseModel):
     priority: Optional[str] = None
     assigned_to_user_id: Optional[int] = None
     tagged_roles: Optional[list[str]] = None
+    tagged_user_ids: Optional[list[int]] = None
     action_taken_note: Optional[str] = None
 
 
@@ -68,6 +69,17 @@ class IncidentEscalateRequest(BaseModel):
 
 def _has_manage(user: User) -> bool:
     return user_has_permission(user, "incident.read_sensitive") and user_has_feature(user, "incidents")
+
+
+def _is_therapist_reporter(user: User) -> bool:
+    return RoleName.THERAPIST.value in user.role_names and not _has_manage(user)
+
+
+def _service_type_from_case(case: Case) -> str:
+    pm = (case.product_module or "").strip().lower()
+    if pm:
+        return pm
+    return (case.service_type or "homecare").strip().lower()
 
 
 def _guard_incident_write(user: User, incident: Incident, db: Session) -> None:
@@ -200,7 +212,7 @@ def get_incident(
         db.commit()
 
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)
 
 
 @router.post("/{incident_id}/close")
@@ -225,7 +237,7 @@ def close_incident_endpoint(
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)
 
 
 @router.post("/{incident_id}/escalate")
@@ -250,7 +262,7 @@ def escalate_incident_endpoint(
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -263,12 +275,23 @@ def create_incident(
     what = payload.what_happened or payload.description or ""
     if not what.strip():
         raise HTTPException(status_code=400, detail="What happened is required")
+
+    if _is_therapist_reporter(user) and not payload.case_id:
+        raise HTTPException(status_code=400, detail="case_id is required for therapist incident reports")
+
+    case = None
     if payload.case_id:
         case = case_service.get_case(db, payload.case_id)
         if not case or not case_scope_check(db, user, case):
             raise HTTPException(status_code=404, detail="Case not found")
         if _has_manage(user):
             guard_clinical_case(user, case, db, feature="incidents")
+
+    service_type = payload.service_type
+    if case:
+        service_type = _service_type_from_case(case)
+    elif _is_therapist_reporter(user):
+        raise HTTPException(status_code=400, detail="case_id is required for therapist incident reports")
 
     try:
         incident = inc_svc.create_incident(
@@ -280,7 +303,7 @@ def create_incident(
             subcategory=payload.subcategory,
             what_happened=what,
             priority=payload.priority,
-            service_type=payload.service_type,
+            service_type=service_type,
             incident_at=payload.incident_at,
             location=payload.location,
             immediate_action=payload.immediate_action,
@@ -334,7 +357,7 @@ def create_incident(
     db.commit()
     db.refresh(incident)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    detail = inc_svc.incident_to_detail_dict(incident, case, user)
+    detail = inc_svc.incident_to_detail_dict(db, incident, case, user)
     detail["confirmation"] = f"Incident {incident.ticket_code} submitted — {assignee_name} will review."
     return detail
 
@@ -382,10 +405,14 @@ def add_incident_message(
     if is_owner:
         _guard_incident_write(user, incident, db)
 
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Message body is required")
+
     msg = IncidentMessage(
         incident_id=incident_id,
         author_user_id=user.id,
-        body=payload.body.strip(),
+        body=body,
     )
     db.add(msg)
 
@@ -401,7 +428,7 @@ def add_incident_message(
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)
 
 
 @router.patch("/{incident_id}")
@@ -424,6 +451,9 @@ def update_incident(
     _guard_incident_write(user, incident, db)
 
     is_owner = incident.assigned_to_user_id == user.id or user_has_permission(user, "admin.override")
+    from app.services import incident_notify_service as inc_notify
+
+    before_tagged = inc_notify.collect_tagged_user_ids(db, incident)
     try:
         inc_svc.update_incident(
             db,
@@ -434,14 +464,20 @@ def update_incident(
             priority=payload.priority,
             assigned_to_user_id=payload.assigned_to_user_id,
             tagged_roles=payload.tagged_roles,
+            tagged_user_ids=payload.tagged_user_ids,
             action_taken_note=payload.action_taken_note,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    if payload.tagged_roles is not None or payload.tagged_user_ids is not None:
+        after_tagged = inc_notify.collect_tagged_user_ids(db, incident)
+        new_ids = after_tagged - before_tagged
+        inc_notify.notify_incident_tagged(db, incident, user.id, notify_user_ids=new_ids)
 
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="incident", entity_id=incident.id, **meta)
     db.commit()
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    return inc_svc.incident_to_detail_dict(incident, case, user)
+    return inc_svc.incident_to_detail_dict(db, incident, case, user)

@@ -67,6 +67,10 @@ class IepVerificationSection(BaseModel):
     therapist_license_no: str = ""
     case_manager_name: str = ""
     case_manager_date: Optional[str] = None
+    prepared_by_user_id: Optional[int] = None
+    prepared_by_name: str = ""
+    prepared_by_role: str = ""
+    prepared_at: Optional[str] = None
     client_name: str = ""
     client_date: Optional[str] = None
 
@@ -84,6 +88,7 @@ class IepPlanSections(BaseModel):
     other_areas_of_need: IepGoalStrategyBlock = Field(default_factory=IepGoalStrategyBlock)
     intervention_by_insighte: str = ""
     verification: IepVerificationSection = Field(default_factory=IepVerificationSection)
+    supplementary_attachment_ids: list[int] = Field(default_factory=list)
     about_child: str = ""
     referral: str = ""
     signatures: str = ""
@@ -115,6 +120,7 @@ class IepPlanRead(BaseModel):
     updated_at: Optional[datetime] = None
     can_edit: bool = False
     can_share_with_parent: bool = False
+    can_create_revision: bool = False
 
 
 class IepPlanSave(BaseModel):

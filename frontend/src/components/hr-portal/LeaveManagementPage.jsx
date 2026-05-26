@@ -7,6 +7,7 @@ import {
   AdminEmptyState,
   AdminToolbar,
   PortalTabBar,
+  RejectWithComment,
   StatusBadge,
 } from '../admin-portal/ui/index.js'
 import './leave-management.css'
@@ -32,7 +33,8 @@ export function LeaveManagementPage({ portal = 'hr' }) {
 
   const [leaves, setLeaves] = useState([])
   const [loading, setLoading] = useState(true)
-  const [reviewNote, setReviewNote] = useState({})
+  const [rejectingId, setRejectingId] = useState(null)
+  const [rejectComment, setRejectComment] = useState('')
   const [processing, setProcessing] = useState({})
   const [error, setError] = useState('')
   const [reportYear, setReportYear] = useState(new Date().getFullYear())
@@ -93,25 +95,43 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     setSearchParams(nextParams, { replace: true })
   }
 
-  async function reviewLeave(id, status) {
+  async function reviewLeave(id, status, note = null) {
     setProcessing((p) => ({ ...p, [id]: true }))
     setError('')
     try {
       await apiFetch(`/api/v1/leave/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status, review_note: reviewNote[id] || null }),
+        body: JSON.stringify({ status, review_note: note }),
       })
-      setReviewNote((n) => {
-        const c = { ...n }
-        delete c[id]
-        return c
-      })
+      if (rejectingId === id) {
+        setRejectingId(null)
+        setRejectComment('')
+      }
       load()
     } catch (err) {
       setError(err.message || 'Could not update leave status')
     } finally {
       setProcessing((p) => ({ ...p, [id]: false }))
     }
+  }
+
+  function startReject(id) {
+    setRejectingId(id)
+    setRejectComment('')
+  }
+
+  function cancelReject() {
+    setRejectingId(null)
+    setRejectComment('')
+  }
+
+  function confirmReject(id) {
+    const note = rejectComment.trim()
+    if (!note) {
+      setError('Add a comment explaining why this leave was rejected.')
+      return
+    }
+    reviewLeave(id, 'REJECTED', note)
   }
 
   async function exportCsv() {
@@ -216,34 +236,33 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                         {l.reason ? (
                           <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>{l.reason}</p>
                         ) : null}
+                        {l.status === 'REJECTED' && l.review_note ? (
+                          <p
+                            className="admin-muted"
+                            style={{
+                              fontSize: '0.85rem',
+                              marginBottom: 10,
+                              padding: '8px 10px',
+                              background: '#fef2f2',
+                              borderRadius: 8,
+                              border: '1px solid #fecaca',
+                            }}
+                          >
+                            <strong>Rejection note:</strong> {l.review_note}
+                          </p>
+                        ) : null}
                         {l.status === 'PENDING' ? (
-                          <div style={{ marginTop: 12 }}>
-                            <input
-                              className="admin-input"
-                              value={reviewNote[l.id] || ''}
-                              onChange={(e) => setReviewNote((n) => ({ ...n, [l.id]: e.target.value }))}
-                              placeholder="Review note (optional)…"
-                              style={{ marginBottom: 8 }}
-                            />
-                            <div className="admin-btn-group">
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn--primary admin-btn--sm"
-                                disabled={processing[l.id]}
-                                onClick={() => reviewLeave(l.id, 'APPROVED')}
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn--sm"
-                                disabled={processing[l.id]}
-                                onClick={() => reviewLeave(l.id, 'REJECTED')}
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </div>
+                          <RejectWithComment
+                            rejecting={rejectingId === l.id}
+                            comment={rejectingId === l.id ? rejectComment : ''}
+                            onCommentChange={setRejectComment}
+                            onStartReject={() => startReject(l.id)}
+                            onCancelReject={cancelReject}
+                            onConfirmReject={() => confirmReject(l.id)}
+                            onApprove={() => reviewLeave(l.id, 'APPROVED', null)}
+                            processing={processing[l.id]}
+                            placeholder="Why is this leave rejected? (required)"
+                          />
                         ) : null}
                       </div>
                     )

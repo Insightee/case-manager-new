@@ -17,6 +17,7 @@ from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine, Session
 from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
+from app.models.user import User
 
 
 def parse_month(month: str) -> tuple[int, int, str]:
@@ -477,6 +478,13 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
     leave_deduction, leave_details = compute_leave_deduction(db, therapist_user_id, year, month_num)
     net = max(subtotal - leave_deduction, 0)
 
+    leave_balance = None
+    therapist_user = db.get(User, therapist_user_id)
+    if therapist_user:
+        from app.services import leave_policy_service as policy
+
+        leave_balance = policy.get_leave_balance(db, therapist_user, year=year)
+
     return {
         "month": f"{year}-{month_num:02d}",
         "month_label": label,
@@ -487,6 +495,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
         "pending_late_count": pending_late_count,
         "leave_deduction_inr": leave_deduction,
         "leave_details": leave_details,
+        "leave_balance": leave_balance,
         "net_amount_inr": round(net, 2),
         "cases": case_groups,
     }

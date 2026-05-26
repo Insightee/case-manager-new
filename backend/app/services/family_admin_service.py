@@ -111,7 +111,23 @@ def create_family(
     email = parent_email.lower().strip()
     existing = db.scalars(select(User).where(User.email == email)).first()
     if existing:
-        raise ValueError("A user with this email already exists")
+        if RoleName.PARENT.value not in existing.role_names:
+            raise ValueError("A user with this email already exists but is not a parent account")
+        child = create_child(db, child_first, child_last, child_dob)
+        pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == existing.id)).first()
+        if not pg:
+            pg = ParentGuardian(user_id=existing.id)
+            db.add(pg)
+            db.flush()
+        if child not in pg.children:
+            pg.children.append(child)
+        db.flush()
+        return {
+            "childId": child.id,
+            "parentUserId": existing.id,
+            "inviteUrl": None,
+            "linkedExistingParent": True,
+        }
 
     child = create_child(db, child_first, child_last, child_dob)
 
@@ -209,6 +225,67 @@ def issue_parent_invite(
                 child_name = ch.full_name
         _send_parent_invite_email(user.email, url, user.full_name or user.email, child_name)
     return url
+
+
+def lookup_parents(db: Session, search: str | None = None, limit: int = 25) -> list[dict]:
+    from app.core.permissions import RoleName
+    from app.models.role import Role
+
+    q = (search or "").strip().lower()
+    parents = db.scalars(
+        select(User)
+        .join(User.roles)
+        .where(Role.name == RoleName.PARENT.value, User.is_active.is_(True))
+        .options(selectinload(User.roles))
+        .order_by(User.full_name)
+    ).unique().all()
+    rows: list[dict] = []
+    for u in parents:
+        hay = f"{u.full_name} {u.email} {u.phone or ''}".lower()
+        if q and q not in hay:
+            continue
+        pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == u.id)).first()
+        children = []
+        if pg:
+            for c in pg.children:
+                children.append({"childId": c.id, "childName": c.full_name})
+        rows.append(
+            {
+                "userId": u.id,
+                "fullName": u.full_name,
+                "email": u.email,
+                "phone": u.phone,
+                "children": children,
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def add_child_to_parent(
+    db: Session,
+    *,
+    parent_user_id: int,
+    first_name: str,
+    last_name: str,
+    date_of_birth=None,
+) -> dict:
+    from app.core.permissions import RoleName
+
+    user = db.get(User, parent_user_id)
+    if not user or RoleName.PARENT.value not in user.role_names:
+        raise ValueError("Parent user not found")
+    child = create_child(db, first_name, last_name, date_of_birth)
+    pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == user.id)).first()
+    if not pg:
+        pg = ParentGuardian(user_id=user.id)
+        db.add(pg)
+        db.flush()
+    if child not in pg.children:
+        pg.children.append(child)
+    db.flush()
+    return {"id": child.id, "fullName": child.full_name, "parentUserId": user.id}
 
 
 def link_child_to_parent_by_email(db: Session, child_id: int, parent_email: str) -> None:

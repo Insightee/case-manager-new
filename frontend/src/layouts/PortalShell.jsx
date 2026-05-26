@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
+import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
 import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
@@ -16,6 +18,7 @@ const THERAPIST_NAV = [
   { to: '/therapist/reports', label: 'Monthly Reports' },
   { to: '/therapist/invoices', label: 'Invoices' },
   { to: '/therapist/support', label: 'Support & Incidents' },
+  { to: '/therapist/cm-meetings', label: 'CM meetings' },
   { to: '/therapist/leave', label: 'Leave' },
   { to: '/therapist/slots', label: 'Open Slots' },
   { to: '/therapist/profile', label: 'My Profile' },
@@ -28,16 +31,6 @@ const THERAPIST_MOBILE_NAV = [
   { to: '/therapist', label: 'Home', end: true },
 ]
 
-const HR_NAV = [
-  { to: '/hr', label: 'Dashboard', end: true, icon: 'dashboard' },
-  { to: '/hr/people', label: 'People', perm: 'user.manage', icon: 'people' },
-  { to: '/hr/therapists', label: 'Therapists', icon: 'user' },
-  { to: '/hr/cases', label: 'Cases', icon: 'cases' },
-  { to: '/hr/leave', label: 'Leave Management', icon: 'calendar' },
-  { to: '/hr/memos', label: 'Memos', icon: 'mail' },
-  { to: '/hr/tickets', label: 'Tickets', icon: 'ticket' },
-]
-
 const PARENT_NAV = [
   { to: '/parent', label: 'Dashboard', end: true },
   { to: '/parent/session-logs', label: 'Session updates' },
@@ -48,63 +41,76 @@ const PARENT_NAV = [
   { to: '/parent/support', label: 'Support & Incidents' },
 ]
 
-const CLINICAL_MODULE_IDS = ['homecare', 'shadow_support']
-
 /** Nav for users whose only operational role is Case Manager (not module admin / finance / HR). */
-const CASE_MANAGER_NAV = [
-  { to: '/admin/cm', label: 'My caseload', end: true, perm: null, feature: null, icon: 'dashboard' },
-  { to: '/admin/cases', label: 'Cases', perm: 'case.read.team', feature: 'cases', moduleIds: CLINICAL_MODULE_IDS, icon: 'cases' },
-  { to: '/admin/workbench', label: 'Review queues', perm: 'case.read.team', moduleIds: CLINICAL_MODULE_IDS, icon: 'workbench' },
-  { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: CLINICAL_MODULE_IDS, icon: 'grid' },
-  { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: CLINICAL_MODULE_IDS, icon: 'reports' },
-  { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: CLINICAL_MODULE_IDS, icon: 'iep' },
-  { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', moduleIds: CLINICAL_MODULE_IDS, icon: 'meetings' },
-  { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', moduleIds: CLINICAL_MODULE_IDS, icon: 'mail' },
-]
+function caseManagerNav(clinicalModuleIds) {
+  return [
+    { to: '/admin/cm', label: 'My caseload', end: true, perm: null, feature: null, icon: 'dashboard' },
+    { to: '/admin/cases', label: 'Cases', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases' },
+    { to: '/admin/workbench', label: 'Review queues', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench' },
+    { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid' },
+    { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports' },
+    { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep' },
+    { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
+    { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', moduleIds: clinicalModuleIds, icon: 'mail' },
+  ]
+}
 
-const ADMIN_NAV = [
-  { to: '/admin', label: 'Dashboard', end: true, perm: null, feature: null, icon: 'dashboard' },
-  { to: '/admin/workbench', label: 'Workbench', perm: 'case.read.team', moduleIds: CLINICAL_MODULE_IDS, icon: 'workbench' },
-  { to: '/admin/cases', label: 'Cases', perm: 'case.read.all', feature: 'cases', moduleIds: CLINICAL_MODULE_IDS, icon: 'cases' },
-  { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: CLINICAL_MODULE_IDS, icon: 'grid' },
-  { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: CLINICAL_MODULE_IDS, icon: 'reports' },
-  { to: '/admin/invoices', label: 'Invoices & client payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices' },
-  { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: CLINICAL_MODULE_IDS, icon: 'iep' },
-  { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', moduleIds: CLINICAL_MODULE_IDS, icon: 'mail' },
-  { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people' },
-  { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope' },
-  { to: '/admin/settings/services', label: 'Service categories', perm: 'user.manage', feature: null, icon: 'settings' },
-  { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', feature: null, icon: 'meetings' },
-  { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave' },
-]
+function adminNav(clinicalModuleIds) {
+  return [
+    { to: '/admin', label: 'Dashboard', end: true, perm: null, feature: null, icon: 'dashboard', section: 'Operations' },
+    { to: '/admin/workbench', label: 'Workbench', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench', section: 'Operations' },
+    { to: '/admin/cases', label: 'Cases', perm: 'case.read.all', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'Operations' },
+    { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid', section: 'Operations' },
+    { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports', section: 'Operations' },
+    { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep', section: 'Operations' },
+    { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', moduleIds: clinicalModuleIds, icon: 'mail', section: 'Operations' },
+    { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },
+    { to: '/admin/invoices', label: 'Invoices & payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices', section: 'Finance' },
+    { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },
+    { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope', section: 'People & HR' },
+    { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave', section: 'People & HR' },
+    { to: '/admin/memos', label: 'Memos', perm: 'memo.send', feature: null, icon: 'mail', section: 'People & HR' },
+    { to: '/admin/hr-cases', label: 'HR case view', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'People & HR' },
+    { to: '/admin/settings/services', label: 'Service categories', perm: 'user.manage', feature: null, icon: 'settings', section: 'Settings' },
+  ]
+}
 
 const PORTAL_LABELS = {
   parent: 'Client Portal',
-  admin: 'Admin Portal',
+  admin: 'Staff Portal',
   therapist: 'Therapist Portal',
-  hr: 'HR Portal',
 }
 
 function NavLinks({ items, className, linkClassName, onNavigate, showIcons }) {
+  let lastSection = null
   return (
     <nav className={className} aria-label="Portal navigation">
       {items.map((item) => {
         if (item.isMore) {
           return null
         }
+        const sectionHeader =
+          item.section && item.section !== lastSection ? (
+            <p key={`section-${item.section}`} className="app-sidebar__nav-section">
+              {item.section}
+            </p>
+          ) : null
+        if (item.section) lastSection = item.section
         return (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              `${linkClassName}${isActive ? ' is-active' : ''}`
-            }
-          >
-            {showIcons && item.icon ? <NavIcon name={item.icon} /> : null}
-            <span>{item.label}</span>
-          </NavLink>
+          <span key={item.to} className="app-sidebar__nav-item-wrap">
+            {sectionHeader}
+            <NavLink
+              to={item.to}
+              end={item.end}
+              onClick={onNavigate}
+              className={({ isActive }) =>
+                `${linkClassName}${isActive ? ' is-active' : ''}`
+              }
+            >
+              {showIcons && item.icon ? <NavIcon name={item.icon} /> : null}
+              <span>{item.label}</span>
+            </NavLink>
+          </span>
         )
       })}
     </nav>
@@ -199,15 +205,11 @@ export function PortalShell({ portal }) {
 
   let nav = THERAPIST_NAV
   if (portal === 'parent') nav = PARENT_NAV
-  if (portal === 'hr') {
-    nav = HR_NAV.filter((item) => !item.perm || can(item.perm))
-  }
   if (portal === 'admin') {
     const roles = user?.roles || []
-    const cmFocused =
-      roles.includes('CASE_MANAGER') &&
-      !roles.some((r) => ['SUPER_ADMIN', 'ADMIN', 'MODULE_ADMIN', 'FINANCE', 'HR'].includes(r))
-    const baseNav = cmFocused ? CASE_MANAGER_NAV : ADMIN_NAV
+    const cmFocused = isCaseManagerOnlyRole(roles)
+    const clinicalIds = clinicalProductModuleIds(user)
+    const baseNav = cmFocused ? caseManagerNav(clinicalIds) : adminNav(clinicalIds)
     nav = baseNav.filter((item) =>
       filterAdminNavItem(item, { roles, navVisible, can, hasFeature }),
     )
@@ -221,8 +223,8 @@ export function PortalShell({ portal }) {
     [nav, portal],
   )
 
-  const showNavIcons = portal === 'admin' || portal === 'hr'
-  const shellClass = portal === 'admin' || portal === 'hr' ? 'app-shell app-shell--admin' : 'app-shell'
+  const showNavIcons = portal === 'admin'
+  const shellClass = portal === 'admin' ? 'app-shell app-shell--admin' : 'app-shell'
   const firstName = user?.full_name?.split(/\s+/)[0] || 'Account'
   const profilePath =
     portal === 'parent'

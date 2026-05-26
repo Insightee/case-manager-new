@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 SERVICE_CATEGORIES: list[dict[str, str]] = [
-    {"id": "shadow", "label": "Shadow support"},
+    {"id": "shadow_support", "label": "Shadow support"},
     {"id": "homecare", "label": "Homecare"},
     {"id": "occupational_therapy", "label": "Occupational therapy"},
     {"id": "speech_therapy", "label": "Speech therapy"},
@@ -39,7 +39,9 @@ def get_service_categories(db: Session) -> list[dict[str, str]]:
         ).all()
         if not rows:
             return list(SERVICE_CATEGORIES)
-        return [{"id": r.id, "label": r.label} for r in rows]
+        from app.core.service_access import normalize_service_id
+
+        return [{"id": normalize_service_id(r.id), "label": r.label} for r in rows]
     except Exception:
         return list(SERVICE_CATEGORIES)
 

@@ -283,7 +283,7 @@ export function AdminCaseManagerHomePage() {
           <AdminPanel title="My caseload" subtitle="Sorted by urgency — allotment and reviews first" padded={false}>
             <div className="admin-panel__body">
               <div style={{ padding: '12px 16px 0' }}>
-                <AdminSearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search caseload…" />
+                <AdminSearchInput value={search} onChange={setSearch} placeholder="Search caseload…" />
               </div>
               <div style={{ padding: '0 16px 16px' }}>
                 <CaseloadTable rows={caseloadRows} filter={search} />

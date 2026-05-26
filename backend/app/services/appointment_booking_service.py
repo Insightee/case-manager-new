@@ -98,8 +98,21 @@ def book_with_session(
     case_id: int,
     booked_by_user_id: int,
     booking_source: BookingSource,
+    *,
+    require_therapist_approval: bool = False,
+    admin_request_comment: str | None = None,
+    force_unavailable: bool = False,
 ) -> TherapistSlot:
-    slot = cal.book_slot(db, slot_id, case_id, booked_by_user_id, booking_source)
+    slot = cal.book_slot(
+        db,
+        slot_id,
+        case_id,
+        booked_by_user_id,
+        booking_source,
+        require_therapist_approval=require_therapist_approval,
+        admin_request_comment=admin_request_comment,
+        force_unavailable=force_unavailable,
+    )
     sync_session_for_slot(db, slot)
     return slot
 

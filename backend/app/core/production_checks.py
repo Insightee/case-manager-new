@@ -50,3 +50,12 @@ def validate_production_settings() -> None:
             "REDIS_URL is unset in production; refresh tokens use in-memory storage "
             "(not safe with multiple API replicas)."
         )
+
+    from app.services.email.service import is_smtp_configured
+
+    if not is_smtp_configured():
+        import logging
+
+        logging.getLogger("insightcase").warning(
+            "SMTP is not configured in production; password reset and billing emails will be logged only."
+        )

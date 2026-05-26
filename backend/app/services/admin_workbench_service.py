@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.module_access import get_allowed_case_product_modules, user_has_feature
@@ -113,12 +113,16 @@ def widget_section_reports(db: Session, user: User, *, limit: int = WIDGET_ITEM_
 def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIMIT) -> dict | None:
     if not user_has_permission(user, "ticket.manage") or not user_has_feature(user, "tickets"):
         return None
+    mine_first = case(
+        (SupportTicket.assigned_to_user_id == user.id, 0),
+        else_=1,
+    )
     ticket_stmt = (
         select(SupportTicket, Case, Child)
         .outerjoin(Case, SupportTicket.case_id == Case.id)
         .outerjoin(Child, Case.child_id == Child.id)
         .where(SupportTicket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS]))
-        .order_by(SupportTicket.updated_at.desc())
+        .order_by(mine_first, SupportTicket.updated_at.desc())
         .limit(limit)
     )
     ticket_stmt = apply_case_scope(ticket_stmt, user)

@@ -1,4 +1,4 @@
-import { REPORT_CATEGORIES } from './reportCategories.js'
+import { REPORTS_HUB_CATEGORIES } from './reportCategories.js'
 
 /** Storage / API report type (monthly vs observation tables). */
 export const REPORT_KIND_OPTIONS = [
@@ -16,6 +16,6 @@ export function reportKindLabel(value) {
 export function reportCategoryOptions() {
   return [
     { value: '', label: 'All categories' },
-    ...REPORT_CATEGORIES.map((c) => ({ value: c.id, label: c.label })),
+    ...REPORTS_HUB_CATEGORIES.map((c) => ({ value: c.id, label: c.label })),
   ]
 }

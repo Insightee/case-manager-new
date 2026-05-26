@@ -26,6 +26,7 @@ export function buildClientInvoiceQuery(filters) {
   if (filters.module) p.set('module', filters.module)
   if (filters.search) p.set('search', filters.search)
   if (filters.caseId) p.set('case_id', filters.caseId)
+  if (filters.claimsPending) p.set('claims_pending', 'true')
   const qs = p.toString()
   return qs ? `?${qs}` : ''
 }
@@ -52,6 +53,7 @@ export function parseClientInvoiceFilters(searchParams) {
     invoiceType: sp.get('invoice_type') || '',
     module: sp.get('module') || '',
     search: sp.get('search') || '',
+    claimsPending: sp.get('claims') === 'pending' || sp.get('claims_pending') === 'true',
   }
 }
 
@@ -62,6 +64,8 @@ export function writeClientInvoiceFiltersToParams(baseParams, filters) {
     if (v) next.set(param, String(v))
     else next.delete(param)
   }
+  if (filters.claimsPending) next.set('claims', 'pending')
+  else next.delete('claims')
   return next
 }
 

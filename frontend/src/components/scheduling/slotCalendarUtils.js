@@ -68,9 +68,27 @@ export const THERAPIST_STATUS_STYLES = {
   IN_PROGRESS: 'bg-amber-100 text-amber-900 border-amber-300',
 }
 
-/** Slots plus scheduled therapy sessions returned by the calendar API. */
+function cmMeetingsAsGridEvents(meetings) {
+  return (meetings || []).map((m) => ({
+    id: `cm-meeting-${m.id}`,
+    event_type: 'cm_meeting',
+    status: 'SESSION',
+    slot_date: m.date,
+    start_time: m.start_time || '09:00',
+    end_time: m.end_time,
+    child_name: m.child_name,
+    case_code: m.case_code,
+    title: m.title,
+  }))
+}
+
+/** Slots, therapy sessions, and CM meetings returned by the calendar API. */
 export function calendarGridEvents(calendar) {
-  return [...(calendar?.slots || []), ...(calendar?.sessions || [])]
+  return [
+    ...(calendar?.slots || []),
+    ...(calendar?.sessions || []),
+    ...cmMeetingsAsGridEvents(calendar?.cm_meetings),
+  ]
 }
 
 export const STATUS_LABELS = {

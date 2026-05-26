@@ -268,7 +268,7 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
   return (
     <div className="admin-cases-kanban">
       <AdminToolbar>
-        <AdminSearchInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search board…" />
+        <AdminSearchInput value={search} onChange={setSearch} placeholder="Search board…" />
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: '#64748b' }}>
           <input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} />
           Hide closed

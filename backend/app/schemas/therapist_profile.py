@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -17,6 +17,11 @@ class TherapistProfileBase(BaseModel):
 class TherapistProfileUpdate(TherapistProfileBase):
     supervisor_user_id: Optional[int] = None
     mentor_user_id: Optional[int] = None
+    employment_start_date: Optional[date] = None
+    leave_balance_year: Optional[int] = None
+    leave_paid_days_backfill: Optional[int] = None
+    leave_carry_forward_days_backfill: Optional[int] = None
+    leave_backfill_note: Optional[str] = None
 
 
 class TherapistProfileRead(TherapistProfileBase):
@@ -32,6 +37,11 @@ class TherapistProfileRead(TherapistProfileBase):
     mentor_user_id: Optional[int] = None
     supervisor_name: Optional[str] = None
     mentor_name: Optional[str] = None
+    employment_start_date: Optional[date] = None
+    leave_balance_year: Optional[int] = None
+    leave_paid_days_backfill: int = 0
+    leave_carry_forward_days_backfill: int = 0
+    leave_backfill_note: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -47,12 +57,18 @@ class TherapistProfileReview(BaseModel):
     admin_note: Optional[str] = None
 
 
+class ProductModuleDef(BaseModel):
+    id: str = Field(min_length=2, max_length=64)
+    label: str = Field(min_length=2, max_length=255)
+
+
 class ServiceCategoryRead(BaseModel):
     id: str
     label: str
     description: Optional[str] = None
     sort_order: int = 0
     is_active: bool = True
+    product_modules: list[ProductModuleDef] = []
 
 
 class ServiceCategoryCreate(BaseModel):
@@ -60,3 +76,12 @@ class ServiceCategoryCreate(BaseModel):
     label: str = Field(min_length=2, max_length=255)
     description: Optional[str] = None
     sort_order: int = 0
+    product_modules: Optional[list[ProductModuleDef]] = None
+
+
+class ServiceCategoryUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, min_length=2, max_length=255)
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+    product_modules: Optional[list[ProductModuleDef]] = None
+    is_active: Optional[bool] = None

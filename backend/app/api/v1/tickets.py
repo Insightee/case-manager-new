@@ -44,6 +44,14 @@ class TicketCreate(BaseModel):
     topic: Optional[str] = None
 
 
+class TicketCreatedOut(BaseModel):
+    id: int
+    subject: str
+    category: str
+    status: str
+    created_at: str
+
+
 class TicketMessageCreate(BaseModel):
     body: str
     is_internal: bool = False
@@ -61,6 +69,8 @@ class TicketFlowNote(BaseModel):
 
 class TicketEscalateRequest(BaseModel):
     reason: Optional[str] = None
+    target_role: Optional[str] = None
+    assign_to_user_id: Optional[int] = None
 
 
 def _parse_category(raw: str) -> TicketCategory:
@@ -162,7 +172,14 @@ async def create_ticket(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()
-    return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
+    db.refresh(ticket)
+    return TicketCreatedOut(
+        id=ticket.id,
+        subject=ticket.subject,
+        category=ticket.category.value,
+        status=ticket.status.value,
+        created_at=ticket.created_at.isoformat() if ticket.created_at else "",
+    )
 
 
 @router.patch("/{ticket_id}")
@@ -178,9 +195,22 @@ def update_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
     _guard_ticket_staff_write(user, ticket, db)
     if payload.status:
-        ticket.status = payload.status
+        try:
+            ticket_flow.set_ticket_status(db, user, ticket, payload.status)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    prev_assignee = ticket.assigned_to_user_id
     if payload.assigned_to_user_id is not None:
         ticket.assigned_to_user_id = payload.assigned_to_user_id
+        if ticket.assigned_to_user_id and ticket.assigned_to_user_id != prev_assignee:
+            from app.services import ticket_notify_service as ticket_notify
+
+            ticket_notify.notify_ticket_assigned(
+                db,
+                ticket,
+                assignee_user_id=ticket.assigned_to_user_id,
+                actor_user_id=user.id,
+            )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()
@@ -247,10 +277,27 @@ def escalate_ticket_endpoint(
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket or not ticket_detail_service._can_view_ticket(db, user, ticket):
         raise HTTPException(status_code=404, detail="Ticket not found")
+    prev_assignee = ticket.assigned_to_user_id
     try:
-        ticket_flow.escalate_ticket_for_user(db, user, ticket, reason=payload.reason)
+        ticket_flow.escalate_ticket_for_user(
+            db,
+            user,
+            ticket,
+            reason=payload.reason,
+            target_role=payload.target_role,
+            assign_to_user_id=payload.assign_to_user_id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if ticket.assigned_to_user_id and ticket.assigned_to_user_id != prev_assignee:
+        from app.services import ticket_notify_service as ticket_notify
+
+        ticket_notify.notify_ticket_assigned(
+            db,
+            ticket,
+            assignee_user_id=ticket.assigned_to_user_id,
+            actor_user_id=user.id,
+        )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="escalate", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()

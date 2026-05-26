@@ -94,6 +94,7 @@ class Incident(Base):
     parent_informed: Mapped[Optional[str]] = mapped_column(String(8))
     primary_owner_role: Mapped[Optional[str]] = mapped_column(String(32))
     tagged_roles: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    tagged_user_ids: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     action_taken_note: Mapped[Optional[str]] = mapped_column(Text)
     last_owner_activity_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     sla_reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

@@ -94,8 +94,8 @@ def create_case(
 ):
     data = payload.model_dump()
     billing_data = {k: data.pop(k) for k in list(data.keys()) if k in (
-        "client_billing_mode", "billing_type", "client_rate_per_session_inr", "package_session_count",
-        "package_amount_inr", "compensation_mode", "pay_share_pct",
+        "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
+        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_pct",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
@@ -153,8 +153,8 @@ def update_case(
     old = {"status": case.status.value, "case_manager_user_id": case.case_manager_user_id}
     updates = payload.model_dump(exclude_unset=True)
     billing_data = {k: updates.pop(k) for k in list(updates.keys()) if k in (
-        "client_billing_mode", "billing_type", "client_rate_per_session_inr", "package_session_count",
-        "package_amount_inr", "compensation_mode", "pay_share_pct",
+        "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
+        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_pct",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
     service_data = {k: updates.pop(k) for k in list(updates.keys()) if k in _SERVICE_ADDRESS_KEYS}

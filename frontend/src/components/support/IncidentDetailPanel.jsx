@@ -1,11 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
-import { useAuth } from '../../context/AuthContext.jsx'
 import { INCIDENT_STATUS_META, PRIORITY_META } from '../../lib/incidentCatalog.js'
 import { TicketFlowDialog } from './TicketFlowDialog.jsx'
 
 const FLOW_API = '/api/v1/incidents'
+
+const TAG_GROUPS = [
+  { role: 'CASE_MANAGER', label: 'Case manager', matchRoles: ['CASE_MANAGER', 'SUPERVISOR'] },
+  { role: 'HR', label: 'HR', matchRoles: ['HR'] },
+  { role: 'ADMIN', label: 'Admin', matchRoles: ['MODULE_ADMIN', 'SUPER_ADMIN', 'ADMIN'] },
+]
+
+const STAFF_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'MODULE_ADMIN', 'CASE_MANAGER', 'SUPERVISOR', 'HR'])
+const STATUS_MENU = ['REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
+const PRIORITIES = ['NORMAL', 'URGENT', 'CRITICAL']
+const MIN_MESSAGE_CHARS = 3
 
 function fmtTime(iso) {
   if (!iso) return ''
@@ -47,9 +57,72 @@ function PriorityPill({ priority }) {
   )
 }
 
-const STAFF_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER', 'SUPERVISOR', 'HR'])
-const STATUS_OPTIONS = ['REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
-const TAG_ROLES = ['CASE_MANAGER', 'HR', 'ADMIN']
+function ActionMenu({ label, items, disabled, variant = 'ghost' }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        className={variant === 'primary' ? 'ticket-compose__send' : 'admin-btn admin-btn--ghost admin-btn--sm'}
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {label} ▾
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: 0,
+            marginBottom: 4,
+            minWidth: 160,
+            background: '#fff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            boxShadow: '0 8px 24px rgba(15,23,42,0.12)',
+            zIndex: 20,
+            padding: 4,
+          }}
+        >
+          {items.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              role="menuitem"
+              disabled={item.disabled}
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 2 }}
+              onClick={() => {
+                setOpen(false)
+                item.onClick()
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function userInTagGroup(user, group) {
+  return user.roles?.some((r) => group.matchRoles.includes(r))
+}
 
 export function IncidentDetailPanel({
   incident,
@@ -57,24 +130,23 @@ export function IncidentDetailPanel({
   apiBase = '/api/v1/incidents',
   canManage = false,
 }) {
-  const { user } = useAuth()
   const [reply, setReply] = useState('')
-  const [pendingStatus, setPendingStatus] = useState(incident?.status || 'REPORTED')
-  const [pendingPriority, setPendingPriority] = useState(incident?.priority || 'NORMAL')
   const [actionNote, setActionNote] = useState(incident?.action_taken_note || '')
-  const [taggedRoles, setTaggedRoles] = useState(incident?.tagged_roles || [])
+  const [taggedUserIds, setTaggedUserIds] = useState(incident?.tagged_user_ids || [])
   const [staffUsers, setStaffUsers] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [uploadFiles, setUploadFiles] = useState([])
   const [dialog, setDialog] = useState(null)
+  const [tagRole, setTagRole] = useState(null)
+  const [tagBanner, setTagBanner] = useState(null)
+  const [assignBanner, setAssignBanner] = useState(null)
+  const [pendingOwnerId, setPendingOwnerId] = useState(null)
 
   useEffect(() => {
-    setPendingStatus(incident?.status || 'REPORTED')
-    setPendingPriority(incident?.priority || 'NORMAL')
     setActionNote(incident?.action_taken_note || '')
-    setTaggedRoles(incident?.tagged_roles || [])
-  }, [incident?.id, incident?.status])
+    setTaggedUserIds(incident?.tagged_user_ids || [])
+  }, [incident?.id, incident?.status, incident?.tagged_user_ids])
 
   useEffect(() => {
     if (!canManage) return
@@ -88,10 +160,19 @@ export function IncidentDetailPanel({
       .catch(() => setStaffUsers([]))
   }, [canManage])
 
+  const taggedUsersDisplay = useMemo(() => {
+    const fromApi = incident?.tagged_users || []
+    if (fromApi.length) return fromApi
+    return staffUsers.filter((u) => taggedUserIds.includes(u.id))
+  }, [incident?.tagged_users, staffUsers, taggedUserIds])
+
   if (!incident) return null
 
   const isClosed = incident.status === 'CLOSED'
   const patchBase = canManage ? '/api/v1/incidents' : apiBase
+  const replyOk = reply.trim().length >= MIN_MESSAGE_CHARS
+  const tagGroup = tagRole ? TAG_GROUPS.find((g) => g.role === tagRole) : null
+  const tagRoleUsers = tagGroup ? staffUsers.filter((u) => userInTagGroup(u, tagGroup)) : []
 
   async function refresh() {
     const fresh = await apiFetch(`${apiBase}/${incident.id}`)
@@ -118,7 +199,10 @@ export function IncidentDetailPanel({
   }
 
   async function sendReply() {
-    if (!reply.trim()) return
+    if (!replyOk) {
+      setError(`Please enter at least ${MIN_MESSAGE_CHARS} characters before sending.`)
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -168,13 +252,111 @@ export function IncidentDetailPanel({
     }
   }
 
-  function toggleTag(role) {
-    const next = taggedRoles.includes(role)
-      ? taggedRoles.filter((r) => r !== role)
-      : [...taggedRoles, role]
-    setTaggedRoles(next)
-    patchIncident({ tagged_roles: next })
+  function rolesFromUserIds(ids) {
+    return TAG_GROUPS.filter((g) =>
+      staffUsers.some((u) => ids.includes(u.id) && userInTagGroup(u, g)),
+    ).map((g) => g.role)
   }
+
+  async function applyTaggedUserIds(nextIds, taggedName) {
+    const unique = [...new Set(nextIds)]
+    setTaggedUserIds(unique)
+    setBusy(true)
+    setError('')
+    try {
+      await apiFetch(`${patchBase}/${incident.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          tagged_user_ids: unique,
+          tagged_roles: rolesFromUserIds(unique),
+        }),
+      })
+      await refresh()
+      if (taggedName) setTagBanner(`Tagged ${taggedName}`)
+      setTagRole(null)
+    } catch (err) {
+      setError(err.message || 'Could not update tags')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function tagPerson(user, group) {
+    if (taggedUserIds.includes(user.id)) {
+      setTagBanner(`${user.full_name} is already tagged`)
+      setTagRole(null)
+      return
+    }
+    applyTaggedUserIds([...taggedUserIds, user.id], user.full_name)
+  }
+
+  async function assignOwner(userId) {
+    setBusy(true)
+    setError('')
+    try {
+      await apiFetch(`${patchBase}/${incident.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ assigned_to_user_id: userId }),
+      })
+      await refresh()
+      const name = staffUsers.find((u) => u.id === userId)?.full_name || 'team member'
+      setAssignBanner(userId ? `Assigned to ${name}` : 'Incident unassigned')
+      setPendingOwnerId(null)
+    } catch (err) {
+      setError(err.message || 'Could not assign owner')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleStatusPick(statusKey) {
+    if (statusKey === 'CLOSED') {
+      setDialog({
+        action: 'close',
+        title: 'Close incident',
+        description: 'Record what action was taken and close this report.',
+        confirmLabel: 'Close incident',
+        requireNote: true,
+        noteLabel: 'Closing note',
+        notePlaceholder: 'Describe the action taken…',
+      })
+      return
+    }
+    if (statusKey === 'ESCALATED') {
+      setDialog({
+        action: 'escalate',
+        title: 'Escalate incident',
+        description: `Route to ${incident.escalation_next_role ? String(incident.escalation_next_role).replace(/_/g, ' ') : 'the next level'}.`,
+        confirmLabel: 'Escalate',
+        requireNote: false,
+        noteLabel: 'Reason (optional)',
+      })
+      return
+    }
+    if (statusKey === 'ACTION_TAKEN') {
+      const note = actionNote.trim()
+      if (note.length < MIN_MESSAGE_CHARS) {
+        setError(`Add an action taken note (at least ${MIN_MESSAGE_CHARS} characters) before updating status.`)
+        return
+      }
+      patchIncident({ status: statusKey, action_taken_note: note })
+      return
+    }
+    patchIncident({ status: statusKey })
+  }
+
+  const priorityMenuItems = PRIORITIES.map((p) => ({
+    key: p,
+    label: PRIORITY_META[p]?.label || p,
+    onClick: () => patchIncident({ priority: p }),
+  }))
+
+  const statusMenuItems = STATUS_MENU.map((s) => ({
+    key: s,
+    label: INCIDENT_STATUS_META[s]?.label || s,
+    disabled: s === 'ESCALATED' && !incident.can_escalate && canManage,
+    onClick: () => handleStatusPick(s),
+  }))
 
   return (
     <div className="ticket-detail-panel">
@@ -204,38 +386,76 @@ export function IncidentDetailPanel({
         {incident.parent_informed ? <span>Parent informed: {incident.parent_informed}</span> : null}
         {incident.immediate_action ? <span>Immediate action: {incident.immediate_action}</span> : null}
         {incident.primary_owner_role ? <span>Owner role: {incident.primary_owner_role}</span> : null}
-        {incident.assigned_to_name ? <span>Assigned: {incident.assigned_to_name}</span> : null}
+        {incident.assigned_to_name ? <span>Assigned owner: {incident.assigned_to_name}</span> : null}
       </div>
 
-      {canManage ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12, alignItems: 'center' }}>
-          <select
-            value={incident.assigned_to_user_id ?? ''}
-            onChange={(e) => patchIncident({ assigned_to_user_id: e.target.value ? Number(e.target.value) : null })}
-            disabled={busy}
-            style={{ fontSize: '0.78rem', padding: '4px 8px', borderRadius: 8, border: '1px solid #d1d5db' }}
-          >
-            <option value="">Unassigned</option>
-            {staffUsers.map((u) => (
-              <option key={u.id} value={u.id}>{u.full_name}</option>
-            ))}
-          </select>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Tag:</span>
-          {TAG_ROLES.map((r) => (
-            <button
-              key={r}
-              type="button"
-              className="admin-btn admin-btn--ghost admin-btn--sm"
-              style={{
-                background: taggedRoles.includes(r) ? '#eef2ff' : undefined,
-                borderColor: taggedRoles.includes(r) ? '#6366f1' : undefined,
-              }}
-              disabled={busy}
-              onClick={() => toggleTag(r)}
+      {taggedUsersDisplay.length > 0 ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+          <span style={{ fontSize: '0.72rem', color: '#64748b', alignSelf: 'center' }}>Tagged:</span>
+          {taggedUsersDisplay.map((u) => (
+            <span
+              key={u.id}
+              className="admin-chip"
+              style={{ fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
             >
-              {r.replace('_', ' ')}
-            </button>
+              {u.full_name}
+              {canManage ? (
+                <button
+                  type="button"
+                  aria-label={`Remove ${u.full_name}`}
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+                  disabled={busy}
+                  onClick={() => applyTaggedUserIds(taggedUserIds.filter((id) => id !== u.id))}
+                >
+                  ×
+                </button>
+              ) : null}
+            </span>
           ))}
+        </div>
+      ) : null}
+
+      {tagBanner ? (
+        <div
+          style={{
+            background: '#eef2ff',
+            border: '1px solid #c7d2fe',
+            borderRadius: 10,
+            padding: '8px 12px',
+            fontSize: '0.8rem',
+            color: '#3730a3',
+            marginBottom: 12,
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
+          <span>{tagBanner}</span>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setTagBanner(null)}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+
+      {assignBanner ? (
+        <div
+          style={{
+            background: '#eef2ff',
+            border: '1px solid #c7d2fe',
+            borderRadius: 10,
+            padding: '8px 12px',
+            fontSize: '0.8rem',
+            color: '#3730a3',
+            marginBottom: 12,
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
+          <span>{assignBanner}</span>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setAssignBanner(null)}>
+            Dismiss
+          </button>
         </div>
       ) : null}
 
@@ -313,92 +533,121 @@ export function IncidentDetailPanel({
           />
           {canManage ? (
             <label style={{ display: 'block', marginTop: 8, fontSize: '0.78rem' }}>
-              Action taken note {pendingStatus === 'CLOSED' ? '(required to close)' : ''}
+              Action taken note (required when setting status to Action taken)
               <textarea
                 rows={2}
                 value={actionNote}
                 onChange={(e) => setActionNote(e.target.value)}
                 style={{ width: '100%', marginTop: 4 }}
+                placeholder="Describe what action was taken…"
               />
             </label>
           ) : null}
-          {error ? <p style={{ color: '#b91c1c', fontSize: '0.78rem' }}>{error}</p> : null}
-          <div className="ticket-compose__actions" style={{ flexWrap: 'wrap' }}>
-            <button type="button" disabled={busy || !reply.trim()} onClick={sendReply} className="ticket-compose__send">
-              Send reply
-            </button>
+          {canManage && !isClosed ? (
+            <div style={{ marginTop: 8 }}>
+              <input type="file" multiple onChange={(e) => setUploadFiles(Array.from(e.target.files || []))} />
+              {uploadFiles.length > 0 ? (
+                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={busy} onClick={uploadAttachments} style={{ marginTop: 6 }}>
+                  Upload {uploadFiles.length} file(s)
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {error ? <p style={{ color: '#b91c1c', fontSize: '0.78rem', marginTop: 8 }} role="alert">{error}</p> : null}
+
+          {canManage && tagRole ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: 12,
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: 10,
+              }}
+            >
+              <p style={{ fontSize: '0.75rem', fontWeight: 600, margin: '0 0 8px', color: '#475569' }}>
+                Tag / notify — {tagGroup?.label || tagRole}
+              </p>
+              {tagRoleUsers.length === 0 ? (
+                <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0 0 8px' }}>No active users for this role.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                  {tagRoleUsers.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                      style={{ justifyContent: 'flex-start' }}
+                      disabled={busy}
+                      onClick={() => tagPerson(u, tagGroup)}
+                    >
+                      {u.full_name}
+                      <span style={{ color: '#94a3b8', marginLeft: 6 }}>{u.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setTagRole(null)}>
+                Cancel
+              </button>
+            </div>
+          ) : null}
+
+          {canManage && pendingOwnerId != null && !tagRole ? (
+            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={busy} onClick={() => assignOwner(pendingOwnerId)}>
+                Confirm assign owner
+              </button>
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setPendingOwnerId(null)}>
+                Cancel
+              </button>
+            </div>
+          ) : null}
+
+          <div className="ticket-compose__actions" style={{ flexWrap: 'wrap', marginTop: 12, gap: 8, alignItems: 'center' }}>
             {canManage ? (
               <>
-                <select value={pendingPriority} onChange={(e) => setPendingPriority(e.target.value)} style={{ fontSize: '0.8rem' }}>
-                  <option value="NORMAL">Normal</option>
-                  <option value="URGENT">Urgent</option>
-                  <option value="CRITICAL">Critical</option>
-                </select>
-                <select value={pendingStatus} onChange={(e) => setPendingStatus(e.target.value)} style={{ fontSize: '0.8rem' }}>
-                  {STATUS_OPTIONS.map((s) => (
-                    <option key={s} value={s}>{INCIDENT_STATUS_META[s]?.label || s}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
+                <ActionMenu label={`Priority: ${PRIORITY_META[incident.priority]?.label || 'Normal'}`} items={priorityMenuItems} disabled={busy} />
+                <ActionMenu
+                  label={`Status: ${INCIDENT_STATUS_META[incident.status]?.label || incident.status}`}
+                  items={statusMenuItems}
                   disabled={busy}
-                  onClick={() =>
-                    patchIncident({
-                      status: pendingStatus === 'CLOSED' ? 'ACTION_TAKEN' : pendingStatus,
-                      priority: pendingPriority,
-                      action_taken_note: actionNote || undefined,
-                    })
-                  }
-                  className="ticket-compose__resolve"
-                >
-                  Update status
+                />
+                <ActionMenu
+                  label="Tag / notify"
+                  items={TAG_GROUPS.map((g) => ({
+                    key: g.role,
+                    label: g.label,
+                    disabled: !staffUsers.some((u) => userInTagGroup(u, g)),
+                    onClick: () => {
+                      setPendingOwnerId(null)
+                      setTagRole(g.role)
+                    },
+                  }))}
+                  disabled={busy}
+                />
+                <ActionMenu
+                  label="Assign owner"
+                  items={[
+                    {
+                      key: 'unassigned',
+                      label: 'Unassigned',
+                      onClick: () => assignOwner(null),
+                    },
+                    ...staffUsers.map((u) => ({
+                      key: String(u.id),
+                      label: `${u.full_name} (${u.email})`,
+                      onClick: () => {
+                        setTagRole(null)
+                        setPendingOwnerId(u.id)
+                      },
+                    })),
+                  ]}
+                  disabled={busy}
+                />
+                <button type="button" className="ticket-compose__send" disabled={busy || !replyOk} onClick={sendReply}>
+                  Send reply
                 </button>
-                {incident.can_close_staff ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="admin-btn admin-btn--ghost admin-btn--sm"
-                    onClick={() =>
-                      setDialog({
-                        action: 'close',
-                        title: 'Close incident',
-                        description: 'Record what action was taken and close this report. The reporter will see this in the thread.',
-                        confirmLabel: 'Close incident',
-                        requireNote: true,
-                        noteLabel: 'Action taken note',
-                      })
-                    }
-                  >
-                    Close…
-                  </button>
-                ) : null}
-                {incident.can_escalate && canManage ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="admin-btn admin-btn--secondary admin-btn--sm"
-                    onClick={() =>
-                      setDialog({
-                        action: 'escalate',
-                        title: 'Escalate incident',
-                        description: `Route to ${incident.escalation_next_role ? String(incident.escalation_next_role).replace(/_/g, ' ') : 'the next level'}.`,
-                        confirmLabel: 'Escalate',
-                        requireNote: false,
-                        noteLabel: 'Reason (optional)',
-                      })
-                    }
-                  >
-                    Escalate…
-                  </button>
-                ) : null}
-                {!isClosed ? (
-                  <>
-                    <input type="file" multiple onChange={(e) => setUploadFiles(Array.from(e.target.files || []))} />
-                    {uploadFiles.length > 0 ? (
-                      <button type="button" disabled={busy} onClick={uploadAttachments}>Upload files</button>
-                    ) : null}
-                  </>
-                ) : null}
               </>
             ) : (
               <>
@@ -441,9 +690,17 @@ export function IncidentDetailPanel({
                     Escalate…
                   </button>
                 ) : null}
+                <button type="button" className="ticket-compose__send" disabled={busy || !replyOk} onClick={sendReply}>
+                  Send reply
+                </button>
               </>
             )}
           </div>
+          {!isClosed && !replyOk && reply.length > 0 ? (
+            <p style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 6 }}>
+              Enter at least {MIN_MESSAGE_CHARS} characters to send.
+            </p>
+          ) : null}
         </div>
       ) : (
         <p style={{ fontSize: '0.78rem', color: '#94a3b8' }}>This incident is closed.</p>

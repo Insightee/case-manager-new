@@ -444,7 +444,7 @@ export function AdminIepPage() {
               <AdminToolbar>
                 <AdminSearchInput
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={setSearch}
                   placeholder="Search case, child, service…"
                 />
                 <ServiceFilterSelect

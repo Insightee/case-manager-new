@@ -32,12 +32,22 @@ services:
     ports:
       - "8000:8000"
     environment:
-      APP_ENV: production
+      APP_ENV: development
       DATABASE_URL: postgresql+psycopg2://insightcase:insightcase@postgres:5432/insightcase
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: dev-secret-change-in-production
       JWT_REFRESH_SECRET_KEY: dev-refresh-secret-change-in-production
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 7
+      FRONTEND_URL: http://localhost:5173
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      # SMTP_HOST:
+      # SMTP_PORT: 587
+      # SMTP_USER:
+      # SMTP_PASSWORD:
+      # SMTP_FROM: InsightCase <noreply@insighte.com>
+      # SMTP_TLS: "true"
+      # ADMIN_NOTIFICATION_EMAILS:
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,7 +56,11 @@ services:
     volumes:
       - ./backend:/app
       - uploads_data:/app/uploads
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: >
+      sh -c "alembic upgrade head &&
+      python -c \"from sqlalchemy import func, select; from app.core.database import SessionLocal; from app.models.user import User; db=SessionLocal(); n=db.scalar(select(func.count()).select_from(User)) or 0; db.close(); import sys; sys.exit(0 if n else 1)\" ||
+      python -m app.seed.demo_seed;
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
 volumes:
   postgres_data:
