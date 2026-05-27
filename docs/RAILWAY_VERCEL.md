@@ -70,6 +70,8 @@ Email/DNS detail: [`EMAIL_DNS.md`](EMAIL_DNS.md).
 
 ## Vercel (frontend)
 
+> **Agent rule:** GitHub repo is `case-manager-new`, but the **Vercel project name is `frontend`**. Railway uses `case-manager-new`. Every `vercel` CLI command must include `--project frontend` (or link `.vercel` to that project). Do **not** create or target a Vercel project named `case-manager-new`.
+
 InsightCase UI lives on team **`insightes-projects`**, project name **`frontend`** (not `case-manager-new`).
 
 | Item | Value |
@@ -87,7 +89,15 @@ InsightCase UI lives on team **`insightes-projects`**, project name **`frontend`
 
 Do **not** add `SMTP_*`, `DATABASE_URL`, `R2_*`, `JWT_*`, or `backend/.env.example` to Vercel.
 
-If backend vars were copied to Vercel by mistake, run from repo root (after `vercel link`):
+If backend vars were copied to Vercel by mistake, run from repo root (targets **`frontend`** only):
+
+```bash
+export VERCEL_TOKEN=...
+python3 scripts/vercel_clean_backend_env_api.py
+```
+
+Legacy shell loop (slow):
+
 
 ```bash
 chmod +x scripts/vercel_clean_backend_env.sh

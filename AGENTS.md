@@ -15,6 +15,15 @@
 - [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) — delivery, RBAC, billing, deploy, and agent checklists (from chat workflow capture).
 - [docs/DATA_IMPORT.md](docs/DATA_IMPORT.md) — production bulk import for therapists, families, and cases (templates and API order).
 
+## Deploy split (do not confuse names)
+
+| Platform | Project / service name | What runs there |
+|----------|------------------------|-----------------|
+| **Railway** | `case-manager-new` (repo `Insightee/case-manager-new`) | FastAPI API, Postgres, Redis — all backend env vars |
+| **Vercel** | **`insightes-projects/frontend`** only (`prj_ibo0tJpTFO1Y8d5cKiKicB7Yr6vN`) | Vite React UI — **`VITE_API_URL` only** |
+
+Never use Vercel project `case-manager-new` (deleted duplicate). CLI: `vercel … --scope insightes-projects --project frontend`. See [docs/RAILWAY_VERCEL.md](docs/RAILWAY_VERCEL.md).
+
 ## Learned Workspace Facts
 
 - Monorepo layout: `backend/` (FastAPI, SQLAlchemy, Alembic), `frontend/` (Vite + React + Tailwind), `docker-compose.yml` for Postgres, Redis, and API.

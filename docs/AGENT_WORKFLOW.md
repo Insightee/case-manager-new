@@ -67,7 +67,7 @@ Subagent runs (tests, explore, CI fix) informed implementation but are not cited
 |------------|------------|-----------------|
 | **Real SMTP in prod** | Strong | ZeptoMail on `insighte.in` senders; env on Railway only; document in [EMAIL_DNS.md](./EMAIL_DNS.md). |
 | **Never commit secrets** | Strong | Rotate tokens if pasted in chat; use `.env` / platform env. |
-| **Monorepo deploy** | Strong | Vercel: frontend root + `vercel.json`; API on Railway; `VITE_API_URL` on Vercel. |
+| **Monorepo deploy** | Strong | **Vercel** = team `insightes-projects`, project **`frontend`** only (`VITE_API_URL`). **Railway** = service **`case-manager-new`** (API + secrets). Never run `vercel env` against `case-manager-new`. |
 | **CI must pass** | Strong | Backend pytest + frontend build; Linux CI may need `npm install` vs `npm ci` if lockfile drifts. |
 | **Postgres prod schema** | Strong | `alembic upgrade head` / `scripts/migrate_production.py`; SQLite local uses bootstrap patches. |
 
