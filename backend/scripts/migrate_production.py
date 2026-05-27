@@ -28,6 +28,7 @@ _REQUIRED_AT_HEAD: dict[str, tuple[str, ...]] = {
     "users": ("external_employee_id",),
     "children": ("external_client_id",),
     "cases": ("external_case_ref",),
+    "daily_logs": ("parent_notified_at",),
 }
 
 
@@ -66,6 +67,7 @@ def _resolve_head(cfg: Config, script: ScriptDirectory) -> str:
 
 def main() -> None:
     cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
     script = ScriptDirectory.from_config(cfg)
     head = _resolve_head(cfg, script)
     insp = inspect(engine)

@@ -7,6 +7,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "g9c0d1e2f3a4"
 down_revision: Union[str, None] = "f8b9c0d1e2f3"
@@ -19,8 +20,24 @@ def upgrade() -> None:
     insp = sa.inspect(bind)
     if insp.has_table("case_status_requests"):
         return
-    status_enum = sa.Enum("PENDING", "APPROVED", "REJECTED", name="casestatusrequeststatus")
-    status_enum.create(bind, checkfirst=True)
+    bind.execute(
+        sa.text(
+            """
+            DO $$ BEGIN
+                CREATE TYPE casestatusrequeststatus AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+            EXCEPTION
+                WHEN duplicate_object THEN NULL;
+            END $$;
+            """
+        )
+    )
+    status_enum = postgresql.ENUM(
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        name="casestatusrequeststatus",
+        create_type=False,
+    )
     op.create_table(
         "case_status_requests",
         sa.Column("id", sa.Integer(), nullable=False),

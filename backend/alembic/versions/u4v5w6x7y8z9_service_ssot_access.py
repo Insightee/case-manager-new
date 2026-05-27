@@ -56,7 +56,10 @@ def upgrade() -> None:
                 )
             )
         elif row and existing_ss:
-            conn.execute(sa.text("UPDATE service_categories SET is_active = 0 WHERE id = 'shadow'"))
+            conn.execute(
+                sa.text("UPDATE service_categories SET is_active = :active WHERE id = 'shadow'"),
+                {"active": False},
+            )
 
         for sid, label, order in _CANONICAL_SEED:
             pm = json.dumps([{"id": sid, "label": label}])
@@ -67,17 +70,17 @@ def upgrade() -> None:
                 conn.execute(
                     sa.text(
                         "UPDATE service_categories SET label = :label, sort_order = :order, "
-                        "is_active = 1, access_group = 'Clinical', product_modules = :pm WHERE id = :id"
+                        "is_active = :active, access_group = 'Clinical', product_modules = :pm WHERE id = :id"
                     ),
-                    {"id": sid, "label": label, "order": order, "pm": pm},
+                    {"id": sid, "label": label, "order": order, "pm": pm, "active": True},
                 )
             else:
                 conn.execute(
                     sa.text(
                         "INSERT INTO service_categories (id, label, sort_order, is_active, access_group, product_modules) "
-                        "VALUES (:id, :label, :order, 1, 'Clinical', :pm)"
+                        "VALUES (:id, :label, :order, :active, 'Clinical', :pm)"
                     ),
-                    {"id": sid, "label": label, "order": order, "pm": pm},
+                    {"id": sid, "label": label, "order": order, "pm": pm, "active": True},
                 )
 
     user_cols = {c["name"] for c in insp.get_columns("users")} if insp.has_table("users") else set()

@@ -30,32 +30,42 @@ def upgrade() -> None:
         op.add_column("cases", sa.Column("external_case_ref", sa.String(length=128), nullable=True))
 
     bind = op.get_bind()
+    insp = sa.inspect(bind)
+    user_idx = {i["name"] for i in insp.get_indexes("users")} if insp.has_table("users") else set()
+    child_idx = {i["name"] for i in insp.get_indexes("children")} if insp.has_table("children") else set()
+    case_idx = {i["name"] for i in insp.get_indexes("cases")} if insp.has_table("cases") else set()
     if bind.dialect.name == "postgresql":
-        op.create_index(
-            "uq_users_external_employee_id",
-            "users",
-            ["external_employee_id"],
-            unique=True,
-            postgresql_where=sa.text("external_employee_id IS NOT NULL"),
-        )
-        op.create_index(
-            "uq_children_external_client_id",
-            "children",
-            ["external_client_id"],
-            unique=True,
-            postgresql_where=sa.text("external_client_id IS NOT NULL"),
-        )
-        op.create_index(
-            "uq_cases_external_case_ref",
-            "cases",
-            ["external_case_ref"],
-            unique=True,
-            postgresql_where=sa.text("external_case_ref IS NOT NULL"),
-        )
+        if "uq_users_external_employee_id" not in user_idx:
+            op.create_index(
+                "uq_users_external_employee_id",
+                "users",
+                ["external_employee_id"],
+                unique=True,
+                postgresql_where=sa.text("external_employee_id IS NOT NULL"),
+            )
+        if "uq_children_external_client_id" not in child_idx:
+            op.create_index(
+                "uq_children_external_client_id",
+                "children",
+                ["external_client_id"],
+                unique=True,
+                postgresql_where=sa.text("external_client_id IS NOT NULL"),
+            )
+        if "uq_cases_external_case_ref" not in case_idx:
+            op.create_index(
+                "uq_cases_external_case_ref",
+                "cases",
+                ["external_case_ref"],
+                unique=True,
+                postgresql_where=sa.text("external_case_ref IS NOT NULL"),
+            )
     else:
-        op.create_index("ix_users_external_employee_id", "users", ["external_employee_id"], unique=True)
-        op.create_index("ix_children_external_client_id", "children", ["external_client_id"], unique=True)
-        op.create_index("ix_cases_external_case_ref", "cases", ["external_case_ref"], unique=True)
+        if "ix_users_external_employee_id" not in user_idx:
+            op.create_index("ix_users_external_employee_id", "users", ["external_employee_id"], unique=True)
+        if "ix_children_external_client_id" not in child_idx:
+            op.create_index("ix_children_external_client_id", "children", ["external_client_id"], unique=True)
+        if "ix_cases_external_case_ref" not in case_idx:
+            op.create_index("ix_cases_external_case_ref", "cases", ["external_case_ref"], unique=True)
 
 
 def downgrade() -> None:

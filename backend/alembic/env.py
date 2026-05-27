@@ -43,13 +43,17 @@ def run_migrations_online() -> None:
         head_rev = heads[0]
 
     with connectable.connect() as connection:
-        insp = inspect(connection)
         is_sqlite = connection.dialect.name == "sqlite"
+        if not is_sqlite:
+            # DDL must commit per statement; a pooled connection without AUTOCOMMIT can leave
+            # migrations visible in logs but rolled back when the connection closes.
+            connection = connection.execution_options(isolation_level="AUTOCOMMIT")
+        insp = inspect(connection)
         empty = not insp.has_table("users")
 
-        context.configure(connection=connection, target_metadata=target_metadata)
-        with context.begin_transaction():
-            if is_sqlite and empty:
+        if is_sqlite and empty:
+            context.configure(connection=connection, target_metadata=target_metadata)
+            with context.begin_transaction():
                 # Greenfield SQLite: create_all matches current models; incremental revisions
                 # mostly duplicate columns and fail. Stamp head (same as migrate_production.py).
                 target_metadata.create_all(bind=connection)
@@ -65,8 +69,14 @@ def run_migrations_online() -> None:
                     text("INSERT INTO alembic_version (version_num) VALUES (:rev)"),
                     {"rev": head_rev},
                 )
-                return
-            context.run_migrations()
+            return
+
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            transaction_per_migration=is_sqlite,
+        )
+        context.run_migrations()
 
 
 if context.is_offline_mode():
