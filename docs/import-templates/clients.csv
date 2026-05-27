@@ -1,0 +1,3 @@
+external_client_id,child_first,child_last,parent_email,parent_full_name,phone,send_invite,password
+CLI-5001,Asha,Kumar,parent1@insighte.in,Priya Kumar,+91 9876500001,false,
+CLI-5002,Ravi,Singh,parent2@insighte.in,Anita Singh,,false,

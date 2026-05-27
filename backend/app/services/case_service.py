@@ -126,6 +126,7 @@ def case_to_read(case: Case, db: Session | None = None) -> dict:
     return {
         "id": case.id,
         "case_code": case.case_code,
+        "external_case_ref": case.external_case_ref,
         "child_id": case.child_id,
         "child_name": case.child.full_name if case.child else None,
         "service_type": case.service_type,

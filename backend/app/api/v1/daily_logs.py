@@ -16,7 +16,6 @@ from app.core.permissions import RoleName, case_scope_check, require_permission,
 from app.models.case import ClientBillingMode
 from app.models.daily_log import LogApprovalStatus
 from app.models.user import User
-from app.models.visibility import VisibilityStatus
 from app.schemas.daily_log import DailyLogCreate, DailyLogFinanceRead, DailyLogRead, DailyLogUpdate
 from app.services import billing_ledger_service, case_service, log_service
 
@@ -139,8 +138,10 @@ def approve_log(
     log.approval_status = LogApprovalStatus.APPROVED
     if not log.submitted_at:
         log.submitted_at = datetime.now(timezone.utc)
-    if log.parent_notes:
-        log.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT
+    from app.services import session_log_service
+
+    session_log_service.publish_log_to_parents(log)
+    session_log_service.notify_parents_session_log_approved(db, log)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve", entity_type="daily_log", entity_id=log.id, **meta)
     try:

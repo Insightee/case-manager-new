@@ -4,7 +4,6 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -25,7 +24,7 @@ from app.schemas.case_document import (
     WorkflowPayload,
 )
 from app.services import case_document_service as doc_svc
-from app.storage.local_case_document_storage import case_document_storage
+from app.storage.object_io import stored_file_response
 
 router = APIRouter(tags=["case-documents"])
 documents_router = APIRouter(prefix="/documents", tags=["case-documents"])
@@ -172,8 +171,11 @@ def download_document(
     info = doc_svc.get_download_info(db, user, doc)
     if info["type"] == "external_link":
         return info
-    path, _ = case_document_storage.open_bytes(info["storage_key"])
-    return FileResponse(path, filename=info.get("file_name") or "document", media_type=info.get("mime_type"))
+    return stored_file_response(
+        info["storage_key"],
+        filename=info.get("file_name") or "document",
+        media_type=info.get("mime_type") or "application/octet-stream",
+    )
 
 
 @documents_router.get("/{document_id}/comments", response_model=list[CaseDocumentCommentRead])

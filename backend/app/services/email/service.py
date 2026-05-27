@@ -23,7 +23,12 @@ _smtp_provider = SmtpEmailProvider()
 def is_smtp_configured() -> bool:
     if not settings.smtp_host:
         return False
-    return bool(settings.smtp_from_header)
+    if not settings.smtp_from_header:
+        return False
+    provider = (settings.email_provider or "smtp").strip().lower()
+    if provider in ("zeptomail", "zepto"):
+        return bool((settings.smtp_user or "").strip() and (settings.smtp_password or "").strip())
+    return True
 
 
 def send_email(

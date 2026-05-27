@@ -6,8 +6,8 @@
 set -e
 cd "$(dirname "$0")/.."
 
-PROJECT_ID="b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4"
-FRONTEND_URL="${FRONTEND_URL:-https://frontend-omega-eight-92.vercel.app}"
+PROJECT_ID="ead85fb6-1826-4eed-bad9-2513e89c4854"
+FRONTEND_URL="${FRONTEND_URL:-https://frontend-insightes-projects.vercel.app}"
 
 npx @railway/cli link --project "$PROJECT_ID"
 

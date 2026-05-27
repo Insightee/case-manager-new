@@ -14,7 +14,9 @@ import sys
 # Allow running as script from backend/
 sys.path.insert(0, ".")
 
+from app.services.email.events import EmailEvent
 from app.services.email.providers.smtp import SmtpEmailProvider, parse_envelope_from
+from app.services.email.senders import from_header_for_event
 from app.services.email.templates import render_template
 from app.core.config import settings
 
@@ -38,8 +40,14 @@ def main() -> int:
         print("ERROR: Set SMTP_HOST and SMTP_PASSWORD in the environment.", file=sys.stderr)
         return 1
 
-    from_email = args.from_email or settings.smtp_from_email
-    from_header = settings.format_from_header(from_email)
+    if args.from_email:
+        from_header = settings.format_from_header(args.from_email)
+    elif args.template == "password_reset":
+        from_header = from_header_for_event(EmailEvent.PASSWORD_RESET)
+    elif args.template == "invoice_generated":
+        from_header = from_header_for_event(EmailEvent.INVOICE_GENERATED)
+    else:
+        from_header = from_header_for_event(EmailEvent.PORTAL_INVITE)
     envelope = parse_envelope_from(from_header)
 
     if args.template == "password_reset":

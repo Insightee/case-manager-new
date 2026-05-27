@@ -101,7 +101,7 @@ def create_daily_log(db: Session, **kwargs) -> DailyLog:
         approval_status=LogApprovalStatus.PENDING,
         late_addition=late,
         late_reason=late_reason.strip() if late and late_reason else None,
-        visibility_status=VisibilityStatus.APPROVED_FOR_PARENT,
+        visibility_status=VisibilityStatus.INTERNAL_ONLY,
     )
     db.add(log)
     db.flush()

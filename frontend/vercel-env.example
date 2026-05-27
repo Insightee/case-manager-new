@@ -1,3 +1,3 @@
-# Copy these to Vercel → Project → Environment Variables (Production + Preview).
-# Do not use backend/.env.example on the frontend project.
+# Vercel project: insightes-projects / frontend (prj_ibo0tJpTFO1Y8d5cKiKicB7Yr6vN)
+# Copy to Vercel → Environment Variables (Production + Preview). Do not use backend/.env.example.
 VITE_API_URL=https://case-manager-new-production.up.railway.app

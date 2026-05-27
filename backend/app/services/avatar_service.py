@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
+from app.storage.object_io import delete_stored_object, put_stored_bytes, read_stored_bytes
 
-AVATAR_DIR = Path("uploads/avatars")
 MAX_AVATAR_BYTES = 1_048_576
 ALLOWED_CONTENT_TYPES = {
     "image/jpeg": ".jpg",
@@ -32,15 +31,36 @@ def validate_avatar_upload(content_type: str | None, size: int, filename: str | 
     return ext
 
 
+def _avatar_mime(ext: str) -> str:
+    if ext == ".png":
+        return "image/png"
+    if ext == ".webp":
+        return "image/webp"
+    return "image/jpeg"
+
+
 def save_avatar(user_id: int, content: bytes, ext: str) -> str:
-    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
-    for old in AVATAR_DIR.glob(f"{user_id}.*"):
-        old.unlink(missing_ok=True)
-    path = AVATAR_DIR / f"{user_id}{ext}"
-    path.write_bytes(content)
-    return str(path)
+    mime = _avatar_mime(ext)
+    key, _provider = put_stored_bytes(
+        "avatars",
+        f"user_{user_id}",
+        filename=f"avatar{ext}",
+        data=content,
+        content_type=mime,
+    )
+    return key
 
 
-def delete_avatar_files(user_id: int) -> None:
-    for old in AVATAR_DIR.glob(f"{user_id}.*"):
-        old.unlink(missing_ok=True)
+def delete_avatar_files(avatar_path: str | None) -> None:
+    if avatar_path:
+        delete_stored_object(avatar_path)
+
+
+def read_avatar_bytes(avatar_path: str) -> tuple[bytes, str]:
+    data = read_stored_bytes(avatar_path)
+    lower = avatar_path.lower()
+    if lower.endswith(".png"):
+        return data, "image/png"
+    if lower.endswith(".webp"):
+        return data, "image/webp"
+    return data, "image/jpeg"

@@ -14,6 +14,7 @@ class Child(Base):
     __tablename__ = "children"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_client_id: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True, index=True)
     first_name: Mapped[str] = mapped_column(String(128), nullable=False)
     last_name: Mapped[str] = mapped_column(String(128), nullable=False)
     date_of_birth: Mapped[Optional[date ]] = mapped_column(Date)

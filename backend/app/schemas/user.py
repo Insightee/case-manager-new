@@ -21,6 +21,7 @@ class UserCreate(BaseModel):
 
 class UserRead(BaseModel):
     id: int
+    external_employee_id: Optional[str] = None
     email: str
     full_name: str
     phone: Optional[str] = None

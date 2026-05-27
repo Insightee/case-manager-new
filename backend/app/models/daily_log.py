@@ -42,6 +42,7 @@ class DailyLog(Base):
     parent_feedback_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     parent_feedback_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     submitted_at: Mapped[Optional[datetime ]] = mapped_column(DateTime(timezone=True), index=True)
+    parent_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     approval_status: Mapped[LogApprovalStatus] = mapped_column(Enum(LogApprovalStatus), default=LogApprovalStatus.PENDING)
     late_addition: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     late_reason: Mapped[Optional[str]] = mapped_column(Text)

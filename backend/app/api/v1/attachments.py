@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-import os
-import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -18,9 +16,9 @@ from app.models.attachment import Attachment
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.services import case_service
+from app.storage.object_io import put_stored_bytes, stored_file_response
 
 router = APIRouter(prefix="/attachments", tags=["attachments"])
-UPLOAD_DIR = Path("uploads")
 
 
 class AttachmentUpdate(BaseModel):
@@ -41,17 +39,23 @@ async def upload_attachment(
     case = case_service.get_case(db, case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or "file").suffix
-    stored_name = f"{uuid.uuid4()}{ext}"
-    path = UPLOAD_DIR / stored_name
     content = await file.read()
-    path.write_bytes(content)
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file not allowed")
+    mime = (file.content_type or "application/octet-stream").split(";")[0].strip().lower()
+    storage_key, _provider = put_stored_bytes(
+        "attachments",
+        f"case_{case_id}",
+        entity_type or "generic",
+        filename=file.filename or "file",
+        data=content,
+        content_type=mime,
+    )
     attachment = Attachment(
         case_id=case_id,
         entity_type=entity_type,
-        file_name=file.filename or stored_name,
-        file_path=str(path),
+        file_name=file.filename or Path(storage_key).name,
+        file_path=storage_key,
         version=version,
         visibility_status=visibility_status,
         uploaded_by_user_id=user.id,
@@ -70,7 +74,6 @@ def download_attachment(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from fastapi.responses import FileResponse
     from sqlalchemy import select
 
     attachment = db.get(Attachment, attachment_id)
@@ -79,10 +82,8 @@ def download_attachment(
     case = case_service.get_case(db, attachment.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Attachment not found")
-    path = Path(attachment.file_path)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="File not found on disk")
-    return FileResponse(path, filename=attachment.file_name)
+    mime = "text/html" if attachment.file_name.lower().endswith(".html") else "application/octet-stream"
+    return stored_file_response(attachment.file_path, filename=attachment.file_name, media_type=mime)
 
 
 @router.patch("/{attachment_id}")

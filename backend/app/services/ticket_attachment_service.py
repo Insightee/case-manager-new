@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from typing import Optional, Sequence
 
 from fastapi import HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -15,8 +13,7 @@ from app.models.support_ticket import SupportTicket
 from app.models.ticket_attachment import TicketAttachment
 from app.models.user import User
 from app.services import case_service
-
-UPLOAD_DIR = Path("uploads/tickets")
+from app.storage.object_io import put_stored_bytes, stored_file_response
 
 def files_from_form(form) -> list[UploadFile]:
     out: list[UploadFile] = []
@@ -122,18 +119,20 @@ async def save_attachments(
     payloads = await validate_and_read_files(files)
     if not payloads:
         return []
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     saved: list[TicketAttachment] = []
     for filename, mime_type, content in payloads:
-        ext = Path(filename).suffix
-        stored_name = f"{uuid.uuid4()}{ext}"
-        path = UPLOAD_DIR / stored_name
-        path.write_bytes(content)
+        storage_key, _provider = put_stored_bytes(
+            "ticket-attachments",
+            f"ticket_{ticket.id}",
+            filename=filename,
+            data=content,
+            content_type=mime_type,
+        )
         att = TicketAttachment(
             ticket_id=ticket.id,
             message_id=message_id,
             file_name=filename,
-            file_path=str(path),
+            file_path=storage_key,
             mime_type=mime_type,
             size_bytes=len(content),
             uploaded_by_user_id=user.id,
@@ -144,11 +143,12 @@ async def save_attachments(
     return saved
 
 
-def download_response(attachment: TicketAttachment) -> FileResponse:
-    path = Path(attachment.file_path)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="File not found on disk")
-    return FileResponse(path, filename=attachment.file_name, media_type=attachment.mime_type)
+def download_response(attachment: TicketAttachment):
+    return stored_file_response(
+        attachment.file_path,
+        filename=attachment.file_name,
+        media_type=attachment.mime_type,
+    )
 
 
 def get_attachment_or_404(db: Session, attachment_id: int) -> TicketAttachment:

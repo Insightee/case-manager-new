@@ -721,16 +721,22 @@ def share_plan_with_parent(db: Session, plan: IepPlan, user: User) -> IepPlan:
     if plan.attachment_id:
         att = db.get(Attachment, plan.attachment_id)
     if not att:
-        upload_dir = Path("uploads/iep")
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = f"iep_plan_{plan.case_id}_{plan.id}.html"
-        file_path = str(upload_dir / safe_name)
-        Path(file_path).write_text(html, encoding="utf-8")
+        from app.storage.object_io import put_stored_bytes
+
+        export_name = f"IEP_{case.case_code}_{plan.version}.html"
+        file_path, _provider = put_stored_bytes(
+            "iep-exports",
+            f"case_{case.id}",
+            f"plan_{plan.id}",
+            filename=export_name,
+            data=html.encode("utf-8"),
+            content_type="text/html; charset=utf-8",
+        )
         att = Attachment(
             case_id=case.id,
             entity_type="iep",
             entity_id=plan.id,
-            file_name=f"IEP_{case.case_code}_{plan.version}.html",
+            file_name=export_name,
             file_path=file_path,
             version=plan.version,
             visibility_status=VisibilityStatus.APPROVED_FOR_PARENT,
@@ -740,8 +746,25 @@ def share_plan_with_parent(db: Session, plan: IepPlan, user: User) -> IepPlan:
         db.flush()
         plan.attachment_id = att.id
     else:
+        from app.storage.object_io import is_object_store_key, put_stored_bytes
+
         att.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT
-        Path(att.file_path).write_text(html, encoding="utf-8")
+        export_name = att.file_name or f"IEP_{case.case_code}_{plan.version}.html"
+        if is_object_store_key(att.file_path):
+            file_path, _provider = put_stored_bytes(
+                "iep-exports",
+                f"case_{case.id}",
+                f"plan_{plan.id}",
+                filename=export_name,
+                data=html.encode("utf-8"),
+                content_type="text/html; charset=utf-8",
+            )
+            att.file_path = file_path
+        else:
+            legacy = Path(att.file_path)
+            if legacy.parent:
+                legacy.parent.mkdir(parents=True, exist_ok=True)
+            legacy.write_text(html, encoding="utf-8")
     plan.status = IepPlanStatus.SHARED_WITH_PARENT.value
     plan.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT.value
     plan.published_at = datetime.now(timezone.utc)

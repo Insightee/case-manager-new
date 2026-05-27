@@ -24,6 +24,15 @@ def test_sender_routing_by_event():
         assert from_email_for_event(EmailEvent.PORTAL_INVITE) == "noreply@insighte.in"
 
 
+def test_sender_falls_back_to_primary_when_dedicated_from_unset():
+    with patch("app.services.email.senders.settings") as mock_settings:
+        mock_settings.smtp_from_email = "noreply@insighte.in"
+        mock_settings.smtp_from_billing_email = ""
+        mock_settings.smtp_from_verification_email = ""
+        assert from_email_for_event(EmailEvent.PASSWORD_RESET) == "noreply@insighte.in"
+        assert from_email_for_event(EmailEvent.INVOICE_GENERATED) == "noreply@insighte.in"
+
+
 def test_render_portal_invite_template():
     subject, text, html = render_template(
         "portal_invite",

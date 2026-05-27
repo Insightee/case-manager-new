@@ -22,7 +22,7 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
 
 ### Railway (Postgres + Docker API)
 
-**Project ID:** `b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4` — full SMTP/Vercel pairing: [`docs/RAILWAY_VERCEL.md`](RAILWAY_VERCEL.md), env template [`backend/env.railway.example`](../backend/env.railway.example).
+**Project ID:** `ead85fb6-1826-4eed-bad9-2513e89c4854` — full SMTP/Vercel pairing: [`docs/RAILWAY_VERCEL.md`](RAILWAY_VERCEL.md), env template [`backend/env.railway.example`](../backend/env.railway.example).
 
 1. In [Railway](https://railway.com), open that project (or **New Project** → **Deploy from GitHub repo** → `Insightee/case-manager-new`).
 2. Add a **PostgreSQL** plugin to the project.
@@ -45,8 +45,8 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
    | `JWT_SECRET_KEY` | long random string |
    | `JWT_REFRESH_SECRET_KEY` | different long random string |
    | `APP_ENV` | `production` |
-   | `CORS_ORIGINS` | `https://frontend-omega-eight-92.vercel.app` (add every Vercel preview URL you use) |
-   | `FRONTEND_URL` | `https://frontend-omega-eight-92.vercel.app` |
+   | `CORS_ORIGINS` | `https://frontend-insightes-projects.vercel.app` (+ previews, `http://localhost:5173`) |
+   | `FRONTEND_URL` | `https://frontend-insightes-projects.vercel.app` |
    | `STORAGE_PROVIDER` | `r2` |
    | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | Cloudflare R2 credentials |
    | `REDIS_URL` | `${{Redis.REDIS_URL}}` or Upstash URL (recommended for refresh tokens) |
@@ -58,14 +58,19 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
 6. Verify: `curl https://YOUR-RAILWAY-DOMAIN/health` → `{"status":"ok",...}`.
 7. **Vercel** → Project → Environment variables → `VITE_API_URL` = Railway URL (no trailing slash) → **Redeploy** frontend.
 
-**CLI (optional):** create a token at Railway → Account → Tokens, then:
+**CLI (optional):** Railway uses **two token types** (see [`docs/RAILWAY_VERCEL.md`](RAILWAY_VERCEL.md#railway-tokens-why-whoami-fails)):
+
+| Goal | Where to create | Env var | `whoami`? |
+|------|-----------------|---------|-----------|
+| Set variables, `link`, `list` | Account → Tokens, **Workspace = No workspace** | `RAILWAY_API_TOKEN` | Yes |
+| CI deploy only | Project → Settings → Tokens | `RAILWAY_TOKEN` | **No** (expected) |
 
 ```bash
-export RAILWAY_TOKEN="<your-token>"
+export RAILWAY_API_TOKEN="<account-token-no-workspace>"
+unset RAILWAY_TOKEN
 cd backend
-npx @railway/cli link --project b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4
-npx @railway/cli up --detach
-npx @railway/cli domain
+sh scripts/verify_railway_token.sh
+npx @railway/cli link --project ead85fb6-1826-4eed-bad9-2513e89c4854
 ```
 
 Do not commit tokens; revoke any token pasted into chat.
@@ -163,4 +168,15 @@ Full matrix: [backend/README.md](../backend/README.md).
 | Login works locally but not on Vercel | Set `VITE_API_URL` to the public API; check browser Network tab |
 | CORS error in browser | Add exact Vercel URL to `CORS_ORIGINS` on API; redeploy API |
 | Blank page after refresh on `/parent/...` | Ensure `vercel.json` rewrites are deployed |
+
+## Current gaps (checklist)
+
+| Item | Status | Action |
+|------|--------|--------|
+| GitHub `main` CI | Last pushed commit **green**; large local diff **not on GitHub** | Commit + push onboarding/R2/session-log work; CI should pass (307 tests, single Alembic head locally) |
+| Vercel project | Case Manager UI: **`insightes-projects/frontend`** (`prj_ibo0tJpTFO1Y8d5cKiKicB7Yr6vN`); recent deploys **ERROR** | Fix Root Directory vs [`vercel.json`](../vercel.json) (see [`RAILWAY_VERCEL.md`](RAILWAY_VERCEL.md)); set `VITE_API_URL`; redeploy |
+| Railway API code | `/health` OK but `db_migration` behind; `forgot-password` **404** | Redeploy API from GitHub after push so `start-production.sh` runs migrations to head |
+| CORS / `FRONTEND_URL` | May point at `insighte-session-logger` (wrong app) | Set Railway to your **`frontend`** production domain from Vercel |
+
+`midhuns-projects/insighte-session-logger` is a **different** payroll app — not InsightCase.
 | API 500 on first request | Run migrations + seed; check `DATABASE_URL` |

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +12,7 @@ from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.parent import ParentGuardian
 from app.models.user import User
+from app.services import avatar_service
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -70,12 +69,5 @@ def get_avatar(
     target = db.get(User, user_id)
     if not target or not target.avatar_path:
         raise HTTPException(status_code=404, detail="Avatar not found")
-    path = Path(target.avatar_path)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Avatar file missing")
-    media = "image/jpeg"
-    if path.suffix.lower() == ".png":
-        media = "image/png"
-    elif path.suffix.lower() == ".webp":
-        media = "image/webp"
-    return FileResponse(path, media_type=media)
+    data, media = avatar_service.read_avatar_bytes(target.avatar_path)
+    return Response(content=data, media_type=media)

@@ -1,17 +1,19 @@
 #!/bin/sh
-# Set Vercel env for the frontend (no SMTP here).
-# Usage: copy to vercel_env.sh, adjust URLs, run from frontend/
-#   chmod +x scripts/vercel_env.sh && ./scripts/vercel_env.sh
-# Requires: npx vercel login && vercel link (in frontend/)
+# Set Vercel env for insightes-projects/frontend (no SMTP here).
+# Prefer: ../scripts/vercel_setup_frontend.sh from repo root (links + env).
+# Usage: copy to vercel_env.sh, run from frontend/
 
-set -e
+set -eu
 
+SCOPE="${VERCEL_SCOPE:-insightes-projects}"
 API_URL="${API_URL:-https://case-manager-new-production.up.railway.app}"
 
 cd "$(dirname "$0")/.."
 
-echo "Setting VITE_API_URL=${API_URL} on Vercel (production + preview)..."
-printf '%s' "$API_URL" | npx vercel env add VITE_API_URL production
-printf '%s' "$API_URL" | npx vercel env add VITE_API_URL preview
+echo "Setting VITE_API_URL=${API_URL} on Vercel ($SCOPE)..."
+printf '%s' "$API_URL" | npx vercel env add VITE_API_URL production --scope "$SCOPE" --force 2>/dev/null \
+  || printf '%s' "$API_URL" | npx vercel env add VITE_API_URL production --scope "$SCOPE"
+printf '%s' "$API_URL" | npx vercel env add VITE_API_URL preview --scope "$SCOPE" --force 2>/dev/null \
+  || printf '%s' "$API_URL" | npx vercel env add VITE_API_URL preview --scope "$SCOPE"
 
-echo "Redeploy: npx vercel --prod"
+echo "Redeploy from repo root: npx vercel --prod --scope $SCOPE"

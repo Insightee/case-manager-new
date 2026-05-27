@@ -62,10 +62,13 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_from_email: str = "noreply@insighte.in"
-    smtp_from_billing_email: str = "billing.noreply@insighte.in"
-    smtp_from_verification_email: str = "verification.noreply@insighte.in"
+    # When unset, billing/verification emails use smtp_from_email (required for single-sender ZeptoMail agents).
+    smtp_from_billing_email: str = ""
+    smtp_from_verification_email: str = ""
     smtp_from_name: str = "Insighte"
     smtp_tls: bool = True
+    # Set true for port 465 (implicit SSL). When false, use SMTP_PORT with STARTTLS (587).
+    smtp_ssl: bool = False
     admin_notification_emails: str = ""
     password_reset_expire_hours: int = 1
     password_reset_rate_limit_per_hour: int = 3
@@ -75,6 +78,13 @@ class Settings(BaseSettings):
     def normalize_database_url(cls, value: object) -> object:
         if isinstance(value, str):
             return _normalize_database_url(value)
+        return value
+
+    @field_validator("smtp_user", "smtp_password", "smtp_host", mode="before")
+    @classmethod
+    def strip_smtp_fields(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
         return value
 
     @property

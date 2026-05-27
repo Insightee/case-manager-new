@@ -6,6 +6,9 @@
 backend/scripts/railway_smtp_env.sh
 backend/scripts/railway_link_and_configure.sh
 frontend/scripts/vercel_env.sh
+.vercel/
+!/.vercel/project.json.example
+scripts/vercel_env.sh
 
 # Python
 __pycache__/
@@ -41,3 +44,4 @@ frontend/.playwright-browsers/
 # Uploads (local dev artifacts)
 backend/uploads/
 uploads/
+.vercel

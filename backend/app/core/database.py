@@ -96,6 +96,21 @@ def ensure_sqlite_schema_patches() -> None:
         if "org_capability_grants" not in user_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN org_capability_grants JSON"))
+        if "external_employee_id" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN external_employee_id VARCHAR(64)"))
+
+    if insp.has_table("children"):
+        child_cols = {c["name"] for c in insp.get_columns("children")}
+        if "external_client_id" not in child_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE children ADD COLUMN external_client_id VARCHAR(64)"))
+
+    if insp.has_table("cases"):
+        case_cols_ext = {c["name"] for c in insp.get_columns("cases")}
+        if "external_case_ref" not in case_cols_ext:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE cases ADD COLUMN external_case_ref VARCHAR(128)"))
 
     if insp.has_table("therapist_profiles"):
         tp_cols = {c["name"] for c in insp.get_columns("therapist_profiles")}
@@ -259,6 +274,8 @@ def ensure_sqlite_schema_patches() -> None:
                 )
             if "review_note" not in log_cols:
                 conn.execute(text("ALTER TABLE daily_logs ADD COLUMN review_note TEXT"))
+            if "parent_notified_at" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN parent_notified_at DATETIME"))
 
     if insp.has_table("support_tickets"):
         t_cols = {c["name"] for c in insp.get_columns("support_tickets")}

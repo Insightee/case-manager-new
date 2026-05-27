@@ -1,0 +1,2 @@
+external_employee_id,email,full_name,role_names,module_assignments,password
+EMP-CM-001,casemanager@insighte.in,Case Manager One,CASE_MANAGER,"homecare,shadow_support",

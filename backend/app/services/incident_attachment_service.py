@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from typing import Optional, Sequence
 
 from fastapi import HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,8 +13,7 @@ from app.models.incident import Incident
 from app.models.incident import IncidentAttachment
 from app.models.user import User
 from app.services import case_service
-
-UPLOAD_DIR = Path("uploads/incidents")
+from app.storage.object_io import put_stored_bytes, stored_file_response
 
 ALLOWED_MIME_TYPES = frozenset(
     {
@@ -100,18 +97,20 @@ async def save_attachments(
     payloads = await validate_and_read_files(files)
     if not payloads:
         return []
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     saved: list[IncidentAttachment] = []
     for filename, mime_type, content in payloads:
-        ext = Path(filename).suffix
-        stored_name = f"{uuid.uuid4()}{ext}"
-        path = UPLOAD_DIR / stored_name
-        path.write_bytes(content)
+        storage_key, _provider = put_stored_bytes(
+            "incident-attachments",
+            f"incident_{incident.id}",
+            filename=filename,
+            data=content,
+            content_type=mime_type,
+        )
         att = IncidentAttachment(
             incident_id=incident.id,
             message_id=message_id,
             file_name=filename,
-            file_path=str(path),
+            file_path=storage_key,
             mime_type=mime_type,
             size_bytes=len(content),
             note=note,
@@ -140,8 +139,9 @@ def get_attachment_or_404(db: Session, attachment_id: int) -> IncidentAttachment
     return att
 
 
-def download_response(attachment: IncidentAttachment) -> FileResponse:
-    path = Path(attachment.file_path)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="File not found on disk")
-    return FileResponse(path, filename=attachment.file_name, media_type=attachment.mime_type)
+def download_response(attachment: IncidentAttachment):
+    return stored_file_response(
+        attachment.file_path,
+        filename=attachment.file_name,
+        media_type=attachment.mime_type,
+    )

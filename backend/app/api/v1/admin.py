@@ -5,7 +5,7 @@ from typing import Optional
 import csv
 import io
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
@@ -1296,6 +1296,78 @@ def export_sessions_pdf(
         content=buf.read(),
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=sessions_{d_from}_{d_to}.pdf"},
+    )
+
+
+@router.get("/session-logs/summary")
+def admin_session_logs_summary(
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    product_module: Optional[str] = None,
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import session_log_service
+
+    if not (
+        user_has_permission(user, "daily_log.review")
+        or user_has_permission(user, "case.read.all")
+        or user_has_permission(user, "case.read.team")
+        or user_has_permission(user, "case.read.scoped")
+    ):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return session_log_service.admin_session_logs_summary(
+        db,
+        user,
+        from_date=from_date,
+        to_date=to_date,
+        product_module=product_module,
+    )
+
+
+@router.get("/session-logs")
+def admin_list_session_logs(
+    status: Optional[str] = Query(None, description="missing|pending|submitted|approved"),
+    case_id: Optional[int] = None,
+    therapist_user_id: Optional[int] = None,
+    product_module: Optional[str] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.schemas.session_log_portal import AdminSessionLogListResponse, SessionLogRead
+    from app.services import session_log_service
+
+    if status and status not in ("missing", "pending", "submitted", "approved"):
+        raise HTTPException(status_code=400, detail="Invalid status filter")
+    if not (
+        user_has_permission(user, "daily_log.review")
+        or user_has_permission(user, "case.read.all")
+        or user_has_permission(user, "case.read.team")
+        or user_has_permission(user, "case.read.scoped")
+    ):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    data = session_log_service.list_admin_session_logs(
+        db,
+        user,
+        status=status,  # type: ignore[arg-type]
+        case_id=case_id,
+        therapist_user_id=therapist_user_id,
+        product_module=product_module,
+        from_date=from_date,
+        to_date=to_date,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminSessionLogListResponse(
+        items=[SessionLogRead(**row) for row in data["items"]],
+        total=data["total"],
+        page=data["page"],
+        page_size=data["page_size"],
+        pages=data["pages"],
     )
 
 

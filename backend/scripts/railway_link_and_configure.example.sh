@@ -7,28 +7,42 @@
 
 set -e
 
-PROJECT_ID="b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4"
+PROJECT_ID="ead85fb6-1826-4eed-bad9-2513e89c4854"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BACKEND="$REPO_ROOT/backend"
 
-# Your Vercel production/preview URL (no trailing slash)
-VERCEL_URL="${VERCEL_URL:-https://frontend-omega-eight-92.vercel.app}"
-# Public Railway API URL — update after `railway domain` if different
+# Your Vercel production URL (no trailing slash)
+# Vercel: insightes-projects/frontend (prj_ibo0tJpTFO1Y8d5cKiKicB7Yr6vN) — copy production domain from Vercel → Settings → Domains
+VERCEL_URL="${VERCEL_URL:-https://frontend-insightes-projects.vercel.app}"
+# Public Railway API URL
 API_URL="${API_URL:-https://case-manager-new-production.up.railway.app}"
 
+if [ -z "${RAILWAY_API_TOKEN:-}" ]; then
+  echo "Set RAILWAY_API_TOKEN (Account → Tokens, Workspace = No workspace)."
+  echo "Project tokens (RAILWAY_TOKEN) cannot run whoami, link, or variable set."
+  exit 1
+fi
+unset RAILWAY_TOKEN
+
 if [ -z "${SMTP_PASSWORD:-}" ]; then
-  echo "Set SMTP_PASSWORD (ZeptoMail send token) before running, e.g.:"
-  echo "  export SMTP_PASSWORD='your-token'"
+  echo "Set SMTP_PASSWORD (ZeptoMail SMTP send token, not REST API key):"
+  echo "  export SMTP_PASSWORD='...'"
   exit 1
 fi
 
 cd "$BACKEND"
 
-echo "Linking Railway project ${PROJECT_ID} (service: backend)..."
+echo "Checking Railway auth (account token only)..."
+npx @railway/cli whoami || {
+  echo "whoami failed — use Account → Tokens with Workspace = No workspace, as RAILWAY_API_TOKEN."
+  exit 1
+}
+
+echo "Linking Railway project ${PROJECT_ID}..."
 npx @railway/cli link --project "$PROJECT_ID"
 
-echo "Setting API variables (SMTP + CORS + frontend URL)..."
-npx @railway/cli variables set \
+echo "Setting API variables..."
+npx @railway/cli variable set \
   APP_ENV=production \
   SEED_DEMO_DATA=false \
   EMAIL_PROVIDER=zeptomail \
@@ -38,17 +52,30 @@ npx @railway/cli variables set \
   SMTP_PASSWORD="$SMTP_PASSWORD" \
   SMTP_TLS=true \
   SMTP_FROM_EMAIL=noreply@insighte.in \
-  SMTP_FROM_BILLING_EMAIL=billing.noreply@insighte.in \
-  SMTP_FROM_VERIFICATION_EMAIL=verification.noreply@insighte.in \
   SMTP_FROM_NAME=Insighte \
   FRONTEND_URL="$VERCEL_URL" \
-  CORS_ORIGINS="http://localhost:5173,${VERCEL_URL}"
+  CORS_ORIGINS="http://localhost:5173,${VERCEL_URL}" \
+  STORAGE_PROVIDER=r2 \
+  STORAGE_PREFIX=insightcase \
+  STORAGE_ENVIRONMENT=production \
+  R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-0409ea66ef188ae9783c5e9aa7af9445}" \
+  R2_BUCKET_NAME="${R2_BUCKET_NAME:-insightecase}" \
+  R2_ENDPOINT_URL="${R2_ENDPOINT_URL:-https://0409ea66ef188ae9783c5e9aa7af9445.r2.cloudflarestorage.com}"
+
+if [ -n "${R2_ACCESS_KEY_ID:-}" ] && [ -n "${R2_SECRET_ACCESS_KEY:-}" ]; then
+  npx @railway/cli variable set \
+    R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" \
+    R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+else
+  echo "Skip R2 keys — set R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY in dashboard (R2 → Manage R2 API tokens)."
+fi
 
 echo ""
-echo "Railway API variables set. Still required in Railway dashboard:"
+echo "Still set in Railway dashboard if not using references:"
 echo "  - DATABASE_URL = \${{Postgres.DATABASE_URL}}"
-echo "  - JWT_SECRET_KEY, JWT_REFRESH_SECRET_KEY (random)"
-echo "  - STORAGE_PROVIDER=r2 + R2_* keys (if using production storage)"
+echo "  - REDIS_URL = \${{Redis.REDIS_URL}} (recommended)"
+echo "  - JWT_SECRET_KEY, JWT_REFRESH_SECRET_KEY (long random strings)"
+echo "  - Delete legacy names: SMTP_USERNAME, EMAIL_FROM_DEFAULT"
 echo ""
 echo "Vercel (frontend project) — set manually or run:"
 echo "  cd frontend && npx vercel env add VITE_API_URL production"

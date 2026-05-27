@@ -1072,7 +1072,6 @@ def admin_summary(db: Session) -> dict:
     }
 
 
-BILLING_PROOF_DIR = Path("uploads/billing")
 MAX_PROOF_BYTES = 5 * 1024 * 1024
 ALLOWED_PROOF_MIME = frozenset(
     {"image/jpeg", "image/png", "image/webp", "application/pdf"}
@@ -1088,12 +1087,17 @@ async def _save_payment_proof(file: UploadFile, payment_id: int) -> tuple[str, s
     mime = file.content_type or "application/octet-stream"
     if mime not in ALLOWED_PROOF_MIME:
         raise ValueError("Proof must be JPEG, PNG, WebP, or PDF")
-    BILLING_PROOF_DIR.mkdir(parents=True, exist_ok=True)
+    from app.storage.object_io import put_stored_bytes
+
     safe_name = Path(file.filename).name.replace("..", "")
-    dest_name = f"{payment_id}_{secrets.token_hex(4)}_{safe_name}"
-    dest = BILLING_PROOF_DIR / dest_name
-    dest.write_bytes(content)
-    return str(dest), safe_name
+    storage_key, _provider = put_stored_bytes(
+        "billing-proofs",
+        f"payment_{payment_id}",
+        filename=safe_name,
+        data=content,
+        content_type=mime,
+    )
+    return storage_key, safe_name
 
 
 async def submit_payment_claim(
@@ -1195,7 +1199,7 @@ def reject_payment_claim(db: Session, payment_id: int, admin_user_id: int, note:
 
 
 def payment_proof_download(db: Session, user: User, payment_id: int, *, admin: bool = False):
-    from fastapi.responses import FileResponse
+    from app.storage.object_io import stored_file_response
 
     payment = db.get(ClientPayment, payment_id)
     if not payment or not payment.proof_file_path:
@@ -1205,10 +1209,11 @@ def payment_proof_download(db: Session, user: User, payment_id: int, *, admin: b
         raise ValueError("Proof not found")
     if not admin and inv.parent_user_id != user.id:
         raise ValueError("Proof not found")
-    path = Path(payment.proof_file_path)
-    if not path.is_file():
-        raise ValueError("Proof file missing")
-    return FileResponse(path, filename=payment.proof_file_name or path.name)
+    return stored_file_response(
+        payment.proof_file_path,
+        filename=payment.proof_file_name or "proof",
+        media_type="application/octet-stream",
+    )
 
 
 def client_invoice_pdf_bytes(inv_detail: dict) -> bytes:

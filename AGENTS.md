@@ -10,6 +10,11 @@
 - Use frontend/UI design skills when improving portal layouts (login sizing, admin dashboard density, therapist quick actions).
 - Invoice UX should support case-by-case preview, session review, late/extra sessions before submit, and admin breakdown review.
 
+## Documentation
+
+- [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) — delivery, RBAC, billing, deploy, and agent checklists (from chat workflow capture).
+- [docs/DATA_IMPORT.md](docs/DATA_IMPORT.md) — production bulk import for therapists, families, and cases (templates and API order).
+
 ## Learned Workspace Facts
 
 - Monorepo layout: `backend/` (FastAPI, SQLAlchemy, Alembic), `frontend/` (Vite + React + Tailwind), `docker-compose.yml` for Postgres, Redis, and API.

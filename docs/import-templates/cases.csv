@@ -1,0 +1,3 @@
+external_case_ref,external_client_id,therapist_email,cm_email,product_module,service_type,case_code,region,notes
+LEG-CASE-001,CLI-5001,therapist1@insighte.in,casemanager@insighte.in,homecare,Occupational therapy,,Bangalore,Imported case
+LEG-CASE-002,CLI-5002,therapist2@insighte.in,casemanager@insighte.in,homecare,Speech therapy,,,

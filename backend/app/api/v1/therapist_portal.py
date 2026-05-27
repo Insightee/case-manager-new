@@ -1,19 +1,25 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_request_meta
+from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import user_has_permission
+from app.core.permissions import require_permission, user_has_permission
 from app.models.user import User
 from app.schemas.session import TherapistClientIntakeCreate, TherapistClientIntakeResponse
+from app.schemas.session_log_portal import (
+    SessionLogCreate,
+    SessionLogRead,
+    TherapistMyCasesResponse,
+)
 from app.schemas.therapist_home import (
     TherapistHomeResponse,
     TherapistReportsPipelineResponse,
     TherapistSessionsWorkspaceResponse,
 )
-from app.services import therapist_home_service, therapist_intake_service
+from app.services import session_log_service, therapist_home_service, therapist_intake_service
 
 router = APIRouter(prefix="/therapist", tags=["therapist-portal"])
 
@@ -21,6 +27,42 @@ router = APIRouter(prefix="/therapist", tags=["therapist-portal"])
 def _require_therapist(user: User) -> None:
     if not user_has_permission(user, "case.read.assigned") and not user_has_permission(user, "case.read.all"):
         raise HTTPException(status_code=403, detail="Therapist access required")
+
+
+@router.get("/my-cases", response_model=TherapistMyCasesResponse)
+def therapist_my_cases(
+    user: User = Depends(require_permission("case.read.assigned")),
+    db: Session = Depends(get_db),
+):
+    _require_therapist(user)
+    data = session_log_service.list_therapist_my_cases(db, user)
+    return TherapistMyCasesResponse(**data)
+
+
+@router.post("/session-logs", response_model=SessionLogRead, status_code=status.HTTP_201_CREATED)
+def therapist_create_session_log(
+    payload: SessionLogCreate,
+    request: Request,
+    user: User = Depends(require_permission("daily_log.create")),
+    db: Session = Depends(get_db),
+):
+    _require_therapist(user)
+    try:
+        log = session_log_service.create_therapist_session_log(db, user, payload.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="create",
+        entity_type="daily_log",
+        entity_id=log.id,
+        new_value=payload.model_dump(),
+        **meta,
+    )
+    db.commit()
+    return SessionLogRead(**session_log_service.session_log_read(db, log))
 
 
 @router.get("/home", response_model=TherapistHomeResponse)

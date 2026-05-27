@@ -101,7 +101,7 @@ python3 scripts/send_test_email.py --to your@inbox.com --template password_reset
 python3 scripts/send_test_email.py --to your@inbox.com --from-email verification.noreply@insighte.in --template portal_invite
 ```
 
-Railway variable batch (project `b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4`): see [`docs/RAILWAY_VERCEL.md`](RAILWAY_VERCEL.md), [`backend/scripts/railway_link_and_configure.example.sh`](../backend/scripts/railway_link_and_configure.example.sh), or [`backend/scripts/railway_smtp_env.example.sh`](../backend/scripts/railway_smtp_env.example.sh).
+Railway variable batch (project `ead85fb6-1826-4eed-bad9-2513e89c4854`): see [`docs/RAILWAY_VERCEL.md`](RAILWAY_VERCEL.md), [`backend/scripts/railway_link_and_configure.example.sh`](../backend/scripts/railway_link_and_configure.example.sh), or [`backend/scripts/railway_smtp_env.example.sh`](../backend/scripts/railway_smtp_env.example.sh).
 
 ## Verify mail is working
 
@@ -130,7 +130,7 @@ Railway variable batch (project `b5944bdb-23e6-4d32-bf7e-f2eeb9494ca4`): see [`d
 | **ZeptoMail** | — | Domain + senders (you completed) |
 | **Cloudflare** | No DNS MCP in workspace | SPF/DKIM if not already green in ZeptoMail |
 | **Railway** | `railway login` required | Set env vars via dashboard or `railway_smtp_env.example.sh` |
-| **Vercel** | List projects only | `VITE_API_URL` + redeploy for `frontend-omega-eight-92` (or your test project) |
+| **Vercel** | `insightes-projects/frontend` (`prj_ibo0tJpTFO1Y8d5cKiKicB7Yr6vN`) | `VITE_API_URL` + redeploy; see [`scripts/vercel_setup_frontend.sh`](../scripts/vercel_setup_frontend.sh) |
 
 **Production API note:** Deployed Railway build may lag the repo (e.g. no `/forgot-password` until latest backend is deployed). After deploy, run `alembic upgrade head` for `email_logs`.
 

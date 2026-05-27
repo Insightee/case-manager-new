@@ -827,10 +827,10 @@ def parent_download_attachment(
     if not att or att.visibility_status not in PARENT_VISIBLE:
         raise HTTPException(status_code=404, detail="File not found")
     _parent_case_or_404(db, user, att.case_id)
-    path = Path(att.file_path)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="File missing on server")
-    return FileResponse(path, filename=att.file_name)
+    from app.storage.object_io import stored_file_response
+
+    mime = "text/html" if att.file_name.lower().endswith(".html") else "application/octet-stream"
+    return stored_file_response(att.file_path, filename=att.file_name, media_type=mime)
 
 
 @router.get("/booking/calendar")

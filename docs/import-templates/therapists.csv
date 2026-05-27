@@ -1,0 +1,3 @@
+external_employee_id,email,full_name,phone,services_offered,primary_cm_email,password
+EMP-T-001,therapist1@insighte.in,Jane Therapist,+91 9876543210,homecare|shadow_support,casemanager@insighte.in,
+EMP-T-002,therapist2@insighte.in,John Therapist,,homecare,casemanager@insighte.in,

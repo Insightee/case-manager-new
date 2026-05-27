@@ -33,6 +33,8 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    env:
+      VITE_API_URL: https://case-manager-new-production.up.railway.app
     defaults:
       run:
         working-directory: frontend
@@ -44,3 +46,20 @@ jobs:
       # npm ci fails on Linux when optional deps (rolldown/wasm) differ from the lock snapshot; install then verify build.
       - run: npm install --no-audit --no-fund
       - run: npm run build
+
+  # Mirrors Vercel project insightes-projects/frontend (repo root + vercel.json).
+  vercel-monorepo-build:
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_URL: https://case-manager-new-production.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install (same as vercel.json)
+        run: npm install --no-audit --no-fund --prefix frontend
+      - name: Build (same as vercel.json)
+        run: npm run build --prefix frontend
+      - name: SPA output exists
+        run: test -f frontend/dist/index.html

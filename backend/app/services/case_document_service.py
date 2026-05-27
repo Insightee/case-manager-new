@@ -146,6 +146,7 @@ def _add_version_upload(
         version_number=version_number,
         filename=filename,
         content=content,
+        content_type=mime_type,
     )
     version = CaseDocumentVersion(
         case_document_id=doc.id,

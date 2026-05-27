@@ -318,6 +318,7 @@ async def upload_avatar(
         ext = avatar_service.validate_avatar_upload(file.content_type, len(content), file.filename)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    avatar_service.delete_avatar_files(user.avatar_path)
     path = avatar_service.save_avatar(user.id, content, ext)
     user.avatar_path = path
     meta = get_request_meta(request) if request else {}
@@ -332,7 +333,7 @@ def delete_avatar(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    avatar_service.delete_avatar_files(user.id)
+    avatar_service.delete_avatar_files(user.avatar_path)
     user.avatar_path = None
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="delete_avatar", entity_type="user", entity_id=user.id, **meta)
