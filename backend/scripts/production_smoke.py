@@ -18,6 +18,10 @@ from pathlib import Path
 _BACKEND = Path(__file__).resolve().parents[1]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
+# migration_util is imported by some Alembic revision modules
+_alembic_dir = _BACKEND / "alembic"
+if str(_alembic_dir) not in sys.path:
+    sys.path.insert(0, str(_alembic_dir))
 
 import httpx
 from alembic.config import Config
@@ -113,6 +117,9 @@ def _check_no_legacy_upload_dirs_in_prod() -> None:
     """Warn if ephemeral upload dirs exist on disk in production (Railway should use R2 only)."""
     if settings.is_development:
         _step("Legacy uploads/ dirs (skipped in dev)", True)
+        return
+    if not os.environ.get("RAILWAY_REPLICA_ID"):
+        _step("Legacy uploads/ dirs (skipped outside Railway container)", True)
         return
     legacy_roots = [
         _BACKEND / "uploads" / "tickets",
