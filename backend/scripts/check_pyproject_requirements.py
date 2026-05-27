@@ -26,15 +26,23 @@ def parse_requirements(path: Path) -> set[str]:
 
 
 def parse_pyproject(path: Path) -> set[str]:
-    text = path.read_text()
-    block = text.split("dependencies = [", 1)[1].split("]", 1)[0]
+    """Parse [project].dependencies without tomllib (handles extras like uvicorn[standard])."""
     names: set[str] = set()
-    for line in block.splitlines():
-        line = line.strip().strip(",").strip('"')
-        if not line or line.startswith("#"):
+    in_deps = False
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("dependencies = ["):
+            in_deps = True
             continue
-        # "package>=1.0" or "package[extra]>=1.0"
-        name = re.split(r"[<>=!~\[]", line, maxsplit=1)[0].strip().lower()
+        if not in_deps:
+            continue
+        if stripped == "]":
+            break
+        m = re.search(r'"([^"]+)"', line)
+        if not m:
+            continue
+        spec = m.group(1)
+        name = re.split(r"[<>=!~\[]", spec, maxsplit=1)[0].strip().lower()
         if name:
             names.add(name)
     return names
