@@ -165,6 +165,9 @@ Full matrix: [backend/README.md](../backend/README.md).
 
 | Symptom | Fix |
 |---------|-----|
+| Railway deploy fails health/network check; logs show `demo_seed` / `Therapist is not actively assigned` | Set **`SEED_DEMO_DATA=false`** (or remove it) on the API service. Redeploy from latest `main` so startup uses `scripts/start-production.sh` (skips seed by default). Do not use a custom start command that always runs `demo_seed`. |
+| Logs repeat `Running migrations...` / `Seeding demo data` and never `Starting API on port` | Container exits during seed before uvicorn; fix `SEED_DEMO_DATA` and redeploy (see row above). |
+| `Database already at head (a1b2c3d4e5f7)` but API features missing | API image is stale; trigger a fresh Railway deploy from GitHub `main` so migrations reach current head. |
 | Login works locally but not on Vercel | Set `VITE_API_URL` to the public API; check browser Network tab |
 | CORS error in browser | Add exact Vercel URL to `CORS_ORIGINS` on API; redeploy API |
 | Blank page after refresh on `/parent/...` | Ensure `vercel.json` rewrites are deployed |

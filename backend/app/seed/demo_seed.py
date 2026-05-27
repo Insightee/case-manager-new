@@ -48,6 +48,7 @@ from app.models.schedule_template import TherapistScheduleTemplate, default_temp
 from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.leave import LeaveType, LeaveStatus, TherapistLeave
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
+from app.core.permissions import get_active_assignment
 from app.services import slot_calendar_service as cal
 from app.models.incident import Incident, IncidentStatus
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
@@ -127,6 +128,40 @@ def get_or_create_user(db, email, password, full_name, role_name, **kwargs):
     db.add(user)
     db.flush()
     return user
+
+
+def ensure_active_case_assignment(
+    db,
+    *,
+    case_id: int,
+    therapist_user_id: int,
+    assigned_by_user_id: int,
+    start_date: date,
+) -> None:
+    """Idempotent: prod DBs may have ended or foreign assignments blocking book_slot."""
+    if get_active_assignment(db, case_id, therapist_user_id):
+        return
+    row = db.scalars(
+        select(CaseAssignment).where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id == therapist_user_id,
+        )
+    ).first()
+    if row:
+        row.status = CaseAssignmentStatus.ACTIVE
+        if row.start_date is None:
+            row.start_date = start_date
+    else:
+        db.add(
+            CaseAssignment(
+                case_id=case_id,
+                therapist_user_id=therapist_user_id,
+                assigned_by_user_id=assigned_by_user_id,
+                start_date=start_date,
+                status=CaseAssignmentStatus.ACTIVE,
+            )
+        )
+    db.flush()
 
 
 def run():
@@ -333,27 +368,20 @@ def run():
                 )
             )
 
-        if not db.scalars(select(CaseAssignment).where(CaseAssignment.case_id == case1.id)).first():
-            db.add(
-                CaseAssignment(
-                    case_id=case1.id,
-                    therapist_user_id=therapist.id,
-                    assigned_by_user_id=case_mgr.id,
-                    start_date=date(2026, 1, 1),
-                    status=CaseAssignmentStatus.ACTIVE,
-                )
-            )
-        if not db.scalars(select(CaseAssignment).where(CaseAssignment.case_id == case2.id)).first():
-            db.add(
-                CaseAssignment(
-                    case_id=case2.id,
-                    therapist_user_id=therapist.id,
-                    assigned_by_user_id=case_mgr.id,
-                    start_date=date(2026, 2, 1),
-                    status=CaseAssignmentStatus.ACTIVE,
-                )
-            )
-        db.flush()
+        ensure_active_case_assignment(
+            db,
+            case_id=case1.id,
+            therapist_user_id=therapist.id,
+            assigned_by_user_id=case_mgr.id,
+            start_date=date(2026, 1, 1),
+        )
+        ensure_active_case_assignment(
+            db,
+            case_id=case2.id,
+            therapist_user_id=therapist.id,
+            assigned_by_user_id=case_mgr.id,
+            start_date=date(2026, 2, 1),
+        )
 
         def seed_session(case, day, hour=9, parent_visible=False):
             existing = db.scalars(

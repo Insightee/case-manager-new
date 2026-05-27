@@ -8,6 +8,11 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exit 1
 fi
 
+if [ "${APP_ENV:-}" = "production" ] && { [ "${SEED_DEMO_DATA:-false}" = "true" ] || [ "${SEED_DEMO_DATA:-false}" = "1" ]; }; then
+  echo "ERROR: SEED_DEMO_DATA must be false or unset when APP_ENV=production (demo seed can block health checks)."
+  exit 1
+fi
+
 echo "Running migrations..."
 python scripts/migrate_production.py
 
