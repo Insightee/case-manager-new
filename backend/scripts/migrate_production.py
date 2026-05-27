@@ -66,10 +66,12 @@ def main() -> None:
     try:
         command.upgrade(cfg, head)
     except Exception as exc:
-        # Bootstrap revision may have already created full model schema.
-        if insp.has_table("cases") and "billing_type" in {c["name"] for c in insp.get_columns("cases")}:
-            print(f"Upgrade error ({exc!r}); stamping head because schema matches models.")
-            command.stamp(cfg, head)
+        # Only stamp when the DB already matches head (greenfield bootstrap path).
+        # Do not stamp on partial failures — that leaves code ahead of schema.
+        err = str(exc).lower()
+        if "duplicate" in err or "already exists" in err:
+            print(f"Upgrade hit existing object ({exc!r}); retrying upgrade to head...")
+            command.upgrade(cfg, head)
             return
         raise
 
