@@ -23,6 +23,26 @@ from app.core.database import engine
 
 import app.models  # noqa: F401
 
+# Columns that must exist when Alembic reports head (catches false stamps on partial upgrades).
+_REQUIRED_AT_HEAD: dict[str, tuple[str, ...]] = {
+    "users": ("external_employee_id",),
+    "children": ("external_client_id",),
+    "cases": ("external_case_ref",),
+}
+
+
+def _missing_required_columns(insp) -> list[str]:
+    missing: list[str] = []
+    for table, cols in _REQUIRED_AT_HEAD.items():
+        if not insp.has_table(table):
+            missing.extend(f"{table}.{c}" for c in cols)
+            continue
+        existing = {c["name"] for c in insp.get_columns(table)}
+        for col in cols:
+            if col not in existing:
+                missing.append(f"{table}.{col}")
+    return missing
+
 
 def _current_revision() -> str | None:
     insp = inspect(engine)
@@ -58,22 +78,33 @@ def main() -> None:
         return
 
     current = _current_revision()
-    if current == head:
+    missing = _missing_required_columns(insp)
+    if current == head and not missing:
         print(f"Database already at head ({head}).")
         return
+
+    if missing:
+        print(f"Schema drift: missing {missing}; migrating to head ({head})...")
 
     print(f"Migrating {current or '(none)'} -> {head}...")
     try:
         command.upgrade(cfg, head)
     except Exception as exc:
-        # Only stamp when the DB already matches head (greenfield bootstrap path).
-        # Do not stamp on partial failures — that leaves code ahead of schema.
         err = str(exc).lower()
         if "duplicate" in err or "already exists" in err:
             print(f"Upgrade hit existing object ({exc!r}); retrying upgrade to head...")
             command.upgrade(cfg, head)
-            return
-        raise
+        else:
+            raise
+
+    missing_after = _missing_required_columns(inspect(engine))
+    if missing_after:
+        raise RuntimeError(
+            f"Migration finished but required columns still missing: {missing_after}. "
+            "Do not start the API until Alembic head is fully applied."
+        )
+    final = _current_revision()
+    print(f"Migration complete (revision {final}).")
 
 
 if __name__ == "__main__":

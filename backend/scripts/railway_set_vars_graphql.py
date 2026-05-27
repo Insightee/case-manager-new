@@ -138,6 +138,8 @@ def main() -> int:
         "SMTP_USER": "emailapikey",
         "SMTP_TLS": "true",
         "SMTP_FROM_EMAIL": "noreply@insighte.in",
+        "SMTP_FROM_BILLING_EMAIL": "billing.noreply@insighte.in",
+        "SMTP_FROM_VERIFICATION_EMAIL": "verification.noreply@insighte.in",
         "SMTP_FROM_NAME": "Insighte",
         "STORAGE_PROVIDER": "r2",
         "STORAGE_PREFIX": "insightcase",

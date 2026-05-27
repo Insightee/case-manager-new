@@ -15,8 +15,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if insp.has_table("case_status_requests"):
+        return
     status_enum = sa.Enum("PENDING", "APPROVED", "REJECTED", name="casestatusrequeststatus")
-    status_enum.create(op.get_bind(), checkfirst=True)
+    status_enum.create(bind, checkfirst=True)
     op.create_table(
         "case_status_requests",
         sa.Column("id", sa.Integer(), nullable=False),

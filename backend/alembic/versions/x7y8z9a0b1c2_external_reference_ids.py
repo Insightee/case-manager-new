@@ -17,9 +17,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("users", sa.Column("external_employee_id", sa.String(length=64), nullable=True))
-    op.add_column("children", sa.Column("external_client_id", sa.String(length=64), nullable=True))
-    op.add_column("cases", sa.Column("external_case_ref", sa.String(length=128), nullable=True))
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    user_cols = {c["name"] for c in insp.get_columns("users")} if insp.has_table("users") else set()
+    child_cols = {c["name"] for c in insp.get_columns("children")} if insp.has_table("children") else set()
+    case_cols = {c["name"] for c in insp.get_columns("cases")} if insp.has_table("cases") else set()
+    if "external_employee_id" not in user_cols:
+        op.add_column("users", sa.Column("external_employee_id", sa.String(length=64), nullable=True))
+    if "external_client_id" not in child_cols:
+        op.add_column("children", sa.Column("external_client_id", sa.String(length=64), nullable=True))
+    if "external_case_ref" not in case_cols:
+        op.add_column("cases", sa.Column("external_case_ref", sa.String(length=128), nullable=True))
 
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
