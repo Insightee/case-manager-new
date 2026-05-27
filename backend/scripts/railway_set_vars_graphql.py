@@ -149,8 +149,8 @@ def main() -> int:
         "R2_ENDPOINT_URL": "https://0409ea66ef188ae9783c5e9aa7af9445.r2.cloudflarestorage.com",
         "FRONTEND_URL": VERCEL_URL.rstrip("/"),
         "CORS_ORIGINS": cors,
-        # Requires a Redis plugin service named \"redis\" in the same Railway project.
-        "REDIS_URL": "${{redis.REDIS_URL}}",
+        # Requires a Redis plugin service named \"Redis\" in the same Railway project.
+        "REDIS_URL": "${{Redis.REDIS_URL}}",
     }
     if r2_key and r2_secret:
         pairs["R2_ACCESS_KEY_ID"] = r2_key
