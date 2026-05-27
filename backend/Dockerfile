@@ -6,14 +6,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir .
-
 # Supports build context = backend/ (CLI) or repo root (GitHub + root railway.toml)
+COPY pyproject.toml requirements.txt ./
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .
 COPY scripts ./scripts
+
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --no-deps .
 
 EXPOSE 8000
 

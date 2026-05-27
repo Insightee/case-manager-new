@@ -24,6 +24,11 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
+      - name: Docker/Railway dependency parity
+        run: |
+          python3 scripts/check_pyproject_requirements.py
+          pip install --no-cache-dir .
+          python3 -c "import boto3; import reportlab; import openpyxl"
       - name: Alembic single head
         run: |
           PYTHONPATH=.:alembic python3 -m alembic heads | tee /tmp/heads.txt

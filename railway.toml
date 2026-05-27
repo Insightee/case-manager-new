@@ -6,7 +6,7 @@ dockerfilePath = "backend/Dockerfile"
 watchPatterns = ["backend/**"]
 
 [deploy]
-startCommand = "sh scripts/start-production.sh"
+# Use Dockerfile CMD (scripts/start-production.sh in image). Override only if needed.
 healthcheckPath = "/health"
 healthcheckTimeout = 180
 restartPolicyType = "ON_FAILURE"
