@@ -13,7 +13,7 @@ BACKEND="$REPO_ROOT/backend"
 
 # Your Vercel production URL (no trailing slash)
 # Vercel: insightes-projects/frontend (prj_ibo0tJpTFO1Y8d5cKiKicB7Yr6vN) — copy production domain from Vercel → Settings → Domains
-VERCEL_URL="${VERCEL_URL:-https://frontend-insightes-projects.vercel.app}"
+VERCEL_URL="${VERCEL_URL:-https://frontend-omega-eight-92.vercel.app}"
 # Public Railway API URL
 API_URL="${API_URL:-https://case-manager-new-production.up.railway.app}"
 

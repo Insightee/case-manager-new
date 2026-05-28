@@ -59,7 +59,7 @@ Or use browser login: `npx @railway/cli login` (no token needed for local `link`
 | `DB_MAX_OVERFLOW` | yes | `20` per worker; keep `WEB_CONCURRENCY × (DB_POOL_SIZE + DB_MAX_OVERFLOW)` below Postgres `max_connections` (default `3×30=90`) |
 | `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY` | yes | Strong unique values |
 | `STORAGE_PROVIDER` | yes | `r2` + all `R2_*` vars |
-| `FRONTEND_URL`, `CORS_ORIGINS` | yes | Vercel production URL (not localhost-only) |
+| `FRONTEND_URL`, `CORS_ORIGINS` | yes | **Exact** Vercel production domain from Settings → Domains (e.g. `https://frontend-omega-eight-92.vercel.app`). Not localhost-only. |
 | `EMAIL_PROVIDER`, `SMTP_*` | yes | ZeptoMail on Railway only |
 
 Template: [`backend/env.railway.example`](../backend/env.railway.example).
@@ -149,6 +149,34 @@ If Root Directory is `frontend` but Install still uses `--prefix frontend`, the 
 
 After a green deploy, copy **Settings → Domains** production URL into Railway `FRONTEND_URL` and `CORS_ORIGINS`.
 
+### CORS / “Cannot reach API” on Vercel
+
+If login or invite shows **Cannot reach the API** but `curl …/health` works, the browser origin is usually **not allowed by CORS**.
+
+| Symptom | Cause | Fix |
+|---------|--------|-----|
+| UI at `https://frontend-omega-eight-92.vercel.app` | That host was missing from `CORS_ORIGINS` | Set `FRONTEND_URL` and add the same URL to `CORS_ORIGINS` on Railway, redeploy API |
+| Invite email opens a different host | `FRONTEND_URL` was wrong when email was sent | Update Railway `FRONTEND_URL`, redeploy API, **re-send invite** from Admin |
+| Git preview URLs | `frontend-git-*-insightes-projects.vercel.app` | Allowed by API CORS regex after latest backend deploy (`frontend-*.vercel.app`) |
+
+Quick CORS check (replace origin with your Vercel URL):
+
+```bash
+curl -sI -H "Origin: https://frontend-omega-eight-92.vercel.app" \
+  https://case-manager-new-production.up.railway.app/health | grep -i access-control
+```
+
+Expect: `access-control-allow-origin: https://frontend-omega-eight-92.vercel.app`
+
+Railway-only CORS update (no SMTP):
+
+```bash
+export VERCEL_URL='https://frontend-omega-eight-92.vercel.app'
+cd backend && npx @railway/cli variable set \
+  FRONTEND_URL="$VERCEL_URL" \
+  CORS_ORIGINS="http://localhost:5173,${VERCEL_URL}"
+```
+
 CLI (link + env + deploy):
 
 ```bash
@@ -176,5 +204,8 @@ After any change: **redeploy API** (Railway) and **redeploy frontend** (Vercel).
 
 ```bash
 curl -s https://case-manager-new-production.up.railway.app/health
-# Open Vercel URL → login → forgot-password → check Railway logs / email_logs
+curl -sI -H "Origin: https://frontend-omega-eight-92.vercel.app" \
+  https://case-manager-new-production.up.railway.app/health | grep -i access-control
+# Open https://frontend-omega-eight-92.vercel.app/login → sign in
+# Open invite link on the same host (or re-send invite after FRONTEND_URL fix)
 ```

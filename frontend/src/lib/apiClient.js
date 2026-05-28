@@ -123,7 +123,11 @@ export async function apiFetch(path, options = {}) {
       hint =
         'Cannot reach the API. Start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 — then refresh this page.'
     } else if (onVercel) {
-      hint = `Cannot reach the API at ${API_URL}. If this is a Vercel preview URL, redeploy the API after the latest CORS fix, or use the production frontend URL. Also confirm VITE_API_URL on Vercel and CORS_ORIGINS on Railway.`
+      const origin =
+        typeof window !== 'undefined' && window.location?.origin ? window.location.origin : hostname
+      hint =
+        `Cannot reach the API at ${API_URL}. The API may be down, or this site origin (${origin}) may not be allowed by Railway CORS. ` +
+        `Add ${origin} to Railway CORS_ORIGINS and FRONTEND_URL, redeploy the API, and confirm VITE_API_URL on Vercel (${API_URL}).`
     } else if (localDev) {
       hint = `Cannot reach the API at ${API_URL}. Start the backend (cd backend && python3 -m uvicorn app.main:app --reload --port 8000), or clear VITE_API_URL in frontend/.env.local and restart npm run dev to use the Vite proxy.`
     } else {

@@ -36,5 +36,5 @@ echo "  OR Root Directory: frontend — then override Install to: npm install --
 echo "  Do NOT use: npm ci --prefix frontend"
 echo ""
 echo "Deploy: npx vercel --prod --scope $SCOPE"
-echo "Production URL: https://frontend-insightes-projects.vercel.app"
-echo "Then set Railway FRONTEND_URL + CORS_ORIGINS to that URL."
+echo "Production URL: copy from Vercel → Settings → Domains (e.g. https://frontend-omega-eight-92.vercel.app)"
+echo "Then set Railway FRONTEND_URL + CORS_ORIGINS to that exact URL (no trailing slash)."
