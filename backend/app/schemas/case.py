@@ -7,6 +7,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 from app.models.case import CaseStatus
+from app.models.case_service import CaseServiceStatus
 from app.schemas.address import AddressRead
 from app.schemas.billing import CaseBillingFields
 
@@ -71,6 +72,7 @@ class CaseRead(CaseBillingFields):
 class AssignmentCreate(BaseModel):
     therapist_user_id: int
     start_date: date
+    case_service_id: Optional[int] = None
     reason_for_change: Optional[str] = None
     notes: Optional[str] = None
 
@@ -86,6 +88,7 @@ class AssignmentBookingUpdate(BaseModel):
 class AssignmentRead(BaseModel):
     id: int
     case_id: int
+    case_service_id: Optional[int] = None
     therapist_user_id: int
     therapist_name: Optional[str] = None
     assigned_by_user_id: Optional[int]
@@ -101,5 +104,33 @@ class AssignmentRead(BaseModel):
     fixed_recurrence_group_id: Optional[str] = None
     fixed_window_label: Optional[str] = None
     case_billing: Optional[dict] = None
+
+    model_config = {"from_attributes": True}
+
+
+class CaseServiceCreate(BaseModel):
+    service_key: str
+    product_module: Optional[str] = None
+    start_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class CaseServiceUpdate(BaseModel):
+    status: Optional[CaseServiceStatus] = None
+    end_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class CaseServiceRead(BaseModel):
+    id: int
+    case_id: int
+    service_key: str
+    product_module: Optional[str] = None
+    status: CaseServiceStatus
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}

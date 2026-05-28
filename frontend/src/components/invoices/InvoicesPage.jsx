@@ -295,7 +295,7 @@ export function InvoicesPage() {
           scrollTop()
           openGenerate()
         }}
-        className="fixed bottom-6 right-5 z-50 flex h-14 items-center gap-2 rounded-full bg-[#F97316] px-5 text-sm font-bold text-white shadow-[0_8px_30px_rgba(249,115,22,0.45)] transition hover:scale-[1.03] hover:bg-orange-600 xl:hidden"
+        className="portal-mobile-fab fixed bottom-6 right-5 z-50 flex h-14 min-h-[44px] items-center gap-2 rounded-full bg-[#F97316] px-5 text-sm font-bold text-white shadow-[0_8px_30px_rgba(249,115,22,0.45)] transition hover:scale-[1.03] hover:bg-orange-600 xl:hidden"
         aria-label="Generate invoice"
       >
         + Generate Invoice

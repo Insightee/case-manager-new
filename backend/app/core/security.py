@@ -15,26 +15,107 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 ALGORITHM = "HS256"
 REFRESH_PREFIX = "refresh:"
 
+_REDIS_CONNECT_TIMEOUT_S = 2
+_REDIS_SOCKET_TIMEOUT_S = 2
 
+_redis_pool: redis.ConnectionPool | None = None
 _redis_client: redis.Redis | None = None
 _use_memory_refresh = False
+_memory_refresh: dict[str, str] = {}
+
+
+def reset_redis_client_for_tests() -> None:
+    """Clear cached Redis client between tests."""
+    global _redis_pool, _redis_client, _use_memory_refresh
+    _redis_pool = None
+    _redis_client = None
+    _use_memory_refresh = False
+    _memory_refresh.clear()
+
+
+def _allow_memory_refresh_fallback() -> bool:
+    return settings.is_development
+
+
+def _redis_pool_kwargs() -> dict[str, Any]:
+    return {
+        "decode_responses": True,
+        "socket_connect_timeout": _REDIS_CONNECT_TIMEOUT_S,
+        "socket_timeout": _REDIS_SOCKET_TIMEOUT_S,
+        "retry_on_timeout": True,
+        "health_check_interval": 30,
+    }
+
+
+def _try_connect_redis() -> redis.Redis | None:
+    global _redis_pool, _redis_client
+    try:
+        if _redis_pool is None:
+            _redis_pool = redis.ConnectionPool.from_url(settings.redis_url, **_redis_pool_kwargs())
+        if _redis_client is None:
+            _redis_client = redis.Redis(connection_pool=_redis_pool)
+        _redis_client.ping()
+        return _redis_client
+    except Exception:
+        _redis_client = None
+        if _redis_pool is not None:
+            try:
+                _redis_pool.disconnect()
+            except Exception:
+                pass
+        _redis_pool = None
+        return None
 
 
 def get_redis() -> redis.Redis | None:
-    global _redis_client, _use_memory_refresh
-    if _use_memory_refresh:
+    global _use_memory_refresh
+    if _use_memory_refresh and _allow_memory_refresh_fallback():
         return None
+    client = _try_connect_redis()
+    if client is not None:
+        return client
+    if not _allow_memory_refresh_fallback():
+        raise RuntimeError(
+            "REDIS_URL is required in production but Redis is unreachable. "
+            "Check Railway Redis plugin and REDIS_URL on the API service."
+        )
+    _use_memory_refresh = True
+    return None
+
+
+def warm_redis_connection() -> str:
+    """Probe Redis at startup; return status for health/logging."""
+    if settings.is_development and _use_memory_refresh:
+        return "memory_fallback"
     try:
-        if _redis_client is None:
-            _redis_client = redis.from_url(settings.redis_url, decode_responses=True)
-            _redis_client.ping()
-        return _redis_client
-    except Exception:
-        _use_memory_refresh = True
-        return None
+        client = get_redis()
+        if client is None:
+            return "memory_fallback" if _allow_memory_refresh_fallback() else "unavailable"
+        return "ok"
+    except RuntimeError:
+        return "fail"
 
 
-_memory_refresh: dict[str, str] = {}
+def ping_redis_for_health() -> str:
+    """Fast Redis check for /health (does not flip dev to memory fallback)."""
+    if _use_memory_refresh and _allow_memory_refresh_fallback():
+        return "memory_fallback"
+    client = _try_connect_redis()
+    if client is not None:
+        return "ok"
+    if _allow_memory_refresh_fallback():
+        return "memory_fallback"
+    return "fail"
+
+
+def verify_redis_at_startup() -> None:
+    """Fail fast in production when refresh-token Redis is not reachable."""
+    if settings.is_development:
+        warm_redis_connection()
+        return
+    status = ping_redis_for_health()
+    if status == "fail":
+        raise RuntimeError("REDIS_URL is required in production for refresh token storage")
 
 
 def hash_password(password: str) -> str:

@@ -199,16 +199,21 @@ def require_mutation_permission(permission: str):
     return checker
 
 
-def get_active_assignment(db: Session, case_id: int, therapist_user_id: int) -> CaseAssignment | None:
-    stmt = (
-        select(CaseAssignment)
-        .where(
-            CaseAssignment.case_id == case_id,
-            CaseAssignment.therapist_user_id == therapist_user_id,
-            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
-        )
-        .limit(1)
+def get_active_assignment(
+    db: Session,
+    case_id: int,
+    therapist_user_id: int,
+    *,
+    case_service_id: int | None = None,
+) -> CaseAssignment | None:
+    stmt = select(CaseAssignment).where(
+        CaseAssignment.case_id == case_id,
+        CaseAssignment.therapist_user_id == therapist_user_id,
+        CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
     )
+    if case_service_id is not None:
+        stmt = stmt.where(CaseAssignment.case_service_id == case_service_id)
+    stmt = stmt.limit(1)
     return db.scalars(stmt).first()
 
 

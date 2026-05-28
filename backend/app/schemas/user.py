@@ -68,3 +68,7 @@ class InviteCreate(BaseModel):
     org_capability_grants: Optional[dict] = None
     feature_overrides: Optional[dict] = None
     view_only: bool = False
+
+
+class AdminSetPassword(BaseModel):
+    password: str = Field(min_length=6)

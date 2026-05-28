@@ -17,6 +17,7 @@ from app.core.audit import log_audit
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.pagination import paginate_query, paginated_response
+from app.core.security import hash_password
 from app.schemas.pagination import PaginatedList
 from app.core.module_access import (
     get_allowed_case_product_modules,
@@ -86,7 +87,7 @@ from app.schemas.therapist_review import (
 )
 from app.schemas.allotment import CaseAllotRequest, ChildCreate, FamilyCreate
 from app.schemas.rbac import RbacPreviewRequest
-from app.schemas.user import InviteCreate, UserCreate, UserRead, UserUpdate
+from app.schemas.user import AdminSetPassword, InviteCreate, UserCreate, UserRead, UserUpdate
 from app.core.rbac_access import (
     ASSIGNABLE_STAFF_ROLES,
     DEPRECATED_STAFF_ROLES,
@@ -1605,6 +1606,33 @@ def deactivate_user(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=current.id, action="deactivate", entity_type="user", entity_id=user_id, **meta)
     db.commit()
+
+
+@router.post("/users/{user_id}/set-password", response_model=UserRead)
+def admin_set_user_password(
+    user_id: int,
+    payload: AdminSetPassword,
+    request: Request,
+    current: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    target.password_hash = hash_password(payload.password)
+    target.is_active = True
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=current.id,
+        action="admin_set_password",
+        entity_type="user",
+        entity_id=user_id,
+        **meta,
+    )
+    db.commit()
+    db.refresh(target)
+    return _user_to_read(target)
 
 
 @router.post("/therapists/invite")

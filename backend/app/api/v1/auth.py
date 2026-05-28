@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from datetime import datetime, timezone
+from hashlib import sha256
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ from app.core.database import get_db
 from app.core.security import decode_refresh_token, is_refresh_token_valid, revoke_refresh_token
 from app.models.role import Role
 from app.models.user import InviteToken, User
+from app.models.app_usage_chunk import AppUsageChunk
 from app.core.module_access import (
     clinical_product_modules_for_user,
     get_user_features,
@@ -343,8 +345,84 @@ class ActivityHeartbeat(BaseModel):
     portal: str
     route: Optional[str] = None
     active_seconds: int
+    idle_seconds: int = 0
+    hidden_seconds: int = 0
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
+    idempotency_key: Optional[str] = None
+
+
+class ActivityBatch(BaseModel):
+    chunks: list[ActivityHeartbeat]
+
+
+def _usage_idempotency_key(user_id: int, payload: ActivityHeartbeat) -> str:
+    if payload.idempotency_key and payload.idempotency_key.strip():
+        return payload.idempotency_key.strip()
+    started = payload.started_at.isoformat() if payload.started_at else "na"
+    ended = payload.ended_at.isoformat() if payload.ended_at else "na"
+    route = payload.route or ""
+    raw = f"{user_id}|{payload.session_id}|{payload.portal}|{route}|{started}|{ended}|{payload.active_seconds}|{payload.idle_seconds}|{payload.hidden_seconds}"
+    return sha256(raw.encode("utf-8")).hexdigest()[:64]
+
+
+def _persist_usage_chunk(
+    db: Session,
+    *,
+    user: User,
+    payload: ActivityHeartbeat,
+    request: Request,
+    write_legacy_audit: bool,
+) -> bool:
+    if payload.active_seconds <= 0:
+        raise HTTPException(status_code=400, detail="active_seconds must be positive")
+    idempotency_key = _usage_idempotency_key(user.id, payload)
+    existing = db.scalars(
+        select(AppUsageChunk.id).where(
+            AppUsageChunk.actor_user_id == user.id,
+            AppUsageChunk.idempotency_key == idempotency_key,
+        )
+    ).first()
+    if existing:
+        return False
+
+    chunk = AppUsageChunk(
+        actor_user_id=user.id,
+        session_id=payload.session_id,
+        portal=payload.portal,
+        route=payload.route,
+        active_seconds=payload.active_seconds,
+        idle_seconds=max(0, payload.idle_seconds or 0),
+        hidden_seconds=max(0, payload.hidden_seconds or 0),
+        chunk_started_at=payload.started_at,
+        chunk_ended_at=payload.ended_at or datetime.now(timezone.utc),
+        idempotency_key=idempotency_key,
+    )
+    db.add(chunk)
+    db.flush()
+
+    if write_legacy_audit:
+        meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="app_usage_heartbeat",
+            entity_type="app_usage",
+            entity_id=payload.session_id,
+            new_value={
+                "session_id": payload.session_id,
+                "portal": payload.portal,
+                "route": payload.route,
+                "active_seconds": payload.active_seconds,
+                "idle_seconds": max(0, payload.idle_seconds or 0),
+                "hidden_seconds": max(0, payload.hidden_seconds or 0),
+                "started_at": payload.started_at.isoformat() if payload.started_at else None,
+                "ended_at": payload.ended_at.isoformat() if payload.ended_at else None,
+                "idempotency_key": idempotency_key,
+            },
+            **meta,
+        )
+    return True
 
 
 @router.post("/activity")
@@ -354,27 +432,42 @@ def record_activity_heartbeat(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if payload.active_seconds <= 0:
-        raise HTTPException(status_code=400, detail="active_seconds must be positive")
-    meta = get_request_meta(request)
-    log_audit(
+    inserted = _persist_usage_chunk(
         db,
-        actor_user_id=user.id,
-        action="app_usage_heartbeat",
-        entity_type="app_usage",
-        entity_id=payload.session_id,
-        new_value={
-            "session_id": payload.session_id,
-            "portal": payload.portal,
-            "route": payload.route,
-            "active_seconds": payload.active_seconds,
-            "started_at": payload.started_at.isoformat() if payload.started_at else None,
-            "ended_at": payload.ended_at.isoformat() if payload.ended_at else None,
-        },
-        **meta,
+        user=user,
+        payload=payload,
+        request=request,
+        write_legacy_audit=True,
     )
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "inserted": inserted}
+
+
+@router.post("/activity/batch")
+def record_activity_batch(
+    payload: ActivityBatch,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not payload.chunks:
+        return {"ok": True, "inserted": 0, "duplicates": 0}
+    inserted = 0
+    duplicates = 0
+    for chunk in payload.chunks:
+        did_insert = _persist_usage_chunk(
+            db,
+            user=user,
+            payload=chunk,
+            request=request,
+            write_legacy_audit=False,
+        )
+        if did_insert:
+            inserted += 1
+        else:
+            duplicates += 1
+    db.commit()
+    return {"ok": True, "inserted": inserted, "duplicates": duplicates}
 
 
 @router.post("/me/avatar")

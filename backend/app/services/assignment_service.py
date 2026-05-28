@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.assignment import BookingMode, CaseAssignment, CaseAssignmentStatus
+from app.models.case import Case
+from app.services import case_service_service
 
 
 def list_assignments(db: Session, case_id: int) -> list[CaseAssignment]:
@@ -23,9 +25,76 @@ def create_assignment(
     reason_for_change: str | None = None,
     notes: str | None = None,
 ) -> CaseAssignment:
+    case = db.get(Case, case_id)
+    if not case:
+        raise ValueError("Case not found")
+    case_service = case_service_service.ensure_default_case_service(db, case)
+    # Compatibility path for legacy endpoint: preserve historical re-allot behavior.
+    return replace_assignment_in_service(
+        db,
+        case_id=case_id,
+        case_service_id=case_service.id,
+        therapist_user_id=therapist_user_id,
+        assigned_by_user_id=assigned_by_user_id,
+        start_date=start_date,
+        reason_for_change=reason_for_change,
+        notes=notes,
+    )
+
+
+def add_assignment_to_service(
+    db: Session,
+    *,
+    case_id: int,
+    case_service_id: int,
+    therapist_user_id: int,
+    assigned_by_user_id: int,
+    start_date: date,
+    reason_for_change: str | None = None,
+    notes: str | None = None,
+) -> CaseAssignment:
+    # Prevent duplicate active assignment for same therapist and service line.
+    duplicate_active = db.scalars(
+        select(CaseAssignment).where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.case_service_id == case_service_id,
+            CaseAssignment.therapist_user_id == therapist_user_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+    ).first()
+    if duplicate_active:
+        raise ValueError("Therapist already has an active assignment for this service line")
+
+    assignment = CaseAssignment(
+        case_id=case_id,
+        case_service_id=case_service_id,
+        therapist_user_id=therapist_user_id,
+        assigned_by_user_id=assigned_by_user_id,
+        start_date=start_date,
+        status=CaseAssignmentStatus.ACTIVE,
+        reason_for_change=reason_for_change,
+        notes=notes,
+    )
+    db.add(assignment)
+    db.flush()
+    return assignment
+
+
+def replace_assignment_in_service(
+    db: Session,
+    *,
+    case_id: int,
+    case_service_id: int,
+    therapist_user_id: int,
+    assigned_by_user_id: int,
+    start_date: date,
+    reason_for_change: str | None = None,
+    notes: str | None = None,
+) -> CaseAssignment:
     active = db.scalars(
         select(CaseAssignment).where(
             CaseAssignment.case_id == case_id,
+            CaseAssignment.case_service_id == case_service_id,
             CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
         )
     ).all()
@@ -36,6 +105,7 @@ def create_assignment(
 
     assignment = CaseAssignment(
         case_id=case_id,
+        case_service_id=case_service_id,
         therapist_user_id=therapist_user_id,
         assigned_by_user_id=assigned_by_user_id,
         start_date=start_date,
@@ -84,6 +154,7 @@ def assignment_to_read_dict(assignment: CaseAssignment, therapist_name: str | No
     return {
         "id": assignment.id,
         "case_id": assignment.case_id,
+        "case_service_id": assignment.case_service_id,
         "therapist_user_id": assignment.therapist_user_id,
         "therapist_name": therapist_name,
         "assigned_by_user_id": assignment.assigned_by_user_id,

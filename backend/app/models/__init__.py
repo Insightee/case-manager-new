@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from app.models.appointment_usage import CaseAppointmentUsage
+from app.models.app_usage_chunk import AppUsageChunk
 from app.models.assignment import BookingMode, CaseAssignment
 from app.models.attachment import Attachment
 from app.models.audit_event import AuditEvent
 from app.models.case import BillingType, Case, CompensationMode
+from app.models.case_service import CaseService, CaseServiceStatus
 from app.models.case_billing_preference import CaseBillingPreference
 from app.models.case_status_request import CaseStatusRequest, CaseStatusRequestStatus
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
@@ -77,6 +79,8 @@ __all__ = [
     "BillingLedger",
     "Organisation",
     "Case",
+    "CaseService",
+    "CaseServiceStatus",
     "BillingType",
     "CompensationMode",
     "CaseManagerMeeting",
@@ -85,6 +89,7 @@ __all__ = [
     "CaseAssignment",
     "BookingMode",
     "CaseAppointmentUsage",
+    "AppUsageChunk",
     "TherapySession",
     "DailyLog",
     "ObservationReport",

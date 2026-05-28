@@ -1,5 +1,36 @@
 const API_URL = import.meta.env.VITE_API_URL || ''
 
+const DEFAULT_TIMEOUT_MS = 30_000
+const requestMetrics = {
+  total: 0,
+  byPath: {},
+  slow: 0,
+  failures: 0,
+}
+
+function recordApiMetric(path, elapsedMs, ok) {
+  requestMetrics.total += 1
+  requestMetrics.byPath[path] = (requestMetrics.byPath[path] || 0) + 1
+  if (elapsedMs >= 1200) requestMetrics.slow += 1
+  if (!ok) requestMetrics.failures += 1
+  if (import.meta.env.DEV) {
+    globalThis.__insightcaseApiMetrics = requestMetrics
+  }
+}
+
+export function getApiBaseUrl() {
+  return API_URL
+}
+
+export function getApiMetricsSnapshot() {
+  return {
+    total: requestMetrics.total,
+    byPath: { ...requestMetrics.byPath },
+    slow: requestMetrics.slow,
+    failures: requestMetrics.failures,
+  }
+}
+
 export function getTokens() {
   return {
     access: localStorage.getItem('access_token'),
@@ -17,10 +48,40 @@ export function clearTokens() {
   localStorage.removeItem('refresh_token')
 }
 
+function timeoutErrorMessage() {
+  if (import.meta.env.DEV) {
+    const base = API_URL || 'http://localhost:8000 (via Vite proxy)'
+    return `Request timed out. Check that the API is running (${base}).`
+  }
+  return 'This is taking longer than expected. Check your connection and try again.'
+}
+
+export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = timeoutMs > 0 ? new AbortController() : null
+  const timer =
+    controller &&
+    setTimeout(() => {
+      controller.abort()
+    }, timeoutMs)
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller?.signal,
+    })
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(timeoutErrorMessage())
+    }
+    throw err
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 async function refreshAccess() {
   const { refresh } = getTokens()
   if (!refresh) return null
-  const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+  const res = await fetchWithTimeout(`${API_URL}/api/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refresh }),
@@ -32,7 +93,7 @@ async function refreshAccess() {
 }
 
 export async function apiFetch(path, options = {}) {
-  const { params, ...fetchOptions } = options
+  const { params, timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options
   let url = path
   if (params && typeof params === 'object') {
     const qs = new URLSearchParams()
@@ -47,12 +108,27 @@ export async function apiFetch(path, options = {}) {
   if (access) headers.Authorization = `Bearer ${access}`
 
   let res
+  const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
   try {
-    res = await fetch(`${API_URL}${url}`, { ...fetchOptions, headers })
-  } catch {
-    const hint = API_URL
-      ? `Cannot reach the API at ${API_URL}. Check that the server is running and CORS allows this site.`
-      : 'Cannot reach the API. For local dev: run the backend on port 8000 and open http://localhost:5173. For Vercel: set VITE_API_URL to your deployed API.'
+    res = await fetchWithTimeout(`${API_URL}${url}`, { ...fetchOptions, headers }, timeoutMs)
+  } catch (err) {
+    const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+    recordApiMetric(path, elapsed, false)
+    if (err?.message === timeoutErrorMessage()) throw err
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
+    const onVercel = /\.vercel\.app$/i.test(hostname)
+    const localDev = hostname === 'localhost' || hostname === '127.0.0.1'
+    let hint
+    if (!API_URL) {
+      hint =
+        'Cannot reach the API. Start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 — then refresh this page.'
+    } else if (onVercel) {
+      hint = `Cannot reach the API at ${API_URL}. If this is a Vercel preview URL, redeploy the API after the latest CORS fix, or use the production frontend URL. Also confirm VITE_API_URL on Vercel and CORS_ORIGINS on Railway.`
+    } else if (localDev) {
+      hint = `Cannot reach the API at ${API_URL}. Start the backend (cd backend && python3 -m uvicorn app.main:app --reload --port 8000), or clear VITE_API_URL in frontend/.env.local and restart npm run dev to use the Vite proxy.`
+    } else {
+      hint = `Cannot reach the API at ${API_URL}. Check that the server is running and CORS allows this site.`
+    }
     throw new Error(hint)
   }
 
@@ -60,7 +136,7 @@ export async function apiFetch(path, options = {}) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetch(`${API_URL}${url}`, { ...fetchOptions, headers })
+      res = await fetchWithTimeout(`${API_URL}${url}`, { ...fetchOptions, headers }, timeoutMs)
     }
     if (res.status === 401) {
       clearTokens()
@@ -69,6 +145,8 @@ export async function apiFetch(path, options = {}) {
   }
 
   if (!res.ok) {
+    const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+    recordApiMetric(path, elapsed, false)
     if (res.status === 502 || res.status === 503) {
       throw new Error(
         'Cannot reach the API server. Start the backend from the backend folder: uvicorn app.main:app --reload --port 8000',
@@ -81,23 +159,48 @@ export async function apiFetch(path, options = {}) {
   }
 
   if (res.status === 204) return null
+  const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+  recordApiMetric(path, elapsed, true)
   const contentType = res.headers.get('content-type') || ''
   if (contentType.includes('text/csv')) return res.text()
   return res.json()
 }
 
+export function apiPostKeepalive(path, payload) {
+  const headers = { 'Content-Type': 'application/json' }
+  const { access } = getTokens()
+  if (access) headers.Authorization = `Bearer ${access}`
+  const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  return fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    keepalive: true,
+  })
+    .then((res) => {
+      const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+      recordApiMetric(path, elapsed, res.ok)
+      return res
+    })
+    .catch((err) => {
+      const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
+      recordApiMetric(path, elapsed, false)
+      throw err
+    })
+}
+
 /** GET binary response with auth (for protected images). */
-export async function apiFetchBlob(path) {
+export async function apiFetchBlob(path, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const headers = {}
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
 
-  let res = await fetch(`${API_URL}${path}`, { headers })
+  let res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
   if (res.status === 401 && access) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetch(`${API_URL}${path}`, { headers })
+      res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
     }
   }
   if (!res.ok) {
@@ -162,17 +265,17 @@ export async function apiUpload(path, formData, { timeoutMs = 60000 } = {}) {
 }
 
 /** Authenticated download; triggers browser save via temporary object URL. */
-export async function apiDownload(path, filename) {
+export async function apiDownload(path, filename, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const headers = {}
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
 
-  let res = await fetch(`${API_URL}${path}`, { headers })
+  let res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
   if (res.status === 401 && access) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetch(`${API_URL}${path}`, { headers })
+      res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
     }
   }
   if (!res.ok) {

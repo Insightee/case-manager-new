@@ -69,7 +69,10 @@ export function NotificationBell({ portal }) {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 60000)
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      load()
+    }, 120000)
     return () => clearInterval(t)
   }, [])
 

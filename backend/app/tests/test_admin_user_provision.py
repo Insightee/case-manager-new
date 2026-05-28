@@ -76,3 +76,35 @@ def test_module_admin_can_create_super_admin_and_case_manager():
 
     cm_caseload = client.get("/api/v1/admin/cm/home", headers=_login(cm_email))
     assert cm_caseload.status_code == 200
+
+
+def test_admin_can_set_user_password_for_recovery():
+    import time
+
+    headers = _login("moduleadmin@demo.com")
+    ts = int(time.time())
+    email = f"recover.user.{ts}@demo.com"
+
+    create = client.post(
+        "/api/v1/admin/users",
+        headers=headers,
+        json={
+            "email": email,
+            "password": "demo123",
+            "full_name": "Recover User",
+            "role_names": ["THERAPIST"],
+            "module_assignments": ["homecare"],
+        },
+    )
+    assert create.status_code == 201, create.text
+    user_id = create.json()["id"]
+
+    set_pw = client.post(
+        f"/api/v1/admin/users/{user_id}/set-password",
+        headers=headers,
+        json={"password": "newpass123"},
+    )
+    assert set_pw.status_code == 200, set_pw.text
+
+    relogin = client.post("/api/v1/auth/login", json={"email": email, "password": "newpass123"})
+    assert relogin.status_code == 200, relogin.text

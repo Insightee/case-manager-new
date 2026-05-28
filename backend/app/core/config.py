@@ -29,11 +29,16 @@ class Settings(BaseSettings):
     seed_demo_data: bool = False
     database_url: str = Field(default_factory=default_sqlite_database_url)
     redis_url: str = "redis://localhost:6379/0"
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
     jwt_secret_key: str = "dev-secret-change-in-production"
     jwt_refresh_secret_key: str = "dev-refresh-secret-change-in-production"
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # Optional regex for extra browser origins (Vercel preview URLs). In production, a safe
+    # default for insightes-projects frontend previews is applied when this is unset.
+    cors_origin_regex: str = ""
     frontend_url: str = "http://localhost:5173"
     support_contact_email: str = "support@insighte.com"
     support_office_address: str = "Insighte Childcare, Koramangala, Bangalore 560034"
@@ -92,8 +97,18 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
+    def cors_origin_regex_effective(self) -> str | None:
+        explicit = (self.cors_origin_regex or "").strip()
+        if explicit:
+            return explicit
+        if self.is_development:
+            return None
+        # Vercel preview deploys: frontend-git-<branch>-insightes-projects.vercel.app
+        return r"https://frontend[a-zA-Z0-9-]*-insightes-projects\.vercel\.app"
+
+    @property
     def is_development(self) -> bool:
-        return self.app_env.lower() in ("development", "dev", "local")
+        return self.app_env.lower() in ("development", "dev", "local", "test")
 
     @property
     def is_sqlite(self) -> bool:

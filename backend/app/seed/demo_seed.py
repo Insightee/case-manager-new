@@ -49,6 +49,7 @@ from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.leave import LeaveType, LeaveStatus, TherapistLeave
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.core.permissions import get_active_assignment
+from app.services import case_service_service
 from app.services import slot_calendar_service as cal
 from app.models.incident import Incident, IncidentStatus
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
@@ -139,7 +140,20 @@ def ensure_active_case_assignment(
     start_date: date,
 ) -> None:
     """Idempotent: prod DBs may have ended or foreign assignments blocking book_slot."""
+    case = db.get(Case, case_id)
+    if not case:
+        return
+    default_service = case_service_service.ensure_default_case_service(db, case)
     if get_active_assignment(db, case_id, therapist_user_id):
+        row = db.scalars(
+            select(CaseAssignment).where(
+                CaseAssignment.case_id == case_id,
+                CaseAssignment.therapist_user_id == therapist_user_id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).first()
+        if row and not row.case_service_id:
+            row.case_service_id = default_service.id
         return
     row = db.scalars(
         select(CaseAssignment).where(
@@ -149,12 +163,14 @@ def ensure_active_case_assignment(
     ).first()
     if row:
         row.status = CaseAssignmentStatus.ACTIVE
+        row.case_service_id = row.case_service_id or default_service.id
         if row.start_date is None:
             row.start_date = start_date
     else:
         db.add(
             CaseAssignment(
                 case_id=case_id,
+                case_service_id=default_service.id,
                 therapist_user_id=therapist_user_id,
                 assigned_by_user_id=assigned_by_user_id,
                 start_date=start_date,

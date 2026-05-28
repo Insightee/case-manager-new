@@ -54,7 +54,11 @@ export function ReportEditPage() {
   const [localDraft, setLocalDraft] = useState(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const saveTimer = useRef(null)
+  const localDraftTimer = useRef(null)
   const skipAutosaveRef = useRef(true)
+  const AUTOSAVE_SERVER_MS = 90_000
+  const AUTOSAVE_LOCAL_MS = 2_000
+  const [serverVersionChanged, setServerVersionChanged] = useState(false)
   const isMobile = useIsMobilePortal()
 
   const editable =
@@ -79,9 +83,17 @@ export function ReportEditPage() {
         try {
           const parsed = JSON.parse(stored)
           setLocalDraft(parsed)
+          if (parsed.baseUpdatedAt && row.updated_at && parsed.baseUpdatedAt !== row.updated_at) {
+            setServerVersionChanged(true)
+          } else {
+            setServerVersionChanged(false)
+          }
         } catch {
           setLocalDraft(null)
+          setServerVersionChanged(false)
         }
+      } else {
+        setServerVersionChanged(false)
       }
       setBodyHtml(serverHtml)
       setPlanNextMonth(row.plan_next_month || '')
@@ -105,18 +117,19 @@ export function ReportEditPage() {
     load()
   }, [load])
 
-  function saveLocalDraft() {
+  function saveLocalDraft(silent = false) {
     const payload = {
       bodyHtml,
       planNextMonth,
       category,
       subCategory,
       month,
+      baseUpdatedAt: report?.updated_at || null,
       savedAt: new Date().toISOString(),
     }
     localStorage.setItem(draftKey(reportId), JSON.stringify(payload))
     setLocalDraft(payload)
-    setMessage('Draft saved on this device.')
+    if (!silent) setMessage('Draft saved on this device.')
   }
 
   function restoreLocalDraft() {
@@ -174,9 +187,12 @@ export function ReportEditPage() {
     if (!editable || loading || skipAutosaveRef.current) return
     setDirty(true)
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => persist(true), 2000)
+    saveTimer.current = setTimeout(() => persist(true), AUTOSAVE_SERVER_MS)
+    if (localDraftTimer.current) clearTimeout(localDraftTimer.current)
+    localDraftTimer.current = setTimeout(() => saveLocalDraft(true), AUTOSAVE_LOCAL_MS)
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current)
+      if (localDraftTimer.current) clearTimeout(localDraftTimer.current)
     }
   }, [bodyHtml, planNextMonth, category, subCategory, month, editable, loading, persist])
 
@@ -383,6 +399,12 @@ export function ReportEditPage() {
       {localDraft ? (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
           Local draft from {localDraft.savedAt ? new Date(localDraft.savedAt).toLocaleString() : 'this device'}.
+          {serverVersionChanged ? (
+            <p className="mt-2 text-amber-700">
+              Newer server version detected. Restoring draft will merge locally and will not overwrite server content
+              silently.
+            </p>
+          ) : null}
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" className="text-sm font-semibold underline" onClick={restoreLocalDraft}>
               Restore draft

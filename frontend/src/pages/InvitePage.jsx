@@ -4,8 +4,6 @@ import { apiFetch } from '../lib/apiClient.js'
 import { setTokens } from '../lib/apiClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
 
-const API_URL = import.meta.env.VITE_API_URL || ''
-
 const ROLE_LABELS = {
   PARENT: { sub: 'Set your password to activate your family account.', cta: 'Activate account' },
   THERAPIST: { sub: 'Set your password to join as a therapist.', cta: 'Create account' },
@@ -55,25 +53,19 @@ export function InvitePage() {
     setError('')
     setSubmitting(true)
     try {
-      const res = await fetch(`${API_URL}/api/v1/auth/accept-invite`, {
+      const body = await apiFetch('/api/v1/auth/accept-invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, full_name: fullName.trim(), password }),
       })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        // "User already exists" → prompt to sign in
-        if (body.detail?.toLowerCase().includes('already exists')) {
-          setError('An account with this email already exists. Please sign in instead.')
-          return
-        }
-        throw new Error(body.detail || 'Could not activate account')
-      }
       // Store tokens and reload auth — then navigate to the right portal
       setTokens(body.access_token, body.refresh_token)
       await reload()
       navigate('/', { replace: true })
     } catch (err) {
+      if ((err.message || '').toLowerCase().includes('already exists')) {
+        setError('An account with this email already exists. Please sign in instead.')
+        return
+      }
       setError(err.message)
     } finally {
       setSubmitting(false)
@@ -92,8 +84,8 @@ export function InvitePage() {
           </p>
           {previewError ? <p className="login-error">{previewError}</p> : null}
           {preview?.email ? (
-            <p className="login-sub" style={{ fontSize: '0.85rem' }}>
-              Signing in as <strong>{preview.email}</strong>
+            <p className="login-sub" style={{ fontSize: '0.9rem' }}>
+              Activating account for <strong>{preview.email}</strong>
             </p>
           ) : null}
 

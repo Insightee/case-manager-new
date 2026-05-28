@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { clearLogDraft, getLogDraft, saveLogDraft } from '../../lib/logDraftStore.js'
+import { clearLogDraft, getLogDraft, listPendingDrafts, markDraftSynced, saveLogDraft } from '../../lib/logDraftStore.js'
 import {
   formatSessionTimeRange,
   isLogEditable,
@@ -57,6 +57,9 @@ export function SubmitSessionLogForm({
   const [error, setError] = useState('')
   const [draftNote, setDraftNote] = useState('')
   const draftTimer = useRef(null)
+  const serverAutosaveTimer = useRef(null)
+  const [serverAutosaveState, setServerAutosaveState] = useState('idle')
+  const [dirtySinceServerSave, setDirtySinceServerSave] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -85,6 +88,30 @@ export function SubmitSessionLogForm({
   }, [existingLog?.id, session?.id])
 
   useEffect(() => {
+    let cancelled = false
+    async function replayPending() {
+      const pending = await listPendingDrafts().catch(() => [])
+      for (const draft of pending) {
+        if (cancelled || !draft?.sync_payload?.session_id) break
+        try {
+          await apiFetch('/api/v1/daily-logs', {
+            method: 'POST',
+            body: JSON.stringify(draft.sync_payload),
+          })
+          await markDraftSynced(draft.sessionId).catch(() => {})
+          await clearLogDraft(draft.sessionId).catch(() => {})
+        } catch {
+          // Keep pending draft for next retry.
+        }
+      }
+    }
+    replayPending()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (!session?.id || isEdit) return undefined
     if (draftTimer.current) clearTimeout(draftTimer.current)
     draftTimer.current = setTimeout(() => {
@@ -95,6 +122,32 @@ export function SubmitSessionLogForm({
       if (draftTimer.current) clearTimeout(draftTimer.current)
     }
   }, [form, session?.id, isEdit])
+
+  useEffect(() => {
+    if (!isEdit || !existingLog?.id || !editable) return undefined
+    if (!dirtySinceServerSave) return undefined
+    if (serverAutosaveTimer.current) clearTimeout(serverAutosaveTimer.current)
+    serverAutosaveTimer.current = setTimeout(async () => {
+      try {
+        setServerAutosaveState('saving')
+        const saved = await apiFetch(`/api/v1/daily-logs/${existingLog.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            ...form,
+            late_reason: form.late_reason || undefined,
+          }),
+        })
+        setServerAutosaveState('synced')
+        setDirtySinceServerSave(false)
+        onSuccess?.(saved)
+      } catch {
+        setServerAutosaveState('retry_pending')
+      }
+    }, 60_000)
+    return () => {
+      if (serverAutosaveTimer.current) clearTimeout(serverAutosaveTimer.current)
+    }
+  }, [isEdit, existingLog?.id, editable, dirtySinceServerSave, form, onSuccess])
 
   const isLateSession = useMemo(() => {
     if (!session?.scheduled_date) return false
@@ -144,7 +197,11 @@ export function SubmitSessionLogForm({
       onSuccess?.(saved)
     } catch (err) {
       if (session?.id) {
-        await saveLogDraft(session.id, { ...form, sync_status: 'pending_sync' }).catch(() => {})
+        await saveLogDraft(session.id, {
+          ...form,
+          sync_status: 'pending_sync',
+          sync_payload: { session_id: session.id, ...body },
+        }).catch(() => {})
         setDraftNote('Saved on device — will sync when you’re back online')
       }
       setError(err.message || 'Could not save log')
@@ -229,7 +286,10 @@ export function SubmitSessionLogForm({
                   name="attendance"
                   value={a.value}
                   checked={form.attendance_status === a.value}
-                  onChange={() => setForm({ ...form, attendance_status: a.value })}
+                  onChange={() => {
+                    setForm({ ...form, attendance_status: a.value })
+                    setDirtySinceServerSave(true)
+                  }}
                 />
                 <span>{a.label}</span>
               </label>
@@ -250,7 +310,10 @@ export function SubmitSessionLogForm({
               <span className="ic-session-log-field__hint">{hint}</span>
               <textarea
                 value={form[key]}
-                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, [key]: e.target.value })
+                  setDirtySinceServerSave(true)
+                }}
                 rows={rows}
                 required={fieldRequired}
               />
@@ -270,7 +333,10 @@ export function SubmitSessionLogForm({
             <textarea
               required
               value={form.late_reason}
-              onChange={(e) => setForm({ ...form, late_reason: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, late_reason: e.target.value })
+                setDirtySinceServerSave(true)
+              }}
               rows={3}
               placeholder="e.g. Session completed offline; submitting after travel."
             />
@@ -295,6 +361,17 @@ export function SubmitSessionLogForm({
         {required ? (
           <p className="ic-session-log-form__footnote">
             “Finish later” keeps this visit in <strong>Needs log</strong> until you submit.
+          </p>
+        ) : null}
+        {isEdit ? (
+          <p className="ic-session-log-form__footnote">
+            {serverAutosaveState === 'saving'
+              ? 'Saving…'
+              : serverAutosaveState === 'retry_pending'
+                ? 'Saved locally. Retry pending.'
+                : serverAutosaveState === 'synced'
+                  ? 'Synced'
+                  : 'Saved locally'}
           </p>
         ) : null}
       </form>

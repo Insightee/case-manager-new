@@ -39,6 +39,21 @@ def validate_production_settings() -> None:
             "STORAGE_PROVIDER must be 'r2' in production so PHI uploads are not stored on disk "
             "(set R2_* env vars; see backend/.env.example)"
         )
+    elif provider == "r2":
+        from app.storage.factory import _validate_r2_settings
+
+        try:
+            _validate_r2_settings()
+        except RuntimeError as exc:
+            errors.append(str(exc))
+
+    redis_url = (settings.redis_url or "").strip()
+    if not redis_url.startswith(("redis://", "rediss://")):
+        errors.append(
+            "REDIS_URL must be set to a Redis URL (redis:// or rediss://) in production for refresh tokens"
+        )
+    elif "localhost" in redis_url or "127.0.0.1" in redis_url:
+        errors.append("REDIS_URL must not point at localhost in production")
 
     cors = settings.cors_origin_list
     if not cors or all("localhost" in o or "127.0.0.1" in o for o in cors):
@@ -65,14 +80,6 @@ def validate_production_settings() -> None:
     if errors:
         detail = "\n".join(f"  - {e}" for e in errors)
         raise RuntimeError(f"Production configuration invalid:\n{detail}")
-
-    if not (settings.redis_url or "").strip().startswith("redis://"):
-        import logging
-
-        logging.getLogger("insightcase").warning(
-            "REDIS_URL is unset in production; refresh tokens use in-memory storage "
-            "(not safe with multiple API replicas)."
-        )
 
     from app.services.email.service import is_smtp_configured
 

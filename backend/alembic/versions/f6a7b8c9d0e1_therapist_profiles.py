@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect
 
 revision: str = "f6a7b8c9d0e1"
 down_revision: Union[str, None] = "e5f6a7b8c9d0"
@@ -17,32 +18,37 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "therapist_profiles",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("display_name", sa.String(length=255), nullable=True),
-        sa.Column("short_bio", sa.Text(), nullable=True),
-        sa.Column("academic_qualifications", sa.Text(), nullable=True),
-        sa.Column("professional_certificates", sa.JSON(), nullable=True),
-        sa.Column("services_offered", sa.JSON(), nullable=True),
-        sa.Column(
-            "status",
-            sa.Enum("DRAFT", "PENDING", "APPROVED", "PAUSED", name="therapistprofilestatus"),
-            nullable=False,
-        ),
-        sa.Column("admin_note", sa.Text(), nullable=True),
-        sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("reviewed_by_user_id", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=True),
-        sa.ForeignKeyConstraint(["reviewed_by_user_id"], ["users.id"]),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("user_id"),
-    )
-    op.create_index("ix_therapist_profiles_user_id", "therapist_profiles", ["user_id"])
+    bind = op.get_bind()
+    insp = inspect(bind)
+    if not insp.has_table("therapist_profiles"):
+        op.create_table(
+            "therapist_profiles",
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("user_id", sa.Integer(), nullable=False),
+            sa.Column("display_name", sa.String(length=255), nullable=True),
+            sa.Column("short_bio", sa.Text(), nullable=True),
+            sa.Column("academic_qualifications", sa.Text(), nullable=True),
+            sa.Column("professional_certificates", sa.JSON(), nullable=True),
+            sa.Column("services_offered", sa.JSON(), nullable=True),
+            sa.Column(
+                "status",
+                sa.Enum("DRAFT", "PENDING", "APPROVED", "PAUSED", name="therapistprofilestatus"),
+                nullable=False,
+            ),
+            sa.Column("admin_note", sa.Text(), nullable=True),
+            sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("reviewed_by_user_id", sa.Integer(), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=True),
+            sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=True),
+            sa.ForeignKeyConstraint(["reviewed_by_user_id"], ["users.id"]),
+            sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
+            sa.PrimaryKeyConstraint("id"),
+            sa.UniqueConstraint("user_id"),
+        )
+    idx = {i["name"] for i in insp.get_indexes("therapist_profiles")} if insp.has_table("therapist_profiles") else set()
+    if "ix_therapist_profiles_user_id" not in idx:
+        op.create_index("ix_therapist_profiles_user_id", "therapist_profiles", ["user_id"])
 
 
 def downgrade() -> None:

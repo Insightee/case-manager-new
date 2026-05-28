@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { getScheduleCache, isScheduleCacheFresh, setScheduleCache } from '../../lib/scheduleCache.js'
 import { WeekCalendarGrid } from './WeekCalendarGrid.jsx'
 import { DayCalendarGrid } from './DayCalendarGrid.jsx'
 import { MonthCalendarGrid } from './MonthCalendarGrid.jsx'
@@ -77,13 +78,25 @@ export function TherapistCalendar({
       setLoading(false)
       return
     }
-    setLoading(true)
+    const cacheParams = { apiPrefix, therapistId, caseId, fromDate, toDate }
+    const cached = getScheduleCache(cacheParams)
+    if (cached?.calendar) {
+      setCalendar(cached.calendar)
+      setLoading(false)
+      onCalendarLoad?.(cached.calendar)
+      if (isScheduleCacheFresh(cached) && !refreshKey) {
+        return
+      }
+    } else {
+      setLoading(true)
+    }
     setError('')
     const tid = therapistId ? `&therapist_id=${therapistId}` : ''
     const cid = caseId ? `&case_id=${caseId}` : ''
     try {
       const data = await apiFetch(`${apiPrefix}/calendar?from_date=${fromDate}&to_date=${toDate}${tid}${cid}`)
       setCalendar(data)
+      setScheduleCache(cacheParams, data)
       onCalendarLoad?.(data)
     } catch (err) {
       setError(err.message || 'Could not load calendar')

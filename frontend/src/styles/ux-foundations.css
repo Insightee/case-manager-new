@@ -120,7 +120,8 @@
 }
 
 @media (max-width: 900px) {
-  .app-mobile-tabs:not(.app-mobile-tabs--compact) {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .app-mobile-tabs__link--menu {
+    min-height: 44px;
+    touch-action: manipulation;
   }
 }

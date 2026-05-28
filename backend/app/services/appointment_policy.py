@@ -81,15 +81,16 @@ def can_parent_reschedule(slot: TherapistSlot, case_id: int, db: Session) -> Pol
 
 
 def get_active_assignment_for_case(
-    db: Session, case_id: int, therapist_user_id: int
+    db: Session, case_id: int, therapist_user_id: int, *, case_service_id: int | None = None
 ) -> CaseAssignment | None:
-    return db.scalars(
-        select(CaseAssignment).where(
-            CaseAssignment.case_id == case_id,
-            CaseAssignment.therapist_user_id == therapist_user_id,
-            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
-        )
-    ).first()
+    stmt = select(CaseAssignment).where(
+        CaseAssignment.case_id == case_id,
+        CaseAssignment.therapist_user_id == therapist_user_id,
+        CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+    )
+    if case_service_id is not None:
+        stmt = stmt.where(CaseAssignment.case_service_id == case_service_id)
+    return db.scalars(stmt).first()
 
 
 def _time_in_range(t: time, start: time, end: time) -> bool:

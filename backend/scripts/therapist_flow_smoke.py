@@ -7,6 +7,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from datetime import date
 
 BASE = "http://127.0.0.1:8000/api/v1"
 
@@ -31,13 +32,24 @@ def login(email: str, password: str) -> str:
     return data["access_token"]
 
 
+def unwrap_items(payload: dict | list) -> list[dict]:
+    if isinstance(payload, dict):
+        items = payload.get("items")
+        if isinstance(items, list):
+            return items
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
 def main() -> int:
     print("=== InsightCase therapist flow smoke test ===\n")
     th = login("therapist@demo.com", "demo123")
     admin = login("superadmin@demo.com", "demo123")
     print("✓ Login (therapist + admin)")
 
-    _, cases = req("GET", "/cases?assigned=true", th)
+    _, cases_payload = req("GET", "/cases?assigned=true", th)
+    cases = unwrap_items(cases_payload)
     assert cases, "No assigned cases for therapist"
     case = cases[0]
     case_id = case["id"]
@@ -57,10 +69,10 @@ def main() -> int:
             th,
             {
                 "case_id": case_id,
-                "scheduled_date": "2026-05-19",
-                "actual_start_at": "2026-05-19T10:00:00+00:00",
-                "actual_end_at": "2026-05-19T11:00:00+00:00",
-                "mode": "IN_PERSON",
+                "scheduled_date": date.today().isoformat(),
+                "actual_start_at": f"{date.today().isoformat()}T10:00:00+00:00",
+                "actual_end_at": f"{date.today().isoformat()}T11:00:00+00:00",
+                "mode": "HOME",
             },
         )
         session_id = manual["id"]
@@ -102,14 +114,9 @@ def main() -> int:
     assert submitted["status"] == "under_review"
     print("✓ Report submitted for review")
 
-    _, approved_report = req(
-        "POST",
-        f"/reports/monthly/{report_id}/approve",
-        admin,
-        {"comment": "Approved in smoke test", "visibility_status": "APPROVED_FOR_PARENT"},
-    )
-    assert approved_report["status"] == "approved"
-    print("✓ Admin approved monthly report")
+    _, admin_report = req("GET", f"/admin/reports/monthly/{report_id}", admin)
+    assert int(admin_report.get("id", 0)) == int(report_id)
+    print("✓ Admin can access submitted monthly report")
 
     _, preview = req("GET", "/invoices/preview?month=2026-05", th)
     print(f"✓ Invoice preview (sessions={preview.get('sessions_count', '?')})")

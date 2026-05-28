@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { apiFetch } from '../lib/apiClient.js'
 import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
 import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
+import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
 import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
@@ -217,8 +217,12 @@ export function PortalShell({ portal }) {
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [activeElapsedSeconds, setActiveElapsedSeconds] = useState(0)
-  const usageFlushRef = useRef(() => {})
+  const { activeElapsedSeconds, syncState } = useAppUsageTracker({
+    enabled: portal === 'admin' && !!user?.id,
+    userId: user?.id,
+    portal: 'admin',
+    routePath: location.pathname,
+  })
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- close overlays on route change
@@ -248,80 +252,6 @@ export function PortalShell({ portal }) {
     if (portal !== 'therapist' || !user?.id) return
     const actionId = actionIdFromPath(location.pathname)
     if (actionId) recordTherapistAction(user.id, actionId)
-  }, [portal, user?.id, location.pathname])
-
-  useEffect(() => {
-    if (portal !== 'admin' || !user?.id) {
-      setActiveElapsedSeconds(0)
-      usageFlushRef.current = () => {}
-      return undefined
-    }
-
-    const sessionId = globalThis.crypto?.randomUUID?.() || `sess-${Date.now()}-${user.id}`
-    const sessionStartedAt = new Date().toISOString()
-    let bufferedActiveSeconds = 0
-    let lastInteractionAt = Date.now()
-    let heartbeatBusy = false
-    let stopped = false
-    const IDLE_MS = 60_000
-    const HEARTBEAT_SECONDS = 30
-
-    function markInteraction() {
-      lastInteractionAt = Date.now()
-    }
-
-    const activityEvents = ['pointerdown', 'mousemove', 'keydown', 'scroll', 'touchstart']
-    for (const eventName of activityEvents) {
-      window.addEventListener(eventName, markInteraction, { passive: true })
-    }
-    window.addEventListener('focus', markInteraction)
-
-    const flushHeartbeat = () => {
-      if (heartbeatBusy || bufferedActiveSeconds <= 0 || stopped) return
-      heartbeatBusy = true
-      const payload = {
-        session_id: sessionId,
-        portal: 'admin',
-        route: location.pathname,
-        active_seconds: bufferedActiveSeconds,
-        started_at: sessionStartedAt,
-        ended_at: new Date().toISOString(),
-      }
-      bufferedActiveSeconds = 0
-      apiFetch('/api/v1/auth/activity', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-        .catch(() => {})
-        .finally(() => {
-          heartbeatBusy = false
-        })
-    }
-
-    usageFlushRef.current = flushHeartbeat
-
-    const intervalId = window.setInterval(() => {
-      const now = Date.now()
-      const isVisible = document.visibilityState === 'visible'
-      const isFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true
-      const isActive = isVisible && isFocused && now - lastInteractionAt < IDLE_MS
-      if (!isActive) return
-      setActiveElapsedSeconds((v) => v + 1)
-      bufferedActiveSeconds += 1
-      if (bufferedActiveSeconds >= HEARTBEAT_SECONDS) {
-        flushHeartbeat()
-      }
-    }, 1000)
-
-    return () => {
-      stopped = true
-      window.clearInterval(intervalId)
-      for (const eventName of activityEvents) {
-        window.removeEventListener(eventName, markInteraction)
-      }
-      window.removeEventListener('focus', markInteraction)
-      flushHeartbeat()
-    }
   }, [portal, user?.id, location.pathname])
 
   const subtitle = PORTAL_LABELS[portal] || 'Portal'
@@ -527,6 +457,8 @@ export function PortalShell({ portal }) {
             <div className="app-sidebar__usage-widget" aria-live="polite">
               <span className="app-sidebar__usage-label">Time on app</span>
               <strong className="app-sidebar__usage-value">{activeDurationLabel}</strong>
+              {syncState === 'syncing' ? <small className="app-sidebar__usage-label">Syncing…</small> : null}
+              {syncState === 'retry_pending' ? <small className="app-sidebar__usage-label">Retry pending</small> : null}
             </div>
           ) : null}
           {profilePath ? (

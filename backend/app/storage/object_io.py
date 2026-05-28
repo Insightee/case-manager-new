@@ -87,6 +87,29 @@ def delete_stored_object(file_path: str, *, storage_provider: str | None = None)
             return
 
 
+def object_exists(file_path: str, *, storage_provider: str | None = None) -> bool:
+    if is_object_store_key(file_path):
+        return get_storage_backend_for_provider(storage_provider).exists(file_path)
+    return any(candidate.is_file() for candidate in _legacy_disk_candidates(file_path))
+
+
+def generate_signed_upload_url(
+    category: str,
+    *segments: str,
+    filename: str,
+    content_type: str,
+    expires_seconds: int = 300,
+) -> tuple[str, str]:
+    from app.storage.keys import build_object_key
+
+    backend = get_storage_backend()
+    if not hasattr(backend, "presign_put"):
+        raise HTTPException(status_code=400, detail="Signed uploads are not enabled for current storage provider")
+    key = build_object_key(category, *segments, filename=filename)
+    url = backend.presign_put(key, content_type=content_type, expires_seconds=expires_seconds)
+    return key, url
+
+
 def stored_file_response(
     file_path: str,
     *,

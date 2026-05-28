@@ -440,6 +440,7 @@ def list_bookable_cases_for_therapist(db: Session, therapist_user_id: int) -> li
             svc = case_service_address_read(a.case)
             entry = {
                 "case_id": a.case_id,
+                "case_service_id": a.case_service_id,
                 "case_code": a.case.case_code,
                 "child_name": a.case.child.full_name if a.case.child else None,
                 "product_module": a.case.product_module,

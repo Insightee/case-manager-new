@@ -163,6 +163,26 @@ export function AdminUsersPage() {
     }
   }
 
+  async function setPasswordForUser(userId, email) {
+    const nextPassword = window.prompt(`Set a new password for ${email} (min 6 characters):`)
+    if (!nextPassword) return
+    if (nextPassword.length < 6) {
+      setError('Password must be at least 6 characters')
+      return
+    }
+    setError('')
+    setSuccess('')
+    try {
+      await apiFetch(`/api/v1/admin/users/${userId}/set-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password: nextPassword }),
+      })
+      setSuccess(`Password updated for ${email}.`)
+    } catch (err) {
+      setError(err.message || 'Could not update password')
+    }
+  }
+
   const needsFullName = mode === 'direct'
   const needsPassword = mode === 'direct'
 
@@ -341,6 +361,14 @@ export function AdminUsersPage() {
                             onClick={() => (editingId === u.id ? setEditingId(null) : startEditModules(u))}
                           >
                             {editingId === u.id ? 'Cancel' : 'Modules'}
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--ghost admin-btn--sm"
+                            style={{ marginLeft: 8 }}
+                            onClick={() => setPasswordForUser(u.id, u.email)}
+                          >
+                            Set password
                           </button>
                         </td>
                       </tr>

@@ -31,6 +31,7 @@ from app.api.v1 import (
     client_billing,
     ledger_billing,
     case_documents,
+    case_services,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -38,6 +39,7 @@ api_router.include_router(auth.router)
 api_router.include_router(notifications.router)
 api_router.include_router(cm_meetings.router)
 api_router.include_router(cases.router)
+api_router.include_router(case_services.router)
 api_router.include_router(assignments.router)
 api_router.include_router(sessions.router)
 api_router.include_router(daily_logs.router)

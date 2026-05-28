@@ -46,13 +46,40 @@ cd backend && sh scripts/verify_railway_token.sh
 
 Or use browser login: `npx @railway/cli login` (no token needed for local `link` / vars).
 
+### Railway API environment variables (`case-manager-new` service)
+
+| Variable | Required | Notes |
+|----------|----------|--------|
+| `APP_ENV` | yes | `production` |
+| `SEED_DEMO_DATA` | yes | `false` or unset |
+| `DATABASE_URL` | yes | `${{Postgres.DATABASE_URL}}` |
+| `REDIS_URL` | yes | `${{Redis.REDIS_URL}}` — startup fails if missing/unreachable |
+| `WEB_CONCURRENCY` | yes | `3` (use `2`–`4`); uvicorn workers in `start-production.sh` |
+| `DB_POOL_SIZE` | yes | `10` per worker |
+| `DB_MAX_OVERFLOW` | yes | `20` per worker; keep `WEB_CONCURRENCY × (DB_POOL_SIZE + DB_MAX_OVERFLOW)` below Postgres `max_connections` (default `3×30=90`) |
+| `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY` | yes | Strong unique values |
+| `STORAGE_PROVIDER` | yes | `r2` + all `R2_*` vars |
+| `FRONTEND_URL`, `CORS_ORIGINS` | yes | Vercel production URL (not localhost-only) |
+| `EMAIL_PROVIDER`, `SMTP_*` | yes | ZeptoMail on Railway only |
+
+Template: [`backend/env.railway.example`](../backend/env.railway.example).
+
+### Vercel UI environment variables (`insightes-projects/frontend`)
+
+| Variable | Required | Notes |
+|----------|----------|--------|
+| `VITE_API_URL` | yes | Railway API URL, no trailing slash |
+
+Do **not** set backend vars on Vercel. Cleanup: [`scripts/vercel_clean_backend_env_api.py`](../scripts/vercel_clean_backend_env_api.py).
+
 ### Dashboard checklist (API service)
 
 1. **Postgres** plugin → set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the API service.
-2. Copy variables from [`backend/env.railway.example`](../backend/env.railway.example) (JWT, SMTP, CORS, R2). R2 detail: [`CLOUDFLARE_R2.md`](CLOUDFLARE_R2.md).
-3. **Root directory** for GitHub deploy: `backend` *or* repo root with root `railway.toml` (Dockerfile `backend/Dockerfile`).
-4. **Start command:** `sh scripts/start-production.sh` (see [`backend/railway.toml`](../backend/railway.toml)).
-5. **Networking** → generate public domain → use that URL as `VITE_API_URL` on Vercel.
+2. **Redis** plugin → set `REDIS_URL=${{Redis.REDIS_URL}}` on the API service.
+3. Copy variables from [`backend/env.railway.example`](../backend/env.railway.example) (JWT, SMTP, CORS, R2). R2 detail: [`CLOUDFLARE_R2.md`](CLOUDFLARE_R2.md).
+4. **Root directory** for GitHub deploy: `backend` *or* repo root with root `railway.toml` (Dockerfile `backend/Dockerfile`).
+5. **Start command:** `sh scripts/start-production.sh` (see [`backend/railway.toml`](../backend/railway.toml)).
+6. **Networking** → generate public domain → use that URL as `VITE_API_URL` on Vercel.
 
 ### One-shot CLI (SMTP + CORS)
 

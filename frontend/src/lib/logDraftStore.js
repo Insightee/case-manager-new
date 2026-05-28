@@ -31,6 +31,7 @@ export async function saveLogDraft(sessionId, fields) {
   const record = {
     sessionId: Number(sessionId),
     fields,
+    sync_payload: fields.sync_payload || null,
     updated_at: new Date().toISOString(),
     sync_status: fields.sync_status || 'local',
   }
@@ -62,5 +63,27 @@ export async function listPendingDrafts() {
       resolve(all.filter((d) => d.sync_status === 'pending_sync'))
     }
     req.onerror = () => reject(req.error)
+  })
+}
+
+export async function markDraftSynced(sessionId) {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite')
+    const store = tx.objectStore(STORE)
+    const getReq = store.get(Number(sessionId))
+    getReq.onsuccess = () => {
+      const row = getReq.result
+      if (!row) {
+        resolve(false)
+        return
+      }
+      row.sync_status = 'synced'
+      row.synced_at = new Date().toISOString()
+      const putReq = store.put(row)
+      putReq.onsuccess = () => resolve(true)
+      putReq.onerror = () => reject(putReq.error)
+    }
+    getReq.onerror = () => reject(getReq.error)
   })
 }

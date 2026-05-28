@@ -59,3 +59,15 @@ class R2StorageBackend:
             if code in ("404", "NoSuchKey", "NotFound"):
                 return False
             raise
+
+    def presign_put(self, key: str, *, content_type: str, expires_seconds: int = 300) -> str:
+        return self._client.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": self._bucket,
+                "Key": key,
+                "ContentType": content_type,
+            },
+            ExpiresIn=expires_seconds,
+            HttpMethod="PUT",
+        )

@@ -466,7 +466,7 @@ export function MonthlyReportsPage() {
       <button
         type="button"
         onClick={() => setDraftOpen(true)}
-        className="fixed bottom-6 right-5 z-50 flex h-14 items-center gap-2 rounded-full bg-indigo-600 px-5 text-sm font-bold text-white shadow-[0_8px_30px_rgba(79,70,229,0.45)] transition hover:scale-[1.03] hover:bg-indigo-700 xl:hidden"
+        className="portal-mobile-fab fixed bottom-6 right-5 z-50 flex h-14 min-h-[44px] items-center gap-2 rounded-full bg-indigo-600 px-5 text-sm font-bold text-white shadow-[0_8px_30px_rgba(79,70,229,0.45)] transition hover:scale-[1.03] hover:bg-indigo-700 xl:hidden"
         aria-label="Create report"
       >
         + Create Report

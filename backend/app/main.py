@@ -13,6 +13,8 @@ from app.core.config import settings
 from app.core.database import ensure_sqlite_schema_patches
 from app.core.db_errors import raise_db_write_http_error
 from app.core.production_checks import validate_production_settings
+from app.core.request_middleware import RequestIdMiddleware
+from app.core.security import ping_redis_for_health, verify_redis_at_startup, warm_redis_connection
 from app.db.bootstrap import bootstrap_schema
 
 app = FastAPI(title="InsightCase API", version="0.1.0")
@@ -99,22 +101,60 @@ def _maybe_seed_demo_on_empty_db() -> None:
     log.info("Demo seed completed")
 
 
+_sqlite_patches_applied = False
+
+
+def _apply_sqlite_patches_if_needed() -> None:
+    global _sqlite_patches_applied
+    if _sqlite_patches_applied:
+        return
+    if settings.is_sqlite and settings.is_development:
+        import os
+
+        lazy = os.environ.get("LAZY_SQLITE_PATCHES", "true").lower() in ("1", "true", "yes")
+        if lazy:
+            return
+    ensure_sqlite_schema_patches()
+    _sqlite_patches_applied = True
+
+
 @app.on_event("startup")
 def _on_startup() -> None:
     validate_production_settings()
+    verify_redis_at_startup()
     bootstrap_schema()
-    ensure_sqlite_schema_patches()
+    _apply_sqlite_patches_if_needed()
     _maybe_seed_demo_on_empty_db()
     _verify_sqlite_writable()
     _log_schema_health()
+    import logging
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    logging.getLogger("insightcase").info("Redis startup status: %s", warm_redis_connection())
+
+
+@app.middleware("http")
+async def _sqlite_patches_middleware(request: Request, call_next):
+    if settings.is_sqlite and settings.is_development:
+        import os
+
+        if os.environ.get("LAZY_SQLITE_PATCHES", "true").lower() in ("1", "true", "yes"):
+            global _sqlite_patches_applied
+            if not _sqlite_patches_applied:
+                ensure_sqlite_schema_patches()
+                _sqlite_patches_applied = True
+    return await call_next(request)
+
+_cors_kwargs: dict = {
+    "allow_origins": settings.cors_origin_list,
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+_cors_regex = settings.cors_origin_regex_effective
+if _cors_regex:
+    _cors_kwargs["allow_origin_regex"] = _cors_regex
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
+app.add_middleware(RequestIdMiddleware)
 
 app.include_router(api_router)
 
@@ -138,4 +178,8 @@ def health(db: Session = Depends(get_db)):
         revision = row[0] if row else None
     except Exception:
         revision = None
-    return {"status": "ok", "db_migration": revision}
+    return {
+        "status": "ok",
+        "db_migration": revision,
+        "redis": ping_redis_for_health(),
+    }

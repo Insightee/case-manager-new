@@ -15,6 +15,15 @@ This app is a **split deployment**: the React UI on Vercel and the FastAPI API o
 | Demo data | `SEED_DEMO_DATA=true` only on staging | **Not** run on production by default |
 | Migrations | `python scripts/migrate_production.py` | Single Alembic head required (`alembic heads`) |
 | Object storage | `STORAGE_PROVIDER=r2` + R2 env vars | Required when `APP_ENV=production` |
+| Redis | `REDIS_URL` on Railway API | **Required** in production (refresh tokens; startup fails without it) |
+| Release gate | [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) | Manual pilot smoke before go-live |
+
+## Production migrations
+
+- **Single head:** `cd backend && PYTHONPATH=.:alembic python3 -m alembic heads` must show exactly one `(head)`.
+- **Railway startup:** [`backend/scripts/start-production.sh`](../backend/scripts/start-production.sh) runs [`migrate_production.py`](../backend/scripts/migrate_production.py) before uvicorn (Postgres only; no SQLite patching in production).
+- **Manual repair (emergency):** use Railway Postgres `DATABASE_PUBLIC_URL` from your machine, then `python3 scripts/migrate_production.py`. Avoid stamping head unless a DBA confirms schema matches. See [`repair_production_schema.py`](../backend/scripts/repair_production_schema.py) only for known partial-failure recovery.
+- **Health check:** `GET /health` → `db_migration` should match the Alembic head revision.
 
 ## 1. Deploy the API (required for Vercel UI)
 
@@ -45,14 +54,16 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
    | `JWT_SECRET_KEY` | long random string |
    | `JWT_REFRESH_SECRET_KEY` | different long random string |
    | `APP_ENV` | `production` |
-   | `CORS_ORIGINS` | `https://frontend-insightes-projects.vercel.app` (+ previews, `http://localhost:5173`) |
+   | `CORS_ORIGINS` | `https://frontend-insightes-projects.vercel.app`, `http://localhost:5173` (Vercel **preview** URLs are allowed automatically via API CORS regex after deploy) |
    | `FRONTEND_URL` | `https://frontend-insightes-projects.vercel.app` |
    | `STORAGE_PROVIDER` | `r2` |
    | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | Cloudflare R2 credentials |
-   | `REDIS_URL` | `${{Redis.REDIS_URL}}` or Upstash URL (recommended for refresh tokens) |
+   | `REDIS_URL` | `${{Redis.REDIS_URL}}` — **required** in production |
+   | `EMAIL_PROVIDER` | `zeptomail` |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL` | ZeptoMail (see [`EMAIL_DNS.md`](EMAIL_DNS.md)) |
    | `SEED_DEMO_DATA` | omit or `false` in production; `true` only for demo/staging |
 
-   Redis is strongly recommended in production; without it, refresh tokens are in-memory (single replica only).
+   Without `REDIS_URL`, production startup fails (refresh tokens must not use in-memory storage).
 
 5. **Networking** → **Generate domain** (e.g. `https://insightcase-api-production.up.railway.app`).
 6. Verify: `curl https://YOUR-RAILWAY-DOMAIN/health` → `{"status":"ok",...}`.
@@ -102,6 +113,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 Verify: `GET https://your-api.example.com/health` returns `{"status":"ok",...}`.
 
 ## 2. Deploy the frontend on Vercel
+
+**Vercel project:** team `insightes-projects`, project name **`frontend`** — not `case-manager-new` (that name is the Railway API service only). CLI: `vercel --scope insightes-projects --project frontend`.
 
 1. Import the GitHub repo in Vercel.
 2. **Root Directory:** either set to `frontend`, **or** leave the repo root and rely on root [`vercel.json`](../vercel.json) (`npm ci --prefix frontend` / `npm run build --prefix frontend`).  

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.permissions import case_scope_check, user_has_permission
 from app.models.audit_event import AuditEvent
+from app.models.app_usage_chunk import AppUsageChunk
 from app.models.case import Case
 from app.models.user import User
 
@@ -160,7 +161,51 @@ def app_usage_summary(
     if not user_has_permission(user, "admin.override"):
         raise PermissionError("Super admin permission required")
 
-    stmt = (
+    chunk_stmt = (
+        select(AppUsageChunk)
+        .where(
+            AppUsageChunk.chunk_ended_at >= start_at,
+            AppUsageChunk.chunk_ended_at <= end_at,
+        )
+        .order_by(AppUsageChunk.chunk_ended_at.desc())
+    )
+    if portal:
+        chunk_stmt = chunk_stmt.where(AppUsageChunk.portal == portal)
+    if staff_user_id is not None:
+        chunk_stmt = chunk_stmt.where(AppUsageChunk.actor_user_id == staff_user_id)
+
+    rows = list(db.scalars(chunk_stmt).all())
+    totals: dict[int, dict[str, Any]] = {}
+    if rows:
+        actor_ids = {r.actor_user_id for r in rows}
+        actor_map = {u.id: u for u in db.scalars(select(User).where(User.id.in_(actor_ids))).all()} if actor_ids else {}
+        for row in rows:
+            actor_id = row.actor_user_id
+            if not actor_id:
+                continue
+            active_seconds = int(row.active_seconds or 0)
+            if active_seconds <= 0:
+                continue
+            actor = actor_map.get(actor_id)
+            bucket = totals.setdefault(
+                actor_id,
+                {
+                    "user_id": actor_id,
+                    "user_name": actor.full_name if actor else None,
+                    "user_email": actor.email if actor else None,
+                    "active_seconds": 0,
+                    "heartbeats": 0,
+                    "last_seen_at": None,
+                },
+            )
+            bucket["active_seconds"] += active_seconds
+            bucket["heartbeats"] += 1
+            seen_at = row.chunk_ended_at.isoformat() if row.chunk_ended_at else row.created_at.isoformat()
+            if seen_at and (bucket["last_seen_at"] is None or seen_at > bucket["last_seen_at"]):
+                bucket["last_seen_at"] = seen_at
+    else:
+        # Backward-compatible fallback for legacy heartbeat rows.
+        stmt = (
         select(AuditEvent)
         .options(joinedload(AuditEvent.actor))
         .where(
@@ -174,37 +219,36 @@ def app_usage_summary(
     if staff_user_id is not None:
         stmt = stmt.where(AuditEvent.actor_user_id == staff_user_id)
 
-    rows = list(db.scalars(stmt).all())
-    totals: dict[int, dict[str, Any]] = {}
-    for ev in rows:
-        payload = _parse_json(ev.new_value) or {}
-        if not isinstance(payload, dict):
-            continue
-        payload_portal = payload.get("portal")
-        if portal and payload_portal != portal:
-            continue
-        actor_id = ev.actor_user_id
-        if not actor_id:
-            continue
-        active_seconds = int(payload.get("active_seconds") or 0)
-        if active_seconds <= 0:
-            continue
-        bucket = totals.setdefault(
-            actor_id,
-            {
-                "user_id": actor_id,
-                "user_name": ev.actor.full_name if ev.actor else None,
-                "user_email": ev.actor.email if ev.actor else None,
-                "active_seconds": 0,
-                "heartbeats": 0,
-                "last_seen_at": None,
-            },
-        )
-        bucket["active_seconds"] += active_seconds
-        bucket["heartbeats"] += 1
-        created = ev.created_at.isoformat() if ev.created_at else None
-        if created and (bucket["last_seen_at"] is None or created > bucket["last_seen_at"]):
-            bucket["last_seen_at"] = created
+        rows = list(db.scalars(stmt).all())
+        for ev in rows:
+            payload = _parse_json(ev.new_value) or {}
+            if not isinstance(payload, dict):
+                continue
+            payload_portal = payload.get("portal")
+            if portal and payload_portal != portal:
+                continue
+            actor_id = ev.actor_user_id
+            if not actor_id:
+                continue
+            active_seconds = int(payload.get("active_seconds") or 0)
+            if active_seconds <= 0:
+                continue
+            bucket = totals.setdefault(
+                actor_id,
+                {
+                    "user_id": actor_id,
+                    "user_name": ev.actor.full_name if ev.actor else None,
+                    "user_email": ev.actor.email if ev.actor else None,
+                    "active_seconds": 0,
+                    "heartbeats": 0,
+                    "last_seen_at": None,
+                },
+            )
+            bucket["active_seconds"] += active_seconds
+            bucket["heartbeats"] += 1
+            created = ev.created_at.isoformat() if ev.created_at else None
+            if created and (bucket["last_seen_at"] is None or created > bucket["last_seen_at"]):
+                bucket["last_seen_at"] = created
 
     items = sorted(totals.values(), key=lambda row: row["active_seconds"], reverse=True)
     return {
