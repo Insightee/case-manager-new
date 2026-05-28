@@ -54,8 +54,8 @@ Options: Railway (recommended below), Render, Fly.io, or your own VM.
    | `JWT_SECRET_KEY` | long random string |
    | `JWT_REFRESH_SECRET_KEY` | different long random string |
    | `APP_ENV` | `production` |
-   | `CORS_ORIGINS` | `https://frontend-insightes-projects.vercel.app`, `http://localhost:5173` (Vercel **preview** URLs are allowed automatically via API CORS regex after deploy) |
-   | `FRONTEND_URL` | `https://frontend-insightes-projects.vercel.app` |
+   | `CORS_ORIGINS` | Your Vercel production domain (e.g. `https://frontend-omega-eight-92.vercel.app`), plus `http://localhost:5173` |
+   | `FRONTEND_URL` | Same Vercel production URL as in `CORS_ORIGINS` (invite/reset email links) |
    | `STORAGE_PROVIDER` | `r2` |
    | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | Cloudflare R2 credentials |
    | `REDIS_URL` | `${{Redis.REDIS_URL}}` — **required** in production |
