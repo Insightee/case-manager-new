@@ -90,9 +90,10 @@ export function TherapistLeavePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const now = useMemo(() => new Date(), [])
 
-  const [viewTab, setViewTab] = useState('month')
   const [calYear, setCalYear] = useState(now.getFullYear())
   const [calMonth, setCalMonth] = useState(now.getMonth())
+  const [listMonthFilter, setListMonthFilter] = useState('ALL')
+  const [listYearFilter, setListYearFilter] = useState(String(now.getFullYear()))
   const [leaves, setLeaves] = useState([])
   const [summary, setSummary] = useState(null)
   const [balance, setBalance] = useState(null)
@@ -294,6 +295,50 @@ export function TherapistLeavePage() {
   const isSelectingRange = Boolean(rangeStart)
   const awaitingEndDate = Boolean(pickStart && !pickEnd)
 
+  const listYearOptions = useMemo(() => {
+    const years = new Set([now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1])
+    leaves.forEach((l) => {
+      if (l.start_date) years.add(Number(l.start_date.slice(0, 4)))
+      if (l.end_date) years.add(Number(l.end_date.slice(0, 4)))
+    })
+    return Array.from(years).filter(Number.isFinite).sort((a, b) => b - a).map(String)
+  }, [leaves, now])
+
+  const filteredLeaves = useMemo(() => {
+    return leaves.filter((l) => {
+      const start = l.start_date ? new Date(`${l.start_date}T00:00:00`) : null
+      if (!start) return false
+      const yearOk = String(start.getFullYear()) === listYearFilter
+      if (!yearOk) return false
+      if (listMonthFilter === 'ALL') return true
+      return start.getMonth() === Number(listMonthFilter)
+    })
+  }, [leaves, listYearFilter, listMonthFilter])
+
+  function exportLeavesExcelLikeCsv() {
+    const header = ['Category', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note']
+    const rows = filteredLeaves.map((l) => [
+      leaveRowLabel(l),
+      l.service_line || '',
+      l.start_date || '',
+      l.end_date || '',
+      l.day_count ?? '',
+      (l.reason || '').replaceAll('"', '""'),
+      l.status || '',
+      (l.status === 'REJECTED' ? l.review_note : '') || '',
+    ])
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell ?? '')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `leave-requests-${listYearFilter}${listMonthFilter === 'ALL' ? '' : `-${Number(listMonthFilter) + 1}`}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
@@ -345,30 +390,6 @@ export function TherapistLeavePage() {
             ))}
           </select>
         </label>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {[
-            ['month', 'Month calendar'],
-            ['year', 'Year at a glance'],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setViewTab(id)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 20,
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                border: 'none',
-                cursor: 'pointer',
-                background: viewTab === id ? '#6366f1' : '#f3f4f6',
-                color: viewTab === id ? '#fff' : '#374151',
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {balance ? (
@@ -429,37 +450,6 @@ export function TherapistLeavePage() {
         <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#15803d', fontSize: '0.875rem' }}>{success}</div>
       ) : null}
 
-      {viewTab === 'year' ? (
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20, marginBottom: 20 }}>
-          <p style={{ fontWeight: 600, margin: '0 0 16px' }}>{calYear} — year at a glance</p>
-          <div className="leave-year-grid">
-            {MONTHS.map((monthName, monthIdx) => {
-              const days = daysInMonth(calYear, monthIdx)
-              const miniCells = []
-              const fd = new Date(calYear, monthIdx, 1).getDay()
-              for (let i = 0; i < fd; i++) miniCells.push(null)
-              for (let d = 1; d <= days; d++) miniCells.push(d)
-              return (
-                <div key={monthName} className="leave-year-month">
-                  <p className="leave-year-month__title">{monthName.slice(0, 3)}</p>
-                  <div className="leave-year-month__grid">
-                    {miniCells.map((day, i) => {
-                      if (!day) return <span key={`e-${i}`} className="leave-year-day leave-year-day--empty" />
-                      const ds = toDateStr(calYear, monthIdx, day)
-                      const entry = leaveOnDate(ds, leaves)
-                      let cls = 'leave-year-day'
-                      if (entry?.status === 'APPROVED') cls += ' leave-year-day--approved'
-                      else if (entry?.status === 'PENDING') cls += ' leave-year-day--pending'
-                      else if (entry?.status === 'REJECTED') cls += ' leave-year-day--rejected'
-                      return <span key={ds} className={cls} title={entry ? `${entry.leave_type} (${entry.status})` : ''} />
-                    })}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ) : (
       <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <button
@@ -560,7 +550,6 @@ export function TherapistLeavePage() {
           </p>
         ) : null}
       </div>
-      )}
 
       {showForm ? (
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
@@ -671,15 +660,47 @@ export function TherapistLeavePage() {
       <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', minHeight: 120 }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={{ fontWeight: 600, margin: 0 }}>All requests</p>
-          <button type="button" onClick={loadLeaves} style={{ fontSize: '0.75rem', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer' }}>
-            Refresh
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <select
+              value={listMonthFilter}
+              onChange={(e) => setListMonthFilter(e.target.value)}
+              className="admin-input"
+              style={{ minWidth: 130, padding: '6px 10px', fontSize: '0.8rem' }}
+              aria-label="Filter by month"
+            >
+              <option value="ALL">All months</option>
+              {MONTHS.map((m, idx) => (
+                <option key={m} value={idx}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <select
+              value={listYearFilter}
+              onChange={(e) => setListYearFilter(e.target.value)}
+              className="admin-input"
+              style={{ minWidth: 100, padding: '6px 10px', fontSize: '0.8rem' }}
+              aria-label="Filter by year"
+            >
+              {listYearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={exportLeavesExcelLikeCsv} style={{ fontSize: '0.75rem', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+              Export Excel
+            </button>
+            <button type="button" onClick={loadLeaves} style={{ fontSize: '0.75rem', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer' }}>
+              Refresh
+            </button>
+          </div>
         </div>
         {loading ? (
           <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>Loading leave requests…</div>
-        ) : leaves.length === 0 ? (
+        ) : filteredLeaves.length === 0 ? (
           <div style={{ padding: 32, textAlign: 'center', color: '#6b7280' }}>
-            <p style={{ margin: '0 0 8px' }}>No leave requests yet.</p>
+            <p style={{ margin: '0 0 8px' }}>No leave requests for this filter.</p>
             <button
               type="button"
               onClick={() => openRequestForm()}
@@ -701,7 +722,7 @@ export function TherapistLeavePage() {
                 </tr>
               </thead>
               <tbody>
-                {leaves.map((l) => {
+                {filteredLeaves.map((l) => {
                   const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
                   const tc = leaveRowColor(l)
                   return (

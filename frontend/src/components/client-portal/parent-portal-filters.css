@@ -1,0 +1,197 @@
+/* Shared mobile-first filters, tabs, and toolbars for parent portal pages */
+
+.parent-portal-filters {
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 20px;
+}
+
+.parent-portal-filters__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.parent-portal-filters__grid--tablet-2 {
+  /* default 1 col; 2 cols from 600px in media below */
+}
+
+.parent-portal-filters__grid--desktop-3 {
+  /* 3 cols from 900px */
+}
+
+.parent-portal-filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  font: inherit;
+}
+
+.parent-portal-filters__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.parent-portal-filters__control {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  background: #fff;
+  color: #0f172a;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.parent-portal-filters__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.parent-portal-filters__actions--inline {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+@media (min-width: 600px) {
+  .parent-portal-filters__grid--tablet-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .parent-portal-filters__grid--desktop-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .parent-portal-filters__actions--desktop-inline {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    align-self: flex-end;
+  }
+
+  .parent-portal-filters--row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px 16px;
+  }
+
+  .parent-portal-filters--row .parent-portal-filters__grid {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .parent-portal-filters--row .parent-portal-filters__actions {
+    flex: 0 0 auto;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+}
+
+.parent-portal-filters__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #4f46e5;
+  text-decoration: none;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  width: 100%;
+  box-sizing: border-box;
+  touch-action: manipulation;
+}
+
+@media (min-width: 600px) {
+  .parent-portal-filters__link {
+    width: auto;
+  }
+}
+
+.parent-portal-section-title {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+/* Scrollable pill tabs (billing, reports, notifications) */
+.parent-portal-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 4px;
+  margin-bottom: 16px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.parent-portal-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.parent-portal-tabs__tab {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+
+.parent-portal-tabs__tab:hover {
+  color: #334155;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.parent-portal-tabs__tab.is-active {
+  background: #fff;
+  color: #4f46e5;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+@media (min-width: 900px) {
+  .parent-portal-tabs {
+    flex-wrap: wrap;
+  }
+}

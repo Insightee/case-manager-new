@@ -5,12 +5,12 @@ test.describe('Parent portal smoke', () => {
   test('dashboard and navigation load with API data', async ({ page }) => {
     await loginParent(page)
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Family dashboard' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Family dashboard', level: 1 })).toBeVisible()
     await expect(page.getByRole('region', { name: 'Family summary' })).toBeVisible()
 
     await sidebarLink(page, 'Session updates').click()
     await expect(page).toHaveURL(/\/parent\/session-logs/)
-    await expect(page.getByRole('heading', { name: 'Session updates' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Session updates', level: 1 })).toBeVisible()
 
     await sidebarLink(page, 'Reports').click()
     await expect(page).toHaveURL(/\/parent\/reports/)
@@ -23,7 +23,7 @@ test.describe('Parent portal smoke', () => {
   test('session updates show approved logs when seeded', async ({ page }) => {
     await loginParent(page)
     await sidebarLink(page, 'Session updates').click()
-    await expect(page.getByRole('heading', { name: 'Session updates' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Session updates', level: 1 })).toBeVisible()
     const logCard = page.locator('article').filter({ hasText: /Activities:|Goals:/ })
     await expect(logCard.first()).toBeVisible({ timeout: 15_000 })
   })

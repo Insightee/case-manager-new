@@ -1,13 +1,15 @@
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { AdminTicketsPage } from './AdminTicketsPage.jsx'
 import { AdminIncidentsPage } from './AdminIncidentsPage.jsx'
 import { AdminSupportReportsPage } from './AdminSupportReportsPage.jsx'
+import { AdminMobilePillTabs, AdminPageHeader } from './ui/index.js'
 
 const TABS = [
-  { id: 'tickets', label: '✉ Support Tickets', perm: 'ticket.manage' },
-  { id: 'incidents', label: '⚠ Incident Reports', perm: 'incident.read_sensitive' },
-  { id: 'reports', label: '📊 Reports', permAny: ['ticket.manage', 'incident.read_sensitive'] },
+  { id: 'tickets', label: 'Tickets', perm: 'ticket.manage' },
+  { id: 'incidents', label: 'Incidents', permAny: ['ticket.manage', 'incident.read_sensitive'] },
+  { id: 'reports', label: 'Reports', permAny: ['ticket.manage', 'incident.read_sensitive'] },
 ]
 
 export function AdminSupportHubPage() {
@@ -25,52 +27,46 @@ export function AdminSupportHubPage() {
   })
 
   return (
-    <div>
-      {/* Tab bar — uses admin styling */}
-      <div style={{
-        display: 'flex',
-        gap: 0,
-        borderBottom: '2px solid #e2e8f0',
-        marginBottom: 0,
-        paddingLeft: 0,
-        paddingTop: '1.5rem',
-        paddingBottom: 0,
-        background: 'transparent',
-      }}>
-        {visibleTabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            style={{
-              padding: '10px 22px',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              borderBottom: tab === t.id ? '2px solid #6366f1' : '2px solid transparent',
-              color: tab === t.id ? '#4338ca' : '#64748b',
-              marginBottom: -2,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
+    <div className="admin-page">
+      <AdminPageHeader
+        eyebrow="Support"
+        title="Support & incidents"
+        subtitle="Tickets, incident reports, and combined history."
+        actions={<PoliciesBotButton />}
+      />
+
+      <AdminMobilePillTabs
+        ariaLabel="Support sections"
+        activeId={tab}
+        onChange={setTab}
+        primaryIds={visibleTabs.map((t) => t.id)}
+        overflowIds={[]}
+        tabs={visibleTabs}
+      />
+
+      <div className="admin-desktop-only" style={{ marginBottom: 16 }}>
+        <nav className="portal-tabs admin-page__tabs-scroll" aria-label="Support sections">
+          {visibleTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`portal-tabs__tab${tab === t.id ? ' is-active' : ''}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
       </div>
 
-      {/* Content panels */}
-      <div style={{ display: tab === 'tickets' ? 'block' : 'none' }}>
-        <AdminTicketsPage />
+      <div className="admin-hub-embedded" style={{ display: tab === 'tickets' ? 'block' : 'none' }}>
+        <AdminTicketsPage embedded />
       </div>
-      <div style={{ display: tab === 'incidents' ? 'block' : 'none' }}>
-        <AdminIncidentsPage />
+      <div className="admin-hub-embedded" style={{ display: tab === 'incidents' ? 'block' : 'none' }}>
+        <AdminIncidentsPage embedded />
       </div>
-      <div style={{ display: tab === 'reports' ? 'block' : 'none' }}>
-        <AdminSupportReportsPage />
+      <div className="admin-hub-embedded" style={{ display: tab === 'reports' ? 'block' : 'none' }}>
+        <AdminSupportReportsPage embedded />
       </div>
     </div>
   )

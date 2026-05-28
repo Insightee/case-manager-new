@@ -6,14 +6,19 @@ import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
-import { StatusBadge } from './ui/index.js'
+import { PortalTabBar, StatusBadge } from './ui/index.js'
 import { AdminCaseReportsPanel } from './AdminCaseReportsPanel.jsx'
 import { AdminCaseCmMeetingsPanel } from './AdminCaseCmMeetingsPanel.jsx'
 import { AdminCaseSchedulingPanel } from './AdminCaseSchedulingPanel.jsx'
+import { AdminCaseDetailMobileHeader } from './AdminCaseDetailMobileHeader.jsx'
+import { AdminCaseDetailMobileNav } from './AdminCaseDetailMobileNav.jsx'
+import { AdminCaseDetailQuickStats } from './AdminCaseDetailQuickStats.jsx'
+import { AdminCaseDetailFab } from './AdminCaseDetailFab.jsx'
 import { CaseActivityPanel } from './CaseActivityPanel.jsx'
 import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { IepBuilderPanel } from './IepBuilderPanel.jsx'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
+import './admin-case-detail-mobile.css'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -45,6 +50,7 @@ export function AdminCaseDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actingLogId, setActingLogId] = useState(null)
+  const [parentContact, setParentContact] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -67,6 +73,31 @@ export function AdminCaseDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!caseRow?.child_id) {
+      setParentContact(null)
+      return
+    }
+    let cancelled = false
+    apiFetch(`/api/v1/admin/families?search=${encodeURIComponent(caseRow.case_code || '')}`)
+      .then((rows) => {
+        if (cancelled) return
+        const match = (rows || []).find((f) => f.childId === caseRow.child_id)
+        const parent = match?.parents?.[0]
+        if (parent?.parentPhone || parent?.parentEmail) {
+          setParentContact({ phone: parent.parentPhone, email: parent.parentEmail })
+        } else {
+          setParentContact(null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setParentContact(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [caseRow?.child_id, caseRow?.case_code])
 
   useEffect(() => {
     if (highlightSessionId && tab !== 'logs') {
@@ -131,6 +162,12 @@ export function AdminCaseDetailPage() {
     caseRow && can('daily_log.review') && canReviewLogs(caseRow.product_module),
   )
   const visibleTabs = TABS.filter((t) => !t.perm || can(t.perm))
+  const visibleTabIds = visibleTabs.map((t) => t.id)
+
+  function openScheduleTab() {
+    if (visibleTabIds.includes('scheduling')) setTab('scheduling')
+    else if (visibleTabIds.includes('cm-meetings')) setTab('cm-meetings')
+  }
 
   if (loading) return <p className="admin-muted">Loading case…</p>
   if (error || !caseRow) {
@@ -145,33 +182,45 @@ export function AdminCaseDetailPage() {
   const addr = caseRow.service_address
 
   return (
-    <div className="admin-page">
+    <div className="admin-page admin-case-detail-page">
       <p style={{ marginBottom: 8 }}>
         <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
           ← Cases
         </Link>
       </p>
-      <header style={{ marginBottom: 20 }}>
+
+      <AdminCaseDetailMobileHeader
+        caseRow={caseRow}
+        activeAssignment={activeAssignment}
+        parentContact={parentContact}
+        onQuickAction={(id) => (id === 'scheduling' ? openScheduleTab() : setTab(id))}
+      />
+
+      <header className="admin-case-detail__header-compact admin-case-detail__header--desktop" style={{ marginBottom: 12 }}>
         <p className="admin-page__eyebrow">{caseRow.case_code}</p>
         <h1 className="admin-page__title">{caseRow.child_name}</h1>
-        <p className="admin-page__subtitle">
+        <p className="admin-page__subtitle admin-portal-lead">
           {caseRow.service_type} · <span className="admin-chip">{caseRow.product_module}</span>{' '}
           <StatusBadge status={caseRow.status} />
         </p>
       </header>
 
-      <nav style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-        {visibleTabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`admin-btn admin-btn--sm ${tab === t.id ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <AdminCaseDetailQuickStats
+        caseId={caseId}
+        caseRow={caseRow}
+        onNavigateTab={setTab}
+        visibleTabIds={visibleTabIds}
+      />
+
+      <PortalTabBar
+        className="admin-case-detail__tabs admin-case-detail__tabs--desktop admin-page__tabs-scroll"
+        ariaLabel="Case sections"
+        activeId={tab}
+        onChange={setTab}
+        tabs={visibleTabs.map((t) => ({ id: t.id, label: t.label }))}
+      />
+
+      <AdminCaseDetailMobileNav activeId={tab} onChange={setTab} visibleTabIds={visibleTabIds} />
 
       {tab === 'activity' && <CaseActivityPanel caseId={caseId} />}
 
@@ -279,7 +328,7 @@ export function AdminCaseDetailPage() {
 
       {tab === 'logs' && (
         <section>
-          <p style={{ marginBottom: 12 }}>
+          <p className="admin-case-detail__lead-link" style={{ marginBottom: 12 }}>
             <Link to={`/admin/logs?tab=sessions&case_id=${caseId}`} className="admin-btn admin-btn--ghost admin-btn--sm">
               Open sessions board for this case
             </Link>
@@ -332,6 +381,13 @@ export function AdminCaseDetailPage() {
       {tab === 'scheduling' && can('slot.book_any') && (
         <AdminCaseSchedulingPanel caseItem={caseRow} assignments={assignments} onDone={load} />
       )}
+
+      <AdminCaseDetailFab
+        caseId={caseRow.id}
+        visibleTabIds={visibleTabIds}
+        onSelectTab={setTab}
+        canInvoice={can('invoice.approve') || can('case.update')}
+      />
     </div>
   )
 }

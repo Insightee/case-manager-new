@@ -6,8 +6,9 @@ import {
   IEP_CATEGORY_ID,
   REPORT_KIND_OPTIONS,
   reportCategoryOptions,
+  reportKindLabel,
 } from '../../lib/reportFilters.js'
-import { AdminPageHeader, AdminSearchInput, ServiceFilterSelect } from './ui/index.js'
+import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, ServiceFilterSelect } from './ui/index.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminReportDetailDrawer } from './AdminReportDetailDrawer.jsx'
 import { AdminReportsTable } from './AdminReportsTable.jsx'
@@ -46,6 +47,17 @@ function buildListQuery(filters, page, pageSize) {
 
 const CATEGORY_OPTIONS = reportCategoryOptions()
 
+const VIEW_TAB_OPTIONS = [
+  { value: 'queue', label: 'Review queue' },
+  { value: 'all', label: 'All reports' },
+  { value: 'missing', label: 'Missing monthly' },
+  { value: 'iep', label: 'Pending IEP' },
+]
+
+function viewTabLabel(tab) {
+  return VIEW_TAB_OPTIONS.find((o) => o.value === tab)?.label || 'Review queue'
+}
+
 export function AdminReportsPage() {
   const { canReviewReports } = useModuleWrite()
   const { can } = useAuth()
@@ -80,6 +92,7 @@ export function AdminReportsPage() {
   const [missingRows, setMissingRows] = useState([])
   const [iepRows, setIepRows] = useState([])
   const [iepSummary, setIepSummary] = useState(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filters = useMemo(
     () => ({
@@ -471,9 +484,11 @@ export function AdminReportsPage() {
         </div>
       ) : null}
 
-      <div className="admin-reports__tabs">
+      <div className="admin-reports__tabs admin-desktop-only" role="tablist" aria-label="Report views">
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'queue'}
           className={`admin-btn admin-btn--sm ${tab === 'queue' ? 'admin-btn--primary' : ''}`}
           onClick={() => setTab('queue')}
         >
@@ -481,6 +496,8 @@ export function AdminReportsPage() {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'all'}
           className={`admin-btn admin-btn--sm ${tab === 'all' ? 'admin-btn--primary' : ''}`}
           onClick={() => setTab('all')}
         >
@@ -488,6 +505,8 @@ export function AdminReportsPage() {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'missing'}
           className={`admin-btn admin-btn--sm ${tab === 'missing' ? 'admin-btn--primary' : ''}`}
           onClick={() => setTab('missing')}
         >
@@ -495,6 +514,8 @@ export function AdminReportsPage() {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'iep'}
           className={`admin-btn admin-btn--sm ${tab === 'iep' ? 'admin-btn--primary' : ''}`}
           onClick={() => setTab('iep')}
         >
@@ -504,7 +525,7 @@ export function AdminReportsPage() {
       </div>
 
       {showReportFilters ? (
-        <div className="admin-reports__filters" role="group" aria-label="Report filters">
+        <div className="admin-reports__filters admin-desktop-only" role="group" aria-label="Report filters">
           <label className="admin-reports__filter">
             <span className="admin-reports__filter-label">Report type</span>
             <select
@@ -541,8 +562,103 @@ export function AdminReportsPage() {
         </div>
       ) : null}
 
+      <AdminCollapsibleFilters
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        quickSearch={
+          <AdminSearchInput value={search} onChange={setSearch} placeholder="Child, case, month, therapist…" />
+        }
+        activeChips={[
+          tab !== 'queue' ? viewTabLabel(tab) : null,
+          typeFilter !== 'all' && showReportFilters ? reportKindLabel(typeFilter) : null,
+          category && showReportFilters ? `Category: ${category}` : null,
+          status && `Status: ${status}`,
+          module && `Service: ${module}`,
+          month && `Month: ${month}`,
+          filters.caseId && `Case #${filters.caseId}`,
+        ].filter(Boolean)}
+        activeCount={
+          [
+            tab !== 'queue' ? 1 : 0,
+            typeFilter !== 'all' && showReportFilters ? 1 : 0,
+            category && showReportFilters ? 1 : 0,
+            status,
+            module,
+            month,
+            filters.caseId,
+          ].filter(Boolean).length
+        }
+      >
+        <div className="admin-reports__filters admin-reports__filters--panel admin-mobile-only" role="group" aria-label="Report filters">
+          <label className="admin-reports__filter">
+            <span className="admin-reports__filter-label">View</span>
+            <select
+              className="admin-select admin-reports__filter-select"
+              value={tab}
+              onChange={(e) => setTab(e.target.value)}
+              aria-label="Report view"
+            >
+              {VIEW_TAB_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                  {o.value === 'iep' && summary?.iep_pending != null ? ` (${summary.iep_pending})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {showReportFilters ? (
+            <>
+              <label className="admin-reports__filter">
+                <span className="admin-reports__filter-label">Report type</span>
+                <select
+                  className="admin-select admin-reports__filter-select"
+                  value={typeFilter}
+                  onChange={(e) => setKindFilter(e.target.value)}
+                  aria-label="Report type"
+                >
+                  {REPORT_KIND_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-reports__filter">
+                <span className="admin-reports__filter-label">Category</span>
+                <select
+                  className="admin-select admin-reports__filter-select"
+                  value={category}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  aria-label="Report category"
+                >
+                  {CATEGORY_OPTIONS.map((o) => (
+                    <option key={o.value || 'all'} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
+          {tab === 'missing' ? (
+            <label className="admin-reports__filter">
+              <span className="admin-reports__filter-label">Month</span>
+              <input
+                className="admin-input admin-reports__filter-select"
+                value={missingMonth}
+                onChange={(e) => setMissingMonth(e.target.value)}
+                aria-label="Missing reports month"
+              />
+            </label>
+          ) : null}
+        </div>
       <div className="admin-reports__toolbar">
-        <AdminSearchInput value={search} onChange={setSearch} placeholder="Child, case, month, therapist…" />
+        <AdminSearchInput
+          className="admin-desktop-only"
+          value={search}
+          onChange={setSearch}
+          placeholder="Child, case, month, therapist…"
+        />
         {tab === 'all' ? (
           <select className="admin-select" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All statuses</option>
@@ -589,6 +705,7 @@ export function AdminReportsPage() {
           Export PDF
         </button>
       </div>
+      </AdminCollapsibleFilters>
 
       {message ? <p className="admin-alert" style={{ marginBottom: 12 }}>{message}</p> : null}
 
@@ -706,18 +823,25 @@ export function AdminReportsPage() {
         </div>
       ) : tab === 'missing' ? (
         <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Month</span>
-            <input
-              className="admin-input"
-              value={missingMonth}
-              onChange={(e) => setMissingMonth(e.target.value)}
-              style={{ maxWidth: 200 }}
-            />
+          <div className="admin-reports__missing-actions admin-desktop-only" style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Month</span>
+              <input
+                className="admin-input"
+                value={missingMonth}
+                onChange={(e) => setMissingMonth(e.target.value)}
+                style={{ maxWidth: 200 }}
+              />
+            </label>
             <button type="button" className="admin-btn admin-btn--sm" onClick={loadMissing}>
               Refresh
             </button>
-          </label>
+          </div>
+          <div className="admin-reports__missing-actions admin-mobile-only" style={{ marginBottom: 12 }}>
+            <button type="button" className="admin-btn admin-btn--sm" onClick={loadMissing}>
+              Refresh list
+            </button>
+          </div>
           {loading ? (
             <p>Loading…</p>
           ) : missingRows.length === 0 ? (

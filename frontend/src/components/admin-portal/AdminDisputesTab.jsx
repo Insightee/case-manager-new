@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { AdminPanel, AdminEmptyState, StatusBadge } from './ui/index.js'
+import { AdminDataList, AdminEmptyState, AdminPanel, AdminTaskCard, StatusBadge } from './ui/index.js'
 
 export function AdminDisputesTab() {
   const [rows, setRows] = useState([])
@@ -28,34 +28,57 @@ export function AdminDisputesTab() {
       ) : rows.length === 0 ? (
         <AdminEmptyState title="No disputes" hint="Parent disputes appear here when filed on invoices." />
       ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Invoice</th>
-                <th>Reason</th>
-                <th>Status</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
+        <AdminDataList
+          desktop={
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((d) => (
+                    <tr key={d.id}>
+                      <td>#{d.clientInvoiceId}</td>
+                      <td>
+                        <strong>{d.reasonCode}</strong>
+                        <br />
+                        <span style={{ fontSize: '0.85rem', color: '#64748b' }}>{d.message}</span>
+                      </td>
+                      <td>
+                        <StatusBadge tone={d.status === 'OPEN' ? 'amber' : 'green'}>{d.status}</StatusBadge>
+                      </td>
+                      <td>{d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          }
+          mobile={
+            <ul className="admin-data-list__cards">
               {rows.map((d) => (
-                <tr key={d.id}>
-                  <td>#{d.clientInvoiceId}</td>
-                  <td>
-                    <strong>{d.reasonCode}</strong>
-                    <br />
-                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>{d.message}</span>
-                  </td>
-                  <td>
-                    <StatusBadge tone={d.status === 'OPEN' ? 'amber' : 'green'}>{d.status}</StatusBadge>
-                  </td>
-                  <td>{d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
-                </tr>
+                <li key={d.id}>
+                  <AdminTaskCard
+                    title={`Invoice #${d.clientInvoiceId}`}
+                    meta={d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}
+                    badges={<StatusBadge tone={d.status === 'OPEN' ? 'amber' : 'green'}>{d.status}</StatusBadge>}
+                  >
+                    <p>
+                      <strong>{d.reasonCode}</strong>
+                      <br />
+                      {d.message}
+                    </p>
+                  </AdminTaskCard>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+          }
+        />
       )}
     </AdminPanel>
   )

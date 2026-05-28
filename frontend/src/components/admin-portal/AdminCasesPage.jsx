@@ -52,8 +52,8 @@ export function AdminCasesPage() {
         />
       ) : null}
 
-      <AdminPanel title="Case board" padded={false}>
-        <div className="admin-panel__body" style={{ padding: '12px 16px 16px' }}>
+      <AdminPanel title="Case board" className="admin-panel--case-board" padded={false}>
+        <div className="admin-panel__body admin-panel__body--case-board">
           <AdminCasesPipelineTable initialFilters={initialFilters} />
         </div>
       </AdminPanel>

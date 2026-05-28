@@ -71,6 +71,9 @@ function formatLoginError(err) {
   if (/invalid credentials/i.test(msg)) {
     return `${msg} For local dev, run: cd backend && python3 -m app.seed.demo_seed (resets demo123 passwords).`
   }
+  if (/timed out/i.test(msg)) {
+    return `${msg} Ensure uvicorn is running on port 8000, or use an empty VITE_API_URL with npm run dev.`
+  }
   return msg
 }
 

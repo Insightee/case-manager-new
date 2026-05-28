@@ -2,11 +2,24 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
 import { TherapistLeaveBalancePanel } from '../hr-portal/TherapistLeaveBalancePanel.jsx'
 import { TherapistReviewsSection } from '../therapist/TherapistReviewsSection.jsx'
 import { TherapistServiceProfileForm } from './TherapistServiceProfileForm.jsx'
-import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminStatCard, AdminToolbar, StatusBadge } from './ui/index.js'
+import {
+  AdminCollapsibleFilters,
+  AdminDataList,
+  AdminEmptyState,
+  AdminPageHeader,
+  AdminPanel,
+  AdminSearchInput,
+  AdminStatCard,
+  AdminStickyFilterRow,
+  AdminTaskCard,
+  AdminToolbar,
+  StatusBadge,
+} from './ui/index.js'
 import './admin-reports.css'
 
 const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT']
@@ -24,9 +37,11 @@ const EMPTY_FORM = {
 
 export function AdminTherapistProfilesPage() {
   const { canManageUsers } = useModuleWrite()
+  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const urlStatus = searchParams.get('status') || 'PENDING'
+  const urlStatus = searchParams.get('status') || 'ALL'
   const urlUserId = searchParams.get('user_id')
+  const canEditProfiles = canManageUsers || (user?.roles || []).includes('SUPER_ADMIN')
 
   const [profiles, setProfiles] = useState([])
   const { items: therapistDirectory } = useStaffDirectory({ roles: 'THERAPIST' })
@@ -196,7 +211,7 @@ export function AdminTherapistProfilesPage() {
         title="Service profiles"
         subtitle="Review, approve, pause, or create therapist service listings."
         actions={
-          canManageUsers ? (
+          canEditProfiles ? (
             <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowCreate((v) => !v)}>
               {showCreate ? 'Close' : '+ Add profile'}
             </button>
@@ -208,7 +223,10 @@ export function AdminTherapistProfilesPage() {
       {success ? <p style={{ color: '#15803d', fontSize: '0.875rem' }}>{success}</p> : null}
 
       {summary ? (
-        <div className="admin-reports-kpi-row" style={{ marginBottom: 16 }}>
+        <div
+          className="admin-reports-kpi-row admin-reports-kpi-row--desktop"
+          style={{ marginBottom: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}
+        >
           <AdminStatCard title="Pending" value={summary.PENDING ?? 0} tone="amber" onClick={() => setStatusFilterAndUrl('PENDING')} />
           <AdminStatCard title="Draft" value={summary.DRAFT ?? 0} tone="slate" onClick={() => setStatusFilterAndUrl('DRAFT')} />
           <AdminStatCard title="Approved" value={summary.APPROVED ?? 0} tone="green" onClick={() => setStatusFilterAndUrl('APPROVED')} />
@@ -217,13 +235,40 @@ export function AdminTherapistProfilesPage() {
         </div>
       ) : null}
 
-      {!canManageUsers ? (
+      <AdminStickyFilterRow>
+        <select
+          className="admin-search__input"
+          style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
+          value={statusFilter}
+          onChange={(e) => setStatusFilterAndUrl(e.target.value)}
+          aria-label="Profile status"
+        >
+          {STATUS_FILTERS.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
+      </AdminStickyFilterRow>
+
+      {summary ? (
+        <div className="admin-reports-kpi-row admin-reports-kpi-row--mobile-strip">
+          <AdminStatCard title="Pending" value={summary.PENDING ?? 0} tone="amber" onClick={() => setStatusFilterAndUrl('PENDING')} />
+          <AdminStatCard title="Draft" value={summary.DRAFT ?? 0} tone="slate" onClick={() => setStatusFilterAndUrl('DRAFT')} />
+          <AdminStatCard title="Approved" value={summary.APPROVED ?? 0} tone="green" onClick={() => setStatusFilterAndUrl('APPROVED')} />
+          <AdminStatCard title="Paused" value={summary.PAUSED ?? 0} tone="rose" onClick={() => setStatusFilterAndUrl('PAUSED')} />
+          <AdminStatCard title="No profile" value={summary.no_profile ?? 0} tone="indigo" />
+        </div>
+      ) : null}
+
+      {!canEditProfiles ? (
         <p className="admin-alert" style={{ color: '#b45309', marginBottom: 16 }}>
           View-only access — you can review profiles but cannot create or approve listings.
         </p>
       ) : null}
 
-      {showCreate && canManageUsers ? (
+      {showCreate && canEditProfiles ? (
         <form className="admin-form-grid" style={{ maxWidth: 560, marginBottom: 20 }} onSubmit={handleCreate}>
           <p className="admin-drawer__subtitle" style={{ gridColumn: '1 / -1' }}>
             Create profile for therapist
@@ -273,65 +318,111 @@ export function AdminTherapistProfilesPage() {
 
       <AdminPanel title="Profiles" padded={false}>
         <div className="admin-panel__body">
-          <AdminToolbar>
-            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
-            <select
-              className="admin-search__input"
-              style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
-              value={statusFilter}
-              onChange={(e) => setStatusFilterAndUrl(e.target.value)}
+          <div className="admin-desktop-only">
+            <AdminCollapsibleFilters
+              quickSearch={<AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />}
+              activeChips={[statusFilter !== 'ALL' ? statusFilter : null, search.trim()].filter(Boolean)}
+              activeCount={[statusFilter !== 'ALL', search.trim()].filter(Boolean).length}
             >
-              {STATUS_FILTERS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </AdminToolbar>
+              <AdminToolbar className="admin-toolbar--mobile-compact">
+                <AdminSearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
+                <select
+                  className="admin-search__input"
+                  style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilterAndUrl(e.target.value)}
+                >
+                  {STATUS_FILTERS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </AdminToolbar>
+            </AdminCollapsibleFilters>
+          </div>
 
           {loading ? (
             <div className="admin-skeleton" style={{ margin: '0 18px 16px' }} />
           ) : filtered.length === 0 ? (
             <AdminEmptyState title="No profiles" description="Try another filter or add a profile." />
           ) : (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Therapist</th>
-                    <th>Services</th>
-                    <th>Primary CM</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <AdminDataList
+              desktop={
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Therapist</th>
+                        <th>Services</th>
+                        <th>Primary CM</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((p) => (
+                        <tr key={p.id}>
+                          <td>
+                            <span className="admin-table__primary">{p.display_name || p.full_name}</span>
+                            <span className="admin-table__meta">{p.email}</span>
+                          </td>
+                          <td>{(p.services_offered || []).length} selected</td>
+                          <td>
+                            {p.supervisor_name ? (
+                              <span>{p.supervisor_name}</span>
+                            ) : (
+                              <span className="admin-muted">—</span>
+                            )}
+                            {p.mentor_name ? (
+                              <span className="admin-table__meta">Mentor: {p.mentor_name}</span>
+                            ) : null}
+                          </td>
+                          <td><StatusBadge status={p.status} /></td>
+                          <td>
+                            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => { setSelected(p); setEditingSupervisor(false) }}>
+                              Review
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              }
+              mobile={
+                <ul className="admin-data-list__cards">
                   {filtered.map((p) => (
-                    <tr key={p.id}>
-                      <td>
-                        <span className="admin-table__primary">{p.display_name || p.full_name}</span>
-                        <span className="admin-table__meta">{p.email}</span>
-                      </td>
-                      <td>{(p.services_offered || []).length} selected</td>
-                      <td>
-                        {p.supervisor_name ? (
-                          <span>{p.supervisor_name}</span>
-                        ) : (
-                          <span className="admin-muted">—</span>
-                        )}
-                        {p.mentor_name ? (
-                          <span className="admin-table__meta">Mentor: {p.mentor_name}</span>
-                        ) : null}
-                      </td>
-                      <td><StatusBadge status={p.status} /></td>
-                      <td>
-                        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => { setSelected(p); setEditingSupervisor(false) }}>
-                          Review
-                        </button>
-                      </td>
-                    </tr>
+                    <li key={p.id}>
+                      <AdminTaskCard
+                        title={p.display_name || p.full_name}
+                        meta={p.email}
+                        badges={<StatusBadge status={p.status} />}
+                        actions={
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--primary admin-btn--sm"
+                            onClick={() => {
+                              setSelected(p)
+                              setEditingSupervisor(false)
+                            }}
+                          >
+                            Review
+                          </button>
+                        }
+                      >
+                        <p>
+                          Services: {(p.services_offered || []).length} selected
+                          <br />
+                          Primary CM: {p.supervisor_name || '—'}
+                          {p.mentor_name ? ` · Mentor: ${p.mentor_name}` : ''}
+                        </p>
+                      </AdminTaskCard>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </ul>
+              }
+            />
           )}
         </div>
       </AdminPanel>
@@ -435,22 +526,22 @@ export function AdminTherapistProfilesPage() {
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="admin-search__input" style={{ width: '100%', marginTop: 4 }} />
           </label>
           <div className="admin-btn-group" style={{ marginTop: 12, flexWrap: 'wrap' }}>
-            {canManageUsers && selected.status === 'PENDING' ? (
+            {canEditProfiles && selected.status === 'PENDING' ? (
               <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('approve', selected.id)}>
                 Approve
               </button>
             ) : null}
-            {canManageUsers && selected.status === 'APPROVED' ? (
+            {canEditProfiles && selected.status === 'APPROVED' ? (
               <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => act('pause', selected.id)}>
                 Pause
               </button>
             ) : null}
-            {canManageUsers && selected.status === 'PAUSED' ? (
+            {canEditProfiles && selected.status === 'PAUSED' ? (
               <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('resume', selected.id)}>
                 Resume
               </button>
             ) : null}
-            {canManageUsers ? (
+            {canEditProfiles ? (
               <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => handleDelete(selected.id)}>
                 Delete
               </button>

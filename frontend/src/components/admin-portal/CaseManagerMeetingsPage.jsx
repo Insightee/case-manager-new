@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
+import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
 import './admin-reports.css'
 
 const MEETING_TYPES = [
@@ -22,6 +22,22 @@ const STATUS_FILTER_OPTIONS = [
 const TYPE_FILTER_OPTIONS = [
   { value: '', label: 'All types' },
   ...MEETING_TYPES,
+]
+
+const MONTH_FILTER_OPTIONS = [
+  { value: '', label: 'All months' },
+  { value: '1', label: 'January' },
+  { value: '2', label: 'February' },
+  { value: '3', label: 'March' },
+  { value: '4', label: 'April' },
+  { value: '5', label: 'May' },
+  { value: '6', label: 'June' },
+  { value: '7', label: 'July' },
+  { value: '8', label: 'August' },
+  { value: '9', label: 'September' },
+  { value: '10', label: 'October' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'December' },
 ]
 
 const SEARCH_DEBOUNCE_MS = 350
@@ -612,6 +628,13 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const [searchInput, setSearchInput] = useState(() => searchParams.get('search') || '')
   const [search, setSearch] = useState(searchInput)
   const [error, setError] = useState('')
+  const yearFilterOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear()
+    return Array.from({ length: 5 }, (_, idx) => {
+      const year = String(currentYear - 2 + idx)
+      return { value: year, label: year }
+    })
+  }, [])
 
   const queueTab = searchParams.get('queue') === 'admin'
 
@@ -771,6 +794,22 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         </p>
       ) : null}
 
+      <AdminCollapsibleFilters
+        quickSearch={
+          <AdminSearchInput
+            value={searchInput}
+            onChange={setSearchInput}
+            placeholder="Child, case code, or meeting title…"
+            className="admin-meetings-filters__search"
+          />
+        }
+        activeChips={[
+          statusFilter && statusFilter !== 'ALL' ? statusFilter : null,
+          typeFilter && typeFilter !== 'ALL' ? typeFilter : null,
+          caseFilter ? `Case ${caseFilter}` : null,
+        ].filter(Boolean)}
+        activeCount={[statusFilter, typeFilter, caseFilter, cmFilter, monthFilter].filter((v) => v && v !== 'ALL' && v !== '').length}
+      >
       <div className="admin-meetings-filters">
         <AdminSearchInput
           value={searchInput}
@@ -814,24 +853,21 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             ]}
           />
         ) : null}
-        <label className="admin-filter-field">
-          <span className="admin-filter-field__label">Month</span>
-          <input
-            type="month"
-            className="admin-input"
-            value={monthFilter ? `${yearFilter}-${String(monthFilter).padStart(2, '0')}` : ''}
-            onChange={(e) => {
-              if (!e.target.value) {
-                setMonthFilter('')
-                return
-              }
-              const [y, m] = e.target.value.split('-')
-              setYearFilter(y)
-              setMonthFilter(String(Number(m)))
-            }}
-          />
-        </label>
+        <FilterSelect
+          label="Month"
+          value={monthFilter}
+          onChange={(e) => setMonthFilter(e.target.value)}
+          options={MONTH_FILTER_OPTIONS}
+        />
+        <FilterSelect
+          label="Year"
+          value={yearFilter}
+          onChange={(e) => setYearFilter(e.target.value)}
+          options={yearFilterOptions}
+          disabled={!monthFilter}
+        />
       </div>
+      </AdminCollapsibleFilters>
 
       {loading ? (
         <p style={{ color: '#94a3b8' }}>Loading meetings…</p>

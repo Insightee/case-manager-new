@@ -9,6 +9,7 @@ export function FilterSelect({
   id,
   className = '',
   disabled = false,
+  ariaLabel,
 }) {
   const selectId = id || `filter-${label?.replace(/\s+/g, '-').toLowerCase() || 'field'}`
   return (
@@ -21,6 +22,7 @@ export function FilterSelect({
           value={value}
           onChange={onChange}
           disabled={disabled}
+          aria-label={ariaLabel || label || undefined}
         >
           {options.map((opt) => (
             <option key={opt.value} value={opt.value}>

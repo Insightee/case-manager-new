@@ -44,8 +44,14 @@ export function moduleAccessSummary(user, catalog = [], grantsFromAssignments) {
   const enabled = Object.entries(grants).filter(([, g]) => g?.enabled)
   if (!enabled.length) return [{ id: '_none', label: 'No modules', access: '—' }]
 
+  const moduleCatalog = Array.isArray(catalog)
+    ? catalog
+    : Array.isArray(catalog?.modules)
+      ? catalog.modules
+      : []
+
   return enabled.map(([id, g]) => {
-    const label = catalog.find((m) => m.id === id)?.label || id.replace(/_/g, ' ')
+    const label = moduleCatalog.find((m) => m.id === id)?.label || id.replace(/_/g, ' ')
     const access = g.access === 'view' ? 'View' : 'Edit'
     return { id, label, access }
   })

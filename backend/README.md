@@ -19,6 +19,32 @@ docker compose up --build
 docker compose exec api python -m app.seed.demo_seed
 ```
 
+## Local dev performance
+
+Sign-in and API calls time out after 30 seconds if the backend is unreachable (see frontend `apiClient.js`).
+
+| Tip | Why |
+|-----|-----|
+| Start Redis: `docker compose up redis -d` | Avoids a slow first-login probe against `localhost:6379` (dev falls back to in-memory refresh tokens if Redis is down, within ~2s) |
+| Use Vite proxy | Leave `VITE_API_URL` empty in `frontend/.env.local` and run `npm run dev` so `/api` proxies to port 8000 |
+| Avoid `SEED_DEMO_DATA=true` on every restart | Demo seed on empty DB can take minutes; only needed for first boot |
+| `LAZY_SQLITE_PATCHES=true` (default) | SQLite column patches run on first request, not blocking uvicorn startup |
+
+## Production scale (login bursts)
+
+Set on the API service (e.g. Railway):
+
+| Variable | Suggested | Notes |
+|----------|-----------|--------|
+| `REDIS_URL` | Railway Redis plugin | **Required** in production for refresh tokens |
+| `WEB_CONCURRENCY` | `2`–`4` | Uvicorn workers in `scripts/start-production.sh` |
+| `DB_POOL_SIZE` | `10` | Per worker |
+| `DB_MAX_OVERFLOW` | `20` | Per worker; keep `workers × (size + overflow)` below Postgres `max_connections` |
+
+Health check: `GET /health` returns `redis: ok|memory_fallback|fail`.
+
+Load smoke (staging): `hey -n 100 -c 20 -m POST -H 'Content-Type: application/json' -d '{"email":"therapist@demo.com","password":"demo123"}' $API_URL/api/v1/auth/login`
+
 ## Demo accounts
 
 | Email | Password | Role |

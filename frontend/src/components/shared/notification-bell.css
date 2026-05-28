@@ -13,7 +13,7 @@
   flex-shrink: 0;
 }
 
-.app-shell:not(.app-shell--admin) .notification-bell__btn {
+.app-shell:not(.app-shell--admin) .app-sidebar--desktop .notification-bell__btn {
   background: #f1f5f9;
 }
 

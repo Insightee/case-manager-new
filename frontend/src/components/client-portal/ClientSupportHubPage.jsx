@@ -1,13 +1,17 @@
 import { useSearchParams } from 'react-router-dom'
+import { useParentPortal } from '../../hooks/useParentPortal.js'
+import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ClientSupportPage } from './ClientSupportPage.jsx'
 import { ClientIncidentPage } from './ClientIncidentPage.jsx'
+import './parent-support.css'
 
 const TABS = [
   { id: 'support', label: 'Support Tickets' },
   { id: 'incidents', label: 'Incident Reports' },
 ]
 
-export function ClientSupportHubPage({ cases = [] }) {
+export function ClientSupportHubPage() {
+  const { cases } = useParentPortal()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'support'
 
@@ -16,46 +20,29 @@ export function ClientSupportHubPage({ cases = [] }) {
   }
 
   return (
-    <div>
-      {/* Tab bar */}
-      <div style={{
-        display: 'flex',
-        gap: 0,
-        borderBottom: '2px solid #e2e8f0',
-        marginBottom: 0,
-        paddingLeft: '1rem',
-        paddingTop: '1rem',
-        background: '#fff',
-      }}>
+    <ClientPortalLayout
+      title="Support & incidents"
+      subtitle="Open tickets with your care team or report an incident."
+    >
+      <nav className="parent-support-hub__tabs" aria-label="Support sections">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
+            className={`parent-support-hub__tab${tab === t.id ? ' is-active' : ''}`}
             onClick={() => setTab(t.id)}
-            style={{
-              padding: '10px 20px',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              borderBottom: tab === t.id ? '2px solid #6366f1' : '2px solid transparent',
-              color: tab === t.id ? '#4338ca' : '#64748b',
-              marginBottom: -2,
-            }}
           >
             {t.label}
           </button>
         ))}
-      </div>
+      </nav>
 
-      {/* Content */}
-      <div style={{ display: tab === 'support' ? 'block' : 'none' }}>
+      <div className="parent-support-hub__panel" hidden={tab !== 'support'}>
         <ClientSupportPage cases={cases} />
       </div>
-      <div style={{ display: tab === 'incidents' ? 'block' : 'none' }}>
+      <div className="parent-support-hub__panel" hidden={tab !== 'incidents'}>
         <ClientIncidentPage cases={cases} />
       </div>
-    </div>
+    </ClientPortalLayout>
   )
 }

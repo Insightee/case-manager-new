@@ -59,6 +59,7 @@ ALL_PERMISSIONS = [
     "slot.book_any",
     "slot.book_parent",
     "iep.read",
+    "iep.manage",
     "case_document.create",
     "case_document.review",
 ]
@@ -81,6 +82,7 @@ _ROLE_MODULE_ADMIN = [
     "slot.book_any",
     "leave.manage",
     "user.manage",
+    "iep.manage",
     "case_document.create",
     "case_document.review",
 ]
@@ -101,9 +103,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "daily_log.review",
         "monthly_report.approve",
         "iep.read",
+        "iep.manage",
         "invoice.approve",
         "attachment.manage",
         "ticket.manage",
+        "incident.read_sensitive",
         "slot.read",
         "slot.book_any",
         "case_document.create",

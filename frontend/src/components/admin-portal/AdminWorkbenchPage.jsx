@@ -132,7 +132,7 @@ function StatusRequestsPanel() {
                   />
                 ) : null}
                 {canAct ? (
-                <div className="admin-btn-group" style={{ marginTop: 8 }}>
+                <div className="admin-btn-group reject-with-comment--mobile" style={{ marginTop: 8 }}>
                   <button
                     type="button"
                     className="admin-btn admin-btn--primary admin-btn--sm"

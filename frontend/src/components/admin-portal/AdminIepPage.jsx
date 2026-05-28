@@ -4,9 +4,13 @@ import { apiFetch, apiUpload, getTokens } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
 import {
+  AdminCollapsibleFilters,
+  AdminDataList,
+  AdminMobilePillTabs,
   AdminPageHeader,
   AdminPanel,
   AdminEmptyState,
+  AdminTaskCard,
   AdminToolbar,
   AdminSearchInput,
   PortalTabBar,
@@ -22,6 +26,12 @@ const STATUS_FILTERS = [
   { id: 'MISSING', label: 'No IEP uploaded' },
   { id: 'INTERNAL_ONLY', label: 'Draft / internal' },
   { id: 'ACKNOWLEDGED', label: 'Acknowledged' },
+]
+
+const IEP_SECTION_TABS = [
+  { id: 'dashboard', label: 'IEP status' },
+  { id: 'plans', label: 'Planner' },
+  { id: 'upload', label: 'Uploader' },
 ]
 
 const STATUS_LABELS = {
@@ -403,20 +413,26 @@ export function AdminIepPage() {
       />
 
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
+        <div className="admin-mobile-only" style={{ width: '100%' }}>
+          <AdminMobilePillTabs
+            ariaLabel="IEP sections"
+            activeId={tab}
+            onChange={setTab}
+            primaryIds={IEP_SECTION_TABS.map((t) => t.id)}
+            overflowIds={[]}
+            tabs={IEP_SECTION_TABS}
+          />
+        </div>
+        <div className="admin-desktop-only" style={{ flex: 1, minWidth: 200 }}>
           <PortalTabBar
             ariaLabel="IEP sections"
             activeId={tab}
             onChange={setTab}
-            tabs={[
-              { id: 'dashboard', label: 'Status dashboard' },
-              { id: 'plans', label: 'Structured plans' },
-              { id: 'upload', label: 'Legacy file upload' },
-            ]}
+            tabs={IEP_SECTION_TABS}
           />
         </div>
-        <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
-          Case pipeline
+        <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm admin-iep__cases-link">
+          Cases
         </Link>
       </div>
 
@@ -441,7 +457,22 @@ export function AdminIepPage() {
 
           <AdminPanel title={`Cases (${dashboard?.rows?.length ?? 0})`} padded={false}>
             <div className="admin-panel__body">
-              <AdminToolbar>
+              <AdminCollapsibleFilters
+                quickSearch={
+                  <AdminSearchInput
+                    value={search}
+                    onChange={setSearch}
+                    placeholder="Search case, child, service…"
+                  />
+                }
+                activeChips={[
+                  moduleFilter !== 'all' ? moduleFilter : null,
+                  therapistFilter ? 'Therapist' : null,
+                  statusFilter !== 'ALL' ? statusFilter : null,
+                ].filter(Boolean)}
+                activeCount={[moduleFilter !== 'all', therapistFilter, statusFilter !== 'ALL', sessionFrom, sessionTo, includeClosed].filter(Boolean).length}
+              >
+              <AdminToolbar className="admin-toolbar--mobile-compact">
                 <AdminSearchInput
                   value={search}
                   onChange={setSearch}
@@ -501,97 +532,158 @@ export function AdminIepPage() {
                   Refresh
                 </button>
               </AdminToolbar>
+              </AdminCollapsibleFilters>
 
               {loading ? (
                 <div className="admin-skeleton" style={{ margin: '0 16px 16px' }} />
               ) : !dashboard?.rows?.length ? (
                 <AdminEmptyState title="No cases match" description="Try another filter or upload an IEP from the Upload tab." />
               ) : (
-                <div className="admin-table-wrap">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Case</th>
-                        <th>Child</th>
-                        <th>Service</th>
-                        <th>IEP status</th>
-                        <th>Document</th>
-                        <th>Parents</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <AdminDataList
+                  desktop={
+                    <div className="admin-table-wrap">
+                      <table className="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Case</th>
+                            <th>Child</th>
+                            <th>Service</th>
+                            <th>IEP status</th>
+                            <th>Document</th>
+                            <th>Parents</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dashboard.rows.map((row) => (
+                            <tr key={row.case_id}>
+                              <td>
+                                <Link to={`/admin/cases/${row.case_id}`} className="admin-table__primary">
+                                  {row.case_code}
+                                </Link>
+                                <span className="admin-table__meta">{row.case_status}</span>
+                              </td>
+                              <td>{row.child_name || '—'}</td>
+                              <td>
+                                <span className="admin-chip">{row.product_module}</span>
+                              </td>
+                              <td>
+                                <IepStatusPill status={row.iep_status} />
+                              </td>
+                              <td>
+                                {row.file_name ? (
+                                  <>
+                                    <span>{row.file_name}</span>
+                                    {row.version ? (
+                                      <span className="admin-table__meta">{row.version}</span>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <span className="admin-muted">—</span>
+                                )}
+                              </td>
+                              <td>
+                                {row.parent_contacts?.length ? (
+                                  <span className="admin-table__meta">{row.parent_contacts.join('; ')}</span>
+                                ) : (
+                                  <span className="admin-muted">No parent linked</span>
+                                )}
+                              </td>
+                              <td>
+                                <div className="admin-btn-group">
+                                  {row.attachment_id ? (
+                                    <button
+                                      type="button"
+                                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                                      onClick={() => downloadAttachment(row.attachment_id, row.file_name)}
+                                    >
+                                      Download
+                                    </button>
+                                  ) : null}
+                                  {row.iep_status === 'INTERNAL_ONLY' && row.attachment_id ? (
+                                    <button
+                                      type="button"
+                                      className="admin-btn admin-btn--primary admin-btn--sm"
+                                      disabled={actingId === row.attachment_id}
+                                      onClick={() => shareFromRow(row)}
+                                    >
+                                      Share with parent
+                                    </button>
+                                  ) : null}
+                                  <Link
+                                    to={`/admin/cases/${row.case_id}?tab=iep`}
+                                    className="admin-btn admin-btn--primary admin-btn--sm"
+                                  >
+                                    Open IEP editor
+                                  </Link>
+                                  <Link to={`/admin/cases/${row.case_id}`} className="admin-btn admin-btn--ghost admin-btn--sm">
+                                    Case
+                                  </Link>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+                  mobile={
+                    <ul className="admin-data-list__cards">
                       {dashboard.rows.map((row) => (
-                        <tr key={row.case_id}>
-                          <td>
-                            <Link to={`/admin/cases/${row.case_id}`} className="admin-table__primary">
-                              {row.case_code}
-                            </Link>
-                            <span className="admin-table__meta">{row.case_status}</span>
-                          </td>
-                          <td>{row.child_name || '—'}</td>
-                          <td>
-                            <span className="admin-chip">{row.product_module}</span>
-                          </td>
-                          <td>
-                            <IepStatusPill status={row.iep_status} />
-                          </td>
-                          <td>
-                            {row.file_name ? (
-                              <>
-                                <span>{row.file_name}</span>
-                                {row.version ? (
-                                  <span className="admin-table__meta">{row.version}</span>
+                        <li key={row.case_id}>
+                          <AdminTaskCard
+                            title={
+                              <Link to={`/admin/cases/${row.case_id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                {row.case_code} · {row.child_name || 'Case'}
+                              </Link>
+                            }
+                            meta={`${row.case_status} · ${row.product_module}`}
+                            badges={<IepStatusPill status={row.iep_status} />}
+                            actions={
+                              <div className="admin-btn-group reject-with-comment--mobile">
+                                {row.iep_status === 'INTERNAL_ONLY' && row.attachment_id ? (
+                                  <button
+                                    type="button"
+                                    className="admin-btn admin-btn--primary admin-btn--sm"
+                                    disabled={actingId === row.attachment_id}
+                                    onClick={() => shareFromRow(row)}
+                                  >
+                                    Share with parent
+                                  </button>
                                 ) : null}
-                              </>
-                            ) : (
-                              <span className="admin-muted">—</span>
-                            )}
-                          </td>
-                          <td>
-                            {row.parent_contacts?.length ? (
-                              <span className="admin-table__meta">{row.parent_contacts.join('; ')}</span>
-                            ) : (
-                              <span className="admin-muted">No parent linked</span>
-                            )}
-                          </td>
-                          <td>
-                            <div className="admin-btn-group">
-                              {row.attachment_id ? (
-                                <button
-                                  type="button"
-                                  className="admin-btn admin-btn--ghost admin-btn--sm"
-                                  onClick={() => downloadAttachment(row.attachment_id, row.file_name)}
-                                >
-                                  Download
-                                </button>
-                              ) : null}
-                              {row.iep_status === 'INTERNAL_ONLY' && row.attachment_id ? (
-                                <button
-                                  type="button"
+                                <Link
+                                  to={`/admin/cases/${row.case_id}?tab=iep`}
                                   className="admin-btn admin-btn--primary admin-btn--sm"
-                                  disabled={actingId === row.attachment_id}
-                                  onClick={() => shareFromRow(row)}
                                 >
-                                  Share with parent
-                                </button>
-                              ) : null}
-                              <Link
-                                to={`/admin/cases/${row.case_id}?tab=iep`}
-                                className="admin-btn admin-btn--primary admin-btn--sm"
+                                  Open IEP editor
+                                </Link>
+                                <Link to={`/admin/cases/${row.case_id}`} className="admin-btn admin-btn--ghost admin-btn--sm">
+                                  Case
+                                </Link>
+                              </div>
+                            }
+                          >
+                            {row.file_name ? <p>Document: {row.file_name}</p> : null}
+                            {row.parent_contacts?.length ? (
+                              <p>Parents: {row.parent_contacts.join('; ')}</p>
+                            ) : (
+                              <p className="admin-muted">No parent linked</p>
+                            )}
+                            {row.attachment_id ? (
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--ghost admin-btn--sm"
+                                onClick={() => downloadAttachment(row.attachment_id, row.file_name)}
                               >
-                                Open IEP editor
-                              </Link>
-                              <Link to={`/admin/cases/${row.case_id}`} className="admin-btn admin-btn--ghost admin-btn--sm">
-                                Case
-                              </Link>
-                            </div>
-                          </td>
-                        </tr>
+                                Download
+                              </button>
+                            ) : null}
+                          </AdminTaskCard>
+                        </li>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                    </ul>
+                  }
+                />
               )}
             </div>
           </AdminPanel>

@@ -168,3 +168,329 @@
   color: #0f766e;
   margin-bottom: 8px;
 }
+
+/* ── Mobile report edit (≤900px, matches PortalShell) ───────────────── */
+
+.report-edit-page--mobile {
+  padding-bottom: calc(var(--portal-bottom-nav-offset, 76px) + 72px);
+}
+
+.report-edit-mobile-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.report-edit-mobile-head__back {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #4f46e5;
+  text-decoration: none;
+}
+
+.report-edit-mobile-head__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.report-edit-mobile-head__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+  flex: 1;
+  min-width: 0;
+}
+
+.report-edit-mobile-head__status {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.report-edit-mobile-head__meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.report-save-status--inline {
+  margin: 0;
+}
+
+.report-edit-mobile-head__save {
+  font-size: 0.8125rem;
+}
+
+.report-edit-details {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.report-edit-details__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+  touch-action: manipulation;
+}
+
+.report-edit-details__summary::-webkit-details-marker {
+  display: none;
+}
+
+.report-edit-details__label {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.report-edit-details__hint {
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.report-edit-details__body {
+  padding: 0 14px 14px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.report-edit-layout--mobile {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.report-edit-mobile-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--portal-bottom-nav-offset, calc(76px + env(safe-area-inset-bottom, 0px)));
+  z-index: 44;
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.08);
+}
+
+.report-edit-mobile-bar__btn {
+  min-height: 44px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.report-edit-mobile-bar__btn--secondary {
+  flex: 1;
+  background: #fff;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.report-edit-mobile-bar__btn--primary {
+  flex: 1.4;
+  background: #4f46e5;
+  color: #fff;
+}
+
+.report-edit-mobile-bar__btn--menu {
+  flex: 0 0 44px;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.report-edit-mobile-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 43;
+  border: none;
+  background: rgba(15, 23, 42, 0.35);
+  cursor: pointer;
+}
+
+.report-edit-mobile-menu {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--portal-bottom-nav-offset, 76px) + 64px);
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.15);
+}
+
+.report-edit-mobile-menu__item,
+.report-edit-mobile-menu__link {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #334155;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.report-edit-mobile-menu__item:hover,
+.report-edit-mobile-menu__link:hover {
+  background: #f8fafc;
+}
+
+.report-editor__shell--mobile {
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.report-editor__mobile-bar {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.report-editor__format-trigger {
+  min-height: 44px;
+  min-width: 88px;
+  padding: 0 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.report-editor__format-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+  border: none;
+  background: rgba(15, 23, 42, 0.4);
+  cursor: pointer;
+}
+
+.report-editor__format-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--portal-bottom-nav-offset, calc(76px + env(safe-area-inset-bottom, 0px)));
+  z-index: 47;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.12);
+}
+
+.report-editor__format-sheet-title {
+  margin: 0 0 12px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.report-editor__format-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-editor__format-sheet-grid button {
+  min-height: 44px;
+  min-width: 0;
+  touch-action: manipulation;
+}
+
+.report-editor__shell--mobile .report-editor__content {
+  min-height: 50dvh;
+  line-height: 1.65;
+  padding: 16px 14px 24px;
+}
+
+.report-editor__plan-disclosure {
+  margin-top: 12px;
+  border: 1px solid #99f6e4;
+  border-radius: 12px;
+  background: #ecfdf5;
+  overflow: hidden;
+}
+
+.report-editor__plan-disclosure-summary {
+  padding: 12px 14px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f766e;
+  cursor: pointer;
+  list-style: none;
+  touch-action: manipulation;
+}
+
+.report-editor__plan-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.report-editor__plan-disclosure .report-editor__plan {
+  margin-top: 0;
+  padding: 0 14px 14px;
+}
+
+.report-editor__plan-disclosure .report-editor__plan label {
+  display: none;
+}
+
+.report-editor__file-input.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+@media (min-width: 901px) {
+  .report-edit-page--mobile {
+    padding-bottom: inherit;
+  }
+
+  .report-edit-mobile-bar,
+  .report-edit-mobile-menu,
+  .report-edit-mobile-menu-backdrop {
+    display: none;
+  }
+}

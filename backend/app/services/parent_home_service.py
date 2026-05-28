@@ -37,24 +37,18 @@ def _attendance_label(raw: str | None) -> str:
 
 
 def _headline_from_log(log: DailyLog, child_name: str | None) -> str:
+    """Short list/dashboard title — attendance only, not therapist note text."""
     att = _attendance_label(log.attendance_status)
-    if log.parent_notes and log.parent_notes.strip():
-        return log.parent_notes.strip()[:120]
-    if att == "Attended":
-        return f"A good session{f' with {child_name}' if child_name else ''}"
-    return f"{att}{f' — {child_name}' if child_name else ''}"
+    suffix = f" — {child_name}" if child_name else ""
+    return f"{att}{suffix}"
 
 
 def _summary_paragraph(log: DailyLog) -> str | None:
+    """One-line dashboard preview; detail views use structured therapist fields."""
     if log.parent_notes and log.parent_notes.strip():
-        return log.parent_notes.strip()
-    parts = []
-    if log.activities_done:
-        parts.append(log.activities_done.strip())
-    if log.follow_ups:
-        parts.append(log.follow_ups.strip())
-    if parts:
-        return " ".join(parts)[:500]
+        return log.parent_notes.strip()[:280]
+    if log.activities_done and log.activities_done.strip():
+        return log.activities_done.strip()[:280]
     return None
 
 

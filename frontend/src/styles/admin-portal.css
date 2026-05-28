@@ -55,6 +55,12 @@
   align-items: flex-start;
   gap: 16px;
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+.admin-page-header__main {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .admin-page-header__eyebrow {
@@ -72,6 +78,7 @@
   font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--text-main);
+  overflow-wrap: anywhere;
 }
 
 .admin-page-header__sub {
@@ -223,6 +230,35 @@
   font-size: 0.9375rem;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+.admin-panel--case-board .admin-panel__head {
+  padding: 18px 20px 14px;
+}
+
+.admin-panel--case-board .admin-panel__title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.admin-panel__body--case-board {
+  padding: 12px 16px 20px;
+}
+
+@media (min-width: 901px) {
+  .admin-panel--case-board .admin-panel__title {
+    font-size: 1.375rem;
+  }
+
+  .admin-panel__body--case-board {
+    padding: 14px 20px 24px;
+  }
+
+  .admin-panel--case-board {
+    overflow: visible;
+  }
 }
 
 .admin-panel__sub {
@@ -1193,25 +1229,58 @@
   }
 }
 
-@media (max-width: 640px) {
-  .admin-kpi-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (max-width: 900px) {
+  .admin-page-header__main,
+  .admin-page-header__sub {
+    overflow-wrap: anywhere;
   }
 
   .admin-page-header__actions {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .admin-page-header__actions .admin-btn {
-    flex: 1;
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .portal-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .portal-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .portal-tabs__tab {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 .portal-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   border-bottom: 2px solid #e2e8f0;
   margin-bottom: 16px;
+  max-width: none;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  grid-template-columns: unset;
 }
 
 .portal-tabs__tab {
@@ -1225,6 +1294,9 @@
   margin-bottom: -2px;
   cursor: pointer;
   border-radius: 8px 8px 0 0;
+  box-shadow: none;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .portal-tabs__tab:hover {
@@ -1234,6 +1306,40 @@
 .portal-tabs__tab.is-active {
   color: #6366f1;
   border-bottom-color: #6366f1;
+  background: none;
+  box-shadow: none;
+}
+
+/* Admin shell: underline tabs (overrides any stray login grid styles) */
+.app-shell--admin .portal-tabs.admin-page__tabs-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: none;
+  width: 100%;
+  margin: 0 0 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid #e2e8f0;
+  border-radius: 0;
+}
+
+.app-shell--admin .portal-tabs.admin-page__tabs-scroll .portal-tabs__tab {
+  min-height: auto;
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  background: none;
+  box-shadow: none;
+}
+
+.app-shell--admin .portal-tabs.admin-page__tabs-scroll .portal-tabs__tab.is-active {
+  color: #6366f1;
+  background: none;
+  border-bottom-color: #6366f1;
+  box-shadow: none;
 }
 
 .admin-chip--button {

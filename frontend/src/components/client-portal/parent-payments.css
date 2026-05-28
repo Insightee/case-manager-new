@@ -1,7 +1,12 @@
-/* Parent portal — Payments / billing hub */
+/* Parent portal — Payments / billing hub (mobile-first) */
 .parent-pay {
+  width: 100%;
   max-width: 960px;
   margin: 0 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-bottom: 8px;
+  overflow-x: clip;
 }
 
 .parent-pay__hero {
@@ -21,6 +26,7 @@
   font-size: 0.9rem;
   color: #64748b;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .parent-pay__banner {
@@ -76,9 +82,11 @@
 
 .parent-pay__stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 10px;
   margin-bottom: 20px;
+  list-style: none;
+  padding: 0;
 }
 
 .parent-pay__stat {
@@ -87,6 +95,7 @@
   border-radius: 12px;
   padding: 14px 16px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  min-width: 0;
 }
 
 .parent-pay__stat strong {
@@ -110,73 +119,6 @@
 
 .parent-pay__stat--overdue strong {
   color: #b91c1c;
-}
-
-.parent-pay__tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px;
-  background: #f1f5f9;
-  border-radius: 12px;
-  margin-bottom: 14px;
-  border: 1px solid #e2e8f0;
-}
-
-.parent-pay__tab {
-  border: none;
-  background: transparent;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #64748b;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.parent-pay__tab:hover {
-  color: #334155;
-  background: rgba(255, 255, 255, 0.6);
-}
-
-.parent-pay__tab.is-active {
-  background: #fff;
-  color: #4f46e5;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-}
-
-.parent-pay__refine {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  align-items: flex-end;
-  padding: 14px 16px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  margin-bottom: 20px;
-}
-
-.parent-pay__refine label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #64748b;
-  min-width: 120px;
-  flex: 1;
-}
-
-.parent-pay__refine select {
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  font-size: 0.875rem;
-  background: #f8fafc;
 }
 
 .parent-pay__due-section {
@@ -206,7 +148,7 @@
 
 .parent-pay__due-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -279,6 +221,7 @@
 
 .parent-pay__due-actions button {
   width: 100%;
+  min-height: 44px;
   padding: 10px 14px;
   border-radius: 10px;
   border: none;
@@ -287,6 +230,7 @@
   font-weight: 600;
   font-size: 0.875rem;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .parent-pay__due-actions button:hover {
@@ -429,4 +373,155 @@
 .parent-pay__alert--success {
   background: #ecfdf5;
   color: #047857;
+}
+
+/* Mobile-friendly list cards (shown instead of wide tables on narrow viewports) */
+.parent-pay__mobile-list {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.parent-pay__mobile-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.parent-pay__mobile-card:active {
+  background: #f8fafc;
+}
+
+.parent-pay__mobile-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.parent-pay__mobile-card-top strong {
+  font-size: 0.95rem;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.parent-pay__mobile-card-meta {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.parent-pay__mobile-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.parent-pay__mobile-card--package .parent-pay__mobile-card-row {
+  font-weight: 500;
+}
+
+.parent-pay__table-desktop {
+  display: block;
+}
+
+.parent-pay__dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+}
+
+.parent-pay__dialog-sheet {
+  margin-top: auto;
+  max-height: min(94dvh, 94vh);
+  background: #fff;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+@media (min-width: 480px) {
+  .parent-pay__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .parent-pay__stats {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+  }
+
+  .parent-pay__due-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .parent-pay__banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .parent-pay__banner p {
+    max-width: none;
+  }
+
+  .parent-pay__banner-actions {
+    margin-left: 0;
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 8px;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+  }
+
+  .parent-pay__banner--urgent .parent-pay__banner-actions {
+    border-top-color: rgba(153, 27, 27, 0.12);
+  }
+
+  .parent-pay__table-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .parent-pay__table-card {
+    overflow: hidden;
+  }
+
+  .parent-pay__table-card .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .parent-pay__mobile-list {
+    display: flex;
+  }
+
+  .parent-pay__table-desktop {
+    display: none;
+  }
 }

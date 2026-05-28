@@ -9,7 +9,15 @@ import {
   parseClientInvoiceFilters,
   writeClientInvoiceFiltersToParams,
 } from '../../lib/invoiceFilters.js'
-import { AdminEmptyState, AdminSearchInput, ServiceFilterSelect, formatCurrency } from './ui/index.js'
+import {
+  AdminCollapsibleFilters,
+  AdminDataList,
+  AdminEmptyState,
+  AdminSearchInput,
+  AdminTaskCard,
+  ServiceFilterSelect,
+  formatCurrency,
+} from './ui/index.js'
 import { InvoiceLineItemEditor } from './InvoiceLineItemEditor.jsx'
 import './admin-client-invoices.css'
 import './admin-client-invoices-composer.css'
@@ -414,6 +422,7 @@ export function AdminClientInvoicesTab({
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState(() => parseClientInvoiceFilters(searchParams))
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [filterOptions, setFilterOptions] = useState(null)
   const [viewId, setViewId] = useState(openInvoiceId ? Number(openInvoiceId) : null)
 
@@ -485,6 +494,29 @@ export function AdminClientInvoicesTab({
     ? filterOptions.billingMonths
     : [...new Set(invoices.map((i) => i.billingMonth).filter(Boolean))].sort().reverse()
 
+  const activeFilterCount = [
+    filters.year,
+    filters.month,
+    filters.module,
+    filters.status,
+    filters.invoiceType,
+    filters.dateFrom,
+    filters.dateTo,
+  ].filter(Boolean).length
+
+  function clearFilters() {
+    setFilters((prev) => ({
+      ...prev,
+      year: '',
+      month: '',
+      module: '',
+      status: '',
+      invoiceType: '',
+      dateFrom: '',
+      dateTo: '',
+    }))
+  }
+
   return (
     <div className="client-inv">
       {highlightClaimsPending && pendingClaimsCount > 0 ? (
@@ -518,7 +550,55 @@ export function AdminClientInvoicesTab({
         </div>
       </div>
 
-      <div className="client-inv__filters client-inv__filters--grid">
+      <div className="client-inv__filter-head admin-desktop-only">
+        <AdminSearchInput
+          value={filters.search}
+          onChange={(value) => patchFilters({ search: value })}
+          placeholder="Search invoice, child, parent…"
+        />
+        <div className="client-inv__filter-head-actions">
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((v) => !v)}
+          >
+            {filtersOpen ? 'Hide filters' : 'Show filters'}
+            {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+          </button>
+          {activeFilterCount > 0 ? (
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearFilters}>
+              Clear filters
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <AdminCollapsibleFilters
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        collapseOnDesktop
+        quickSearch={
+          <AdminSearchInput
+            value={filters.search}
+            onChange={(value) => patchFilters({ search: value })}
+            placeholder="Search invoice, child, parent…"
+          />
+        }
+        activeChips={[
+          filters.year && `Year ${filters.year}`,
+          filters.month && filters.month,
+          filters.module && filters.module,
+          filters.status && filters.status.replaceAll('_', ' '),
+          filters.invoiceType && filters.invoiceType,
+        ].filter(Boolean)}
+        activeCount={activeFilterCount}
+      >
+      <div
+        className={`client-inv__filters client-inv__filters--grid${!filtersOpen ? ' client-inv__filters--collapsed' : ''}`}
+        role="region"
+        aria-label="Invoice filters"
+      >
         <label className="client-inv__filter-field">
           <span className="client-inv__filter-label">Year</span>
           <select
@@ -596,7 +676,7 @@ export function AdminClientInvoicesTab({
             ))}
           </select>
         </label>
-        <div className="client-inv__filter-field client-inv__filter-field--search client-inv__filter-field--search-compact">
+        <div className="client-inv__filter-field client-inv__filter-field--search client-inv__filter-field--search-compact admin-mobile-only">
           <AdminSearchInput
             value={filters.search}
             onChange={(value) => patchFilters({ search: value })}
@@ -604,6 +684,7 @@ export function AdminClientInvoicesTab({
           />
         </div>
       </div>
+      </AdminCollapsibleFilters>
 
       <div className="client-inv__toolbar">
         <button
@@ -632,69 +713,113 @@ export function AdminClientInvoicesTab({
       ) : invoices.length === 0 ? (
         <AdminEmptyState title="No client invoices" description="Raise an invoice for a family case to get started." />
       ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Invoice</th>
-                <th>Client</th>
-                <th>Case</th>
-                <th>Month</th>
-                <th>Type</th>
-                <th>Total</th>
-                <th>Balance</th>
-                <th>Due</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.map((inv) => (
-                <tr key={inv.id}>
-                  <td>
-                    <span className="admin-table__primary">{inv.invoiceNumber}</span>
-                  </td>
-                  <td>
-                    <span className="admin-table__primary">{inv.childName}</span>
-                    <span className="admin-table__meta">{inv.parentName}</span>
-                  </td>
-                  <td>{inv.caseId}</td>
-                  <td>{inv.billingMonth}</td>
-                  <td>
-                    <span className="admin-chip">{inv.invoiceType}</span>
-                  </td>
-                  <td>{formatCurrency(inv.totalInr)}</td>
-                  <td>
-                    <strong style={{ color: inv.balanceInr > 0 ? '#b45309' : '#047857' }}>{formatCurrency(inv.balanceInr)}</strong>
-                  </td>
-                  <td>{inv.dueDate || '—'}</td>
-                  <td>
-                    <span className={statusPillClass(displayStatus(inv))}>{displayStatus(inv)}</span>
-                  </td>
-                  <td>
-                    <div className="admin-table__actions">
-                      <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setViewId(inv.id)}>
-                        View
+        <AdminDataList
+          desktop={
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Client</th>
+                    <th>Case</th>
+                    <th>Month</th>
+                    <th>Type</th>
+                    <th>Total</th>
+                    <th>Balance</th>
+                    <th>Due</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map((inv) => (
+                    <tr key={inv.id}>
+                      <td>
+                        <span className="admin-table__primary">{inv.invoiceNumber}</span>
+                      </td>
+                      <td>
+                        <span className="admin-table__primary">{inv.childName}</span>
+                        <span className="admin-table__meta">{inv.parentName}</span>
+                      </td>
+                      <td>{inv.caseId}</td>
+                      <td>{inv.billingMonth}</td>
+                      <td>
+                        <span className="admin-chip">{inv.invoiceType}</span>
+                      </td>
+                      <td>{formatCurrency(inv.totalInr)}</td>
+                      <td>
+                        <strong style={{ color: inv.balanceInr > 0 ? '#b45309' : '#047857' }}>
+                          {formatCurrency(inv.balanceInr)}
+                        </strong>
+                      </td>
+                      <td>{inv.dueDate || '—'}</td>
+                      <td>
+                        <span className={statusPillClass(displayStatus(inv))}>{displayStatus(inv)}</span>
+                      </td>
+                      <td>
+                        <div className="admin-table__actions">
+                          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setViewId(inv.id)}>
+                            View
+                          </button>
+                          {canWriteBilling && (inv.status === 'DRAFT' || inv.status === 'GENERATED') ? (
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--primary admin-btn--sm"
+                              onClick={async () => {
+                                await apiFetch(`/api/v1/admin/client-billing/invoices/${inv.id}/notify-parent`, { method: 'POST' })
+                                load()
+                              }}
+                            >
+                              Send
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          }
+          mobile={invoices.map((inv) => (
+            <li key={inv.id}>
+              <AdminTaskCard
+                title={inv.invoiceNumber}
+                meta={`${inv.childName} · ${inv.billingMonth || '—'}`}
+                badges={<span className={statusPillClass(displayStatus(inv))}>{displayStatus(inv)}</span>}
+                actions={
+                  <>
+                    <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setViewId(inv.id)}>
+                      View
+                    </button>
+                    {canWriteBilling && (inv.status === 'DRAFT' || inv.status === 'GENERATED') ? (
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn--primary admin-btn--sm"
+                        onClick={async () => {
+                          await apiFetch(`/api/v1/admin/client-billing/invoices/${inv.id}/notify-parent`, { method: 'POST' })
+                          load()
+                        }}
+                      >
+                        Send
                       </button>
-                      {canWriteBilling && (inv.status === 'DRAFT' || inv.status === 'GENERATED') ? (
-                        <button
-                          type="button"
-                          className="admin-btn admin-btn--primary admin-btn--sm"
-                          onClick={async () => {
-                            await apiFetch(`/api/v1/admin/client-billing/invoices/${inv.id}/notify-parent`, { method: 'POST' })
-                            load()
-                          }}
-                        >
-                          Send
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    ) : null}
+                  </>
+                }
+              >
+                <p style={{ margin: 0 }}>
+                  Balance{' '}
+                  <strong style={{ color: inv.balanceInr > 0 ? '#b45309' : '#047857' }}>
+                    {formatCurrency(inv.balanceInr)}
+                  </strong>
+                  {' '}
+                  of {formatCurrency(inv.totalInr)}
+                  {inv.dueDate ? ` · Due ${inv.dueDate}` : ''}
+                </p>
+              </AdminTaskCard>
+            </li>
+          ))}
+        />
       )}
 
       {viewId ? (

@@ -18,12 +18,42 @@ import { TherapistSupportHubPage } from '../components/therapist/TherapistSuppor
 import { TherapistLeavePage } from '../components/therapist/TherapistLeavePage.jsx'
 import { TherapistSlotsPage } from '../components/therapist/TherapistSlotsPage.jsx'
 import { NotificationCenterPage } from '../components/shared/NotificationCenterPage.jsx'
+import { RouteLoading } from '../components/shared/RouteLoading.jsx'
+import { PortalRouteError } from '../components/shared/PortalRouteError.jsx'
 
 const ReportEditPage = lazy(() =>
   import('../components/reports/ReportEditPage.jsx').then((m) => ({ default: m.ReportEditPage }))
 )
-const ParentRoutes = lazy(() =>
-  import('./ParentRoutes.jsx').then((m) => ({ default: m.ParentRoutes }))
+const ParentPortalLayout = lazy(() =>
+  import('./ParentPortalLayout.jsx').then((m) => ({ default: m.ParentPortalLayout }))
+)
+const ParentDashboardRoute = lazy(() =>
+  import('./ParentRoutes.jsx').then((m) => ({ default: m.ParentDashboardRoute }))
+)
+const ClientBookAppointmentPage = lazy(() =>
+  import('../components/client-portal/ClientBookAppointmentPage.jsx').then((m) => ({
+    default: m.ClientBookAppointmentPage,
+  }))
+)
+const ClientSessionLogsPage = lazy(() =>
+  import('../components/client-portal/ClientSessionLogsPage.jsx').then((m) => ({
+    default: m.ClientSessionLogsPage,
+  }))
+)
+const ParentReportsPage = lazy(() =>
+  import('../components/client-portal/ParentReportsPage.jsx').then((m) => ({ default: m.ParentReportsPage }))
+)
+const ParentBillingPage = lazy(() =>
+  import('../components/client-portal/ParentBillingPage.jsx').then((m) => ({ default: m.ParentBillingPage }))
+)
+const ParentProfilePage = lazy(() =>
+  import('../components/client-portal/ParentProfilePage.jsx').then((m) => ({ default: m.ParentProfilePage }))
+)
+const ClientSupportHubPage = lazy(() =>
+  import('../components/client-portal/ClientSupportHubPage.jsx').then((m) => ({ default: m.ClientSupportHubPage }))
+)
+const ParentCaseDetailPage = lazy(() =>
+  import('../components/client-portal/ParentCaseDetailPage.jsx').then((m) => ({ default: m.ParentCaseDetailPage }))
 )
 const HRMemosPage = lazy(() =>
   import('../components/hr-portal/HRMemosPage.jsx').then((m) => ({ default: m.HRMemosPage }))
@@ -77,6 +107,11 @@ const AdminServiceCategoriesPage = lazy(() =>
     default: m.AdminServiceCategoriesPage,
   }))
 )
+const AdminStaffProfilePage = lazy(() =>
+  import('../components/admin-portal/AdminStaffProfilePage.jsx').then((m) => ({
+    default: m.AdminStaffProfilePage,
+  }))
+)
 const AdminClientProfilesPage = lazy(() =>
   import('../components/admin-portal/AdminClientProfilesPage.jsx').then((m) => ({
     default: m.AdminClientProfilesPage,
@@ -100,7 +135,7 @@ const LeaveManagementPage = lazy(() =>
 )
 
 function RouteFallback() {
-  return <p style={{ padding: '2rem' }}>Loading…</p>
+  return <RouteLoading />
 }
 
 function Lazy({ children }) {
@@ -109,31 +144,23 @@ function Lazy({ children }) {
 
 function PortalRedirect() {
   const { portal, loading } = useAuth()
-  const [adminLanding, setAdminLanding] = useState(null)
+  const [adminLanding, setAdminLanding] = useState('/admin')
 
   useEffect(() => {
-    if (portal !== 'admin') {
-      setAdminLanding(null)
-      return
-    }
+    if (portal !== 'admin') return
     let cancelled = false
     apiFetch('/api/v1/admin/home')
       .then((home) => {
-        if (!cancelled) setAdminLanding(home?.landing_route || '/admin')
+        if (!cancelled && home?.landing_route) setAdminLanding(home.landing_route)
       })
-      .catch(() => {
-        if (!cancelled) setAdminLanding('/admin')
-      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [portal])
 
-  if (loading) return <p style={{ padding: '2rem' }}>Loading…</p>
-  if (portal === 'admin') {
-    if (!adminLanding) return <p style={{ padding: '2rem' }}>Loading…</p>
-    return <Navigate to={adminLanding} replace />
-  }
+  if (loading) return <RouteLoading />
+  if (portal === 'admin') return <Navigate to={adminLanding} replace />
   if (portal === 'parent') return <Navigate to="/parent" replace />
   if (portal === 'therapist') return <Navigate to="/therapist" replace />
   return <Navigate to="/login" replace />
@@ -141,7 +168,7 @@ function PortalRedirect() {
 
 function Protected({ portal, children }) {
   const { user, portal: current, loading } = useAuth()
-  if (loading) return <p style={{ padding: '2rem' }}>Loading…</p>
+  if (loading) return <RouteLoading />
   if (!user) return <Navigate to="/login" replace />
   if (current !== portal) return <Navigate to="/" replace />
   return children
@@ -196,21 +223,91 @@ export function AppRoutes() {
       </Route>
 
       <Route
-        path="/parent/*"
+        path="/parent"
         element={
           <Protected portal="parent">
             <PortalShell portal="parent" />
           </Protected>
         }
+        errorElement={<PortalRouteError />}
       >
         <Route
-          path="*"
           element={
             <Lazy>
-              <ParentRoutes />
+              <ParentPortalLayout />
             </Lazy>
           }
-        />
+          errorElement={<PortalRouteError />}
+        >
+          <Route
+            index
+            element={
+              <Lazy>
+                <ParentDashboardRoute />
+              </Lazy>
+            }
+          />
+          <Route
+            path="cases/:caseId"
+            element={
+              <Lazy>
+                <ParentCaseDetailPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="reports"
+            element={
+              <Lazy>
+                <ParentReportsPage />
+              </Lazy>
+            }
+          />
+          <Route path="iep" element={<Navigate to="/parent/reports?type=iep" replace />} />
+          <Route
+            path="billing"
+            element={
+              <Lazy>
+                <ParentBillingPage />
+              </Lazy>
+            }
+          />
+          <Route path="address" element={<Navigate to="/parent/profile" replace />} />
+          <Route
+            path="book"
+            element={
+              <Lazy>
+                <ClientBookAppointmentPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="session-logs"
+            element={
+              <Lazy>
+                <ClientSessionLogsPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="profile"
+            element={
+              <Lazy>
+                <ParentProfilePage />
+              </Lazy>
+            }
+          />
+          <Route path="notifications" element={<NotificationCenterPage portal="parent" />} />
+          <Route
+            path="support"
+            element={
+              <Lazy>
+                <ClientSupportHubPage />
+              </Lazy>
+            }
+          />
+          <Route path="incidents" element={<Navigate to="/parent/support?tab=incidents" replace />} />
+        </Route>
       </Route>
 
       <Route
@@ -340,6 +437,14 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminPeoplePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="profile"
+          element={
+            <Lazy>
+              <AdminStaffProfilePage />
             </Lazy>
           }
         />

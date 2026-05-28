@@ -10,8 +10,8 @@ from app.core.config import settings
 _connect_args = {"check_same_thread": False} if settings.is_sqlite else {}
 _engine_kwargs: dict = {"pool_pre_ping": True, "connect_args": _connect_args}
 if not settings.is_sqlite:
-    _engine_kwargs["pool_size"] = 10
-    _engine_kwargs["max_overflow"] = 20
+    _engine_kwargs["pool_size"] = settings.db_pool_size
+    _engine_kwargs["max_overflow"] = settings.db_max_overflow
 
 engine = create_engine(settings.database_url, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAdminHome } from '../../hooks/useAdminHome.js'
 import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
-import { AdminPageHeader } from './ui/index.js'
+import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
 import { AdminClientInvoicesTab } from './AdminClientInvoicesTab.jsx'
 import { AdminProductRulesTab } from './AdminProductRulesTab.jsx'
 import { AdminSessionLedgerTab } from './AdminSessionLedgerTab.jsx'
@@ -21,6 +21,19 @@ const TABS = [
   { id: 'claims', label: 'Payment claims' },
   { id: 'disputes', label: 'Disputes' },
 ]
+
+const MOBILE_TAB_LABELS = {
+  client: 'Invoices',
+  therapist: 'Payouts',
+  ledger: 'Ledger',
+  products: 'Products & rules',
+  packages: 'Packages',
+  claims: 'Claims',
+  disputes: 'Disputes',
+}
+
+const FINANCE_PRIMARY_TABS = ['client', 'therapist', 'ledger', 'claims', 'disputes']
+const FINANCE_OVERFLOW_TABS = ['products', 'packages']
 
 function financeWidgetFooter(widget) {
   const map = {
@@ -85,20 +98,36 @@ export function AdminInvoicesPage() {
         </div>
       ) : null}
 
-      <div className="sessions-dash__tabs" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`sessions-dash__tab ${activeTab === t.id ? 'is-active' : ''}`}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-            {t.id === 'claims' && claimsPending > 0 ? ` (${claimsPending})` : null}
-            {t.id === 'client' && claimsPending > 0 && activeTab !== 'claims' ? ' ·' : null}
-          </button>
-        ))}
-      </div>
+      <PortalTabBar
+        className="admin-page__tabs-scroll admin-desktop-only"
+        ariaLabel="Billing sections"
+        activeId={activeTab}
+        onChange={setTab}
+        tabs={TABS.map((t) => ({
+          id: t.id,
+          label: t.label,
+          badge:
+            t.id === 'claims' && claimsPending > 0
+              ? String(claimsPending)
+              : undefined,
+        }))}
+      />
+
+      <AdminMobilePillTabs
+        ariaLabel="Billing sections"
+        activeId={activeTab}
+        onChange={setTab}
+        primaryIds={FINANCE_PRIMARY_TABS}
+        overflowIds={FINANCE_OVERFLOW_TABS}
+        tabs={TABS.map((t) => ({
+          id: t.id,
+          label: MOBILE_TAB_LABELS[t.id] || t.label,
+          badge:
+            t.id === 'claims' && claimsPending > 0
+              ? String(claimsPending)
+              : undefined,
+        }))}
+      />
 
       {activeTab === 'client' ? (
         <AdminClientInvoicesTab

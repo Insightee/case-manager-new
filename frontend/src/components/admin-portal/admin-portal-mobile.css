@@ -1,0 +1,867 @@
+/* Staff / admin portal — mobile-first task layouts (≤900px) */
+
+@media (max-width: 900px) {
+  .admin-page {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .admin-people-search {
+    margin-bottom: 12px;
+  }
+
+  .admin-people-search .admin-search {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .admin-page-header__sub,
+  .admin-portal-lead {
+    display: none;
+  }
+
+  .admin-page-header__title {
+    font-size: 1.25rem;
+    line-height: 1.25;
+  }
+
+  .admin-page-header {
+    margin-bottom: 12px;
+  }
+
+  /* Scrollable tab rows (no multi-row wrap grids) */
+  .sessions-dash__tabs,
+  .admin-page__tabs-scroll {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  .sessions-dash__tabs::-webkit-scrollbar,
+  .admin-page__tabs-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sessions-dash__tab {
+    flex-shrink: 0;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  /* Compact KPI strips */
+  .admin-reports__kpis,
+  .sessions-dash__kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .admin-reports__kpi,
+  .sessions-dash__kpi {
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+
+  .admin-reports__kpi-value,
+  .sessions-dash__kpi-value {
+    font-size: 1.1rem;
+  }
+
+  .admin-reports__kpi-label,
+  .sessions-dash__kpi-label {
+    font-size: 0.6rem;
+  }
+
+  .sessions-dash--hide-kpis-mobile .sessions-dash__kpi-grid {
+    display: none;
+  }
+
+  /* Collapsible filter shell */
+  .admin-collapsible-filters__bar--filters-only {
+    justify-content: flex-end;
+  }
+
+  .admin-collapsible-filters__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    padding: 8px 0;
+    background: linear-gradient(
+      180deg,
+      var(--admin-bg, #f8fafc) 0%,
+      var(--admin-bg, #f8fafc) 85%,
+      transparent 100%
+    );
+  }
+
+  .admin-collapsible-filters__bar .admin-search {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .admin-collapsible-filters__toggle {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #334155;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .admin-collapsible-filters__toggle[aria-expanded='true'] {
+    border-color: #6366f1;
+    background: #eef2ff;
+    color: #4338ca;
+  }
+
+  .admin-collapsible-filters__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 6px;
+    border-radius: 99px;
+    background: #6366f1;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+  }
+
+  .admin-collapsible-filters__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .admin-collapsible-filters__chip {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 99px;
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+  }
+
+  .admin-collapsible-filters__panel {
+    display: none;
+    margin-bottom: 12px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .admin-collapsible-filters__panel.is-open {
+    display: block;
+    max-height: min(70vh, calc(100dvh - var(--portal-bottom-nav-offset, 72px) - 140px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
+    position: relative;
+    z-index: 14;
+  }
+
+  .admin-collapsible-filters__panel .admin-meetings-filters,
+  .admin-collapsible-filters__panel .sessions-dash__filters,
+  .admin-collapsible-filters__panel .admin-reports__filters,
+  .admin-collapsible-filters__panel .client-inv__filters,
+  .admin-collapsible-filters__panel .admin-cases-pipeline__filters {
+    margin-bottom: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    grid-template-columns: none;
+  }
+
+  .admin-collapsible-filters__panel .admin-search,
+  .admin-collapsible-filters__panel .admin-meetings-filters__search {
+    display: none;
+  }
+
+  .admin-collapsible-filters__panel .admin-filter-field,
+  .admin-collapsible-filters__panel .admin-reports__filter,
+  .admin-collapsible-filters__panel .client-inv__filter-field {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .admin-collapsible-filters__panel .admin-input,
+  .admin-collapsible-filters__panel .admin-filter-select__input,
+  .admin-collapsible-filters__panel .admin-search__input,
+  .admin-collapsible-filters__panel input[type='date'],
+  .admin-collapsible-filters__panel input[type='month'],
+  .admin-collapsible-filters__panel select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .admin-reports__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-reports__filter-hint {
+    display: none;
+  }
+
+  .admin-reports__scope {
+    display: none;
+  }
+
+  .admin-reports__tabs {
+    display: none !important;
+  }
+
+  .admin-reports__filters:not(.admin-reports__filters--panel) {
+    display: none !important;
+  }
+
+  .admin-reports__filters--panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+
+  .admin-reports__filters--panel .admin-reports__filter {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-reports__filters--panel .admin-reports__filter-select,
+  .admin-reports__filters--panel .admin-input {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .admin-cases-pipeline__filter-head {
+    display: none;
+  }
+
+  .admin-cases-pipeline__toolbar-inner {
+    display: none !important;
+  }
+
+  .admin-cases-pipeline__toolbar {
+    margin-bottom: 10px;
+  }
+
+  .admin-cases-pipeline__filter-head .admin-cases-pipeline__sort--inline {
+    display: none !important;
+  }
+
+  .admin-cases-pipeline__filter-head .admin-cases-pipeline__result-count {
+    margin-left: auto;
+    width: 100%;
+  }
+
+  .admin-cases-pipeline__toolbar-mobile {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .admin-cases-pipeline__mobile-controls {
+    margin-left: auto;
+  }
+
+  .admin-cases-pipeline__mobile-controls .admin-btn {
+    min-height: 44px;
+  }
+
+  .admin-cases-pipeline__toolbar-mobile .admin-cases-pipeline__sort-menu {
+    width: 100%;
+  }
+
+  .admin-cases-pipeline__toolbar-mobile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .admin-cases-pipeline__toolbar-mobile-actions .admin-btn {
+    min-height: 44px;
+  }
+
+  .admin-cases-pipeline__hint {
+    display: none;
+  }
+
+  .client-inv__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .client-inv__kpi {
+    padding: 8px 10px;
+  }
+
+  .client-inv__kpi-value {
+    font-size: 1.1rem;
+  }
+
+  .admin-toolbar--mobile-compact {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-toolbar--mobile-compact .admin-search {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .admin-toolbar--mobile-compact select.admin-search__input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Hide desktop-only table; show mobile cards */
+  .admin-data-list__desktop {
+    display: none !important;
+  }
+
+  .admin-data-list__mobile {
+    display: flex !important;
+  }
+
+  /* Task cards */
+  .admin-task-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .admin-task-card.is-highlight {
+    background: #fef9c3;
+    border-color: #fde047;
+    box-shadow: inset 3px 0 0 #eab308;
+  }
+
+  .admin-task-card__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .admin-task-card__title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.35;
+  }
+
+  .admin-task-card__meta {
+    margin: 4px 0 0;
+    font-size: 0.75rem;
+    color: #64748b;
+    line-height: 1.4;
+  }
+
+  .admin-task-card__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .admin-task-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .admin-task-card__actions .admin-btn {
+    min-height: 44px;
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .admin-task-card__actions .admin-btn-group {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .admin-task-card__actions .admin-btn-group .admin-btn {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 120px;
+  }
+
+  .admin-task-card__details summary {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6366f1;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .admin-task-card__details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .admin-task-card__body {
+    font-size: 0.8125rem;
+    color: #334155;
+    line-height: 1.5;
+    margin-top: 8px;
+  }
+
+  .admin-data-list__mobile {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .admin-case-detail__header-compact .admin-page__subtitle {
+    font-size: 0.8125rem;
+  }
+
+  .admin-case-detail__tabs {
+    margin-bottom: 12px;
+  }
+
+  .admin-case-detail__lead-link {
+    display: none;
+  }
+
+  .case-sessions-logs__intro {
+    display: none;
+  }
+
+  .reject-with-comment--mobile .admin-btn-group {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .reject-with-comment--mobile .admin-btn-group .admin-btn {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .admin-queue__item .admin-btn-group {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .admin-queue__item .admin-btn-group .admin-btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .admin-queue__item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .admin-staff-form .admin-form-grid,
+  .admin-panel__body .admin-form-grid {
+    min-width: 0;
+  }
+
+  .rbac-editor,
+  .rbac-access-summary {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .rbac-access-summary .admin-badge {
+    white-space: normal;
+  }
+
+  /* Mobile-only utility */
+  .admin-mobile-only {
+    display: block;
+  }
+
+  .admin-desktop-only {
+    display: none !important;
+  }
+
+  /* Override login grid tabs inside admin shell */
+  .app-shell--admin .portal-tabs.admin-page__tabs-scroll {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-width: none;
+    width: 100%;
+    padding: 0;
+    margin-bottom: 12px;
+    background: transparent;
+    border: none;
+    gap: 8px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .app-shell--admin .portal-tabs.admin-page__tabs-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-shell--admin .portal-tabs__tab {
+    flex-shrink: 0;
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    margin-bottom: 0;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+  }
+
+  .app-shell--admin .portal-tabs__tab.is-active {
+    background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(13, 148, 136, 0.35);
+  }
+
+  /* Pill tabs component */
+  .admin-mobile-pill-tabs {
+    margin-bottom: 12px;
+  }
+
+  .admin-mobile-pill-tabs__row {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 2px 0;
+  }
+
+  .admin-mobile-pill-tabs__row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-mobile-pill-tabs__pill {
+    flex-shrink: 0;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .admin-mobile-pill-tabs__pill.is-active {
+    background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(13, 148, 136, 0.35);
+  }
+
+  .admin-mobile-pill-tabs__badge {
+    display: inline-flex;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.25);
+    font-size: 0.65rem;
+    font-weight: 700;
+  }
+
+  .admin-mobile-pill-tabs__pill:not(.is-active) .admin-mobile-pill-tabs__badge {
+    background: #0d9488;
+    color: #fff;
+  }
+
+  .admin-mobile-pill-tabs__more-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .admin-mobile-pill-tabs__menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 30;
+    min-width: 200px;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  }
+
+  .admin-mobile-pill-tabs__menu button {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    text-align: left;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+  }
+
+  .admin-mobile-pill-tabs__menu button.is-active,
+  .admin-mobile-pill-tabs__menu button:hover {
+    background: #e8f7f5;
+    color: #0f3d2e;
+  }
+
+  /* Sticky inline filters */
+  .admin-sticky-filter-row {
+    position: sticky;
+    top: 0;
+    z-index: 11;
+    margin-bottom: 12px;
+    padding: 8px 0;
+    background: linear-gradient(180deg, #f8fafc 0%, #f8fafc 85%, transparent 100%);
+  }
+
+  .admin-sticky-filter-row__scroll {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .admin-sticky-filter-row__scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-sticky-filter-row .client-inv__filter-field {
+    flex-shrink: 0;
+    margin: 0;
+    min-width: 120px;
+  }
+
+  .admin-sticky-filter-row .admin-input,
+  .admin-sticky-filter-row select.admin-search__input {
+    min-height: 44px;
+    font-size: 0.8125rem;
+  }
+
+  .admin-sticky-filter-row .admin-search {
+    flex: 1 1 160px;
+    min-width: 140px;
+  }
+
+  .admin-sticky-filter-row .admin-btn--sm {
+    flex-shrink: 0;
+    min-height: 44px;
+  }
+
+  /* Guided empty states */
+  .admin-empty--guided {
+    padding: 20px 16px;
+    text-align: left;
+  }
+
+  .admin-empty__hints {
+    margin: 12px 0 0;
+    padding-left: 1.25rem;
+    font-size: 0.8125rem;
+    color: #64748b;
+    line-height: 1.5;
+  }
+
+  .admin-empty__hints li {
+    margin-bottom: 4px;
+  }
+
+  .admin-empty__action {
+    margin-top: 14px;
+  }
+
+  .admin-empty__action .admin-btn,
+  .admin-empty__action a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Hub embedded: hide duplicate headers */
+  .admin-hub-embedded .admin-page-header {
+    display: none;
+  }
+
+  .admin-hub-embedded .admin-panel__title-row--hub-hidden {
+    display: none;
+  }
+
+  /* Therapist profile KPI → horizontal stat strip */
+  .admin-reports-kpi-row--mobile-strip {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-bottom: 12px;
+  }
+
+  .admin-reports-kpi-row--mobile-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-reports-kpi-row--mobile-strip .admin-stat {
+    flex: 0 0 auto;
+    min-width: 100px;
+    padding: 10px 12px;
+  }
+
+  .admin-reports-kpi-row--mobile-strip .admin-stat__value {
+    font-size: 1.25rem;
+  }
+
+  .admin-reports-kpi-row--desktop {
+    display: none;
+  }
+
+  /* Compact people / client actions */
+  .admin-people-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    margin-bottom: 12px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .admin-people-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-people-actions .admin-btn {
+    flex-shrink: 0;
+    min-height: 44px;
+  }
+
+  /* Finance ledger card emphasis */
+  .admin-ledger-card__amount {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+}
+
+@media (min-width: 901px) {
+  .admin-mobile-only {
+    display: none !important;
+  }
+
+  .admin-desktop-only {
+    display: block;
+  }
+
+  .admin-reports-kpi-row--mobile-strip {
+    display: none;
+  }
+
+  .admin-reports-kpi-row--desktop {
+    display: grid;
+  }
+  .admin-cases-pipeline__filters--collapsed {
+    display: none !important;
+  }
+
+  .admin-cases-pipeline__toolbar {
+    margin-bottom: 14px;
+  }
+
+  .admin-collapsible-filters__bar,
+  .admin-collapsible-filters__toggle,
+  .admin-collapsible-filters__chips {
+    display: none;
+  }
+
+  .admin-collapsible-filters__panel {
+    display: block !important;
+    margin-bottom: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+
+  .admin-collapsible-filters__panel--desktop-collapsible:not(.is-open) {
+    display: none !important;
+  }
+
+  .admin-collapsible-filters__panel--desktop-collapsible.is-open {
+    display: block !important;
+    margin-bottom: 12px;
+  }
+
+  .admin-data-list__mobile {
+    display: none !important;
+  }
+
+  .admin-data-list__desktop {
+    display: block !important;
+  }
+}

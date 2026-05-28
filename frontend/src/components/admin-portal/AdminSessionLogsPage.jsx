@@ -5,7 +5,13 @@ import {
   PieChart, Pie, Cell, AreaChart, Area,
 } from 'recharts'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
-import { AdminPageHeader, StatusBadge } from './ui/index.js'
+import {
+  AdminCollapsibleFilters,
+  AdminDataList,
+  AdminPageHeader,
+  AdminTaskCard,
+  StatusBadge,
+} from './ui/index.js'
 import './admin-sessions-dashboard.css'
 
 const STATUS_COLORS = {
@@ -401,6 +407,7 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
           value={tableSearch}
           onChange={(e) => setTableSearch(e.target.value)}
           placeholder="Filter rows…"
+          aria-label="Filter sessions"
         />
         <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => downloadFile('xlsx')}>
           Excel
@@ -413,6 +420,8 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
       {filtered.length === 0 ? (
         <div className="sessions-dash__empty">No sessions found for this filter.</div>
       ) : (
+        <AdminDataList
+          desktop={
         <div className="admin-table-wrap sessions-dash__table-wrap">
           <table className="admin-table admin-table--compact sessions-dash__table">
             <thead>
@@ -508,6 +517,51 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
             </tbody>
           </table>
         </div>
+          }
+          mobile={filtered.map((s) => {
+                const startDisplay = s.actual_start_at ? fmt(s.actual_start_at) : (s.start_time ? s.start_time.slice(0, 5) : '—')
+                const endDisplay = s.actual_end_at ? fmt(s.actual_end_at) : (s.end_time ? s.end_time.slice(0, 5) : '—')
+                const isHighlight = highlightSessionId && String(s.id) === String(highlightSessionId)
+                const reviewHref = s.case_id
+                  ? `/admin/cases/${s.case_id}?tab=logs&session_id=${s.id}`
+                  : null
+                return (
+                  <li key={s.id} ref={isHighlight ? highlightRef : null}>
+                    <AdminTaskCard
+                      highlight={isHighlight}
+                      title={`${fmtDate(s.scheduled_date)} · ${startDisplay}${endDisplay !== '—' ? ` – ${endDisplay}` : ''}`}
+                      meta={[s.case_code, s.child_name, s.therapist_name].filter(Boolean).join(' · ') || '—'}
+                      badges={<StatusBadge status={s.status} />}
+                      actions={
+                        <>
+                          {reviewHref ? (
+                            <Link
+                              to={reviewHref}
+                              className="admin-btn admin-btn--primary admin-btn--sm"
+                            >
+                              {s.has_daily_log ? 'Review log' : 'View case'}
+                            </Link>
+                          ) : null}
+                          {s.status === 'CANCELLED' || s.status === 'NO_SHOW' || s.status === 'CLIENT_ABSENT' ? (
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--sm sessions-dash__flag-btn"
+                              onClick={() => setFlagSession(s)}
+                            >
+                              Flag
+                            </button>
+                          ) : null}
+                        </>
+                      }
+                    >
+                      <p className="admin-muted" style={{ margin: 0 }}>
+                        {s.product_module || '—'} · Log: {s.has_daily_log ? 'Submitted' : 'Pending'}
+                      </p>
+                    </AdminTaskCard>
+                  </li>
+                )
+              })}
+        />
       )}
 
       {flagSession ? (
@@ -610,6 +664,25 @@ export function AdminSessionLogsPage() {
   const sc = data?.status_counts || {}
   const totalInRange = Object.values(sc).reduce((a, b) => a + b, 0)
 
+  const filterChips = []
+  if (filters.dateFrom || filters.dateTo) {
+    filterChips.push(`${fmtDate(filters.dateFrom)} – ${fmtDate(filters.dateTo)}`)
+  }
+  if (filters.therapistId) {
+    const t = therapists.find((x) => String(x.therapist_user_id || x.id) === String(filters.therapistId))
+    filterChips.push(t?.therapist_name || t?.full_name || `Therapist #${filters.therapistId}`)
+  }
+  if (filters.productModule) filterChips.push(filters.productModule)
+  if (filters.status) filterChips.push(filters.status.replaceAll('_', ' '))
+  if (filters.caseId) filterChips.push(`Case #${filters.caseId}`)
+
+  const activeFilterCount = [
+    filters.therapistId,
+    filters.productModule,
+    filters.status,
+    filters.caseId,
+  ].filter(Boolean).length
+
   return (
     <div className="admin-page sessions-dash sessions-dash--compact">
       <AdminPageHeader
@@ -630,66 +703,73 @@ export function AdminSessionLogsPage() {
         </div>
       ) : null}
 
-      {/* Filter bar */}
-      <div className="sessions-dash__filters sessions-dash__filters--compact">
-        <span className="sessions-dash__filter-label">Range</span>
-        <input
-          type="date"
-          className="sessions-dash__filter-input"
-          value={filters.dateFrom}
-          onChange={(e) => setFilter('dateFrom', e.target.value)}
-        />
-        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>to</span>
-        <input
-          type="date"
-          className="sessions-dash__filter-input"
-          value={filters.dateTo}
-          onChange={(e) => setFilter('dateTo', e.target.value)}
-        />
+      <AdminCollapsibleFilters activeChips={filterChips} activeCount={activeFilterCount}>
+        <div className="sessions-dash__filters sessions-dash__filters--compact">
+          <span className="sessions-dash__filter-label">Range</span>
+          <input
+            type="date"
+            className="sessions-dash__filter-input"
+            value={filters.dateFrom}
+            onChange={(e) => setFilter('dateFrom', e.target.value)}
+          />
+          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>to</span>
+          <input
+            type="date"
+            className="sessions-dash__filter-input"
+            value={filters.dateTo}
+            onChange={(e) => setFilter('dateTo', e.target.value)}
+          />
 
-        <span className="sessions-dash__filter-label" style={{ marginLeft: 8 }}>Therapist</span>
-        <select
-          className="sessions-dash__filter-input"
-          style={{ width: 160 }}
-          value={filters.therapistId}
-          onChange={(e) => setFilter('therapistId', e.target.value)}
-        >
-          <option value="">All therapists</option>
-          {therapists.map((t) => (
-            <option key={t.therapist_user_id || t.id} value={t.therapist_user_id || t.id}>
-              {t.therapist_name || t.full_name || `#${t.therapist_user_id || t.id}`}
-            </option>
-          ))}
-        </select>
+          <span className="sessions-dash__filter-label" style={{ marginLeft: 8 }}>Therapist</span>
+          <select
+            className="sessions-dash__filter-input"
+            style={{ width: 160 }}
+            value={filters.therapistId}
+            onChange={(e) => setFilter('therapistId', e.target.value)}
+          >
+            <option value="">All therapists</option>
+            {therapists.map((t) => (
+              <option key={t.therapist_user_id || t.id} value={t.therapist_user_id || t.id}>
+                {t.therapist_name || t.full_name || `#${t.therapist_user_id || t.id}`}
+              </option>
+            ))}
+          </select>
 
-        {modules.length > 0 ? (
-          <>
-            <span className="sessions-dash__filter-label">Service</span>
-            <select
-              className="sessions-dash__filter-input"
-              style={{ width: 140 }}
-              value={filters.productModule}
-              onChange={(e) => setFilter('productModule', e.target.value)}
-            >
-              <option value="">All services</option>
-              {modules.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </>
-        ) : null}
+          {modules.length > 0 ? (
+            <>
+              <span className="sessions-dash__filter-label">Service</span>
+              <select
+                className="sessions-dash__filter-input"
+                style={{ width: 140 }}
+                value={filters.productModule}
+                onChange={(e) => setFilter('productModule', e.target.value)}
+              >
+                <option value="">All services</option>
+                {modules.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
 
-        <span className="sessions-dash__filter-label">Status</span>
-        <select
-          className="sessions-dash__filter-input"
-          style={{ width: 150 }}
-          value={filters.status}
-          onChange={(e) => setFilter('status', e.target.value)}
-        >
-          <option value="">All statuses</option>
-          {['SCHEDULED','IN_PROGRESS','COMPLETED','CANCELLED','NO_SHOW','RESCHEDULED','CLIENT_ABSENT','THERAPIST_LEAVE'].map((s) => (
-            <option key={s} value={s}>{s.replaceAll('_', ' ')}</option>
-          ))}
-        </select>
-      </div>
+          <span className="sessions-dash__filter-label">Status</span>
+          <select
+            className="sessions-dash__filter-input"
+            style={{ width: 150 }}
+            value={filters.status}
+            onChange={(e) => setFilter('status', e.target.value)}
+          >
+            <option value="">All statuses</option>
+            {['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'RESCHEDULED', 'CLIENT_ABSENT', 'THERAPIST_LEAVE'].map((s) => (
+              <option key={s} value={s}>
+                {s.replaceAll('_', ' ')}
+              </option>
+            ))}
+          </select>
+        </div>
+      </AdminCollapsibleFilters>
 
       {activeTab === 'overview' ? (
         <div className="sessions-dash__kpi-grid">

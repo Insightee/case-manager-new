@@ -1,18 +1,16 @@
 import { test, expect } from '@playwright/test'
+import { loginParent, sidebarLink } from './helpers/auth.js'
 
-test.describe('Parent booking calendar', () => {
+test.describe('Parent session schedule', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/login')
-    await page.getByLabel(/email/i).fill('parent@demo.com')
-    await page.getByLabel(/password/i).fill('demo123')
-    await page.getByRole('button', { name: /sign in|log in/i }).click()
-    await expect(page).toHaveURL(/\/parent/)
+    await loginParent(page)
   })
 
-  test('book appointment page shows week calendar', async ({ page }) => {
-    await page.getByRole('link', { name: /book appointment/i }).click()
-    await expect(page.getByRole('heading', { name: /book appointment/i })).toBeVisible()
-    await expect(page.getByText(/Today/)).toBeVisible()
-    await expect(page.getByRole('columnheader', { name: /Time/i })).toBeVisible()
+  test('session schedule page loads from navigation', async ({ page }) => {
+    await sidebarLink(page, 'Session schedule').click()
+    await expect(page).toHaveURL(/\/parent\/book/)
+    await expect(page.getByRole('heading', { name: 'Session schedule', level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Upcoming sessions' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Book a new therapy session' })).toBeVisible()
   })
 })

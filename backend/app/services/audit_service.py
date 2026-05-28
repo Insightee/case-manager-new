@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -145,3 +146,69 @@ def case_timeline(db: Session, user: User, case_id: int, *, limit: int = 40) -> 
 
     events.sort(key=lambda e: e.get("created_at") or "", reverse=True)
     return events[:limit]
+
+
+def app_usage_summary(
+    db: Session,
+    user: User,
+    *,
+    start_at: datetime,
+    end_at: datetime,
+    portal: Optional[str] = None,
+    staff_user_id: Optional[int] = None,
+) -> dict[str, Any]:
+    if not user_has_permission(user, "admin.override"):
+        raise PermissionError("Super admin permission required")
+
+    stmt = (
+        select(AuditEvent)
+        .options(joinedload(AuditEvent.actor))
+        .where(
+            AuditEvent.entity_type == "app_usage",
+            AuditEvent.action == "app_usage_heartbeat",
+            AuditEvent.created_at >= start_at,
+            AuditEvent.created_at <= end_at,
+        )
+        .order_by(AuditEvent.created_at.desc())
+    )
+    if staff_user_id is not None:
+        stmt = stmt.where(AuditEvent.actor_user_id == staff_user_id)
+
+    rows = list(db.scalars(stmt).all())
+    totals: dict[int, dict[str, Any]] = {}
+    for ev in rows:
+        payload = _parse_json(ev.new_value) or {}
+        if not isinstance(payload, dict):
+            continue
+        payload_portal = payload.get("portal")
+        if portal and payload_portal != portal:
+            continue
+        actor_id = ev.actor_user_id
+        if not actor_id:
+            continue
+        active_seconds = int(payload.get("active_seconds") or 0)
+        if active_seconds <= 0:
+            continue
+        bucket = totals.setdefault(
+            actor_id,
+            {
+                "user_id": actor_id,
+                "user_name": ev.actor.full_name if ev.actor else None,
+                "user_email": ev.actor.email if ev.actor else None,
+                "active_seconds": 0,
+                "heartbeats": 0,
+                "last_seen_at": None,
+            },
+        )
+        bucket["active_seconds"] += active_seconds
+        bucket["heartbeats"] += 1
+        created = ev.created_at.isoformat() if ev.created_at else None
+        if created and (bucket["last_seen_at"] is None or created > bucket["last_seen_at"]):
+            bucket["last_seen_at"] = created
+
+    items = sorted(totals.values(), key=lambda row: row["active_seconds"], reverse=True)
+    return {
+        "range": {"start_at": start_at.isoformat(), "end_at": end_at.isoformat(), "portal": portal},
+        "items": items,
+        "total_active_seconds": sum(item["active_seconds"] for item in items),
+    }

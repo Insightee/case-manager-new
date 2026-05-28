@@ -1,5 +1,8 @@
 .parent-profile {
   max-width: 640px;
+  width: 100%;
+  min-width: 0;
+  padding-bottom: 8px;
 }
 
 .parent-profile__intro {
@@ -7,6 +10,133 @@
   color: #64748b;
   margin: 0 0 20px;
   line-height: 1.5;
+}
+
+.parent-profile__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.parent-profile__avatar-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.parent-profile__skeleton {
+  border-radius: 12px;
+  background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
+  background-size: 200% 100%;
+  animation: parent-profile-shimmer 1.2s ease-in-out infinite;
+}
+
+.parent-profile__skeleton--avatar {
+  height: 88px;
+  margin-bottom: 16px;
+}
+
+.parent-profile__skeleton--card {
+  height: 120px;
+  margin-bottom: 16px;
+}
+
+.parent-profile__skeleton--tall {
+  height: 200px;
+}
+
+@keyframes parent-profile-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.parent-profile__address-type {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.parent-profile__address-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: min(140px, 100%);
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 2px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #475569;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+.parent-profile__address-pill.is-selected {
+  border-color: #6366f1;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.parent-profile__address-pill-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.parent-profile__save-bar {
+  margin-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .parent-profile__card {
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .parent-profile__field input,
+  .parent-profile__field select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .parent-profile__child-row {
+    padding: 12px;
+  }
+
+  .parent-profile__save-bar {
+    position: sticky;
+    bottom: calc(var(--portal-bottom-nav-offset, 76px) + 8px);
+    z-index: 20;
+    margin-top: 16px;
+    padding: 10px 0 4px;
+    background: linear-gradient(
+      180deg,
+      rgba(248, 250, 252, 0) 0%,
+      rgba(248, 250, 252, 0.92) 28%,
+      #f8fafc 100%
+    );
+  }
+
+  .parent-profile__save {
+    min-height: 48px;
+    box-shadow: 0 4px 14px rgba(79, 70, 229, 0.28);
+  }
 }
 
 .parent-profile__card {

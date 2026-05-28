@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -50,7 +51,11 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="login", entity_type="user", entity_id=user.id, **meta)
     db.commit()
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return TokenResponse(
+        access_token=access,
+        refresh_token=refresh,
+        user=_user_me_response(user, db),
+    )
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -75,7 +80,11 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     access, new_refresh = auth_service.issue_tokens(user)
     revoke_refresh_token(data["jti"])
     db.commit()
-    return TokenResponse(access_token=access, refresh_token=new_refresh)
+    return TokenResponse(
+        access_token=access,
+        refresh_token=new_refresh,
+        user=_user_me_response(user, db),
+    )
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
@@ -210,7 +219,11 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
         .options(selectinload(User.roles).selectinload(Role.permissions))
     ).first()
     access, refresh = auth_service.issue_tokens(user)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return TokenResponse(
+        access_token=access,
+        refresh_token=refresh,
+        user=_user_me_response(user, db),
+    )
 
 
 def _avatar_url(user: User) -> Optional[str]:
@@ -225,8 +238,15 @@ def _user_me_response(user: User, db: Session) -> UserMeResponse:
         id=user.id,
         email=user.email,
         full_name=user.full_name,
+        staff_id=user.external_employee_id,
         phone=user.phone,
         avatar_url=_avatar_url(user),
+        bio=user.bio,
+        job_title=user.job_title,
+        department=user.department,
+        timezone=user.timezone,
+        ui_preferences=user.ui_preferences or {},
+        notification_preferences=user.notification_preferences or {},
         roles=user.role_names,
         permissions=sorted(user.permission_names),
         region=user.region,
@@ -299,11 +319,62 @@ def update_me(
         if payload.employment_status not in allowed:
             raise HTTPException(status_code=400, detail="Therapists may only set status to ACTIVE or SUSPENDED")
         user.employment_status = EmploymentStatus(payload.employment_status)
+    if payload.bio is not None:
+        user.bio = payload.bio.strip() or None
+    if payload.job_title is not None:
+        user.job_title = payload.job_title.strip() or None
+    if payload.department is not None:
+        user.department = payload.department.strip() or None
+    if payload.timezone is not None:
+        user.timezone = payload.timezone.strip() or None
+    if payload.ui_preferences is not None:
+        user.ui_preferences = payload.ui_preferences or {}
+    if payload.notification_preferences is not None:
+        user.notification_preferences = payload.notification_preferences or {}
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update_profile", entity_type="user", entity_id=user.id, **meta)
     db.commit()
     db.refresh(user)
     return _user_me_response(user, db)
+
+
+class ActivityHeartbeat(BaseModel):
+    session_id: str
+    portal: str
+    route: Optional[str] = None
+    active_seconds: int
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+
+
+@router.post("/activity")
+def record_activity_heartbeat(
+    payload: ActivityHeartbeat,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.active_seconds <= 0:
+        raise HTTPException(status_code=400, detail="active_seconds must be positive")
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="app_usage_heartbeat",
+        entity_type="app_usage",
+        entity_id=payload.session_id,
+        new_value={
+            "session_id": payload.session_id,
+            "portal": payload.portal,
+            "route": payload.route,
+            "active_seconds": payload.active_seconds,
+            "started_at": payload.started_at.isoformat() if payload.started_at else None,
+            "ended_at": payload.ended_at.isoformat() if payload.ended_at else None,
+        },
+        **meta,
+    )
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/me/avatar")

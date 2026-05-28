@@ -7,11 +7,71 @@ import { dehydrateReportImages, hydrateReportImages } from '../../lib/reportHtml
 import { ReportImageExtension } from '../../lib/reportImageExtension.js'
 import './report-editor.css'
 
-function ToolbarButton({ active, onClick, children, title }) {
+function ToolbarButton({ active, onClick, children, title, className = '' }) {
   return (
-    <button type="button" className={active ? 'is-active' : ''} onClick={onClick} title={title}>
+    <button
+      type="button"
+      className={`${active ? 'is-active' : ''} ${className}`.trim()}
+      onClick={onClick}
+      title={title}
+    >
       {children}
     </button>
+  )
+}
+
+function FormatToolbar({ editor, reportId, onPickImage, disabled }) {
+  if (!editor || disabled) return null
+  return (
+    <>
+      <ToolbarButton
+        active={editor.isActive('bold')}
+        onClick={() => editor.chain().focus().toggleBold().run()}
+        title="Bold"
+      >
+        B
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive('italic')}
+        onClick={() => editor.chain().focus().toggleItalic().run()}
+        title="Italic"
+      >
+        I
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive('heading', { level: 2 })}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+        title="Heading"
+      >
+        H2
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive('bulletList')}
+        onClick={() => editor.chain().focus().toggleBulletList().run()}
+        title="Bullet list"
+      >
+        •
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive('orderedList')}
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        title="Numbered list"
+      >
+        1.
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive('blockquote')}
+        onClick={() => editor.chain().focus().toggleBlockquote().run()}
+        title="Quote"
+      >
+        “
+      </ToolbarButton>
+      {reportId ? (
+        <ToolbarButton onClick={onPickImage} title="Insert image">
+          Image
+        </ToolbarButton>
+      ) : null}
+    </>
   )
 }
 
@@ -23,6 +83,7 @@ export function ReportEditor({
   onPlanChange,
   onHtmlChange,
   disabled = false,
+  mobile = false,
 }) {
   const fileRef = useRef(null)
   const onHtmlChangeRef = useRef(onHtmlChange)
@@ -31,6 +92,8 @@ export function ReportEditor({
   const [uploadError, setUploadError] = useState(null)
   const [pendingFile, setPendingFile] = useState(null)
   const [editorReady, setEditorReady] = useState(false)
+  const [formatOpen, setFormatOpen] = useState(false)
+  const [planOpen, setPlanOpen] = useState(!mobile)
 
   const editor = useEditor({
     extensions: [
@@ -79,6 +142,15 @@ export function ReportEditor({
     if (editor) editor.setEditable(!disabled)
   }, [editor, disabled])
 
+  useEffect(() => {
+    if (!formatOpen) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') setFormatOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [formatOpen])
+
   const insertImage = useCallback(
     async (file) => {
       if (!reportId || !editor) return
@@ -99,7 +171,11 @@ export function ReportEditor({
     [editor, reportId],
   )
 
-  async function onPickImage(e) {
+  async function onPickImage() {
+    fileRef.current?.click()
+  }
+
+  async function onPickImageChange(e) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
@@ -108,6 +184,7 @@ export function ReportEditor({
     try {
       await insertImage(file)
       setPendingFile(null)
+      setFormatOpen(false)
     } catch (err) {
       setUploadError(err.message || 'Could not upload image')
     }
@@ -126,74 +203,73 @@ export function ReportEditor({
 
   if (!editor) return <p className="text-sm text-slate-500">Loading editor…</p>
 
+  const shellClass = `report-editor__shell${mobile ? ' report-editor__shell--mobile' : ''}`
+
   return (
-    <div>
-      <div className="report-editor__shell">
+    <div className={mobile ? 'report-editor--mobile' : undefined}>
+      <div className={shellClass}>
         {!disabled ? (
-          <div className="report-editor__toolbar">
-            <ToolbarButton
-              active={editor.isActive('bold')}
-              onClick={() => editor.chain().focus().toggleBold().run()}
-              title="Bold"
-            >
-              B
-            </ToolbarButton>
-            <ToolbarButton
-              active={editor.isActive('italic')}
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-              title="Italic"
-            >
-              I
-            </ToolbarButton>
-            <ToolbarButton
-              active={editor.isActive('heading', { level: 2 })}
-              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-              title="Heading"
-            >
-              H2
-            </ToolbarButton>
-            <ToolbarButton
-              active={editor.isActive('bulletList')}
-              onClick={() => editor.chain().focus().toggleBulletList().run()}
-              title="Bullet list"
-            >
-              • List
-            </ToolbarButton>
-            <ToolbarButton
-              active={editor.isActive('orderedList')}
-              onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              title="Numbered list"
-            >
-              1. List
-            </ToolbarButton>
-            <ToolbarButton
-              active={editor.isActive('blockquote')}
-              onClick={() => editor.chain().focus().toggleBlockquote().run()}
-              title="Quote"
-            >
-              “
-            </ToolbarButton>
-            {reportId ? (
-              <>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={onPickImage}
-                />
-                <ToolbarButton onClick={() => fileRef.current?.click()} title="Insert image">
-                  Image
-                </ToolbarButton>
-              </>
-            ) : null}
-          </div>
+          mobile ? (
+            <>
+              <div className="report-editor__mobile-bar">
+                <button
+                  type="button"
+                  className="report-editor__format-trigger"
+                  aria-expanded={formatOpen}
+                  onClick={() => setFormatOpen((o) => !o)}
+                >
+                  Format
+                </button>
+              </div>
+              {formatOpen ? (
+                <>
+                  <button
+                    type="button"
+                    className="report-editor__format-backdrop"
+                    aria-label="Close format menu"
+                    onClick={() => setFormatOpen(false)}
+                  />
+                  <div
+                    className="report-editor__format-sheet"
+                    role="dialog"
+                    aria-label="Text formatting"
+                  >
+                    <p className="report-editor__format-sheet-title">Format</p>
+                    <div className="report-editor__format-sheet-grid">
+                      <FormatToolbar
+                        editor={editor}
+                        reportId={reportId}
+                        onPickImage={onPickImage}
+                        disabled={disabled}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </>
+          ) : (
+            <div className="report-editor__toolbar">
+              <FormatToolbar
+                editor={editor}
+                reportId={reportId}
+                onPickImage={onPickImage}
+                disabled={disabled}
+              />
+            </div>
+          )
         ) : null}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden report-editor__file-input"
+          onChange={onPickImageChange}
+        />
         {uploadError ? (
-          <div className="report-editor__upload-error" role="alert" style={{ padding: '8px 12px', marginBottom: 8 }}>
+          <div className="report-editor__upload-error" role="alert">
             <span>{uploadError}</span>
             {pendingFile ? (
-              <button type="button" className="btn btn-secondary btn-sm" onClick={retryUpload} style={{ marginLeft: 8 }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={retryUpload}>
                 Retry upload
               </button>
             ) : null}
@@ -202,17 +278,38 @@ export function ReportEditor({
         <EditorContent editor={editor} className="report-editor__content" />
       </div>
 
-      <div className="report-editor__plan">
-        <label>
-          Plan for next month
-          <textarea
-            value={planNextMonth}
-            onChange={(e) => onPlanChange?.(e.target.value)}
-            placeholder="Goals, focus areas, and recommendations for the coming month…"
-            disabled={disabled}
-          />
-        </label>
-      </div>
+      {mobile ? (
+        <details
+          className="report-editor__plan-disclosure"
+          open={planOpen}
+          onToggle={(e) => setPlanOpen(e.currentTarget.open)}
+        >
+          <summary className="report-editor__plan-disclosure-summary">Plan for next month</summary>
+          <div className="report-editor__plan">
+            <label>
+              <span className="sr-only">Plan for next month</span>
+              <textarea
+                value={planNextMonth}
+                onChange={(e) => onPlanChange?.(e.target.value)}
+                placeholder="Goals, focus areas, and recommendations for the coming month…"
+                disabled={disabled}
+              />
+            </label>
+          </div>
+        </details>
+      ) : (
+        <div className="report-editor__plan">
+          <label>
+            Plan for next month
+            <textarea
+              value={planNextMonth}
+              onChange={(e) => onPlanChange?.(e.target.value)}
+              placeholder="Goals, focus areas, and recommendations for the coming month…"
+              disabled={disabled}
+            />
+          </label>
+        </div>
+      )}
     </div>
   )
 }

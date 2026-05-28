@@ -9,10 +9,13 @@ import {
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
+  AdminCollapsibleFilters,
+  AdminDataList,
   AdminPanel,
   AdminEmptyState,
   AdminToolbar,
   AdminSearchInput,
+  AdminTaskCard,
   StatusBadge,
   formatCurrency,
 } from './ui/index.js'
@@ -109,7 +112,22 @@ export function TherapistPayoutsTab() {
 
       <AdminPanel title={`${invoices.length} therapist payout invoices`} padded={false}>
         <div className="admin-panel__body">
-          <AdminToolbar>
+          <AdminCollapsibleFilters
+            quickSearch={
+              <AdminSearchInput
+                value={filters.search}
+                onChange={(value) => patchFilters({ search: value })}
+                placeholder="Therapist name or month…"
+              />
+            }
+            activeChips={[
+              filters.year && `Year ${filters.year}`,
+              filters.month && filters.month,
+              filters.status && filters.status !== 'ALL' ? filters.status : null,
+            ].filter(Boolean)}
+            activeCount={[filters.year, filters.month, filters.status !== 'ALL' && filters.status, filters.dateFrom, filters.dateTo].filter(Boolean).length}
+          >
+          <AdminToolbar className="admin-toolbar--mobile-compact">
             <select
               className="admin-select"
               style={{ width: 'auto', minWidth: 100 }}
@@ -162,82 +180,125 @@ export function TherapistPayoutsTab() {
               placeholder="Therapist name or month…"
             />
           </AdminToolbar>
+          </AdminCollapsibleFilters>
 
           {loading ? (
             <div className="admin-skeleton" />
           ) : invoices.length === 0 ? (
             <AdminEmptyState title="No invoices" description="Invoices appear when therapists submit billing." />
           ) : (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Therapist</th>
-                    <th>Month</th>
-                    <th>Sessions</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoices.map((inv) => (
-                    <tr key={inv.id}>
-                      <td>
-                        <span className="admin-table__primary">
-                          {inv.therapist_name || `Therapist #${inv.therapist_user_id}`}
-                        </span>
-                        <span className="admin-table__meta">Invoice {inv.id}</span>
-                      </td>
-                      <td>{inv.month}</td>
-                      <td>{inv.sessions_count ?? '—'}</td>
-                      <td>{formatCurrency(inv.amount_inr)}</td>
-                      <td>
-                        <StatusBadge status={inv.status} />
-                      </td>
-                      <td>
-                        <div className="admin-btn-group">
-                          <button
-                            type="button"
-                            className="admin-btn admin-btn--ghost admin-btn--sm"
-                            onClick={() => setBreakdownId(inv.id)}
-                          >
-                            Breakdown
-                          </button>
-                          {canWriteBilling ? (
-                            <>
+            <AdminDataList
+              desktop={
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Therapist</th>
+                        <th>Month</th>
+                        <th>Sessions</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoices.map((inv) => (
+                        <tr key={inv.id}>
+                          <td>
+                            <span className="admin-table__primary">
+                              {inv.therapist_name || `Therapist #${inv.therapist_user_id}`}
+                            </span>
+                            <span className="admin-table__meta">Invoice {inv.id}</span>
+                          </td>
+                          <td>{inv.month}</td>
+                          <td>{inv.sessions_count ?? '—'}</td>
+                          <td>{formatCurrency(inv.amount_inr)}</td>
+                          <td>
+                            <StatusBadge status={inv.status} />
+                          </td>
+                          <td>
+                            <div className="admin-btn-group">
                               <button
                                 type="button"
-                                className="admin-btn admin-btn--primary admin-btn--sm"
-                                onClick={() => review(inv.id, 'approve')}
+                                className="admin-btn admin-btn--ghost admin-btn--sm"
+                                onClick={() => setBreakdownId(inv.id)}
                               >
-                                Approve
+                                Breakdown
                               </button>
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn--danger admin-btn--sm"
-                                onClick={() => review(inv.id, 'reject')}
-                              >
-                                Reject
-                              </button>
-                            </>
-                          ) : null}
-                          {can('payout.override') && canWriteBilling ? (
+                              {canWriteBilling ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="admin-btn admin-btn--primary admin-btn--sm"
+                                    onClick={() => review(inv.id, 'approve')}
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="admin-btn admin-btn--danger admin-btn--sm"
+                                    onClick={() => review(inv.id, 'reject')}
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              ) : null}
+                              {can('payout.override') && canWriteBilling ? (
+                                <button
+                                  type="button"
+                                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                                  onClick={() => openPayment(inv)}
+                                >
+                                  Record payment
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              }
+              mobile={invoices.map((inv) => (
+                <li key={inv.id}>
+                  <AdminTaskCard
+                    title={inv.therapist_name || `Therapist #${inv.therapist_user_id}`}
+                    meta={`${inv.month} · ${inv.sessions_count ?? 0} sessions · ${formatCurrency(inv.amount_inr)}`}
+                    badges={<StatusBadge status={inv.status} />}
+                    actions={
+                      <div className="admin-btn-group">
+                        {canWriteBilling && inv.status === 'IN_REVIEW' ? (
+                          <>
                             <button
                               type="button"
-                              className="admin-btn admin-btn--ghost admin-btn--sm"
-                              onClick={() => openPayment(inv)}
+                              className="admin-btn admin-btn--primary admin-btn--sm"
+                              onClick={() => review(inv.id, 'approve')}
                             >
-                              Record payment
+                              Approve
                             </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--danger admin-btn--sm"
+                              onClick={() => review(inv.id, 'reject')}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn--ghost admin-btn--sm"
+                          onClick={() => setBreakdownId(inv.id)}
+                        >
+                          Breakdown
+                        </button>
+                      </div>
+                    }
+                  />
+                </li>
+              ))}
+            />
           )}
         </div>
       </AdminPanel>

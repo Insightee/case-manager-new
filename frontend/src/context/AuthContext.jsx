@@ -57,6 +57,11 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({ email, password }),
     })
     setTokens(data.access_token, data.refresh_token)
+    if (data.user) {
+      setUser(data.user)
+      setLoading(false)
+      return data
+    }
     await loadMe()
     return data
   }

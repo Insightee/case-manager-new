@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { apiFetch } from '../lib/apiClient.js'
 import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
 import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
@@ -39,6 +40,19 @@ const PARENT_NAV = [
   { to: '/parent/billing', label: 'Billing' },
   { to: '/parent/profile', label: 'My profile' },
   { to: '/parent/support', label: 'Support & Incidents' },
+]
+
+const PARENT_MOBILE_NAV = [
+  { to: '/parent/session-logs', label: 'Updates' },
+  { to: '/parent/book', label: 'Book' },
+  { to: '/parent/billing', label: 'Billing' },
+  { to: '/parent', label: 'Home', end: true },
+]
+
+const ADMIN_CM_MOBILE_NAV = [
+  { to: '/admin/cm', label: 'Caseload', end: true, icon: 'dashboard' },
+  { to: '/admin/cases', label: 'Cases', icon: 'cases' },
+  { to: '/admin/workbench', label: 'Review', icon: 'workbench' },
 ]
 
 /** Nav for users whose only operational role is Case Manager (not module admin / finance / HR). */
@@ -117,12 +131,33 @@ function NavLinks({ items, className, linkClassName, onNavigate, showIcons }) {
   )
 }
 
-function buildMobileTabs(fullNav, portal) {
+function iconForNavPath(to) {
+  if (!to) return 'dashboard'
+  if (to.includes('/cases') || to.includes('/cm')) return 'cases'
+  if (to.includes('/reports')) return 'reports'
+  if (to.includes('/workbench') || to.includes('/logs')) return 'workbench'
+  if (to.includes('/invoices')) return 'invoices'
+  return 'dashboard'
+}
+
+function buildMobileTabs(fullNav, portal, { cmFocused = false } = {}) {
   if (portal === 'therapist') {
-    return { tabs: THERAPIST_MOBILE_NAV, useMenu: false }
+    return {
+      tabs: THERAPIST_MOBILE_NAV.map((t) => ({ ...t, icon: t.icon || iconForNavPath(t.to) })),
+      useMenu: false,
+    }
+  }
+  if (portal === 'parent') {
+    return { tabs: PARENT_MOBILE_NAV, useMenu: false }
+  }
+  if (portal === 'admin' && cmFocused) {
+    return { tabs: ADMIN_CM_MOBILE_NAV, useMenu: true }
   }
   if (fullNav.length <= 4) {
-    return { tabs: fullNav, useMenu: false }
+    return {
+      tabs: fullNav.map((t) => ({ ...t, icon: t.icon || iconForNavPath(t.to) })),
+      useMenu: false,
+    }
   }
   const home = fullNav.find((n) => n.end) ?? fullNav[0]
   const cases =
@@ -140,7 +175,10 @@ function buildMobileTabs(fullNav, portal) {
     seen.add(t.to)
     return true
   })
-  return { tabs: unique.slice(0, 3), useMenu: true }
+  return {
+    tabs: unique.slice(0, 3).map((t) => ({ ...t, icon: t.icon || iconForNavPath(t.to) })),
+    useMenu: true,
+  }
 }
 
 function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
@@ -160,7 +198,7 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
     )
   }
   if (item.to === '/admin/iep') {
-    return navVisible(item) && (can('attachment.manage') || can('iep.read'))
+    return navVisible(item) && (can('iep.read') || can('iep.manage') || can('attachment.manage'))
   }
   if (item.to === '/admin/support') {
     const ticketsOk = can('ticket.manage') && hasFeature('tickets')
@@ -179,6 +217,8 @@ export function PortalShell({ portal }) {
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [activeElapsedSeconds, setActiveElapsedSeconds] = useState(0)
+  const usageFlushRef = useRef(() => {})
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- close overlays on route change
@@ -196,9 +236,92 @@ export function PortalShell({ portal }) {
   }, [mobileNavOpen])
 
   useEffect(() => {
+    if (!mobileNavOpen) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [mobileNavOpen])
+
+  useEffect(() => {
     if (portal !== 'therapist' || !user?.id) return
     const actionId = actionIdFromPath(location.pathname)
     if (actionId) recordTherapistAction(user.id, actionId)
+  }, [portal, user?.id, location.pathname])
+
+  useEffect(() => {
+    if (portal !== 'admin' || !user?.id) {
+      setActiveElapsedSeconds(0)
+      usageFlushRef.current = () => {}
+      return undefined
+    }
+
+    const sessionId = globalThis.crypto?.randomUUID?.() || `sess-${Date.now()}-${user.id}`
+    const sessionStartedAt = new Date().toISOString()
+    let bufferedActiveSeconds = 0
+    let lastInteractionAt = Date.now()
+    let heartbeatBusy = false
+    let stopped = false
+    const IDLE_MS = 60_000
+    const HEARTBEAT_SECONDS = 30
+
+    function markInteraction() {
+      lastInteractionAt = Date.now()
+    }
+
+    const activityEvents = ['pointerdown', 'mousemove', 'keydown', 'scroll', 'touchstart']
+    for (const eventName of activityEvents) {
+      window.addEventListener(eventName, markInteraction, { passive: true })
+    }
+    window.addEventListener('focus', markInteraction)
+
+    const flushHeartbeat = () => {
+      if (heartbeatBusy || bufferedActiveSeconds <= 0 || stopped) return
+      heartbeatBusy = true
+      const payload = {
+        session_id: sessionId,
+        portal: 'admin',
+        route: location.pathname,
+        active_seconds: bufferedActiveSeconds,
+        started_at: sessionStartedAt,
+        ended_at: new Date().toISOString(),
+      }
+      bufferedActiveSeconds = 0
+      apiFetch('/api/v1/auth/activity', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+        .catch(() => {})
+        .finally(() => {
+          heartbeatBusy = false
+        })
+    }
+
+    usageFlushRef.current = flushHeartbeat
+
+    const intervalId = window.setInterval(() => {
+      const now = Date.now()
+      const isVisible = document.visibilityState === 'visible'
+      const isFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true
+      const isActive = isVisible && isFocused && now - lastInteractionAt < IDLE_MS
+      if (!isActive) return
+      setActiveElapsedSeconds((v) => v + 1)
+      bufferedActiveSeconds += 1
+      if (bufferedActiveSeconds >= HEARTBEAT_SECONDS) {
+        flushHeartbeat()
+      }
+    }, 1000)
+
+    return () => {
+      stopped = true
+      window.clearInterval(intervalId)
+      for (const eventName of activityEvents) {
+        window.removeEventListener(eventName, markInteraction)
+      }
+      window.removeEventListener('focus', markInteraction)
+      flushHeartbeat()
+    }
   }, [portal, user?.id, location.pathname])
 
   const subtitle = PORTAL_LABELS[portal] || 'Portal'
@@ -218,10 +341,17 @@ export function PortalShell({ portal }) {
   const portalTitle = PORTAL_LABELS[portal] || 'Portal'
   usePageMeta({ title: portalTitle })
 
+  const cmFocused =
+    portal === 'admin' && isCaseManagerOnlyRole(user?.roles || [])
+
   const { tabs: mobileTabs, useMenu } = useMemo(
-    () => buildMobileTabs(nav, portal),
-    [nav, portal],
+    () => buildMobileTabs(nav, portal, { cmFocused }),
+    [nav, portal, cmFocused],
   )
+
+  /** Full sidebar in drawer: therapist + parent always; admin when nav is large or CM shortcuts. */
+  const showMobileDrawer =
+    portal === 'therapist' || portal === 'parent' || useMenu
 
   const showNavIcons = portal === 'admin'
   const shellClass = portal === 'admin' ? 'app-shell app-shell--admin' : 'app-shell'
@@ -231,20 +361,47 @@ export function PortalShell({ portal }) {
       ? '/parent/profile'
       : portal === 'therapist'
         ? '/therapist/profile'
-        : null
+        : portal === 'admin'
+          ? '/admin/profile'
+          : null
+
+  const activeDurationLabel = useMemo(() => {
+    const h = Math.floor(activeElapsedSeconds / 3600)
+    const m = Math.floor((activeElapsedSeconds % 3600) / 60)
+    const s = activeElapsedSeconds % 60
+    const mm = String(m).padStart(2, '0')
+    const ss = String(s).padStart(2, '0')
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+  }, [activeElapsedSeconds])
 
   return (
     <div className={shellClass}>
       <SkipLink />
       <header className="app-mobile-topbar">
-        <div className="app-mobile-topbar__brand">
-          <span className="app-mobile-topbar__logo" aria-hidden />
-          <div>
-            <span className="app-mobile-topbar__title">InsightCase</span>
-            <span className="app-mobile-topbar__sub">{subtitle}</span>
+        <div className="app-mobile-topbar__start">
+          {showMobileDrawer ? (
+            <button
+              type="button"
+              className="app-mobile-topbar__menu"
+              aria-expanded={mobileNavOpen}
+              aria-controls="portal-nav-drawer"
+              aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              onClick={() => setMobileNavOpen((o) => !o)}
+            >
+              <span className="app-mobile-topbar__menu-glyph" aria-hidden>
+                {mobileNavOpen ? '✕' : '☰'}
+              </span>
+            </button>
+          ) : null}
+          <div className="app-mobile-topbar__brand">
+            <span className="app-mobile-topbar__logo" aria-hidden />
+            <div className="app-mobile-topbar__brand-text">
+              <span className="app-mobile-topbar__title">InsightCase</span>
+              <span className="app-mobile-topbar__sub">{subtitle}</span>
+            </div>
           </div>
         </div>
-        <div className="app-mobile-topbar__account" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="app-mobile-topbar__account">
           <NotificationBell portal={portal} />
           <button
             type="button"
@@ -296,13 +453,14 @@ export function PortalShell({ portal }) {
             to={item.to}
             end={item.end}
             className={({ isActive }) =>
-              `app-mobile-tabs__link${isActive ? ' is-active' : ''}`
+              `app-mobile-tabs__link app-mobile-tabs__link--icon${isActive ? ' is-active' : ''}`
             }
           >
-            {item.label}
+            {item.icon ? <NavIcon name={item.icon} className="app-mobile-tabs__icon" /> : null}
+            <span className="app-mobile-tabs__label">{item.label}</span>
           </NavLink>
         ))}
-        {useMenu ? (
+        {useMenu && !showMobileDrawer ? (
           <button
             type="button"
             className={`app-mobile-tabs__link app-mobile-tabs__link--menu${mobileNavOpen ? ' is-active' : ''}`}
@@ -315,7 +473,7 @@ export function PortalShell({ portal }) {
         ) : null}
       </nav>
 
-      {useMenu ? (
+      {showMobileDrawer ? (
         <>
           <button
             type="button"
@@ -365,6 +523,12 @@ export function PortalShell({ portal }) {
           showIcons={showNavIcons}
         />
         <div className="app-sidebar__footer">
+          {portal === 'admin' ? (
+            <div className="app-sidebar__usage-widget" aria-live="polite">
+              <span className="app-sidebar__usage-label">Time on app</span>
+              <strong className="app-sidebar__usage-value">{activeDurationLabel}</strong>
+            </div>
+          ) : null}
           {profilePath ? (
             <NavLink to={profilePath} className="app-sidebar__user-card" title="Go to profile">
               <AuthenticatedAvatar user={user} className="app-sidebar__user-avatar" size={40} />

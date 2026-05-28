@@ -592,6 +592,33 @@ def admin_audit_list(
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
+@router.get("/audit/app-usage-summary")
+def admin_app_usage_summary(
+    days: int = Query(7, ge=1, le=90),
+    portal: Optional[str] = Query(None),
+    user_id: Optional[int] = Query(None),
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "admin.override"):
+        raise HTTPException(status_code=403, detail="Super admin permission required")
+    from app.services import audit_service
+
+    end_at = datetime.now(timezone.utc)
+    start_at = end_at - timedelta(days=days)
+    try:
+        return audit_service.app_usage_summary(
+            db,
+            user,
+            start_at=start_at,
+            end_at=end_at,
+            portal=portal,
+            staff_user_id=user_id,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
 @router.get("/cases/{case_id}/timeline")
 def admin_case_timeline(
     case_id: int,
@@ -2474,7 +2501,7 @@ def admin_save_iep_plan(
     case_id: int,
     payload: IepPlanSave,
     request: Request,
-    user: User = Depends(require_mutation_permission("iep.read")),
+    user: User = Depends(require_mutation_permission("iep.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import case_service, iep_plan_service as iep_svc
@@ -2506,7 +2533,7 @@ def admin_save_iep_plan(
 def admin_new_iep_plan_version(
     case_id: int,
     request: Request,
-    user: User = Depends(require_mutation_permission("iep.read")),
+    user: User = Depends(require_mutation_permission("iep.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import case_service, iep_plan_service as iep_svc
@@ -2537,7 +2564,7 @@ def admin_new_iep_plan_version(
 def admin_share_iep_plan(
     case_id: int,
     request: Request,
-    user: User = Depends(require_mutation_permission("iep.read")),
+    user: User = Depends(require_mutation_permission("iep.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import case_service, iep_plan_service as iep_svc
@@ -2615,7 +2642,7 @@ def admin_iep_plan_export_pdf(
 def admin_iep_plan_suggestion(
     case_id: int,
     payload: IepPlanSuggestionCreate,
-    user: User = Depends(require_mutation_permission("iep.read")),
+    user: User = Depends(require_mutation_permission("iep.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import case_service, iep_plan_service as iep_svc
@@ -2637,7 +2664,7 @@ def admin_iep_plan_suggestion(
 @router.post("/cases/{case_id}/iep-plan/suggestions/resolve")
 def admin_resolve_iep_suggestions(
     case_id: int,
-    user: User = Depends(require_mutation_permission("iep.read")),
+    user: User = Depends(require_mutation_permission("iep.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import case_service, iep_plan_service as iep_svc
@@ -2657,7 +2684,7 @@ def admin_resolve_iep_suggestions(
 @router.post("/cases/{case_id}/iep-plan/approve")
 def admin_approve_iep_plan(
     case_id: int,
-    user: User = Depends(require_mutation_permission("iep.read")),
+    user: User = Depends(require_mutation_permission("iep.manage")),
     db: Session = Depends(get_db),
 ):
     from app.services import case_service, iep_plan_service as iep_svc

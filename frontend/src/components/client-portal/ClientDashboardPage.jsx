@@ -285,9 +285,20 @@ export function ClientDashboardPage({
           {highlight.summary_paragraph ? (
             <p style={{ margin: 0, color: '#475569', lineHeight: 1.5 }}>{highlight.summary_paragraph}</p>
           ) : null}
+          {highlight.what_we_did && highlight.what_we_did !== highlight.summary_paragraph ? (
+            <p style={{ margin: '10px 0 0', fontSize: '0.875rem', color: '#334155' }}>
+              <strong style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', marginBottom: 4 }}>
+                What we did today
+              </strong>
+              {highlight.what_we_did}
+            </p>
+          ) : null}
           {highlight.what_is_next ? (
-            <p style={{ margin: '12px 0 0', fontSize: '0.875rem' }}>
-              <strong>What’s next:</strong> {highlight.what_is_next}
+            <p style={{ margin: '10px 0 0', fontSize: '0.875rem', color: '#334155' }}>
+              <strong style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', marginBottom: 4 }}>
+                What&apos;s next
+              </strong>
+              {highlight.what_is_next}
             </p>
           ) : null}
           <Link to="/parent/session-logs" style={{ display: 'inline-block', marginTop: 12, fontWeight: 600 }}>

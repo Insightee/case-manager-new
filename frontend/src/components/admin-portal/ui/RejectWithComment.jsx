@@ -16,7 +16,7 @@ export function RejectWithComment({
 }) {
   if (rejecting) {
     return (
-      <div style={{ marginTop: 8 }}>
+      <div className="reject-with-comment reject-with-comment--mobile" style={{ marginTop: 8 }}>
         <textarea
           className="admin-input"
           rows={3}
@@ -49,7 +49,7 @@ export function RejectWithComment({
   }
 
   return (
-    <div className="admin-btn-group" style={{ marginTop: 8 }}>
+    <div className="admin-btn-group reject-with-comment reject-with-comment--mobile" style={{ marginTop: 8 }}>
       {showApprove && onApprove ? (
         <button
           type="button"

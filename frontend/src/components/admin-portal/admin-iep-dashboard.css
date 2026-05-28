@@ -84,3 +84,14 @@
   background: #dcfce7;
   color: #15803d;
 }
+
+.admin-iep__cases-link {
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .admin-iep__cases-link {
+    margin-left: auto;
+    margin-top: -4px;
+  }
+}

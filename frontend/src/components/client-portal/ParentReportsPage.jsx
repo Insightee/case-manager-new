@@ -12,6 +12,9 @@ import { CaseDocumentComments } from '../documents/CaseDocumentComments.jsx'
 import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
 import '../documents/case-documents.css'
 import '../reports/report-editor.css'
+import './parent-portal-filters.css'
+import { ClientPortalLayout } from './ClientPortalLayout.jsx'
+import { ParentFilterBar, ParentFilterField, ParentFilterSelect, ParentPortalTabs } from './ParentFilterBar.jsx'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -298,6 +301,10 @@ export function ParentReportsPage() {
     detail?.kind === 'case_document' && detail.allowed_actions?.includes('parent_feedback')
 
   return (
+    <ClientPortalLayout
+      title="Reports"
+      subtitle="Monthly reports, IEP plans, and documents shared by your care team."
+    >
     <div className="parent-reports">
       {error ? (
         <p role="alert" style={{ color: '#b91c1c', marginBottom: 12 }}>
@@ -330,49 +337,33 @@ export function ParentReportsPage() {
         </section>
       ) : null}
 
-      <div
-        className="parent-reports__tabs"
-        role="tablist"
-        aria-label="Report type"
-        style={{ display: 'flex', gap: 8, marginBottom: 16 }}
-      >
-        {[
+      <ParentPortalTabs
+        ariaLabel="Report type"
+        tabs={[
           { id: 'monthly', label: 'Monthly reports' },
           { id: 'iep', label: 'IEP plans' },
           { id: 'documents', label: 'Documents' },
-        ].map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            className={tab === t.id ? 'admin-btn admin-btn--primary' : 'admin-btn admin-btn--secondary'}
-            onClick={() => {
-              setTab(t.id)
-              closeDetail()
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+        ]}
+        value={tab}
+        onChange={(id) => {
+          setTab(id)
+          closeDetail()
+        }}
+      />
 
       {caseOptions.length > 1 ? (
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          <span style={{ fontSize: 13, color: '#6b7280' }}>Filter by child</span>
-          <select
-            value={caseFilter}
-            onChange={(e) => setCaseFilter(e.target.value)}
-            style={{ display: 'block', width: '100%', marginTop: 4, padding: 8 }}
-          >
-            <option value="all">All children</option>
-            {caseOptions.map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ParentFilterBar ariaLabel="Filter reports" gridClass="">
+          <ParentFilterField label="Child">
+            <ParentFilterSelect value={caseFilter} onChange={(e) => setCaseFilter(e.target.value)}>
+              <option value="all">All children</option>
+              {caseOptions.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </ParentFilterSelect>
+          </ParentFilterField>
+        </ParentFilterBar>
       ) : null}
 
       <section className="card">
@@ -762,7 +753,14 @@ export function ParentReportsPage() {
 
       <style>{`
         .parent-reports__cases { margin-bottom: 24px; }
-        .parent-reports__case-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+        .parent-reports { width: 100%; min-width: 0; box-sizing: border-box; }
+        .parent-reports__case-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        @media (min-width: 600px) {
+          .parent-reports__case-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (min-width: 900px) {
+          .parent-reports__case-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+        }
         .parent-reports__case-card { display: block; padding: 14px 16px; border-radius: 14px; border: 1px solid #e2e8f0; background: #fff; text-decoration: none; color: inherit; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: border-color 0.15s, box-shadow 0.15s; }
         .parent-reports__case-card:hover { border-color: #c7d2fe; box-shadow: 0 4px 12px rgba(99,102,241,0.12); }
         .parent-reports__case-code { font-size: 0.7rem; font-weight: 700; color: #6366f1; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
@@ -771,5 +769,6 @@ export function ParentReportsPage() {
         .parent-reports__case-cta { font-size: 0.75rem; font-weight: 600; color: #4f46e5; }
       `}</style>
     </div>
+    </ClientPortalLayout>
   )
 }

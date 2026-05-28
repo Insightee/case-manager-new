@@ -1,7 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
-import { AdminPanel, AdminEmptyState, AdminToolbar, formatCurrency } from './ui/index.js'
+import {
+  AdminDataList,
+  AdminEmptyState,
+  AdminPanel,
+  AdminStickyFilterRow,
+  AdminTaskCard,
+  AdminToolbar,
+  StatusBadge,
+  formatCurrency,
+} from './ui/index.js'
+
+function formatLedgerMonth(ym) {
+  if (!ym) return 'this period'
+  try {
+    const [y, m] = ym.split('-').map(Number)
+    const d = new Date(y, m - 1, 1)
+    return d.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+  } catch {
+    return ym
+  }
+}
 
 export function AdminSessionLedgerTab() {
   const { canWriteBilling } = useModuleWrite()
@@ -63,34 +84,45 @@ export function AdminSessionLedgerTab() {
     }
   }
 
+  const filterFields = (
+    <>
+      <label className="client-inv__filter-field">
+        <span className="client-inv__filter-label">Month</span>
+        <input className="admin-input" type="month" value={ledgerMonth} onChange={(e) => setLedgerMonth(e.target.value)} aria-label="Ledger month" />
+      </label>
+      <label className="client-inv__filter-field">
+        <span className="client-inv__filter-label">Case ID</span>
+        <input className="admin-input" type="number" placeholder="DB id" value={caseId} onChange={(e) => setCaseId(e.target.value)} aria-label="Case ID filter" />
+      </label>
+      <label className="client-inv__filter-field">
+        <span className="client-inv__filter-label">Status</span>
+        <select className="admin-input" value={billableStatus} onChange={(e) => setBillableStatus(e.target.value)} aria-label="Billable status">
+          <option value="">All</option>
+          <option value="PENDING_REVIEW">Pending review</option>
+          <option value="BILLABLE">Billable</option>
+          <option value="NON_BILLABLE">Non-billable</option>
+          <option value="INVOICED">Invoiced</option>
+        </select>
+      </label>
+      <button type="button" className="admin-btn admin-btn--sm" onClick={load}>
+        Refresh
+      </button>
+      <button type="button" className="admin-btn admin-btn--sm admin-btn--secondary" onClick={runReconcile}>
+        Reconcile
+      </button>
+    </>
+  )
+
+  const monthLabel = formatLedgerMonth(ledgerMonth)
+
   return (
     <div className="client-inv">
-      <AdminToolbar>
-        <label className="client-inv__filter-field">
-          <span className="client-inv__filter-label">Month</span>
-          <input className="admin-input" type="month" value={ledgerMonth} onChange={(e) => setLedgerMonth(e.target.value)} />
-        </label>
-        <label className="client-inv__filter-field">
-          <span className="client-inv__filter-label">Case ID</span>
-          <input className="admin-input" type="number" placeholder="DB id" value={caseId} onChange={(e) => setCaseId(e.target.value)} />
-        </label>
-        <label className="client-inv__filter-field">
-          <span className="client-inv__filter-label">Billable</span>
-          <select className="admin-input" value={billableStatus} onChange={(e) => setBillableStatus(e.target.value)}>
-            <option value="">All</option>
-            <option value="PENDING_REVIEW">Pending review</option>
-            <option value="BILLABLE">Billable</option>
-            <option value="NON_BILLABLE">Non-billable</option>
-            <option value="INVOICED">Invoiced</option>
-          </select>
-        </label>
-        <button type="button" className="admin-btn admin-btn--sm" onClick={load}>
-          Refresh
-        </button>
-        <button type="button" className="admin-btn admin-btn--sm admin-btn--secondary" onClick={runReconcile}>
-          Reconcile case
-        </button>
-      </AdminToolbar>
+      <AdminStickyFilterRow>{filterFields}</AdminStickyFilterRow>
+      <div className="admin-desktop-only">
+        <AdminToolbar className="admin-toolbar--mobile-compact" style={{ marginBottom: 12 }}>
+          {filterFields}
+        </AdminToolbar>
+      </div>
 
       {reconcile ? (
         <div className="admin-alert" style={{ marginBottom: 12 }}>
@@ -130,46 +162,87 @@ export function AdminSessionLedgerTab() {
 
       <AdminPanel title="Session ledger">
         {loading ? (
-          <p>Loading…</p>
+          <p className="admin-muted">Loading…</p>
         ) : rows.length === 0 ? (
-          <AdminEmptyState title="No ledger rows" hint="Approve daily logs or complete sessions to generate entries." />
+          <AdminEmptyState
+            title={`No session entries for ${monthLabel}`}
+            hints={[
+              'Try selecting another month',
+              'Adjust case or billable status filters',
+              'Approve daily logs or complete sessions to generate ledger rows',
+            ]}
+            action={
+              <Link to="/admin/logs" className="admin-btn admin-btn--primary admin-btn--sm">
+                View session logs
+              </Link>
+            }
+          />
         ) : (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Case</th>
-                  <th>Event</th>
-                  <th>Status</th>
-                  <th>Amount</th>
-                  <th>Invoice</th>
-                  {canWriteBilling ? <th /> : null}
-                </tr>
-              </thead>
-              <tbody>
+          <AdminDataList
+            desktop={
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Case</th>
+                      <th>Event</th>
+                      <th>Status</th>
+                      <th>Amount</th>
+                      <th>Invoice</th>
+                      {canWriteBilling ? <th /> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.id}>
+                        <td>{r.eventDate}</td>
+                        <td>{r.caseCode}</td>
+                        <td>{r.eventType}</td>
+                        <td>{r.billableStatus}</td>
+                        <td>{formatCurrency(r.totalInr)}</td>
+                        <td>{r.clientInvoiceId || '—'}</td>
+                        {canWriteBilling && r.billableStatus !== 'INVOICED' ? (
+                          <td>
+                            <button type="button" className="admin-btn admin-btn--sm" onClick={() => setOverrideId(r.id)}>
+                              Override
+                            </button>
+                          </td>
+                        ) : canWriteBilling ? (
+                          <td />
+                        ) : null}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            }
+            mobile={
+              <ul className="admin-data-list__cards">
                 {rows.map((r) => (
-                  <tr key={r.id}>
-                    <td>{r.eventDate}</td>
-                    <td>{r.caseCode}</td>
-                    <td>{r.eventType}</td>
-                    <td>{r.billableStatus}</td>
-                    <td>{formatCurrency(r.totalInr)}</td>
-                    <td>{r.clientInvoiceId || '—'}</td>
-                    {canWriteBilling && r.billableStatus !== 'INVOICED' ? (
-                      <td>
-                        <button type="button" className="admin-btn admin-btn--sm" onClick={() => setOverrideId(r.id)}>
-                          Override
-                        </button>
-                      </td>
-                    ) : canWriteBilling ? (
-                      <td />
-                    ) : null}
-                  </tr>
+                  <li key={r.id}>
+                    <AdminTaskCard
+                      title={r.caseCode || `Case #${r.caseId}`}
+                      meta={`${r.eventType?.replace(/_/g, ' ') || 'Event'} · ${r.eventDate}`}
+                      badges={<StatusBadge status={r.billableStatus} />}
+                      actions={
+                        canWriteBilling && r.billableStatus !== 'INVOICED' ? (
+                          <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setOverrideId(r.id)}>
+                            Override
+                          </button>
+                        ) : null
+                      }
+                    >
+                      <p className="admin-ledger-card__amount">{formatCurrency(r.totalInr)}</p>
+                      <p className="admin-muted" style={{ margin: '4px 0 0', fontSize: '0.8125rem' }}>
+                        Invoice: {r.clientInvoiceId || '—'}
+                      </p>
+                    </AdminTaskCard>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </ul>
+            }
+          />
         )}
       </AdminPanel>
     </div>

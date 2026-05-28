@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiFetch, apiUpload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { IncidentReportForm } from '../support/IncidentReportForm.jsx'
 import { IncidentDetailPanel } from '../support/IncidentDetailPanel.jsx'
 import {
+  AdminCollapsibleFilters,
   AdminPageHeader,
   AdminPanel,
   AdminEmptyState,
@@ -16,8 +18,13 @@ import '../support/support-tickets.css'
 
 const STATUS_FILTERS = ['ALL', 'REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
 
-export function AdminIncidentsPage() {
+export function AdminIncidentsPage({ embedded = false }) {
+  const [cases, setCases] = useState([])
   const [incidents, setIncidents] = useState([])
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [createBusy, setCreateBusy] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [createSuccess, setCreateSuccess] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('REPORTED')
   const [moduleFilter, setModuleFilter] = useState('')
@@ -41,6 +48,9 @@ export function AdminIncidentsPage() {
 
   useEffect(() => {
     load()
+    apiFetch('/api/v1/cases?page_size=100')
+      .then((d) => setCases(unwrapList(d)))
+      .catch(() => setCases([]))
   }, [])
 
   const filtered = useMemo(() => {
@@ -76,53 +86,134 @@ export function AdminIncidentsPage() {
     load()
   }
 
-  return (
-    <div className="admin-page">
-      <AdminPageHeader
-        eyebrow="Risk & safety"
-        title="Incidents"
-        subtitle="Incident reports from therapists and clients. Review, investigate, and close each report here."
-        actions={
-          <span
-            className="admin-chip"
-            style={{
-              background: openCount ? '#fef3c7' : '#d1fae5',
-              color: openCount ? '#b45309' : '#047857',
-            }}
-          >
-            {openCount} active
-          </span>
-        }
-      />
+  async function submitIncident(payload) {
+    setCreateBusy(true)
+    setCreateError('')
+    setCreateSuccess('')
+    try {
+      const { files, attachment_note, ...body } = payload
+      const created = await apiFetch('/api/v1/incidents', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      if (files?.length) {
+        const fd = new FormData()
+        files.forEach((f) => fd.append('files', f))
+        if (attachment_note) fd.append('note', attachment_note)
+        await apiUpload(`/api/v1/incidents/${created.id}/attachments`, fd)
+      }
+      setShowCreateForm(false)
+      setCreateSuccess(created.confirmation || 'Incident created successfully.')
+      await load()
+    } catch (err) {
+      setCreateError(err.message || 'Could not create incident')
+    } finally {
+      setCreateBusy(false)
+    }
+  }
 
-      <AdminPanel title={`${filtered.length} incidents`} padded={false}>
-        <div className="admin-panel__body">
-          <AdminToolbar>
-            <AdminSearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search title, reporter…"
-            />
-            <select
-              className="admin-search__input"
-              style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+  const filterControls = (
+    <>
+      <AdminSearchInput value={search} onChange={setSearch} placeholder="Search title, reporter…" />
+      <select
+        className="admin-search__input"
+        style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value)}
+        aria-label="Incident status"
+      >
+        {STATUS_FILTERS.map((s) => (
+          <option key={s} value={s}>
+            {s === 'ALL' ? 'All statuses' : s}
+          </option>
+        ))}
+      </select>
+      <ServiceFilterSelect
+        className="admin-search__input"
+        style={{ flex: '0 0 auto', minWidth: 150, paddingLeft: 12, backgroundImage: 'none' }}
+        value={moduleFilter}
+        onChange={setModuleFilter}
+        extraOptions={[{ value: 'billing', label: 'Billing' }]}
+      />
+    </>
+  )
+
+  return (
+    <div className={embedded ? 'admin-hub-embedded' : 'admin-page'}>
+      {!embedded ? (
+        <AdminPageHeader
+          eyebrow="Risk & safety"
+          title="Incidents"
+          subtitle="Incident reports from therapists and clients. Review, investigate, and close each report here."
+          actions={
+            <span
+              className="admin-chip"
+              style={{
+                background: openCount ? '#fef3c7' : '#d1fae5',
+                color: openCount ? '#b45309' : '#047857',
+              }}
             >
-              {STATUS_FILTERS.map((s) => (
-                <option key={s} value={s}>
-                  {s === 'ALL' ? 'All statuses' : s}
-                </option>
-              ))}
-            </select>
-            <ServiceFilterSelect
-              className="admin-search__input"
-              style={{ flex: '0 0 auto', minWidth: 150, paddingLeft: 12, backgroundImage: 'none' }}
-              value={moduleFilter}
-              onChange={setModuleFilter}
-              extraOptions={[{ value: 'billing', label: 'Billing' }]}
-            />
-          </AdminToolbar>
+              {openCount} active
+            </span>
+          }
+        />
+      ) : null}
+
+      <AdminPanel
+        title={`${filtered.length} incidents`}
+        padded={false}
+        actions={
+          embedded ? (
+            <span
+              className="admin-chip"
+              style={{
+                background: openCount ? '#fef3c7' : '#d1fae5',
+                color: openCount ? '#b45309' : '#047857',
+              }}
+            >
+              {openCount} active
+            </span>
+          ) : null
+        }
+      >
+        <div className="admin-panel__body">
+          <AdminCollapsibleFilters
+            quickSearch={
+              <AdminSearchInput value={search} onChange={setSearch} placeholder="Search title, reporter…" />
+            }
+            activeChips={[statusFilter !== 'ALL' ? statusFilter : null, moduleFilter || null].filter(Boolean)}
+            activeCount={[statusFilter !== 'ALL', moduleFilter].filter(Boolean).length}
+          >
+            <AdminToolbar className="admin-toolbar--mobile-compact admin-collapsible-filters__grid">
+              {filterControls}
+            </AdminToolbar>
+          </AdminCollapsibleFilters>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className={`admin-btn admin-btn--sm ${showCreateForm ? 'admin-btn--ghost' : 'admin-btn--primary'}`}
+                onClick={() => {
+                  setShowCreateForm((v) => !v)
+                  setCreateError('')
+                  setCreateSuccess('')
+                }}
+              >
+                {showCreateForm ? 'Cancel' : '+ New incident'}
+              </button>
+            </div>
+            {showCreateForm ? (
+              <div style={{ marginTop: 10 }}>
+                <IncidentReportForm
+                  cases={cases}
+                  onSubmit={submitIncident}
+                  submitting={createBusy}
+                  error={createError}
+                />
+              </div>
+            ) : null}
+            {createSuccess ? <p className="admin-alert admin-alert--success">{createSuccess}</p> : null}
+          </div>
 
           {loading ? (
             <div className="admin-skeleton" />

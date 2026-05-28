@@ -17,7 +17,17 @@ import {
   sortPipelineRows,
 } from '../../lib/adminCasePipeline.js'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
-import { AdminEmptyState, AdminSearchInput, AdminToolbar, FilterDateRange, FilterSelect } from './ui/index.js'
+import {
+  AdminCollapsibleFilters,
+  AdminDataList,
+  AdminEmptyState,
+  AdminSearchInput,
+  AdminTaskCard,
+  AdminToolbar,
+  FilterDateRange,
+  FilterSelect,
+} from './ui/index.js'
+
 import { AdminCaseAssignDrawer } from './AdminCaseAssignDrawer.jsx'
 import { AdminBulkAssignModal } from './AdminBulkAssignModal.jsx'
 import './admin-cases-pipeline.css'
@@ -32,7 +42,7 @@ const QUEUE_TABS = [
 ]
 
 const SORT_OPTIONS = [
-  { value: 'priority', label: 'Action priority' },
+  { value: 'priority', label: 'Priority' },
   { value: 'case', label: 'Case code' },
   { value: 'child', label: 'Child name' },
 ]
@@ -45,8 +55,9 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filters, setFilters] = useState(() => defaultPipelineFilters(initialFilters))
-  const [filtersOpen, setFiltersOpen] = useState(true)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [sort, setSort] = useState('priority')
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [assignCard, setAssignCard] = useState(null)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
@@ -219,28 +230,74 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
       </div>
 
       <div className="admin-cases-pipeline__filter-head">
-        <button
-          type="button"
-          className="admin-btn admin-btn--ghost admin-btn--sm"
-          aria-expanded={filtersOpen}
-          onClick={() => setFiltersOpen((v) => !v)}
-        >
-          {filtersOpen ? 'Hide filters' : 'Show filters'}
-          {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-        </button>
-        {activeFilterCount > 0 ? (
-          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearExtraFilters}>
-            Clear filters
+        <div className="admin-cases-pipeline__filter-head-main">
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((v) => !v)}
+          >
+            {filtersOpen ? 'Hide filters' : 'Show filters'}
+            {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
           </button>
-        ) : null}
+          {activeFilterCount > 0 ? (
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearExtraFilters}>
+              Clear filters
+            </button>
+          ) : null}
+        </div>
+        <FilterSelect
+          id="case-pipeline-sort-desktop"
+          ariaLabel="Sort cases"
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          options={SORT_OPTIONS}
+          className="admin-cases-pipeline__sort admin-cases-pipeline__sort--inline admin-desktop-only"
+        />
         <span className="admin-cases-pipeline__result-count">
           {rows.length} case{rows.length === 1 ? '' : 's'}
           {board?.total_cases != null ? ` · ${board.total_cases} total` : ''}
         </span>
       </div>
 
-      {filtersOpen ? (
-        <div className="admin-cases-pipeline__filters" role="region" aria-label="Case filters">
+      <AdminCollapsibleFilters
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        mobileActions={
+          <div className="admin-cases-pipeline__mobile-controls">
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              aria-expanded={sortMenuOpen}
+              onClick={() => setSortMenuOpen((v) => !v)}
+            >
+              Sort: {SORT_OPTIONS.find((o) => o.value === sort)?.label || 'Priority'}
+            </button>
+          </div>
+        }
+        quickSearch={
+          <AdminSearchInput
+            value={filters.search}
+            onChange={(value) => patchFilters({ search: value })}
+            placeholder="Search case, client, therapist…"
+          />
+        }
+        activeCount={activeFilterCount}
+        activeChips={
+          activeFilterCount > 0 ? [`${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'} active`] : []
+        }
+      >
+      <div
+        className={`admin-cases-pipeline__filters${!filtersOpen ? ' admin-cases-pipeline__filters--collapsed' : ''}`}
+        role="region"
+        aria-label="Case filters"
+      >
+          <FilterSelect
+            label="Queue"
+            value={filters.queue}
+            onChange={(e) => patchFilters({ queue: e.target.value })}
+            options={QUEUE_TABS.map((tab) => ({ value: tab.id, label: tab.label }))}
+          />
           <FilterSelect
             label="Case state"
             value={filters.caseState}
@@ -309,40 +366,68 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
               ]}
             />
           ) : null}
-        </div>
-      ) : null}
+      </div>
+      </AdminCollapsibleFilters>
 
-      <AdminToolbar>
-        <AdminSearchInput
-          value={filters.search}
-          onChange={(value) => patchFilters({ search: value })}
-          placeholder="Search case, client, therapist, CM…"
-        />
-        <FilterSelect
-          label="Sort by"
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          options={SORT_OPTIONS}
-          className="admin-cases-pipeline__sort"
-        />
-        {canAssign && bulkEligible && selectedIds.size > 0 ? (
-          <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setBulkOpen(true)}>
-            Bulk assign ({selectedIds.size})
+      <div className="admin-cases-pipeline__toolbar">
+        <AdminToolbar className="admin-cases-pipeline__toolbar-inner admin-desktop-only">
+          <AdminSearchInput
+            value={filters.search}
+            onChange={(value) => patchFilters({ search: value })}
+            placeholder="Search case, client, therapist, CM…"
+          />
+          <div className="admin-cases-pipeline__toolbar-actions">
+          {canAssign && bulkEligible && selectedIds.size > 0 ? (
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setBulkOpen(true)}>
+              Bulk assign ({selectedIds.size})
+            </button>
+          ) : null}
+          {canAssign && bulkEligible && rows.some((r) => ['needs_therapist', 'reassignment'].includes(r.pipeline_column)) ? (
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={selectAllVisible}>
+              Select assignable
+            </button>
+          ) : null}
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={load}>
+            Refresh
           </button>
-        ) : null}
-        {canAssign && bulkEligible && rows.some((r) => ['needs_therapist', 'reassignment'].includes(r.pipeline_column)) ? (
-          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={selectAllVisible}>
-            Select assignable
-          </button>
-        ) : null}
-        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={load}>
-          Refresh
-        </button>
-      </AdminToolbar>
+          </div>
+        </AdminToolbar>
+        <div className="admin-cases-pipeline__toolbar-mobile admin-mobile-only">
+          {sortMenuOpen ? (
+            <div className="admin-cases-pipeline__sort-menu" role="menu" aria-label="Sort cases">
+              {SORT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sort === option.value}
+                  className={`admin-cases-pipeline__sort-option${sort === option.value ? ' is-active' : ''}`}
+                  onClick={() => {
+                    setSort(option.value)
+                    setSortMenuOpen(false)
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="admin-cases-pipeline__toolbar-mobile-actions">
+            {canAssign && bulkEligible && selectedIds.size > 0 ? (
+              <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setBulkOpen(true)}>
+                Bulk ({selectedIds.size})
+              </button>
+            ) : null}
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={load}>
+              Refresh
+            </button>
+          </div>
+        </div>
+      </div>
 
       {toast ? <p className="admin-alert admin-alert--warning admin-cases-pipeline__toast">{toast}</p> : null}
 
-      <p className="admin-muted admin-cases-pipeline__hint">
+      <p className="admin-muted admin-cases-pipeline__hint admin-portal-lead">
         <strong>Needs action</strong> shows cases waiting on allotment, assignment, reviews, IEP, or compliance. Use filters to narrow by case manager, therapist, or client; row actions let you work without opening the full case file first.
       </p>
 
@@ -352,7 +437,9 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
           description="Try another queue tab, clear filters, or switch to All cases for active caseload with no pending work."
         />
       ) : (
-        <div className="admin-table-wrap">
+        <AdminDataList
+          desktop={
+        <div className="admin-table-wrap admin-cases-pipeline__table-wrap">
           <table className="admin-table admin-cases-pipeline__table">
             <thead>
               <tr>
@@ -471,6 +558,66 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
             </tbody>
           </table>
         </div>
+          }
+          mobile={rows.map((row) => {
+                const rowCanWrite = canWriteProduct(row.product_module)
+                const actions = buildPipelineActions(row, {
+                  canAssign,
+                  canUpdate,
+                  canWrite: rowCanWrite,
+                })
+                const primary = actions[0]
+                return (
+                  <li key={row.id}>
+                    <AdminTaskCard
+                      title={row.case_code}
+                      meta={`${row.child_name || '—'} · ${row.next_action || row.pipeline_label}`}
+                      badges={
+                        <span className={`admin-badge admin-badge--${pipelineStatusBadgeVariant(row.pipeline_tone)}`}>
+                          {row.pipeline_label}
+                        </span>
+                      }
+                      actions={
+                        <div className="admin-btn-group admin-cases-pipeline__actions">
+                          {actions.slice(0, 3).map((action) =>
+                            action.href && action.variant !== 'danger' ? (
+                              <Link
+                                key={action.id}
+                                to={action.href}
+                                className={`admin-btn admin-btn--sm ${
+                                  action.variant === 'primary' ? 'admin-btn--primary' : 'admin-btn--ghost'
+                                }`}
+                              >
+                                {action.label}
+                              </Link>
+                            ) : (
+                              <button
+                                key={action.id}
+                                type="button"
+                                className={`admin-btn admin-btn--sm ${
+                                  action.variant === 'primary' ? 'admin-btn--primary' : 'admin-btn--ghost'
+                                }`}
+                                disabled={actingId === row.id}
+                                onClick={() => runAction(action, row)}
+                              >
+                                {action.label}
+                              </button>
+                            ),
+                          )}
+                        </div>
+                      }
+                    >
+                      <PipelineFlags row={row} />
+                      {!primary ? null : (
+                        <p className="admin-muted" style={{ margin: '8px 0 0', fontSize: '0.75rem' }}>
+                          {row.product_module} · {row.therapist_name || 'No therapist'}
+                        </p>
+                      )}
+                    </AdminTaskCard>
+                  </li>
+                )
+              })}
+        />
       )}
 
       <AdminCaseAssignDrawer

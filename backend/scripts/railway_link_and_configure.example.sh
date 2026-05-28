@@ -60,7 +60,10 @@ npx @railway/cli variable set \
   STORAGE_ENVIRONMENT=production \
   R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-0409ea66ef188ae9783c5e9aa7af9445}" \
   R2_BUCKET_NAME="${R2_BUCKET_NAME:-insightecase}" \
-  R2_ENDPOINT_URL="${R2_ENDPOINT_URL:-https://0409ea66ef188ae9783c5e9aa7af9445.r2.cloudflarestorage.com}"
+  R2_ENDPOINT_URL="${R2_ENDPOINT_URL:-https://0409ea66ef188ae9783c5e9aa7af9445.r2.cloudflarestorage.com}" \
+  WEB_CONCURRENCY="${WEB_CONCURRENCY:-3}" \
+  DB_POOL_SIZE="${DB_POOL_SIZE:-10}" \
+  DB_MAX_OVERFLOW="${DB_MAX_OVERFLOW:-20}"
 
 if [ -n "${R2_ACCESS_KEY_ID:-}" ] && [ -n "${R2_SECRET_ACCESS_KEY:-}" ]; then
   npx @railway/cli variable set \
@@ -73,7 +76,8 @@ fi
 echo ""
 echo "Still set in Railway dashboard if not using references:"
 echo "  - DATABASE_URL = \${{Postgres.DATABASE_URL}}"
-echo "  - REDIS_URL = \${{Redis.REDIS_URL}} (recommended)"
+echo "  - REDIS_URL = \${{Redis.REDIS_URL}} (required in production)"
+echo "  - WEB_CONCURRENCY, DB_POOL_SIZE, DB_MAX_OVERFLOW (set above unless overridden)"
 echo "  - JWT_SECRET_KEY, JWT_REFRESH_SECRET_KEY (long random strings)"
 echo "  - Delete legacy names: SMTP_USERNAME, EMAIL_FROM_DEFAULT"
 echo ""

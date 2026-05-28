@@ -151,6 +151,10 @@ def main() -> int:
         "CORS_ORIGINS": cors,
         # Requires a Redis plugin service named \"Redis\" in the same Railway project.
         "REDIS_URL": "${{Redis.REDIS_URL}}",
+        # ~100 concurrent logins: keep workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) below Postgres max_connections
+        "WEB_CONCURRENCY": "3",
+        "DB_POOL_SIZE": "10",
+        "DB_MAX_OVERFLOW": "20",
     }
     if r2_key and r2_secret:
         pairs["R2_ACCESS_KEY_ID"] = r2_key

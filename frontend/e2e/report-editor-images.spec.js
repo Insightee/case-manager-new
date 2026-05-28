@@ -58,7 +58,7 @@ test.describe('Report editor images', () => {
 
     await expect(page.locator('.report-editor__content')).toBeVisible({ timeout: 15_000 })
 
-    const fileInput = page.locator('.report-editor__toolbar input[type="file"]')
+    const fileInput = page.locator('.report-editor__file-input')
     await fileInput.setInputFiles({
       name: 'e2e.png',
       mimeType: 'image/png',

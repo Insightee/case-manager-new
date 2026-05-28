@@ -54,13 +54,6 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
           >
             Weekly schedule
           </button>
-          <button
-            type="button"
-            onClick={bumpRefresh}
-            className="rounded-xl border border-[#E2E8F0] px-4 py-2 text-sm font-semibold text-slate-700"
-          >
-            Refresh
-          </button>
         </div>
       </div>
 

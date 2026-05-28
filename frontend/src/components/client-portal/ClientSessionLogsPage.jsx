@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useParentPortal } from '../../hooks/useParentPortal.js'
+import { ClientPortalLayout } from './ClientPortalLayout.jsx'
+import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
+import { formatParentLogSessionTime } from '../../lib/parentSessionLogDisplay.js'
+import { SessionLogParentBody } from './SessionLogParentBody.jsx'
 import './parent-session-updates.css'
 
 function StarRating({ value, onChange, disabled }) {
@@ -79,6 +84,7 @@ function SessionCard({ log, onSaved, onDispute }) {
         year: 'numeric',
       })
     : ''
+  const timeLabel = formatParentLogSessionTime(localLog)
 
   const showClosed = hasSubmitted || (localLog.parent_feedback_at && !editing)
 
@@ -89,8 +95,8 @@ function SessionCard({ log, onSaved, onDispute }) {
           <h3 className="session-card__title">{localLog.child_name || localLog.case_code}</h3>
           <p className="session-card__meta">
             {dateLabel}
-            {localLog.therapist_name ? ` · Therapist: ${localLog.therapist_name}` : ''}
-            {localLog.start_time && localLog.end_time ? ` · ${localLog.start_time}–${localLog.end_time}` : ''}
+            {localLog.therapist_name ? ` · ${localLog.therapist_name}` : ''}
+            {timeLabel ? ` · ${timeLabel}` : ''}
           </p>
         </div>
         <span className="session-card__badge">
@@ -98,36 +104,7 @@ function SessionCard({ log, onSaved, onDispute }) {
         </span>
       </header>
 
-      {localLog.headline ? (
-        <h4 className="session-card__headline">{localLog.headline}</h4>
-      ) : null}
-      {localLog.summary_paragraph ? (
-        <p className="session-card__summary">{localLog.summary_paragraph}</p>
-      ) : null}
-      {localLog.what_we_did ? (
-        <p className="session-card__block">
-          <strong>What we did:</strong> {localLog.what_we_did}
-        </p>
-      ) : localLog.activities_done ? (
-        <p className="session-card__block">
-          <strong>What we did:</strong> {localLog.activities_done}
-        </p>
-      ) : null}
-      {localLog.what_is_next ? (
-        <p className="session-card__block">
-          <strong>What’s next:</strong> {localLog.what_is_next}
-        </p>
-      ) : localLog.follow_ups ? (
-        <p className="session-card__block">
-          <strong>What’s next:</strong> {localLog.follow_ups}
-        </p>
-      ) : null}
-      {!localLog.summary_paragraph && localLog.parent_notes ? (
-        <div className="session-card__therapist-note">
-          <strong>From your therapist</strong>
-          <p style={{ margin: '6px 0 0' }}>{localLog.parent_notes}</p>
-        </div>
-      ) : null}
+      <SessionLogParentBody log={localLog} />
 
       {showClosed && !editing ? (
         <div className="session-card__feedback session-card__feedback--closed">
@@ -223,31 +200,40 @@ function CmMeetingCard({ meeting }) {
         <span className="session-card__badge session-card__badge--cm">{meeting.status}</span>
       </header>
 
-      {meeting.notes_concerns ? (
-        <p className="session-card__block">
-          <strong>Concerns addressed:</strong> {meeting.notes_concerns}
-        </p>
-      ) : null}
-      {meeting.notes_follow_up ? (
-        <p className="session-card__block">
-          <strong>Follow-up steps:</strong> {meeting.notes_follow_up}
-        </p>
-      ) : null}
-      {meeting.notes_action ? (
-        <p className="session-card__block">
-          <strong>Actions taken:</strong> {meeting.notes_action}
-        </p>
-      ) : null}
-      {meeting.notes_other ? (
-        <p className="session-card__block">
-          <strong>Additional notes:</strong> {meeting.notes_other}
-        </p>
-      ) : null}
-      {!meeting.notes_concerns && !meeting.notes_follow_up && !meeting.notes_action && !meeting.notes_other ? (
-        <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '8px 0 0' }}>
-          Meeting notes will appear here after your case manager completes the meeting.
-        </p>
-      ) : null}
+      <div className="session-card__body">
+        {meeting.notes_concerns ? (
+          <section className="session-card__section">
+            <h4 className="session-card__section-label">Concerns addressed</h4>
+            <p className="session-card__section-text">{meeting.notes_concerns}</p>
+          </section>
+        ) : null}
+        {meeting.notes_follow_up ? (
+          <section className="session-card__section">
+            <h4 className="session-card__section-label">Follow-up steps</h4>
+            <p className="session-card__section-text">{meeting.notes_follow_up}</p>
+          </section>
+        ) : null}
+        {meeting.notes_action ? (
+          <section className="session-card__section">
+            <h4 className="session-card__section-label">Actions taken</h4>
+            <p className="session-card__section-text">{meeting.notes_action}</p>
+          </section>
+        ) : null}
+        {meeting.notes_other ? (
+          <section className="session-card__section">
+            <h4 className="session-card__section-label">Additional notes</h4>
+            <p className="session-card__section-text">{meeting.notes_other}</p>
+          </section>
+        ) : null}
+        {!meeting.notes_concerns &&
+        !meeting.notes_follow_up &&
+        !meeting.notes_action &&
+        !meeting.notes_other ? (
+          <p className="session-card__empty-note">
+            Meeting notes will appear here after your case manager completes the meeting.
+          </p>
+        ) : null}
+      </div>
     </article>
   )
 }
@@ -275,7 +261,8 @@ const ATTENDANCE_FILTERS = [
   { value: 'CANCELLED', label: 'Cancelled' },
 ]
 
-export function ClientSessionLogsPage({ cases = [] }) {
+export function ClientSessionLogsPage() {
+  const { cases } = useParentPortal()
   const navigate = useNavigate()
   const monthOptions = useMemo(() => buildMonthOptions(), [])
   const [selectedMonth, setSelectedMonth] = useState(monthOptions[0].value)
@@ -349,67 +336,54 @@ export function ClientSessionLogsPage({ cases = [] }) {
   const monthLabel = selectedMeta.label
 
   return (
-    <div>
-      <p className="session-updates__intro">
-        Approved session notes from your therapist and case manager meeting summaries. Your case manager is assigned by
-        the clinic on your child&apos;s case; your therapist is assigned separately for visits.
-      </p>
-
-      <div className="session-updates__filters">
+    <ClientPortalLayout
+      title="Session updates"
+      subtitle="Therapist session notes and case manager meetings. Your case manager and therapist are assigned separately on each case."
+    >
+      <ParentFilterBar
+        ariaLabel="Filter session updates"
+        layout="stack"
+        actions={
+          <Link to="/parent/book" className="parent-portal-filters__link">
+            Session schedule →
+          </Link>
+        }
+      >
         {caseOptions.length > 0 ? (
-          <label className="session-updates__filter-label">
-            Child
-            <select
-              className="session-updates__select"
-              value={caseId}
-              onChange={(e) => setCaseId(e.target.value)}
-            >
+          <ParentFilterField label="Child">
+            <ParentFilterSelect value={caseId} onChange={(e) => setCaseId(e.target.value)}>
               <option value="">All children</option>
               {caseOptions.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.childName} · {c.serviceType}
                 </option>
               ))}
-            </select>
-          </label>
+            </ParentFilterSelect>
+          </ParentFilterField>
         ) : null}
 
-        <label className="session-updates__filter-label">
-          Month
-          <select
-            className="session-updates__select"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-          >
+        <ParentFilterField label="Month">
+          <ParentFilterSelect value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
             {monthOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
-          </select>
-        </label>
+          </ParentFilterSelect>
+        </ParentFilterField>
 
-        <label className="session-updates__filter-label">
-          Attendance
-          <select
-            className="session-updates__select"
-            value={attendanceFilter}
-            onChange={(e) => setAttendanceFilter(e.target.value)}
-          >
+        <ParentFilterField label="Attendance">
+          <ParentFilterSelect value={attendanceFilter} onChange={(e) => setAttendanceFilter(e.target.value)}>
             {ATTENDANCE_FILTERS.map((f) => (
               <option key={f.value || 'all'} value={f.value}>
                 {f.label}
               </option>
             ))}
-          </select>
-        </label>
+          </ParentFilterSelect>
+        </ParentFilterField>
+      </ParentFilterBar>
 
-        <Link to="/parent/book" className="session-updates__schedule-link">
-          Session schedule →
-        </Link>
-      </div>
-
-      <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e293b', marginBottom: 12 }}>{monthLabel}</h2>
+      <h2 className="parent-portal-section-title">{monthLabel}</h2>
 
       {loading ? (
         <p style={{ color: '#94a3b8' }}>Loading session updates…</p>
@@ -433,6 +407,6 @@ export function ClientSessionLogsPage({ cases = [] }) {
           )
         })()
       )}
-    </div>
+    </ClientPortalLayout>
   )
 }

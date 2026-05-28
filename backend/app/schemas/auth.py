@@ -16,6 +16,7 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    user: Optional["UserMeResponse"] = None
 
 
 class RefreshRequest(BaseModel):
@@ -40,8 +41,15 @@ class UserMeResponse(BaseModel):
     id: int
     email: str
     full_name: str
+    staff_id: Optional[str] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+    job_title: Optional[str] = None
+    department: Optional[str] = None
+    timezone: Optional[str] = None
+    ui_preferences: dict = {}
+    notification_preferences: dict = {}
     roles: list[str]
     permissions: list[str]
     region: Optional[str] = None
@@ -76,6 +84,9 @@ class ResetPasswordPreviewResponse(BaseModel):
     email: str
 
 
+TokenResponse.model_rebuild()
+
+
 class ResetPasswordRequest(BaseModel):
     token: str
     password: str
@@ -94,3 +105,9 @@ class MeUpdate(BaseModel):
     home_landmark: Optional[str] = None
     home_latitude: Optional[float] = None
     home_longitude: Optional[float] = None
+    bio: Optional[str] = None
+    job_title: Optional[str] = None
+    department: Optional[str] = None
+    timezone: Optional[str] = None
+    ui_preferences: Optional[dict] = None
+    notification_preferences: Optional[dict] = None

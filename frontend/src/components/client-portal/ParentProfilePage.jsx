@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
+import { ErrorBanner } from '../shared/ErrorBanner.jsx'
 import { AvatarUpload } from '../shared/AvatarUpload.jsx'
+import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import {
   AddressFormFields,
   addressFromApi,
@@ -173,6 +175,16 @@ function AddChildForm({ onAdd, onCancel }) {
   )
 }
 
+function ProfileLoadingSkeleton() {
+  return (
+    <div className="parent-profile parent-profile--loading" aria-busy="true" aria-label="Loading profile">
+      <div className="parent-profile__skeleton parent-profile__skeleton--avatar" />
+      <div className="parent-profile__skeleton parent-profile__skeleton--card" />
+      <div className="parent-profile__skeleton parent-profile__skeleton--card parent-profile__skeleton--tall" />
+    </div>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 export function ParentProfilePage() {
   const { user, reload: reloadAuth } = useAuth()
@@ -197,7 +209,7 @@ export function ParentProfilePage() {
     setLoading(true)
     setError('')
     try {
-      const p = await apiFetch('/api/v1/parent/profile')
+      const p = await apiFetch('/api/v1/parent/profile', { timeoutMs: 45_000 })
       setFullName(p.full_name || '')
       setEmail(p.email || '')
       setPhone(p.phone || '')
@@ -326,25 +338,29 @@ export function ParentProfilePage() {
     }
   }
 
+  const layout = (content) => (
+    <ClientPortalLayout
+      title="My profile"
+      subtitle="Update your contact details, children, and visit address. Your care team may have filled in some fields when your case was created."
+    >
+      {content}
+    </ClientPortalLayout>
+  )
+
   if (loading) {
-    return <p className="parent-profile__intro">Loading profile…</p>
+    return layout(<ProfileLoadingSkeleton />)
   }
 
-  return (
+  return layout(
     <div className="parent-profile">
-      <p className="parent-profile__intro">
-        Your care team may have set up some details when your case was created. Review everything below and
-        update names, contact info, and visit addresses anytime.
-      </p>
-
-      {error ? <p className="parent-profile__alert parent-profile__alert--error">{error}</p> : null}
+      <ErrorBanner message={error} onRetry={loadProfile} />
       {success ? <p className="parent-profile__alert parent-profile__alert--success">{success}</p> : null}
 
-      <div className="parent-profile__card" style={{ marginBottom: 16 }}>
+      <div className="parent-profile__card parent-profile__avatar-card">
         <AvatarUpload user={user} onUpdated={reloadAuth} size={72} />
       </div>
 
-      <form onSubmit={handleSave}>
+      <form className="parent-profile__form" onSubmit={handleSave}>
         {/* ── Contact details ── */}
         <section className="parent-profile__card">
           <h3>Your details</h3>
@@ -446,34 +462,21 @@ export function ParentProfilePage() {
             <legend style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Address type
             </legend>
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div className="parent-profile__address-type">
               {[
                 { id: 'home', label: '🏠 Home' },
                 { id: 'school', label: '🏫 School' },
               ].map((opt) => (
                 <label
                   key={opt.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '8px 16px',
-                    borderRadius: 10,
-                    border: `2px solid ${addressType === opt.id ? '#6366f1' : '#e2e8f0'}`,
-                    background: addressType === opt.id ? '#eef2ff' : '#fff',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.875rem',
-                    color: addressType === opt.id ? '#4338ca' : '#475569',
-                    transition: 'all 0.15s',
-                  }}
+                  className={`parent-profile__address-pill${addressType === opt.id ? ' is-selected' : ''}`}
                 >
                   <input
                     type="radio"
                     name="addressType"
                     checked={addressType === opt.id}
                     onChange={() => setAddressType(opt.id)}
-                    style={{ display: 'none' }}
+                    className="parent-profile__address-pill-input"
                   />
                   {opt.label}
                 </label>
@@ -515,10 +518,12 @@ export function ParentProfilePage() {
           </div>
         </section>
 
-        <button type="submit" className="parent-profile__save" disabled={saving}>
-          {saving ? 'Saving…' : 'Save profile'}
-        </button>
+        <div className="parent-profile__save-bar">
+          <button type="submit" className="parent-profile__save" disabled={saving}>
+            {saving ? 'Saving…' : 'Save profile'}
+          </button>
+        </div>
       </form>
-    </div>
+    </div>,
   )
 }

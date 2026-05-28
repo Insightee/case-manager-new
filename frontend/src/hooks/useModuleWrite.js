@@ -33,7 +33,7 @@ export function useModuleWrite() {
   )
 
   const canEditIep = useCallback(
-    (productModule) => can('iep.read') && !isViewOnly && canWriteFeature('iep', productModule),
+    (productModule) => can('iep.manage') && !isViewOnly && canWriteFeature('iep', productModule),
     [can, isViewOnly, canWriteFeature],
   )
 

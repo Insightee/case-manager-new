@@ -1,0 +1,26 @@
+.client-portal-page-head {
+  margin-bottom: 4px;
+}
+
+@media (max-width: 900px) {
+  .client-portal-page-head {
+    margin-bottom: 12px;
+  }
+
+  .client-portal-page-head .ic-page-head__title {
+    font-size: 1.25rem;
+  }
+
+  .client-portal-page-head .ic-page-head__title {
+    line-height: 1.25;
+  }
+
+  .client-portal-page-head .ic-page-head__actions {
+    width: 100%;
+  }
+
+  .client-portal-page-head .ic-btn-cta {
+    min-height: 44px;
+    width: 100%;
+  }
+}

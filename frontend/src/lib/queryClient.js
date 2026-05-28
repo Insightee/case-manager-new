@@ -3,7 +3,7 @@ import { QueryClient } from '@tanstack/react-query'
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 2,
+      retry: 1,
       staleTime: 30_000,
       refetchOnWindowFocus: true,
     },
@@ -16,6 +16,9 @@ export const queryKeys = {
   therapistDailyLogs: (userId) => ['therapist', 'daily-logs', userId ?? 'self'],
   therapistReportsPipeline: ['therapist', 'reports', 'pipeline'],
   parentHome: ['parent', 'home'],
+  parentCases: ['parent', 'cases'],
+  parentBootstrap: ['parent', 'bootstrap'],
+  parentAppointments: ['parent', 'appointments'],
   adminHome: ['admin', 'home'],
   adminCmHome: ['admin', 'cm', 'home'],
   notifications: (unreadOnly) => ['notifications', { unreadOnly }],

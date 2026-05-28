@@ -1,6 +1,14 @@
 import { Fragment, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { AdminEmptyState, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
+import {
+  AdminDataList,
+  AdminEmptyState,
+  AdminPanel,
+  AdminSearchInput,
+  AdminTaskCard,
+  AdminToolbar,
+  StatusBadge,
+} from './ui/index.js'
 import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
 import {
   hasDeprecatedStaffRole,
@@ -328,12 +336,16 @@ export function AdminStaffManageSection({
 
       <AdminPanel title={`Staff directory (${filtered.length})`} padded={false}>
         <div className="admin-panel__body">
-          <AdminToolbar>
-            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff…" />
-          </AdminToolbar>
+          <div className="admin-desktop-only">
+            <AdminToolbar>
+              <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff…" />
+            </AdminToolbar>
+          </div>
           {filtered.length === 0 ? (
             <AdminEmptyState title="No staff users" description="Add a user above or adjust search." />
           ) : (
+            <AdminDataList
+              desktop={
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
@@ -483,6 +495,133 @@ export function AdminStaffManageSection({
                 </tbody>
               </table>
             </div>
+              }
+              mobile={
+                <ul className="admin-data-list__cards">
+                  {filtered.map((u) => (
+                    <li key={u.id}>
+                      <AdminTaskCard
+                        title={u.full_name}
+                        meta={u.email}
+                        badges={
+                          <StatusBadge tone={u.is_active ? 'success' : 'neutral'}>
+                            {u.is_active ? 'Active' : 'Inactive'}
+                          </StatusBadge>
+                        }
+                        actions={
+                          <div className="admin-btn-group">
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--ghost admin-btn--sm"
+                              onClick={() => {
+                                if (editingId === u.id) {
+                                  setEditingId(null)
+                                } else {
+                                  setEditingId(u.id)
+                                  setEditGrants(
+                                    Object.keys(u.service_access_grants || {}).length ||
+                                      Object.keys(u.org_capability_grants || {}).length
+                                      ? mergeGrants(u.service_access_grants || {}, u.org_capability_grants || {})
+                                      : Object.keys(u.module_access_grants || {}).length
+                                        ? u.module_access_grants
+                                        : grantsFromAssignments(u.module_assignments ?? [], u.is_view_only),
+                                  )
+                                  setEditOverrides(u.feature_overrides ?? {})
+                                  setEditViewOnly(u.is_view_only ?? false)
+                                  setEditRoles([...(u.roles || [])])
+                                }
+                              }}
+                            >
+                              {editingId === u.id ? 'Cancel' : 'Edit access'}
+                            </button>
+                            {u.is_active ? (
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--ghost admin-btn--sm"
+                                onClick={() => deactivateUser(u.id, u.full_name)}
+                              >
+                                Deactivate
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--ghost admin-btn--sm"
+                                onClick={() => toggleActive(u.id, true)}
+                              >
+                                Reactivate
+                              </button>
+                            )}
+                          </div>
+                        }
+                      >
+                        <div className="admin-chip-row" style={{ marginBottom: 8 }}>
+                          {(u.roles || []).map((r) => {
+                            const id = String(r).toUpperCase()
+                            const legacy = deprecatedSet.has(id) || hasDeprecatedStaffRole([id])
+                            return (
+                              <span key={r} className={`admin-chip ${legacy ? 'admin-chip--warn' : ''}`}>
+                                {r.replace(/_/g, ' ')}
+                              </span>
+                            )
+                          })}
+                        </div>
+                        <div className="rbac-access-summary">
+                          {moduleAccessSummary(u, catalog, grantsFromAssignments).map((row) => (
+                            <span
+                              key={row.id}
+                              className={`admin-badge admin-badge--sm ${
+                                row.access === 'Edit' ? 'admin-badge--success' : 'admin-badge--neutral'
+                              }`}
+                            >
+                              {row.label}: {row.access}
+                            </span>
+                          ))}
+                        </div>
+                        {editingId === u.id ? (
+                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                            {hasDeprecatedStaffRole(u.roles) ? (
+                              <p className="admin-alert admin-alert--warn rbac-editor__hint">
+                                Legacy role detected. Prefer Module Admin, Case Manager, or Finance when re-provisioning access.
+                              </p>
+                            ) : null}
+                            <RbacEditor
+                              catalog={catalog}
+                              assignableRoles={assignableRoles}
+                              roleDefaults={roleDefaults}
+                              selectedRoles={editRoles}
+                              onRoleChange={setEditRoles}
+                              allowMultiRole
+                              grants={editGrants}
+                              onGrantsChange={setEditGrants}
+                              featureOverrides={editOverrides}
+                              onOverridesChange={setEditOverrides}
+                              viewOnly={editViewOnly}
+                              onViewOnlyChange={setEditViewOnly}
+                            />
+                            <div className="admin-btn-group" style={{ marginTop: 12 }}>
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--primary admin-btn--sm"
+                                onClick={() => saveEditAccess(u.id)}
+                              >
+                                Save access
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--ghost admin-btn--sm"
+                                onClick={() => setEditingId(null)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </AdminTaskCard>
+                    </li>
+                  ))}
+                </ul>
+              }
+            />
           )}
         </div>
       </AdminPanel>

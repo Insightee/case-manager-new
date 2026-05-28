@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import './parent-payments.css'
+import './parent-portal-filters.css'
+import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 
 const DISPUTE_STATUS_LABELS = {
   open: 'Submitted — finance will review',
@@ -45,6 +47,54 @@ function statusClass(bucket) {
   if (bucket === 'disputed') return 'warning'
   if (bucket === 'partial') return 'in-progress'
   return 'pending'
+}
+
+function InvoiceMobileCard({ inv, onOpen }) {
+  return (
+    <button type="button" className="parent-pay__mobile-card" onClick={() => onOpen(inv.id)}>
+      <div className="parent-pay__mobile-card-top">
+        <strong>{inv.invoiceNumber}</strong>
+        <span className={`status ${statusClass(inv.paymentBucket)}`}>{inv.paymentBucket}</span>
+      </div>
+      <p className="parent-pay__mobile-card-meta">
+        {inv.childName} · {formatMonth(inv.billingMonth)}
+      </p>
+      <div className="parent-pay__mobile-card-row">
+        <span>Balance {formatInr(inv.balanceInr)}</span>
+        {inv.dueDate ? (
+          <span>
+            Due {new Date(inv.dueDate).toLocaleDateString('en-IN')}
+            {inv.isOverdue && inv.balanceInr > 0 ? (
+              <span className="parent-pay__badge parent-pay__badge--overdue" style={{ marginLeft: 6 }}>
+                Overdue
+              </span>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
+    </button>
+  )
+}
+
+function PackageMobileCard({ pkg }) {
+  return (
+    <article className="parent-pay__mobile-card parent-pay__mobile-card--package">
+      <div className="parent-pay__mobile-card-top">
+        <strong>{pkg.name}</strong>
+        <span className="parent-pay__badge" style={{ background: '#eef2ff', color: '#3730a3' }}>
+          {pkg.remainingSessions} left
+        </span>
+      </div>
+      <p className="parent-pay__mobile-card-meta">{pkg.childName}</p>
+      <div className="parent-pay__mobile-card-row">
+        <span>Total {pkg.totalSessions}</span>
+        <span>Used {pkg.usedSessions}</span>
+        <span>
+          Expires {pkg.validityEnd ? new Date(pkg.validityEnd).toLocaleDateString('en-IN') : '—'}
+        </span>
+      </div>
+    </article>
+  )
 }
 
 export function ParentBillingPage() {
@@ -195,7 +245,9 @@ export function ParentBillingPage() {
     <div className="parent-pay">
       <header className="parent-pay__hero">
         <h1>Payments</h1>
-        <p>Review invoices raised by your care team, download statements, and keep track of what is due.</p>
+        <p className="parent-portal-lead">
+          Review invoices raised by your care team, download statements, and keep track of what is due.
+        </p>
       </header>
 
       {error ? (
@@ -288,7 +340,12 @@ export function ParentBillingPage() {
           <div className="parent-pay__table-head">
             <h3>Session packages</h3>
           </div>
-          <div className="table-wrap">
+          <div className="parent-pay__mobile-list" aria-label="Session packages">
+            {dashboard.packages.map((p) => (
+              <PackageMobileCard key={p.id} pkg={p} />
+            ))}
+          </div>
+          <div className="parent-pay__table-desktop table-wrap">
             <table>
               <thead>
                 <tr>
@@ -319,12 +376,12 @@ export function ParentBillingPage() {
         </section>
       ) : null}
 
-      <nav className="parent-pay__tabs" aria-label="Invoice payment status">
+      <nav className="parent-portal-tabs parent-pay__tabs-sync" aria-label="Invoice payment status">
         {PAYMENT_TABS.map((t) => (
           <button
             key={t.id || 'all'}
             type="button"
-            className={`parent-pay__tab ${paymentTab === t.id ? 'is-active' : ''}`}
+            className={`parent-portal-tabs__tab ${paymentTab === t.id ? 'is-active' : ''}`}
             onClick={() => setPaymentTab(t.id)}
           >
             {t.label}
@@ -332,41 +389,41 @@ export function ParentBillingPage() {
         ))}
       </nav>
 
-      <div className="parent-pay__refine" aria-label="Refine invoice list">
-        <label>
-          Month
-          <select value={month} onChange={(e) => setMonth(e.target.value)}>
+      <ParentFilterBar
+        ariaLabel="Refine invoice list"
+        gridClass="parent-portal-filters__grid--tablet-2 parent-portal-filters__grid--desktop-3"
+      >
+        <ParentFilterField label="Month">
+          <ParentFilterSelect value={month} onChange={(e) => setMonth(e.target.value)}>
             <option value="">All months</option>
             {(opts.months || []).map((m) => (
               <option key={m} value={m}>
                 {formatMonth(m)}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
-          Child / case
-          <select value={caseId} onChange={(e) => setCaseId(e.target.value)}>
+          </ParentFilterSelect>
+        </ParentFilterField>
+        <ParentFilterField label="Child / case">
+          <ParentFilterSelect value={caseId} onChange={(e) => setCaseId(e.target.value)}>
             <option value="">All</option>
             {(opts.children || []).map((c) => (
               <option key={c.caseDbId} value={String(c.caseDbId)}>
                 {c.label}
               </option>
             ))}
-          </select>
-        </label>
-        <label>
-          Service
-          <select value={service} onChange={(e) => setService(e.target.value)}>
+          </ParentFilterSelect>
+        </ParentFilterField>
+        <ParentFilterField label="Service">
+          <ParentFilterSelect value={service} onChange={(e) => setService(e.target.value)}>
             <option value="">All services</option>
             {(opts.services || []).map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
             ))}
-          </select>
-        </label>
-      </div>
+          </ParentFilterSelect>
+        </ParentFilterField>
+      </ParentFilterBar>
 
       <section className="parent-pay__table-card">
         <div className="parent-pay__table-head">
@@ -378,7 +435,13 @@ export function ParentBillingPage() {
         ) : invoices.length === 0 ? (
           <p style={{ padding: 16, color: '#9ca3af' }}>No invoices match these filters.</p>
         ) : (
-          <div className="table-wrap">
+          <>
+            <div className="parent-pay__mobile-list" aria-label="Invoice list">
+              {invoices.map((inv) => (
+                <InvoiceMobileCard key={inv.id} inv={inv} onOpen={openInvoice} />
+              ))}
+            </div>
+            <div className="parent-pay__table-desktop table-wrap">
             <table>
               <thead>
                 <tr>
@@ -420,7 +483,8 @@ export function ParentBillingPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </section>
 
@@ -429,27 +493,9 @@ export function ParentBillingPage() {
           role="dialog"
           aria-modal="true"
           aria-label="Invoice detail"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15,23,42,0.45)',
-            zIndex: 60,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
+          className="parent-pay__dialog-backdrop"
         >
-          <div
-            style={{
-              marginTop: 'auto',
-              maxHeight: '94vh',
-              background: '#fff',
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
+          <div className="parent-pay__dialog-sheet">
             <div
               style={{
                 padding: '12px 16px',

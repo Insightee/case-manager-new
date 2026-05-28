@@ -1,0 +1,33 @@
+/* Parent / client portal — mobile-first copy and spacing */
+
+@media (max-width: 900px) {
+  .client-portal-page-head .ic-page-head__sub {
+    display: none;
+  }
+
+  .parent-portal-lead,
+  .parent-profile__intro,
+  .parent-profile__hint,
+  .parent-support__hint {
+    display: none;
+  }
+
+  .parent-pay__hero > p {
+    display: none;
+  }
+
+  .parent-pay__hero {
+    margin-bottom: 12px;
+  }
+
+  .parent-pay__hero h1 {
+    font-size: 1.25rem;
+    margin-bottom: 0;
+  }
+}
+
+@media (min-width: 901px) {
+  .parent-profile__hint--mobile-only {
+    display: none;
+  }
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../../lib/reportCategories.js'
+import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
 import { ReportEditor } from './ReportEditor.jsx'
 import { SessionLogContextPanel } from './SessionLogContextPanel.jsx'
 import './report-editor.css'
@@ -51,8 +52,10 @@ export function ReportEditPage() {
   const [message, setMessage] = useState('')
   const [documentVersion, setDocumentVersion] = useState(0)
   const [localDraft, setLocalDraft] = useState(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const saveTimer = useRef(null)
   const skipAutosaveRef = useRef(true)
+  const isMobile = useIsMobilePortal()
 
   const editable =
     report &&
@@ -226,56 +229,150 @@ export function ReportEditPage() {
     )
   }
 
+  const detailsSummary = `${month || '—'} · ${categoryLabel(category)}`
+  const submitLabel = isAdminEditor ? 'Save' : 'Submit for review'
+
+  function SaveStatusLine({ className = '' }) {
+    if (!editable) return null
+    return (
+      <div className={`report-save-status report-save-status--inline ${className}`.trim()} role="status">
+        {saving ? (
+          <span className="report-save-status__chip report-save-status__chip--saving">Saving…</span>
+        ) : saveFailed ? (
+          <>
+            <span className="report-save-status__chip report-save-status__chip--error">Save failed</span>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => persist(false)}>
+              Retry
+            </button>
+          </>
+        ) : savedAt ? (
+          <span className="report-save-status__chip report-save-status__chip--ok">
+            Saved {savedAt.toLocaleTimeString()}
+          </span>
+        ) : dirty ? (
+          <span className="report-save-status__chip">Unsaved changes</span>
+        ) : null}
+      </div>
+    )
+  }
+
+  const metadataFields = (
+    <>
+      <label className="report-edit-field text-sm font-medium text-slate-700">
+        Month
+        <input
+          className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          disabled={!editable}
+        />
+      </label>
+      <label className="report-edit-field text-sm font-medium text-slate-700">
+        Category
+        <select
+          className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          disabled={!editable}
+        >
+          {REPORT_CATEGORIES.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {category === 'PROGRESS' ? (
+        <label className="report-edit-field text-sm font-medium text-slate-700 sm:col-span-2">
+          Progress type
+          <select
+            className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={subCategory}
+            onChange={(e) => setSubCategory(e.target.value)}
+            disabled={!editable}
+          >
+            <option value="">Select…</option>
+            {PROGRESS_SUB_CATEGORIES.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </>
+  )
+
+  const pageClass = `report-edit-page mx-auto max-w-6xl space-y-4 px-2 py-4 sm:px-4${
+    isMobile ? ' report-edit-page--mobile' : ''
+  }`
+
   return (
-    <div className="mx-auto max-w-6xl space-y-4 px-2 py-4 sm:px-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link to={base} className="text-sm font-semibold text-indigo-600 hover:underline">
+    <div className={pageClass}>
+      {isMobile ? (
+        <header className="report-edit-mobile-head">
+          <Link to={base} className="report-edit-mobile-head__back">
             ← Reports
           </Link>
-          <h1 className="mt-2 text-xl font-bold text-slate-900">
-            {report.child_name} · {report.month}
-          </h1>
-          <p className="text-sm text-slate-500">
-            {report.case_code} · {categoryLabel(category)} · {report.status}
+          <div className="report-edit-mobile-head__row">
+            <h1 className="report-edit-mobile-head__title">{report.child_name}</h1>
+            <span className="report-edit-mobile-head__status">{report.status}</span>
+          </div>
+          <p className="report-edit-mobile-head__meta">
+            {report.case_code} · {month || 'No month set'}
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
-            onClick={() => persist(false)}
-            disabled={!editable || saving}
-          >
-            {saving ? 'Saving…' : 'Save to server'}
-          </button>
-          {editable ? (
+          <SaveStatusLine className="report-edit-mobile-head__save" />
+        </header>
+      ) : (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <Link to={base} className="text-sm font-semibold text-indigo-600 hover:underline">
+              ← Reports
+            </Link>
+            <h1 className="mt-2 text-xl font-bold text-slate-900">
+              {report.child_name} · {report.month}
+            </h1>
+            <p className="text-sm text-slate-500">
+              {report.case_code} · {categoryLabel(category)} · {report.status}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
-              onClick={saveLocalDraft}
+              onClick={() => persist(false)}
+              disabled={!editable || saving}
             >
-              Save draft on device
+              {saving ? 'Saving…' : 'Save to server'}
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
-            onClick={handleDownload}
-          >
-            Download PDF
-          </button>
-          {editable ? (
+            {editable ? (
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                onClick={saveLocalDraft}
+              >
+                Save draft on device
+              </button>
+            ) : null}
             <button
               type="button"
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
-              onClick={handleSubmit}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+              onClick={handleDownload}
             >
-              Submit for review
+              Download PDF
             </button>
-          ) : null}
+            {editable ? (
+              <button
+                type="button"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                onClick={handleSubmit}
+              >
+                {submitLabel}
+              </button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
 
       {report.reviewer_comment ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -298,73 +395,27 @@ export function ReportEditPage() {
       ) : null}
       {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {editable ? (
-        <div className="report-save-status" role="status">
-          {saving ? (
-            <span className="report-save-status__chip report-save-status__chip--saving">Saving…</span>
-          ) : saveFailed ? (
-            <>
-              <span className="report-save-status__chip report-save-status__chip--error">Save failed</span>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => persist(false)}>
-                Retry
-              </button>
-            </>
-          ) : savedAt ? (
-            <span className="report-save-status__chip report-save-status__chip--ok">
-              Saved {savedAt.toLocaleTimeString()}
-            </span>
-          ) : dirty ? (
-            <span className="report-save-status__chip">Unsaved changes</span>
-          ) : null}
-        </div>
-      ) : null}
+      {!isMobile && editable ? <SaveStatusLine /> : null}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-medium text-slate-700">
-              Month
-              <input
-                className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                disabled={!editable}
-              />
-            </label>
-            <label className="text-sm font-medium text-slate-700">
-              Category
-              <select
-                className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                disabled={!editable}
-              >
-                {REPORT_CATEGORIES.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {category === 'PROGRESS' ? (
-              <label className="text-sm font-medium text-slate-700 sm:col-span-2">
-                Progress type
-                <select
-                  className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={subCategory}
-                  onChange={(e) => setSubCategory(e.target.value)}
-                  disabled={!editable}
-                >
-                  <option value="">Select…</option>
-                  {PROGRESS_SUB_CATEGORIES.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
+      <div
+        className={
+          isMobile
+            ? 'report-edit-layout report-edit-layout--mobile'
+            : 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]'
+        }
+      >
+        <div className="report-edit-main space-y-4">
+          {isMobile ? (
+            <details className="report-edit-details">
+              <summary className="report-edit-details__summary">
+                <span className="report-edit-details__label">Report details</span>
+                <span className="report-edit-details__hint">{detailsSummary}</span>
+              </summary>
+              <div className="report-edit-details__body grid gap-3">{metadataFields}</div>
+            </details>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">{metadataFields}</div>
+          )}
 
           <ReportEditor
             reportId={Number(reportId)}
@@ -374,6 +425,7 @@ export function ReportEditPage() {
             onPlanChange={setPlanNextMonth}
             onHtmlChange={setBodyHtml}
             disabled={!editable}
+            mobile={isMobile}
           />
         </div>
 
@@ -381,12 +433,100 @@ export function ReportEditPage() {
           reportId={Number(reportId)}
           caseId={report.case_id}
           month={month}
+          collapsed={isMobile}
           onInsertIepGoals={(html) => {
             setBodyHtml((prev) => `${prev || ''}${html}`)
             setDocumentVersion((v) => v + 1)
           }}
         />
       </div>
+
+      {isMobile ? (
+        <>
+          {mobileMenuOpen ? (
+            <button
+              type="button"
+              className="report-edit-mobile-menu-backdrop"
+              aria-label="Close menu"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+          ) : null}
+          <div className="report-edit-mobile-bar" role="toolbar" aria-label="Report actions">
+            {editable ? (
+              <>
+                <button
+                  type="button"
+                  className="report-edit-mobile-bar__btn report-edit-mobile-bar__btn--secondary"
+                  onClick={() => persist(false)}
+                  disabled={saving}
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  className="report-edit-mobile-bar__btn report-edit-mobile-bar__btn--primary"
+                  onClick={handleSubmit}
+                >
+                  {submitLabel}
+                </button>
+                <button
+                  type="button"
+                  className="report-edit-mobile-bar__btn report-edit-mobile-bar__btn--menu"
+                  aria-expanded={mobileMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setMobileMenuOpen((o) => !o)}
+                >
+                  ⋯
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="report-edit-mobile-bar__btn report-edit-mobile-bar__btn--secondary"
+                onClick={handleDownload}
+              >
+                Download PDF
+              </button>
+            )}
+          </div>
+          {mobileMenuOpen ? (
+            <div className="report-edit-mobile-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                className="report-edit-mobile-menu__item"
+                onClick={() => {
+                  handleDownload()
+                  setMobileMenuOpen(false)
+                }}
+              >
+                Download PDF
+              </button>
+              {editable ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="report-edit-mobile-menu__item"
+                  onClick={() => {
+                    saveLocalDraft()
+                    setMobileMenuOpen(false)
+                  }}
+                >
+                  Save draft on device
+                </button>
+              ) : null}
+              <Link
+                to={base}
+                role="menuitem"
+                className="report-edit-mobile-menu__item report-edit-mobile-menu__link"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Back to reports
+              </Link>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </div>
   )
 }

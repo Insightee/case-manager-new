@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useParentPortal } from '../../hooks/useParentPortal.js'
+import { fetchParentAppointments } from '../../lib/parentCases.js'
+import { queryKeys } from '../../lib/queryClient.js'
+import { ClientPortalLayout } from './ClientPortalLayout.jsx'
+import { ErrorBanner } from '../shared/ErrorBanner.jsx'
 import { ParentBookSessionForm } from './ParentBookSessionForm.jsx'
 import './parent-book-form.css'
 
@@ -91,94 +97,45 @@ function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
   )
 }
 
-export function ClientBookAppointmentPage({ cases }) {
+export function ClientBookAppointmentPage() {
   const location = useLocation()
-  const [appointments, setAppointments] = useState([])
-  const [apptLoading, setApptLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const { cases, casesLoading } = useParentPortal()
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [formActing, setFormActing] = useState(false)
   const [rescheduleFrom, setRescheduleFrom] = useState(null)
-  const [acting, setActing] = useState(false)
   const [selectedAppt, setSelectedAppt] = useState(null)
 
-  function loadAppointments() {
-    setApptLoading(true)
-    setError('')
-    Promise.all([
-      apiFetch('/api/v1/parent/appointments'),
-      apiFetch('/api/v1/parent/cm-meetings'),
-    ])
-      .then(([slots, meetings]) => {
-        const slotItems = (slots || []).map((a) => ({
-          id: `slot-${a.id}`,
-          rawId: a.id,
-          isCmMeeting: false,
-          caseDbId: a.caseDbId,
-          childName: a.childName,
-          therapistName: a.therapistName,
-          therapistUserId: a.therapistUserId,
-          slotDate: a.slotDate,
-          startTime: a.startTime,
-          endTime: a.endTime,
-          approvalStatus: a.approval_status || a.approvalStatus || 'CONFIRMED',
-          canCancel: a.can_cancel,
-          canReschedule: a.can_reschedule,
-          rescheduleReason: a.reschedule_reason,
-          cancelReason: a.cancel_reason,
-        }))
-        const meetingItems = (meetings || []).map((m) => ({
-          id: `cm-${m.id}`,
-          rawId: m.id,
-          isCmMeeting: true,
-          caseMgrName: m.case_manager_name,
-          childName: m.child_name,
-          therapistName: null,
-          slotDate: m.scheduled_date,
-          startTime: m.scheduled_time,
-          endTime: null,
-          approvalStatus: 'CONFIRMED',
-          canCancel: false,
-          canReschedule: false,
-        }))
-        const all = [...slotItems, ...meetingItems].sort((a, b) => {
-          const da = (a.slotDate || '') + 'T' + (a.startTime || '00:00')
-          const db = (b.slotDate || '') + 'T' + (b.startTime || '00:00')
-          return da < db ? -1 : da > db ? 1 : 0
-        })
-        setAppointments(all)
-        return all
-      })
-      .catch((err) => {
-        setError(err.message || 'Could not load appointments')
-        setAppointments([])
-        return []
-      })
-      .finally(() => setApptLoading(false))
-  }
+  const {
+    data: appointments = [],
+    isLoading: apptLoading,
+    error: apptQueryError,
+    refetch: refetchAppointments,
+  } = useQuery({
+    queryKey: queryKeys.parentAppointments,
+    queryFn: fetchParentAppointments,
+    staleTime: 30_000,
+  })
 
-  useEffect(() => {
-    loadAppointments().then((all) => {
-      const openId = location.state?.openApptId
-      if (!openId || !all?.length) return
-      const match = all.find((a) => a.id === openId || String(a.rawId) === String(openId))
-      if (match) setSelectedAppt(match)
-    })
-  }, [])
-
-  async function cancelAppointment(appt) {
-    setActing(true)
-    setError('')
-    try {
-      await apiFetch(`/api/v1/parent/appointments/${appt.rawId}/cancel`, { method: 'POST' })
+  const cancelMutation = useMutation({
+    mutationFn: (rawId) =>
+      apiFetch(`/api/v1/parent/appointments/${rawId}/cancel`, { method: 'POST' }),
+    onSuccess: async () => {
       setMessage('Session cancelled.')
       setSelectedAppt(null)
-      loadAppointments()
-    } catch (err) {
-      setError(err.message || 'Could not cancel')
-    } finally {
-      setActing(false)
-    }
-  }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.parentAppointments })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.parentBootstrap })
+    },
+    onError: (err) => setError(err.message || 'Could not cancel'),
+  })
+
+  useEffect(() => {
+    const openId = location.state?.openApptId
+    if (!openId || !appointments.length) return
+    const match = appointments.find((a) => a.id === openId || String(a.rawId) === String(openId))
+    if (match) setSelectedAppt(match)
+  }, [location.state?.openApptId, appointments])
 
   function startRescheduleFromStrip(appt) {
     setRescheduleFrom(appt)
@@ -186,103 +143,122 @@ export function ClientBookAppointmentPage({ cases }) {
     setMessage('Choose a new date and open slot below.')
   }
 
+  const acting = cancelMutation.isPending || formActing
+  const loadError = apptQueryError?.message || error
+
   return (
-    <div className="parent-schedule-page">
-      <div>
-        <h1 className="parent-schedule-page__title">Session schedule</h1>
-        <p className="parent-schedule-page__subtitle">
-          View upcoming therapy sessions and case manager meetings, or book a new therapy session.
-        </p>
+    <ClientPortalLayout
+      title="Session schedule"
+      subtitle="View upcoming therapy sessions and case manager meetings, or book a new therapy session."
+    >
+      <div className="parent-schedule-page">
+        <ErrorBanner
+          message={loadError}
+          onRetry={() => {
+            setError('')
+            refetchAppointments()
+          }}
+        />
+
+        {message ? <p className="parent-schedule-page__msg parent-schedule-page__msg--ok">{message}</p> : null}
+
+        <section>
+          <h2 className="parent-schedule-page__section-title">Upcoming sessions</h2>
+          {apptLoading ? (
+            <p className="parent-schedule-page__muted">Loading…</p>
+          ) : appointments.length === 0 ? (
+            <p className="parent-schedule-page__muted">No upcoming sessions booked yet.</p>
+          ) : (
+            <div className="parent-schedule-page__strip">
+              {appointments.map((appt) => (
+                <button
+                  key={appt.id}
+                  type="button"
+                  className={`parent-schedule-page__card ${appt.isCmMeeting ? 'parent-schedule-page__card--cm' : ''}`}
+                  onClick={() => setSelectedAppt(appt)}
+                >
+                  <p className="parent-schedule-page__card-date">{fmtDate(appt.slotDate)}</p>
+                  <p className="parent-schedule-page__card-time">
+                    {appt.startTime}
+                    {appt.endTime ? `–${appt.endTime}` : ''}
+                  </p>
+                  <p className="parent-schedule-page__card-role">
+                    {appt.isCmMeeting ? 'Case manager meeting' : `Therapy · ${appt.childName || '—'}`}
+                  </p>
+                  <p className="parent-schedule-page__card-sub">
+                    {appt.isCmMeeting
+                      ? appt.caseMgrName
+                        ? `With: ${appt.caseMgrName}`
+                        : 'With your case manager'
+                      : appt.therapistName
+                        ? `Therapist: ${appt.therapistName}`
+                        : null}
+                  </p>
+                  <div>
+                    {appt.isCmMeeting ? (
+                      <span className="parent-appt-badge parent-appt-badge--cm">CM meeting</span>
+                    ) : (
+                      <ApptStatusBadge status={appt.approvalStatus} />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {casesLoading ? (
+          <p className="parent-schedule-page__muted">Loading your cases…</p>
+        ) : !cases?.length ? (
+          <p className="parent-schedule-page__msg parent-schedule-page__msg--err" role="alert">
+            No active cases are linked to your account yet. Contact your care team if you expected to book sessions
+            here.
+          </p>
+        ) : null}
+
+        <section>
+          <h2 className="parent-schedule-page__section-title">
+            {rescheduleFrom ? 'Pick a new time' : 'Book a new therapy session'}
+          </h2>
+          <ParentBookSessionForm
+            cases={cases}
+            rescheduleFrom={rescheduleFrom}
+            onCancelReschedule={() => {
+              setRescheduleFrom(null)
+              setMessage('')
+            }}
+            onBookSuccess={async () => {
+              setRescheduleFrom(null)
+              setMessage('Appointment booked. Your therapist has been notified.')
+              await queryClient.invalidateQueries({ queryKey: queryKeys.parentAppointments })
+              await queryClient.invalidateQueries({ queryKey: queryKeys.parentBootstrap })
+            }}
+            onRescheduleSuccess={async () => {
+              setRescheduleFrom(null)
+              setMessage('Reschedule request sent — your therapist will confirm.')
+              await queryClient.invalidateQueries({ queryKey: queryKeys.parentAppointments })
+              await queryClient.invalidateQueries({ queryKey: queryKeys.parentBootstrap })
+            }}
+            acting={formActing}
+            setActing={setFormActing}
+            setError={setError}
+            setMessage={setMessage}
+          />
+        </section>
+
+        {selectedAppt ? (
+          <UpcomingApptSheet
+            appt={selectedAppt}
+            acting={acting}
+            onReschedule={startRescheduleFromStrip}
+            onCancel={(appt) => cancelMutation.mutate(appt.rawId)}
+            onClose={() => setSelectedAppt(null)}
+          />
+        ) : null}
       </div>
-
-      {message ? <p className="parent-schedule-page__msg parent-schedule-page__msg--ok">{message}</p> : null}
-      {error ? <p className="parent-schedule-page__msg parent-schedule-page__msg--err">{error}</p> : null}
-
-      <section>
-        <h2 className="parent-schedule-page__section-title">Upcoming sessions</h2>
-        {apptLoading ? (
-          <p className="parent-schedule-page__muted">Loading…</p>
-        ) : appointments.length === 0 ? (
-          <p className="parent-schedule-page__muted">No upcoming sessions booked yet.</p>
-        ) : (
-          <div className="parent-schedule-page__strip">
-            {appointments.map((appt) => (
-              <button
-                key={appt.id}
-                type="button"
-                className={`parent-schedule-page__card ${appt.isCmMeeting ? 'parent-schedule-page__card--cm' : ''}`}
-                onClick={() => setSelectedAppt(appt)}
-              >
-                <p className="parent-schedule-page__card-date">{fmtDate(appt.slotDate)}</p>
-                <p className="parent-schedule-page__card-time">
-                  {appt.startTime}
-                  {appt.endTime ? `–${appt.endTime}` : ''}
-                </p>
-                <p className="parent-schedule-page__card-role">
-                  {appt.isCmMeeting ? 'Case manager meeting' : `Therapy · ${appt.childName || '—'}`}
-                </p>
-                <p className="parent-schedule-page__card-sub">
-                  {appt.isCmMeeting
-                    ? appt.caseMgrName
-                      ? `With: ${appt.caseMgrName}`
-                      : 'With your case manager'
-                    : appt.therapistName
-                      ? `Therapist: ${appt.therapistName}`
-                      : null}
-                </p>
-                <div>{appt.isCmMeeting ? <span className="parent-appt-badge parent-appt-badge--cm">CM meeting</span> : <ApptStatusBadge status={appt.approvalStatus} />}</div>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {!cases?.length ? (
-        <p className="parent-schedule-page__msg parent-schedule-page__msg--err" role="alert">
-          No active cases are linked to your account yet. Contact your care team if you expected to book sessions here.
-        </p>
-      ) : null}
-
-      <section>
-        <h2 className="parent-schedule-page__section-title">
-          {rescheduleFrom ? 'Pick a new time' : 'Book a new therapy session'}
-        </h2>
-        <ParentBookSessionForm
-          cases={cases}
-          rescheduleFrom={rescheduleFrom}
-          onCancelReschedule={() => {
-            setRescheduleFrom(null)
-            setMessage('')
-          }}
-          onBookSuccess={() => {
-            setRescheduleFrom(null)
-            loadAppointments()
-          }}
-          onRescheduleSuccess={() => {
-            setRescheduleFrom(null)
-            loadAppointments()
-          }}
-          acting={acting}
-          setActing={setActing}
-          setError={setError}
-          setMessage={setMessage}
-        />
-      </section>
-
-      {selectedAppt ? (
-        <UpcomingApptSheet
-          appt={selectedAppt}
-          acting={acting}
-          onReschedule={startRescheduleFromStrip}
-          onCancel={cancelAppointment}
-          onClose={() => setSelectedAppt(null)}
-        />
-      ) : null}
 
       <style>{`
         .parent-schedule-page { display: flex; flex-direction: column; gap: 16px; }
-        .parent-schedule-page__title { font-size: 1.25rem; font-weight: 800; color: #1e293b; margin: 0 0 4px; }
-        .parent-schedule-page__subtitle { font-size: 0.875rem; color: #64748b; margin: 0; }
         .parent-schedule-page__section-title { font-size: 0.9rem; font-weight: 700; color: #475569; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
         .parent-schedule-page__msg { border-radius: 10px; padding: 8px 12px; font-size: 0.875rem; margin: 0; }
         .parent-schedule-page__msg--ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
@@ -319,6 +295,6 @@ export function ClientBookAppointmentPage({ cases }) {
         .parent-appt-sheet__ghost, .parent-appt-sheet__close-only { background: none; border: none; font-size: 0.875rem; color: #94a3b8; cursor: pointer; padding: 6px 0; }
         .parent-appt-sheet__close-only { width: 100%; background: #f1f5f9; border-radius: 12px; padding: 10px 0; font-weight: 600; color: #475569; }
       `}</style>
-    </div>
+    </ClientPortalLayout>
   )
 }

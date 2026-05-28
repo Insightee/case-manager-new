@@ -3,9 +3,21 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
 import { AdminTherapistOnboardPanel } from './AdminTherapistOnboardPanel.jsx'
 import { AdminStaffManageSection } from './AdminStaffManageSection.jsx'
-import { AdminEmptyState, AdminPageHeader, AdminPanel, AdminSearchInput, AdminToolbar, StatusBadge } from './ui/index.js'
+import {
+  AdminCollapsibleFilters,
+  AdminDataList,
+  AdminEmptyState,
+  AdminMobilePillTabs,
+  AdminPageHeader,
+  AdminPanel,
+  AdminSearchInput,
+  AdminTaskCard,
+  AdminToolbar,
+  StatusBadge,
+} from './ui/index.js'
 
 export function AdminPeoplePage() {
   const navigate = useNavigate()
@@ -13,7 +25,7 @@ export function AdminPeoplePage() {
   const isHrPortal = (user?.roles || []).includes('HR')
   const canManageUsers = can('user.manage') && !isViewOnly
   const canReadTherapists = canManageUsers || can('therapist.read')
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState(() => searchParams.get('tab') || 'staff')
   const [users, setUsers] = useState([])
   const [profiles, setProfiles] = useState([])
@@ -28,6 +40,7 @@ export function AdminPeoplePage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
+  const [showFamilyWizard, setShowFamilyWizard] = useState(false)
   const [familySearchDebounced, setFamilySearchDebounced] = useState('')
 
   useEffect(() => {
@@ -157,9 +170,15 @@ export function AdminPeoplePage() {
 
   const tabs = [
     { id: 'staff', label: 'Staff' },
-    { id: 'therapists', label: 'Therapist profiles' },
+    { id: 'therapists', label: 'Therapists' },
     { id: 'clients', label: 'Clients' },
   ]
+
+  function changeTab(id) {
+    setTab(id)
+    setSearch('')
+    setSearchParams({ tab: id }, { replace: true })
+  }
 
   return (
     <div className="admin-page">
@@ -181,43 +200,59 @@ export function AdminPeoplePage() {
         </p>
       ) : null}
 
-      <nav style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      <AdminMobilePillTabs
+        ariaLabel="People sections"
+        activeId={tab}
+        onChange={changeTab}
+        primaryIds={tabs.map((t) => t.id)}
+        overflowIds={[]}
+        tabs={tabs}
+      />
+
+      <nav className="admin-desktop-only admin-page__tabs-scroll portal-tabs" style={{ marginBottom: 16 }} aria-label="People sections">
         {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
-            className={`admin-btn admin-btn--sm ${tab === t.id ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => {
-              setTab(t.id)
-              setSearch('')
-            }}
+            className={`portal-tabs__tab${tab === t.id ? ' is-active' : ''}`}
+            onClick={() => changeTab(t.id)}
           >
             {t.label}
           </button>
         ))}
       </nav>
 
-      <AdminToolbar>
-        <AdminSearchInput value={search} onChange={setSearch} placeholder="Search…" />
-      </AdminToolbar>
+      <div className="admin-people-search admin-mobile-only">
+        <AdminSearchInput value={search} onChange={setSearch} placeholder="Search people…" />
+      </div>
+
+      <div className="admin-desktop-only">
+        <AdminCollapsibleFilters
+          quickSearch={<AdminSearchInput value={search} onChange={setSearch} placeholder="Search…" />}
+          activeChips={search.trim() ? [search.trim()] : []}
+          activeCount={search.trim() ? 1 : 0}
+        >
+          <AdminToolbar className="admin-toolbar--mobile-compact">
+            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search…" />
+          </AdminToolbar>
+        </AdminCollapsibleFilters>
+      </div>
 
       {tab === 'clients' ? (
         <>
-          <div className="admin-btn-group" style={{ marginBottom: 12 }}>
-            <div className="admin-btn-group" style={{ marginBottom: 12 }}>
-              {can('case.create') ? (
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--primary admin-btn--sm"
-                  onClick={() => navigate('/admin/cases?allot=1')}
-                >
-                  Add client & case (allotment)
-                </button>
-              ) : null}
-              <Link to="/admin/client-profiles" className="admin-btn admin-btn--secondary admin-btn--sm">
-                Client profiles & bulk import
-              </Link>
-            </div>
+          <div className="admin-people-actions">
+            {can('case.create') ? (
+              <button
+                type="button"
+                className="admin-btn admin-btn--primary admin-btn--sm"
+                onClick={() => navigate('/admin/cases?allot=1')}
+              >
+                Add client & case
+              </button>
+            ) : null}
+            <Link to="/admin/client-profiles" className="admin-btn admin-btn--secondary admin-btn--sm">
+              Bulk import
+            </Link>
           </div>
           {!canManageUsers ? (
             <p className="admin-muted" style={{ marginBottom: 12, fontSize: '0.85rem' }}>
@@ -306,132 +341,215 @@ export function AdminPeoplePage() {
                 {filteredTherapists.length === 0 ? (
                   <AdminEmptyState title="No therapists yet" description="Use Add therapist or Bulk upload above." />
                 ) : (
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Phone</th>
-                        <th>Profile</th>
-                        <th>Primary CM</th>
-                        <th>Services</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTherapists.map((u) => {
-                        const prof = profileByUser.get(u.id)
-                        return (
-                          <tr key={u.id}>
-                            <td className="admin-muted">{u.id}</td>
-                            <td>
-                              <Link
-                                to={`/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : ''}`}
+                  <AdminDataList
+                    desktop={
+                      <div className="admin-table-wrap">
+                        <table className="admin-table">
+                          <thead>
+                            <tr>
+                              <th>ID</th>
+                              <th>Name</th>
+                              <th>Email</th>
+                              <th>Phone</th>
+                              <th>Profile</th>
+                              <th>Primary CM</th>
+                              <th>Services</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredTherapists.map((u) => {
+                              const prof = profileByUser.get(u.id)
+                              return (
+                                <tr key={u.id}>
+                                  <td className="admin-muted">{u.id}</td>
+                                  <td>
+                                    <Link
+                                      to={`/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : ''}`}
+                                    >
+                                      {u.full_name}
+                                    </Link>
+                                  </td>
+                                  <td>{u.email}</td>
+                                  <td>{u.phone || '—'}</td>
+                                  <td>
+                                    {prof ? (
+                                      <Link to={`/admin/therapist-profiles?user_id=${u.id}&status=${prof.status}`}>
+                                        <StatusBadge status={prof.status} />
+                                      </Link>
+                                    ) : (
+                                      <Link to={`/admin/therapist-profiles?user_id=${u.id}`} className="admin-muted">
+                                        No profile
+                                      </Link>
+                                    )}
+                                  </td>
+                                  <td>{prof?.supervisor_name || '—'}</td>
+                                  <td>{(prof?.services_offered || u.module_assignments || []).join(', ') || '—'}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                    mobile={
+                      <ul className="admin-data-list__cards">
+                        {filteredTherapists.map((u) => {
+                          const prof = profileByUser.get(u.id)
+                          const profileHref = `/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : prof?.status ? `&status=${prof.status}` : ''}`
+                          return (
+                            <li key={u.id}>
+                              <AdminTaskCard
+                                title={
+                                  <Link to={profileHref} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                    {u.full_name}
+                                  </Link>
+                                }
+                                meta={[u.email, u.phone].filter(Boolean).join(' · ')}
+                                badges={
+                                  prof ? (
+                                    <StatusBadge status={prof.status} />
+                                  ) : (
+                                    <span className="admin-muted">No profile</span>
+                                  )
+                                }
+                                actions={
+                                  <Link to={profileHref} className="admin-btn admin-btn--primary admin-btn--sm">
+                                    {prof ? 'Open profile' : 'Create profile'}
+                                  </Link>
+                                }
                               >
-                                {u.full_name}
-                              </Link>
-                            </td>
-                            <td>{u.email}</td>
-                            <td>{u.phone || '—'}</td>
-                            <td>
-                              {prof ? (
-                                <Link to={`/admin/therapist-profiles?user_id=${u.id}&status=${prof.status}`}>
-                                  <StatusBadge status={prof.status} />
-                                </Link>
-                              ) : (
-                                <Link to={`/admin/therapist-profiles?user_id=${u.id}`} className="admin-muted">
-                                  No profile
-                                </Link>
-                              )}
-                            </td>
-                            <td>{prof?.supervisor_name || '—'}</td>
-                            <td>{(prof?.services_offered || u.module_assignments || []).join(', ') || '—'}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                                <p>
+                                  Primary CM: {prof?.supervisor_name || '—'}
+                                  <br />
+                                  Services: {(prof?.services_offered || u.module_assignments || []).join(', ') || '—'}
+                                </p>
+                              </AdminTaskCard>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    }
+                  />
                 )}
               </AdminPanel>
             </>
           )}
 
           {tab === 'clients' && (
-            <AdminPanel title={`Clients (${filteredClients.length})`}>
-              {filteredClients.length === 0 ? (
-                <AdminEmptyState title="No clients" description="Use Add client or quick add above to get started." />
-              ) : (
-                <ul className="admin-queue">
-                  {filteredClients.map((f) => (
-                    <li key={f.childId} className="admin-queue__item">
-                      <div>
-                        <p className="admin-queue__title">
-                          {f.childName}
-                          {!f.hasParent && !f.pendingInvite ? (
-                            <span className="admin-badge admin-badge--warn" style={{ marginLeft: 8 }}>
-                              No parent
-                            </span>
-                          ) : null}
-                          {f.pendingInvite ? (
-                            <span className="admin-badge" style={{ marginLeft: 8 }}>
-                              Invite pending
-                            </span>
-                          ) : null}
+            <AdminPanel title={`Clients (${filteredClients.length})`} padded={false}>
+              <div className="admin-panel__body">
+                {filteredClients.length === 0 ? (
+                  <AdminEmptyState title="No clients" description="Use Add client or quick add above to get started." />
+                ) : (
+                  <ul className="admin-data-list__cards">
+                    {filteredClients.map((f) => (
+                      <li key={f.childId}>
+                        <AdminTaskCard
+                          title={f.childName}
+                          meta={
+                            f.parents?.length
+                              ? f.parents.map((p) => `${p.parentName} · ${p.parentEmail}`).join(' | ')
+                              : f.pendingInvite
+                                ? `Pending: ${f.pendingInvite.pendingEmail}`
+                                : 'No parent linked'
+                          }
+                          badges={
+                            <>
+                              {!f.hasParent && !f.pendingInvite ? (
+                                <span className="admin-chip">No parent</span>
+                              ) : null}
+                              {f.pendingInvite ? <span className="admin-chip">Invite pending</span> : null}
+                              {f.caseCodes?.length ? (
+                                <span className="admin-chip">{f.caseCodes.length} case{f.caseCodes.length > 1 ? 's' : ''}</span>
+                              ) : null}
+                            </>
+                          }
+                          actions={
+                            <>
+                              {f.parents?.[0]?.userId ? (
+                                <button
+                                  type="button"
+                                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                                  onClick={() => inviteParent(f.parents[0].userId, f.childId)}
+                                >
+                                  Invite parent
+                                </button>
+                              ) : null}
+                              {!f.hasParent && !f.pendingInvite ? (
+                                <button
+                                  type="button"
+                                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                                  onClick={() => setShowFamilyWizard(true)}
+                                >
+                                  Add parent
+                                </button>
+                              ) : null}
+                              {isHrPortal ? (
+                                <Link to="/hr/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
+                                  View cases
+                                </Link>
+                              ) : can('case.create') ? (
+                                <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary admin-btn--sm">
+                                  Allot case
+                                </Link>
+                              ) : null}
+                            </>
+                          }
+                        >
                           {f.caseCodes?.length ? (
-                            <span className="admin-badge admin-badge--ok" style={{ marginLeft: 8 }}>
-                              {f.caseCodes.length} case{f.caseCodes.length > 1 ? 's' : ''}
-                            </span>
+                            <p className="admin-muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
+                              {f.caseCodes.join(', ')}
+                            </p>
                           ) : null}
-                        </p>
-                        <p className="admin-queue__meta">
-                          {f.parents?.length
-                            ? f.parents.map((p) => `${p.parentName} · ${p.parentEmail}`).join(' | ')
-                            : f.pendingInvite
-                              ? `Pending: ${f.pendingInvite.pendingEmail}`
-                              : 'No parent linked'}
-                          {f.caseCodes?.length ? ` · ${f.caseCodes.join(', ')}` : ''}
-                        </p>
-                      </div>
-                      <div className="admin-btn-group">
-                        {f.parents?.[0]?.userId ? (
-                          <button
-                            type="button"
-                            className="admin-btn admin-btn--ghost admin-btn--sm"
-                            onClick={() => inviteParent(f.parents[0].userId, f.childId)}
-                          >
-                            Invite parent
-                          </button>
-                        ) : null}
-                        {!f.hasParent && !f.pendingInvite ? (
-                          <button
-                            type="button"
-                            className="admin-btn admin-btn--ghost admin-btn--sm"
-                            onClick={() => {
-                              setShowFamilyWizard(true)
-                            }}
-                          >
-                            Add parent
-                          </button>
-                        ) : null}
-                        {isHrPortal ? (
-                          <Link to="/hr/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
-                            View cases
-                          </Link>
-                        ) : can('case.create') ? (
-                          <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary admin-btn--sm">
-                            Allot case
-                          </Link>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                        </AdminTaskCard>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </AdminPanel>
           )}
 
         </>
       )}
+
+      {showFamilyWizard ? (
+        <div
+          className="admin-drawer-backdrop"
+          role="presentation"
+          onClick={() => setShowFamilyWizard(false)}
+        >
+          <div
+            className="admin-drawer admin-drawer--wide"
+            role="dialog"
+            aria-labelledby="add-family-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="admin-drawer__header">
+              <h2 id="add-family-title" className="admin-drawer__title">
+                Add family
+              </h2>
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                onClick={() => setShowFamilyWizard(false)}
+              >
+                Close
+              </button>
+            </header>
+            <div className="admin-drawer__body">
+              <AdminAddFamilyWizard
+                onComplete={() => {
+                  setShowFamilyWizard(false)
+                  setSuccess('Family saved.')
+                  load()
+                }}
+                onCancel={() => setShowFamilyWizard(false)}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
