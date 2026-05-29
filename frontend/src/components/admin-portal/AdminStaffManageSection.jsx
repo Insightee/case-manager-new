@@ -10,6 +10,7 @@ import {
   StatusBadge,
 } from './ui/index.js'
 import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
+import { inviteEmailMessage } from '../../lib/inviteEmail.js'
 import {
   hasDeprecatedStaffRole,
   moduleAccessSummary,
@@ -49,6 +50,7 @@ export function AdminStaffManageSection({
   const [editViewOnly, setEditViewOnly] = useState(false)
   const [editRoles, setEditRoles] = useState([])
   const [submitting, setSubmitting] = useState(false)
+  const [resendingId, setResendingId] = useState(null)
 
   const deprecatedSet = useMemo(
     () => new Set((deprecatedRoles || []).map((r) => String(r).toUpperCase())),
@@ -99,11 +101,17 @@ export function AdminStaffManageSection({
             email: form.email,
             full_name: form.full_name?.trim() || undefined,
             role_name: role,
+            send_email: true,
             ...access,
           }),
         })
         setInviteUrl(res.invite_url)
-        onSuccess?.(`Invite link generated for ${form.email}`)
+        const deliveryMsg = inviteEmailMessage(form.email, res.email_delivery)
+        if (res.email_delivery === 'skipped_no_smtp') {
+          onError?.(deliveryMsg)
+        } else {
+          onSuccess?.(deliveryMsg)
+        }
         onReload?.()
       } else {
         const access = buildRbacPayload({
@@ -189,6 +197,26 @@ export function AdminStaffManageSection({
     onSuccess?.('Link copied to clipboard')
   }
 
+  async function resendInviteEmail(inviteId, email) {
+    onError?.('')
+    setResendingId(inviteId)
+    try {
+      const res = await apiFetch(`/api/v1/admin/invites/${inviteId}/resend-email`, {
+        method: 'POST',
+      })
+      const msg = inviteEmailMessage(email, res.email_delivery)
+      if (res.email_delivery === 'skipped_no_smtp') {
+        onError?.(msg)
+      } else {
+        onSuccess?.(msg)
+      }
+    } catch (err) {
+      onError?.(err.message || 'Could not resend invite email')
+    } finally {
+      setResendingId(null)
+    }
+  }
+
   return (
     <>
       <AdminPanel
@@ -264,25 +292,28 @@ export function AdminStaffManageSection({
             selectedRoles={form.role_names}
             onRoleChange={setRoles}
             allowMultiRole={mode === 'direct'}
+            disabled={submitting}
             grants={form.module_access_grants}
             onGrantsChange={(module_access_grants) =>
-              setForm({
-                ...form,
+              setForm((prev) => ({
+                ...prev,
                 module_access_grants,
                 module_assignments: Object.entries(module_access_grants)
                   .filter(([, g]) => g?.enabled)
                   .map(([id]) => id),
-              })
+              }))
             }
             featureOverrides={form.feature_overrides}
-            onOverridesChange={(feature_overrides) => setForm({ ...form, feature_overrides })}
+            onOverridesChange={(feature_overrides) =>
+              setForm((prev) => ({ ...prev, feature_overrides }))
+            }
             viewOnly={form.view_only}
-            onViewOnlyChange={(v) => setForm({ ...form, view_only: v })}
+            onViewOnlyChange={(view_only) => setForm((prev) => ({ ...prev, view_only }))}
           />
 
           {landingHint ? (
             <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: -8 }}>
-              Primary role ({form.role_names[0]?.replace(/_/g, ' ')}) {landingHint} after sign-in.
+              Selected role ({form.role_names.map((r) => r.replace(/_/g, ' ')).join(', ')}) — {landingHint}
             </p>
           ) : null}
 
@@ -327,6 +358,14 @@ export function AdminStaffManageSection({
                       Copy link
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--ghost admin-btn--sm"
+                    disabled={resendingId === inv.id}
+                    onClick={() => resendInviteEmail(inv.id, inv.email)}
+                  >
+                    {resendingId === inv.id ? 'Sending…' : 'Resend email'}
+                  </button>
                 </div>
               </li>
             ))}

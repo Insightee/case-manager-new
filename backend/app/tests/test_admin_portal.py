@@ -378,6 +378,41 @@ def test_admin_list_invites():
     assert isinstance(invites.json(), list)
 
 
+def test_resend_invite_email():
+    import uuid
+
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    email = f"resend-{uuid.uuid4().hex[:8]}@example.com"
+    created = client.post(
+        "/api/v1/admin/therapists/invite",
+        headers=headers,
+        json={
+            "email": email,
+            "role_name": "CASE_MANAGER",
+            "full_name": "Resend Test",
+            "send_email": False,
+            "module_assignments": ["homecare"],
+        },
+    )
+    assert created.status_code == 200, created.text
+    invite_id = None
+    for row in client.get("/api/v1/admin/invites", headers=headers).json():
+        if row.get("email") == email:
+            invite_id = row["id"]
+            break
+    assert invite_id is not None
+    resend = client.post(f"/api/v1/admin/invites/{invite_id}/resend-email", headers=headers)
+    assert resend.status_code == 200, resend.text
+    body = resend.json()
+    assert body.get("email") == email
+    assert body.get("email_delivery") in (
+        "queued",
+        "skipped_no_smtp",
+        "sent_sync",
+    )
+
+
 def test_therapist_onboard_invite_and_accept():
     import uuid
 
@@ -403,6 +438,7 @@ def test_therapist_onboard_invite_and_accept():
     assert res.status_code == 200, res.text
     body = res.json()
     assert body.get("invite_url")
+    assert body.get("email_delivery") == "skipped_disabled"
     token_str = body["invite_url"].rstrip("/").split("/")[-1]
     accept = client.post(
         "/api/v1/auth/accept-invite",

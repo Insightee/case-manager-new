@@ -1684,6 +1684,8 @@ def invite_therapist(
             "invite_url": result["invite_url"],
             "email": payload.email,
             "expires_at": result["expires_at"],
+            "invite_id": result.get("invite_id"),
+            "email_delivery": result.get("email_delivery"),
         }
     token = secrets.token_urlsafe(32)
     invite_meta: dict = {}
@@ -1693,6 +1695,10 @@ def invite_therapist(
         invite_meta["view_only"] = True
     if payload.module_access_grants:
         invite_meta["module_access_grants"] = payload.module_access_grants
+    if payload.service_access_grants:
+        invite_meta["service_access_grants"] = payload.service_access_grants
+    if payload.org_capability_grants:
+        invite_meta["org_capability_grants"] = payload.org_capability_grants
     if payload.feature_overrides:
         invite_meta["feature_overrides"] = payload.feature_overrides
     invite = InviteToken(
@@ -1707,9 +1713,12 @@ def invite_therapist(
     db.add(invite)
     db.flush()
     url = f"{settings.frontend_url.rstrip('/')}/invite/{token}"
-    if payload.send_email:
-        from app.services.email.service import enqueue_portal_invite_email
+    from app.services.email.service import enqueue_portal_invite_email, invite_email_delivery_status
 
+    email_delivery = invite_email_delivery_status(
+        send_email=payload.send_email, background_tasks=background_tasks
+    )
+    if payload.send_email and email_delivery != "skipped_no_smtp":
         display_name = (payload.full_name or "").strip() or payload.email.split("@")[0]
         role_label = role.replace("_", " ").title()
         enqueue_portal_invite_email(
@@ -1726,7 +1735,13 @@ def invite_therapist(
     db.commit()
     if not payload.send_email:
         print(f"[DEV INVITE] {payload.email} -> {url}")
-    return {"invite_url": url, "email": payload.email, "expires_at": invite.expires_at.isoformat()}
+    return {
+        "invite_url": url,
+        "email": payload.email,
+        "expires_at": invite.expires_at.isoformat(),
+        "invite_id": invite.id,
+        "email_delivery": email_delivery,
+    }
 
 
 @router.post("/therapists/onboard")
@@ -3596,11 +3611,52 @@ def admin_list_invites(
     ]
 
 
+@router.post("/invites/{invite_id}/resend-email")
+def resend_invite_email(
+    invite_id: int,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    """Re-queue portal invite email for an active, unused invite."""
+    invite = db.get(InviteToken, invite_id)
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    from app.core.timezone import ensure_utc_aware
+
+    now = datetime.now(timezone.utc)
+    if invite.used_at is not None:
+        raise HTTPException(status_code=400, detail="Invite has already been used")
+    if ensure_utc_aware(invite.expires_at) <= now:
+        raise HTTPException(status_code=400, detail="Invite has expired")
+    from app.services.email.service import enqueue_portal_invite_email, invite_email_delivery_status
+
+    url = f"{settings.frontend_url.rstrip('/')}/invite/{invite.token}"
+    meta = invite.invite_metadata or {}
+    display_name = (meta.get("full_name") or "").strip() or invite.email.split("@")[0]
+    role = invite.role_name or "THERAPIST"
+    role_label = role.replace("_", " ").title()
+    email_delivery = invite_email_delivery_status(send_email=True, background_tasks=background_tasks)
+    if email_delivery != "skipped_no_smtp":
+        enqueue_portal_invite_email(
+            background_tasks,
+            db,
+            to=invite.email,
+            invite_url=url,
+            full_name=display_name,
+            role_label=role_label,
+            recipient_role=role.lower(),
+        )
+    db.commit()
+    return {"ok": True, "email": invite.email, "email_delivery": email_delivery}
+
+
 @router.post("/invites")
 def admin_create_invite(
     payload: InviteCreate,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    return invite_therapist(payload, request, user, db)
+    return invite_therapist(payload, request, background_tasks, user, db)

@@ -40,6 +40,9 @@ class TherapistOnboardResult(BaseModel):
     email: str
     user_id: Optional[int] = None
     invite_url: Optional[str] = None
+    invite_id: Optional[int] = None
+    expires_at: Optional[str] = None
     temporary_password: Optional[str] = None
+    email_delivery: Optional[str] = None
     success: bool
     error: Optional[str] = None

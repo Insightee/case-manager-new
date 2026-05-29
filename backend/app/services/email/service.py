@@ -20,6 +20,17 @@ logger = logging.getLogger(__name__)
 _smtp_provider = SmtpEmailProvider()
 
 
+def invite_email_delivery_status(*, send_email: bool, background_tasks: BackgroundTasks | None) -> str:
+    """UI hint: whether an invite email was queued, skipped, or sent synchronously."""
+    if not send_email:
+        return "skipped_disabled"
+    if not is_smtp_configured():
+        return "skipped_no_smtp"
+    if background_tasks is not None:
+        return "queued"
+    return "sent_sync"
+
+
 def is_smtp_configured() -> bool:
     if not settings.smtp_host:
         return False

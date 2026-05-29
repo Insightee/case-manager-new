@@ -19,6 +19,9 @@ test.describe('Production API', () => {
     const body = await health.json()
     expect(body.status).toBe('ok')
     expect(body.db_migration).toBeTruthy()
+    if (body.smtp_configured !== undefined) {
+      expect(body.smtp_configured).toBe(true)
+    }
 
     const login = await request.post(`${API}/api/v1/auth/login`, {
       data: { email: 'superadmin@demo.com', password: 'demo123' },

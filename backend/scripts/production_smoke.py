@@ -8,6 +8,7 @@ Usage:
 Optional:
   SMOKE_TEST_EMAIL=admin@example.com SMOKE_TEST_PASSWORD=...  # login + optional email send
   SMOKE_SKIP_EMAIL=1  # skip ZeptoMail send probe
+  SMOKE_API_ONLY=1  # only GET /health (+ optional local ZeptoMail send); skip DB/R2 checks
 """
 from __future__ import annotations
 
@@ -139,6 +140,18 @@ def _check_no_legacy_upload_dirs_in_prod() -> None:
 def _check_api_health(base: str) -> None:
     r = httpx.get(f"{base.rstrip('/')}/health", timeout=30.0)
     _step("GET /health", r.status_code == 200, r.text[:120])
+    try:
+        body = r.json()
+    except Exception:
+        return
+    if "smtp_configured" in body:
+        _step(
+            "GET /health smtp_configured",
+            body.get("smtp_configured") is True,
+            f"smtp_configured={body.get('smtp_configured')}",
+        )
+    else:
+        print("[INFO] Deployed API has no smtp_configured in /health yet (optional hardening)")
 
 
 def _check_email_optional(base: str) -> None:
@@ -166,7 +179,16 @@ def _check_email_optional(base: str) -> None:
 
 def main() -> None:
     base = (os.environ.get("API_BASE_URL") or os.environ.get("PUBLIC_API_URL") or "").strip()
+    api_only = os.environ.get("SMOKE_API_ONLY", "").strip().lower() in ("1", "true", "yes")
     print(f"APP_ENV={settings.app_env} STORAGE_PROVIDER={settings.storage_provider}")
+    if api_only:
+        print("[INFO] SMOKE_API_ONLY — remote API + local SMTP probe only")
+        if not base:
+            _step("API_BASE_URL set", False, "required when SMOKE_API_ONLY=1")
+        _check_api_health(base)
+        _check_email_optional(base)
+        print("\nAll smoke checks passed.")
+        return
     if not settings.is_development:
         _check_production_config()
     else:

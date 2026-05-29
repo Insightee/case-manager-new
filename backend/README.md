@@ -116,7 +116,9 @@ Copy [`backend/.env.example`](.env.example) to `.env` and set:
 | `SMTP_FROM` | Optional legacy full From header (overrides default email when set) |
 | `ADMIN_NOTIFICATION_EMAILS` | Comma-separated ops inboxes for some scheduling alerts |
 
-When `SMTP_HOST` is unset, transactional email is **logged only** (no failure) — fine for local dev. Sent messages are recorded in the `email_logs` table when migrations are applied.
+When `SMTP_HOST` is unset (or `SMTP_PASSWORD` is empty for ZeptoMail), transactional email is **logged only** (`email_logs.provider=noop`) — no ZeptoMail traffic. Set `SMTP_PASSWORD` in `backend/.env` for local invite testing. `GET /health` includes `smtp_configured` after deploy.
+
+**Scripts:** `python3 scripts/smtp_check.py` · `python3 scripts/send_test_email.py --to you@example.com --template portal_invite` · `python3 scripts/diagnose_invite_email.py <email>` · `API_BASE_URL=https://… SMOKE_API_ONLY=1 SMOKE_TEST_EMAIL=… python3 scripts/production_smoke.py` (remote health + local ZeptoMail send).
 
 ### ZeptoMail (production SMTP)
 

@@ -17,7 +17,10 @@ def setup_db():
 def test_health():
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+    body = r.json()
+    assert body["status"] == "ok"
+    assert "smtp_configured" in body
+    assert isinstance(body["smtp_configured"], bool)
 
 
 def test_login_and_me():

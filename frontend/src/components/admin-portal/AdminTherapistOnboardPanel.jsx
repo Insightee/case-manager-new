@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { inviteEmailMessage } from '../../lib/inviteEmail.js'
 import { AdminPanel } from './ui/index.js'
 
 function defaultTherapistServices(roleDefaults) {
@@ -67,6 +68,7 @@ export function AdminTherapistOnboardPanel({
   const [bulkPreview, setBulkPreview] = useState(null)
   const [bulkPhase, setBulkPhase] = useState('edit')
   const [lastResult, setLastResult] = useState(null)
+  const [resendingId, setResendingId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -121,8 +123,13 @@ export function AdminTherapistOnboardPanel({
         }),
       })
       setLastResult(res)
-      if (res.invite_url) onSuccess(`Invite created for ${form.email}`)
-      else onSuccess(`Therapist account created (ID ${res.user_id})`)
+      if (res.invite_url) {
+        const msg = inviteEmailMessage(form.email, res.email_delivery)
+        if (res.email_delivery === 'skipped_no_smtp') onError(msg)
+        else onSuccess(msg)
+      } else {
+        onSuccess(`Therapist account created (ID ${res.user_id})`)
+      }
       resetForm()
       setShowAdd(false)
       onReload()
@@ -198,6 +205,21 @@ export function AdminTherapistOnboardPanel({
     onSuccess('Link copied')
   }
 
+  async function resendInviteEmail(inviteId, email) {
+    onError('')
+    setResendingId(inviteId)
+    try {
+      const res = await apiFetch(`/api/v1/admin/invites/${inviteId}/resend-email`, { method: 'POST' })
+      const msg = inviteEmailMessage(email, res.email_delivery)
+      if (res.email_delivery === 'skipped_no_smtp') onError(msg)
+      else onSuccess(msg)
+    } catch (err) {
+      onError(err.message || 'Could not resend invite email')
+    } finally {
+      setResendingId(null)
+    }
+  }
+
   return (
     <>
       <div className="admin-btn-group" style={{ marginBottom: 12 }}>
@@ -251,9 +273,23 @@ export function AdminTherapistOnboardPanel({
                   <td>{inv.email}</td>
                   <td>{new Date(inv.expires_at).toLocaleDateString()}</td>
                   <td>
-                    <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => copyLink(inv.invite_url)}>
-                      Copy link
-                    </button>
+                    <div className="admin-btn-group">
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn--ghost admin-btn--sm"
+                        onClick={() => copyLink(inv.invite_url)}
+                      >
+                        Copy link
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn--ghost admin-btn--sm"
+                        disabled={resendingId === inv.id}
+                        onClick={() => resendInviteEmail(inv.id, inv.email)}
+                      >
+                        {resendingId === inv.id ? 'Sending…' : 'Resend email'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

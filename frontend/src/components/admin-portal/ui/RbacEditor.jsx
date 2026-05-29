@@ -227,8 +227,8 @@ export function RbacEditor({
 
   return (
     <div className="rbac-editor">
-      <fieldset className="rbac-editor__section" disabled={disabled}>
-        <legend className="rbac-editor__legend">Role</legend>
+      <div className="rbac-editor__section" aria-disabled={disabled || undefined}>
+        <p className="rbac-editor__legend">Role</p>
         {allowMultiRole ? (
           <label className="rbac-editor__combine">
             <input
@@ -249,6 +249,7 @@ export function RbacEditor({
                 type="button"
                 className={`admin-chip admin-chip--btn ${active ? 'is-active' : ''}`}
                 onClick={() => selectRole(String(id))}
+                disabled={disabled}
                 title={r.description || ''}
               >
                 {r.label || String(id).replace(/_/g, ' ')}
@@ -269,12 +270,12 @@ export function RbacEditor({
         </div>
       ) : (
         <>
-          <fieldset className="rbac-editor__section" disabled={disabled}>
-            <legend className="rbac-editor__legend">Service access</legend>
+          <div className="rbac-editor__section" aria-disabled={disabled || undefined}>
+            <p className="rbac-editor__legend">Service access</p>
             <p className="admin-muted rbac-editor__hint" style={{ marginTop: 0 }}>
               Service lines from Settings → Service categories. Same clinical features per service unless customized below.
             </p>
-            {suggested.length ? (
+            {Object.keys(suggested).length > 0 ? (
               <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={applySuggested}>
                 Apply defaults for role
               </button>
@@ -289,6 +290,7 @@ export function RbacEditor({
                       <input
                         type="checkbox"
                         checked={enabled}
+                        disabled={disabled}
                         onChange={() => toggleModule(mod.id)}
                       />
                       <span>
@@ -366,11 +368,11 @@ export function RbacEditor({
                 )
               })}
             </ul>
-          </fieldset>
+          </div>
 
           {orgCatalog.length > 0 ? (
-            <fieldset className="rbac-editor__section" disabled={disabled}>
-              <legend className="rbac-editor__legend">Org capabilities</legend>
+            <div className="rbac-editor__section" aria-disabled={disabled || undefined}>
+              <p className="rbac-editor__legend">Org capabilities</p>
               <ul className="rbac-module-list">
                 {orgCatalog.map((mod) => {
                   const grant = grants[mod.id] || {}
@@ -381,6 +383,7 @@ export function RbacEditor({
                         <input
                           type="checkbox"
                           checked={enabled}
+                          disabled={disabled}
                           onChange={() => toggleModule(mod.id)}
                         />
                         <span>
@@ -398,6 +401,7 @@ export function RbacEditor({
                                 type="radio"
                                 name={`access-${mod.id}`}
                                 checked={grant.access === 'view'}
+                                disabled={disabled}
                                 onChange={() => setModuleAccess(mod.id, 'view')}
                               />
                               <span>
@@ -427,7 +431,7 @@ export function RbacEditor({
                   )
                 })}
               </ul>
-            </fieldset>
+            </div>
           ) : null}
 
           {onViewOnlyChange ? (

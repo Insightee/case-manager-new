@@ -172,6 +172,8 @@ def root():
 
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
+    from app.services.email.service import is_smtp_configured
+
     revision = None
     try:
         row = db.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).first()
@@ -182,4 +184,6 @@ def health(db: Session = Depends(get_db)):
         "status": "ok",
         "db_migration": revision,
         "redis": ping_redis_for_health(),
+        "smtp_configured": is_smtp_configured(),
+        "email_provider": settings.email_provider,
     }

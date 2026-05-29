@@ -13,7 +13,11 @@ from app.core.therapist_services import validate_service_ids
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import InviteToken, User
 from app.services import auth_service, therapist_profile_service as profile_svc
-from app.services.email.service import enqueue_portal_invite_email, therapist_staff_invite_email
+from app.services.email.service import (
+    enqueue_portal_invite_email,
+    invite_email_delivery_status,
+    therapist_staff_invite_email,
+)
 
 
 def _invite_url(token: str) -> str:
@@ -148,6 +152,9 @@ def onboard_therapist_invite(
         "invite_url": url,
         "invite_id": invite.id,
         "expires_at": invite.expires_at.isoformat(),
+        "email_delivery": invite_email_delivery_status(
+            send_email=send_email, background_tasks=background_tasks
+        ),
     }
 
 
@@ -196,6 +203,7 @@ def onboard_therapist_direct(
         "email": user.email,
         "profile_id": profile.id,
         "temporary_password": temp_password if not password else None,
+        "email_delivery": "skipped_direct_mode",
     }
 
 
