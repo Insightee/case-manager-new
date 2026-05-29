@@ -1,3 +1,4 @@
+import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
 import { billingSummary, formatInr, lineTypeLabel } from './invoiceUtils.js'
 import { AddLateSessionForm } from './AddLateSessionForm.jsx'
 
@@ -93,10 +94,16 @@ export function InvoiceBreakdownView({
         <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-slate-700">
           <p className="text-xs font-semibold uppercase text-indigo-700">Leave balance ({leaveBalance.year})</p>
           <p className="mt-1">
-            Paid remaining: <strong>{leaveBalance.paid_remaining}</strong> of {leaveBalance.entitlement_paid}
-            {' · '}
-            Used: {leaveBalance.paid_used_effective} (system {leaveBalance.computed_paid_used}
-            {leaveBalance.backfill_paid_used > 0 ? ` + HR backfill ${leaveBalance.backfill_paid_used}` : ''})
+            Paid remaining: <strong>{leaveBalanceRemainingLabel(leaveBalance)}</strong>
+            {!isLeaveBalanceUpdated(leaveBalance) ? (
+              <span className="ml-2 font-semibold text-amber-700">To be updated</span>
+            ) : (
+              <>
+                {' · '}
+                Used: {leaveBalance.paid_used_effective} (system {leaveBalance.computed_paid_used}
+                {leaveBalance.backfill_paid_used > 0 ? ` + HR backfill ${leaveBalance.backfill_paid_used}` : ''})
+              </>
+            )}
           </p>
         </div>
       ) : null}

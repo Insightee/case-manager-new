@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -58,6 +58,7 @@ def _ensure_therapist_profile(db, user_id: int) -> TherapistProfile:
     profile.leave_balance_year = 2026
     profile.leave_paid_days_backfill = 0
     profile.leave_carry_forward_days_backfill = 0
+    profile.leave_backfill_updated_at = datetime.now(timezone.utc)
     db.commit()
     return profile
 
@@ -130,6 +131,7 @@ def test_leave_balance_api():
     try:
         user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
         _ensure_therapist_profile(db, user.id)
+        db.commit()
     finally:
         db.close()
     r = client.get("/api/v1/leave/balance?year=2026", headers=_headers(therapist))
@@ -137,6 +139,22 @@ def test_leave_balance_api():
     data = r.json()
     assert "paid_remaining" in data
     assert "entitlement_paid" in data
+    assert data["balance_updated"] is True
+
+
+def test_leave_balance_not_updated_until_hr_save():
+    therapist = _login("therapist@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        profile = _ensure_therapist_profile(db, user.id)
+        profile.leave_backfill_updated_at = None
+        db.commit()
+    finally:
+        db.close()
+    r = client.get("/api/v1/leave/balance?year=2026", headers=_headers(therapist))
+    assert r.status_code == 200
+    assert r.json()["balance_updated"] is False
 
 
 def test_hr_leave_backfill_requires_note():

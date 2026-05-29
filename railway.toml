@@ -2,7 +2,8 @@
 # Railway project: ead85fb6-1826-4eed-bad9-2513e89c4854 (see docs/RAILWAY_VERCEL.md)
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "backend/Dockerfile"
+# Repo-root context; copies from backend/ (see /Dockerfile). Do not use backend/Dockerfile here.
+dockerfilePath = "Dockerfile"
 watchPatterns = ["backend/**"]
 
 [deploy]

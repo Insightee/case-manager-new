@@ -77,7 +77,7 @@ Do **not** set backend vars on Vercel. Cleanup: [`scripts/vercel_clean_backend_e
 1. **Postgres** plugin → set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the API service.
 2. **Redis** plugin → set `REDIS_URL=${{Redis.REDIS_URL}}` on the API service.
 3. Copy variables from [`backend/env.railway.example`](../backend/env.railway.example) (JWT, SMTP, CORS, R2). R2 detail: [`CLOUDFLARE_R2.md`](CLOUDFLARE_R2.md).
-4. **Root directory** for GitHub deploy: `backend` *or* repo root with root `railway.toml` (Dockerfile `backend/Dockerfile`).
+4. **GitHub deploy** uses repo-root [`railway.toml`](../railway.toml) + [`Dockerfile`](../Dockerfile) (copies `backend/`). CLI/`docker-compose` use [`backend/Dockerfile`](../backend/Dockerfile) with context `backend/`.
 5. **Start command:** `sh scripts/start-production.sh` (see [`backend/railway.toml`](../backend/railway.toml)).
 6. **Networking** → generate public domain → use that URL as `VITE_API_URL` on Vercel.
 

@@ -108,11 +108,16 @@ class SessionLogContextItem(BaseModel):
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     attendance_status: Optional[str] = None
+    approval_status: Optional[str] = None
     activities_done: Optional[str] = None
     goals_addressed: Optional[str] = None
     follow_ups: Optional[str] = None
     parent_notes: Optional[str] = None
     session_notes: Optional[str] = None
+
+
+class GenerateFromLogsRequest(BaseModel):
+    mode: str = Field(default="replace", pattern="^(replace|append)$")
 
 
 class MissingMonthlyCaseItem(BaseModel):

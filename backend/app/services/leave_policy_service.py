@@ -65,6 +65,21 @@ def _backfill_adjustments(profile: TherapistProfile | None, year: int) -> tuple[
     )
 
 
+def is_leave_balance_updated(
+    user: User, profile: TherapistProfile | None, year: int
+) -> bool:
+    """True when HR has configured leave balance for this calendar year (or user is internal staff)."""
+    if is_staff_leave_user(user):
+        return True
+    if not profile:
+        return False
+    if profile.leave_balance_year != year:
+        return False
+    if not profile.employment_start_date:
+        return False
+    return profile.leave_backfill_updated_at is not None
+
+
 def _days_for_leave_in_year(leave: TherapistLeave, year: int) -> int:
     return leave_service.days_in_calendar_year(leave, year)
 
@@ -137,6 +152,7 @@ def get_leave_balance(
         "policy_tier": "staff_20" if is_staff_leave_user(user) else ("annual_12" if profile and profile.employment_start_date and (date.today() - profile.employment_start_date).days >= 365 else "monthly_pro_rata"),
         "requires_employment_start_date": not is_staff_leave_user(user)
         and not (profile and profile.employment_start_date),
+        "balance_updated": is_leave_balance_updated(user, profile, year),
     }
 
 

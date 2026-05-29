@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { isLeaveBalanceUpdated, leaveBalancePaidRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
 
 const SERVICE_LINES = [
   { value: 'shadow_support', label: 'Shadow support' },
@@ -90,22 +91,38 @@ export function TherapistLeaveBalancePanel({
         Balances refresh each January. Use backfill for leave taken before the new system or when auto totals are wrong.
       </p>
 
+      {!isLeaveBalanceUpdated(balance) ? (
+        <p style={{ fontSize: '0.8rem', color: '#b45309', margin: '0 0 12px', fontWeight: 600 }}>
+          Balance for {year}: — To be updated (save employment date and leave settings below).
+        </p>
+      ) : null}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 12, fontSize: '0.8rem' }}>
         <div style={{ padding: 8, background: '#f8fafc', borderRadius: 8 }}>
           <div style={{ color: '#64748b' }}>Paid entitlement</div>
-          <div style={{ fontWeight: 700 }}>{balance.entitlement_paid}</div>
+          <div style={{ fontWeight: 700 }}>{isLeaveBalanceUpdated(balance) ? balance.entitlement_paid : '—'}</div>
         </div>
         <div style={{ padding: 8, background: '#f0fdf4', borderRadius: 8 }}>
           <div style={{ color: '#64748b' }}>Paid remaining</div>
-          <div style={{ fontWeight: 700, color: '#15803d' }}>{balance.paid_remaining}</div>
+          <div style={{ fontWeight: 700, color: isLeaveBalanceUpdated(balance) ? '#15803d' : '#b45309' }}>
+            {leaveBalancePaidRemainingLabel(balance)}
+          </div>
         </div>
         <div style={{ padding: 8, background: '#f8fafc', borderRadius: 8 }}>
           <div style={{ color: '#64748b' }}>Used (system)</div>
-          <div style={{ fontWeight: 600 }}>{balance.computed_paid_used} paid · {balance.computed_carry_forward_used} carry</div>
+          <div style={{ fontWeight: 600 }}>
+            {isLeaveBalanceUpdated(balance)
+              ? `${balance.computed_paid_used} paid · ${balance.computed_carry_forward_used} carry`
+              : '—'}
+          </div>
         </div>
         <div style={{ padding: 8, background: '#f8fafc', borderRadius: 8 }}>
           <div style={{ color: '#64748b' }}>HR backfill</div>
-          <div style={{ fontWeight: 600 }}>{balance.backfill_paid_used} paid · {balance.backfill_carry_forward_used} carry</div>
+          <div style={{ fontWeight: 600 }}>
+            {isLeaveBalanceUpdated(balance)
+              ? `${balance.backfill_paid_used} paid · ${balance.backfill_carry_forward_used} carry`
+              : '—'}
+          </div>
         </div>
       </div>
 

@@ -2,6 +2,12 @@ import DOMPurify from 'dompurify'
 import { apiFetchBlob } from './apiClient.js'
 
 const REPORT_IMAGE_RE = /\/api\/v1\/reports\/images\/\d+/
+const blobUrlCache = new Map()
+
+function imageIdFromSrc(src) {
+  const match = (src || '').match(/\/api\/v1\/reports\/images\/(\d+)/)
+  return match ? match[1] : null
+}
 
 export function sanitizeReportHtml(html) {
   if (!html) return ''
@@ -32,7 +38,7 @@ export function dehydrateReportImages(html) {
   return doc.body.innerHTML
 }
 
-/** Replace authenticated image paths with blob URLs for display. */
+/** Replace authenticated image paths with blob URLs for display (cached per image id). */
 export async function hydrateReportImages(html) {
   if (!html) return ''
   const safe = sanitizeReportHtml(html)
@@ -42,12 +48,18 @@ export async function hydrateReportImages(html) {
     imgs.map(async (img) => {
       const src = img.getAttribute('src') || ''
       const apiSrc = img.getAttribute('data-api-src') || src
-      const match = apiSrc.match(/\/api\/v1\/reports\/images\/(\d+)/)
-      if (!match) return
+      const imageId = imageIdFromSrc(apiSrc)
+      if (!imageId) return
+      img.setAttribute('data-api-src', apiSrc)
+      if (blobUrlCache.has(imageId)) {
+        img.setAttribute('src', blobUrlCache.get(imageId))
+        return
+      }
       try {
-        const blob = await apiFetchBlob(`/api/v1/reports/images/${match[1]}`)
-        img.setAttribute('data-api-src', apiSrc)
-        img.setAttribute('src', URL.createObjectURL(blob))
+        const blob = await apiFetchBlob(`/api/v1/reports/images/${imageId}`)
+        const blobUrl = URL.createObjectURL(blob)
+        blobUrlCache.set(imageId, blobUrl)
+        img.setAttribute('src', blobUrl)
       } catch {
         img.setAttribute('alt', 'Image unavailable')
       }
@@ -63,4 +75,12 @@ export function revokeBlobUrlsInHtml(html) {
     const src = img.getAttribute('src')
     if (src?.startsWith('blob:')) URL.revokeObjectURL(src)
   })
+}
+
+export function registerReportImageBlobUrl(imageId, blobUrl) {
+  if (imageId == null || !blobUrl) return
+  const key = String(imageId)
+  const existing = blobUrlCache.get(key)
+  if (existing && existing !== blobUrl) URL.revokeObjectURL(existing)
+  blobUrlCache.set(key, blobUrl)
 }

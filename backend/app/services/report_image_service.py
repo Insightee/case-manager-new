@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -169,6 +172,12 @@ def open_report_image_content(img: ReportImage) -> tuple[bytes, str, str]:
         try:
             data = backend.get_bytes(img.storage_key)
         except FileNotFoundError:
+            logger.warning(
+                "report_image missing in storage provider=%s key=%s image_id=%s",
+                img.storage_provider,
+                img.storage_key,
+                img.id,
+            )
             raise HTTPException(status_code=404, detail="File not found")
         return data, mime, filename
 
@@ -183,6 +192,10 @@ def open_report_image_content(img: ReportImage) -> tuple[bytes, str, str]:
             if candidate.is_file():
                 return candidate.read_bytes(), mime, filename
 
+    logger.warning(
+        "report_image has no storage_key or readable file_path image_id=%s",
+        img.id,
+    )
     raise HTTPException(status_code=404, detail="File not found")
 
 

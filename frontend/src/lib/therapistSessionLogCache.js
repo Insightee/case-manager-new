@@ -5,6 +5,30 @@ export function therapistDailyLogsKey(userId) {
   return queryKeys.therapistDailyLogs(userId)
 }
 
+export function applySessionStartedToWorkspace(workspace, started) {
+  if (!workspace || !started?.id) return workspace
+  const sid = Number(started.id)
+  return {
+    ...workspace,
+    active_session: started,
+    upcoming: (workspace.upcoming || []).filter((s) => s.id !== sid),
+  }
+}
+
+export function applySessionEndedToWorkspace(workspace, ended) {
+  if (!workspace || !ended?.id) return workspace
+  const sid = Number(ended.id)
+  const needs = workspace.needs_log || []
+  const inNeeds = needs.some((s) => s.id === sid)
+  return {
+    ...workspace,
+    active_session: workspace.active_session?.id === sid ? null : workspace.active_session,
+    needs_log: inNeeds
+      ? needs.map((s) => (s.id === sid ? { ...s, ...ended } : s))
+      : [ended, ...needs],
+  }
+}
+
 export function applyLogSavedToWorkspace(workspace, sessionId) {
   if (!workspace || sessionId == null) return workspace
   const sid = Number(sessionId)
@@ -41,6 +65,20 @@ export function applyLogSavedToSessions(sessions, sessionId) {
 export function applyLogSavedToCaseLogs(logs, savedLog, caseId, { isEdit = false } = {}) {
   const withCase = savedLog ? { ...savedLog, case_id: savedLog.case_id ?? Number(caseId) } : savedLog
   return applyLogSavedToDailyLogs(logs, withCase, { isEdit })
+}
+
+export function patchCachesAfterSessionStart(started) {
+  queryClient.setQueryData(queryKeys.therapistWorkspace, (old) =>
+    applySessionStartedToWorkspace(old, started),
+  )
+  void queryClient.invalidateQueries({ queryKey: queryKeys.therapistHome })
+}
+
+export function patchCachesAfterSessionEnd(ended) {
+  queryClient.setQueryData(queryKeys.therapistWorkspace, (old) =>
+    applySessionEndedToWorkspace(old, ended),
+  )
+  void queryClient.invalidateQueries({ queryKey: queryKeys.therapistHome })
 }
 
 /** Immediate UI after save; background refetch reconciles with server. */

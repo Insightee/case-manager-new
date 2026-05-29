@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { apiFetchBlob, apiUpload } from '../../lib/apiClient.js'
+import { apiUpload } from '../../lib/apiClient.js'
 import { compressImageFile } from '../../lib/compressImage.js'
-import { dehydrateReportImages, hydrateReportImages } from '../../lib/reportHtml.js'
+import { dehydrateReportImages, hydrateReportImages, registerReportImageBlobUrl } from '../../lib/reportHtml.js'
 import { ReportImageExtension } from '../../lib/reportImageExtension.js'
 import './report-editor.css'
 
@@ -89,6 +89,7 @@ export function ReportEditor({
   const onHtmlChangeRef = useRef(onHtmlChange)
   onHtmlChangeRef.current = onHtmlChange
   const lastAppliedDocRef = useRef(-1)
+  const lastHydratedHtmlRef = useRef('')
   const [uploadError, setUploadError] = useState(null)
   const [pendingFile, setPendingFile] = useState(null)
   const [editorReady, setEditorReady] = useState(false)
@@ -125,6 +126,12 @@ export function ReportEditor({
     let cancelled = false
     const runForVersion = documentVersion
     const sourceHtml = initialHtmlRef.current || '<p></p>'
+    const dehydrated = dehydrateReportImages(sourceHtml)
+    if (dehydrated === lastHydratedHtmlRef.current && lastAppliedDocRef.current >= 0) {
+      lastAppliedDocRef.current = documentVersion
+      return () => {}
+    }
+    lastHydratedHtmlRef.current = dehydrated
     ;(async () => {
       const displayHtml = await hydrateReportImages(sourceHtml)
       if (cancelled || runForVersion !== documentVersion) return
@@ -159,8 +166,8 @@ export function ReportEditor({
       fd.append('file', compressed)
       const res = await apiUpload(`/api/v1/reports/monthly/${reportId}/images`, fd)
       const apiPath = res.url || `/api/v1/reports/images/${res.id}`
-      const blob = await apiFetchBlob(apiPath)
-      const blobUrl = URL.createObjectURL(blob)
+      const blobUrl = URL.createObjectURL(compressed)
+      registerReportImageBlobUrl(res.id, blobUrl)
       editor.chain().focus().setImage({ src: blobUrl, dataApiSrc: apiPath }).run()
       queueMicrotask(() => {
         if (!editor.isDestroyed) {

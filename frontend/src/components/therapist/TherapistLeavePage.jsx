@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
+import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
 import './therapist-leave.css'
 
 const BILLING_CATEGORIES = [
@@ -395,14 +396,23 @@ export function TherapistLeavePage() {
       {balance ? (
         <div style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem' }}>
           <p style={{ margin: '0 0 6px', fontWeight: 700, color: '#3730a3' }}>
-            Paid leave remaining ({calYear}): {balance.paid_remaining} / {balance.entitlement_paid}
+            Paid leave remaining ({calYear}): {leaveBalanceRemainingLabel(balance)}
+            {!isLeaveBalanceUpdated(balance) ? (
+              <span style={{ marginLeft: 8, fontWeight: 600, color: '#b45309' }}>To be updated</span>
+            ) : null}
           </p>
-          <p style={{ margin: 0, color: '#4f46e5', fontSize: '0.8rem' }}>
-            Used {balance.paid_used_effective} paid days
-            {balance.backfill_paid_used > 0 ? ` (includes ${balance.backfill_paid_used} HR adjustment)` : ''}
-            {' · '}
-            Carry forward {balance.carry_forward_used_display}
-          </p>
+          {isLeaveBalanceUpdated(balance) ? (
+            <p style={{ margin: 0, color: '#4f46e5', fontSize: '0.8rem' }}>
+              Used {balance.paid_used_effective} paid days
+              {balance.backfill_paid_used > 0 ? ` (includes ${balance.backfill_paid_used} HR adjustment)` : ''}
+              {' · '}
+              Carry forward {balance.carry_forward_used_display}
+            </p>
+          ) : (
+            <p style={{ margin: 0, color: '#64748b', fontSize: '0.8rem' }}>
+              HR will confirm your opening balance for {calYear}. You can still submit leave requests.
+            </p>
+          )}
           {balance.requires_employment_start_date ? (
             <p style={{ margin: '8px 0 0', color: '#b45309', fontSize: '0.8rem' }}>
               Employment start date must be set by HR before you can submit leave.

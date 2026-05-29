@@ -1,5 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+
+function approvalLabel(status) {
+  if (status === 'APPROVED') return { text: 'Approved', className: 'bg-emerald-100 text-emerald-800' }
+  if (status === 'PENDING') return { text: 'Pending review', className: 'bg-amber-100 text-amber-900' }
+  return { text: status || '—', className: 'bg-slate-100 text-slate-700' }
+}
 
 export function SessionLogContextPanel({
   reportId,
@@ -36,6 +42,12 @@ export function SessionLogContextPanel({
       .finally(() => setLoading(false))
   }, [open, reportId, caseId])
 
+  const counts = useMemo(() => {
+    const approved = logs.filter((l) => l.approval_status === 'APPROVED').length
+    const pending = logs.filter((l) => l.approval_status === 'PENDING').length
+    return { approved, pending, total: logs.length }
+  }, [logs])
+
   function buildIepGoalsHtml() {
     const rows = iepContext?.learningEnvironments || []
     if (!rows.length) return ''
@@ -68,8 +80,15 @@ export function SessionLogContextPanel({
       {open ? (
         <div className="border-t border-slate-200 px-4 pb-4">
           <p className="mt-2 text-xs text-slate-500">
-            Approved sessions for this report month. Use these notes while writing your report.
+            Submitted session logs for this report month. Pending logs are included in{' '}
+            <strong>Generate from session logs</strong>; admin approval is still required for billing.
           </p>
+          {counts.total > 0 ? (
+            <p className="mt-2 text-xs font-medium text-slate-700">
+              {counts.total} log{counts.total === 1 ? '' : 's'} · {counts.approved} approved
+              {counts.pending > 0 ? ` · ${counts.pending} pending review` : ''}
+            </p>
+          ) : null}
           {caseId ? (
             <button
               type="button"
@@ -82,7 +101,9 @@ export function SessionLogContextPanel({
           {loading ? <p className="mt-3 text-sm text-slate-500">Loading…</p> : null}
           {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
           {!loading && !error && logs.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">No approved session logs for this month.</p>
+            <p className="mt-3 text-sm text-slate-500">
+              No submitted session logs for this month. End visits and submit logs from Session Logs first.
+            </p>
           ) : null}
           {iepContext?.hasPlan && iepContext.learningEnvironments?.length > 0 ? (
             <div className="mt-4 rounded-lg border border-indigo-100 bg-white p-3">
@@ -117,29 +138,37 @@ export function SessionLogContextPanel({
             </div>
           ) : null}
           <ul className="mt-3 max-h-80 space-y-3 overflow-y-auto">
-            {logs.map((log) => (
-              <li key={log.log_id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-                <p className="font-semibold text-slate-800">
-                  {log.scheduled_date}
-                  {log.attendance_status ? ` · ${log.attendance_status}` : ''}
-                </p>
-                {log.activities_done ? (
-                  <p className="mt-1 text-slate-600">
-                    <strong>Activities:</strong> {log.activities_done}
-                  </p>
-                ) : null}
-                {log.goals_addressed ? (
-                  <p className="mt-1 text-slate-600">
-                    <strong>Goals:</strong> {log.goals_addressed}
-                  </p>
-                ) : null}
-                {log.parent_notes ? (
-                  <p className="mt-1 text-slate-600">
-                    <strong>Notes:</strong> {log.parent_notes}
-                  </p>
-                ) : null}
-              </li>
-            ))}
+            {logs.map((log) => {
+              const badge = approvalLabel(log.approval_status)
+              return (
+                <li key={log.log_id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-slate-800">
+                      {log.scheduled_date}
+                      {log.attendance_status ? ` · ${log.attendance_status}` : ''}
+                    </p>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}>
+                      {badge.text}
+                    </span>
+                  </div>
+                  {log.activities_done ? (
+                    <p className="mt-1 text-slate-600">
+                      <strong>Activities:</strong> {log.activities_done}
+                    </p>
+                  ) : null}
+                  {log.goals_addressed ? (
+                    <p className="mt-1 text-slate-600">
+                      <strong>Goals:</strong> {log.goals_addressed}
+                    </p>
+                  ) : null}
+                  {log.parent_notes ? (
+                    <p className="mt-1 text-slate-600">
+                      <strong>Notes:</strong> {log.parent_notes}
+                    </p>
+                  ) : null}
+                </li>
+              )
+            })}
           </ul>
         </div>
       ) : null}

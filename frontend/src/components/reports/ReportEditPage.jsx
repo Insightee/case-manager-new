@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { generateReportFromLogs } from '../../lib/reportGenerateFromLogs.js'
 import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
 import { ReportEditor } from './ReportEditor.jsx'
@@ -56,9 +57,11 @@ export function ReportEditPage() {
   const saveTimer = useRef(null)
   const localDraftTimer = useRef(null)
   const skipAutosaveRef = useRef(true)
-  const AUTOSAVE_SERVER_MS = 90_000
+  const AUTOSAVE_SERVER_MS = 120_000
   const AUTOSAVE_LOCAL_MS = 2_000
   const [serverVersionChanged, setServerVersionChanged] = useState(false)
+  const [generatingFromLogs, setGeneratingFromLogs] = useState(false)
+  const lastPersistedHtmlRef = useRef('')
   const isMobile = useIsMobilePortal()
 
   const editable =
@@ -151,6 +154,7 @@ export function ReportEditPage() {
   const persist = useCallback(
     async (silent = true) => {
       if (!report || !editable) return
+      if (silent && bodyHtml === lastPersistedHtmlRef.current) return
       setSaving(true)
       setSaveFailed(false)
       if (!silent) setError('')
@@ -169,6 +173,7 @@ export function ReportEditPage() {
           }),
         })
         setReport(updated)
+        lastPersistedHtmlRef.current = bodyHtml
         setSavedAt(new Date())
         setDirty(false)
         clearLocalDraft()
@@ -231,6 +236,33 @@ export function ReportEditPage() {
 
   async function handleDownload() {
     await apiDownload(`/api/v1/reports/monthly/${reportId}/download`, `report_${month || reportId}.pdf`)
+  }
+
+  async function handleGenerateFromLogs(mode = 'replace') {
+    if (!report || !editable) return
+    const hasContent = Boolean((bodyHtml || '').replace(/<[^>]+>/g, '').trim())
+    if (hasContent && mode === 'replace') {
+      const ok = window.confirm(
+        'Replace the current report body with text compiled from session logs? Use Cancel to keep your draft.',
+      )
+      if (!ok) return
+    }
+    setGeneratingFromLogs(true)
+    setError('')
+    try {
+      const updated = await generateReportFromLogs(Number(reportId), mode)
+      setReport(updated)
+      setBodyHtml(updated.body_html || '')
+      setPlanNextMonth(updated.plan_next_month || '')
+      lastPersistedHtmlRef.current = updated.body_html || ''
+      setDocumentVersion((v) => v + 1)
+      setDirty(false)
+      setMessage('Report body generated from session logs.')
+    } catch (err) {
+      setError(err.message || 'Could not generate from session logs')
+    } finally {
+      setGeneratingFromLogs(false)
+    }
   }
 
   if (loading) return <p className="p-6 text-slate-500">Loading report…</p>
@@ -378,13 +410,23 @@ export function ReportEditPage() {
               Download PDF
             </button>
             {editable ? (
-              <button
-                type="button"
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
-                onClick={handleSubmit}
-              >
-                {submitLabel}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800"
+                  onClick={() => handleGenerateFromLogs('replace')}
+                  disabled={generatingFromLogs || saving}
+                >
+                  {generatingFromLogs ? 'Generating…' : 'Generate from session logs'}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                  onClick={handleSubmit}
+                >
+                  {submitLabel}
+                </button>
+              </>
             ) : null}
           </div>
         </div>
@@ -525,17 +567,31 @@ export function ReportEditPage() {
                 Download PDF
               </button>
               {editable ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="report-edit-mobile-menu__item"
-                  onClick={() => {
-                    saveLocalDraft()
-                    setMobileMenuOpen(false)
-                  }}
-                >
-                  Save draft on device
-                </button>
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="report-edit-mobile-menu__item"
+                    disabled={generatingFromLogs || saving}
+                    onClick={() => {
+                      setMobileMenuOpen(false)
+                      handleGenerateFromLogs('replace')
+                    }}
+                  >
+                    {generatingFromLogs ? 'Generating…' : 'Generate from session logs'}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="report-edit-mobile-menu__item"
+                    onClick={() => {
+                      saveLocalDraft()
+                      setMobileMenuOpen(false)
+                    }}
+                  >
+                    Save draft on device
+                  </button>
+                </>
               ) : null}
               <Link
                 to={base}

@@ -7,6 +7,8 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { queryKeys } from '../../lib/queryClient.js'
 import {
   patchCachesAfterLogSave,
+  patchCachesAfterSessionEnd,
+  patchCachesAfterSessionStart,
   refreshTherapistLogDraftIds,
 } from '../../lib/therapistSessionLogCache.js'
 import { useTherapistSessionsWorkspace } from '../../hooks/useTherapistHome.js'
@@ -238,30 +240,18 @@ export function DailyLogsPage() {
     )
   }
 
-  async function getGeoCoords() {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve(null); return }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => resolve(null),
-        { timeout: 6000 },
-      )
-    })
-  }
-
   async function handleStart(sessionId) {
     setError('')
     setSuccess('')
     try {
-      const pos = await getGeoCoords()
       const started = await apiFetch(`/api/v1/sessions/${sessionId}/start`, {
         method: 'POST',
-        body: JSON.stringify(pos ? { lat: pos.lat, lng: pos.lng } : {}),
+        body: JSON.stringify({}),
       })
+      patchCachesAfterSessionStart(started)
       if (started?.invite_sent && started?.invite_email) {
         setSuccess(`Invite sent to ${started.invite_email} — they will join the Client portal.`)
       }
-      void loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not start session')
     }
@@ -270,13 +260,12 @@ export function DailyLogsPage() {
   async function handleEnd(sessionId) {
     setError('')
     try {
-      const pos = await getGeoCoords()
       const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, {
         method: 'POST',
-        body: JSON.stringify(pos ? { lat: pos.lat, lng: pos.lng } : {}),
+        body: JSON.stringify({}),
       })
+      patchCachesAfterSessionEnd(ended)
       openLogForm(ended, { required: true })
-      void loadAll({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not end session')
     }

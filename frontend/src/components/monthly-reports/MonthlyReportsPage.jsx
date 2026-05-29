@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 const REPORTS_EDIT_BASE = '/therapist/reports/edit'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { generateReportFromLogs } from '../../lib/reportGenerateFromLogs.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useTherapistHome, useTherapistReportsPipeline } from '../../hooks/useTherapistHome.js'
 import { QueryState } from '../shared/QueryState.jsx'
@@ -176,6 +177,20 @@ export function MonthlyReportsPage() {
       await load()
     } catch (err) {
       showToast(err.message || 'Could not submit report')
+    }
+  }
+
+  async function handleGenerateFromLogs(report) {
+    if (report.isPlaceholder || !report.id || String(report.id).startsWith('missing-')) {
+      showToast('Create a report draft for this case first.')
+      return
+    }
+    try {
+      await generateReportFromLogs(report.id, 'replace')
+      showToast(`Draft built from session logs — ${report.child || report.caseId}.`)
+      navigate(`${REPORTS_EDIT_BASE}/${report.id}`)
+    } catch (err) {
+      showToast(err.message || 'Could not generate from session logs')
     }
   }
 
@@ -374,6 +389,7 @@ export function MonthlyReportsPage() {
                           key={r.id}
                           variant="attention"
                           report={r}
+                          onGenerateFromLogs={handleGenerateFromLogs}
                           onStart={() =>
                             r.isPlaceholder && r.caseDbId ? goToCaseReports(r.caseDbId, { create: true }) : setDraftOpen(true)
                           }
@@ -407,6 +423,7 @@ export function MonthlyReportsPage() {
                           key={r.id}
                           variant="progress"
                           report={r}
+                          onGenerateFromLogs={handleGenerateFromLogs}
                           onContinue={(rep) => navigate(`${REPORTS_EDIT_BASE}/${rep.id}`)}
                           onSubmitReview={r.status === 'draft' ? handleSubmitReview : undefined}
                           onPreview={(rep) => navigate(`${REPORTS_EDIT_BASE}/${rep.id}`)}

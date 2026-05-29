@@ -19,11 +19,12 @@ fi
 unset RAILWAY_TOKEN
 
 cd "$BACKEND"
-npx @railway/cli link --project "$PROJECT_ID"
+npx @railway/cli link --project "$PROJECT_ID" --environment production --service case-manager-new
 npx @railway/cli variable set \
   FRONTEND_URL="$VERCEL_URL" \
   CORS_ORIGINS="http://localhost:5173,${VERCEL_URL}"
 
 echo "Set FRONTEND_URL=$VERCEL_URL"
 echo "Set CORS_ORIGINS=http://localhost:5173,${VERCEL_URL}"
-echo "Redeploy the API service on Railway for changes to take effect."
+echo "Restart the API so env vars load: npx @railway/cli redeploy --from-source -y -s case-manager-new"
+echo "(from repo root, with service linked; or trigger Deploy in Railway dashboard)"

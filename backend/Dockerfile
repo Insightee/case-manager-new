@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Supports build context = backend/ (CLI) or repo root (GitHub + root railway.toml)
+# Build context = backend/ (docker-compose, `railway up` from backend/). GitHub uses repo-root /Dockerfile.
 COPY pyproject.toml requirements.txt ./
 COPY app ./app
 COPY alembic ./alembic

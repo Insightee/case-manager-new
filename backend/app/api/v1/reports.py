@@ -29,9 +29,10 @@ from app.schemas.report import (
     ObservationReportRead,
     ObservationReportUpdate,
     ReviewAction,
+    GenerateFromLogsRequest,
     SessionLogContextItem,
 )
-from app.services import case_service, parent_reports_service, report_service
+from app.services import case_service, parent_reports_service, report_compile_service, report_service
 from app.services import report_image_service, report_pdf_service, report_session_context_service
 from app.services.report_image_service import sync_summary_from_body
 
@@ -275,8 +276,30 @@ def download_report_image(
     return Response(
         content=data,
         media_type=mime,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, max-age=3600",
+        },
     )
+
+
+@router.post("/monthly/{report_id}/generate-from-logs", response_model=MonthlyReportRead)
+def generate_monthly_report_from_logs(
+    report_id: int,
+    payload: GenerateFromLogsRequest = GenerateFromLogsRequest(),
+    user: User = Depends(require_permission("monthly_report.create")),
+    db: Session = Depends(get_db),
+):
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    mode = payload.mode if payload.mode in ("replace", "append") else "replace"
+    report_compile_service.generate_monthly_report_from_logs(
+        db, user, report, mode=mode
+    )
+    commit_or_http(db)
+    db.refresh(report)
+    return _report_read(db, report)
 
 
 @router.get("/monthly/{report_id}/session-context", response_model=list[SessionLogContextItem])
