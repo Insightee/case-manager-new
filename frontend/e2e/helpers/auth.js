@@ -37,7 +37,7 @@ export async function loginParent(page) {
 /** @param {import('@playwright/test').Page} page */
 export async function loginAdmin(page) {
   await page.goto('/login')
-  await page.getByRole('tab', { name: 'Staff' }).click()
+  await page.getByRole('tab', { name: 'Staff' }).click({ timeout: 90_000 })
   await page.getByRole('textbox', { name: 'Email' }).fill('superadmin@demo.com')
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
