@@ -88,16 +88,22 @@ export function AdminReportViewPage() {
             ) : null}
           </section>
 
-          <ReportCommentsThread
-            title="Comments"
-            commentsPath={`/api/v1/admin/reports/monthly/${reportId}/comments`}
-            postPath={`/api/v1/admin/reports/monthly/${reportId}/comments`}
-            canPost
-          />
+          <section className="admin-reports__drawer-section admin-reports__discussion">
+            <h3>Discussion</h3>
+            <p className="admin-reports__card-help">
+              Team comments on this report. Use report management for internal notes and send-back.
+            </p>
+            <ReportCommentsThread
+              title=""
+              commentsPath={`/api/v1/admin/reports/monthly/${reportId}/comments`}
+              postPath={`/api/v1/admin/reports/monthly/${reportId}/comments`}
+              canPost
+            />
+          </section>
 
           {detail.review_history?.length > 0 ? (
-            <section className="admin-reports__drawer-section">
-              <h3>Decision history</h3>
+            <details className="admin-reports__history-details">
+              <summary>Review history ({detail.review_history.length})</summary>
               <ul className="admin-reports__history-list">
                 {detail.review_history.map((h) => (
                   <li key={h.id} className="admin-reports__history-item">
@@ -110,7 +116,7 @@ export function AdminReportViewPage() {
                   </li>
                 ))}
               </ul>
-            </section>
+            </details>
           ) : null}
 
           <p className="admin-muted admin-reports-view__case-link">

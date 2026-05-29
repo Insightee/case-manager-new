@@ -188,6 +188,8 @@
   .admin-collapsible-filters__panel .admin-meetings-filters,
   .admin-collapsible-filters__panel .sessions-dash__filters,
   .admin-collapsible-filters__panel .admin-reports__filters,
+  .admin-collapsible-filters__panel .admin-meetings-filters,
+  .admin-collapsible-filters__panel .admin-filter-grid,
   .admin-collapsible-filters__panel .client-inv__filters,
   .admin-collapsible-filters__panel .admin-cases-pipeline__filters {
     margin-bottom: 0;
@@ -241,7 +243,8 @@
     display: none;
   }
 
-  .admin-reports__tabs {
+  /* Report management view tabs: use pill row (see AdminReportsPage); hide duplicate button row */
+  .admin-reports__tabs--desktop-only {
     display: none !important;
   }
 
@@ -353,6 +356,56 @@
   .admin-toolbar--mobile-compact select.admin-search__input {
     width: 100%;
     min-width: 0;
+  }
+
+  .admin-collapsible-filters__grid.admin-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    align-items: stretch;
+    margin-bottom: 0;
+  }
+
+  .admin-collapsible-filters__grid .admin-search,
+  .admin-collapsible-filters__grid .admin-filter-field {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .admin-collapsible-filters__grid select,
+  .admin-collapsible-filters__grid .admin-select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .admin-collapsible-filters__panel .admin-collapsible-filters__grid {
+    margin-bottom: 4px;
+  }
+
+  .admin-panel__body {
+    min-width: 0;
+  }
+
+  .sessions-dash__body {
+    min-width: 0;
+  }
+
+  .sessions-dash__tab-panel {
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .sessions-dash__chart-card {
+    padding: 14px 12px 10px;
+    min-width: 0;
+  }
+
+  .sessions-dash__chart-card .recharts-responsive-container {
+    min-width: 0 !important;
   }
 
   /* Hide desktop-only table; show mobile cards */
@@ -782,22 +835,21 @@
     display: none;
   }
 
-  /* Compact people / client actions */
-  .admin-people-actions {
+  /* Compact people / client onboard actions */
+  .admin-people-onboard {
     display: flex;
     flex-wrap: nowrap;
     gap: 8px;
     overflow-x: auto;
-    margin-bottom: 12px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
 
-  .admin-people-actions::-webkit-scrollbar {
+  .admin-people-onboard::-webkit-scrollbar {
     display: none;
   }
 
-  .admin-people-actions .admin-btn {
+  .admin-people-onboard .admin-btn {
     flex-shrink: 0;
     min-height: 44px;
   }

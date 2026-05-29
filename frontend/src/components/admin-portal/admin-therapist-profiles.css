@@ -1,0 +1,252 @@
+.therapist-profile-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border: none;
+  background: #fff;
+}
+
+.therapist-profile-drawer__header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--admin-border, #e2e8f0);
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.therapist-profile-drawer__header-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.therapist-profile-drawer__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.therapist-profile-drawer__subtitle {
+  margin: 4px 0 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.therapist-profile-drawer__body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.therapist-profile-drawer__section {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--admin-border, #e2e8f0);
+  background: #fafbfc;
+}
+
+.therapist-profile-drawer__section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.therapist-profile-drawer__section-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+
+.therapist-profile-drawer__text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.therapist-profile-drawer__meta-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.therapist-profile-drawer__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.therapist-profile-drawer__chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+.therapist-profile-drawer__assignment-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.therapist-profile-drawer__assignment-read {
+  display: grid;
+  gap: 6px;
+  font-size: 0.875rem;
+}
+
+.therapist-profile-drawer__assignment-read dt {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+
+.therapist-profile-drawer__assignment-read dd {
+  margin: 0;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.therapist-profile-drawer__edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.therapist-profile-drawer__edit-grid .admin-staff-select {
+  min-width: 0;
+}
+
+.therapist-profile-drawer__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.admin-filter-select--block {
+  display: block;
+  width: 100%;
+}
+
+.admin-filter-select--block .admin-filter-select__input {
+  width: 100%;
+}
+
+.admin-staff-select {
+  min-width: 0;
+}
+
+/* Leave balance panel (shared HR + admin drawer) */
+.therapist-leave-panel {
+  margin-top: 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--admin-border, #e2e8f0);
+  background: #fff;
+}
+
+.therapist-leave-panel__title {
+  margin: 0 0 4px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.therapist-leave-panel__lead {
+  margin: 0 0 12px;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.therapist-leave-panel__banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.therapist-leave-panel__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.therapist-leave-panel__stat {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.therapist-leave-panel__stat--highlight {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.therapist-leave-panel__stat-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+}
+
+.therapist-leave-panel__stat-value {
+  margin-top: 4px;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.therapist-leave-panel__stat-value--muted {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.therapist-leave-panel__stat-value--ok {
+  color: #15803d;
+}
+
+.therapist-leave-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.therapist-leave-panel__form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .therapist-profile-drawer__assignment-grid,
+  .therapist-profile-drawer__edit-grid,
+  .therapist-profile-drawer__assignment-grid,
+  .therapist-leave-panel__form-grid {
+    grid-template-columns: 1fr;
+  }
+}

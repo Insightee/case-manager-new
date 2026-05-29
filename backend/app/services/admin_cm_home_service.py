@@ -30,6 +30,23 @@ ACTION_COLUMNS = frozenset(
     }
 )
 
+
+def _caseload_target_tab(
+    pipeline_column: str,
+    *,
+    reports_under_review: int,
+    missing_logs: int,
+) -> str:
+    if pipeline_column in ("pending_allotment", "needs_therapist", "reassignment"):
+        return "assignments"
+    if pipeline_column == "reports_logs":
+        return "reports" if reports_under_review > 0 else "logs"
+    if pipeline_column == "iep":
+        return "iep"
+    if pipeline_column == "compliance":
+        return "logs" if missing_logs > 0 else "activity"
+    return "overview"
+
 SECTION_ORDER = [
     "observations",
     "status_requests",
@@ -182,6 +199,13 @@ def build_cm_home(db: Session, user: User) -> dict:
         if column in ACTION_COLUMNS or st == CaseStatus.PENDING_ALLOTMENT.value:
             summary["needs_action"] += 1
 
+        reports_u = m.get("reports_u", 0)
+        missing = m.get("missing", 0)
+        target_tab = _caseload_target_tab(
+            column,
+            reports_under_review=reports_u,
+            missing_logs=missing,
+        )
         caseload_rows.append(
             {
                 "id": case.id,
@@ -193,11 +217,11 @@ def build_cm_home(db: Session, user: User) -> dict:
                 "therapist_name": m.get("therapist_name"),
                 "pipeline_column": column,
                 "next_action": m.get("next_action"),
-                "open_reports": m.get("reports_u", 0),
-                "missing_logs": m.get("missing", 0),
+                "open_reports": reports_u,
+                "missing_logs": missing,
                 "open_tickets": m.get("tickets", 0),
                 "open_incidents": m.get("incidents", 0),
-                "href": f"/admin/cases/{case.id}",
+                "href": f"/admin/cases/{case.id}?tab={target_tab}",
             }
         )
 

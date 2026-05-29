@@ -73,3 +73,13 @@ export function isScheduleCacheFresh(entry) {
   if (!entry) return false
   return Date.now() - (entry.cachedAt || 0) <= TTL_MS
 }
+
+/** Drop cached calendar payloads so a new booking shows immediately. */
+export function clearScheduleCache() {
+  memoryCache.clear()
+  try {
+    localStorage.removeItem(CACHE_KEY)
+  } catch {
+    // best effort
+  }
+}

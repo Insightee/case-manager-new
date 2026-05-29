@@ -17,6 +17,10 @@ class BillingDisputeCreate(BaseModel):
     ]
     message: str = Field(min_length=10)
     line_id: Optional[int] = None
+    line_ids: Optional[list[int]] = Field(
+        default=None,
+        description="Invoice line ids to dispute; omit or send [] for the entire invoice.",
+    )
 
 
 class ClientPaymentRecord(BaseModel):

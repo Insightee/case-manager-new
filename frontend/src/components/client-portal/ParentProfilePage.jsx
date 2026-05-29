@@ -198,8 +198,9 @@ export function ParentProfilePage() {
   const [phone, setPhone] = useState('')
   const [children, setChildren] = useState([])
   const [services, setServices] = useState([])
-  const [serviceAddr, setServiceAddr] = useState(emptyAddress())
-  const [addressType, setAddressType] = useState('home') // 'home' | 'school'
+  const [homeAddr, setHomeAddr] = useState(emptyAddress())
+  const [schoolAddr, setSchoolAddr] = useState(emptyAddress())
+  const [addressType, setAddressType] = useState('home') // which address is shown / preferred for visits
   const [billingSame, setBillingSame] = useState(true)
   const [billingAddr, setBillingAddr] = useState(emptyAddress())
   const [homecareCases, setHomecareCases] = useState([])
@@ -224,9 +225,12 @@ export function ParentProfilePage() {
       setAddressType(p.address_type || 'home')
       const hc = p.homecare_cases || []
       setHomecareCases(hc)
-      // Prefer the homecare service address if one exists, otherwise fall back to home_address
-      const primaryAddr = hc.length ? hc[0].service_address : p.home_address
-      setServiceAddr(addressFromApi(primaryAddr))
+      let home = addressFromApi(p.home_address)
+      if (!home.address_line1 && hc.length && hc[0].service_address) {
+        home = addressFromApi(hc[0].service_address)
+      }
+      setHomeAddr(home)
+      setSchoolAddr(addressFromApi(p.school_address))
       if (p.billing_address_line1) {
         setBillingSame(false)
         setBillingAddr(addressFromApi({
@@ -310,14 +314,14 @@ export function ParentProfilePage() {
         email: email.trim(),
         phone: phone.trim() || null,
         address_type: addressType,
-        // Save single address as home_address_* for backward compat
-        ...addressToPayload(serviceAddr, 'home_'),
+        ...addressToPayload(homeAddr, 'home_'),
+        ...addressToPayload(schoolAddr, 'school_'),
       }
-      // Propagate to first homecare case service_address if one exists
-      if (homecareCases.length) {
+      // Homecare visit location follows home address only (not school)
+      if (homecareCases.length && homeAddr.address_line1) {
         body.service_address = {
           case_id: Number(homecareCases[0].case_id),
-          address: addressToPayload(serviceAddr),
+          address: addressToPayload(homeAddr),
         }
       }
       // Billing address — only save when it's different from service address
@@ -455,12 +459,13 @@ export function ParentProfilePage() {
         {/* ── Service address ── */}
         <section className="parent-profile__card">
           <h3>Service address</h3>
-          <p className="parent-profile__hint">Where your therapist visits. Use the GPS button to pin the exact location.</p>
+          <p className="parent-profile__hint">
+            Save separate home and school locations. Choose which one you are editing — each is stored independently.
+          </p>
 
-          {/* Type: Home / School */}
           <fieldset style={{ border: 'none', padding: 0, margin: '0 0 16px' }}>
             <legend style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Address type
+              Edit address
             </legend>
             <div className="parent-profile__address-type">
               {[
@@ -484,10 +489,20 @@ export function ParentProfilePage() {
             </div>
           </fieldset>
 
-          <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="service" disabled={saving} />
-          {hasCoordinates(serviceAddr) ? (
+          <AddressFormFields
+            value={addressType === 'school' ? schoolAddr : homeAddr}
+            onChange={addressType === 'school' ? setSchoolAddr : setHomeAddr}
+            idPrefix={addressType === 'school' ? 'school' : 'home'}
+            disabled={saving}
+          />
+          {hasCoordinates(addressType === 'school' ? schoolAddr : homeAddr) ? (
             <p style={{ fontSize: '0.8rem', color: '#15803d', marginTop: 8 }}>📍 Location pinned on map.</p>
           ) : null}
+          <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 8 }}>
+            {addressType === 'school'
+              ? 'School address is kept separate from your home address.'
+              : 'Home address is kept separate from your school address.'}
+          </p>
 
           {/* Billing address */}
           <div style={{ marginTop: 20, borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
@@ -512,7 +527,7 @@ export function ParentProfilePage() {
               </div>
             ) : (
               <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 6 }}>
-                Invoices will be addressed to the service address above.
+                Invoices will use the {addressType === 'school' ? 'school' : 'home'} address shown above.
               </p>
             )}
           </div>

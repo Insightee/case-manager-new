@@ -127,6 +127,87 @@
   font-style: italic;
 }
 
+.case-sessions-logs__expand-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.case-sessions-logs__analytics-link {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.case-sessions-logs__analytics-link:hover {
+  color: #0f172a;
+}
+
+.admin-session-log-detail {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.admin-session-log-detail__head h3 {
+  margin: 0 0 4px;
+  font-size: 0.9375rem;
+}
+
+.admin-session-log-detail__meta {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.admin-session-log-detail__notice {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.admin-session-log-detail__notice--warn {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.admin-session-log-detail__dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.admin-session-log-detail__dl > div {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-session-log-detail__dl dt {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.admin-session-log-detail__dl dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: #0f172a;
+}
+
 /* ── Filter bar ─────────────────────────────────────────────────────────── */
 
 .sessions-dash__filters {
@@ -176,9 +257,17 @@
   display: flex;
   gap: 4px;
   border-bottom: 2px solid #e2e8f0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .sessions-dash__tab {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 9px 18px;
   font-size: 0.875rem;
   font-weight: 600;
@@ -426,4 +515,74 @@
 @keyframes shimmer {
   0%   { background-position: 100% 50%; }
   100% { background-position: 0%   50%; }
+}
+
+/* Case detail — monthly report from session logs */
+.case-sessions-report-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.case-sessions-report-bar__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.case-sessions-report-bar__hint {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.case-sessions-report-bar__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.case-sessions-report-bar__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 280px;
+}
+
+.case-sessions-report-bar__label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.case-sessions-report-bar__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.case-sessions-report-bar__msg {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 640px) {
+  .case-sessions-report-bar__field {
+    max-width: none;
+  }
+
+  .case-sessions-report-bar__buttons .admin-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }

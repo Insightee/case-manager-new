@@ -66,6 +66,9 @@ def start_session(
         raise ValueError("Not your session")
     if session.status != SessionStatus.SCHEDULED:
         raise ValueError("Session is not scheduled")
+    from app.services.assignment_acceptance_service import assert_therapist_may_start_session
+
+    assert_therapist_may_start_session(db, session.case_id)
     active = db.scalars(
         select(TherapySession).where(
             TherapySession.therapist_user_id == therapist_user_id,

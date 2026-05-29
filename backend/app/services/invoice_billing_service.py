@@ -602,6 +602,22 @@ def submit_invoice_from_preview(
     db.add(invoice)
     db.flush()
 
+    _replace_invoice_lines_from_preview(db, invoice, preview)
+    invoice.status = InvoiceStatus.IN_REVIEW
+    invoice.notes = combined_notes
+    return invoice
+
+
+def _replace_invoice_lines_from_preview(db: Session, invoice: Invoice, preview: dict) -> None:
+    for cl in list(invoice.case_lines):
+        db.delete(cl)
+    db.flush()
+
+    invoice.amount_inr = preview["net_amount_inr"]
+    invoice.subtotal_inr = preview["subtotal_inr"]
+    invoice.leave_deduction_inr = preview["leave_deduction_inr"]
+    invoice.sessions_count = preview["total_sessions"]
+
     for case_group in preview["cases"]:
         case_line = InvoiceCaseLine(
             invoice_id=invoice.id,
@@ -651,8 +667,43 @@ def submit_invoice_from_preview(
                     flags=flags,
                 )
             )
-
     db.flush()
+
+
+def amend_invoice_from_preview(
+    db: Session,
+    invoice_id: int,
+    therapist_user_id: int,
+    preview: dict,
+    notes: str | None = None,
+) -> Invoice:
+    invoice = db.scalars(
+        select(Invoice)
+        .where(Invoice.id == invoice_id)
+        .options(selectinload(Invoice.case_lines))
+    ).first()
+    if not invoice:
+        raise ValueError("Invoice not found")
+    if invoice.therapist_user_id != therapist_user_id:
+        raise ValueError("Not your invoice")
+    if invoice.status not in (InvoiceStatus.IN_REVIEW, InvoiceStatus.QUERIED, InvoiceStatus.REJECTED):
+        raise ValueError("This invoice cannot be amended")
+
+    pending_count = int(preview.get("pending_late_count") or 0)
+    pending_inr = float(preview.get("pending_late_inr") or 0)
+    note_parts = []
+    if notes:
+        note_parts.append(notes.strip())
+    if pending_count:
+        note_parts.append(
+            f"Contains {pending_count} late-added session(s) pending log approval "
+            f"(₹{pending_inr:,.0f} excluded from payout)."
+        )
+    combined_notes = "\n".join(note_parts) if note_parts else invoice.notes
+
+    _replace_invoice_lines_from_preview(db, invoice, preview)
+    invoice.status = InvoiceStatus.IN_REVIEW
+    invoice.notes = combined_notes
     return invoice
 
 
@@ -666,6 +717,30 @@ def invoice_breakdown(db: Session, invoice_id: int) -> dict | None:
     ).first()
     if not invoice:
         return None
+
+    line_count = sum(len(cl.session_lines) for cl in invoice.case_lines)
+    if not invoice.case_lines or line_count == 0:
+        preview = build_month_preview(db, invoice.therapist_user_id, invoice.month)
+        leave_balance = preview.get("leave_balance")
+        return {
+            "id": invoice.id,
+            "therapist_user_id": invoice.therapist_user_id,
+            "month": invoice.month,
+            "status": invoice.status.value,
+            "subtotal_inr": float(invoice.subtotal_inr or preview["subtotal_inr"]),
+            "leave_deduction_inr": float(invoice.leave_deduction_inr or preview["leave_deduction_inr"]),
+            "adjustment_inr": float(invoice.adjustment_inr or 0),
+            "amount_inr": float(invoice.amount_inr),
+            "sessions_count": invoice.sessions_count or preview["total_sessions"],
+            "pending_late_inr": preview.get("pending_late_inr", 0),
+            "pending_late_count": preview.get("pending_late_count", 0),
+            "notes": invoice.notes,
+            "reviewer_comment": invoice.reviewer_comment,
+            "cases": preview.get("cases") or [],
+            "leave_details": preview.get("leave_details") or [],
+            "leave_balance": leave_balance,
+            "from_preview": True,
+        }
 
     cases = []
     pending_late_inr = 0.0
@@ -696,9 +771,14 @@ def invoice_breakdown(db: Session, invoice_id: int) -> dict | None:
             else:
                 session_lines.append(entry)
 
+        child_name = None
+        case_row = db.get(Case, cl.case_id)
+        if case_row and case_row.child:
+            child_name = case_row.child.full_name
         cases.append({
             "case_id": cl.case_id,
             "case_code": cl.case_code,
+            "child_name": child_name,
             "billing_type": cl.billing_type,
             "included_sessions": cl.included_sessions,
             "additional_sessions": cl.additional_sessions,

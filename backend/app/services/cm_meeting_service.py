@@ -12,8 +12,12 @@ from sqlalchemy.orm import Session
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
+from app.core.config import settings
+from app.core.permissions import RoleName
 from app.models.user import User
 from app.services import notification_service, parent_service
+from app.services.email.google_calendar import build_google_calendar_add_url
+from app.services.email.service import cm_meeting_invite_email
 
 
 def parse_staff_attendee_ids(raw: str | None) -> list[int]:
@@ -47,6 +51,18 @@ def meeting_participant_user_ids(meeting: CaseManagerMeeting) -> set[int]:
 
 def user_can_view_meeting(meeting: CaseManagerMeeting, user_id: int) -> bool:
     return user_id in meeting_participant_user_ids(meeting)
+
+
+def parse_guest_emails(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return [str(e).strip().lower() for e in data if e and str(e).strip()]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return []
 
 
 def _format_meeting_when(meeting: CaseManagerMeeting) -> str:
@@ -204,14 +220,124 @@ def apply_attendee_selection(
     meeting.staff_attendee_user_ids_json = dump_staff_attendee_ids(admin_user_ids)
 
 
+def _portal_url_for_user(user: User) -> str:
+    base = (settings.frontend_url or "http://localhost:5173").rstrip("/")
+    role = getattr(user, "role_name", None) or (
+        user.roles[0].name if getattr(user, "roles", None) and user.roles else ""
+    )
+    if role == RoleName.PARENT.value:
+        return f"{base}/parent"
+    if role == RoleName.THERAPIST.value:
+        return f"{base}/therapist/cm-meetings"
+    return f"{base}/admin/cm-meetings"
+
+
+def _meeting_calendar_details(
+    *,
+    organizer_name: str,
+    child_name: str | None,
+    case_code: str | None,
+    meeting_url: str | None,
+    portal_url: str | None,
+) -> str:
+    lines = [f"Organizer: {organizer_name}"]
+    if child_name or case_code:
+        case_bits = [p for p in [child_name, f"({case_code})" if case_code else None] if p]
+        lines.append(f"Case: {' '.join(case_bits)}")
+    if meeting_url:
+        lines.append(f"Join: {meeting_url}")
+    if portal_url:
+        lines.append(f"Insighte: {portal_url}")
+    return "\n".join(lines)
+
+
+def send_meeting_invite_emails(
+    db: Session,
+    meeting: CaseManagerMeeting,
+    *,
+    actor_user_id: int,
+    invite_case_manager: bool,
+    is_update: bool = False,
+) -> None:
+    """Email invited stakeholders (portal users + guests). The booker does not receive email."""
+    case = db.get(Case, meeting.case_id) if meeting.case_id else None
+    child_name = case.child.full_name if case and case.child else None
+    case_code = case.case_code if case else None
+    label = _meeting_type_label(meeting.meeting_type)
+    title_text = meeting.title or label
+    when = _format_meeting_when(meeting)
+    actor = db.get(User, actor_user_id)
+    organizer_name = (actor.full_name if actor else None) or "Insighte"
+    actor_email = (actor.email or "").strip().lower() if actor and actor.email else ""
+
+    sent_to: set[str] = set()
+    if actor_email:
+        sent_to.add(actor_email)
+
+    def _send_one(*, to: str, full_name: str, portal_url: str | None) -> None:
+        addr = to.strip().lower()
+        if not addr or addr in sent_to:
+            return
+        sent_to.add(addr)
+        details = _meeting_calendar_details(
+            organizer_name=organizer_name,
+            child_name=child_name,
+            case_code=case_code,
+            meeting_url=meeting.meeting_url,
+            portal_url=portal_url,
+        )
+        google_calendar_url = build_google_calendar_add_url(
+            title=title_text,
+            scheduled_date=meeting.scheduled_date,
+            scheduled_time=meeting.scheduled_time,
+            duration_minutes=meeting.duration_minutes or 30,
+            details=details,
+            location=meeting.meeting_url or "",
+            timezone=settings.meeting_invite_calendar_timezone,
+        )
+        cm_meeting_invite_email(
+            to=addr,
+            full_name=full_name,
+            meeting_title=title_text,
+            when=when,
+            duration_minutes=meeting.duration_minutes or 30,
+            organizer_name=organizer_name,
+            meeting_url=meeting.meeting_url,
+            portal_url=portal_url,
+            google_calendar_url=google_calendar_url,
+            calendar_details=details,
+            child_name=child_name,
+            case_code=case_code,
+            is_update=is_update,
+        )
+
+    for uid in meeting_participant_user_ids(meeting):
+        if uid == actor_user_id:
+            continue
+        if not invite_case_manager and uid == meeting.case_manager_user_id:
+            continue
+        user = db.get(User, uid)
+        if not user or not (user.email or "").strip():
+            continue
+        _send_one(
+            to=user.email,
+            full_name=user.full_name or user.email,
+            portal_url=_portal_url_for_user(user),
+        )
+
+    for guest in parse_guest_emails(meeting.guest_emails_json):
+        _send_one(to=guest, full_name="there", portal_url=None)
+
+
 def notify_meeting_invites_respecting_flags(
     db: Session,
     meeting: CaseManagerMeeting,
     *,
     actor_user_id: int,
     invite_case_manager: bool,
+    is_update: bool = False,
 ) -> None:
-    """Notify participants; case manager can be excluded when not invited."""
+    """In-app notifications and email invites for all stakeholders."""
     case = db.get(Case, meeting.case_id) if meeting.case_id else None
     child_name = case.child.full_name if case and case.child else None
     label = _meeting_type_label(meeting.meeting_type)
@@ -223,7 +349,7 @@ def notify_meeting_invites_respecting_flags(
     if when:
         body_parts.append(f"When: {when}")
     if meeting.meeting_url:
-        body_parts.append("A meeting link is included.")
+        body_parts.append(f"Join: {meeting.meeting_url}")
     body = " · ".join(body_parts)
 
     for uid in meeting_participant_user_ids(meeting):
@@ -234,8 +360,16 @@ def notify_meeting_invites_respecting_flags(
         notification_service.create_notification(
             db,
             user_id=uid,
-            title="CM meeting invitation",
+            title="CM meeting updated" if is_update else "CM meeting invitation",
             body=body,
             entity_type="cm_meeting",
             entity_id=meeting.id,
         )
+
+    send_meeting_invite_emails(
+        db,
+        meeting,
+        actor_user_id=actor_user_id,
+        invite_case_manager=invite_case_manager,
+        is_update=is_update,
+    )

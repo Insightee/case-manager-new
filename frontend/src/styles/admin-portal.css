@@ -131,6 +131,32 @@
   box-shadow: 0 10px 28px rgba(79, 70, 229, 0.12);
 }
 
+button.admin-stat--link {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.admin-stat--link.is-active {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.22);
+}
+
+.admin-stat--link .admin-stat__label,
+.admin-stat--link .admin-stat__value,
+.admin-stat--link .admin-stat__hint {
+  pointer-events: none;
+}
+
+.admin-stat--yellow {
+  background: #fefce8;
+  border-color: #fde047;
+}
+
+.admin-stat--yellow .admin-stat__value {
+  color: #a16207;
+}
+
 .admin-stat__top {
   display: flex;
   justify-content: space-between;
@@ -139,6 +165,7 @@
 }
 
 .admin-stat__label {
+  display: block;
   margin: 0;
   font-size: 0.6875rem;
   font-weight: 600;
@@ -174,6 +201,7 @@
 }
 
 .admin-stat__value {
+  display: block;
   margin: 4px 0 0;
   font-size: var(--kpi-value-size);
   font-weight: 700;
@@ -192,6 +220,7 @@
 }
 
 .admin-stat__hint {
+  display: block;
   margin: 6px 0 0;
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -214,6 +243,13 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
   overflow: hidden;
+  min-width: 0;
+}
+
+/* Let filter panels / tab strips extend without clipping shadows or last tab */
+.admin-panel:has(.admin-collapsible-filters),
+.admin-panel:has(.admin-page__tabs-scroll) {
+  overflow: visible;
 }
 
 .admin-panel__head {
@@ -279,6 +315,12 @@
 
 .admin-panel__body--flush {
   padding: 0;
+  min-width: 0;
+  overflow: visible;
+}
+
+.admin-panel__body--flush > .admin-collapsible-filters {
+  padding: 12px 14px 0;
 }
 
 .admin-btn {
@@ -517,6 +559,28 @@
   gap: 10px;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.admin-collapsible-filters__grid.admin-toolbar {
+  align-items: flex-end;
+}
+
+@media (min-width: 901px) {
+  .admin-collapsible-filters__grid.admin-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+  }
+
+  .admin-collapsible-filters__grid .admin-filter-field {
+    flex: 0 1 auto;
+    min-width: 140px;
+  }
+
+  .admin-collapsible-filters__grid .admin-search {
+    flex: 1 1 220px;
+    min-width: 200px;
+  }
 }
 
 .admin-search {
@@ -1156,6 +1220,16 @@
   font-size: 0.8125rem;
 }
 
+/* People directory — client onboard (mirrors therapist onboard) */
+.admin-people-onboard {
+  margin-bottom: 12px;
+}
+
+.admin-people-onboard__hint {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+}
+
 /* ── Admin chip enhancements ─────────────────────── */
 
 .admin-chip-row {
@@ -1313,16 +1387,29 @@
 /* Admin shell: underline tabs (overrides any stray login grid styles) */
 .app-shell--admin .portal-tabs.admin-page__tabs-scroll {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
-  max-width: none;
+  max-width: 100%;
   width: 100%;
+  min-width: 0;
   margin: 0 0 20px;
-  padding: 0;
+  padding: 0 0 2px;
   background: transparent;
   border: none;
   border-bottom: 2px solid #e2e8f0;
   border-radius: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.app-shell--admin .portal-tabs.admin-page__tabs-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.app-shell--admin .portal-tabs.admin-page__tabs-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 99px;
 }
 
 .app-shell--admin .portal-tabs.admin-page__tabs-scroll .portal-tabs__tab {

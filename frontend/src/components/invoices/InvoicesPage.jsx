@@ -63,7 +63,7 @@ export function InvoicesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [previewMonth, setPreviewMonth] = useState(null)
   const [previewData, setPreviewData] = useState(null)
-  const [breakdownId, setBreakdownId] = useState(null)
+  const [breakdownInvoice, setBreakdownInvoice] = useState(null)
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   const [checklist, setChecklist] = useState(invoiceData.checklist.map((c) => ({ ...c })))
@@ -159,9 +159,14 @@ export function InvoicesPage() {
       />
 
       <InvoiceBreakdownModal
-        invoiceId={breakdownId}
-        open={Boolean(breakdownId)}
-        onClose={() => setBreakdownId(null)}
+        invoiceId={breakdownInvoice?.id}
+        invoiceStatus={breakdownInvoice?.apiStatus}
+        open={Boolean(breakdownInvoice)}
+        onClose={() => setBreakdownInvoice(null)}
+        onAmended={() => {
+          setBreakdownInvoice(null)
+          loadInvoices()
+        }}
       />
 
       <SectionHeader
@@ -216,8 +221,9 @@ export function InvoicesPage() {
                         key={inv.id}
                         variant="attention"
                         invoice={inv}
-                        onResolve={() => setBreakdownId(inv.id)}
-                        onViewDetails={() => setBreakdownId(inv.id)}
+                        onResolve={() => setBreakdownInvoice(inv)}
+                        onViewDetails={() => setBreakdownInvoice(inv)}
+                        onSessionBreakdown={() => setBreakdownInvoice(inv)}
                       />
                     ))}
                   </div>
@@ -241,7 +247,8 @@ export function InvoicesPage() {
                         key={inv.id}
                         variant="progress"
                         invoice={inv}
-                        onViewDetails={() => setBreakdownId(inv.id)}
+                        onViewDetails={() => setBreakdownInvoice(inv)}
+                        onSessionBreakdown={() => setBreakdownInvoice(inv)}
                         onDownloadCsv={() => showToast(`CSV export for ${inv.month} coming soon`)}
                       />
                     ))}
@@ -266,7 +273,8 @@ export function InvoicesPage() {
                         key={inv.id}
                         variant="paid"
                         invoice={inv}
-                        onView={() => setBreakdownId(inv.id)}
+                        onView={() => setBreakdownInvoice(inv)}
+                        onSessionBreakdown={() => setBreakdownInvoice(inv)}
                         onDownloadPdf={() => showToast(`PDF for ${inv.month} coming soon`)}
                       />
                     ))}

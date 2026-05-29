@@ -330,37 +330,63 @@ def create_dispute(
     reason_code: str,
     message: str,
     line_id: Optional[int] = None,
+    line_ids: Optional[list[int]] = None,
 ) -> dict:
     inv = db.get(ClientInvoice, invoice_id)
     if not inv or inv.parent_user_id != user.id:
         raise ValueError("Invoice not found")
-    if line_id:
-        line = db.get(ClientInvoiceLine, line_id)
+
+    if line_ids is not None:
+        target_line_ids: list[Optional[int]] = [None] if len(line_ids) == 0 else list(dict.fromkeys(line_ids))
+    elif line_id is not None:
+        target_line_ids = [line_id]
+    else:
+        target_line_ids = [None]
+
+    for lid in target_line_ids:
+        if lid is None:
+            continue
+        line = db.get(ClientInvoiceLine, lid)
         if not line or line.client_invoice_id != inv.id:
             raise ValueError("Invalid line")
-    dispute = BillingDispute(
-        client_invoice_id=inv.id,
-        client_invoice_line_id=line_id,
-        parent_user_id=user.id,
-        reason_code=reason_code,
-        message=message,
-        status=BillingDisputeStatus.OPEN,
-    )
+
+    created: list[BillingDispute] = []
+    for lid in target_line_ids:
+        dispute = BillingDispute(
+            client_invoice_id=inv.id,
+            client_invoice_line_id=lid,
+            parent_user_id=user.id,
+            reason_code=reason_code,
+            message=message,
+            status=BillingDisputeStatus.OPEN,
+        )
+        db.add(dispute)
+        created.append(dispute)
+
     inv.status = ClientInvoiceStatus.DISPUTED
-    db.add(dispute)
     db.flush()
 
     case = db.get(Case, inv.case_id)
     if case and case.case_manager_user_id:
+        session_note = ""
+        if len(target_line_ids) > 1 or (len(target_line_ids) == 1 and target_line_ids[0] is not None):
+            session_note = f" ({len(target_line_ids)} session{'s' if len(target_line_ids) != 1 else ''})"
         notification_service.create_notification(
             db,
             user_id=case.case_manager_user_id,
             title="Invoice dispute raised",
-            body=f"{inv.invoice_number}: {message[:200]}",
+            body=f"{inv.invoice_number}{session_note}: {message[:200]}",
             entity_type="client_invoice",
             entity_id=inv.id,
         )
-    return {"id": dispute.id, "status": dispute.status.value.lower()}
+
+    first = created[0]
+    return {
+        "id": first.id,
+        "ids": [d.id for d in created],
+        "count": len(created),
+        "status": first.status.value.lower(),
+    }
 
 
 def record_payment(

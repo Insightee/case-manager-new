@@ -117,3 +117,22 @@
   font-size: 0.8125rem;
   color: #475569;
 }
+
+.admin-scheduling-hub__calendar-wrap {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 16px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.admin-scheduling-hub__calendar-wrap > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-scheduling-hub__calendar-wrap .overflow-x-auto {
+  max-width: 100%;
+}

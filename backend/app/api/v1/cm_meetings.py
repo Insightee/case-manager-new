@@ -419,6 +419,11 @@ def update_cm_meeting(
     role = user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
     if role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your meeting")
+    old_date = meeting.scheduled_date
+    old_time = meeting.scheduled_time
+    old_duration = meeting.duration_minutes
+    old_url = meeting.meeting_url
+    old_guests = meeting.guest_emails_json
     if payload.status is not None:
         meeting.status = payload.status
     if payload.title is not None:
@@ -446,6 +451,26 @@ def update_cm_meeting(
         meeting.guest_emails_json = json.dumps(
             [e.strip() for e in payload.guest_emails if e and e.strip()]
         ) or None
+    schedule_changed = (
+        (payload.scheduled_date is not None and payload.scheduled_date != old_date)
+        or (payload.scheduled_time is not None and payload.scheduled_time != old_time)
+        or (payload.duration_minutes is not None and payload.duration_minutes != old_duration)
+    )
+    link_changed = payload.meeting_url is not None and (meeting.meeting_url or "") != (old_url or "")
+    guests_changed = payload.guest_emails is not None and meeting.guest_emails_json != old_guests
+    if (
+        meeting.status == MeetingStatus.SCHEDULED
+        and (schedule_changed or link_changed or guests_changed)
+    ):
+        from app.services.cm_meeting_service import notify_meeting_invites_respecting_flags
+
+        notify_meeting_invites_respecting_flags(
+            db,
+            meeting,
+            actor_user_id=user.id,
+            invite_case_manager=True,
+            is_update=True,
+        )
     db.commit()
     db.refresh(meeting)
     return _serialize(meeting, db)

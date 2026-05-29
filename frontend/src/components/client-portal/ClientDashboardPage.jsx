@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../../lib/apiClient.js'
 import { useParentHome } from '../../hooks/useParentHome.js'
 import { QueryState } from '../shared/QueryState.jsx'
 import './parent-dashboard.css'
@@ -8,6 +9,90 @@ function fmt(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr + 'T00:00:00')
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+function PendingAssignmentBanner({ items, onAccepted }) {
+  const [busyId, setBusyId] = useState(null)
+  const [err, setErr] = useState('')
+  if (!items?.length) return null
+  return (
+    <section
+      className="card"
+      style={{
+        marginBottom: 20,
+        padding: 16,
+        border: '1px solid #c7d2fe',
+        background: 'linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%)',
+      }}
+    >
+      <h2 style={{ margin: '0 0 8px', fontSize: '1rem', fontWeight: 700, color: '#312e81' }}>
+        New care assignment
+      </h2>
+      <p style={{ margin: '0 0 12px', fontSize: '0.875rem', color: '#475569' }}>
+        Your therapist and schedule are ready to use. Please review the plan when you can — accepting is optional
+        for now and helps us know you have seen the details.
+      </p>
+      {err ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{err}</p> : null}
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {items.map((item) => (
+          <li
+            key={item.assignment_id}
+            style={{
+              padding: 12,
+              borderRadius: 10,
+              background: '#fff',
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            <p style={{ margin: '0 0 4px', fontWeight: 600 }}>
+              {item.child_name} · {item.case_code}
+            </p>
+            {item.therapist_name ? (
+              <p style={{ margin: '0 0 10px', fontSize: '0.875rem', color: '#64748b' }}>
+                Therapist: {item.therapist_name}
+              </p>
+            ) : null}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn--primary admin-btn--sm"
+                disabled={busyId === item.assignment_id}
+                onClick={async () => {
+                  setBusyId(item.assignment_id)
+                  setErr('')
+                  try {
+                    await apiFetch(`/api/v1/parent/assignments/${item.assignment_id}/accept`, {
+                      method: 'POST',
+                    })
+                    onAccepted?.()
+                  } catch (e) {
+                    setErr(e.message || 'Could not accept assignment')
+                  } finally {
+                    setBusyId(null)
+                  }
+                }}
+              >
+                {busyId === item.assignment_id ? 'Saving…' : 'I have reviewed this assignment'}
+              </button>
+              <Link
+                to="/parent/support"
+                state={{
+                  prefill: {
+                    topic: 'CASE_ISSUE',
+                    subject: `Assignment question — ${item.case_code}`,
+                    caseId: item.case_id,
+                  },
+                }}
+                style={{ fontSize: '0.875rem', alignSelf: 'center', fontWeight: 600 }}
+              >
+                Report a problem
+              </Link>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 function StatusBadge({ status }) {
@@ -262,6 +347,7 @@ export function ClientDashboardPage({
     }))
   }, [home, cases])
   const recentUpdates = home?.recent_updates || []
+  const pendingAcceptance = home?.pending_assignment_acceptance || []
   const highlight = homeCases?.[0]?.session_highlight
   const childLabel = homeCases?.[0]?.childName
   const pendingIepCount =
@@ -276,6 +362,7 @@ export function ClientDashboardPage({
         error={error}
         onRetry={() => refetch()}
       >
+      <PendingAssignmentBanner items={pendingAcceptance} onAccepted={() => refetch()} />
       {highlight ? (
         <section className="parent-home-hero card" style={{ marginBottom: 20, padding: 20 }}>
           <p className="parent-home-hero__eyebrow">

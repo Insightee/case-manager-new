@@ -7,6 +7,7 @@ import {
   applyLogSavedToCaseLogs,
   applyLogSavedToSessions,
   patchCachesAfterLogSave,
+  patchCachesAfterSessionEnd,
 } from '../../lib/therapistSessionLogCache.js'
 import { formatScheduleWhen } from '../../lib/therapistSchedule.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
@@ -102,7 +103,11 @@ export function CaseSessionsPanel({
   async function handleEnd(sessionId) {
     setError('')
     try {
-      const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, { method: 'POST' })
+      const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      patchCachesAfterSessionEnd(ended)
       openLogForm(ended, { required: true })
       setActive(null)
       setSessions((prev) =>
@@ -110,7 +115,6 @@ export function CaseSessionsPanel({
           s.id === sessionId ? { ...s, ...ended, status: 'COMPLETED', has_daily_log: false } : s,
         ),
       )
-      void load({ silent: true })
       onScheduleChange?.()
     } catch (err) {
       setError(err.message || 'Could not end session')
@@ -240,7 +244,7 @@ export function CaseSessionsPanel({
             if (active?.id === sessionId) setActive(null)
             void load({ silent: true })
           }}
-          onCancel={closeLogForm}
+          onCancel={logRequired && !editingLog ? undefined : closeLogForm}
         />
       ) : (
         <TherapistSessionComposer

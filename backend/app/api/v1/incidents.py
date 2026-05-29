@@ -127,6 +127,7 @@ def download_incident_attachment(
 
 @router.get("")
 def list_incidents(
+    case_id: Optional[int] = None,
     product_module: Optional[str] = None,
     status: Optional[str] = None,
     priority: Optional[str] = None,
@@ -165,6 +166,8 @@ def list_incidents(
         stmt = stmt.where(Incident.priority == priority.upper())
     if primary_category:
         stmt = stmt.where(Incident.primary_category == primary_category.upper())
+    if case_id is not None:
+        stmt = stmt.where(Incident.case_id == case_id)
 
     incidents, total = paginate_query(db, stmt, page=page, page_size=page_size)
 

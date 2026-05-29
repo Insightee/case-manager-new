@@ -51,6 +51,9 @@ class CaseAssignment(Base):
     fixed_start_time: Mapped[Optional[time]] = mapped_column(Time)
     fixed_end_time: Mapped[Optional[time]] = mapped_column(Time)
     fixed_recurrence_group_id: Mapped[Optional[str]] = mapped_column(String(36))
+    therapist_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    parent_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    assignment_offer_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     case = relationship("Case", back_populates="assignments")

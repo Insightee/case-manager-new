@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     ticket_attachment_max_files: int = 3
     case_document_max_bytes: int = 5 * 1024 * 1024
     billing_ledger_drafts: bool = True
+    # When false (pilot default), assignment acceptance timestamps are informational only.
+    acceptance_gating_enabled: bool = False
 
     storage_provider: str = "local"
     storage_prefix: str = "insightcase"
@@ -77,6 +79,8 @@ class Settings(BaseSettings):
     admin_notification_emails: str = ""
     password_reset_expire_hours: int = 1
     password_reset_rate_limit_per_hour: int = 3
+    # IANA timezone for Google Calendar links in CM meeting invite emails (ctz=).
+    meeting_invite_calendar_timezone: str = "Asia/Kolkata"
 
     @field_validator("database_url", mode="before")
     @classmethod

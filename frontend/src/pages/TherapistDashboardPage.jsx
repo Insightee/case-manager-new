@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { apiFetch } from '../lib/apiClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTherapistFrequentActions } from '../hooks/useTherapistFrequentActions.js'
 import { useTherapistHome } from '../hooks/useTherapistHome.js'
 import { QueryState } from '../components/shared/QueryState.jsx'
-import { formatScheduleWhen } from '../lib/therapistSchedule.js'
+import { TherapistTodaySchedule } from '../components/therapist/TherapistTodaySchedule.jsx'
 import { THERAPIST_ACTIONS } from '../lib/therapistActions.js'
 
 export function TherapistDashboardPage() {
@@ -25,6 +27,9 @@ export function TherapistDashboardPage() {
   const needsLog = home?.needs_log_sessions || []
   const schedule = home?.schedule_preview || []
   const criticalCases = (home?.cases_board?.allCases || []).filter((c) => c.critical).slice(0, 5)
+  const pendingAssignments = home?.pending_assignment_acceptance || []
+  const [acceptBusy, setAcceptBusy] = useState(null)
+  const [acceptErr, setAcceptErr] = useState('')
 
   return (
     <>
@@ -65,6 +70,51 @@ export function TherapistDashboardPage() {
         error={error}
         onRetry={() => refetch()}
       >
+        {pendingAssignments.length > 0 ? (
+          <section className="card" style={{ marginBottom: 16, padding: 16, borderColor: '#c7d2fe' }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '1rem' }}>New case assignment</h3>
+            <p className="admin-muted" style={{ margin: '0 0 12px' }}>
+              You can start sessions and logs for this case now. Please review the care plan when you can — marking
+              reviewed is optional.
+            </p>
+            {acceptErr ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{acceptErr}</p> : null}
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {pendingAssignments.map((item) => (
+                <li key={item.assignment_id} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <span>
+                    <strong>{item.child_name}</strong> · {item.case_code}
+                    {!item.parent_accepted ? (
+                      <span style={{ marginLeft: 8, fontSize: '0.75rem', color: '#92400e' }}>
+                        Waiting for parent
+                      </span>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary admin-btn--sm"
+                    disabled={acceptBusy === item.assignment_id}
+                    onClick={async () => {
+                      setAcceptBusy(item.assignment_id)
+                      setAcceptErr('')
+                      try {
+                        await apiFetch(`/api/v1/assignments/${item.assignment_id}/accept`, {
+                          method: 'POST',
+                        })
+                        refetch()
+                      } catch (e) {
+                        setAcceptErr(e.message || 'Could not accept')
+                      } finally {
+                        setAcceptBusy(null)
+                      }
+                    }}
+                  >
+                    {acceptBusy === item.assignment_id ? 'Saving…' : 'Mark as reviewed'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {stats ? (
           <section className="therapist-dashboard-stats" aria-label="Work summary">
             <ul className="therapist-dashboard-stats__grid">
@@ -115,20 +165,12 @@ export function TherapistDashboardPage() {
         ) : null}
 
         {schedule.length > 0 ? (
-          <section className="therapist-home-panel" aria-labelledby="today-schedule-title">
-            <h3 id="today-schedule-title">Today’s schedule</h3>
-            <ul className="therapist-home-list">
-              {schedule.slice(0, 6).map((item) => (
-                <li key={item.key}>
-                  <span>
-                    <strong>{item.childName || item.caseCode}</strong>
-                    <span className="therapist-home-list__meta">
-                      {formatScheduleWhen(item)} · {item.subtitle}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
+          <section className="therapist-home-panel therapist-home-panel--schedule" aria-labelledby="today-schedule-title">
+            <div className="therapist-home-panel__head">
+              <h3 id="today-schedule-title">Today’s schedule</h3>
+              <p className="therapist-home-panel__hint">Tap a visit to open logs or the case</p>
+            </div>
+            <TherapistTodaySchedule items={schedule} limit={8} />
             <Link to="/therapist/logs" className="therapist-home-panel__link">
               Open session logs →
             </Link>

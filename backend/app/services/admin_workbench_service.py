@@ -535,7 +535,7 @@ def build_workbench_summary(db: Session, user: User) -> dict:
                     id=inc.id,
                     title=inc.title,
                     status=inc.status.value if hasattr(inc.status, "value") else inc.status,
-                    href=f"/admin/support?tab=incidents",
+                    href=f"/admin/support?tab=incidents&incident={inc.id}",
                 )
                 for inc, case, child in inc_rows
             ],

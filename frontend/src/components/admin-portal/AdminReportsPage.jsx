@@ -8,7 +8,15 @@ import {
   reportCategoryOptions,
   reportKindLabel,
 } from '../../lib/reportFilters.js'
-import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, ServiceFilterSelect } from './ui/index.js'
+import {
+  AdminCollapsibleFilters,
+  AdminMobilePillTabs,
+  AdminPageHeader,
+  AdminSearchInput,
+  AdminToolbar,
+  PortalTabBar,
+  ServiceFilterSelect,
+} from './ui/index.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminReportDetailDrawer } from './AdminReportDetailDrawer.jsx'
 import { AdminReportsTable } from './AdminReportsTable.jsx'
@@ -58,6 +66,81 @@ function viewTabLabel(tab) {
   return VIEW_TAB_OPTIONS.find((o) => o.value === tab)?.label || 'Review queue'
 }
 
+function parseDrawerId(searchParams) {
+  const raw = searchParams.get('reportId')
+  if (!raw || !/^\d+$/.test(raw)) return null
+  const id = Number(raw)
+  return id > 0 ? id : null
+}
+
+const KPI_FILTERS = [
+  {
+    id: 'queue',
+    label: 'In review queue',
+    valueKey: 'queue_total',
+    apply: { tab: 'queue', type: 'all', status: '', parentReview: '' },
+  },
+  {
+    id: 'monthly_review',
+    label: 'Monthly under review',
+    valueKey: 'monthly_under_review',
+    apply: { tab: 'queue', type: 'monthly', status: 'UNDER_REVIEW', parentReview: '' },
+  },
+  {
+    id: 'parent_changes',
+    label: 'Parent changes requested',
+    valueKey: 'parent_changes',
+    apply: { tab: 'all', type: 'monthly', status: 'PUBLISHED', parentReview: 'CHANGES_REQUESTED' },
+  },
+  {
+    id: 'obs_review',
+    label: 'Observation under review',
+    valueKey: 'obs_under_review',
+    apply: { tab: 'queue', type: 'observation', status: 'UNDER_REVIEW', parentReview: '' },
+  },
+  {
+    id: 'published',
+    label: 'Published (combined)',
+    valueKey: 'published',
+    apply: { tab: 'all', type: 'all', status: 'PUBLISHED', parentReview: '' },
+  },
+  {
+    id: 'iep',
+    label: 'Pending IEP',
+    valueKey: 'iep_pending',
+    apply: { tab: 'iep', type: 'all', status: '', parentReview: '' },
+  },
+]
+
+function kpiValue(summary, valueKey) {
+  if (!summary) return 0
+  switch (valueKey) {
+    case 'queue_total':
+      return summary.queue_total ?? 0
+    case 'monthly_under_review':
+      return summary.monthly?.under_review ?? 0
+    case 'parent_changes':
+      return summary.monthly?.parent_changes_requested ?? 0
+    case 'obs_under_review':
+      return summary.observation?.under_review ?? 0
+    case 'published':
+      return (summary.monthly?.published ?? 0) + (summary.observation?.published ?? 0)
+    case 'iep_pending':
+      return summary.iep_pending ?? 0
+    default:
+      return 0
+  }
+}
+
+function kpiFilterIsActive(searchParams, tab, apply) {
+  if (searchParams.get('tab') !== apply.tab) return false
+  const type = searchParams.get('type') || 'all'
+  if ((apply.type || 'all') !== type) return false
+  if ((searchParams.get('status') || '') !== (apply.status || '')) return false
+  if ((searchParams.get('parent_review') || '') !== (apply.parentReview || '')) return false
+  return true
+}
+
 export function AdminReportsPage() {
   const { canReviewReports } = useModuleWrite()
   const { can } = useAuth()
@@ -67,7 +150,7 @@ export function AdminReportsPage() {
   const typeFilter = searchParams.get('type') || searchParams.get('kind') || 'all'
   const showReportFilters = tab === 'queue' || tab === 'all'
   const drawerType = searchParams.get('type') === 'observation' ? 'observation' : searchParams.get('type') === 'monthly' ? 'monthly' : null
-  const drawerId = searchParams.get('reportId') ? Number(searchParams.get('reportId')) : null
+  const drawerId = parseDrawerId(searchParams)
 
   const [summary, setSummary] = useState(null)
   const [rows, setRows] = useState([])
@@ -101,11 +184,21 @@ export function AdminReportsPage() {
       module,
       month,
       category,
-      parentReview: '',
+      parentReview: searchParams.get('parent_review') || '',
       caseId: searchParams.get('case_id') || '',
     }),
     [search, status, module, month, category, searchParams],
   )
+
+  useEffect(() => {
+    const raw = searchParams.get('reportId')
+    if (raw && !parseDrawerId(searchParams)) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('reportId')
+      next.delete('type')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   const loadSummary = useCallback(async () => {
     try {
@@ -224,7 +317,27 @@ export function AdminReportsPage() {
   function setTab(nextTab) {
     const next = new URLSearchParams(searchParams)
     next.set('tab', nextTab)
+    next.delete('reportId')
     setSearchParams(next, { replace: true })
+  }
+
+  function applyKpiFilter(apply) {
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', apply.tab)
+    next.delete('reportId')
+    if (apply.type && apply.type !== 'all') next.set('type', apply.type)
+    else {
+      next.delete('type')
+      next.delete('kind')
+    }
+    if (apply.status) next.set('status', apply.status)
+    else next.delete('status')
+    if (apply.parentReview) next.set('parent_review', apply.parentReview)
+    else next.delete('parent_review')
+    setSearchParams(next, { replace: true })
+    setStatus(apply.status || '')
+    setCategory('')
+    setPage(1)
   }
 
   function setKindFilter(kind) {
@@ -456,73 +569,47 @@ export function AdminReportsPage() {
       </p>
 
       {summary ? (
-        <div className="admin-reports__kpis">
-          <div className="admin-reports__kpi">
-            <div className="admin-reports__kpi-value">{summary.queue_total}</div>
-            <div className="admin-reports__kpi-label">In review queue</div>
-          </div>
-          <div className="admin-reports__kpi">
-            <div className="admin-reports__kpi-value">{summary.monthly.under_review}</div>
-            <div className="admin-reports__kpi-label">Monthly under review</div>
-          </div>
-          <div className="admin-reports__kpi">
-            <div className="admin-reports__kpi-value">{summary.monthly.parent_changes_requested}</div>
-            <div className="admin-reports__kpi-label">Parent changes requested</div>
-          </div>
-          <div className="admin-reports__kpi">
-            <div className="admin-reports__kpi-value">{summary.observation.under_review}</div>
-            <div className="admin-reports__kpi-label">Observation under review</div>
-          </div>
-          <div className="admin-reports__kpi">
-            <div className="admin-reports__kpi-value">{summary.monthly.published + summary.observation.published}</div>
-            <div className="admin-reports__kpi-label">Published (combined)</div>
-          </div>
-          <div className="admin-reports__kpi">
-            <div className="admin-reports__kpi-value">{summary.iep_pending ?? 0}</div>
-            <div className="admin-reports__kpi-label">Pending IEP</div>
-          </div>
+        <div className="admin-reports__kpis" role="group" aria-label="Report summary filters">
+          {KPI_FILTERS.map((kpi) => (
+            <button
+              key={kpi.id}
+              type="button"
+              className={`admin-reports__kpi${kpiFilterIsActive(searchParams, tab, kpi.apply) ? ' is-active' : ''}`}
+              onClick={() => applyKpiFilter(kpi.apply)}
+              aria-pressed={kpiFilterIsActive(searchParams, tab, kpi.apply)}
+            >
+              <div className="admin-reports__kpi-value">{kpiValue(summary, kpi.valueKey)}</div>
+              <div className="admin-reports__kpi-label">{kpi.label}</div>
+            </button>
+          ))}
         </div>
       ) : null}
 
-      <div className="admin-reports__tabs admin-desktop-only" role="tablist" aria-label="Report views">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'queue'}
-          className={`admin-btn admin-btn--sm ${tab === 'queue' ? 'admin-btn--primary' : ''}`}
-          onClick={() => setTab('queue')}
-        >
-          Review queue
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'all'}
-          className={`admin-btn admin-btn--sm ${tab === 'all' ? 'admin-btn--primary' : ''}`}
-          onClick={() => setTab('all')}
-        >
-          All reports
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'missing'}
-          className={`admin-btn admin-btn--sm ${tab === 'missing' ? 'admin-btn--primary' : ''}`}
-          onClick={() => setTab('missing')}
-        >
-          Missing monthly
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'iep'}
-          className={`admin-btn admin-btn--sm ${tab === 'iep' ? 'admin-btn--primary' : ''}`}
-          onClick={() => setTab('iep')}
-        >
-          Pending IEP
-          {summary?.iep_pending != null ? ` (${summary.iep_pending})` : ''}
-        </button>
-      </div>
+      <AdminMobilePillTabs
+        className="admin-mobile-only"
+        ariaLabel="Report views"
+        activeId={tab}
+        onChange={setTab}
+        primaryIds={VIEW_TAB_OPTIONS.map((o) => o.value)}
+        overflowIds={[]}
+        tabs={VIEW_TAB_OPTIONS.map((o) => ({
+          id: o.value,
+          label: o.label,
+          badge: o.value === 'iep' && summary?.iep_pending != null ? String(summary.iep_pending) : undefined,
+        }))}
+      />
+
+      <PortalTabBar
+        className="admin-page__tabs-scroll admin-reports__tabs--desktop-only admin-desktop-only"
+        ariaLabel="Report views"
+        activeId={tab}
+        onChange={setTab}
+        tabs={VIEW_TAB_OPTIONS.map((o) => ({
+          id: o.value,
+          label: o.label,
+          badge: o.value === 'iep' && summary?.iep_pending != null ? String(summary.iep_pending) : undefined,
+        }))}
+      />
 
       {showReportFilters ? (
         <div className="admin-reports__filters admin-desktop-only" role="group" aria-label="Report filters">
@@ -652,7 +739,7 @@ export function AdminReportsPage() {
             </label>
           ) : null}
         </div>
-      <div className="admin-reports__toolbar">
+      <AdminToolbar className="admin-reports__toolbar admin-toolbar--mobile-compact admin-collapsible-filters__grid">
         <AdminSearchInput
           className="admin-desktop-only"
           value={search}
@@ -660,51 +747,66 @@ export function AdminReportsPage() {
           placeholder="Child, case, month, therapist…"
         />
         {tab === 'all' ? (
-          <select className="admin-select" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All statuses</option>
-            <option value="DRAFT">Draft</option>
-            <option value="UNDER_REVIEW">Under review</option>
-            <option value="PUBLISHED">Published</option>
-            <option value="REJECTED">Rejected</option>
-          </select>
+          <label className="admin-filter-field">
+            <span className="admin-filter-field__label">Status</span>
+            <select className="admin-select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Report status">
+              <option value="">All statuses</option>
+              <option value="DRAFT">Draft</option>
+              <option value="UNDER_REVIEW">Under review</option>
+              <option value="PUBLISHED">Published</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+          </label>
         ) : null}
-        <ServiceFilterSelect value={module} onChange={setModule} />
+        <label className="admin-filter-field">
+          <span className="admin-filter-field__label">Service</span>
+          <ServiceFilterSelect value={module} onChange={setModule} />
+        </label>
         {(typeFilter === 'all' || typeFilter === 'monthly') && tab === 'all' ? (
-          <input
-            className="admin-input"
-            placeholder="Month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            style={{ maxWidth: 120 }}
-          />
+          <label className="admin-filter-field">
+            <span className="admin-filter-field__label">Month</span>
+            <input
+              className="admin-input"
+              placeholder="Month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              aria-label="Report month"
+            />
+          </label>
         ) : null}
-        <select
-          className="admin-select"
-          value={pageSize}
-          onChange={(e) => {
-            setPageSize(Number(e.target.value))
-            setPage(1)
-          }}
-        >
-          <option value={25}>25 / page</option>
-          <option value={50}>50 / page</option>
-          <option value={100}>100 / page</option>
-        </select>
-        <button
-          type="button"
-          className="admin-btn admin-btn--ghost admin-btn--sm"
-          onClick={() => downloadExport(exportPath('xlsx'), 'reports-export.xlsx').catch((e) => setMessage(e.message))}
-        >
-          Export Excel
-        </button>
-        <button
-          type="button"
-          className="admin-btn admin-btn--ghost admin-btn--sm"
-          onClick={() => downloadExport(exportPath('pdf'), 'reports-export.pdf').catch((e) => setMessage(e.message))}
-        >
-          Export PDF
-        </button>
-      </div>
+        <label className="admin-filter-field">
+          <span className="admin-filter-field__label">Page size</span>
+          <select
+            className="admin-select"
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value))
+              setPage(1)
+            }}
+            aria-label="Results per page"
+          >
+            <option value={25}>25 / page</option>
+            <option value={50}>50 / page</option>
+            <option value={100}>100 / page</option>
+          </select>
+        </label>
+        <div className="admin-filter-grid__actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            onClick={() => downloadExport(exportPath('xlsx'), 'reports-export.xlsx').catch((e) => setMessage(e.message))}
+          >
+            Export Excel
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            onClick={() => downloadExport(exportPath('pdf'), 'reports-export.pdf').catch((e) => setMessage(e.message))}
+          >
+            Export PDF
+          </button>
+        </div>
+      </AdminToolbar>
       </AdminCollapsibleFilters>
 
       {message ? <p className="admin-alert" style={{ marginBottom: 12 }}>{message}</p> : null}
@@ -909,7 +1011,7 @@ export function AdminReportsPage() {
       </div>
       ) : null}
 
-      {drawerId ? (
+      {drawerId != null ? (
         <AdminReportDetailDrawer
           reportType={effectiveDrawerType}
           reportId={drawerId}

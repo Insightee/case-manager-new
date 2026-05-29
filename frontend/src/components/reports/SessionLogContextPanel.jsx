@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 
+const MAX_CSV_EXPORT_ERROR = 'Could not export session logs.'
+
 function approvalLabel(status) {
   if (status === 'APPROVED') return { text: 'Approved', className: 'bg-emerald-100 text-emerald-800' }
   if (status === 'PENDING') return { text: 'Pending review', className: 'bg-amber-100 text-amber-900' }
@@ -12,6 +14,7 @@ export function SessionLogContextPanel({
   caseId,
   month,
   collapsed: initialCollapsed = false,
+  exportVariant = 'therapist',
   onInsertIepGoals,
 }) {
   const [open, setOpen] = useState(!initialCollapsed)
@@ -19,6 +22,7 @@ export function SessionLogContextPanel({
   const [iepContext, setIepContext] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     if (!open || !reportId) return
@@ -62,21 +66,48 @@ export function SessionLogContextPanel({
 
   async function exportCsv() {
     if (!caseId) return
-    const p = new URLSearchParams({ case_id: String(caseId) })
-    if (month) p.set('month', month)
-    await apiDownload(`/api/v1/reports/therapist/session-logs/export?${p}`, 'session_logs.csv')
+    setExporting(true)
+    setError('')
+    try {
+      const p = new URLSearchParams({ case_id: String(caseId) })
+      if (month) p.set('month', month)
+      const path =
+        exportVariant === 'admin'
+          ? `/api/v1/admin/session-logs/export?${p}`
+          : `/api/v1/reports/therapist/session-logs/export?${p}`
+      await apiDownload(path, 'session_logs.csv')
+    } catch (err) {
+      setError(err.message || MAX_CSV_EXPORT_ERROR)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
     <aside className="rounded-xl border border-slate-200 bg-slate-50">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-slate-800"
-        onClick={() => setOpen((v) => !v)}
-      >
-        Session log reference
-        <span className="text-slate-400">{open ? '−' : '+'}</span>
-      </button>
+      <div className="flex items-center justify-between gap-2 px-4 py-3">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center justify-between text-left text-sm font-semibold text-slate-800"
+          onClick={() => setOpen((v) => !v)}
+        >
+          Session log reference
+          <span className="ml-2 shrink-0 text-slate-400">{open ? '−' : '+'}</span>
+        </button>
+        {caseId ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--secondary admin-btn--sm shrink-0"
+            disabled={exporting}
+            onClick={(e) => {
+              e.stopPropagation()
+              exportCsv()
+            }}
+          >
+            {exporting ? '…' : 'CSV'}
+          </button>
+        ) : null}
+      </div>
       {open ? (
         <div className="border-t border-slate-200 px-4 pb-4">
           <p className="mt-2 text-xs text-slate-500">
@@ -88,15 +119,6 @@ export function SessionLogContextPanel({
               {counts.total} log{counts.total === 1 ? '' : 's'} · {counts.approved} approved
               {counts.pending > 0 ? ` · ${counts.pending} pending review` : ''}
             </p>
-          ) : null}
-          {caseId ? (
-            <button
-              type="button"
-              className="mt-2 text-xs font-semibold text-indigo-600 hover:underline"
-              onClick={exportCsv}
-            >
-              Export CSV for this case
-            </button>
           ) : null}
           {loading ? <p className="mt-3 text-sm text-slate-500">Loading…</p> : null}
           {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}

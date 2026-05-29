@@ -60,12 +60,62 @@ export function defaultHourRows() {
 export const THERAPIST_STATUS_STYLES = {
   AVAILABLE: 'bg-emerald-100 text-emerald-900 border-emerald-200',
   BOOKED: 'bg-blue-100 text-blue-900 border-blue-200',
+  BOOKED_UNDER_REVIEW: 'bg-amber-50 text-amber-950 border-amber-300',
   BLOCKED: 'bg-slate-200 text-slate-600 border-slate-300',
   HOLIDAY: 'bg-amber-100 text-amber-900 border-amber-200',
   CANCELLED: 'bg-red-50 text-red-800 border-red-200 line-through',
   RESCHEDULED: 'bg-purple-50 text-purple-800 border-purple-200',
   SESSION: 'bg-violet-100 text-violet-900 border-violet-200',
   IN_PROGRESS: 'bg-amber-100 text-amber-900 border-amber-300',
+}
+
+export function isCaseUnderReview(caseStatus) {
+  return caseStatus === 'PENDING_ALLOTMENT'
+}
+
+/** Therapist/parent calendar cell label for a slot or session event. */
+export function calendarEventLabel(s, mode = 'therapist') {
+  const isParent = mode === 'parent'
+  if (isParent) {
+    return s.is_mine ? `My session · ${s.start_time}` : `Available · ${s.start_time}`
+  }
+  if (s.event_type === 'cm_meeting') {
+    return `CM · ${s.title || s.child_name || s.case_code || 'Meeting'}`
+  }
+  if (s.event_type === 'session') {
+    const underReview = isCaseUnderReview(s.case_status)
+    const who = s.child_name || s.case_code || 'Visit'
+    const prefix =
+      s.status === 'IN_PROGRESS' ? 'In progress · ' : underReview ? 'Under review · ' : 'Session · '
+    return `${prefix}${who}`
+  }
+  if (s.status === 'BOOKED') {
+    const who = s.child_name || s.case_code || 'Booked'
+    if (isCaseUnderReview(s.case_status)) {
+      return `Under review · ${who}`
+    }
+    if (s.approval_status === 'PENDING_THERAPIST') {
+      return `⏳ ${who}`
+    }
+    if (s.booking_source === 'PARENT') {
+      return `Parent · ${who}`
+    }
+    return who
+  }
+  return `${s.start_time}–${s.end_time}`
+}
+
+export function calendarEventStyle(s, mode = 'therapist') {
+  if (mode === 'parent') {
+    return PARENT_SLOT_STYLES[s.is_mine ? 'mine' : 'available']
+  }
+  if (s.event_type === 'session') {
+    return THERAPIST_STATUS_STYLES[s.status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'SESSION']
+  }
+  if (s.status === 'BOOKED' && isCaseUnderReview(s.case_status)) {
+    return THERAPIST_STATUS_STYLES.BOOKED_UNDER_REVIEW
+  }
+  return THERAPIST_STATUS_STYLES[s.status] || ''
 }
 
 function cmMeetingsAsGridEvents(meetings) {

@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     admin,
     admin_support,
+    assignment_acceptance,
     assignments,
     attachments,
     auth,
@@ -41,6 +42,7 @@ api_router.include_router(cm_meetings.router)
 api_router.include_router(cases.router)
 api_router.include_router(case_services.router)
 api_router.include_router(assignments.router)
+api_router.include_router(assignment_acceptance.router)
 api_router.include_router(sessions.router)
 api_router.include_router(daily_logs.router)
 api_router.include_router(reports.router)

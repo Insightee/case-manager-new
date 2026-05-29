@@ -1,6 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { defaultPriorityForSubcategory } from '../../lib/incidentCatalog.js'
+
+function formatFileSize(bytes) {
+  if (!bytes && bytes !== 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function fileKey(file) {
+  return `${file.name}-${file.size}-${file.lastModified}`
+}
+
+function isImageFile(file) {
+  return (file.type || '').startsWith('image/')
+}
 
 const EMPTY_FORM = {
   case_id: '',
@@ -33,6 +48,7 @@ export function IncidentReportForm({
   const [meta, setMeta] = useState(null)
   const [form, setForm] = useState(() => ({ ...EMPTY_FORM, incident_at: toLocalDatetimeInput() }))
   const [files, setFiles] = useState([])
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     apiFetch('/api/v1/incidents/meta')
@@ -51,13 +67,49 @@ export function IncidentReportForm({
     }
   }, [form.subcategory])
 
+  useEffect(() => {
+    if (!form.case_id) return
+    const match = cases.find((c) => String(c.id) === String(form.case_id))
+    if (!match) return
+    const derived = match.service_type || match.product_module || match.productModule
+    if (derived) {
+      setForm((f) => (f.service_type === derived ? f : { ...f, service_type: derived }))
+    }
+  }, [form.case_id, cases])
+
   function handleCategoryChange(cat) {
     setForm((f) => ({ ...f, primary_category: cat, subcategory: '' }))
+  }
+
+  function removeFile(target) {
+    setFiles((prev) => prev.filter((f) => fileKey(f) !== fileKey(target)))
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function addFiles(fileList) {
+    const incoming = Array.from(fileList || [])
+    if (!incoming.length) return
+    setFiles((prev) => {
+      const seen = new Set(prev.map(fileKey))
+      const merged = [...prev]
+      for (const f of incoming) {
+        const key = fileKey(f)
+        if (!seen.has(key)) {
+          seen.add(key)
+          merged.push(f)
+        }
+      }
+      return merged
+    })
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
     const incidentAt = form.incident_at ? new Date(form.incident_at).toISOString() : new Date().toISOString()
+    const selectedCase = cases.find((c) => String(c.id) === String(form.case_id))
+    const derivedServiceType =
+      selectedCase?.service_type || selectedCase?.product_module || selectedCase?.productModule || form.service_type
+    const serviceType = hideServiceType ? derivedServiceType : form.service_type || derivedServiceType
     const payload = {
       case_id: form.case_id ? Number(form.case_id) : undefined,
       primary_category: form.primary_category,
@@ -72,9 +124,7 @@ export function IncidentReportForm({
       files,
       attachment_note: form.attachment_note.trim() || undefined,
     }
-    if (!hideServiceType) {
-      payload.service_type = form.service_type
-    }
+    if (serviceType) payload.service_type = serviceType
     await onSubmit(payload)
   }
 
@@ -216,24 +266,64 @@ export function IncidentReportForm({
         </label>
       </div>
 
-      <div className="parent-support__field">
-        <span style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>Attach files</span>
-        <p style={{ margin: '0 0 8px', fontSize: '0.78rem', color: '#64748b' }}>
-          Images, PDF, documents, audio, or video (max 15 MB each)
+      <div className="parent-support__field incident-report-form__attachments">
+        <span className="incident-report-form__attachments-label">Attach files</span>
+        <p className="incident-report-form__attachments-hint">
+          Images, PDF, documents, audio, or video (max 15 MB each, up to 8 files)
         </p>
         <input
+          ref={fileInputRef}
           type="file"
           multiple
+          className="incident-report-form__file-input"
           accept="image/*,application/pdf,video/*,audio/*,.doc,.docx,.txt"
-          onChange={(e) => setFiles(Array.from(e.target.files || []))}
+          onChange={(e) => {
+            addFiles(e.target.files)
+            if (fileInputRef.current) fileInputRef.current.value = ''
+          }}
         />
+        <button
+          type="button"
+          className="incident-report-form__file-trigger"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={submitting}
+        >
+          Choose files
+        </button>
         {files.length > 0 ? (
-          <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: '0.8rem', color: '#475569' }}>
+          <ul className="incident-report-form__file-list" aria-live="polite">
             {files.map((f) => (
-              <li key={`${f.name}-${f.size}`}>{f.name}</li>
+              <li key={fileKey(f)} className="incident-report-form__file-item">
+                {isImageFile(f) ? (
+                  <img
+                    className="incident-report-form__file-thumb"
+                    src={URL.createObjectURL(f)}
+                    alt=""
+                    onLoad={(e) => URL.revokeObjectURL(e.target.src)}
+                  />
+                ) : (
+                  <span className="incident-report-form__file-icon" aria-hidden>
+                    📎
+                  </span>
+                )}
+                <div className="incident-report-form__file-meta">
+                  <span className="incident-report-form__file-name">{f.name}</span>
+                  <span className="incident-report-form__file-size">{formatFileSize(f.size)}</span>
+                </div>
+                <button
+                  type="button"
+                  className="incident-report-form__file-remove"
+                  onClick={() => removeFile(f)}
+                  aria-label={`Remove ${f.name}`}
+                >
+                  Remove
+                </button>
+              </li>
             ))}
           </ul>
-        ) : null}
+        ) : (
+          <p className="incident-report-form__file-empty">No files selected yet.</p>
+        )}
         <label className="parent-support__field" style={{ marginTop: 10 }}>
           Attachment note
           <input
@@ -245,7 +335,7 @@ export function IncidentReportForm({
         </label>
       </div>
 
-      {error ? <p style={{ color: '#b91c1c', fontSize: '0.8rem' }}>{error}</p> : null}
+      {error ? <p className="incident-report-form__error" role="alert">{error}</p> : null}
 
       <button
         type="submit"

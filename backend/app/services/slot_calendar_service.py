@@ -257,11 +257,13 @@ def _slot_to_dict(slot: TherapistSlot, case: Case | None = None) -> dict[str, An
     product_module = None
     service_type = None
     resolved_case = case or slot.case
+    case_status = None
     if resolved_case:
         case_code = resolved_case.case_code
         child_name = resolved_case.child.full_name if resolved_case.child else None
         product_module = getattr(resolved_case, "product_module", None)
         service_type = getattr(resolved_case, "service_type", None)
+        case_status = resolved_case.status.value if resolved_case.status else None
     return {
         "id": slot.id,
         "therapist_user_id": slot.therapist_user_id,
@@ -272,6 +274,7 @@ def _slot_to_dict(slot: TherapistSlot, case: Case | None = None) -> dict[str, An
         "notes": slot.notes,
         "case_id": slot.case_id,
         "case_code": case_code,
+        "case_status": case_status,
         "child_name": child_name,
         "product_module": product_module,
         "service_type": service_type,
@@ -299,6 +302,7 @@ def _session_to_calendar_dict(session: TherapySession) -> dict[str, Any]:
         if session.status == SessionStatus.IN_PROGRESS
         else "SESSION"
     )
+    case_status = case.status.value if case and case.status else None
     return {
         "event_type": "session",
         "id": f"session-{session.id}",
@@ -310,6 +314,7 @@ def _session_to_calendar_dict(session: TherapySession) -> dict[str, Any]:
         "status": status,
         "case_id": session.case_id,
         "case_code": case_code,
+        "case_status": case_status,
         "child_name": child_name,
         "mode": session.mode.value if session.mode else None,
     }
@@ -438,11 +443,14 @@ def list_bookable_cases_for_therapist(db: Session, therapist_user_id: int) -> li
     for a in assignments:
         if a.case:
             svc = case_service_address_read(a.case)
+            case_status = a.case.status.value if a.case.status else None
             entry = {
                 "case_id": a.case_id,
                 "case_service_id": a.case_service_id,
                 "case_code": a.case.case_code,
                 "child_name": a.case.child.full_name if a.case.child else None,
+                "case_status": case_status,
+                "pending_allotment": case_status == "PENDING_ALLOTMENT",
                 "product_module": a.case.product_module,
                 "is_homecare": is_homecare_case(a.case),
             }

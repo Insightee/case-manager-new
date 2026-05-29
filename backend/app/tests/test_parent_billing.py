@@ -67,6 +67,23 @@ def test_parent_invoice_detail_and_dispute():
         sess = client.get(f"/api/v1/parent/billing/lines/{line_id}/session", headers=headers)
         assert sess.status_code == 200
         assert "session_notes" not in sess.json()
+        lines = detail.json()["lines"]
+        payload = {
+            "reason_code": "incorrect_amount",
+            "message": "Test dispute for automated billing check.",
+            "line_ids": [l["id"] for l in lines[:2]] if len(lines) > 1 else [line_id],
+        }
+        if len(lines) == 1:
+            payload["line_ids"] = [line_id]
+        dispute = client.post(
+            f"/api/v1/parent/billing/invoices/{inv_id}/disputes",
+            headers=headers,
+            json=payload,
+        )
+        assert dispute.status_code == 200, dispute.text
+        body = dispute.json()
+        assert body.get("count", 1) >= 1
+        assert body.get("ids")
 
 
 def test_parent_invoice_pdf_download():

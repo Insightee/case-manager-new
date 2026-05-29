@@ -151,14 +151,22 @@ export async function apiFetch(path, options = {}) {
   if (!res.ok) {
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
     recordApiMetric(path, elapsed, false)
-    if (res.status === 502 || res.status === 503) {
-      throw new Error(
-        'Cannot reach the API server. Start the backend from the backend folder: uvicorn app.main:app --reload --port 8000',
-      )
-    }
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
     const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join(', ') : res.statusText
+    if (res.status === 502 || res.status === 503) {
+      if (message && message !== res.statusText && message !== 'Bad Gateway' && message !== 'Service Unavailable') {
+        throw new Error(message)
+      }
+      const localDev =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      throw new Error(
+        localDev
+          ? 'API is not responding. In a terminal run: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 — then refresh this page.'
+          : 'API is not responding. Check that the backend service is running and VITE_API_URL points to it.',
+      )
+    }
     throw new Error(message || 'Request failed')
   }
 

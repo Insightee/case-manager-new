@@ -12,6 +12,7 @@ const SECONDARY_TABS = [
   { id: 'activity', label: 'Timeline' },
   { id: 'logs', label: 'Sessions' },
   { id: 'reports', label: 'Reports' },
+  { id: 'incidents', label: 'Incidents' },
   { id: 'documents', label: 'Documents' },
   { id: 'iep', label: 'IEP' },
   { id: 'billing', label: 'Billing' },

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { createStaffTicket } from '../../lib/ticketFormUtils.js'
@@ -18,6 +19,9 @@ import {
 } from './ui/index.js'
 
 export function AdminTicketsPage({ embedded = false }) {
+  const [searchParams] = useSearchParams()
+  const deepLinkTicketId = searchParams.get('ticket')
+  const handledDeepLink = useRef(null)
   const [cases, setCases] = useState([])
   const [tickets, setTickets] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -71,7 +75,7 @@ export function AdminTicketsPage({ embedded = false }) {
 
   const openCount = tickets.filter((t) => t.status === 'OPEN').length
 
-  async function toggleExpand(t) {
+  async function openTicket(t) {
     if (expandedId === t.id) {
       setExpandedId(null)
       setDetail(null)
@@ -87,6 +91,18 @@ export function AdminTicketsPage({ embedded = false }) {
       setDetailLoading(false)
     }
   }
+
+  const toggleExpand = openTicket
+
+  useEffect(() => {
+    if (!deepLinkTicketId || loading) return
+    const id = Number(deepLinkTicketId)
+    if (!Number.isFinite(id) || handledDeepLink.current === id) return
+    const ticket = tickets.find((t) => t.id === id)
+    if (!ticket) return
+    handledDeepLink.current = id
+    openTicket(ticket)
+  }, [deepLinkTicketId, loading, tickets])
 
   async function onDetailUpdated(updated) {
     setDetail(updated)

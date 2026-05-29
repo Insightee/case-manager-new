@@ -43,11 +43,17 @@ def _layout(*, title: str, body_html: str, locale: str = "en") -> str:
 </html>"""
 
 
-def _button(href: str, label: str) -> str:
+def _button(href: str, label: str, *, variant: str = "primary") -> str:
     safe_href = escape(href, quote=True)
+    if variant == "calendar":
+        bg, color = "#1a73e8", "#ffffff"
+        margin = "margin:12px 0 0 0;"
+    else:
+        bg, color = "#2563eb", "#ffffff"
+        margin = "margin:24px 0;"
     return (
-        f'<p style="margin:24px 0;">'
-        f'<a href="{safe_href}" style="display:inline-block;background:#2563eb;color:#ffffff;'
+        f'<p style="{margin}">'
+        f'<a href="{safe_href}" style="display:inline-block;background:{bg};color:{color};'
         f'text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600;">'
         f"{escape(label)}</a></p>"
     )
@@ -62,6 +68,7 @@ def render_template(template_key: str, payload: dict[str, Any], *, locale: str =
         "report_uploaded": _report_uploaded,
         "report_published": _report_published,
         "payment_reminder": _payment_reminder,
+        "cm_meeting_invite": _cm_meeting_invite,
     }
     fn = renderers.get(template_key)
     if not fn:
@@ -199,6 +206,87 @@ def _report_published(payload: dict[str, Any], *, locale: str = "en") -> tuple[s
         f"<p>The <strong>{escape(str(report_label))}</strong> for "
         f"<strong>{escape(str(child_name))}</strong> is now available.</p>"
         f"{_button(portal_url, 'View report')}"
+    )
+    html = _layout(title=subject, body_html=body, locale=locale)
+    return subject, text, html
+
+
+def _cm_meeting_invite(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    full_name = payload.get("full_name", "there")
+    meeting_title = payload.get("meeting_title", "Case manager meeting")
+    when = payload.get("when", "")
+    duration_minutes = int(payload.get("duration_minutes", 30))
+    child_name = payload.get("child_name")
+    case_code = payload.get("case_code")
+    organizer_name = payload.get("organizer_name", "Insighte")
+    meeting_url = (payload.get("meeting_url") or "").strip()
+    portal_url = (payload.get("portal_url") or "").strip()
+    google_calendar_url = (payload.get("google_calendar_url") or "").strip()
+    is_update = bool(payload.get("is_update"))
+
+    case_line = ""
+    if child_name or case_code:
+        parts = [p for p in [child_name, f"({case_code})" if case_code else None] if p]
+        case_line = " · ".join(parts)
+
+    subject_prefix = "Updated: " if is_update else ""
+    subject = f"{subject_prefix}Meeting invitation — {meeting_title}"
+
+    when_block = f"When: {when}\nDuration: {duration_minutes} minutes\n" if when else ""
+    case_block = f"Case: {case_line}\n" if case_line else ""
+    link_block = f"Join meeting:\n{meeting_url}\n\n" if meeting_url else ""
+    calendar_block = (
+        f"Add to Google Calendar:\n{google_calendar_url}\n\n" if google_calendar_url else ""
+    )
+    portal_block = f"View in Insighte:\n{portal_url}\n\n" if portal_url else ""
+
+    text = (
+        f"Hi {full_name},\n\n"
+        f"{'This meeting was updated. ' if is_update else ''}"
+        f"{organizer_name} invited you to a case manager meeting.\n\n"
+        f"Meeting: {meeting_title}\n"
+        f"{case_block}"
+        f"{when_block}"
+        f"{link_block}"
+        f"{calendar_block}"
+        f"{portal_block}"
+        "You will also see this meeting in your Insighte notifications.\n"
+    )
+
+    case_html = (
+        f"<p><strong>Case:</strong> {escape(case_line)}</p>" if case_line else ""
+    )
+    when_html = (
+        f"<p><strong>When:</strong> {escape(str(when))}<br/>"
+        f"<strong>Duration:</strong> {duration_minutes} minutes</p>"
+        if when
+        else ""
+    )
+    update_html = (
+        '<p style="color:#b45309;font-weight:600;">This meeting was updated.</p>'
+        if is_update
+        else ""
+    )
+    link_html = _button(meeting_url, "Join meeting") if meeting_url else ""
+    calendar_html = (
+        _button(google_calendar_url, "Add to Google Calendar", variant="calendar")
+        if google_calendar_url
+        else ""
+    )
+    portal_html = (
+        f'<p style="margin-top:16px;"><a href="{escape(portal_url, quote=True)}" '
+        f'style="color:#2563eb;">Open meeting in Insighte</a></p>'
+        if portal_url
+        else ""
+    )
+    body = (
+        f"<p>Hi {escape(str(full_name))},</p>"
+        f"{update_html}"
+        f"<p><strong>{escape(str(organizer_name))}</strong> invited you to "
+        f"<strong>{escape(str(meeting_title))}</strong>.</p>"
+        f"{case_html}{when_html}"
+        f"{link_html}{calendar_html}{portal_html}"
+        '<p style="color:#6b7280;font-size:14px;">You will also see this in your Insighte notifications.</p>'
     )
     html = _layout(title=subject, body_html=body, locale=locale)
     return subject, text, html

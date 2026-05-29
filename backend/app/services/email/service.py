@@ -278,6 +278,46 @@ def therapist_staff_invite_email(
     )
 
 
+def cm_meeting_invite_email(
+    *,
+    to: str,
+    full_name: str,
+    meeting_title: str,
+    when: str,
+    duration_minutes: int,
+    organizer_name: str,
+    meeting_url: str | None = None,
+    portal_url: str | None = None,
+    google_calendar_url: str | None = None,
+    calendar_details: str | None = None,
+    child_name: str | None = None,
+    case_code: str | None = None,
+    is_update: bool = False,
+) -> None:
+    payload = {
+        "full_name": full_name,
+        "meeting_title": meeting_title,
+        "when": when,
+        "duration_minutes": duration_minutes,
+        "organizer_name": organizer_name,
+        "meeting_url": meeting_url or "",
+        "portal_url": portal_url or "",
+        "google_calendar_url": google_calendar_url or "",
+        "calendar_details": calendar_details or "",
+        "child_name": child_name,
+        "case_code": case_code,
+        "is_update": is_update,
+    }
+    subject, body_text, body_html = render_template("cm_meeting_invite", payload)
+    send_email(
+        to=to,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        event=EmailEvent.CM_MEETING_INVITE,
+    )
+
+
 def invite_portal_email(
     *,
     to: str,

@@ -125,6 +125,7 @@ def _ticket_rows(
             {
                 "record_type": "ticket",
                 "id": t.id,
+                "case_id": t.case_id,
                 "code": f"TCK-{t.id}",
                 "subject": t.subject,
                 "status": t.status.value,
@@ -195,6 +196,7 @@ def _incident_rows(
             {
                 "record_type": "incident",
                 "id": inc.id,
+                "case_id": inc.case_id,
                 "code": inc.ticket_code or f"INC-{inc.id}",
                 "subject": inc.title,
                 "status": st,

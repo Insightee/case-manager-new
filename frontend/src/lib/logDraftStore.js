@@ -66,6 +66,20 @@ export async function listPendingDrafts() {
   })
 }
 
+/** Session ids with any local draft (saved or pending sync). */
+export async function listDraftSessionIds() {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly')
+    const req = tx.objectStore(STORE).getAll()
+    req.onsuccess = () => {
+      const all = req.result || []
+      resolve(all.map((d) => Number(d.sessionId)).filter((id) => Number.isFinite(id)))
+    }
+    req.onerror = () => reject(req.error)
+  })
+}
+
 export async function markDraftSynced(sessionId) {
   const db = await openDb()
   return new Promise((resolve, reject) => {

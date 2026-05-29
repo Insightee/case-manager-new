@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { getScheduleCache, isScheduleCacheFresh, setScheduleCache } from '../../lib/scheduleCache.js'
+import {
+  clearScheduleCache,
+  getScheduleCache,
+  isScheduleCacheFresh,
+  setScheduleCache,
+} from '../../lib/scheduleCache.js'
 import { WeekCalendarGrid } from './WeekCalendarGrid.jsx'
 import { DayCalendarGrid } from './DayCalendarGrid.jsx'
 import { MonthCalendarGrid } from './MonthCalendarGrid.jsx'
@@ -80,11 +85,14 @@ export function TherapistCalendar({
     }
     const cacheParams = { apiPrefix, therapistId, caseId, fromDate, toDate }
     const cached = getScheduleCache(cacheParams)
-    if (cached?.calendar) {
+    if (refreshKey) {
+      clearScheduleCache()
+    }
+    if (cached?.calendar && !refreshKey) {
       setCalendar(cached.calendar)
       setLoading(false)
       onCalendarLoad?.(cached.calendar)
-      if (isScheduleCacheFresh(cached) && !refreshKey) {
+      if (isScheduleCacheFresh(cached)) {
         return
       }
     } else {
@@ -140,8 +148,12 @@ export function TherapistCalendar({
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-full border border-[#E2E8F0] bg-slate-50 p-1">
+      <div className="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div
+          className="inline-flex max-w-full overflow-x-auto rounded-full border border-[#E2E8F0] bg-slate-50 p-1"
+          role="tablist"
+          aria-label="Calendar view"
+        >
           {[
             { id: 'day', label: 'Day' },
             { id: 'week', label: 'Week' },
@@ -150,8 +162,10 @@ export function TherapistCalendar({
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={view === t.id}
               onClick={() => switchView(t.id)}
-              className={`rounded-full px-4 py-1.5 text-xs font-semibold sm:text-sm ${
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold sm:px-4 sm:text-sm ${
                 view === t.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
               }`}
             >

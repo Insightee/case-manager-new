@@ -1,42 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { InvoiceBreakdownView } from './InvoiceBreakdownView.jsx'
-import { formatInr } from './invoiceUtils.js'
-
-function applyLocalExcludes(preview, excludeIds) {
-  if (!preview) return preview
-  const exclude = new Set(excludeIds)
-  const next = structuredClone(preview)
-  let subtotal = 0
-  let totalSessions = 0
-  for (const cg of next.cases || []) {
-    let caseTotal = 0
-    let included = 0
-    let additional = 0
-    for (const line of cg.session_lines || []) {
-      if (line.session_id && exclude.has(line.session_id)) {
-        line.included = false
-      }
-      if (line.included !== false) {
-        caseTotal += line.amount_inr || 0
-        totalSessions += 1
-        if (line.line_type === 'ADDITIONAL') additional += 1
-        else if (line.line_type === 'INCLUDED') included += 1
-      }
-    }
-    cg.therapist_share_inr = Math.round(caseTotal * 100) / 100
-    cg.included_sessions = included
-    cg.additional_sessions = additional
-    if (cg.billing?.billing_type === 'PER_SESSION' || cg.billing_snapshot?.billing_type === 'PER_SESSION') {
-      cg.display_included_sessions = cg.session_lines?.filter((l) => l.included !== false).length ?? 0
-    }
-    subtotal += cg.therapist_share_inr
-  }
-  next.subtotal_inr = Math.round(subtotal * 100) / 100
-  next.total_sessions = totalSessions
-  next.net_amount_inr = Math.max(next.subtotal_inr - (next.leave_deduction_inr || 0), 0)
-  return next
-}
+import { applyLocalExcludes, formatInr } from './invoiceUtils.js'
 
 export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onClose, onSubmitted }) {
   const [serverPreview, setServerPreview] = useState(initialPreview)

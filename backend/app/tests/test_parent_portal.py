@@ -81,6 +81,42 @@ def test_parent_profile_get_and_update():
     assert patch.json()["phone"] == "9876543210"
 
 
+def test_parent_profile_home_and_school_addresses_are_separate():
+    headers = _login("parent@demo.com")
+    r = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={
+            "home_address_line1": "10 Home Street",
+            "home_city": "Bangalore",
+            "home_pincode": "560001",
+            "school_address_line1": "42 School Road",
+            "school_city": "Bangalore",
+            "school_pincode": "560034",
+            "address_type": "school",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["home_address"]["address_line1"] == "10 Home Street"
+    assert body["school_address"]["address_line1"] == "42 School Road"
+    assert body["address_type"] == "school"
+
+    r2 = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={
+            "school_address_line1": "99 Updated School Campus",
+            "school_city": "Bangalore",
+            "school_pincode": "560034",
+        },
+    )
+    assert r2.status_code == 200
+    body2 = r2.json()
+    assert body2["school_address"]["address_line1"] == "99 Updated School Campus"
+    assert body2["home_address"]["address_line1"] == "10 Home Street"
+
+
 def test_parent_reports_hub():
     headers = _login("parent@demo.com")
     hub = client.get("/api/v1/parent/reports/hub", headers=headers)
@@ -129,6 +165,23 @@ def test_parent_monthly_approve():
     r = client.post(f"/api/v1/parent/reports/monthly/{rid}/approve", headers=parent_h)
     assert r.status_code == 200
     assert r.json()["parentReviewStatus"] == "APPROVED"
+
+
+def test_parent_monthly_detail_and_download():
+    parent_h = _login("parent@demo.com")
+    hub = client.get("/api/v1/parent/reports/hub", headers=parent_h).json()
+    if not hub.get("monthly"):
+        return
+    rid = hub["monthly"][0]["id"]
+    detail = client.get(f"/api/v1/parent/reports/monthly/{rid}", headers=parent_h)
+    assert detail.status_code == 200
+    data = detail.json()
+    assert data.get("kind") == "monthly"
+    assert data.get("summary") or data.get("bodyHtml")
+    assert data.get("downloadPath", "").startswith("/api/v1/parent/reports/monthly/")
+    pdf = client.get(data["downloadPath"], headers=parent_h)
+    assert pdf.status_code == 200
+    assert pdf.headers.get("content-type", "").startswith("application/pdf")
 
 
 def test_parent_iep_comment_create():

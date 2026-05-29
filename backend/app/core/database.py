@@ -99,12 +99,37 @@ def ensure_sqlite_schema_patches() -> None:
         if "external_employee_id" not in user_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN external_employee_id VARCHAR(64)"))
+        for col, ddl in (
+            ("school_address_line1", "VARCHAR(255)"),
+            ("school_address_line2", "VARCHAR(255)"),
+            ("school_city", "VARCHAR(128)"),
+            ("school_state", "VARCHAR(128)"),
+            ("school_pincode", "VARCHAR(16)"),
+            ("school_landmark", "VARCHAR(255)"),
+            ("school_latitude", "FLOAT"),
+            ("school_longitude", "FLOAT"),
+            ("preferred_visit_address_type", "VARCHAR(16) DEFAULT 'home'"),
+        ):
+            if col not in user_cols:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
 
     if insp.has_table("children"):
         child_cols = {c["name"] for c in insp.get_columns("children")}
         if "external_client_id" not in child_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE children ADD COLUMN external_client_id VARCHAR(64)"))
+
+    if insp.has_table("case_assignments"):
+        asg_cols = {c["name"] for c in insp.get_columns("case_assignments")}
+        with engine.begin() as conn:
+            for col in (
+                "therapist_accepted_at",
+                "parent_accepted_at",
+                "assignment_offer_sent_at",
+            ):
+                if col not in asg_cols:
+                    conn.execute(text(f"ALTER TABLE case_assignments ADD COLUMN {col} DATETIME"))
 
     if insp.has_table("cases"):
         case_cols_ext = {c["name"] for c in insp.get_columns("cases")}

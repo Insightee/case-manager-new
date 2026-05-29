@@ -1,4 +1,4 @@
-import { listPendingDrafts } from './logDraftStore.js'
+import { listDraftSessionIds } from './logDraftStore.js'
 import { queryClient, queryKeys } from './queryClient.js'
 
 export function therapistDailyLogsKey(userId) {
@@ -100,6 +100,6 @@ export function patchCachesAfterLogSave({ userId, sessionId, savedLog, isEdit = 
 }
 
 export async function refreshTherapistLogDraftIds() {
-  const pending = await listPendingDrafts()
-  return new Set(pending.map((d) => d.sessionId))
+  const ids = await listDraftSessionIds()
+  return new Set(ids)
 }

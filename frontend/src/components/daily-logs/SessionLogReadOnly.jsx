@@ -1,7 +1,7 @@
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
 
-const FIELDS = [
+export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'attendance_status', label: 'Attendance' },
   { key: 'activities_done', label: 'What you did today' },
   { key: 'goals_addressed', label: 'Goals worked on' },
@@ -12,45 +12,67 @@ const FIELDS = [
   { key: 'late_reason', label: 'Late reason' },
 ]
 
-export function SessionLogReadOnly({ log, session, childName, caseCode, onClose }) {
+export function SessionLogReadOnly({
+  log,
+  session,
+  childName,
+  caseCode,
+  onClose,
+  variant = 'therapist',
+  hideHeader = false,
+  className = '',
+}) {
+  const isAdmin = variant === 'admin'
   const displayName = childName || log?.child_name || caseCode || log?.case_code || 'Client'
   const timeRange = formatSessionTimeRange(session || log)
+  const rootClass = [isAdmin ? 'admin-session-log-detail' : 'ic-session-log-readonly', className]
+    .filter(Boolean)
+    .join(' ')
+  const dlClass = isAdmin ? 'admin-session-log-detail__dl' : 'ic-session-log-readonly__dl'
 
   return (
-    <section className="ic-session-log-readonly" aria-label="Session log details">
-      <div className="ic-session-log-readonly__head">
-        <div>
-          <h3>{displayName}</h3>
-          {log?.scheduled_date ? (
-            <p className="ic-session-log-readonly__meta">
-              {log.scheduled_date}
-              {timeRange ? ` · ${timeRange}` : ''}
-            </p>
+    <section className={rootClass} aria-label="Session log details">
+      {!hideHeader ? (
+        <div className={isAdmin ? 'admin-session-log-detail__head' : 'ic-session-log-readonly__head'}>
+          <div>
+            <h3>{displayName}</h3>
+            {log?.scheduled_date ? (
+              <p className={isAdmin ? 'admin-session-log-detail__meta' : 'ic-session-log-readonly__meta'}>
+                {log.scheduled_date}
+                {timeRange ? ` · ${timeRange}` : ''}
+              </p>
+            ) : null}
+            <SessionLogStatusBadge
+              approvalStatus={log?.approval_status}
+              attendanceStatus={log?.attendance_status}
+            />
+          </div>
+          {onClose ? (
+            <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose}>
+              Close
+            </button>
           ) : null}
-          <SessionLogStatusBadge
-            approvalStatus={log?.approval_status}
-            attendanceStatus={log?.attendance_status}
-          />
         </div>
-        {onClose ? (
-          <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose}>
-            Close
-          </button>
-        ) : null}
-      </div>
-      {log?.approval_status === 'APPROVED' ? (
+      ) : null}
+      {!isAdmin && log?.approval_status === 'APPROVED' ? (
         <p className="ic-session-log-readonly__notice" role="status">
           Approved logs cannot be edited. Contact your case manager if something needs to change.
         </p>
       ) : null}
-      {log?.approval_status === 'REJECTED' ? (
+      {!isAdmin && log?.approval_status === 'REJECTED' ? (
         <p className="ic-session-log-readonly__notice ic-session-log-readonly__notice--warn" role="status">
           This log was rejected.
           {log.review_note ? ` Note: ${log.review_note}` : ' Contact your case manager to discuss next steps.'}
         </p>
       ) : null}
-      <dl className="ic-session-log-readonly__dl">
-        {FIELDS.map(({ key, label }) => {
+      {isAdmin && log?.approval_status === 'REJECTED' ? (
+        <p className="admin-session-log-detail__notice admin-session-log-detail__notice--warn" role="status">
+          Rejected
+          {log.review_note ? `: ${log.review_note}` : '.'}
+        </p>
+      ) : null}
+      <dl className={dlClass}>
+        {SESSION_LOG_READONLY_FIELDS.map(({ key, label }) => {
           const val = log?.[key]
           if (!val) return null
           return (

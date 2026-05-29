@@ -1401,6 +1401,7 @@ def admin_list_session_logs(
 
 @router.get("/session-logs/export")
 def export_session_logs(
+    case_id: Optional[int] = None,
     therapist_user_id: Optional[int] = None,
     month: Optional[str] = None,
     product_module: Optional[str] = None,
@@ -1411,6 +1412,8 @@ def export_session_logs(
     scoped = []
     for log in logs:
         if not log.session:
+            continue
+        if case_id is not None and log.session.case_id != case_id:
             continue
         case = case_service.get_case(db, log.session.case_id)
         if case and case_scope_check(db, user, case):
@@ -2819,6 +2822,55 @@ def admin_allot_case(
     )
     db.commit()
     return result
+
+
+@router.post("/cases/{case_id}/activate-allotment")
+def admin_activate_allotment(
+    case_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("case.create")),
+    db: Session = Depends(get_db),
+):
+    from app.services import allotment_service
+
+    case = db.get(Case, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_write_access(user, case, db)
+    try:
+        result = allotment_service.activate_allotment(db, user, case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="activate_allotment",
+        entity_type="case",
+        entity_id=case_id,
+        **meta,
+    )
+    db.commit()
+    return result
+
+
+@router.get("/cases/{case_id}/allotment-preview")
+def admin_allotment_preview(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import allotment_service, case_service
+
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Case not found")
+    try:
+        return allotment_service.build_allotment_preview(db, case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 def _reports_reader(

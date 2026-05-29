@@ -144,6 +144,33 @@ def parent_home(user: User = Depends(get_current_user), db: Session = Depends(ge
     return parent_home_service.build_parent_home(db, user)
 
 
+@router.post("/assignments/{assignment_id}/accept", response_model=dict)
+def parent_accept_assignment(
+    assignment_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import assignment_acceptance_service as accept_svc
+
+    _require_parent(user)
+    try:
+        assignment = accept_svc.accept_assignment_as_parent(db, assignment_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="accept_assignment",
+        entity_type="case_assignment",
+        entity_id=assignment.id,
+        **meta,
+    )
+    db.commit()
+    return {"status": "accepted", "assignment_id": assignment.id}
+
+
 @router.get("/cases")
 def parent_cases(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_parent(user)
@@ -186,8 +213,14 @@ def _parent_session_log_read(log: DailyLog, case: Case | None, therapist: User |
 
 @router.get("/cases/{case_id}")
 def parent_case_detail(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.services import assignment_acceptance_service as accept_svc
+
     _require_parent(user)
     case = _parent_case_or_404(db, user, case_id)
+    try:
+        accept_svc.assert_parent_session_access(db, user, case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     if not case.child:
         db.refresh(case, ["child"])
     return parent_service.parent_case_payload(db, case)
@@ -523,6 +556,24 @@ def parent_monthly_report_detail(
         raise HTTPException(status_code=404, detail="Report not found")
 
 
+@router.get("/reports/monthly/{report_id}/download")
+def parent_monthly_report_download(
+    report_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    from fastapi.responses import Response
+
+    _require_parent(user)
+    try:
+        pdf, filename = parent_reports_service.monthly_report_pdf_bytes(db, user, report_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/reports/monthly/{report_id}/comments")
 def parent_monthly_report_comments(
     report_id: int,
@@ -646,6 +697,26 @@ def parent_iep_comment(
     log_audit(db, actor_user_id=user.id, action="iep_comment", entity_type="iep", entity_id=attachment_id, **meta)
     db.commit()
     return result
+
+
+@router.get("/reports/iep/{attachment_id}/download")
+def parent_iep_report_download(
+    attachment_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    from fastapi.responses import Response
+
+    _require_parent(user)
+    try:
+        data, filename = parent_reports_service.iep_report_pdf_bytes(db, user, attachment_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="IEP document not found")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="IEP file not found")
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/reports/iep/{attachment_id}/acknowledge")
@@ -1280,7 +1351,8 @@ def parent_create_incident(
 
     if payload.case_id is None:
         raise HTTPException(status_code=400, detail="Please select a child case")
-    _parent_case_or_404(db, user, payload.case_id)
+    case = _parent_case_or_404(db, user, payload.case_id)
+    service_type = payload.service_type or case.product_module
 
     try:
         incident = inc_svc.create_incident(
@@ -1292,7 +1364,7 @@ def parent_create_incident(
             subcategory=payload.subcategory,
             what_happened=payload.what_happened,
             priority=payload.priority,
-            service_type=payload.service_type,
+            service_type=service_type,
             incident_at=payload.incident_at,
             location=payload.location,
             immediate_action=payload.immediate_action,
@@ -1328,9 +1400,10 @@ def parent_create_incident(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="incident", entity_id=incident.id, **meta)
     db.commit()
-    db.refresh(incident)
-    case = case_service.get_case(db, incident.case_id) if incident.case_id else None
-    detail = inc_svc.incident_to_detail_dict(db, incident, case)
+    incident = inc_svc.get_incident_detail(db, incident.id)
+    if not incident:
+        raise HTTPException(status_code=500, detail="Incident was created but could not be loaded")
+    detail = inc_svc.incident_to_detail_dict(db, incident, case, user)
     detail["confirmation"] = f"Incident {incident.ticket_code} submitted — {assignee_name} will review."
     return detail
 

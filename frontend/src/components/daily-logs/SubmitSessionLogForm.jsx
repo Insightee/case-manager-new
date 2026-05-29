@@ -8,6 +8,7 @@ import {
   todayIsoIST,
   validateSessionLogForm,
 } from '../../lib/sessionLogUtils.js'
+import { SessionBrief } from './SessionBrief.jsx'
 
 const ATTENDANCE = [
   { value: 'PRESENT', label: 'Present' },
@@ -123,6 +124,13 @@ export function SubmitSessionLogForm({
     }
   }, [form, session?.id, isEdit])
 
+  const isLateSession = useMemo(() => {
+    if (!session?.scheduled_date) return false
+    return session.scheduled_date < todayIsoIST()
+  }, [session])
+
+  const editable = !isEdit || isLogEditable(existingLog)
+
   useEffect(() => {
     if (!isEdit || !existingLog?.id || !editable) return undefined
     if (!dirtySinceServerSave) return undefined
@@ -130,7 +138,7 @@ export function SubmitSessionLogForm({
     serverAutosaveTimer.current = setTimeout(async () => {
       try {
         setServerAutosaveState('saving')
-        const saved = await apiFetch(`/api/v1/daily-logs/${existingLog.id}`, {
+        await apiFetch(`/api/v1/daily-logs/${existingLog.id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             ...form,
@@ -139,7 +147,6 @@ export function SubmitSessionLogForm({
         })
         setServerAutosaveState('synced')
         setDirtySinceServerSave(false)
-        onSuccess?.(saved)
       } catch {
         setServerAutosaveState('retry_pending')
       }
@@ -147,16 +154,26 @@ export function SubmitSessionLogForm({
     return () => {
       if (serverAutosaveTimer.current) clearTimeout(serverAutosaveTimer.current)
     }
-  }, [isEdit, existingLog?.id, editable, dirtySinceServerSave, form, onSuccess])
-
-  const isLateSession = useMemo(() => {
-    if (!session?.scheduled_date) return false
-    return session.scheduled_date < todayIsoIST()
-  }, [session])
+  }, [isEdit, existingLog?.id, editable, dirtySinceServerSave, form])
 
   const timeRange = formatSessionTimeRange(session)
   const displayName = childName || session?.child_name || caseCode || session?.case_code || 'Client'
-  const editable = !isEdit || isLogEditable(existingLog)
+  const showBrief = Boolean(session?.actual_end_at || session?.status === 'COMPLETED')
+
+  async function persistLocalDraft(syncStatus = 'local') {
+    if (!session?.id || isEdit) return
+    await saveLogDraft(session.id, { ...form, sync_status: syncStatus })
+    setDraftNote(syncStatus === 'pending_sync' ? 'Saved on device — will sync when online' : 'Draft saved on this device')
+  }
+
+  async function handleSaveDraft() {
+    setError('')
+    try {
+      await persistLocalDraft('local')
+    } catch {
+      setError('Could not save draft on this device')
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -251,10 +268,15 @@ export function SubmitSessionLogForm({
         ) : null}
       </header>
 
+      {showBrief && !isEdit ? (
+        <SessionBrief session={session} childName={childName} caseCode={caseCode} />
+      ) : null}
+
       {required ? (
         <p className="ic-session-log-panel__banner">
-          Your timer has stopped. Submit this log now so the visit is recorded and the family can get an update after
-          admin review. You can edit for <strong>24 hours</strong> if you need to fix something.
+          Your timer has stopped. Review the session summary above, then submit this log so the visit is recorded. Use{' '}
+          <strong>Save draft</strong> if you need to step away — the visit stays in <strong>Needs log</strong> until you
+          submit.
         </p>
       ) : isEdit ? (
         <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
@@ -345,11 +367,11 @@ export function SubmitSessionLogForm({
 
         <div className="ic-session-log-form__actions">
           <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
-            {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Submit log & close session'}
+            {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Submit log & finish'}
           </button>
-          {required && onCancel ? (
-            <button type="button" className="ic-btn ic-btn--ghost" onClick={onCancel}>
-              Finish later
+          {!isEdit && session?.id ? (
+            <button type="button" className="ic-btn ic-btn--ghost" disabled={submitting} onClick={handleSaveDraft}>
+              Save draft
             </button>
           ) : null}
           {!required && onCancel ? (
@@ -360,7 +382,8 @@ export function SubmitSessionLogForm({
         </div>
         {required ? (
           <p className="ic-session-log-form__footnote">
-            “Finish later” keeps this visit in <strong>Needs log</strong> until you submit.
+            The visit is already ended on the clock. Submit the log when you can — drafts are stored on this device only
+            until you submit.
           </p>
         ) : null}
         {isEdit ? (

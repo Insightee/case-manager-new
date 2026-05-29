@@ -483,6 +483,90 @@
   clip: rect(0, 0, 0, 0);
 }
 
+.report-save-menu {
+  position: relative;
+}
+
+.report-save-menu__split {
+  display: inline-flex;
+  position: relative;
+}
+
+.report-save-menu__split .report-save-menu__caret {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-left: 8px;
+  padding-right: 10px;
+  margin-left: -1px;
+}
+
+.report-save-menu__split > button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.report-save-menu__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 11rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 4px;
+}
+
+.report-save-menu__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.report-save-menu__item:hover {
+  background: #f1f5f9;
+}
+
+.report-save-menu--mobile {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.report-save-menu--mobile .report-save-menu__split {
+  flex: 1;
+  min-width: 0;
+}
+
+.report-save-menu--mobile .report-save-menu__split > button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.report-save-menu--mobile .report-save-menu__dropdown {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  max-width: min(16rem, calc(100vw - 24px));
+}
+
+.report-edit-mobile-bar .report-save-menu > .report-edit-mobile-bar__btn--primary {
+  flex: 1.2;
+  min-width: 0;
+}
+
 @media (min-width: 901px) {
   .report-edit-page--mobile {
     padding-bottom: inherit;

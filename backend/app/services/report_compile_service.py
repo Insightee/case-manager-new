@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.permissions import case_scope_check
+from app.core.permissions import case_scope_check, user_has_permission
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.report import MonthlyReport, ReportStatus
 from app.services import case_service
@@ -79,7 +79,7 @@ def generate_monthly_report_from_logs(
     case = case_service.get_case(db, report.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Report not found")
-    if report.therapist_user_id != user.id:
+    if report.therapist_user_id != user.id and not user_has_permission(user, "monthly_report.approve"):
         raise HTTPException(status_code=404, detail="Report not found")
     if report.status not in (ReportStatus.DRAFT, ReportStatus.REJECTED):
         raise HTTPException(status_code=400, detail="Only draft or rejected reports can be edited")

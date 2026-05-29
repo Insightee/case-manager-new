@@ -1,0 +1,155 @@
+.admin-allotment-wizard {
+  overflow: visible;
+  margin-bottom: 20px;
+}
+
+.admin-allotment-wizard__form {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .admin-allotment-wizard__form {
+    max-width: 640px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .admin-allotment-wizard__form {
+    max-width: 720px;
+  }
+}
+
+.admin-allotment-wizard__client-type {
+  grid-column: 1 / -1;
+  border: none;
+  padding: 0;
+  margin: 0 0 4px;
+}
+
+.admin-allotment-wizard__client-type-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.admin-allotment-wizard__search-field {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.admin-allotment-wizard__search-field .admin-input {
+  width: 100%;
+}
+
+.admin-allotment-wizard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.admin-allotment-wizard__billing {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 640px;
+}
+
+.admin-allotment-wizard__billing-section {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fafbfc;
+}
+
+.admin-allotment-wizard__section-title {
+  margin: 0 0 6px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+
+.admin-allotment-wizard__section-lead {
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.admin-allotment-wizard__section-lead--warn {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.admin-allotment-wizard__billing-grid {
+  max-width: 100%;
+}
+
+.admin-allotment-wizard__review {
+  max-width: 520px;
+}
+
+.admin-allotment-wizard__review-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.admin-allotment-wizard__review-list > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 38%) 1fr;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.admin-allotment-wizard__review-list dt {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #94a3b8;
+}
+
+.admin-allotment-wizard__review-list dd {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-allotment-wizard__preview-sessions-title {
+  margin: 16px 0 8px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.admin-allotment-wizard__sessions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.admin-allotment-wizard__sessions-table th,
+.admin-allotment-wizard__sessions-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.admin-allotment-wizard__sessions-table th {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #94a3b8;
+}

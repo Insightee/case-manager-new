@@ -1,18 +1,18 @@
 import { Link } from 'react-router-dom'
 
-export function AdminStatCard({ title, value, hint, tone = 'indigo', icon, to, onClick }) {
+export function AdminStatCard({ title, value, hint, tone = 'indigo', icon, to, onClick, active = false }) {
   const inner = (
     <>
       <div className="admin-stat__top">
-        <p className="admin-stat__label">{title}</p>
+        <span className="admin-stat__label">{title}</span>
         {icon ? <span className="admin-stat__icon" aria-hidden>{icon}</span> : null}
       </div>
-      <p className="admin-stat__value">{value}</p>
-      {hint ? <p className="admin-stat__hint">{hint}</p> : null}
+      <span className="admin-stat__value">{value}</span>
+      {hint ? <span className="admin-stat__hint">{hint}</span> : null}
     </>
   )
 
-  const className = `admin-stat admin-stat--${tone}`
+  const className = `admin-stat admin-stat--${tone}${active ? ' is-active' : ''}`
 
   if (to) {
     return (

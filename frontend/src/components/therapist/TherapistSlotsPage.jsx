@@ -5,6 +5,7 @@ import { WeeklyScheduleDrawer } from './WeeklyScheduleDrawer.jsx'
 import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
 import { SlotDetailSheet } from '../scheduling/SlotDetailSheet.jsx'
 import { SlotEditSheet } from '../scheduling/SlotEditSheet.jsx'
+import { clearScheduleCache } from '../../lib/scheduleCache.js'
 import { addDays, dateStr, startOfWeek } from '../scheduling/slotCalendarUtils.js'
 
 export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
@@ -22,6 +23,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
   const weekEnd = addDays(scheduleWeekStart, 6)
 
   function bumpRefresh() {
+    clearScheduleCache()
     setRefreshKey((k) => k + 1)
   }
 

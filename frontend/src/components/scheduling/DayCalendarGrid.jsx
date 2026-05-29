@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import {
-  PARENT_SLOT_STYLES,
-  THERAPIST_STATUS_STYLES,
+  calendarEventLabel,
+  calendarEventStyle,
   calendarGridEvents,
   dateStr,
   defaultHourRows,
@@ -122,21 +122,8 @@ export function DayCalendarGrid({
                         </button>
                       ) : null}
                       {cellSlots.map((s) => {
-                        const isParent = mode === 'parent'
-                        const style = isParent
-                          ? PARENT_SLOT_STYLES[s.is_mine ? 'mine' : 'available']
-                          : THERAPIST_STATUS_STYLES[s.status] || ''
-                        const label = isParent
-                          ? s.is_mine
-                            ? `My session · ${s.start_time}`
-                            : `Available · ${s.start_time}`
-                          : s.event_type === 'cm_meeting'
-                            ? `CM · ${s.title || s.child_name || s.case_code || 'Meeting'}`
-                            : s.event_type === 'session'
-                            ? `${s.status === 'IN_PROGRESS' ? 'In progress · ' : 'Session · '}${s.child_name || s.case_code || 'Visit'}`
-                            : s.status === 'BOOKED'
-                              ? `${s.approval_status === 'PENDING_THERAPIST' ? '⏳ ' : ''}${s.booking_source === 'PARENT' ? 'Parent · ' : ''}${s.child_name || s.case_code || 'Booked'}`
-                              : `${s.start_time}–${s.end_time}`
+                        const style = calendarEventStyle(s, mode)
+                        const label = calendarEventLabel(s, mode)
                         return (
                           <button
                             key={s.id}

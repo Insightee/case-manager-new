@@ -12,4 +12,5 @@ class EmailEvent(str, Enum):
     PAYMENT_REMINDER = "payment_reminder"
     SESSION_DISPUTED = "session_disputed"
     THERAPIST_ASSIGNED = "therapist_assigned"
+    CM_MEETING_INVITE = "cm_meeting_invite"
     SECURITY_ALERT = "security_alert"

@@ -72,6 +72,15 @@ class TherapistHomeStats(BaseModel):
     active_session_id: Optional[int] = None
 
 
+class TherapistPendingAssignment(BaseModel):
+    assignment_id: int
+    case_id: int
+    case_code: str
+    child_name: str
+    parent_accepted: bool = False
+    offer_sent_at: Optional[str] = None
+
+
 class TherapistHomeResponse(BaseModel):
     greeting_context: Optional[str] = None
     stats: TherapistHomeStats
@@ -80,6 +89,7 @@ class TherapistHomeResponse(BaseModel):
     needs_log_sessions: list[SessionRead]
     cases_board: dict
     schedule_preview: list[SchedulePreviewItem]
+    pending_assignment_acceptance: list[TherapistPendingAssignment] = []
 
 
 class TherapistSessionsWorkspaceResponse(BaseModel):

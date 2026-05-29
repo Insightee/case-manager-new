@@ -54,8 +54,18 @@ class ParentHomeCase(BaseModel):
     session_highlight: Optional[ParentSessionHighlight] = None
 
 
+class PendingAssignmentAcceptance(BaseModel):
+    assignment_id: int
+    case_id: int
+    case_code: str
+    child_name: str
+    therapist_name: Optional[str] = None
+    offer_sent_at: Optional[str] = None
+
+
 class ParentHomeResponse(BaseModel):
     stats: ParentHomeStats
     cases: list[ParentHomeCase]
     recent_updates: list[ParentRecentUpdate]
     upcoming_appointments: list[dict[str, Any]]
+    pending_assignment_acceptance: list[PendingAssignmentAcceptance] = []

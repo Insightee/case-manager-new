@@ -25,6 +25,8 @@ import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
 import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
+import { SessionVisitPanel } from './SessionVisitPanel.jsx'
+import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
 import '../cases/my-cases.css'
 
 const LOG_TABS = [
@@ -52,7 +54,7 @@ function formatDuration(startIso, tick) {
 }
 
 export function DailyLogsPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const therapistId = user?.id
@@ -73,9 +75,12 @@ export function DailyLogsPage() {
   const bookedSlots = workspace?.booked_slots || []
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
   const loading = wsLoading || logsQuery.isLoading
+  const logsReady = !wsLoading && !logsQuery.isLoading
   const [tick, setTick] = useState(Date.now())
   const [draftIds, setDraftIds] = useState(new Set())
   const [logSession, setLogSession] = useState(null)
+  const [visitSession, setVisitSession] = useState(null)
+  const [visitBusy, setVisitBusy] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
   const [logRequired, setLogRequired] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -84,6 +89,7 @@ export function DailyLogsPage() {
   const [logTab, setLogTab] = useState('needs')
   const [viewingLog, setViewingLog] = useState(null)
   const logPanelRef = useRef(null)
+  const deepLinkResolvedRef = useRef(null)
 
   const pendingLogs = useMemo(
     () => logs.filter((l) => l.approval_status === 'PENDING'),
@@ -127,12 +133,48 @@ export function DailyLogsPage() {
   }, [active?.actual_start_at, active?.id])
 
   useEffect(() => {
-    if (logSession && logPanelRef.current) {
+    if ((logSession || visitSession) && logPanelRef.current) {
       logPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
-  }, [logSession?.id, editingLog?.id])
+  }, [logSession?.id, editingLog?.id, visitSession?.id])
+
+  function clearSessionQueryParam() {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('session')
+        return next
+      },
+      { replace: true },
+    )
+  }
+
+  function openSessionFromDeepLink(session) {
+    setError('')
+    const action = resolveSessionDeepLink(session, logs)
+    if (action.type === 'error') {
+      setError(action.message || 'Could not open session')
+      return
+    }
+    if (action.type === 'log') {
+      setVisitSession(null)
+      openLogForm(action.session, { required: action.required, log: action.log || null })
+      return
+    }
+    if (action.type === 'readonly') {
+      setVisitSession(null)
+      openLogForm(action.session, { log: action.log, readOnly: true })
+      return
+    }
+    setLogSession(null)
+    setEditingLog(null)
+    setLogRequired(false)
+    setViewingLog(null)
+    setVisitSession(action.session)
+  }
 
   function openLogForm(session, { required = false, log = null, readOnly = false } = {}) {
+    setVisitSession(null)
     setError('')
     setViewingLog(null)
     if (readOnly && log) {
@@ -151,20 +193,79 @@ export function DailyLogsPage() {
 
   useEffect(() => {
     const sessionId = searchParams.get('session')
-    if (!sessionId || loading) return
+    if (!sessionId || !logsReady) return
     const sid = Number(sessionId)
+    if (!Number.isFinite(sid)) return
+    if (deepLinkResolvedRef.current === sid) return
+
     const match =
       needsLog.find((s) => s.id === sid) ||
       upcoming.find((s) => s.id === sid) ||
       (active?.id === sid ? active : null)
-    if (match) openLogForm(match, { required: false })
-  }, [searchParams, loading, needsLog, upcoming, active])
+
+    if (match) {
+      deepLinkResolvedRef.current = sid
+      openSessionFromDeepLink(match)
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const session = await apiFetch(`/api/v1/sessions/${sid}`)
+        if (cancelled) return
+        deepLinkResolvedRef.current = sid
+        openSessionFromDeepLink(session)
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || `Could not open session ${sid}`)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, logsReady, needsLog, upcoming, active, logs])
+
+  useEffect(() => {
+    if (!searchParams.get('session')) {
+      deepLinkResolvedRef.current = null
+    }
+  }, [searchParams])
 
   function closeLogForm() {
     setLogSession(null)
     setEditingLog(null)
     setLogRequired(false)
     setViewingLog(null)
+    clearSessionQueryParam()
+  }
+
+  function closeVisitFocus() {
+    setVisitSession(null)
+    clearSessionQueryParam()
+  }
+
+  async function handleVisitStart(sessionId) {
+    setVisitBusy(true)
+    setError('')
+    try {
+      await handleStart(sessionId)
+      closeVisitFocus()
+    } finally {
+      setVisitBusy(false)
+    }
+  }
+
+  async function handleVisitEnd(sessionId) {
+    setVisitBusy(true)
+    try {
+      await handleEnd(sessionId)
+      setVisitSession(null)
+    } finally {
+      setVisitBusy(false)
+    }
   }
 
   function renderLogRow(l, { allowEdit = false, allowView = false } = {}) {
@@ -321,7 +422,7 @@ export function DailyLogsPage() {
     }
   }
 
-  const showComposer = !logSession && !viewingLog && !active
+  const showComposer = !logSession && !viewingLog && !visitSession && !active
 
   if (loading && !logSession) {
     return <p style={{ padding: 24, color: '#6b7280' }}>Loading session logs…</p>
@@ -386,6 +487,19 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
+      {visitSession ? (
+        <section ref={logPanelRef} className="ic-session-log-panel-wrap" style={{ marginBottom: 24 }}>
+          <SessionVisitPanel
+            session={visitSession}
+            activeSessionId={active?.id}
+            busy={visitBusy}
+            onStart={handleVisitStart}
+            onEnd={handleVisitEnd}
+            onClose={closeVisitFocus}
+          />
+        </section>
+      ) : null}
+
       {viewingLog ? (
         <section ref={logPanelRef} style={{ marginBottom: 24 }}>
           <SessionLogReadOnly
@@ -417,7 +531,7 @@ export function DailyLogsPage() {
               })
               void syncDraftIds()
             }}
-            onCancel={closeLogForm}
+            onCancel={logRequired && !editingLog ? undefined : closeLogForm}
           />
         </section>
       ) : null}
@@ -448,12 +562,15 @@ export function DailyLogsPage() {
                 key={s.id}
                 type="button"
                 className="ic-session-log-needs__item"
-                onClick={() => openLogForm(s, { required: false })}
+                onClick={() => openSessionFromDeepLink(s)}
               >
                 <span>
                   <strong>{s.child_name || s.case_code}</strong> · {s.scheduled_date}
+                  {draftIds.has(s.id) ? (
+                    <span className="ic-session-log-needs__draft"> · Draft saved</span>
+                  ) : null}
                 </span>
-                <span className="ic-session-log-needs__cta">Complete log</span>
+                <span className="ic-session-log-needs__cta">{draftIds.has(s.id) ? 'Continue log' : 'Complete log'}</span>
               </button>
             ))}
           </div>
@@ -588,14 +705,19 @@ export function DailyLogsPage() {
                       <p className="ic-session-log-recent__title">
                         {s.child_name || s.case_code} · {s.scheduled_date}
                       </p>
-                      <span className="ic-session-log-recent__meta">Completed — log required</span>
+                      <span className="ic-session-log-recent__meta">
+                        Completed — log required
+                        {draftIds.has(s.id) ? (
+                          <span className="ic-session-log-recent__draft"> · Draft saved</span>
+                        ) : null}
+                      </span>
                     </div>
                     <button
                       type="button"
                       className="ic-btn ic-btn--primary"
-                      onClick={() => openLogForm(s, { required: true })}
+                      onClick={() => openSessionFromDeepLink(s)}
                     >
-                      Write log
+                      {draftIds.has(s.id) ? 'Continue log' : 'Write log'}
                     </button>
                   </div>
                 ))}

@@ -75,6 +75,8 @@ def _iep_ack_status(db: Session, att: Attachment) -> str:
     from app.services import iep_plan_service as iep_svc
 
     plan = iep_svc._plan_for_attachment(db, att)
+    if not plan:
+        plan = iep_svc.get_latest_plan(db, att.case_id)
     if plan and plan.status == "PARENT_ACKNOWLEDGED":
         return "acknowledged"
     if att.visibility_status == VisibilityStatus.SHARED_WITH_PARENT:
@@ -229,6 +231,23 @@ def _comment_rows(db: Session, entity_type: str, entity_id: int) -> list[dict]:
     return result
 
 
+def _parent_visible_iep_plan(db: Session, att: Attachment) -> "IepPlan | None":
+    from app.models.iep_plan import IepPlan, IepPlanStatus
+    from app.services import iep_plan_service as iep_svc
+
+    visible = {
+        IepPlanStatus.SHARED_WITH_PARENT.value,
+        IepPlanStatus.PARENT_ACKNOWLEDGED.value,
+    }
+    plan = iep_svc._plan_for_attachment(db, att)
+    if plan and plan.status in visible:
+        return plan
+    latest = iep_svc.get_latest_plan(db, att.case_id)
+    if latest and latest.status in visible:
+        return latest
+    return None
+
+
 def get_monthly_detail(db: Session, user: User, report_id: int) -> dict:
     report = db.get(MonthlyReport, report_id)
     if not report or not parent_can_see_monthly(report):
@@ -247,7 +266,7 @@ def get_monthly_detail(db: Session, user: User, report_id: int) -> dict:
         "bodyHtml": report.body_html,
         "planNextMonth": report.plan_next_month,
         "category": report.category,
-        "downloadPath": f"/api/v1/reports/monthly/{report.id}/download",
+        "downloadPath": f"/api/v1/parent/reports/monthly/{report.id}/download",
         "status": _parent_status_label(report),
         "parentReviewStatus": report.parent_review_status,
         "parentFeedback": report.parent_feedback,
@@ -265,22 +284,28 @@ def get_iep_detail(db: Session, user: User, attachment_id: int) -> dict:
         raise ValueError("IEP document not found")
     from app.services import iep_plan_service as iep_svc
 
-    plan = iep_svc._plan_for_attachment(db, att)
+    plan = _parent_visible_iep_plan(db, att)
     ack_status = _iep_ack_status(db, att)
     can_acknowledge = bool(plan and plan.status == "SHARED_WITH_PARENT")
     can_suggest_goals = bool(plan and plan.status in ("SHARED_WITH_PARENT", "PARENT_ACKNOWLEDGED"))
-    preview_html = None
-    if plan:
-        preview_html = iep_svc.sections_to_preview_html(db, plan)
+    preview_html = iep_svc.sections_to_preview_html(db, plan) if plan else None
+    plan_version = plan.version if plan else att.version
+    title = f"IEP {plan_version}" if plan else (att.file_name or "IEP document")
+    download_path = (
+        f"/api/v1/parent/reports/iep/{att.id}/download"
+        if plan
+        else f"/api/v1/parent/attachments/{att.id}/download"
+    )
     return {
         "kind": "iep",
         "id": str(att.id),
         "caseId": case.case_code,
         "caseDbId": case.id,
         "childName": case.child.full_name if case.child else "",
-        "version": att.version,
+        "version": plan_version,
         "fileName": att.file_name,
-        "downloadPath": f"/api/v1/parent/attachments/{att.id}/download",
+        "title": title,
+        "downloadPath": download_path,
         "status": ack_status,
         "planId": plan.id if plan else None,
         "canAcknowledge": can_acknowledge,
@@ -289,6 +314,52 @@ def get_iep_detail(db: Session, user: User, attachment_id: int) -> dict:
         "issuedAt": att.created_at.isoformat() if att.created_at else None,
         "comments": _comment_rows(db, DocumentEntityType.IEP.value, att.id),
     }
+
+
+def monthly_report_pdf_bytes(db: Session, user: User, report_id: int) -> tuple[bytes, str]:
+    from app.services import report_pdf_service
+    from app.services.export_document_service import export_meta
+
+    report = db.get(MonthlyReport, report_id)
+    if not report or not parent_can_see_monthly(report):
+        raise ValueError("Report not found")
+    case = parent_service.get_parent_case(db, user, report.case_id)
+    if not case:
+        raise ValueError("Report not found")
+    child_name = case.child.full_name if case.child else ""
+    meta = export_meta(user)
+    pdf = report_pdf_service.monthly_report_pdf(
+        report,
+        case.case_code,
+        child_name,
+        generated_by=meta["generated_by"],
+        generated_at=meta["generated_at"],
+    )
+    safe = (report.month or "report").replace(" ", "_")[:40]
+    return pdf, f"report_{safe}.pdf"
+
+
+def iep_report_pdf_bytes(db: Session, user: User, attachment_id: int) -> tuple[bytes, str]:
+    from app.services import iep_plan_service as iep_svc
+
+    att = db.get(Attachment, attachment_id)
+    if not att or att.entity_type != "iep" or att.visibility_status not in PARENT_VISIBLE:
+        raise ValueError("IEP document not found")
+    case = parent_service.get_parent_case(db, user, att.case_id)
+    if not case:
+        raise ValueError("IEP document not found")
+    plan = _parent_visible_iep_plan(db, att)
+    if plan:
+        pdf = iep_svc.sections_to_pdf_bytes(db, plan)
+        safe = f"IEP_{case.case_code}_{plan.version}".replace(" ", "_")[:60]
+        return pdf, f"{safe}.pdf"
+    from app.storage.object_io import read_stored_bytes
+
+    data = read_stored_bytes(att.file_path)
+    name = att.file_name or f"iep_{att.id}.pdf"
+    if not name.lower().endswith(".pdf"):
+        name = f"{name.rsplit('.', 1)[0]}.pdf" if "." in name else f"{name}.pdf"
+    return data, name
 
 
 def _notify_case_team(
@@ -412,14 +483,11 @@ def add_iep_comment(
 
 def acknowledge_iep(db: Session, att: Attachment, parent_user: User | None = None) -> None:
     att.visibility_status = VisibilityStatus.SHARED_WITH_PARENT
-    from app.models.iep_plan import IepPlan
     from app.services import iep_plan_service as iep_svc
 
-    plan = db.scalars(
-        select(IepPlan).where(IepPlan.attachment_id == att.id).order_by(IepPlan.id.desc())
-    ).first()
-    if not plan and att.entity_id:
-        plan = db.get(IepPlan, att.entity_id)
+    plan = iep_svc._plan_for_attachment(db, att)
+    if not plan:
+        plan = iep_svc.get_latest_plan(db, att.case_id)
     if plan and parent_user and plan.status == "SHARED_WITH_PARENT":
         iep_svc.parent_acknowledge_plan(db, plan, parent_user)
 

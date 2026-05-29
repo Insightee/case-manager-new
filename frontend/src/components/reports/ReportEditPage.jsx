@@ -5,6 +5,8 @@ import { generateReportFromLogs } from '../../lib/reportGenerateFromLogs.js'
 import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
 import { ReportEditor } from './ReportEditor.jsx'
+import { ReportReferenceDocsPanel } from './ReportReferenceDocsPanel.jsx'
+import { ReportSaveMenu } from './ReportSaveMenu.jsx'
 import { SessionLogContextPanel } from './SessionLogContextPanel.jsx'
 import './report-editor.css'
 
@@ -58,10 +60,15 @@ export function ReportEditPage() {
   const localDraftTimer = useRef(null)
   const skipAutosaveRef = useRef(true)
   const AUTOSAVE_SERVER_MS = 120_000
-  const AUTOSAVE_LOCAL_MS = 2_000
+  const AUTOSAVE_LOCAL_MS = 5_000
   const [serverVersionChanged, setServerVersionChanged] = useState(false)
   const [generatingFromLogs, setGeneratingFromLogs] = useState(false)
   const lastPersistedHtmlRef = useRef('')
+  const bodyHtmlRef = useRef('')
+  const planNextMonthRef = useRef('')
+  const categoryRef = useRef('CLIENT_MONTHLY')
+  const subCategoryRef = useRef('')
+  const monthRef = useRef('')
   const isMobile = useIsMobilePortal()
 
   const editable =
@@ -122,17 +129,28 @@ export function ReportEditPage() {
 
   function saveLocalDraft(silent = false) {
     const payload = {
-      bodyHtml,
-      planNextMonth,
-      category,
-      subCategory,
-      month,
+      bodyHtml: bodyHtmlRef.current,
+      planNextMonth: planNextMonthRef.current,
+      category: categoryRef.current,
+      subCategory: subCategoryRef.current,
+      month: monthRef.current,
       baseUpdatedAt: report?.updated_at || null,
       savedAt: new Date().toISOString(),
     }
-    localStorage.setItem(draftKey(reportId), JSON.stringify(payload))
-    setLocalDraft(payload)
-    if (!silent) setMessage('Draft saved on this device.')
+    try {
+      localStorage.setItem(draftKey(reportId), JSON.stringify(payload))
+      setLocalDraft(payload)
+      if (!silent) {
+        setMessage(`Saved on this device at ${new Date().toLocaleTimeString()}.`)
+        setError('')
+      }
+    } catch {
+      const msg = 'Could not save on this device — storage may be full or blocked.'
+      if (!silent) {
+        setError(msg)
+        setMessage('')
+      }
+    }
   }
 
   function restoreLocalDraft() {
@@ -151,29 +169,37 @@ export function ReportEditPage() {
     setLocalDraft(null)
   }
 
+  bodyHtmlRef.current = bodyHtml
+  planNextMonthRef.current = planNextMonth
+  categoryRef.current = category
+  subCategoryRef.current = subCategory
+  monthRef.current = month
+
   const persist = useCallback(
     async (silent = true) => {
       if (!report || !editable) return
-      if (silent && bodyHtml === lastPersistedHtmlRef.current) return
+      const html = bodyHtmlRef.current
+      if (silent && html === lastPersistedHtmlRef.current) return
       setSaving(true)
       setSaveFailed(false)
       if (!silent) setError('')
       try {
+        const cat = categoryRef.current
         const patchUrl = isAdminEditor
           ? `/api/v1/admin/reports/monthly/${report.id}`
           : `/api/v1/reports/monthly/${report.id}`
         const updated = await apiFetch(patchUrl, {
           method: 'PATCH',
           body: JSON.stringify({
-            body_html: bodyHtml,
-            plan_next_month: planNextMonth,
-            category,
-            sub_category: category === 'PROGRESS' ? subCategory || null : null,
-            month,
+            body_html: html,
+            plan_next_month: planNextMonthRef.current,
+            category: cat,
+            sub_category: cat === 'PROGRESS' ? subCategoryRef.current || null : null,
+            month: monthRef.current,
           }),
         })
         setReport(updated)
-        lastPersistedHtmlRef.current = bodyHtml
+        lastPersistedHtmlRef.current = html
         setSavedAt(new Date())
         setDirty(false)
         clearLocalDraft()
@@ -185,7 +211,7 @@ export function ReportEditPage() {
         setSaving(false)
       }
     },
-    [report, editable, bodyHtml, planNextMonth, category, subCategory, month, isAdminEditor],
+    [report, editable, isAdminEditor],
   )
 
   useEffect(() => {
@@ -384,51 +410,18 @@ export function ReportEditPage() {
               {report.case_code} · {categoryLabel(category)} · {report.status}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
-              onClick={() => persist(false)}
-              disabled={!editable || saving}
-            >
-              {saving ? 'Saving…' : 'Save to server'}
-            </button>
-            {editable ? (
-              <button
-                type="button"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
-                onClick={saveLocalDraft}
-              >
-                Save draft on device
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
-              onClick={handleDownload}
-            >
-              Download PDF
-            </button>
-            {editable ? (
-              <>
-                <button
-                  type="button"
-                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800"
-                  onClick={() => handleGenerateFromLogs('replace')}
-                  disabled={generatingFromLogs || saving}
-                >
-                  {generatingFromLogs ? 'Generating…' : 'Generate from session logs'}
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
-                  onClick={handleSubmit}
-                >
-                  {submitLabel}
-                </button>
-              </>
-            ) : null}
-          </div>
+          <ReportSaveMenu
+            saving={saving}
+            editable={editable}
+            onSaveCloud={() => persist(false)}
+            onSaveLocal={() => saveLocalDraft(false)}
+            onDownloadPdf={handleDownload}
+            onGenerateFromLogs={() => handleGenerateFromLogs('replace')}
+            generatingFromLogs={generatingFromLogs}
+            workflowLabel={submitLabel}
+            onWorkflow={handleSubmit}
+            variant="desktop"
+          />
         </div>
       )}
 
@@ -493,16 +486,20 @@ export function ReportEditPage() {
           />
         </div>
 
-        <SessionLogContextPanel
-          reportId={Number(reportId)}
-          caseId={report.case_id}
-          month={month}
-          collapsed={isMobile}
-          onInsertIepGoals={(html) => {
-            setBodyHtml((prev) => `${prev || ''}${html}`)
-            setDocumentVersion((v) => v + 1)
-          }}
-        />
+        <div className="space-y-4">
+          <ReportReferenceDocsPanel caseId={report.case_id} month={month} />
+          <SessionLogContextPanel
+            reportId={Number(reportId)}
+            caseId={report.case_id}
+            month={month}
+            collapsed={isMobile}
+            exportVariant={isAdminEditor ? 'admin' : 'therapist'}
+            onInsertIepGoals={(html) => {
+              setBodyHtml((prev) => `${prev || ''}${html}`)
+              setDocumentVersion((v) => v + 1)
+            }}
+          />
+        </div>
       </div>
 
       {isMobile ? (
@@ -518,21 +515,15 @@ export function ReportEditPage() {
           <div className="report-edit-mobile-bar" role="toolbar" aria-label="Report actions">
             {editable ? (
               <>
-                <button
-                  type="button"
-                  className="report-edit-mobile-bar__btn report-edit-mobile-bar__btn--secondary"
-                  onClick={() => persist(false)}
-                  disabled={saving}
-                >
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
-                <button
-                  type="button"
-                  className="report-edit-mobile-bar__btn report-edit-mobile-bar__btn--primary"
-                  onClick={handleSubmit}
-                >
-                  {submitLabel}
-                </button>
+                <ReportSaveMenu
+                  variant="mobile"
+                  saving={saving}
+                  editable={editable}
+                  onSaveCloud={() => persist(false)}
+                  onSaveLocal={() => saveLocalDraft(false)}
+                  workflowLabel={submitLabel}
+                  onWorkflow={handleSubmit}
+                />
                 <button
                   type="button"
                   className="report-edit-mobile-bar__btn report-edit-mobile-bar__btn--menu"
@@ -567,31 +558,18 @@ export function ReportEditPage() {
                 Download PDF
               </button>
               {editable ? (
-                <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="report-edit-mobile-menu__item"
-                    disabled={generatingFromLogs || saving}
-                    onClick={() => {
-                      setMobileMenuOpen(false)
-                      handleGenerateFromLogs('replace')
-                    }}
-                  >
-                    {generatingFromLogs ? 'Generating…' : 'Generate from session logs'}
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="report-edit-mobile-menu__item"
-                    onClick={() => {
-                      saveLocalDraft()
-                      setMobileMenuOpen(false)
-                    }}
-                  >
-                    Save draft on device
-                  </button>
-                </>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="report-edit-mobile-menu__item"
+                  disabled={generatingFromLogs || saving}
+                  onClick={() => {
+                    setMobileMenuOpen(false)
+                    handleGenerateFromLogs('replace')
+                  }}
+                >
+                  {generatingFromLogs ? 'Generating…' : 'Generate from session logs'}
+                </button>
               ) : null}
               <Link
                 to={base}

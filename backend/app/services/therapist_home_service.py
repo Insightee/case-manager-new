@@ -21,9 +21,11 @@ from app.schemas.therapist_home import (
     TherapistCaseBoardStat,
     TherapistHomeResponse,
     TherapistHomeStats,
+    TherapistPendingAssignment,
     TherapistReportsPipelineResponse,
     TherapistSessionsWorkspaceResponse,
 )
+from app.services import assignment_acceptance_service as accept_svc
 from app.services import parent_service, session_service
 from app.services.address_service import case_service_address_read
 from app.services import therapist_portal_queries as tpq
@@ -364,6 +366,11 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
     cm_dicts = [meeting_to_calendar_dict(m, db) for m in cm_rows]
     schedule = merge_schedule_preview(upcoming_reads, slot_dicts, cm_dicts)
 
+    pending_assignments = [
+        TherapistPendingAssignment(**row)
+        for row in accept_svc.pending_acceptance_for_therapist(db, user.id)
+    ]
+
     return TherapistHomeResponse(
         greeting_context=greeting,
         stats=TherapistHomeStats(
@@ -379,6 +386,7 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
         needs_log_sessions=needs_log_reads,
         cases_board=board,
         schedule_preview=schedule,
+        pending_assignment_acceptance=pending_assignments,
     )
 
 

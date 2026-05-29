@@ -104,6 +104,12 @@ class AssignmentRead(BaseModel):
     fixed_recurrence_group_id: Optional[str] = None
     fixed_window_label: Optional[str] = None
     case_billing: Optional[dict] = None
+    therapist_accepted_at: Optional[datetime] = None
+    parent_accepted_at: Optional[datetime] = None
+    assignment_offer_sent_at: Optional[datetime] = None
+    requires_acceptance: bool = False
+    parent_accepted: bool = True
+    therapist_accepted: bool = True
 
     model_config = {"from_attributes": True}
 

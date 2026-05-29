@@ -183,6 +183,18 @@ def require_permission(permission: str):
     return checker
 
 
+def require_any_permission(*permissions: str):
+    """User must hold at least one of the listed permissions."""
+    from app.api.deps import get_current_user
+
+    def checker(user: User = Depends(get_current_user)) -> User:
+        if any(user_has_permission(user, p) for p in permissions):
+            return user
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    return checker
+
+
 def require_mutation_permission(permission: str):
     """Like require_permission, but view-only users get a clear read-only error first."""
     from app.api.deps import get_current_user

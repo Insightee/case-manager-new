@@ -9,6 +9,7 @@ from app.models.user import User
 from app.schemas.address import AddressRead, format_address_summary, maps_query_url
 
 HOME_PREFIX = "home_"
+SCHOOL_PREFIX = "school_"
 SERVICE_PREFIX = "service_"
 
 ADDRESS_ATTRS = (
@@ -72,6 +73,10 @@ def user_home_address_read(user: User) -> AddressRead | None:
     return _address_read_from_prefixed(_get_prefixed(user, HOME_PREFIX))
 
 
+def user_school_address_read(user: User) -> AddressRead | None:
+    return _address_read_from_prefixed(_get_prefixed(user, SCHOOL_PREFIX))
+
+
 def case_service_address_read(case: Case) -> AddressRead | None:
     return _address_read_from_prefixed(_get_prefixed(case, SERVICE_PREFIX))
 
@@ -81,24 +86,32 @@ def service_address_summary(case: Case) -> str | None:
     return addr.formatted if addr else None
 
 
-def validate_home_address_payload(data: dict[str, Any]) -> None:
-    if not _has_any_address_value(data, HOME_PREFIX):
+def _validate_user_address_payload(data: dict[str, Any], prefix: str, label: str) -> None:
+    if not _has_any_address_value(data, prefix):
         return
-    text_keys = ("home_address_line1", "home_city", "home_pincode", "home_address_line2", "home_state", "home_landmark")
+    text_keys = tuple(f"{prefix}{attr}" for attr in ("address_line1", "city", "pincode", "address_line2", "state", "landmark"))
     if not any(k in data for k in text_keys):
         return
-    line1 = data.get("home_address_line1")
-    city = data.get("home_city")
-    pincode = data.get("home_pincode")
+    line1 = data.get(f"{prefix}address_line1")
+    city = data.get(f"{prefix}city")
+    pincode = data.get(f"{prefix}pincode")
     if not line1 or not city or not pincode:
         raise HTTPException(
             status_code=400,
-            detail="Home address requires address_line1, city, and pincode when saving",
+            detail=f"{label} requires address line 1, city, and pincode when saving",
         )
     from app.schemas.address import PINCODE_RE
 
     if pincode and not PINCODE_RE.match(str(pincode)):
         raise HTTPException(status_code=400, detail="Pincode must be exactly 6 digits")
+
+
+def validate_home_address_payload(data: dict[str, Any]) -> None:
+    _validate_user_address_payload(data, HOME_PREFIX, "Home address")
+
+
+def validate_school_address_payload(data: dict[str, Any]) -> None:
+    _validate_user_address_payload(data, SCHOOL_PREFIX, "School address")
 
 
 def validate_service_address_payload(data: dict[str, Any], case: Case) -> None:
@@ -130,13 +143,21 @@ def validate_service_address_payload(data: dict[str, Any], case: Case) -> None:
         raise HTTPException(status_code=400, detail="Pincode must be exactly 6 digits")
 
 
-def apply_home_address_to_user(user: User, data: dict[str, Any]) -> None:
+def _apply_user_address(user: User, data: dict[str, Any], prefix: str) -> None:
     for attr in ADDRESS_ATTRS:
-        key = f"home_{attr}"
+        key = f"{prefix}{attr}"
         if key in data:
             setattr(user, key, data[key])
+
+
+def apply_home_address_to_user(user: User, data: dict[str, Any]) -> None:
+    _apply_user_address(user, data, HOME_PREFIX)
     if user.home_city and user.home_pincode:
         user.location = f"{user.home_city}, {user.home_pincode}"
+
+
+def apply_school_address_to_user(user: User, data: dict[str, Any]) -> None:
+    _apply_user_address(user, data, SCHOOL_PREFIX)
 
 
 def apply_service_address_to_case(case: Case, data: dict[str, Any]) -> None:
@@ -146,19 +167,27 @@ def apply_service_address_to_case(case: Case, data: dict[str, Any]) -> None:
             setattr(case, key, data[key])
 
 
-def home_address_from_me_update(payload: dict[str, Any]) -> dict[str, Any]:
-    """Map MeUpdate home_* optional fields to DB column keys."""
+def _user_address_from_update(payload: dict[str, Any], field_prefix: str) -> dict[str, Any]:
+    """Map API home_* / school_* fields to DB column keys."""
     mapping = {
-        "home_address_line1": "home_address_line1",
-        "home_address_line2": "home_address_line2",
-        "home_city": "home_city",
-        "home_state": "home_state",
-        "home_pincode": "home_pincode",
-        "home_landmark": "home_landmark",
-        "home_latitude": "home_latitude",
-        "home_longitude": "home_longitude",
+        f"{field_prefix}address_line1": f"{field_prefix}address_line1",
+        f"{field_prefix}address_line2": f"{field_prefix}address_line2",
+        f"{field_prefix}city": f"{field_prefix}city",
+        f"{field_prefix}state": f"{field_prefix}state",
+        f"{field_prefix}pincode": f"{field_prefix}pincode",
+        f"{field_prefix}landmark": f"{field_prefix}landmark",
+        f"{field_prefix}latitude": f"{field_prefix}latitude",
+        f"{field_prefix}longitude": f"{field_prefix}longitude",
     }
     return {k: payload[v] for k, v in mapping.items() if v in payload and payload[v] is not None}
+
+
+def home_address_from_me_update(payload: dict[str, Any]) -> dict[str, Any]:
+    return _user_address_from_update(payload, HOME_PREFIX)
+
+
+def school_address_from_parent_update(payload: dict[str, Any]) -> dict[str, Any]:
+    return _user_address_from_update(payload, SCHOOL_PREFIX)
 
 
 def service_address_from_payload(payload: dict[str, Any], prefix_keys: bool = True) -> dict[str, Any]:

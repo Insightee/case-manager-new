@@ -12,7 +12,13 @@ from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.db_errors import commit_or_http
 from app.core.module_write import guard_clinical_case
-from app.core.permissions import case_scope_check, require_mutation_permission, require_permission, user_has_permission
+from app.core.permissions import (
+    case_scope_check,
+    require_any_permission,
+    require_mutation_permission,
+    require_permission,
+    user_has_permission,
+)
 from app.services import case_service
 from app.core.report_constants import PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES
 from app.models.report import MonthlyReport, ObservationReport, ReportCategory, ReportStatus
@@ -257,7 +263,7 @@ def report_categories():
 async def upload_monthly_report_image(
     report_id: int,
     file: UploadFile = File(...),
-    user: User = Depends(require_permission("monthly_report.create")),
+    user: User = Depends(require_any_permission("monthly_report.create", "monthly_report.approve")),
     db: Session = Depends(get_db),
 ):
     result = await report_image_service.save_report_image(db, user, "monthly", report_id, file)
@@ -287,7 +293,7 @@ def download_report_image(
 def generate_monthly_report_from_logs(
     report_id: int,
     payload: GenerateFromLogsRequest = GenerateFromLogsRequest(),
-    user: User = Depends(require_permission("monthly_report.create")),
+    user: User = Depends(require_any_permission("monthly_report.create", "monthly_report.approve")),
     db: Session = Depends(get_db),
 ):
     report = db.get(MonthlyReport, report_id)

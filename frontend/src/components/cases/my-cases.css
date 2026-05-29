@@ -1395,6 +1395,97 @@
   font-size: 0.875rem;
 }
 
+/* Post end-session summary */
+.ic-session-brief {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+  border: 1px solid #e2e8f0;
+}
+
+.ic-session-brief__eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6366f1;
+}
+
+.ic-session-brief__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ic-session-brief__code {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.ic-session-brief__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+}
+
+.ic-session-brief__grid dt {
+  margin: 0;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.ic-session-brief__grid dd {
+  margin: 0;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.ic-session-brief__late {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.ic-session-brief__pending {
+  color: #c2410c;
+}
+
+.ic-session-brief__location {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+}
+
+.ic-session-brief__location a {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.ic-session-log-needs__draft,
+.ic-session-log-recent__draft {
+  color: #6366f1;
+  font-weight: 600;
+}
+
+.ic-session-visit-panel {
+  background: #fff;
+  border: 2px solid #6366f1;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12);
+}
+
+.ic-session-visit-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 /* Session log panel (post end-session) */
 .ic-session-log-panel {
   background: #fff;

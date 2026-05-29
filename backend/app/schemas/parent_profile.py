@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.address import AddressRead, ServiceAddressUpdate
+
+VisitAddressType = Literal["home", "school"]
 
 
 class ParentChildRead(BaseModel):
@@ -46,6 +48,8 @@ class ParentProfileRead(BaseModel):
     email: str
     phone: Optional[str] = None
     home_address: Optional[AddressRead] = None
+    school_address: Optional[AddressRead] = None
+    address_type: VisitAddressType = "home"
     children: list[ParentChildRead] = []
     services: list[ParentServiceRead] = []
     homecare_cases: list[ParentHomecareCaseRead] = []
@@ -68,5 +72,14 @@ class ParentProfileUpdate(BaseModel):
     home_landmark: Optional[str] = None
     home_latitude: Optional[float] = None
     home_longitude: Optional[float] = None
+    school_address_line1: Optional[str] = None
+    school_address_line2: Optional[str] = None
+    school_city: Optional[str] = None
+    school_state: Optional[str] = None
+    school_pincode: Optional[str] = None
+    school_landmark: Optional[str] = None
+    school_latitude: Optional[float] = None
+    school_longitude: Optional[float] = None
+    address_type: Optional[VisitAddressType] = None
     children: Optional[list[ParentChildUpdate]] = None
     service_address: Optional[ParentServiceAddressPatch] = None

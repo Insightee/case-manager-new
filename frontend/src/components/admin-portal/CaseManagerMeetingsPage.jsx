@@ -315,7 +315,7 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
               Invite attendees
             </legend>
             <p style={{ margin: '0 0 10px', fontSize: '0.78rem', color: '#64748b' }}>
-              Invited people receive a notification and see this meeting in their CM meetings list and calendar.
+              Invited people receive an email with join and Add to Google Calendar links (you will not get a duplicate email), an in-app notification, and see this meeting in their CM meetings list and calendar.
             </p>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
               <input

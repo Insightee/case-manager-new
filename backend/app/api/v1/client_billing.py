@@ -152,8 +152,17 @@ def parent_create_dispute(
 ):
     _require_parent(user)
     try:
+        line_ids = payload.line_ids
+        if line_ids is None and payload.line_id is not None:
+            line_ids = [payload.line_id]
         result = client_billing_service.create_dispute(
-            db, user, invoice_id, payload.reason_code, payload.message.strip(), payload.line_id
+            db,
+            user,
+            invoice_id,
+            payload.reason_code,
+            payload.message.strip(),
+            line_id=payload.line_id,
+            line_ids=line_ids,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

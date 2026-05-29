@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import './parent-payments.css'
 import './parent-portal-filters.css'
-import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
+import { ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 
 const DISPUTE_STATUS_LABELS = {
   open: 'Submitted — finance will review',
@@ -40,6 +41,15 @@ function formatMonth(key) {
   if (!m) return key
   const d = new Date(Number(m[1]), Number(m[2]) - 1, 1)
   return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+}
+
+function formatSessionLineLabel(line) {
+  const date = line.sessionDate
+    ? new Date(line.sessionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : 'Session'
+  const status = line.sessionStatus || '—'
+  const amount = formatInr(line.amountInr)
+  return `${date} · ${status} · ${amount}`
 }
 
 function statusClass(bucket) {
@@ -110,7 +120,8 @@ export function ParentBillingPage() {
   const [disputeOpen, setDisputeOpen] = useState(false)
   const [disputeReason, setDisputeReason] = useState('incorrect_amount')
   const [disputeMessage, setDisputeMessage] = useState('')
-  const [disputeLineId, setDisputeLineId] = useState(null)
+  const [disputeEntireInvoice, setDisputeEntireInvoice] = useState(true)
+  const [disputeLineIds, setDisputeLineIds] = useState([])
   const [acting, setActing] = useState(false)
   const [message, setMessage] = useState('')
   const [paymentOpen, setPaymentOpen] = useState(false)
@@ -144,16 +155,47 @@ export function ParentBillingPage() {
     load()
   }, [load])
 
+  useEffect(() => {
+    if (!selected) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [selected])
+
   const invoices = dashboard?.invoices || []
   const dueInvoices = useMemo(
     () => invoices.filter((i) => ['unpaid', 'partial'].includes(i.paymentBucket)),
     [invoices],
   )
 
+  function resetDisputeForm() {
+    setDisputeReason('incorrect_amount')
+    setDisputeMessage('')
+    setDisputeEntireInvoice(true)
+    setDisputeLineIds([])
+  }
+
+  function closeInvoiceDialog() {
+    setSelected(null)
+    setLineDetail(null)
+    setDisputeOpen(false)
+    setPaymentOpen(false)
+    resetDisputeForm()
+  }
+
+  function openDisputeForm() {
+    resetDisputeForm()
+    setPaymentOpen(false)
+    setDisputeOpen(true)
+  }
+
   async function openInvoice(id) {
     setLineDetail(null)
     setDisputeOpen(false)
     setPaymentOpen(false)
+    resetDisputeForm()
     try {
       const detail = await apiFetch(`/api/v1/parent/billing/invoices/${id}`)
       setSelected(detail)
@@ -208,23 +250,46 @@ export function ParentBillingPage() {
     }
   }
 
-  async function submitDispute() {
-    if (!selected || disputeMessage.trim().length < 10) return
+  function toggleDisputeLine(lineId) {
+    setDisputeLineIds((prev) => {
+      const next = prev.includes(lineId) ? prev.filter((id) => id !== lineId) : [...prev, lineId]
+      return next
+    })
+    setDisputeEntireInvoice(false)
+  }
+
+  async function submitDispute(e) {
+    e?.preventDefault?.()
+    if (!selected) return
+    const message = disputeMessage.trim()
+    if (message.length < 10) {
+      setError('Please describe the issue in at least 10 characters.')
+      return
+    }
+    if (!disputeEntireInvoice && disputeLineIds.length === 0) {
+      setError('Select at least one session, or choose entire invoice.')
+      return
+    }
     setActing(true)
+    setError('')
     setMessage('')
     try {
-      await apiFetch(`/api/v1/parent/billing/invoices/${selected.id}/disputes`, {
+      const result = await apiFetch(`/api/v1/parent/billing/invoices/${selected.id}/disputes`, {
         method: 'POST',
         body: JSON.stringify({
           reason_code: disputeReason,
-          message: disputeMessage.trim(),
-          line_id: disputeLineId,
+          message,
+          line_ids: disputeEntireInvoice ? [] : disputeLineIds,
         }),
       })
-      setMessage('Dispute submitted. Finance will review and update you by email or in this portal.')
+      const count = result?.count ?? 1
+      setMessage(
+        count > 1
+          ? `${count} disputes submitted. Finance will review and update you in this portal.`
+          : 'Dispute submitted. Finance will review and update you by email or in this portal.',
+      )
       setDisputeOpen(false)
-      setDisputeMessage('')
-      setDisputeLineId(null)
+      resetDisputeForm()
       setPaymentTab('disputed')
       const detail = await apiFetch(`/api/v1/parent/billing/invoices/${selected.id}`)
       setSelected(detail)
@@ -488,14 +553,21 @@ export function ParentBillingPage() {
         )}
       </section>
 
-      {selected ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Invoice detail"
-          className="parent-pay__dialog-backdrop"
-        >
-          <div className="parent-pay__dialog-sheet">
+      {selected
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Invoice detail"
+              className="parent-pay__dialog"
+            >
+              <button
+                type="button"
+                className="parent-pay__dialog-backdrop"
+                aria-label="Close invoice"
+                onClick={closeInvoiceDialog}
+              />
+              <div className="parent-pay__dialog-sheet">
             <div
               style={{
                 padding: '12px 16px',
@@ -524,15 +596,7 @@ export function ParentBillingPage() {
                   ) : null}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelected(null)
-                  setLineDetail(null)
-                  setDisputeOpen(false)
-                }}
-                aria-label="Close"
-              >
+              <button type="button" className="parent-pay__dialog-close" onClick={closeInvoiceDialog} aria-label="Close">
                 ✕
               </button>
             </div>
@@ -623,50 +687,103 @@ export function ParentBillingPage() {
                   {lineDetail.activitiesSummary ? (
                     <p style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{lineDetail.activitiesSummary}</p>
                   ) : null}
-                  <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" style={{ marginTop: 8 }} onClick={() => setLineDetail(null)}>
+                  <button
+                    type="button"
+                    className="parent-pay__btn parent-pay__btn--ghost parent-pay__btn--sm"
+                    style={{ marginTop: 8 }}
+                    onClick={() => setLineDetail(null)}
+                  >
                     Close session
                   </button>
                 </section>
               ) : null}
 
               {disputeOpen ? (
-                <section style={{ marginTop: 16 }}>
-                  <h3 style={{ fontSize: 15 }}>Raise a dispute</h3>
-                  <select value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} style={{ width: '100%', marginBottom: 8, padding: 8 }}>
-                    {DISPUTE_REASONS.map((r) => (
-                      <option key={r.value} value={r.value}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={disputeLineId ?? ''}
-                    onChange={(e) => setDisputeLineId(e.target.value ? Number(e.target.value) : null)}
-                    style={{ width: '100%', marginBottom: 8, padding: 8 }}
-                  >
-                    <option value="">Whole invoice</option>
-                    {(selected.lines || []).map((l) => (
-                      <option key={l.id} value={l.id}>
-                        Line: {l.sessionDate} — {l.sessionStatus}
-                      </option>
-                    ))}
-                  </select>
-                  <textarea
-                    value={disputeMessage}
-                    onChange={(e) => setDisputeMessage(e.target.value)}
-                    rows={4}
-                    placeholder="Describe the issue (min 10 characters)"
-                    style={{ width: '100%', padding: 8 }}
-                  />
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button type="button" className="admin-btn admin-btn--primary" disabled={acting || disputeMessage.trim().length < 10} onClick={submitDispute}>
-                      Submit dispute
+                <form className="parent-pay__dispute-form" onSubmit={submitDispute}>
+                  <h3 className="parent-pay__dispute-title">Raise a dispute</h3>
+                  <ParentFilterField label="Reason">
+                    <ParentFilterSelect
+                      value={disputeReason}
+                      onChange={(e) => setDisputeReason(e.target.value)}
+                      aria-label="Dispute reason"
+                    >
+                      {DISPUTE_REASONS.map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </ParentFilterSelect>
+                  </ParentFilterField>
+
+                  <fieldset className="parent-pay__dispute-sessions">
+                    <legend className="parent-portal-filters__label">Sessions</legend>
+                    <label className="parent-pay__dispute-check parent-pay__dispute-check--whole">
+                      <input
+                        type="checkbox"
+                        checked={disputeEntireInvoice}
+                        onChange={(e) => {
+                          setDisputeEntireInvoice(e.target.checked)
+                          if (e.target.checked) setDisputeLineIds([])
+                        }}
+                      />
+                      <span>Entire invoice</span>
+                    </label>
+                    {(selected.lines || []).length > 0 ? (
+                      <ul className="parent-pay__dispute-session-list">
+                        {(selected.lines || []).map((l) => (
+                          <li key={l.id}>
+                            <label className="parent-pay__dispute-check">
+                              <input
+                                type="checkbox"
+                                checked={!disputeEntireInvoice && disputeLineIds.includes(l.id)}
+                                disabled={disputeEntireInvoice}
+                                onChange={() => toggleDisputeLine(l.id)}
+                              />
+                              <span>{formatSessionLineLabel(l)}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="parent-pay__dispute-empty">No session lines on this invoice.</p>
+                    )}
+                  </fieldset>
+
+                  <ParentFilterField label="Details">
+                    <textarea
+                      className="parent-pay__dispute-textarea"
+                      value={disputeMessage}
+                      onChange={(e) => setDisputeMessage(e.target.value)}
+                      rows={4}
+                      placeholder="Describe the issue (at least 10 characters)"
+                      aria-label="Dispute details"
+                    />
+                  </ParentFilterField>
+
+                  <div className="parent-pay__dispute-actions">
+                    <button
+                      type="submit"
+                      className="parent-pay__btn parent-pay__btn--primary"
+                      disabled={
+                        acting ||
+                        disputeMessage.trim().length < 10 ||
+                        (!disputeEntireInvoice && disputeLineIds.length === 0)
+                      }
+                    >
+                      {acting ? 'Submitting…' : 'Submit dispute'}
                     </button>
-                    <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setDisputeOpen(false)}>
+                    <button
+                      type="button"
+                      className="parent-pay__btn parent-pay__btn--ghost"
+                      onClick={() => {
+                        setDisputeOpen(false)
+                        resetDisputeForm()
+                      }}
+                    >
                       Cancel
                     </button>
                   </div>
-                </section>
+                </form>
               ) : null}
 
               {(selected.payments || []).length > 0 ? (
@@ -702,7 +819,7 @@ export function ParentBillingPage() {
                         {p.hasProof ? (
                           <button
                             type="button"
-                            className="admin-btn admin-btn--ghost admin-btn--sm"
+                            className="parent-pay__btn parent-pay__btn--ghost parent-pay__btn--sm"
                             style={{ marginTop: 4 }}
                             onClick={() =>
                               apiDownload(
@@ -775,10 +892,14 @@ export function ParentBillingPage() {
                       />
                     </label>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <button type="submit" className="admin-btn admin-btn--primary" disabled={acting}>
+                      <button type="submit" className="parent-pay__btn parent-pay__btn--primary" disabled={acting}>
                         {acting ? 'Submitting…' : 'Submit for review'}
                       </button>
-                      <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setPaymentOpen(false)}>
+                      <button
+                        type="button"
+                        className="parent-pay__btn parent-pay__btn--ghost"
+                        onClick={() => setPaymentOpen(false)}
+                      >
                         Cancel
                       </button>
                     </div>
@@ -827,10 +948,10 @@ export function ParentBillingPage() {
               ) : null}
             </div>
 
-            <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <div className="parent-pay__dialog-footer">
               <button
                 type="button"
-                className="admin-btn admin-btn--secondary"
+                className="parent-pay__btn parent-pay__btn--secondary"
                 onClick={() => downloadPdf(selected.id, selected.invoiceNumber)}
               >
                 Download PDF
@@ -839,7 +960,7 @@ export function ParentBillingPage() {
                 <>
                   <button
                     type="button"
-                    className="admin-btn admin-btn--primary"
+                    className="parent-pay__btn parent-pay__btn--primary"
                     disabled
                     title="Online payment gateway coming soon"
                   >
@@ -847,7 +968,7 @@ export function ParentBillingPage() {
                   </button>
                   <button
                     type="button"
-                    className="admin-btn admin-btn--secondary"
+                    className="parent-pay__btn parent-pay__btn--secondary"
                     onClick={() => {
                       setPaymentOpen(true)
                       setDisputeOpen(false)
@@ -855,15 +976,17 @@ export function ParentBillingPage() {
                   >
                     I paid offline
                   </button>
-                  <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setDisputeOpen(true)}>
+                  <button type="button" className="parent-pay__btn parent-pay__btn--ghost" onClick={openDisputeForm}>
                     Dispute invoice
                   </button>
                 </>
               ) : null}
             </div>
-          </div>
-        </div>
-      ) : null}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

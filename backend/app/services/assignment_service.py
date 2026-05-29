@@ -149,9 +149,10 @@ def update_assignment_booking(db: Session, assignment_id: int, data: dict) -> Ca
 
 def assignment_to_read_dict(assignment: CaseAssignment, therapist_name: str | None = None) -> dict:
     from app.services.appointment_policy import assignment_booking_summary
+    from app.services.assignment_acceptance_service import assignment_acceptance_fields
 
     summary = assignment_booking_summary(assignment)
-    return {
+    data = {
         "id": assignment.id,
         "case_id": assignment.case_id,
         "case_service_id": assignment.case_service_id,
@@ -170,3 +171,5 @@ def assignment_to_read_dict(assignment: CaseAssignment, therapist_name: str | No
         "fixed_recurrence_group_id": assignment.fixed_recurrence_group_id,
         "fixed_window_label": summary.get("fixed_window_label"),
     }
+    data.update(assignment_acceptance_fields(assignment))
+    return data

@@ -39,3 +39,8 @@ class InvoiceSubmitRequest(BaseModel):
     month: str
     edits: Optional[InvoicePreviewEdit] = None
     notes: Optional[str] = None
+
+
+class InvoiceAmendRequest(BaseModel):
+    edits: Optional[InvoicePreviewEdit] = None
+    notes: Optional[str] = None

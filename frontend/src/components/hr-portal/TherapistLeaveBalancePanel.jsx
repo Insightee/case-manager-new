@@ -2,18 +2,12 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { isLeaveBalanceUpdated, leaveBalancePaidRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
 
-const SERVICE_LINES = [
-  { value: 'shadow_support', label: 'Shadow support' },
-  { value: 'homecare', label: 'Homecare' },
-  { value: 'counselling', label: 'Counselling' },
-  { value: 'occupational_therapy', label: 'Occupational therapy' },
-]
-
 export function TherapistLeaveBalancePanel({
   therapistUserId,
   year: yearProp,
   canEdit = false,
   onSaved,
+  className = '',
 }) {
   const year = yearProp || new Date().getFullYear()
   const [balance, setBalance] = useState(null)
@@ -76,109 +70,127 @@ export function TherapistLeaveBalancePanel({
     }
   }
 
+  const panelClass = ['therapist-leave-panel', className].filter(Boolean).join(' ')
+
   if (loading) {
-    return <p style={{ fontSize: '0.875rem', color: '#94a3b8' }}>Loading leave balance…</p>
+    return (
+      <div className={panelClass}>
+        <p className="admin-muted" style={{ margin: 0, fontSize: '0.875rem' }}>
+          Loading leave balance…
+        </p>
+      </div>
+    )
   }
 
   if (!balance) {
-    return error ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{error}</p> : null
+    return error ? (
+      <div className={panelClass}>
+        <p className="admin-alert admin-alert--error" style={{ margin: 0 }}>
+          {error}
+        </p>
+      </div>
+    ) : null
   }
 
+  const updated = isLeaveBalanceUpdated(balance)
+  const pendingLabel = updated ? null : 'Pending setup'
+
   return (
-    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
-      <h3 style={{ margin: '0 0 8px', fontSize: '0.95rem', fontWeight: 700 }}>Leave balance ({year})</h3>
-      <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 12px' }}>
+    <div className={panelClass}>
+      <h3 className="therapist-leave-panel__title">Leave balance ({year})</h3>
+      <p className="therapist-leave-panel__lead">
         Balances refresh each January. Use backfill for leave taken before the new system or when auto totals are wrong.
       </p>
 
-      {!isLeaveBalanceUpdated(balance) ? (
-        <p style={{ fontSize: '0.8rem', color: '#b45309', margin: '0 0 12px', fontWeight: 600 }}>
-          Balance for {year}: — To be updated (save employment date and leave settings below).
+      {!updated ? (
+        <p className="therapist-leave-panel__banner">
+          Add consultant start date below to calculate paid entitlement and remaining days for {year}.
         </p>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 12, fontSize: '0.8rem' }}>
-        <div style={{ padding: 8, background: '#f8fafc', borderRadius: 8 }}>
-          <div style={{ color: '#64748b' }}>Paid entitlement</div>
-          <div style={{ fontWeight: 700 }}>{isLeaveBalanceUpdated(balance) ? balance.entitlement_paid : '—'}</div>
-        </div>
-        <div style={{ padding: 8, background: '#f0fdf4', borderRadius: 8 }}>
-          <div style={{ color: '#64748b' }}>Paid remaining</div>
-          <div style={{ fontWeight: 700, color: isLeaveBalanceUpdated(balance) ? '#15803d' : '#b45309' }}>
-            {leaveBalancePaidRemainingLabel(balance)}
+      <div className="therapist-leave-panel__stats">
+        <div className="therapist-leave-panel__stat">
+          <div className="therapist-leave-panel__stat-label">Paid entitlement</div>
+          <div
+            className={`therapist-leave-panel__stat-value ${updated ? '' : 'therapist-leave-panel__stat-value--muted'}`}
+          >
+            {updated ? balance.entitlement_paid : pendingLabel}
           </div>
         </div>
-        <div style={{ padding: 8, background: '#f8fafc', borderRadius: 8 }}>
-          <div style={{ color: '#64748b' }}>Used (system)</div>
-          <div style={{ fontWeight: 600 }}>
-            {isLeaveBalanceUpdated(balance)
+        <div className="therapist-leave-panel__stat therapist-leave-panel__stat--highlight">
+          <div className="therapist-leave-panel__stat-label">Paid remaining</div>
+          <div
+            className={`therapist-leave-panel__stat-value ${updated ? 'therapist-leave-panel__stat-value--ok' : 'therapist-leave-panel__stat-value--muted'}`}
+          >
+            {updated ? leaveBalancePaidRemainingLabel(balance) : pendingLabel}
+          </div>
+        </div>
+        <div className="therapist-leave-panel__stat">
+          <div className="therapist-leave-panel__stat-label">Used (system)</div>
+          <div className={`therapist-leave-panel__stat-value ${updated ? '' : 'therapist-leave-panel__stat-value--muted'}`}>
+            {updated
               ? `${balance.computed_paid_used} paid · ${balance.computed_carry_forward_used} carry`
-              : '—'}
+              : pendingLabel}
           </div>
         </div>
-        <div style={{ padding: 8, background: '#f8fafc', borderRadius: 8 }}>
-          <div style={{ color: '#64748b' }}>HR backfill</div>
-          <div style={{ fontWeight: 600 }}>
-            {isLeaveBalanceUpdated(balance)
+        <div className="therapist-leave-panel__stat">
+          <div className="therapist-leave-panel__stat-label">HR backfill</div>
+          <div className={`therapist-leave-panel__stat-value ${updated ? '' : 'therapist-leave-panel__stat-value--muted'}`}>
+            {updated
               ? `${balance.backfill_paid_used} paid · ${balance.backfill_carry_forward_used} carry`
-              : '—'}
+              : pendingLabel}
           </div>
         </div>
       </div>
 
       {balance.backfill_paid_used > 0 && balance.backfill_note ? (
-        <p style={{ fontSize: '0.75rem', color: '#6366f1', marginBottom: 12 }}>Note: {balance.backfill_note}</p>
+        <p className="admin-muted" style={{ fontSize: '0.75rem', margin: '0 0 12px' }}>
+          Note: {balance.backfill_note}
+        </p>
       ) : null}
 
       {canEdit ? (
-        <form onSubmit={saveBackfill} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <label style={{ fontSize: '0.8rem' }}>
-            Employment start date
+        <form onSubmit={saveBackfill} className="therapist-leave-panel__form">
+          <label className="admin-filter-field">
+            <span className="admin-filter-field__label">Consultant start date</span>
             <input
               type="date"
+              className="admin-input"
               value={employmentStart}
               onChange={(e) => setEmploymentStart(e.target.value)}
-              style={{ display: 'block', width: '100%', marginTop: 4, padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db' }}
             />
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <label style={{ fontSize: '0.8rem' }}>
-              Paid days (backfill)
+          <div className="therapist-leave-panel__form-grid">
+            <label className="admin-filter-field">
+              <span className="admin-filter-field__label">Paid days (backfill)</span>
               <input
                 type="number"
                 min={0}
+                className="admin-input"
                 value={paidBackfill}
                 onChange={(e) => setPaidBackfill(e.target.value)}
-                style={{ display: 'block', width: '100%', marginTop: 4, padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db' }}
               />
             </label>
-            <label style={{ fontSize: '0.8rem' }}>
-              Carry forward (backfill)
+            <label className="admin-filter-field">
+              <span className="admin-filter-field__label">Carry forward (backfill)</span>
               <input
                 type="number"
                 min={0}
+                className="admin-input"
                 value={carryBackfill}
                 onChange={(e) => setCarryBackfill(e.target.value)}
-                style={{ display: 'block', width: '100%', marginTop: 4, padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db' }}
               />
             </label>
           </div>
-          <label style={{ fontSize: '0.8rem' }}>
-            Note {Number(paidBackfill) > 0 || Number(carryBackfill) > 0 ? '(required if backfill &gt; 0)' : ''}
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              style={{ display: 'block', width: '100%', marginTop: 4, padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db' }}
-            />
+          <label className="admin-filter-field">
+            <span className="admin-filter-field__label">
+              Note {Number(paidBackfill) > 0 || Number(carryBackfill) > 0 ? '(required if backfill > 0)' : ''}
+            </span>
+            <textarea className="admin-input" value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
           </label>
-          {error ? <p style={{ color: '#b91c1c', fontSize: '0.8rem', margin: 0 }}>{error}</p> : null}
-          {success ? <p style={{ color: '#15803d', fontSize: '0.8rem', margin: 0 }}>{success}</p> : null}
-          <button
-            type="submit"
-            disabled={saving}
-            style={{ padding: '8px 14px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer', alignSelf: 'flex-start' }}
-          >
+          {error ? <p className="admin-alert admin-alert--error" style={{ margin: 0 }}>{error}</p> : null}
+          {success ? <p className="admin-alert admin-alert--success" style={{ margin: 0 }}>{success}</p> : null}
+          <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={saving}>
             {saving ? 'Saving…' : 'Save leave settings'}
           </button>
         </form>
@@ -186,5 +198,3 @@ export function TherapistLeaveBalancePanel({
     </div>
   )
 }
-
-export { SERVICE_LINES }

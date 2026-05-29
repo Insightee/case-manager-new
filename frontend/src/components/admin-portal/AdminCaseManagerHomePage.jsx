@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAdminCmHome } from '../../hooks/useAdminCmHome.js'
-import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminSearchInput, StatusBadge } from './ui/index.js'
+import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminSearchInput, AdminStatCard, StatusBadge } from './ui/index.js'
 import './admin-cm-home.css'
 
 const COLUMN_LABELS = {
@@ -39,6 +39,15 @@ const SECTION_ORDER = [
   'iep',
   'meetings',
 ]
+
+function caseHrefWithTab(href, tab) {
+  if (!href) return href
+  const [path, query = ''] = href.split('?')
+  const params = new URLSearchParams(query)
+  params.set('tab', tab)
+  const qs = params.toString()
+  return qs ? `${path}?${qs}` : path
+}
 
 function CaseloadTable({ rows, filter }) {
   const q = filter.trim().toLowerCase()
@@ -92,14 +101,17 @@ function CaseloadTable({ rows, filter }) {
                   <Link to={row.href} className="admin-btn admin-btn--primary admin-btn--sm">
                     Open
                   </Link>
-                  {row.pipeline_column === 'pending_allotment' || row.pipeline_column === 'needs_therapist' ? (
-                    <Link to={`${row.href}?tab=assignments`} className="admin-btn admin-btn--ghost admin-btn--sm">
-                      Assign
+                  {row.open_reports > 0 ? (
+                    <Link
+                      to={caseHrefWithTab(row.href, 'reports')}
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                    >
+                      Reports
                     </Link>
                   ) : null}
-                  {row.open_reports > 0 ? (
-                    <Link to="/admin/reports?tab=queue" className="admin-btn admin-btn--ghost admin-btn--sm">
-                      Review
+                  {row.missing_logs > 0 ? (
+                    <Link to={caseHrefWithTab(row.href, 'logs')} className="admin-btn admin-btn--ghost admin-btn--sm">
+                      Logs
                     </Link>
                   ) : null}
                 </div>
@@ -154,6 +166,14 @@ export function AdminCaseManagerHomePage() {
   const { data, isLoading, error, refetch } = useAdminCmHome()
   const [caseloadFilter, setCaseloadFilter] = useState('needs_action')
   const [search, setSearch] = useState('')
+  const caseloadPanelRef = useRef(null)
+
+  function selectCaseloadFilter(next) {
+    setCaseloadFilter(next)
+    window.requestAnimationFrame(() => {
+      caseloadPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
 
   const summary = data?.caseload_summary
   const allCaseload = data?.caseload || []
@@ -213,40 +233,49 @@ export function AdminCaseManagerHomePage() {
         <p className="admin-muted">Loading your caseload…</p>
       ) : (
         <>
-          <section className="admin-cm-stats" aria-label="Caseload summary">
-            <button
-              type="button"
-              className={`admin-stat admin-stat--link admin-stat--yellow ${caseloadFilter === 'needs_action' ? 'is-active' : ''}`}
-              onClick={() => setCaseloadFilter('needs_action')}
-            >
-              <p className="admin-stat__label">Needs action</p>
-              <p className="admin-stat__value">{summary?.needs_action ?? 0}</p>
-            </button>
-            <button
-              type="button"
-              className={`admin-stat admin-stat--link admin-stat--slate ${caseloadFilter === 'pending_allotment' ? 'is-active' : ''}`}
-              onClick={() => setCaseloadFilter('pending_allotment')}
-            >
-              <p className="admin-stat__label">Pending allotment</p>
-              <p className="admin-stat__value">{summary?.pending_allotment ?? 0}</p>
-            </button>
-            <button
-              type="button"
-              className={`admin-stat admin-stat--link admin-stat--indigo ${caseloadFilter === 'active' ? 'is-active' : ''}`}
-              onClick={() => setCaseloadFilter('active')}
-            >
-              <p className="admin-stat__label">Active</p>
-              <p className="admin-stat__value">{summary?.active ?? 0}</p>
-            </button>
-            <button
-              type="button"
-              className={`admin-stat admin-stat--link admin-stat--slate ${caseloadFilter === 'all' ? 'is-active' : ''}`}
-              onClick={() => setCaseloadFilter('all')}
-            >
-              <p className="admin-stat__label">Total caseload</p>
-              <p className="admin-stat__value">{summary?.total ?? 0}</p>
-            </button>
+          <section className="admin-cm-stats" aria-label="Caseload summary" role="tablist">
+            <AdminStatCard
+              title="Needs action"
+              value={summary?.needs_action ?? 0}
+              tone="yellow"
+              active={caseloadFilter === 'needs_action'}
+              onClick={() => selectCaseloadFilter('needs_action')}
+            />
+            <AdminStatCard
+              title="Pending allotment"
+              value={summary?.pending_allotment ?? 0}
+              tone="slate"
+              active={caseloadFilter === 'pending_allotment'}
+              onClick={() => selectCaseloadFilter('pending_allotment')}
+            />
+            <AdminStatCard
+              title="Active"
+              value={summary?.active ?? 0}
+              tone="indigo"
+              active={caseloadFilter === 'active'}
+              onClick={() => selectCaseloadFilter('active')}
+            />
+            <AdminStatCard
+              title="Total caseload"
+              value={summary?.total ?? 0}
+              tone="slate"
+              active={caseloadFilter === 'all'}
+              onClick={() => selectCaseloadFilter('all')}
+            />
           </section>
+
+          <div ref={caseloadPanelRef} className="admin-cm-caseload-panel">
+            <AdminPanel title="My caseload" subtitle="Sorted by urgency — allotment and reviews first" padded={false}>
+            <div className="admin-panel__body">
+              <div style={{ padding: '12px 16px 0' }}>
+                <AdminSearchInput value={search} onChange={setSearch} placeholder="Search caseload…" />
+              </div>
+              <div style={{ padding: '0 16px 16px' }}>
+                <CaseloadTable rows={caseloadRows} filter={search} />
+              </div>
+            </div>
+            </AdminPanel>
+          </div>
 
           <section className="admin-cm-reports-hub" aria-label="Report management">
             <div className="admin-cm-reports-hub__head">
@@ -279,17 +308,6 @@ export function AdminCaseManagerHomePage() {
               </Link>
             </div>
           </section>
-
-          <AdminPanel title="My caseload" subtitle="Sorted by urgency — allotment and reviews first" padded={false}>
-            <div className="admin-panel__body">
-              <div style={{ padding: '12px 16px 0' }}>
-                <AdminSearchInput value={search} onChange={setSearch} placeholder="Search caseload…" />
-              </div>
-              <div style={{ padding: '0 16px 16px' }}>
-                <CaseloadTable rows={caseloadRows} filter={search} />
-              </div>
-            </div>
-          </AdminPanel>
 
           {sectionIds.length > 0 ? (
             <div className="admin-cm-queues">

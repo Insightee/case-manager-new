@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { formatSessionWhen } from '../../lib/sessionDisplay.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AddressFormFields, addressFromApi, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
@@ -7,6 +8,7 @@ import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { CaseSchedulingHub } from './CaseSchedulingHub.jsx'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import './admin-allotment-wizard.css'
 
 const TOTAL_STEPS = 5
 
@@ -56,11 +58,16 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   const [addressSource, setAddressSource] = useState('manual')
   const [billing, setBilling] = useState(EMPTY_BILLING)
   const [therapistId, setTherapistId] = useState('')
+  const [therapistLabel, setTherapistLabel] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
   const [createdCase, setCreatedCase] = useState(null)
   const [createdAssignments, setCreatedAssignments] = useState([])
+  const [scheduledSessionCount, setScheduledSessionCount] = useState(0)
+  const [previewData, setPreviewData] = useState(null)
+  const [activating, setActivating] = useState(false)
+  const [activationInvites, setActivationInvites] = useState([])
 
   useEffect(() => {
     apiFetch('/api/v1/admin/service-categories')
@@ -123,6 +130,25 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       .then((r) => setCaseCode(r.case_code))
       .catch(() => setCaseCode(''))
   }, [productModule])
+
+  useEffect(() => {
+    if (!therapistId || !productModule) {
+      setTherapistLabel('')
+      return
+    }
+    apiFetch(
+      `/api/v1/admin/allotment/therapists?product_module=${encodeURIComponent(productModule)}&approved_only=false`,
+    )
+      .then((rows) => {
+        const match = (rows || []).find((t) => String(t.therapist_user_id) === String(therapistId))
+        if (match) {
+          setTherapistLabel(`${match.therapist_name || match.full_name} · ${match.email || ''}`.trim())
+        } else {
+          setTherapistLabel(`Therapist #${therapistId}`)
+        }
+      })
+      .catch(() => setTherapistLabel(`Therapist #${therapistId}`))
+  }, [therapistId, productModule])
 
   useEffect(() => {
     if (!moduleOptions.find((m) => m.id === productModule) && moduleOptions.length) {
@@ -225,11 +251,48 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       setCreatedCase(result.case)
       const asg = await apiFetch(`/api/v1/cases/${result.case.id}/assignments`).catch(() => [])
       setCreatedAssignments(asg || [])
+      setScheduledSessionCount(0)
+      setPreviewData(null)
       setStep(5)
     } catch (err) {
       setError(err.message || 'Allotment failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const loadPreview = useCallback(async () => {
+    if (!createdCase?.id) return
+    const data = await apiFetch(`/api/v1/admin/cases/${createdCase.id}/allotment-preview`)
+    setPreviewData(data)
+    const sessions = data.upcoming_sessions || []
+    setScheduledSessionCount(sessions.length)
+  }, [createdCase?.id])
+
+  useEffect(() => {
+    if (step === 6 && createdCase?.id) {
+      loadPreview().catch((err) => setError(err.message || 'Could not load preview'))
+    }
+  }, [step, createdCase?.id, loadPreview])
+
+  async function handleApprove() {
+    if (!createdCase?.id) return
+    setActivating(true)
+    setError('')
+    try {
+      const res = await apiFetch(`/api/v1/admin/cases/${createdCase.id}/activate-allotment`, {
+        method: 'POST',
+      })
+      setCreatedCase(res.case)
+      setActivationInvites(res.parent_invite_urls || [])
+      if (res.parent_invite_urls?.length) {
+        setInviteUrl(res.parent_invite_urls[0])
+      }
+      setStep(7)
+    } catch (err) {
+      setError(err.message || 'Activation failed')
+    } finally {
+      setActivating(false)
     }
   }
 
@@ -244,10 +307,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       ) : null}
 
       {step === 1 ? (
-        <div className="admin-form-grid" style={{ maxWidth: 520 }}>
-          <fieldset style={{ gridColumn: '1 / -1', border: 'none', padding: 0, margin: 0 }}>
+        <div className="admin-form-grid admin-allotment-wizard__form">
+          <fieldset className="admin-allotment-wizard__client-type">
             <legend className="text-sm font-semibold text-slate-700 mb-3">Client type</legend>
-            <div className="flex gap-4">
+            <div className="admin-allotment-wizard__client-type-options">
               {[
                 { id: 'existing', label: 'Existing client' },
                 { id: 'new', label: 'New client' },
@@ -266,7 +329,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             </div>
           </fieldset>
           {familyMode === 'existing' ? (
-            <label style={{ gridColumn: '1 / -1' }}>
+            <label className="admin-allotment-wizard__search-field">
               Search child or parent
               <AdminFamilyCombobox
                 value={childId}
@@ -439,82 +502,259 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       ) : null}
 
       {step === 3 ? (
-        <div className="admin-form-grid" style={{ maxWidth: 520 }}>
-          <label>
-            Client billing (family invoice)
-            <select className="admin-input" value={billing.client_billing_mode} onChange={(e) => setBill('client_billing_mode', e.target.value)}>
-              <option value="POSTPAID">Postpaid</option>
-              <option value="PREPAID">Prepaid</option>
-            </select>
-          </label>
-          <label>
-            Therapist billing
-            <select className="admin-input" value={billing.billing_type} onChange={(e) => setBill('billing_type', e.target.value)}>
-              <option value="PER_SESSION">Per session</option>
-              <option value="PACKAGE">Package</option>
-            </select>
-          </label>
-          {billing.billing_type === 'PER_SESSION' ? (
-            <>
+        <div className="admin-allotment-wizard__billing">
+          <section className="admin-allotment-wizard__billing-section">
+            <h3 className="admin-allotment-wizard__section-title">Assign therapist</h3>
+            <p className="admin-allotment-wizard__section-lead">
+              Choose who will deliver this case for {productModule.replace(/_/g, ' ')}. Billing rates apply to this
+              therapist.
+            </p>
+            <AdminTherapistPicker
+              mode="allotment"
+              productModule={productModule}
+              value={therapistId}
+              onChange={setTherapistId}
+            />
+          </section>
+
+          <section className="admin-allotment-wizard__billing-section admin-allotment-wizard__billing-rates">
+            <h3 className="admin-allotment-wizard__section-title">Client &amp; therapist billing</h3>
+            {!therapistId ? (
+              <p className="admin-allotment-wizard__section-lead admin-allotment-wizard__section-lead--warn">
+                Select a therapist above to set invoice type, package or per-session rates, and pay share.
+              </p>
+            ) : (
+              <p className="admin-allotment-wizard__section-lead">
+                Set what the family is charged and this therapist&apos;s pay share on the case.
+              </p>
+            )}
+            <div className="admin-form-grid admin-allotment-wizard__billing-grid">
               <label>
-                Rate / session (INR)
-                <input type="number" className="admin-input" value={billing.client_rate_per_session_inr} onChange={(e) => setBill('client_rate_per_session_inr', e.target.value)} />
+                Client billing (family invoice)
+                <select
+                  className="admin-input"
+                  value={billing.client_billing_mode}
+                  onChange={(e) => setBill('client_billing_mode', e.target.value)}
+                  disabled={!therapistId}
+                >
+                  <option value="POSTPAID">Postpaid</option>
+                  <option value="PREPAID">Prepaid</option>
+                </select>
               </label>
               <label>
-                Therapist share %
-                <input type="number" min="50" max="70" className="admin-input" value={billing.pay_share_pct} onChange={(e) => setBill('pay_share_pct', e.target.value)} />
+                Therapist billing
+                <select
+                  className="admin-input"
+                  value={billing.billing_type}
+                  onChange={(e) => setBill('billing_type', e.target.value)}
+                  disabled={!therapistId}
+                >
+                  <option value="PER_SESSION">Per session</option>
+                  <option value="PACKAGE">Package</option>
+                </select>
               </label>
-            </>
-          ) : (
-            <>
-              <label>
-                Package sessions
-                <input type="number" className="admin-input" value={billing.package_session_count} onChange={(e) => setBill('package_session_count', e.target.value)} />
-              </label>
-              <label>
-                Package amount (INR)
-                <input type="number" className="admin-input" value={billing.package_amount_inr} onChange={(e) => setBill('package_amount_inr', e.target.value)} />
-              </label>
-              <label>
-                Therapist share %
-                <input type="number" min="50" max="70" className="admin-input" value={billing.pay_share_pct} onChange={(e) => setBill('pay_share_pct', e.target.value)} />
-              </label>
-            </>
-          )}
+              {billing.billing_type === 'PER_SESSION' ? (
+                <>
+                  <label>
+                    Rate / session (INR)
+                    <input
+                      type="number"
+                      className="admin-input"
+                      value={billing.client_rate_per_session_inr}
+                      onChange={(e) => setBill('client_rate_per_session_inr', e.target.value)}
+                      disabled={!therapistId}
+                    />
+                  </label>
+                  <label>
+                    Therapist pay share %
+                    <input
+                      type="number"
+                      min="50"
+                      max="70"
+                      className="admin-input"
+                      value={billing.pay_share_pct}
+                      onChange={(e) => setBill('pay_share_pct', e.target.value)}
+                      disabled={!therapistId}
+                    />
+                    <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
+                      Share of client session fee paid to the assigned therapist (typically 50–70%).
+                    </span>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    Package sessions
+                    <input
+                      type="number"
+                      className="admin-input"
+                      value={billing.package_session_count}
+                      onChange={(e) => setBill('package_session_count', e.target.value)}
+                      disabled={!therapistId}
+                    />
+                  </label>
+                  <label>
+                    Package amount (INR)
+                    <input
+                      type="number"
+                      className="admin-input"
+                      value={billing.package_amount_inr}
+                      onChange={(e) => setBill('package_amount_inr', e.target.value)}
+                      disabled={!therapistId}
+                    />
+                  </label>
+                  <label>
+                    Therapist pay share %
+                    <input
+                      type="number"
+                      min="50"
+                      max="70"
+                      className="admin-input"
+                      value={billing.pay_share_pct}
+                      onChange={(e) => setBill('pay_share_pct', e.target.value)}
+                      disabled={!therapistId}
+                    />
+                    <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
+                      Percentage of package value for therapist payout.
+                    </span>
+                  </label>
+                </>
+              )}
+            </div>
+          </section>
         </div>
       ) : null}
 
       {step === 4 ? (
-        <div style={{ maxWidth: 480 }}>
-          <p className="text-sm font-semibold text-slate-700 mb-1">Assign therapist</p>
-          <p className="text-xs text-slate-500 mb-3">
-            Only therapists approved for {productModule.replace(/_/g, ' ')} are listed.
+        <div className="admin-allotment-wizard__review">
+          <h3 className="admin-allotment-wizard__section-title">Save draft case</h3>
+          <p className="admin-allotment-wizard__section-lead">
+            The case stays in pending allotment until you approve and send invites. You can schedule sessions next.
           </p>
-          <AdminTherapistPicker
-            mode="allotment"
-            productModule={productModule}
-            value={therapistId}
-            onChange={setTherapistId}
-          />
-          {therapistId && (
-            <p className="mt-3 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-              Therapist selected — click <strong>Create case &amp; assign</strong> to proceed.
+          <dl className="admin-allotment-wizard__review-list">
+            <div>
+              <dt>Module</dt>
+              <dd>{moduleOptions.find((m) => m.id === productModule)?.label || productModule}</dd>
+            </div>
+            <div>
+              <dt>Case code</dt>
+              <dd>{caseCode || '—'}</dd>
+            </div>
+            <div>
+              <dt>Therapist</dt>
+              <dd>{therapistLabel || (therapistId ? `Therapist #${therapistId}` : 'Not selected')}</dd>
+            </div>
+            <div>
+              <dt>Client billing</dt>
+              <dd>{billing.client_billing_mode}</dd>
+            </div>
+            <div>
+              <dt>Therapist billing</dt>
+              <dd>
+                {billing.billing_type === 'PER_SESSION'
+                  ? `Per session · ₹${billing.client_rate_per_session_inr}/session · ${billing.pay_share_pct}% pay share`
+                  : `Package · ${billing.package_session_count} sessions · ₹${billing.package_amount_inr} · ${billing.pay_share_pct}% pay share`}
+              </dd>
+            </div>
+          </dl>
+          {!therapistId ? (
+            <p className="admin-allotment-wizard__section-lead admin-allotment-wizard__section-lead--warn">
+              Go back to step 3 and select a therapist.
             </p>
-          )}
+          ) : null}
         </div>
       ) : null}
 
       {step === 5 && createdCase ? (
         <div>
           <p className="admin-muted" style={{ marginBottom: 12 }}>
-            Case {createdCase.case_code} created. Book sessions now or finish later from the case page.
+            Case {createdCase.case_code} (draft). Book recurring or one-off sessions — upcoming count:{' '}
+            {scheduledSessionCount}.
           </p>
-          <CaseSchedulingHub caseItem={createdCase} assignments={createdAssignments} onDone={() => {}} />
+          <CaseSchedulingHub
+            caseItem={createdCase}
+            assignments={createdAssignments}
+            onDone={loadPreview}
+            onSessionsChange={(list) => setScheduledSessionCount(list.length)}
+          />
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {step > 1 && step < 5 ? (
+      {step === 6 && createdCase ? (
+        <div className="admin-allotment-wizard__preview">
+          <h3 className="admin-allotment-wizard__section-title">Preview before approval</h3>
+          <p className="admin-allotment-wizard__section-lead">
+            After approval, parent and therapist receive invites to review the plan. Service can begin once the case
+            is active — acceptance is optional during the pilot. Conflicts can be raised via Support.
+          </p>
+          <dl className="admin-allotment-wizard__review-list">
+            <div>
+              <dt>Case</dt>
+              <dd>{createdCase.case_code}</dd>
+            </div>
+            <div>
+              <dt>Therapist</dt>
+              <dd>{previewData?.therapist_name || therapistLabel || '—'}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{previewData?.case?.status || createdCase.status || 'PENDING_ALLOTMENT'}</dd>
+            </div>
+            {previewData?.billing_summary ? (
+              <div>
+                <dt>Billing</dt>
+                <dd>
+                  {previewData.billing_summary.billing_type === 'PER_SESSION'
+                    ? `Per session · ₹${previewData.billing_summary.client_rate_per_session_inr} · ${previewData.billing_summary.pay_share_pct}% pay share`
+                    : `Package · ${previewData.billing_summary.package_session_count} sessions · ₹${previewData.billing_summary.package_amount_inr}`}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+          <h4 className="admin-allotment-wizard__preview-sessions-title">Upcoming sessions</h4>
+          {(previewData?.upcoming_sessions || []).length === 0 ? (
+            <p className="admin-muted">No upcoming sessions scheduled yet. Go back to step 5 to book, or approve without sessions.</p>
+          ) : (
+            <table className="admin-allotment-wizard__sessions-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(previewData?.upcoming_sessions || []).map((s) => (
+                  <tr key={s.id}>
+                    <td>{formatSessionWhen(s)}</td>
+                    <td>{s.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : null}
+
+      {step === 7 && createdCase ? (
+        <div className="admin-allotment-wizard__success">
+          <h3 className="admin-allotment-wizard__section-title">Case activated</h3>
+          <p className="admin-allotment-wizard__section-lead">
+            {createdCase.case_code} is active. Parent and therapist have been notified to accept the assignment.
+          </p>
+          {activationInvites.length > 0 ? (
+            <p style={{ fontSize: '0.875rem', color: '#047857', wordBreak: 'break-all' }}>
+              Parent invite: {activationInvites[0]}
+            </p>
+          ) : inviteUrl ? (
+            <p style={{ fontSize: '0.875rem', color: '#047857', wordBreak: 'break-all' }}>
+              Parent invite: {inviteUrl}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="admin-allotment-wizard__actions">
+        {step > 1 && step < 7 && step !== 6 ? (
           <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => setStep((s) => s - 1)}>
             Back
           </button>
@@ -525,8 +765,30 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             </button>
           )
         )}
-        {step < 4 ? (
+        {step === 6 ? (
+          <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => setStep(3)}>
+            Back to edit
+          </button>
+        ) : null}
+        {step < 3 ? (
           <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setStep((s) => s + 1)}>
+            Next
+          </button>
+        ) : null}
+        {step === 3 ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            disabled={!therapistId}
+            onClick={() => {
+              if (!therapistId) {
+                setError('Select a therapist before continuing')
+                return
+              }
+              setError('')
+              setStep(4)
+            }}
+          >
             Next
           </button>
         ) : null}
@@ -537,10 +799,34 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             disabled={saving || !therapistId || !canSubmitAllot}
             onClick={handleSubmit}
           >
-            {saving ? 'Creating…' : 'Create case & assign'}
+            {saving ? 'Saving…' : 'Save draft & continue'}
           </button>
         ) : null}
         {step === 5 ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            onClick={() => {
+              setError('')
+              loadPreview()
+                .then(() => setStep(6))
+                .catch((err) => setError(err.message || 'Could not load preview'))
+            }}
+          >
+            Continue to preview
+          </button>
+        ) : null}
+        {step === 6 ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            disabled={activating}
+            onClick={handleApprove}
+          >
+            {activating ? 'Approving…' : 'Approve & send invites'}
+          </button>
+        ) : null}
+        {step === 7 ? (
           <button
             type="button"
             className="admin-btn admin-btn--primary admin-btn--sm"

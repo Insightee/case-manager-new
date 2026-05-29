@@ -1,0 +1,114 @@
+.case-activity-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.case-activity-panel__header {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.case-activity-panel__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.case-activity-panel__lead {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.case-activity-panel__body {
+  padding: 8px 18px 18px;
+}
+
+.case-activity-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid #e2e8f0;
+}
+
+.case-activity-timeline__item {
+  position: relative;
+  padding: 12px 0 12px 16px;
+  border-bottom: none;
+}
+
+.case-activity-timeline__item::before {
+  content: '';
+  position: absolute;
+  left: -17px;
+  top: 18px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #6366f1;
+  box-shadow: 0 0 0 2px #eef2ff;
+}
+
+.case-activity-timeline__item--assignment::before {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 2px #ccfbf1;
+}
+
+.case-activity-timeline__item--audit::before {
+  border-color: #64748b;
+  box-shadow: 0 0 0 2px #f1f5f9;
+}
+
+.case-activity-timeline__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.case-activity-timeline__action {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.case-activity-timeline__time {
+  font-size: 0.6875rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.case-activity-timeline__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.case-activity-timeline__chip {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+@media (max-width: 640px) {
+  .case-activity-panel__header,
+  .case-activity-panel__body {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}

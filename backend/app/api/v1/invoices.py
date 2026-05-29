@@ -15,7 +15,7 @@ from app.models.invoice import Invoice, InvoiceStatus
 from app.models.review import ReviewDecision
 from app.models.user import User
 from app.schemas.invoice import InvoiceRead, PaymentUpdate
-from app.schemas.billing import InvoiceSubmitRequest, LateSessionCreate
+from app.schemas.billing import InvoiceAmendRequest, InvoiceSubmitRequest, LateSessionCreate
 from app.schemas.report import ReviewAction
 from app.services import invoice_service
 from app.services import invoice_billing_service
@@ -149,6 +149,37 @@ def submit_invoice(
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="submit", entity_type="invoice", entity_id=invoice.id, **meta)
+    db.commit()
+    db.refresh(invoice)
+    return _invoice_read(invoice, db)
+
+
+@router.post("/{invoice_id}/amend", response_model=InvoiceRead)
+def amend_invoice(
+    invoice_id: int,
+    payload: InvoiceAmendRequest,
+    request: Request,
+    user: User = Depends(require_permission("invoice.generate")),
+    db: Session = Depends(get_db),
+):
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if invoice.therapist_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    preview = invoice_billing_service.build_month_preview(db, user.id, invoice.month)
+    if payload.edits:
+        preview = invoice_billing_service.apply_preview_edits(
+            preview, payload.edits.model_dump()
+        )
+    try:
+        invoice = invoice_billing_service.amend_invoice_from_preview(
+            db, invoice_id, user.id, preview, payload.notes
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="amend", entity_type="invoice", entity_id=invoice.id, **meta)
     db.commit()
     db.refresh(invoice)
     return _invoice_read(invoice, db)

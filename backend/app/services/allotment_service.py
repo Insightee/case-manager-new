@@ -116,10 +116,156 @@ def allot_case(
         start_date=start,
         reason_for_change=reason,
     )
-    if case.status == CaseStatus.PENDING_ALLOTMENT:
-        case.status = CaseStatus.ACTIVE
     db.flush()
     return {
         "case": case_service.case_to_read(case, db),
         "assignment_id": assignment.id,
+    }
+
+
+def activate_allotment(
+    db: Session,
+    actor: User,
+    case_id: int,
+) -> dict:
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.child import Child
+    from app.models.parent import ParentGuardian, parent_child_link
+    from app.services import family_admin_service
+    from app.services.email import service as email_service
+
+    case = db.get(Case, case_id)
+    if not case:
+        raise ValueError("Case not found")
+    if case.status not in (CaseStatus.PENDING_ALLOTMENT, CaseStatus.ACTIVE):
+        raise ValueError("Case cannot be activated from current status")
+    assignment = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.id.desc())
+    ).first()
+    if not assignment:
+        raise ValueError("No active assignment on this case")
+
+    now = datetime.now(timezone.utc)
+    case.status = CaseStatus.ACTIVE
+    assignment.assignment_offer_sent_at = now
+    db.flush()
+
+    parent_invite_urls: list[str] = []
+    child = db.get(Child, case.child_id)
+    if child:
+        parents = db.scalars(
+            select(ParentGuardian)
+            .join(parent_child_link, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
+            .where(parent_child_link.c.child_id == child.id)
+            .options(selectinload(ParentGuardian.user))
+        ).all()
+        for pg in parents:
+            if pg.user:
+                try:
+                    url = family_admin_service.issue_parent_invite(
+                        db,
+                        pg.user_id,
+                        actor.id,
+                        child_id=child.id,
+                        send_email=True,
+                    )
+                    parent_invite_urls.append(url)
+                except ValueError:
+                    pass
+
+    therapist = db.get(User, assignment.therapist_user_id)
+    if therapist and therapist.email:
+        child_name = child.full_name if child else "the client"
+        email_service.send_email(
+            to=therapist.email,
+            subject=f"New case assignment — {case.case_code}",
+            body_text=(
+                f"Hello {therapist.full_name or 'there'},\n\n"
+                f"You have been assigned to case {case.case_code} ({child_name}). "
+                f"Please sign in to your therapist portal to review and accept the assignment.\n\n"
+                f"— Insighte"
+            ),
+        )
+
+    db.flush()
+    return {
+        "case": case_service.case_to_read(case, db),
+        "assignment_id": assignment.id,
+        "parent_invite_urls": parent_invite_urls,
+    }
+
+
+def build_allotment_preview(db: Session, case_id: int, *, session_limit: int = 15) -> dict:
+    from sqlalchemy import select
+
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.session import Session as TherapySession
+    from app.models.session import SessionStatus
+    from app.models.user import User
+
+    case = db.get(Case, case_id)
+    if not case:
+        raise ValueError("Case not found")
+    assignment = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.id.desc())
+    ).first()
+    therapist_name = None
+    if assignment:
+        t = db.get(User, assignment.therapist_user_id)
+        therapist_name = t.full_name if t else None
+
+    today = date.today()
+    sessions = db.scalars(
+        select(TherapySession)
+        .where(
+            TherapySession.case_id == case_id,
+            TherapySession.status.in_([SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS]),
+            TherapySession.scheduled_date >= today,
+        )
+        .order_by(TherapySession.scheduled_date.asc(), TherapySession.start_time.asc())
+        .limit(session_limit)
+    ).all()
+    upcoming = [
+        {
+            "id": s.id,
+            "scheduled_date": s.scheduled_date.isoformat(),
+            "start_time": s.start_time.strftime("%H:%M") if s.start_time else None,
+            "end_time": s.end_time.strftime("%H:%M") if s.end_time else None,
+            "status": s.status.value,
+        }
+        for s in sessions
+    ]
+    case_read = case_service.case_to_read(case, db)
+    status_val = case_read.get("status")
+    if hasattr(status_val, "value"):
+        status_val = status_val.value
+    case_read["status"] = status_val
+    return {
+        "case": case_read,
+        "assignment_id": assignment.id if assignment else None,
+        "therapist_name": therapist_name,
+        "upcoming_sessions": upcoming,
+        "billing_summary": {
+            "billing_type": case_read.get("billing_type"),
+            "client_billing_mode": case_read.get("client_billing_mode"),
+            "client_rate_per_session_inr": case_read.get("client_rate_per_session_inr"),
+            "package_session_count": case_read.get("package_session_count"),
+            "package_amount_inr": case_read.get("package_amount_inr"),
+            "pay_share_pct": case_read.get("pay_share_pct"),
+        },
     }

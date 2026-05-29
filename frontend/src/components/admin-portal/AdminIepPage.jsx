@@ -423,8 +423,9 @@ export function AdminIepPage() {
             tabs={IEP_SECTION_TABS}
           />
         </div>
-        <div className="admin-desktop-only" style={{ flex: 1, minWidth: 200 }}>
+        <div className="admin-desktop-only" style={{ flex: 1, minWidth: 0 }}>
           <PortalTabBar
+            className="admin-page__tabs-scroll"
             ariaLabel="IEP sections"
             activeId={tab}
             onChange={setTab}
@@ -472,7 +473,7 @@ export function AdminIepPage() {
                 ].filter(Boolean)}
                 activeCount={[moduleFilter !== 'all', therapistFilter, statusFilter !== 'ALL', sessionFrom, sessionTo, includeClosed].filter(Boolean).length}
               >
-              <AdminToolbar className="admin-toolbar--mobile-compact">
+              <AdminToolbar className="admin-toolbar--mobile-compact admin-collapsible-filters__grid">
                 <AdminSearchInput
                   value={search}
                   onChange={setSearch}

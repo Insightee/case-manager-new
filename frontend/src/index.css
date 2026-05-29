@@ -3427,12 +3427,128 @@ th {
 }
 
 .therapist-home-list a {
-  display: block;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
   padding: 10px 12px;
   border-radius: 8px;
   text-decoration: none;
   color: inherit;
   background: #f8fafc;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.therapist-home-list a:hover {
+  background: #eef2ff;
+  box-shadow: 0 1px 0 rgba(99, 102, 241, 0.12);
+}
+
+.therapist-home-list a strong {
+  font-weight: 600;
+}
+
+.therapist-home-list a > span {
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.therapist-home-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.therapist-home-panel__head h3 {
+  margin: 0;
+}
+
+.therapist-home-panel__hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.therapist-schedule {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.therapist-schedule__link {
+  display: block;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #fafbff 0%, #f8fafc 100%);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.therapist-schedule__link:hover {
+  border-color: #c7d2fe;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.1);
+}
+
+.therapist-schedule__item--today .therapist-schedule__link {
+  border-color: #a5b4fc;
+  background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%);
+}
+
+.therapist-schedule__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.therapist-schedule__name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.therapist-schedule__badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #4f46e5;
+  color: #fff;
+}
+
+.therapist-schedule__when {
+  margin: 6px 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+.therapist-schedule__meta {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.therapist-schedule__kind {
+  font-weight: 600;
+  color: #6366f1;
+}
+
+.therapist-schedule__subtitle {
+  color: #64748b;
 }
 
 .therapist-home-list__meta {

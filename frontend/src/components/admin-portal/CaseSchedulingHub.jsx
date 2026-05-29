@@ -9,6 +9,7 @@ import { ScheduleWeekdayPicker } from '../scheduling/ScheduleWeekdayPicker.jsx'
 import { ONGOING_MATERIALIZE_WEEKS } from '../scheduling/scheduleTemplateUtils.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { billingSummary } from '../invoices/invoiceUtils.js'
+import { filterUpcomingSessions, formatSessionWhen } from '../../lib/sessionDisplay.js'
 import './admin-scheduling-hub.css'
 
 function addDaysIso(iso, days) {
@@ -17,7 +18,7 @@ function addDaysIso(iso, days) {
   return d.toISOString().slice(0, 10)
 }
 
-export function CaseSchedulingHub({ caseItem, assignments, onDone, canBook = true }) {
+export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsChange, canBook = true }) {
   const { isViewOnly } = useAuth()
   const readOnly = !canBook || isViewOnly
   const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || assignments?.[0]
@@ -88,21 +89,17 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, canBook = tru
     apiFetch(`/api/v1/sessions?case_id=${caseItem.id}&page_size=50`)
       .then((d) => {
         const rows = unwrapList(d)
-        const now = new Date()
-        setUpcoming(
-          rows
-            .filter((s) => s.scheduled_at && new Date(s.scheduled_at) >= now)
-            .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
-            .slice(0, 15),
-        )
+        const list = filterUpcomingSessions(rows).slice(0, 15)
+        setUpcoming(list)
+        onSessionsChange?.(list)
       })
       .catch(() => setUpcoming([]))
       .finally(() => setLoadingUpcoming(false))
-  }, [caseItem?.id])
+  }, [caseItem?.id, onSessionsChange])
 
   useEffect(() => {
     loadUpcoming()
-  }, [loadUpcoming, onDone])
+  }, [loadUpcoming, onDone, calendarRefresh])
 
   useEffect(() => {
     if (assignedTherapistId) setTherapistId(assignedTherapistId)
@@ -476,7 +473,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, canBook = tru
                   ) : null}
                   {tid ? (
                     <>
-                      <div style={{ marginTop: 16 }}>
+                      <div className="admin-scheduling-hub__calendar-wrap">
                         <TherapistCalendar
                           therapistId={tid}
                           caseId={caseItem.id}
@@ -534,7 +531,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, canBook = tru
             {upcoming.map((s) => (
               <li key={s.id} className="admin-queue__item">
                 <div>
-                  <p className="admin-queue__title">{s.scheduled_at ? new Date(s.scheduled_at).toLocaleString() : 'Session'}</p>
+                  <p className="admin-queue__title">{formatSessionWhen(s)}</p>
                   <p className="admin-queue__meta">{s.status}</p>
                 </div>
               </li>

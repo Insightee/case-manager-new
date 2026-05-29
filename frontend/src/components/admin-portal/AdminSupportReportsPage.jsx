@@ -1,39 +1,49 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { useClinicalProductModules, clinicalProductModuleLabel } from '../../hooks/useClinicalProductModules.js'
 import { sortSupportHistoryByUrgency, isUrgent } from './supportHistoryPriority.js'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
   AdminEmptyState,
+  AdminFilterGrid,
   AdminPageHeader,
   AdminPanel,
   AdminSearchInput,
   AdminTaskCard,
-  AdminToolbar,
-  ServiceFilterSelect,
+  FilterDateRange,
+  FilterSelect,
   StatusBadge,
 } from './ui/index.js'
+import './admin-reports.css'
+
+const RECORD_TYPE_OPTIONS = [
+  { value: 'all', label: 'All types' },
+  { value: 'tickets', label: 'Tickets only' },
+  { value: 'incidents', label: 'Incidents only' },
+]
+
+const STATUS_OPTIONS = [
+  { value: '', label: 'Any status' },
+  { value: 'OPEN', label: 'Open (tickets)' },
+  { value: 'IN_PROGRESS', label: 'In progress' },
+  { value: 'RESOLVED', label: 'Resolved' },
+  { value: 'CLOSED', label: 'Closed' },
+  { value: 'REPORTED', label: 'Reported (incidents)' },
+  { value: 'IN_REVIEW', label: 'In review' },
+  { value: 'ACTION_TAKEN', label: 'Action taken' },
+  { value: 'ESCALATED', label: 'Escalated' },
+]
 
 function recordTypeLabel(value) {
-  if (value === 'tickets') return 'Tickets only'
-  if (value === 'incidents') return 'Incidents only'
-  return 'All types'
+  return RECORD_TYPE_OPTIONS.find((o) => o.value === value)?.label || 'All types'
 }
 
 function statusLabel(value) {
   if (!value) return null
-  const labels = {
-    OPEN: 'Open',
-    IN_PROGRESS: 'In progress',
-    RESOLVED: 'Resolved',
-    CLOSED: 'Closed',
-    REPORTED: 'Reported',
-    IN_REVIEW: 'In review',
-    ACTION_TAKEN: 'Action taken',
-    ESCALATED: 'Escalated',
-  }
-  return labels[value] || value
+  return STATUS_OPTIONS.find((o) => o.value === value)?.label || value
 }
 
 function formatDate(iso) {
@@ -43,6 +53,42 @@ function formatDate(iso) {
   } catch {
     return iso
   }
+}
+
+function historyRowActions(row) {
+  const linkStyle = { color: '#6366f1', fontSize: '0.8125rem' }
+  if (row.record_type === 'incident') {
+    return (
+      <span style={{ whiteSpace: 'nowrap' }}>
+        <Link to={`/admin/support?tab=incidents&incident=${row.id}`} style={linkStyle}>
+          View report
+        </Link>
+        {row.case_id ? (
+          <>
+            <span className="admin-muted"> · </span>
+            <Link to={`/admin/cases/${row.case_id}?tab=incidents`} style={linkStyle}>
+              View case
+            </Link>
+          </>
+        ) : null}
+      </span>
+    )
+  }
+  return (
+    <span style={{ whiteSpace: 'nowrap' }}>
+      <Link to={`/admin/support?tab=tickets&ticket=${row.id}`} style={linkStyle}>
+        View ticket
+      </Link>
+      {row.case_id ? (
+        <>
+          <span className="admin-muted"> · </span>
+          <Link to={`/admin/cases/${row.case_id}`} style={linkStyle}>
+            View case
+          </Link>
+        </>
+      ) : null}
+    </span>
+  )
 }
 
 export function AdminSupportReportsPage({ embedded = false }) {
@@ -61,6 +107,8 @@ export function AdminSupportReportsPage({ embedded = false }) {
   const [therapistId, setTherapistId] = useState('')
   const [childId, setChildId] = useState('')
 
+  const { options: moduleOptions, labelByValue: moduleLabels } = useClinicalProductModules()
+
   const childOptions = useMemo(() => {
     const seen = new Map()
     for (const c of cases) {
@@ -68,22 +116,30 @@ export function AdminSupportReportsPage({ embedded = false }) {
         seen.set(c.child_id, c.child_name)
       }
     }
-    return [...seen.entries()].map(([id, name]) => ({ id, name }))
+    return [{ value: '', label: 'Any client' }, ...[...seen.entries()].map(([id, name]) => ({ value: String(id), label: name }))]
   }, [cases])
+
+  const therapistOptions = useMemo(
+    () => [
+      { value: '', label: 'Any therapist' },
+      ...therapists.map((t) => ({ value: String(t.id), label: t.full_name || `Therapist #${t.id}` })),
+    ],
+    [therapists],
+  )
 
   const activeChips = useMemo(
     () =>
       [
         recordType !== 'all' ? recordTypeLabel(recordType) : null,
         statusLabel(status),
-        moduleFilter || null,
+        moduleFilter ? clinicalProductModuleLabel(moduleFilter, moduleLabels) : null,
         dateFrom ? `From ${dateFrom}` : null,
         dateTo ? `To ${dateTo}` : null,
         therapistId ? therapists.find((t) => String(t.id) === therapistId)?.full_name : null,
-        childId ? childOptions.find((c) => String(c.id) === childId)?.name : null,
+        childId ? childOptions.find((c) => c.value === childId)?.label : null,
         search ? `Search: ${search}` : null,
       ].filter(Boolean),
-    [recordType, status, moduleFilter, dateFrom, dateTo, therapistId, childId, search, therapists, childOptions],
+    [recordType, status, moduleFilter, dateFrom, dateTo, therapistId, childId, search, therapists, childOptions, moduleLabels],
   )
 
   const sortedRows = useMemo(() => sortSupportHistoryByUrgency(rows), [rows])
@@ -99,7 +155,14 @@ export function AdminSupportReportsPage({ embedded = false }) {
     )
   }, [sortedRows, search])
 
-  async function load() {
+  const kpis = useMemo(() => {
+    const tickets = visibleRows.filter((r) => r.record_type === 'ticket').length
+    const incidents = visibleRows.filter((r) => r.record_type === 'incident').length
+    const urgent = visibleRows.filter((r) => isUrgent(r)).length
+    return { tickets, incidents, urgent }
+  }, [visibleRows])
+
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const qs = new URLSearchParams({ record_type: recordType, page_size: '100' })
@@ -118,10 +181,13 @@ export function AdminSupportReportsPage({ embedded = false }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [recordType, status, moduleFilter, dateFrom, dateTo, therapistId, childId])
 
   useEffect(() => {
     load()
+  }, [load])
+
+  useEffect(() => {
     apiFetch('/api/v1/cases?page_size=200')
       .then((d) => setCases(unwrapList(d)))
       .catch(() => setCases([]))
@@ -144,68 +210,62 @@ export function AdminSupportReportsPage({ embedded = false }) {
     apiDownload(`/api/v1/admin/support/history/export.csv?${qs.toString()}`, 'support-history.csv')
   }
 
-  const filterForm = (
-    <div className="client-inv__filters client-inv__filters--grid">
-      <label className="client-inv__filter-field">
-        <span className="client-inv__filter-label">Type</span>
-        <select className="admin-input" value={recordType} onChange={(e) => setRecordType(e.target.value)}>
-          <option value="all">All types</option>
-          <option value="tickets">Tickets only</option>
-          <option value="incidents">Incidents only</option>
-        </select>
-      </label>
-      <label className="client-inv__filter-field">
-        <span className="client-inv__filter-label">Status</span>
-        <select className="admin-input" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Any status</option>
-          <option value="OPEN">Open (tickets)</option>
-          <option value="IN_PROGRESS">In progress</option>
-          <option value="RESOLVED">Resolved</option>
-          <option value="CLOSED">Closed</option>
-          <option value="REPORTED">Reported (incidents)</option>
-          <option value="IN_REVIEW">In review</option>
-          <option value="ACTION_TAKEN">Action taken</option>
-          <option value="ESCALATED">Escalated</option>
-        </select>
-      </label>
-      <label className="client-inv__filter-field">
-        <span className="client-inv__filter-label">Service</span>
-        <ServiceFilterSelect className="admin-input" value={moduleFilter} onChange={setModuleFilter} />
-      </label>
-      <label className="client-inv__filter-field">
-        <span className="client-inv__filter-label">From</span>
-        <input className="admin-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-      </label>
-      <label className="client-inv__filter-field">
-        <span className="client-inv__filter-label">To</span>
-        <input className="admin-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-      </label>
-      <label className="client-inv__filter-field">
-        <span className="client-inv__filter-label">Therapist</span>
-        <select className="admin-input" value={therapistId} onChange={(e) => setTherapistId(e.target.value)}>
-          <option value="">Any therapist</option>
-          {therapists.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.full_name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="client-inv__filter-field">
-        <span className="client-inv__filter-label">Client</span>
-        <select className="admin-input" value={childId} onChange={(e) => setChildId(e.target.value)}>
-          <option value="">Any client</option>
-          {childOptions.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={load}>
-        Apply filters
-      </button>
-    </div>
+  function clearFilters() {
+    setRecordType('all')
+    setStatus('')
+    setModuleFilter('')
+    setDateFrom('')
+    setDateTo('')
+    setTherapistId('')
+    setChildId('')
+    setSearch('')
+  }
+
+  const filterGrid = (
+    <AdminFilterGrid ariaLabel="Support history filters">
+      <FilterSelect
+        label="Type"
+        value={recordType}
+        onChange={(e) => setRecordType(e.target.value)}
+        options={RECORD_TYPE_OPTIONS}
+      />
+      <FilterSelect
+        label="Status"
+        value={status}
+        onChange={(e) => setStatus(e.target.value)}
+        options={STATUS_OPTIONS}
+      />
+      <FilterSelect
+        label="Service"
+        value={moduleFilter}
+        onChange={(e) => setModuleFilter(e.target.value)}
+        options={moduleOptions}
+      />
+      <FilterDateRange
+        label="Date range"
+        from={dateFrom}
+        to={dateTo}
+        onFromChange={(e) => setDateFrom(e.target.value)}
+        onToChange={(e) => setDateTo(e.target.value)}
+      />
+      <FilterSelect
+        label="Therapist"
+        value={therapistId}
+        onChange={(e) => setTherapistId(e.target.value)}
+        options={therapistOptions}
+      />
+      <FilterSelect
+        label="Client"
+        value={childId}
+        onChange={(e) => setChildId(e.target.value)}
+        options={childOptions}
+      />
+      <div className="admin-filter-grid__actions">
+        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearFilters}>
+          Clear filters
+        </button>
+      </div>
+    </AdminFilterGrid>
   )
 
   return (
@@ -213,8 +273,8 @@ export function AdminSupportReportsPage({ embedded = false }) {
       {!embedded ? (
         <AdminPageHeader
           eyebrow="Support"
-          title="Support & incident reports"
-          subtitle="History of tickets and incident reports across your scope."
+          title="Support & incident history"
+          subtitle="Combined tickets and incident reports across your scope. Monthly clinical reports are under Report management."
           actions={
             <button type="button" className="admin-btn admin-btn--secondary" onClick={exportCsv}>
               Export CSV
@@ -223,8 +283,32 @@ export function AdminSupportReportsPage({ embedded = false }) {
         />
       ) : null}
 
+      <p className="admin-reports__scope admin-reports__scope--all" role="note" style={{ marginBottom: 12 }}>
+        Tickets and incidents only — for monthly and observation reports, open{' '}
+        <strong>Report management</strong> in the sidebar.
+      </p>
+
+      <div className="admin-reports__kpis" style={{ marginBottom: 16 }}>
+        <div className="admin-reports__kpi">
+          <div className="admin-reports__kpi-value">{loading ? '…' : total}</div>
+          <div className="admin-reports__kpi-label">Matching records</div>
+        </div>
+        <div className="admin-reports__kpi">
+          <div className="admin-reports__kpi-value">{loading ? '…' : kpis.tickets}</div>
+          <div className="admin-reports__kpi-label">Tickets (shown)</div>
+        </div>
+        <div className="admin-reports__kpi">
+          <div className="admin-reports__kpi-value">{loading ? '…' : kpis.incidents}</div>
+          <div className="admin-reports__kpi-label">Incidents (shown)</div>
+        </div>
+        <div className="admin-reports__kpi">
+          <div className="admin-reports__kpi-value">{loading ? '…' : kpis.urgent}</div>
+          <div className="admin-reports__kpi-label">Needs attention</div>
+        </div>
+      </div>
+
       <AdminPanel
-        title={`${total} records`}
+        title={`${visibleRows.length} shown`}
         padded={false}
         actions={
           embedded ? (
@@ -234,42 +318,31 @@ export function AdminSupportReportsPage({ embedded = false }) {
           ) : null
         }
       >
-        <div className="admin-panel__body">
-          <div className="admin-mobile-only">
-            <AdminCollapsibleFilters
-              filtersOnly
-              quickSearch={
-                <AdminSearchInput
-                  value={search}
-                  onChange={setSearch}
-                  placeholder="Search code, subject, client…"
-                />
-              }
-              activeChips={activeChips}
-              activeCount={activeChips.length}
-            >
-              {filterForm}
-            </AdminCollapsibleFilters>
-          </div>
-          <div className="admin-desktop-only">
-            <AdminToolbar>
+        <div className="admin-panel__body admin-panel__body--flush">
+          <AdminCollapsibleFilters
+            quickSearch={
               <AdminSearchInput value={search} onChange={setSearch} placeholder="Search code, subject, client…" />
-            </AdminToolbar>
-            {filterForm}
-          </div>
+            }
+            activeChips={activeChips}
+            activeCount={activeChips.filter((c) => !c.startsWith('Search:')).length}
+          >
+            {filterGrid}
+          </AdminCollapsibleFilters>
 
           {loading ? (
-            <div className="admin-skeleton" />
+            <div className="admin-skeleton" style={{ margin: '0 16px 16px' }} />
           ) : visibleRows.length === 0 ? (
-            <AdminEmptyState
-              title="No records"
-              hints={['Widen the date range', 'Clear status or service filters', 'Try All types']}
-            />
+            <div style={{ padding: '0 16px 16px' }}>
+              <AdminEmptyState
+                title="No records"
+                hints={['Widen the date range', 'Clear status or service filters', 'Try All types']}
+              />
+            </div>
           ) : (
             <AdminDataList
               desktop={
-                <div className="admin-table-wrap">
-                  <table className="admin-table" style={{ width: '100%', fontSize: '0.8rem' }}>
+                <div className="admin-table-wrap" style={{ padding: '0 16px 16px' }}>
+                  <table className="admin-table admin-reports__table-wrap" style={{ width: '100%', fontSize: '0.8rem' }}>
                     <thead>
                       <tr>
                         <th>Type</th>
@@ -284,23 +357,27 @@ export function AdminSupportReportsPage({ embedded = false }) {
                         <th>Module</th>
                         <th>Created</th>
                         <th>Closed</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {visibleRows.map((r) => (
-                        <tr key={`${r.record_type}-${r.id}`}>
-                          <td>{r.record_type}</td>
+                        <tr key={`${r.record_type}-${r.id}`} className={isUrgent(r) ? 'sessions-dash__row--highlight' : ''}>
+                          <td>{r.record_type === 'incident' ? 'Incident' : 'Ticket'}</td>
                           <td style={{ fontFamily: 'monospace' }}>{r.code}</td>
                           <td>{r.subject}</td>
-                          <td>{r.status}</td>
+                          <td>
+                            <StatusBadge status={r.status} />
+                          </td>
                           <td>{r.priority || '—'}</td>
                           <td>{r.client_name || '—'}</td>
                           <td>{r.therapist_name || '—'}</td>
                           <td>{r.reporter_name || '—'}</td>
                           <td>{r.assignee_name || '—'}</td>
-                          <td>{r.product_module || '—'}</td>
+                          <td>{r.product_module ? String(r.product_module).replace(/_/g, ' ') : '—'}</td>
                           <td>{formatDate(r.created_at)}</td>
                           <td>{formatDate(r.closed_at)}</td>
+                          <td>{historyRowActions(r)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -308,7 +385,7 @@ export function AdminSupportReportsPage({ embedded = false }) {
                 </div>
               }
               mobile={
-                <ul className="admin-data-list__cards">
+                <ul className="admin-data-list__cards" style={{ padding: '0 16px 16px' }}>
                   {visibleRows.map((r) => (
                     <li key={`${r.record_type}-${r.id}`}>
                       <AdminTaskCard
@@ -333,6 +410,7 @@ export function AdminSupportReportsPage({ embedded = false }) {
                           {r.priority ? ` · Priority ${r.priority}` : ''}
                           {r.product_module ? ` · ${String(r.product_module).replace(/_/g, ' ')}` : ''}
                         </p>
+                        <div style={{ marginTop: 8 }}>{historyRowActions(r)}</div>
                       </AdminTaskCard>
                     </li>
                   ))}

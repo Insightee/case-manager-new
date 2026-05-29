@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
+import { AdminClientOnboardPanel } from './AdminClientOnboardPanel.jsx'
 import { AdminTherapistOnboardPanel } from './AdminTherapistOnboardPanel.jsx'
 import { AdminStaffManageSection } from './AdminStaffManageSection.jsx'
 import {
@@ -20,7 +21,6 @@ import {
 } from './ui/index.js'
 
 export function AdminPeoplePage() {
-  const navigate = useNavigate()
   const { can, user, isViewOnly } = useAuth()
   const isHrPortal = (user?.roles || []).includes('HR')
   const canManageUsers = can('user.manage') && !isViewOnly
@@ -168,6 +168,90 @@ export function AdminPeoplePage() {
     setSuccess('Link copied to clipboard')
   }
 
+  const canCreateCase = can('case.create')
+
+  function clientCases(f) {
+    if (f.cases?.length) return f.cases
+    return (f.caseCodes || []).map((code) => ({ caseId: null, caseCode: code }))
+  }
+
+  function clientStatusBadges(f) {
+    const badges = []
+    if (!f.hasParent && !f.pendingInvite) {
+      badges.push(
+        <span key="no-parent" className="admin-chip">
+          No parent
+        </span>,
+      )
+    }
+    if (f.pendingInvite) {
+      badges.push(
+        <span key="pending" className="admin-chip">
+          Invite pending
+        </span>,
+      )
+    }
+    const cases = clientCases(f)
+    if (cases.length) {
+      badges.push(
+        <span key="cases" className="admin-chip">
+          {cases.length} case{cases.length > 1 ? 's' : ''}
+        </span>,
+      )
+    }
+    return badges
+  }
+
+  function clientRowActions(f) {
+    const primary = f.parents?.[0]
+    return (
+      <div className="admin-btn-group">
+        {primary?.userId ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            onClick={() => inviteParent(primary.userId, f.childId)}
+          >
+            Invite parent
+          </button>
+        ) : null}
+        {!f.hasParent && !f.pendingInvite ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            onClick={() => setShowFamilyWizard(true)}
+          >
+            Add parent
+          </button>
+        ) : null}
+        {isHrPortal ? (
+          <Link to="/hr/cases" className="admin-btn admin-btn--primary admin-btn--sm">
+            View cases
+          </Link>
+        ) : canCreateCase ? (
+          <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary admin-btn--sm">
+            Allot case
+          </Link>
+        ) : null}
+      </div>
+    )
+  }
+
+  function renderClientCaseLinks(f) {
+    const cases = clientCases(f)
+    if (!cases.length) return '—'
+    return cases.map((c, i) => (
+      <span key={c.caseId || c.caseCode || i}>
+        {i > 0 ? ', ' : null}
+        {c.caseId ? (
+          <Link to={`/admin/cases/${c.caseId}`}>{c.caseCode}</Link>
+        ) : (
+          c.caseCode
+        )}
+      </span>
+    ))
+  }
+
   const tabs = [
     { id: 'staff', label: 'Staff' },
     { id: 'therapists', label: 'Therapists' },
@@ -185,7 +269,7 @@ export function AdminPeoplePage() {
       <AdminPageHeader
         eyebrow="Directory"
         title="People"
-        subtitle="Staff, therapist profiles, and client records — add therapists with invite or bulk upload."
+        subtitle="Staff, therapists, and clients — onboard with invites, family wizard, or bulk import."
       />
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
@@ -237,47 +321,6 @@ export function AdminPeoplePage() {
           </AdminToolbar>
         </AdminCollapsibleFilters>
       </div>
-
-      {tab === 'clients' ? (
-        <>
-          <div className="admin-people-actions">
-            {can('case.create') ? (
-              <button
-                type="button"
-                className="admin-btn admin-btn--primary admin-btn--sm"
-                onClick={() => navigate('/admin/cases?allot=1')}
-              >
-                Add client & case
-              </button>
-            ) : null}
-            <Link to="/admin/client-profiles" className="admin-btn admin-btn--secondary admin-btn--sm">
-              Bulk import
-            </Link>
-          </div>
-          {!canManageUsers ? (
-            <p className="admin-muted" style={{ marginBottom: 12, fontSize: '0.85rem' }}>
-              Families are read-only here. Use case allotment to add a child with a parent account.
-            </p>
-          ) : null}
-          {parentPendingInvites.length > 0 ? (
-            <AdminPanel title="Pending parent invites" subtitle="Invites not yet accepted">
-              <ul className="admin-queue">
-                {parentPendingInvites.map((inv) => (
-                  <li key={inv.id} className="admin-queue__item">
-                    <div>
-                      <p className="admin-queue__title">{inv.email}</p>
-                      <p className="admin-queue__meta">Expires {new Date(inv.expires_at).toLocaleDateString()}</p>
-                    </div>
-                    <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => copyLink(inv.invite_url)}>
-                      Copy link
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </AdminPanel>
-          ) : null}
-        </>
-      ) : null}
 
       {loading ? (
         <p className="admin-muted">Loading…</p>
@@ -436,78 +479,130 @@ export function AdminPeoplePage() {
           )}
 
           {tab === 'clients' && (
-            <AdminPanel title={`Clients (${filteredClients.length})`} padded={false}>
-              <div className="admin-panel__body">
+            <>
+              <AdminClientOnboardPanel
+                canCreateCase={canCreateCase}
+                canManageUsers={canManageUsers}
+                isHrPortal={isHrPortal}
+                pendingInvites={parentPendingInvites}
+                onCopyLink={copyLink}
+                onAddFamily={() => setShowFamilyWizard(true)}
+              />
+              <AdminPanel
+                title={`Clients (${filteredClients.length})`}
+                actions={
+                  canCreateCase ? (
+                    <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
+                      Case list
+                    </Link>
+                  ) : null
+                }
+              >
                 {filteredClients.length === 0 ? (
-                  <AdminEmptyState title="No clients" description="Use Add client or quick add above to get started." />
+                  <AdminEmptyState
+                    title="No clients yet"
+                    description="Use Add client & case, Add family, or Bulk import above."
+                  />
                 ) : (
-                  <ul className="admin-data-list__cards">
-                    {filteredClients.map((f) => (
-                      <li key={f.childId}>
-                        <AdminTaskCard
-                          title={f.childName}
-                          meta={
-                            f.parents?.length
-                              ? f.parents.map((p) => `${p.parentName} · ${p.parentEmail}`).join(' | ')
-                              : f.pendingInvite
-                                ? `Pending: ${f.pendingInvite.pendingEmail}`
-                                : 'No parent linked'
-                          }
-                          badges={
-                            <>
-                              {!f.hasParent && !f.pendingInvite ? (
-                                <span className="admin-chip">No parent</span>
+                  <AdminDataList
+                    desktop={
+                      <div className="admin-table-wrap">
+                        <table className="admin-table">
+                          <thead>
+                            <tr>
+                              <th>ID</th>
+                              <th>Child</th>
+                              <th>Parent</th>
+                              <th>Email</th>
+                              <th>Phone</th>
+                              <th>Status</th>
+                              <th>Cases</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredClients.map((f) => {
+                              const primary = f.parents?.[0]
+                              const firstCase = clientCases(f)[0]
+                              const childHref = firstCase?.caseId
+                                ? `/admin/cases/${firstCase.caseId}`
+                                : canCreateCase
+                                  ? '/admin/cases?allot=1'
+                                  : null
+                              return (
+                                <tr key={f.childId}>
+                                  <td className="admin-muted">{f.childId}</td>
+                                  <td>
+                                    {childHref ? (
+                                      <Link to={childHref}>{f.childName}</Link>
+                                    ) : (
+                                      f.childName
+                                    )}
+                                  </td>
+                                  <td>
+                                    {primary?.parentName ||
+                                      (f.pendingInvite ? `Pending: ${f.pendingInvite.pendingEmail}` : '—')}
+                                  </td>
+                                  <td>{primary?.parentEmail || '—'}</td>
+                                  <td>{primary?.parentPhone || '—'}</td>
+                                  <td>
+                                    <div className="admin-chip-row admin-chip-row--wrap">{clientStatusBadges(f)}</div>
+                                  </td>
+                                  <td>{renderClientCaseLinks(f)}</td>
+                                  <td>{clientRowActions(f)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                    mobile={
+                      <ul className="admin-data-list__cards">
+                        {filteredClients.map((f) => {
+                        const primary = f.parents?.[0]
+                        const firstCase = clientCases(f)[0]
+                        const childHref = firstCase?.caseId
+                          ? `/admin/cases/${firstCase.caseId}`
+                          : canCreateCase
+                            ? '/admin/cases?allot=1'
+                            : null
+                        const metaParts = primary
+                          ? [primary.parentName, primary.parentEmail, primary.parentPhone].filter(Boolean)
+                          : f.pendingInvite
+                            ? [`Pending: ${f.pendingInvite.pendingEmail}`]
+                            : ['No parent linked']
+                        return (
+                          <li key={f.childId}>
+                            <AdminTaskCard
+                              title={
+                                childHref ? (
+                                  <Link to={childHref} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                    {f.childName}
+                                  </Link>
+                                ) : (
+                                  f.childName
+                                )
+                              }
+                              meta={metaParts.join(' · ')}
+                              badges={clientStatusBadges(f)}
+                              actions={clientRowActions(f)}
+                            >
+                              {clientCases(f).length ? (
+                                <p className="admin-muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
+                                  Cases: {renderClientCaseLinks(f)}
+                                </p>
                               ) : null}
-                              {f.pendingInvite ? <span className="admin-chip">Invite pending</span> : null}
-                              {f.caseCodes?.length ? (
-                                <span className="admin-chip">{f.caseCodes.length} case{f.caseCodes.length > 1 ? 's' : ''}</span>
-                              ) : null}
-                            </>
-                          }
-                          actions={
-                            <>
-                              {f.parents?.[0]?.userId ? (
-                                <button
-                                  type="button"
-                                  className="admin-btn admin-btn--ghost admin-btn--sm"
-                                  onClick={() => inviteParent(f.parents[0].userId, f.childId)}
-                                >
-                                  Invite parent
-                                </button>
-                              ) : null}
-                              {!f.hasParent && !f.pendingInvite ? (
-                                <button
-                                  type="button"
-                                  className="admin-btn admin-btn--ghost admin-btn--sm"
-                                  onClick={() => setShowFamilyWizard(true)}
-                                >
-                                  Add parent
-                                </button>
-                              ) : null}
-                              {isHrPortal ? (
-                                <Link to="/hr/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
-                                  View cases
-                                </Link>
-                              ) : can('case.create') ? (
-                                <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary admin-btn--sm">
-                                  Allot case
-                                </Link>
-                              ) : null}
-                            </>
-                          }
-                        >
-                          {f.caseCodes?.length ? (
-                            <p className="admin-muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
-                              {f.caseCodes.join(', ')}
-                            </p>
-                          ) : null}
-                        </AdminTaskCard>
-                      </li>
-                    ))}
-                  </ul>
+                            </AdminTaskCard>
+                          </li>
+                        )
+                        })}
+                      </ul>
+                    }
+                  />
                 )}
-              </div>
-            </AdminPanel>
+              </AdminPanel>
+            </>
           )}
 
         </>

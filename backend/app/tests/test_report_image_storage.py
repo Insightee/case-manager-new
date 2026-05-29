@@ -237,6 +237,27 @@ def test_r2_backend_put_get_mocked(monkeypatch):
         assert data == _TINY_PNG
 
 
+def test_case_manager_can_upload_image_on_under_review_report():
+    th_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
+    cm_headers = {"Authorization": f"Bearer {_login('casemanager@demo.com')}"}
+    case_id = _therapist_case_id(th_headers)
+    created = client.post(
+        "/api/v1/reports/monthly",
+        headers=th_headers,
+        json={"case_id": case_id, "month": "CM Upload Review 2099", "body_html": "<p>review</p>"},
+    )
+    assert created.status_code == 201
+    rid = created.json()["id"]
+    submit = client.post(f"/api/v1/reports/monthly/{rid}/submit", headers=th_headers)
+    assert submit.status_code == 200, submit.text
+    up = client.post(
+        f"/api/v1/reports/monthly/{rid}/images",
+        headers=cm_headers,
+        files={"file": ("cm.png", io.BytesIO(_TINY_PNG), "image/png")},
+    )
+    assert up.status_code == 200, up.text
+
+
 def test_r2_factory_requires_credentials(monkeypatch):
     monkeypatch.setattr(settings, "storage_provider", "r2")
     monkeypatch.setattr(settings, "r2_bucket_name", "")

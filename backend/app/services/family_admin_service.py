@@ -41,9 +41,11 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
             if not any(p["userId"] == u.id for p in parents):
                 parents.append(info)
 
-    cases_by_child: dict[int, list[str]] = {}
+    cases_by_child: dict[int, list[dict]] = {}
     for case in db.scalars(select(Case)).all():
-        cases_by_child.setdefault(case.child_id, []).append(case.case_code)
+        cases_by_child.setdefault(case.child_id, []).append(
+            {"caseId": case.id, "caseCode": case.case_code}
+        )
 
     now = datetime.now(timezone.utc)
     pending_by_child: dict[int, dict] = {}
@@ -65,8 +67,10 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
     for child in children:
         parents = child_parents.get(child.id, [])
         label = child.full_name
+        child_cases = cases_by_child.get(child.id, [])
+        case_codes = [c["caseCode"] for c in child_cases if c.get("caseCode")]
         if q:
-            hay = f"{label} {' '.join(p['parentEmail'] for p in parents)} {' '.join(cases_by_child.get(child.id, []))}".lower()
+            hay = f"{label} {' '.join(p['parentEmail'] for p in parents)} {' '.join(case_codes)}".lower()
             if q not in hay:
                 continue
         pending = pending_by_child.get(child.id)
@@ -78,7 +82,8 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
                 "lastName": child.last_name,
                 "dateOfBirth": child.date_of_birth.isoformat() if child.date_of_birth else None,
                 "parents": parents,
-                "caseCodes": cases_by_child.get(child.id, []),
+                "cases": child_cases,
+                "caseCodes": case_codes,
                 "hasParent": bool(parents),
                 "pendingInvite": pending,
             }

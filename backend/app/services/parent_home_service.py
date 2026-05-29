@@ -17,7 +17,9 @@ from app.schemas.parent_home import (
     ParentHomeStats,
     ParentRecentUpdate,
     ParentSessionHighlight,
+    PendingAssignmentAcceptance,
 )
+from app.services import assignment_acceptance_service as accept_svc
 from app.services import notification_service, parent_service
 
 
@@ -184,6 +186,11 @@ def build_parent_home(db: Session, user: User) -> ParentHomeResponse:
                 }
             )
 
+    pending_rows = [
+        PendingAssignmentAcceptance(**row)
+        for row in accept_svc.pending_acceptance_for_parent(db, user)
+    ]
+
     return ParentHomeResponse(
         stats=ParentHomeStats(
             case_count=len(cases_raw),
@@ -194,4 +201,5 @@ def build_parent_home(db: Session, user: User) -> ParentHomeResponse:
         cases=cases,
         recent_updates=recent,
         upcoming_appointments=upcoming,
+        pending_assignment_acceptance=pending_rows,
     )

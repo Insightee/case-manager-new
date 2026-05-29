@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import {
-  PARENT_SLOT_STYLES,
-  THERAPIST_STATUS_STYLES,
   addDays,
+  calendarEventLabel,
+  calendarEventStyle,
   calendarGridEvents,
   dateStr,
   defaultHourRows,
@@ -45,28 +45,30 @@ export function WeekCalendarGrid({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="flex items-center gap-3 border-b border-[#E2E8F0] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#E2E8F0] px-3 py-2 sm:gap-3 sm:px-4 sm:py-3">
         <button
           type="button"
           onClick={() => onWeekStartChange(addDays(weekStart, -7))}
-          className="rounded-lg border px-3 py-1 text-sm"
+          className="rounded-lg border px-2.5 py-1 text-sm"
+          aria-label="Previous week"
         >
           ‹
         </button>
-        <p className="flex-1 text-center text-sm font-semibold text-slate-800">
+        <p className="min-w-0 flex-1 text-center text-xs font-semibold text-slate-800 sm:text-sm">
           {dateStr(weekStart)} – {dateStr(weekEnd)}
         </p>
         <button
           type="button"
           onClick={() => onWeekStartChange(addDays(weekStart, 7))}
-          className="rounded-lg border px-3 py-1 text-sm"
+          className="rounded-lg border px-2.5 py-1 text-sm"
+          aria-label="Next week"
         >
           ›
         </button>
         <button
           type="button"
           onClick={() => onWeekStartChange(startOfWeek(new Date()))}
-          className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-semibold text-white"
+          className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white sm:px-3"
         >
           Today
         </button>
@@ -75,8 +77,8 @@ export function WeekCalendarGrid({
       {loading ? (
         <p className="p-8 text-center text-slate-500">Loading calendar…</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse">
+        <div className="overflow-x-auto overscroll-x-contain">
+          <table className="w-full min-w-0 border-collapse sm:min-w-[720px]">
             <thead>
               <tr>
                 <th className="w-14 bg-slate-50 p-2 text-xs text-slate-400">Time</th>
@@ -139,21 +141,8 @@ export function WeekCalendarGrid({
                           </button>
                         ) : null}
                         {cellSlots.map((s) => {
-                          const isParent = mode === 'parent'
-                          const style = isParent
-                            ? PARENT_SLOT_STYLES[s.is_mine ? 'mine' : 'available']
-                            : THERAPIST_STATUS_STYLES[s.status] || ''
-                          const label = isParent
-                            ? s.is_mine
-                              ? `My session · ${s.start_time}`
-                              : `Available · ${s.start_time}`
-                            : s.event_type === 'cm_meeting'
-                              ? `CM · ${s.title || s.child_name || s.case_code || 'Meeting'}`
-                              : s.event_type === 'session'
-                              ? `${s.status === 'IN_PROGRESS' ? 'In progress · ' : 'Session · '}${s.child_name || s.case_code || 'Visit'}`
-                              : s.status === 'BOOKED'
-                                ? `${s.approval_status === 'PENDING_THERAPIST' ? '⏳ ' : ''}${s.booking_source === 'PARENT' ? 'Parent · ' : ''}${s.child_name || s.case_code || 'Booked'}`
-                                : `${s.start_time}–${s.end_time}`
+                          const style = calendarEventStyle(s, mode)
+                          const label = calendarEventLabel(s, mode)
                           return (
                             <button
                               key={s.id}

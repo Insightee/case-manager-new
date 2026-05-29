@@ -199,7 +199,7 @@ export function WeeklyScheduleDrawer({
     setSaving(true)
     setError('')
     try {
-      await apiFetch('/api/v1/scheduling/assign-recurring', {
+      const result = await apiFetch('/api/v1/scheduling/assign-recurring', {
         method: 'POST',
         body: JSON.stringify({
           case_id: cid,
@@ -211,7 +211,14 @@ export function WeeklyScheduleDrawer({
           end_date: bookRange.to,
         }),
       })
-      onApplied?.()
+      const booked = result?.booked_slot_count ?? 0
+      if (booked === 0 && bookPreview.length > 0) {
+        setError(
+          'No sessions were booked for those dates. Check leave days, time conflicts, and that the week range matches the calendar.',
+        )
+        return
+      }
+      onApplied?.(result)
       onClose()
     } catch (err) {
       setError(err.message || 'Could not book recurring sessions')
@@ -436,6 +443,7 @@ export function WeeklyScheduleDrawer({
                       {cases.map((c) => (
                         <option key={c.case_id} value={c.case_id}>
                           {c.case_code} · {c.child_name || 'Client'}
+                          {c.pending_allotment ? ' (under review)' : ''}
                         </option>
                       ))}
                     </select>

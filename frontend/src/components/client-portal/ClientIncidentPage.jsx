@@ -93,6 +93,10 @@ export function ClientIncidentPage({ cases = [] }) {
     setFormSuccess('')
     try {
       const { files, attachment_note, ...body } = payload
+      if (!body.case_id) {
+        setFormError('Please select which child this incident relates to.')
+        return
+      }
       const created = await apiFetch('/api/v1/parent/incidents', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -101,7 +105,24 @@ export function ClientIncidentPage({ cases = [] }) {
         const fd = new FormData()
         files.forEach((f) => fd.append('files', f))
         if (attachment_note) fd.append('note', attachment_note)
-        await apiUpload(`/api/v1/parent/incidents/${created.id}/attachments`, fd)
+        try {
+          await apiUpload(`/api/v1/parent/incidents/${created.id}/attachments`, fd)
+        } catch (uploadErr) {
+          setFormSuccess(created.confirmation || 'Your report has been submitted.')
+          setFormError(
+            uploadErr.message ||
+              `Report ${created.ticket_code || ''} was saved, but we could not upload your file(s). Try adding them from the incident thread.`,
+          )
+          setShowForm(false)
+          setExpandedId(created.id)
+          await loadIncidents()
+          try {
+            setExpandedDetail(await apiFetch(`/api/v1/parent/incidents/${created.id}`))
+          } catch {
+            setExpandedDetail(null)
+          }
+          return
+        }
       }
       setFormSuccess(created.confirmation || 'Your report has been submitted.')
       setShowForm(false)
@@ -196,8 +217,10 @@ export function ClientIncidentPage({ cases = [] }) {
                 child_name: c.childName,
                 case_code: c.caseId,
                 service_type: c.serviceType,
+                product_module: c.productModule,
               }))}
               caseRequired={caseOptions.length > 0}
+              hideServiceType
               onSubmit={submitReport}
               submitting={submitting}
               error={formError}

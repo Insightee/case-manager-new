@@ -104,7 +104,7 @@ def test_generate_from_logs_includes_pending_and_approved():
 
 def test_generate_from_logs_rejects_non_author():
     headers = _login("therapist@demo.com")
-    other_headers = _login("therapist2@demo.com") if False else _login("casemanager@demo.com")
+    other_headers = _login("parent@demo.com")
     cases = client.get("/api/v1/cases", headers=headers)
     case_id = api_items(cases.json())[0]["id"]
     created = client.post(

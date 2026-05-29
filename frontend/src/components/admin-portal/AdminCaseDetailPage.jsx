@@ -8,6 +8,7 @@ import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { PortalTabBar, StatusBadge } from './ui/index.js'
 import { AdminCaseReportsPanel } from './AdminCaseReportsPanel.jsx'
+import { AdminCaseIncidentsPanel } from './AdminCaseIncidentsPanel.jsx'
 import { AdminCaseCmMeetingsPanel } from './AdminCaseCmMeetingsPanel.jsx'
 import { AdminCaseSchedulingPanel } from './AdminCaseSchedulingPanel.jsx'
 import { AdminCaseDetailMobileHeader } from './AdminCaseDetailMobileHeader.jsx'
@@ -26,6 +27,7 @@ const TABS = [
   { id: 'assignments', label: 'Assignments' },
   { id: 'logs', label: 'Session logs' },
   { id: 'reports', label: 'Reports' },
+  { id: 'incidents', label: 'Incidents', perm: 'incident.read_sensitive' },
   { id: 'iep', label: 'IEP builder', perm: 'iep.read' },
   { id: 'documents', label: 'Documents' },
   { id: 'cm-meetings', label: 'CM meetings' },
@@ -38,6 +40,7 @@ export function AdminCaseDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
   const highlightSessionId = searchParams.get('session_id')
+  const highlightIncidentId = searchParams.get('incident_id')
   const { can, canWriteProduct, isViewOnly } = useAuth()
   const { canReviewLogs } = useModuleWrite()
   const [caseRow, setCaseRow] = useState(null)
@@ -49,7 +52,6 @@ export function AdminCaseDetailPage() {
   const [assignSuccess, setAssignSuccess] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [actingLogId, setActingLogId] = useState(null)
   const [parentContact, setParentContact] = useState(null)
 
   const load = useCallback(async () => {
@@ -105,6 +107,11 @@ export function AdminCaseDetailPage() {
     }
   }, [highlightSessionId, tab, setSearchParams])
 
+  useEffect(() => {
+    if (!highlightIncidentId || tab === 'incidents' || !can('incident.read_sensitive')) return
+    setSearchParams({ tab: 'incidents', incident_id: highlightIncidentId }, { replace: true })
+  }, [highlightIncidentId, tab, setSearchParams])
+
   function setTab(id) {
     setSearchParams({ tab: id }, { replace: true })
   }
@@ -137,20 +144,6 @@ export function AdminCaseDetailPage() {
   async function saveServiceAddress(payload) {
     const updated = await apiFetch(`/api/v1/cases/${caseId}`, { method: 'PATCH', body: JSON.stringify(payload) })
     setCaseRow(updated)
-  }
-
-  async function reviewLog(logId, action, comment = null) {
-    setActingLogId(logId)
-    try {
-      const opts = { method: 'POST' }
-      if (action === 'reject') {
-        opts.body = JSON.stringify({ comment: comment || '' })
-      }
-      await apiFetch(`/api/v1/daily-logs/${logId}/${action}`, opts)
-      await load()
-    } finally {
-      setActingLogId(null)
-    }
   }
 
   const activeAssignment = assignments.find((a) => a.status === 'ACTIVE') || assignments[0]
@@ -200,6 +193,9 @@ export function AdminCaseDetailPage() {
         <p className="admin-page__eyebrow">{caseRow.case_code}</p>
         <h1 className="admin-page__title">{caseRow.child_name}</h1>
         <p className="admin-page__subtitle admin-portal-lead">
+          Therapist:{' '}
+          <strong>{activeAssignment?.therapist_name || 'Unassigned'}</strong>
+          {' · '}
           {caseRow.service_type} · <span className="admin-chip">{caseRow.product_module}</span>{' '}
           <StatusBadge status={caseRow.status} />
         </p>
@@ -328,17 +324,10 @@ export function AdminCaseDetailPage() {
 
       {tab === 'logs' && (
         <section>
-          <p className="admin-case-detail__lead-link" style={{ marginBottom: 12 }}>
-            <Link to={`/admin/logs?tab=sessions&case_id=${caseId}`} className="admin-btn admin-btn--ghost admin-btn--sm">
-              Open sessions board for this case
-            </Link>
-          </p>
           <CaseSessionsAndLogsPanel
             caseId={caseId}
             highlightSessionId={highlightSessionId}
             canReview={canReviewCaseLogs}
-            onReviewLog={reviewLog}
-            actingLogId={actingLogId}
           />
         </section>
       )}
@@ -348,6 +337,13 @@ export function AdminCaseDetailPage() {
           caseId={caseRow?.id || caseId}
           highlightReportId={searchParams.get('reportId')}
           highlightType={searchParams.get('type')}
+        />
+      )}
+
+      {tab === 'incidents' && can('incident.read_sensitive') && (
+        <AdminCaseIncidentsPanel
+          caseId={caseRow?.id || caseId}
+          highlightIncidentId={highlightIncidentId}
         />
       )}
 

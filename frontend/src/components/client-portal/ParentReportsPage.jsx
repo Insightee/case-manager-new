@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload, getTokens } from '../../lib/apiClient.js'
 import {
@@ -13,6 +14,7 @@ import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
 import '../documents/case-documents.css'
 import '../reports/report-editor.css'
 import './parent-portal-filters.css'
+import './parent-reports.css'
 import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect, ParentPortalTabs } from './ParentFilterBar.jsx'
 
@@ -24,6 +26,30 @@ const STATUS_LABELS = {
   changes_sent: 'Changes sent',
   pending: 'Pending acknowledgement',
   acknowledged: 'Acknowledged',
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function reportPreviewHtml(detail) {
+  if (!detail) return ''
+  if (detail.bodyHtml) return detail.bodyHtml
+  const text = detail.summary || detail.content || ''
+  if (!text) return ''
+  if (/<[a-z][\s\S]*>/i.test(text)) return text
+  return `<p>${escapeHtml(text)}</p>`
+}
+
+function detailTitle(detail) {
+  if (!detail) return 'Document'
+  if (detail.kind === 'case_document') return detail.title || 'Document'
+  if (detail.kind === 'iep') return detail.title || detail.fileName || `IEP ${detail.version || ''}`.trim()
+  return detail.month || detail.title || 'Monthly report'
 }
 
 function StatusChip({ status }) {
@@ -100,6 +126,20 @@ export function ParentReportsPage() {
     else setSearchParams({}, { replace: true })
   }, [tab, setSearchParams])
 
+  useEffect(() => {
+    if (!detail && !detailLoading) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e) => {
+      if (e.key === 'Escape') closeDetail()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [detail, detailLoading])
+
   const list =
     tab === 'iep' ? hub.iep : tab === 'documents' ? parentDocs : hub.monthly
 
@@ -152,8 +192,9 @@ export function ParentReportsPage() {
           ? `/api/v1/parent/reports/iep/${item.id}`
           : `/api/v1/parent/reports/monthly/${item.id}`
       const data = await apiFetch(path)
-      setDetail({ ...data, kind: item.kind || (tab === 'iep' ? 'iep' : 'monthly') })
-      if (data.kind === 'iep' && data.downloadPath && !data.bodyHtml) {
+      const kind = data.kind || item.kind || (tab === 'iep' ? 'iep' : 'monthly')
+      setDetail({ ...data, kind })
+      if (kind === 'iep' && data.downloadPath && !data.bodyHtml) {
         const isPdf = (data.fileName || '').toLowerCase().endsWith('.pdf')
         if (isPdf) {
           const blobUrl = await fetchBlobUrl(data.downloadPath)
@@ -205,13 +246,14 @@ export function ParentReportsPage() {
   async function submitIepComment() {
     if (!detail || !commentBody.trim()) return
     setActing(true)
+    setError('')
     try {
       await apiFetch(`/api/v1/parent/reports/iep/${detail.id}/comments`, {
         method: 'POST',
         body: JSON.stringify({ body: commentBody.trim(), comment_type: commentType }),
       })
       const refreshed = await apiFetch(`/api/v1/parent/reports/iep/${detail.id}`)
-      setDetail(refreshed)
+      setDetail({ ...refreshed, kind: 'iep' })
       setCommentBody('')
       setMessage('Comment added.')
     } catch (err) {
@@ -259,10 +301,15 @@ export function ParentReportsPage() {
   async function acknowledgeIep() {
     if (!detail) return
     setActing(true)
+    setError('')
     try {
       await apiFetch(`/api/v1/parent/reports/iep/${detail.id}/acknowledge`, { method: 'POST' })
       setMessage('IEP acknowledged.')
       await loadHub()
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl)
+        setPdfUrl(null)
+      }
       const refreshed = await apiFetch(`/api/v1/parent/reports/iep/${detail.id}`)
       setDetail({ ...refreshed, kind: 'iep' })
     } catch (err) {
@@ -307,14 +354,12 @@ export function ParentReportsPage() {
     >
     <div className="parent-reports">
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c', marginBottom: 12 }}>
+        <p role="alert" className="parent-reports__alert parent-reports__alert--error">
           {error}
         </p>
       ) : null}
       {message ? (
-        <p style={{ padding: '8px 12px', background: '#ecfdf5', borderRadius: 8, color: '#047857', marginBottom: 12 }}>
-          {message}
-        </p>
+        <p className="parent-reports__alert parent-reports__alert--success">{message}</p>
       ) : null}
 
       {parentCases.length > 0 ? (
@@ -386,22 +431,7 @@ export function ParentReportsPage() {
           <ul className="log-list">
             {filtered.map((item) => (
               <li key={`${item.kind || tab}-${item.id}`}>
-                <button
-                  type="button"
-                  onClick={() => openDetail(item)}
-                  style={{
-                    width: '100%',
-                    textAlign: 'left',
-                    background: 'none',
-                    border: 'none',
-                    padding: 0,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
-                >
+                <button type="button" className="parent-reports__list-btn" onClick={() => openDetail(item)}>
                   <div>
                     <p style={{ margin: 0, fontWeight: 600 }}>
                       {tab === 'documents'
@@ -432,62 +462,29 @@ export function ParentReportsPage() {
         )}
       </section>
 
-      {detail || detailLoading ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Report detail"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15,23,42,0.45)',
-            zIndex: 60,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div
-            style={{
-              marginTop: 'auto',
-              maxHeight: '92vh',
-              background: '#fff',
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                padding: '12px 16px',
-                borderBottom: '1px solid #e5e7eb',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <div>
-                <h2 style={{ margin: 0, fontSize: 18 }}>
-                  {detail?.kind === 'case_document'
-                    ? detail.title
-                    : detail?.month || detail?.fileName || 'Document'}
-                </h2>
-                <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-                  {detail?.kind === 'case_document'
-                    ? `${categoryLabel(detail.category)} · ${statusLabel(detail.status)}`
-                    : `${detail?.childName} · ${detail?.caseId}`}
-                </p>
-              </div>
-              <button type="button" onClick={closeDetail} aria-label="Close">
-                ✕
-              </button>
-            </div>
+      {(detail || detailLoading) && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="parent-reports__modal-root" role="dialog" aria-modal="true" aria-label="Report detail">
+              <button type="button" className="parent-reports__modal-backdrop" aria-label="Close" onClick={closeDetail} />
+              <div className="parent-reports__modal-panel">
+                <div className="parent-reports__modal-head">
+                  <div>
+                    <h2 className="parent-reports__modal-title">{detailTitle(detail)}</h2>
+                    <p className="parent-reports__modal-meta">
+                      {detail?.kind === 'case_document'
+                        ? `${categoryLabel(detail.category)} · ${statusLabel(detail.status)}`
+                        : `${detail?.childName || ''}${detail?.caseId ? ` · ${detail.caseId}` : ''}`}
+                    </p>
+                  </div>
+                  <button type="button" className="parent-reports__modal-close" onClick={closeDetail} aria-label="Close">
+                    ×
+                  </button>
+                </div>
 
-            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-              {detailLoading ? (
-                <p>Loading document…</p>
-              ) : detail?.kind === 'case_document' ? (
+                <div className="parent-reports__modal-body">
+                  {detailLoading ? (
+                    <p style={{ color: '#64748b' }}>Loading document…</p>
+                  ) : detail?.kind === 'case_document' ? (
                 <>
                   {detail.current_version?.source_type === 'EXTERNAL_LINK' ? (
                     <p className="case-docs__banner">{GOOGLE_LINK_WARNING}</p>
@@ -546,7 +543,7 @@ export function ParentReportsPage() {
                 </>
               ) : detail?.kind === 'monthly' ? (
                 <>
-                  <ReportHtmlView html={detail.bodyHtml || detail.summary} />
+                  <ReportHtmlView html={reportPreviewHtml(detail)} />
                   {detail.planNextMonth ? (
                     <div className="report-plan-block" style={{ marginTop: 16 }}>
                       <strong>Plan for next month</strong>
@@ -562,10 +559,10 @@ export function ParentReportsPage() {
                 <iframe
                   title={detail.fileName || 'IEP document'}
                   src={pdfUrl}
-                  style={{ width: '100%', minHeight: '70vh', border: '1px solid #e5e7eb', borderRadius: 8 }}
+                  style={{ width: '100%', minHeight: '60vh', border: '1px solid #e5e7eb', borderRadius: 8 }}
                 />
               ) : (
-                <p>Preview not available.</p>
+                <p style={{ color: '#64748b' }}>Preview not available. Try downloading the document.</p>
               )}
 
               {detail?.comments?.length > 0 ? (
@@ -612,32 +609,35 @@ export function ParentReportsPage() {
               ) : null}
 
               {detail?.kind === 'iep' ? (
-                <section style={{ marginTop: 16 }}>
-                  <h3 style={{ fontSize: 15 }}>Add a comment</h3>
+                <section className="parent-reports__comment-form" style={{ marginTop: 16 }}>
+                  <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>Add a comment</h3>
+                  <label htmlFor="iep-comment-type">Comment type</label>
                   <select
+                    id="iep-comment-type"
                     value={commentType}
                     onChange={(e) => setCommentType(e.target.value)}
-                    style={{ width: '100%', marginBottom: 8, padding: 8 }}
+                    style={{ marginBottom: 10 }}
                   >
                     <option value="GENERAL">General comment</option>
                     <option value="GOAL_SUGGESTION">Suggest a goal</option>
                     <option value="CHANGE_REQUEST">Request a change</option>
                   </select>
+                  <label htmlFor="iep-comment-body">Your message</label>
                   <textarea
+                    id="iep-comment-body"
                     value={commentBody}
                     onChange={(e) => setCommentBody(e.target.value)}
                     rows={3}
                     placeholder="Your feedback for the care team"
-                    style={{ width: '100%', padding: 8 }}
                   />
                   <button
                     type="button"
-                    className="admin-btn admin-btn--secondary"
+                    className="parent-reports__btn parent-reports__btn--secondary"
                     disabled={acting || !commentBody.trim()}
                     onClick={submitIepComment}
-                    style={{ marginTop: 8 }}
+                    style={{ marginTop: 10, width: '100%' }}
                   >
-                    Post comment
+                    {acting ? 'Posting…' : 'Post comment'}
                   </button>
                 </section>
               ) : null}
@@ -669,87 +669,105 @@ export function ParentReportsPage() {
               ) : null}
             </div>
 
-            {detail && !detailLoading ? (
-              <div
-                style={{
-                  padding: 12,
-                  borderTop: '1px solid #e5e7eb',
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 8,
-                }}
-              >
-                {detail.kind === 'monthly' && canApproveMonthly ? (
-                  <button type="button" className="admin-btn admin-btn--primary" disabled={acting} onClick={approveReport}>
-                    Approve
-                  </button>
-                ) : null}
-                {detail.kind === 'monthly' && detail.downloadPath ? (
-                  <button
-                    type="button"
-                    className="admin-btn admin-btn--secondary"
-                    disabled={acting}
-                    onClick={() => apiDownload(detail.downloadPath, `report_${detail.month || detail.id}.pdf`)}
-                  >
-                    Download PDF
-                  </button>
-                ) : null}
-                {detail.kind === 'monthly' && canApproveMonthly ? (
-                  <button
-                    type="button"
-                    className="admin-btn admin-btn--secondary"
-                    disabled={acting}
-                    onClick={() => setFeedbackOpen(true)}
-                  >
-                    Suggest changes
-                  </button>
-                ) : null}
-                {detail.kind === 'iep' && (detail.canAcknowledge || detail.status === 'pending') ? (
-                  <button type="button" className="admin-btn admin-btn--primary" disabled={acting} onClick={acknowledgeIep}>
-                    Acknowledge IEP
-                  </button>
-                ) : null}
-                {detail.kind === 'case_document' && canApproveDoc ? (
-                  <button
-                    type="button"
-                    className="admin-btn admin-btn--primary"
-                    disabled={acting}
-                    onClick={approveCaseDocument}
-                  >
-                    {workflowActionLabel('parent_approve')}
-                  </button>
-                ) : null}
-                {detail.kind === 'case_document' &&
-                detail.current_version?.source_type === 'UPLOAD' ? (
-                  <button
-                    type="button"
-                    className="admin-btn admin-btn--secondary"
-                    disabled={acting}
-                    onClick={() =>
-                      apiDownload(
-                        `/api/v1/documents/${detail.id}/download`,
-                        detail.current_version?.file_name || `document_${detail.id}`,
-                      )
-                    }
-                  >
-                    Download
-                  </button>
-                ) : null}
-                {detail.kind === 'case_document' && canDocFeedback && !docFeedbackOpen ? (
-                  <button
-                    type="button"
-                    className="admin-btn admin-btn--secondary"
-                    disabled={acting}
-                    onClick={() => setDocFeedbackOpen(true)}
-                  >
-                    {workflowActionLabel('parent_feedback')}
-                  </button>
+                {detail && !detailLoading ? (
+                  <div className="parent-reports__modal-foot">
+                    {detail.kind === 'monthly' && canApproveMonthly ? (
+                      <button
+                        type="button"
+                        className="parent-reports__btn parent-reports__btn--primary"
+                        disabled={acting}
+                        onClick={approveReport}
+                      >
+                        Approve
+                      </button>
+                    ) : null}
+                    {detail.kind === 'monthly' && detail.downloadPath ? (
+                      <button
+                        type="button"
+                        className="parent-reports__btn parent-reports__btn--secondary"
+                        disabled={acting}
+                        onClick={() => apiDownload(detail.downloadPath, `report_${detail.month || detail.id}.pdf`)}
+                      >
+                        Download PDF
+                      </button>
+                    ) : null}
+                    {detail.kind === 'monthly' && canApproveMonthly ? (
+                      <button
+                        type="button"
+                        className="parent-reports__btn parent-reports__btn--secondary"
+                        disabled={acting}
+                        onClick={() => setFeedbackOpen(true)}
+                      >
+                        Suggest changes
+                      </button>
+                    ) : null}
+                    {detail.kind === 'iep' && detail.downloadPath ? (
+                      <button
+                        type="button"
+                        className="parent-reports__btn parent-reports__btn--secondary"
+                        disabled={acting}
+                        onClick={() =>
+                          apiDownload(
+                            detail.downloadPath,
+                            `${(detail.title || detail.fileName || 'iep').replace(/\s+/g, '_')}.pdf`,
+                          )
+                        }
+                      >
+                        Download PDF
+                      </button>
+                    ) : null}
+                    {detail.kind === 'iep' && detail.canAcknowledge ? (
+                      <button
+                        type="button"
+                        className="parent-reports__btn parent-reports__btn--primary"
+                        disabled={acting}
+                        onClick={acknowledgeIep}
+                      >
+                        {acting ? 'Saving…' : 'Acknowledge IEP'}
+                      </button>
+                    ) : null}
+                    {detail.kind === 'case_document' && canApproveDoc ? (
+                      <button
+                        type="button"
+                        className="parent-reports__btn parent-reports__btn--primary"
+                        disabled={acting}
+                        onClick={approveCaseDocument}
+                      >
+                        {workflowActionLabel('parent_approve')}
+                      </button>
+                    ) : null}
+                    {detail.kind === 'case_document' && detail.current_version?.source_type === 'UPLOAD' ? (
+                      <button
+                        type="button"
+                        className="parent-reports__btn parent-reports__btn--secondary"
+                        disabled={acting}
+                        onClick={() =>
+                          apiDownload(
+                            `/api/v1/documents/${detail.id}/download`,
+                            detail.current_version?.file_name || `document_${detail.id}`,
+                          )
+                        }
+                      >
+                        Download
+                      </button>
+                    ) : null}
+                    {detail.kind === 'case_document' && canDocFeedback && !docFeedbackOpen ? (
+                      <button
+                        type="button"
+                        className="parent-reports__btn parent-reports__btn--secondary"
+                        disabled={acting}
+                        onClick={() => setDocFeedbackOpen(true)}
+                      >
+                        {workflowActionLabel('parent_feedback')}
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
 
       <style>{`
         .parent-reports__cases { margin-bottom: 24px; }

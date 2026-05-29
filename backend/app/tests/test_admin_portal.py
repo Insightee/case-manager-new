@@ -329,8 +329,17 @@ def test_allotment_therapists_and_allot_case():
         },
     )
     assert allot.status_code == 201, allot.text
-    assert allot.json()["case"]["status"] == "ACTIVE"
-    assert allot.json()["assignment_id"]
+    body = allot.json()
+    assert body["case"]["status"] == "PENDING_ALLOTMENT"
+    assert body["assignment_id"]
+    case_id = body["case"]["id"]
+
+    activate = client.post(
+        f"/api/v1/admin/cases/{case_id}/activate-allotment",
+        headers=admin_headers,
+    )
+    assert activate.status_code == 200, activate.text
+    assert activate.json()["case"]["status"] == "ACTIVE"
 
 
 def test_admin_iep_dashboard():
@@ -528,6 +537,48 @@ def test_cm_meetings_bookable_cases_for_case_manager():
         assert row.get("id")
         assert row.get("case_code")
         assert row.get("child_name")
+
+
+def test_cm_meeting_booking_sends_invite_emails(monkeypatch):
+    sent: list[dict] = []
+
+    def _capture(**kwargs):
+        sent.append(kwargs)
+
+    monkeypatch.setattr(
+        "app.services.cm_meeting_service.cm_meeting_invite_email",
+        lambda **kw: sent.append(kw),
+    )
+    th_token = _login("therapist@demo.com")
+    th_headers = {"Authorization": f"Bearer {th_token}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    case_id = cases.json()[0]["id"]
+    created = client.post(
+        "/api/v1/cm-meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": "2026-07-15",
+            "scheduled_time": "11:00:00",
+            "duration_minutes": 45,
+            "meeting_type": "CLIENT_AND_THERAPIST",
+            "title": "Email invite test",
+            "meeting_url": "https://meet.google.com/abc-defg-hij",
+            "guest_emails": ["guest@example.com"],
+            "invite_client": True,
+            "invite_therapist": True,
+            "invite_case_manager": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert sent, "Expected invite emails to be sent"
+    assert any(s.get("meeting_url") == "https://meet.google.com/abc-defg-hij" for s in sent)
+    assert any(s.get("to") == "guest@example.com" for s in sent)
+    assert all(s.get("to") != "therapist@demo.com" for s in sent), "Booker should not get invite email"
+    guest = next(s for s in sent if s.get("to") == "guest@example.com")
+    cal_url = guest.get("google_calendar_url") or ""
+    assert "calendar.google.com" in cal_url
+    assert "action=TEMPLATE" in cal_url
 
 
 def test_therapist_can_book_cm_meeting_on_assigned_case():

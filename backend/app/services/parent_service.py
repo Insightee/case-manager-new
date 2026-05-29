@@ -19,7 +19,7 @@ from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.schemas.parent_profile import ParentProfileRead
 from app.services import address_service
-from app.services.address_service import user_home_address_read
+from app.services.address_service import user_home_address_read, user_school_address_read
 
 PARENT_VISIBLE = (VisibilityStatus.APPROVED_FOR_PARENT, VisibilityStatus.SHARED_WITH_PARENT)
 
@@ -135,6 +135,14 @@ def iep_status_for_case(db: Session, case_id: int) -> str:
 
 
 def upcoming_booking_summary(db: Session, case_id: int, today: date | None = None) -> str | None:
+    from app.services.assignment_acceptance_service import (
+        active_assignment_for_case,
+        parent_has_accepted,
+    )
+
+    assignment = active_assignment_for_case(db, case_id)
+    if not parent_has_accepted(assignment):
+        return None
     today = today or date.today()
     slot = db.scalars(
         select(TherapistSlot)
@@ -248,16 +256,27 @@ def _batch_iep_status(db: Session, case_ids: list[int]) -> dict[int, str]:
 
 
 def _batch_upcoming_booking(db: Session, case_ids: list[int], today: date | None = None) -> dict[int, str | None]:
+    from app.services.assignment_acceptance_service import (
+        active_assignment_for_case,
+        parent_has_accepted,
+    )
+
     today = today or date.today()
     if not case_ids:
         return {}
+    eligible_ids = []
+    for cid in case_ids:
+        if parent_has_accepted(active_assignment_for_case(db, cid)):
+            eligible_ids.append(cid)
+    if not eligible_ids:
+        return {cid: None for cid in case_ids}
     subq = (
         select(
             TherapistSlot.case_id,
             func.min(TherapistSlot.slot_date).label("min_date"),
         )
         .where(
-            TherapistSlot.case_id.in_(case_ids),
+            TherapistSlot.case_id.in_(eligible_ids),
             TherapistSlot.status == SlotStatus.BOOKED,
             TherapistSlot.slot_date >= today,
         )
@@ -272,14 +291,14 @@ def _batch_upcoming_booking(db: Session, case_ids: list[int], today: date | None
         )
         .where(
             TherapistSlot.status == SlotStatus.BOOKED,
-            TherapistSlot.case_id.in_(case_ids),
+            TherapistSlot.case_id.in_(eligible_ids),
         )
         .order_by(TherapistSlot.start_time.asc())
     ).all()
-    out: dict[int, str | None] = {}
+    out: dict[int, str | None] = {cid: None for cid in case_ids}
     for case_id, slot_date, start_time in rows:
         cid = int(case_id)
-        if cid in out:
+        if cid in out and out[cid] is not None:
             continue
         out[cid] = f"{slot_date} {start_time.strftime('%H:%M')}"
     return out
@@ -464,6 +483,8 @@ def get_parent_profile(db: Session, user: User) -> ParentProfileRead:
         email=user.email,
         phone=user.phone,
         home_address=user_home_address_read(user),
+        school_address=user_school_address_read(user),
+        address_type=(user.preferred_visit_address_type or "home"),
         children=children,
         services=services,
         homecare_cases=homecare_cases,
@@ -488,10 +509,18 @@ def update_parent_profile(db: Session, user: User, payload: dict[str, Any]) -> P
         phone = payload.get("phone")
         user.phone = phone.strip() if phone and str(phone).strip() else None
 
+    if payload.get("address_type") in ("home", "school"):
+        user.preferred_visit_address_type = payload["address_type"]
+
     home_data = address_service.home_address_from_me_update(payload)
     if home_data:
         address_service.validate_home_address_payload(home_data)
         address_service.apply_home_address_to_user(user, home_data)
+
+    school_data = address_service.school_address_from_parent_update(payload)
+    if school_data:
+        address_service.validate_school_address_payload(school_data)
+        address_service.apply_school_address_to_user(user, school_data)
 
     child_updates = payload.get("children")
     if child_updates:

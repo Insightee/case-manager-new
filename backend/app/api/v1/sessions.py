@@ -235,6 +235,25 @@ def create_manual_walk_in_session(
     )
 
 
+@router.get("/{session_id}", response_model=SessionRead)
+def get_session(
+    session_id: int,
+    user: User = Depends(require_permission("session.read")),
+    db: Session = Depends(get_db),
+):
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == session_id)
+        .options(selectinload(TherapySession.case).selectinload(Case.child), selectinload(TherapySession.daily_log))
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return _session_read(session, case)
+
+
 @router.patch("/{session_id}", response_model=SessionRead)
 def update_session(
     session_id: int,

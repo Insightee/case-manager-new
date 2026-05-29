@@ -10,7 +10,7 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.permissions import RoleName, case_scope_check
+from app.core.permissions import RoleName, case_scope_check, user_has_permission
 from app.models.report import MonthlyReport, ObservationReport, ReportStatus
 from app.models.report_image import ReportImage
 from app.models.user import User
@@ -71,16 +71,28 @@ def _validate_image_bytes(raw: bytes, declared_mime: str) -> str:
     return sniffed
 
 
+_EDITABLE_STATUSES = frozenset(
+    {ReportStatus.DRAFT, ReportStatus.REJECTED, ReportStatus.UNDER_REVIEW}
+)
+
+
 def _assert_can_edit_report(db: Session, user, report_type: str, report) -> None:
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     case = case_service.get_case(db, report.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Report not found")
-    if report.therapist_user_id != user.id:
-        raise HTTPException(status_code=403, detail="Only the report author can upload images")
-    if report.status not in (ReportStatus.DRAFT, ReportStatus.REJECTED):
-        raise HTTPException(status_code=400, detail="Images can only be added to draft or rejected reports")
+    if report.status not in _EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Images can only be added while the report is draft, under review, or rejected",
+        )
+    is_author = report.therapist_user_id == user.id
+    if is_author:
+        return
+    if user_has_permission(user, "monthly_report.approve"):
+        return
+    raise HTTPException(status_code=403, detail="Only the report author or a reviewer can upload images")
 
 
 def _parent_linked_to_case(db: Session, user: User, case_id: int) -> bool:

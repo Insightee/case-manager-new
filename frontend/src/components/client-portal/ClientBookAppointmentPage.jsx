@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
@@ -34,13 +35,43 @@ function ApptStatusBadge({ status }) {
 }
 
 function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
-  return (
-    <div className="parent-appt-sheet" role="dialog" aria-modal="true">
-      <div className="parent-appt-sheet__panel">
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [])
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  const titleId = 'parent-appt-sheet-title'
+
+  return createPortal(
+    <div className="parent-appt-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <button
+        type="button"
+        className="parent-appt-sheet__backdrop"
+        aria-label="Close appointment details"
+        onClick={onClose}
+      />
+      <div
+        className="parent-appt-sheet__panel"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
         {appt.isCmMeeting ? (
           <>
             <p className="parent-appt-sheet__eyebrow parent-appt-sheet__eyebrow--cm">Case manager meeting</p>
-            <h3 className="parent-appt-sheet__title">{fmtDate(appt.slotDate)}</h3>
+            <h3 id={titleId} className="parent-appt-sheet__title">
+              {fmtDate(appt.slotDate)}
+            </h3>
             <p className="parent-appt-sheet__time">
               {appt.startTime}
               {appt.endTime ? `–${appt.endTime}` : ''}
@@ -58,7 +89,9 @@ function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
         ) : (
           <>
             <p className="parent-appt-sheet__eyebrow">Therapy session</p>
-            <h3 className="parent-appt-sheet__title">{fmtDate(appt.slotDate)}</h3>
+            <h3 id={titleId} className="parent-appt-sheet__title">
+              {fmtDate(appt.slotDate)}
+            </h3>
             <p className="parent-appt-sheet__time">
               {appt.startTime}
               {appt.endTime ? `–${appt.endTime}` : ''}
@@ -93,7 +126,8 @@ function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -277,9 +311,10 @@ export function ClientBookAppointmentPage() {
         .parent-appt-badge--pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
         .parent-appt-badge--cancelled { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
         .parent-appt-badge--cm { background: #ede9fe; color: #4c1d95; border-color: #c4b5fd; }
-        .parent-appt-sheet { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(15,23,42,0.4); padding: 16px; }
+        .parent-appt-sheet { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-end; justify-content: center; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); pointer-events: none; }
         @media (min-width: 640px) { .parent-appt-sheet { align-items: center; } }
-        .parent-appt-sheet__panel { width: 100%; max-width: 420px; background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+        .parent-appt-sheet__backdrop { position: absolute; inset: 0; margin: 0; padding: 0; border: none; background: rgba(15,23,42,0.4); cursor: default; pointer-events: auto; }
+        .parent-appt-sheet__panel { position: relative; z-index: 1; width: 100%; max-width: 420px; background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); pointer-events: auto; }
         .parent-appt-sheet__eyebrow { font-size: 0.7rem; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
         .parent-appt-sheet__eyebrow--cm { color: #7c3aed; }
         .parent-appt-sheet__title { font-size: 1.1rem; font-weight: 700; color: #1e293b; margin: 0 0 4px; }

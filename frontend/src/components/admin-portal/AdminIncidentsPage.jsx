@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiUpload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { IncidentReportForm } from '../support/IncidentReportForm.jsx'
@@ -19,6 +19,9 @@ import '../support/support-tickets.css'
 const STATUS_FILTERS = ['ALL', 'REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
 
 export function AdminIncidentsPage({ embedded = false }) {
+  const [searchParams] = useSearchParams()
+  const deepLinkIncidentId = searchParams.get('incident')
+  const handledDeepLink = useRef(null)
   const [cases, setCases] = useState([])
   const [incidents, setIncidents] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -64,7 +67,7 @@ export function AdminIncidentsPage({ embedded = false }) {
 
   const openCount = incidents.filter((i) => i.status !== 'CLOSED').length
 
-  async function toggleExpand(inc) {
+  async function openIncident(inc) {
     if (expandedId === inc.id) {
       setExpandedId(null)
       setDetail(null)
@@ -80,6 +83,18 @@ export function AdminIncidentsPage({ embedded = false }) {
       setDetailLoading(false)
     }
   }
+
+  const toggleExpand = openIncident
+
+  useEffect(() => {
+    if (!deepLinkIncidentId || loading) return
+    const id = Number(deepLinkIncidentId)
+    if (!Number.isFinite(id) || handledDeepLink.current === id) return
+    const inc = incidents.find((i) => i.id === id)
+    if (!inc) return
+    handledDeepLink.current = id
+    openIncident(inc)
+  }, [deepLinkIncidentId, loading, incidents])
 
   function onDetailUpdated(updated) {
     setDetail(updated)
@@ -254,14 +269,33 @@ export function AdminIncidentsPage({ embedded = false }) {
                           <>
                             {' '}·{' '}
                             <Link
-                              to={`/admin/cases/${inc.case_id}`}
+                              to={`/admin/cases/${inc.case_id}?tab=incidents`}
                               onClick={(e) => e.stopPropagation()}
                               style={{ color: '#6366f1' }}
                             >
                               View case
                             </Link>
+                            {' '}·{' '}
+                            <Link
+                              to={`/admin/support?tab=incidents&incident=${inc.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ color: '#6366f1' }}
+                            >
+                              View report
+                            </Link>
                           </>
-                        ) : null}
+                        ) : (
+                          <>
+                            {' '}·{' '}
+                            <Link
+                              to={`/admin/support?tab=incidents&incident=${inc.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ color: '#6366f1' }}
+                            >
+                              View report
+                            </Link>
+                          </>
+                        )}
                       </p>
                     </button>
                     <StatusBadge status={inc.status} />

@@ -16,8 +16,14 @@ function fmtDateLabel(iso) {
   })
 }
 
+function childSelectLabel(c) {
+  const name = c.childName || 'Your child'
+  const therapist = c.therapist && c.therapist !== '—' ? c.therapist : null
+  return therapist ? `${name} · ${therapist}` : name
+}
+
 /**
- * Compact parent booking: pick case → therapist → date → open slot → confirm.
+ * Compact parent booking: pick child → therapist → date → open slot → confirm.
  * Replaces month calendar grid on the session schedule page.
  */
 export function ParentBookSessionForm({
@@ -159,7 +165,7 @@ export function ParentBookSessionForm({
 
       <div className="parent-book-form__grid">
         <label className="parent-book-form__field">
-          Case
+          Child
           <select
             value={caseId}
             onChange={(e) => {
@@ -167,10 +173,11 @@ export function ParentBookSessionForm({
               setTherapistId('')
             }}
             disabled={isReschedule}
+            aria-label="Select child"
           >
             {(cases || []).map((c) => (
               <option key={c.id || c.caseId} value={c.id || c.caseId}>
-                {c.childName} ({c.caseId})
+                {childSelectLabel(c)}
               </option>
             ))}
           </select>

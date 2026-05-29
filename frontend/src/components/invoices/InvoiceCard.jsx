@@ -31,6 +31,7 @@ export function InvoiceCard({
   invoice,
   onResolve,
   onViewDetails,
+  onSessionBreakdown,
   onDownloadCsv,
   onView,
   onDownloadPdf,
@@ -58,11 +59,11 @@ export function InvoiceCard({
         </div>
         {invoice.detail && <p className="mt-3 text-sm text-slate-600">{invoice.detail}</p>}
         <div className="mt-4 flex flex-wrap gap-2">
+          <ActionBtn variant="primary" onClick={() => (onSessionBreakdown || onViewDetails)?.(invoice)}>
+            Session breakdown
+          </ActionBtn>
           <ActionBtn variant="danger" onClick={() => onResolve?.(invoice)}>
             Resolve issue
-          </ActionBtn>
-          <ActionBtn variant="primary" onClick={() => onViewDetails?.(invoice)}>
-            View details
           </ActionBtn>
         </div>
       </article>
@@ -84,8 +85,8 @@ export function InvoiceCard({
           <StatusBadge status="in_review" />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <ActionBtn variant="primary" onClick={() => onViewDetails?.(invoice)}>
-            View details
+          <ActionBtn variant="primary" onClick={() => (onSessionBreakdown || onViewDetails)?.(invoice)}>
+            Session breakdown
           </ActionBtn>
           <ActionBtn variant="neutral" onClick={() => onDownloadCsv?.(invoice)}>
             Download CSV
@@ -109,8 +110,8 @@ export function InvoiceCard({
           <StatusBadge status="paid" />
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <ActionBtn variant="primary" onClick={() => onView?.(invoice)}>
-            View
+          <ActionBtn variant="primary" onClick={() => (onSessionBreakdown || onView)?.(invoice)}>
+            Session breakdown
           </ActionBtn>
           <ActionBtn variant="neutral" onClick={() => onDownloadPdf?.(invoice)}>
             Download PDF

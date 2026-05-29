@@ -4,12 +4,12 @@ import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { AdminTicketsPage } from './AdminTicketsPage.jsx'
 import { AdminIncidentsPage } from './AdminIncidentsPage.jsx'
 import { AdminSupportReportsPage } from './AdminSupportReportsPage.jsx'
-import { AdminMobilePillTabs, AdminPageHeader } from './ui/index.js'
+import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
 
 const TABS = [
   { id: 'tickets', label: 'Tickets', perm: 'ticket.manage' },
   { id: 'incidents', label: 'Incidents', permAny: ['ticket.manage', 'incident.read_sensitive'] },
-  { id: 'reports', label: 'Reports', permAny: ['ticket.manage', 'incident.read_sensitive'] },
+  { id: 'reports', label: 'History', permAny: ['ticket.manage', 'incident.read_sensitive'] },
 ]
 
 export function AdminSupportHubPage() {
@@ -44,20 +44,13 @@ export function AdminSupportHubPage() {
         tabs={visibleTabs}
       />
 
-      <div className="admin-desktop-only" style={{ marginBottom: 16 }}>
-        <nav className="portal-tabs admin-page__tabs-scroll" aria-label="Support sections">
-          {visibleTabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`portal-tabs__tab${tab === t.id ? ' is-active' : ''}`}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+      <PortalTabBar
+        className="admin-page__tabs-scroll admin-desktop-only"
+        ariaLabel="Support sections"
+        activeId={tab}
+        onChange={setTab}
+        tabs={visibleTabs}
+      />
 
       <div className="admin-hub-embedded" style={{ display: tab === 'tickets' ? 'block' : 'none' }}>
         <AdminTicketsPage embedded />
