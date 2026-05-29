@@ -191,6 +191,29 @@ def _send_parent_invite_email(to: str, invite_url: str, parent_name: str, child_
     )
 
 
+def queue_parent_portal_invite_email(
+    background_tasks,
+    db: Session,
+    *,
+    to: str,
+    invite_url: str,
+    full_name: str,
+    child_name: str,
+) -> None:
+    from app.services.email.service import enqueue_portal_invite_email
+
+    enqueue_portal_invite_email(
+        background_tasks,
+        db,
+        to=to,
+        invite_url=invite_url,
+        full_name=full_name,
+        role_label="Parent",
+        intro_line=f"You have been invited to the Insighte parent portal for {child_name}.",
+        recipient_role="parent",
+    )
+
+
 def issue_parent_invite(
     db: Session,
     parent_user_id: int,
@@ -198,6 +221,7 @@ def issue_parent_invite(
     *,
     child_id: int | None = None,
     send_email: bool = True,
+    background_tasks=None,
 ) -> str:
     from app.core.permissions import RoleName
 
@@ -228,7 +252,17 @@ def issue_parent_invite(
             ch = db.get(Child, linked_child_id)
             if ch:
                 child_name = ch.full_name
-        _send_parent_invite_email(user.email, url, user.full_name or user.email, child_name)
+        if background_tasks is not None:
+            queue_parent_portal_invite_email(
+                background_tasks,
+                db,
+                to=user.email,
+                invite_url=url,
+                full_name=user.full_name or user.email,
+                child_name=child_name,
+            )
+        else:
+            _send_parent_invite_email(user.email, url, user.full_name or user.email, child_name)
     return url
 
 

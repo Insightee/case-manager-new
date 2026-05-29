@@ -12,6 +12,13 @@ import {
 import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
 import {
+  formatInviteStatus,
+  formatLoginReady,
+  provisionActivateSuccess,
+  provisionInviteFailure,
+  provisionInviteSuccess,
+} from '../../lib/userProvision.js'
+import {
   hasDeprecatedStaffRole,
   moduleAccessSummary,
   primaryLandingHint,
@@ -51,6 +58,8 @@ export function AdminStaffManageSection({
   const [editRoles, setEditRoles] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [resendingId, setResendingId] = useState(null)
+  const [rowBusy, setRowBusy] = useState(null)
+  const [lastProvision, setLastProvision] = useState(null)
 
   const deprecatedSet = useMemo(
     () => new Set((deprecatedRoles || []).map((r) => String(r).toUpperCase())),
@@ -154,18 +163,101 @@ export function AdminStaffManageSection({
     }
   }
 
-  async function toggleActive(userId, isActive) {
+  async function activateForLogin(u) {
+    const key = `${u.id}:activate`
+    if (rowBusy) return
     onError?.('')
+    setRowBusy(key)
     try {
-      await apiFetch(`/api/v1/admin/users/${userId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ is_active: isActive }),
+      const res = await apiFetch(`/api/v1/admin/users/${u.id}/activate-for-login`, {
+        method: 'POST',
+        timeoutMs: 20_000,
       })
+      setLastProvision({ email: res.email, ...res })
+      onSuccess?.(provisionActivateSuccess(res))
       onReload?.()
-      onSuccess?.(isActive ? 'User reactivated.' : 'User deactivated.')
     } catch (err) {
-      onError?.(err.message || 'Could not update status')
+      onError?.(err.message || `Could not activate ${u.email}`)
+    } finally {
+      setRowBusy(null)
     }
+  }
+
+  async function inviteToLogin(u) {
+    const key = `${u.id}:invite`
+    if (rowBusy) return
+    onError?.('')
+    setRowBusy(key)
+    try {
+      const res = await apiFetch(`/api/v1/admin/users/${u.id}/invite-to-login`, {
+        method: 'POST',
+        timeoutMs: 20_000,
+      })
+      setLastProvision({ email: res.email, ...res })
+      const fail = provisionInviteFailure(res)
+      if (fail) onError?.(fail)
+      onSuccess?.(provisionInviteSuccess(res))
+      if (res.invite_url) setInviteUrl(res.invite_url)
+      onReload?.()
+    } catch (err) {
+      onError?.(err.message || `Could not invite ${u.email}`)
+    } finally {
+      setRowBusy(null)
+    }
+  }
+
+  function loginMetaLine(u) {
+    const parts = [
+      formatLoginReady(u.login_ready, u.is_active),
+      formatInviteStatus(u.invite_status),
+    ]
+    if (u.last_invite_sent_at) {
+      parts.push(`Last email ${new Date(u.last_invite_sent_at).toLocaleString()}`)
+    }
+    return parts.join(' · ')
+  }
+
+  function rowLoginActions(u) {
+    const busyActivate = rowBusy === `${u.id}:activate`
+    const busyInvite = rowBusy === `${u.id}:invite`
+    const link = u.pending_invite_url || (lastProvision?.email === u.email ? lastProvision.invite_url : null)
+    return (
+      <div className="admin-btn-group admin-btn-group--wrap">
+        {!u.is_active ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            disabled={!!rowBusy}
+            onClick={() => activateForLogin(u)}
+          >
+            {busyActivate ? 'Activating…' : 'Activate user'}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="admin-btn admin-btn--ghost admin-btn--sm"
+          disabled={!!rowBusy}
+          onClick={() => inviteToLogin(u)}
+        >
+          {busyInvite ? 'Sending…' : u.invite_status === 'pending' ? 'Resend invite' : 'Invite to login'}
+        </button>
+        {link ? (
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => copyLink(link)}>
+            Copy login link
+          </button>
+        ) : null}
+        {u.is_active ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            disabled={!!rowBusy}
+            onClick={() => deactivateUser(u.id, u.full_name)}
+          >
+            Deactivate
+          </button>
+        ) : null}
+      </div>
+    )
   }
 
   async function saveEditAccess(userId) {
@@ -394,7 +486,8 @@ export function AdminStaffManageSection({
                     <th>Role</th>
                     <th>Access</th>
                     <th>Status</th>
-                    <th />
+                    <th>Login</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -404,7 +497,9 @@ export function AdminStaffManageSection({
                         <td>
                           <span className="admin-table__primary">{u.full_name}</span>
                         </td>
-                        <td>{u.email}</td>
+                        <td>
+                          <span className="admin-table__primary">{u.email}</span>
+                        </td>
                         <td>
                           <div className="admin-chip-row">
                             {(u.roles || []).map((r) => {
@@ -443,54 +538,44 @@ export function AdminStaffManageSection({
                           </StatusBadge>
                         </td>
                         <td>
-                          <div className="admin-btn-group">
-                          <button
-                            type="button"
-                            className="admin-btn admin-btn--ghost admin-btn--sm"
-                            onClick={() => {
-                              if (editingId === u.id) {
-                                setEditingId(null)
-                              } else {
-                                setEditingId(u.id)
-                                setEditGrants(
-                                  Object.keys(u.service_access_grants || {}).length ||
-                                    Object.keys(u.org_capability_grants || {}).length
-                                    ? mergeGrants(u.service_access_grants || {}, u.org_capability_grants || {})
-                                    : Object.keys(u.module_access_grants || {}).length
-                                      ? u.module_access_grants
-                                      : grantsFromAssignments(u.module_assignments ?? [], u.is_view_only),
-                                )
-                                setEditOverrides(u.feature_overrides ?? {})
-                                setEditViewOnly(u.is_view_only ?? false)
-                                setEditRoles([...(u.roles || [])])
-                              }
-                            }}
-                          >
-                            {editingId === u.id ? 'Cancel' : 'Edit access'}
-                          </button>
-                          {u.is_active ? (
+                          <p className="admin-muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
+                            {loginMetaLine(u)}
+                          </p>
+                        </td>
+                        <td>
+                          <div className="admin-btn-group admin-btn-group--wrap">
                             <button
                               type="button"
                               className="admin-btn admin-btn--ghost admin-btn--sm"
-                              onClick={() => deactivateUser(u.id, u.full_name)}
+                              disabled={!!rowBusy}
+                              onClick={() => {
+                                if (editingId === u.id) {
+                                  setEditingId(null)
+                                } else {
+                                  setEditingId(u.id)
+                                  setEditGrants(
+                                    Object.keys(u.service_access_grants || {}).length ||
+                                      Object.keys(u.org_capability_grants || {}).length
+                                      ? mergeGrants(u.service_access_grants || {}, u.org_capability_grants || {})
+                                      : Object.keys(u.module_access_grants || {}).length
+                                        ? u.module_access_grants
+                                        : grantsFromAssignments(u.module_assignments ?? [], u.is_view_only),
+                                  )
+                                  setEditOverrides(u.feature_overrides ?? {})
+                                  setEditViewOnly(u.is_view_only ?? false)
+                                  setEditRoles([...(u.roles || [])])
+                                }
+                              }}
                             >
-                              Deactivate
+                              {editingId === u.id ? 'Cancel' : 'Edit access'}
                             </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn--ghost admin-btn--sm"
-                              onClick={() => toggleActive(u.id, true)}
-                            >
-                              Reactivate
-                            </button>
-                          )}
+                            {rowLoginActions(u)}
                           </div>
                         </td>
                       </tr>
                       {editingId === u.id ? (
                         <tr>
-                          <td colSpan={6} style={{ padding: '12px 16px', background: '#f8fafc' }}>
+                          <td colSpan={8} style={{ padding: '12px 16px', background: '#f8fafc' }}>
                             {hasDeprecatedStaffRole(u.roles) ? (
                               <p className="admin-alert admin-alert--warn rbac-editor__hint">
                                 Legacy role detected. Prefer Module Admin, Case Manager, or Finance when re-provisioning access.
@@ -543,15 +628,21 @@ export function AdminStaffManageSection({
                         title={u.full_name}
                         meta={u.email}
                         badges={
-                          <StatusBadge tone={u.is_active ? 'success' : 'neutral'}>
-                            {u.is_active ? 'Active' : 'Inactive'}
-                          </StatusBadge>
+                          <>
+                            <StatusBadge tone={u.is_active ? 'success' : 'neutral'}>
+                              {u.is_active ? 'Active' : 'Inactive'}
+                            </StatusBadge>
+                            <StatusBadge tone={u.login_ready ? 'success' : 'neutral'}>
+                              {u.login_ready ? 'Login ready' : 'Not login-ready'}
+                            </StatusBadge>
+                          </>
                         }
                         actions={
-                          <div className="admin-btn-group">
+                          <div className="admin-btn-group admin-btn-group--wrap">
                             <button
                               type="button"
                               className="admin-btn admin-btn--ghost admin-btn--sm"
+                              disabled={!!rowBusy}
                               onClick={() => {
                                 if (editingId === u.id) {
                                   setEditingId(null)
@@ -573,26 +664,13 @@ export function AdminStaffManageSection({
                             >
                               {editingId === u.id ? 'Cancel' : 'Edit access'}
                             </button>
-                            {u.is_active ? (
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn--ghost admin-btn--sm"
-                                onClick={() => deactivateUser(u.id, u.full_name)}
-                              >
-                                Deactivate
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn--ghost admin-btn--sm"
-                                onClick={() => toggleActive(u.id, true)}
-                              >
-                                Reactivate
-                              </button>
-                            )}
+                            {rowLoginActions(u)}
                           </div>
                         }
                       >
+                        <p className="admin-muted" style={{ margin: '0 0 8px', fontSize: '0.8125rem' }}>
+                          {loginMetaLine(u)}
+                        </p>
                         <div className="admin-chip-row" style={{ marginBottom: 8 }}>
                           {(u.roles || []).map((r) => {
                             const id = String(r).toUpperCase()

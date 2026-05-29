@@ -48,12 +48,13 @@ export function clearTokens() {
   localStorage.removeItem('refresh_token')
 }
 
-function timeoutErrorMessage() {
+function timeoutErrorMessage(timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const secs = Math.round(timeoutMs / 1000)
   if (import.meta.env.DEV) {
     const base = API_URL || 'http://localhost:8000 (via Vite proxy)'
-    return `Request timed out. Check that the API is running (${base}).`
+    return `Request timed out after ${secs}s. The API may be down or an operation is stuck — check GET /health and start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 (${base}).`
   }
-  return 'This is taking longer than expected. Check your connection and try again.'
+  return `This is taking longer than expected (${secs}s). Check your connection and try again.`
 }
 
 export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -70,7 +71,7 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TI
     })
   } catch (err) {
     if (err?.name === 'AbortError') {
-      throw new Error(timeoutErrorMessage())
+      throw new Error(timeoutErrorMessage(timeoutMs))
     }
     throw err
   } finally {
@@ -114,7 +115,7 @@ export async function apiFetch(path, options = {}) {
   } catch (err) {
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
     recordApiMetric(path, elapsed, false)
-    if (err?.message === timeoutErrorMessage()) throw err
+    if (err?.message?.startsWith('Request timed out')) throw err
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
     const onVercel = /\.vercel\.app$/i.test(hostname)
     const localDev = hostname === 'localhost' || hostname === '127.0.0.1'

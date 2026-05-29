@@ -34,6 +34,10 @@ class UserRead(BaseModel):
     service_access_grants: dict = Field(default_factory=dict)
     org_capability_grants: dict = Field(default_factory=dict)
     feature_overrides: dict = Field(default_factory=dict)
+    login_ready: bool = False
+    invite_status: Optional[str] = None
+    last_invite_sent_at: Optional[str] = None
+    pending_invite_url: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

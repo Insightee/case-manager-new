@@ -9,7 +9,21 @@ cd backend
 python3 -m pip install -r requirements.txt
 cp .env.example .env   # optional; defaults to SQLite for local dev
 python3 -m app.seed.demo_seed
-uvicorn app.main:app --reload --port 8000
+python3 -m uvicorn app.main:app --reload --port 8000
+```
+
+Frontend (separate terminal; proxies `/api` and `/health` to port 8000 when `VITE_API_URL` is unset):
+
+```bash
+cd frontend
+npm run dev
+```
+
+Quick checks:
+
+```bash
+curl -s http://localhost:8000/health
+cd backend && python3 -m pytest app/tests -q
 ```
 
 With Docker (Postgres + Redis):

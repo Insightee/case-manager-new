@@ -123,10 +123,38 @@ def allot_case(
     }
 
 
+def _queue_therapist_assignment_email(
+    background_tasks,
+    *,
+    to: str,
+    therapist_name: str,
+    case_code: str,
+    child_name: str,
+) -> None:
+    from app.services.email import service as email_service
+
+    body = (
+        f"Hello {therapist_name or 'there'},\n\n"
+        f"You have been assigned to case {case_code} ({child_name}). "
+        f"Please sign in to your therapist portal to review the assignment.\n\n"
+        f"— Insighte"
+    )
+
+    def _send() -> None:
+        email_service.send_email(
+            to=to,
+            subject=f"New case assignment — {case_code}",
+            body_text=body,
+        )
+
+    background_tasks.add_task(_send)
+
+
 def activate_allotment(
     db: Session,
     actor: User,
     case_id: int,
+    background_tasks=None,
 ) -> dict:
     from datetime import datetime, timezone
 
@@ -177,24 +205,22 @@ def activate_allotment(
                         pg.user_id,
                         actor.id,
                         child_id=child.id,
-                        send_email=True,
+                        send_email=background_tasks is not None,
+                        background_tasks=background_tasks,
                     )
                     parent_invite_urls.append(url)
                 except ValueError:
                     pass
 
     therapist = db.get(User, assignment.therapist_user_id)
-    if therapist and therapist.email:
+    if therapist and therapist.email and background_tasks is not None:
         child_name = child.full_name if child else "the client"
-        email_service.send_email(
+        _queue_therapist_assignment_email(
+            background_tasks,
             to=therapist.email,
-            subject=f"New case assignment — {case.case_code}",
-            body_text=(
-                f"Hello {therapist.full_name or 'there'},\n\n"
-                f"You have been assigned to case {case.case_code} ({child_name}). "
-                f"Please sign in to your therapist portal to review and accept the assignment.\n\n"
-                f"— Insighte"
-            ),
+            therapist_name=therapist.full_name,
+            case_code=case.case_code,
+            child_name=child_name,
         )
 
     db.flush()
@@ -202,6 +228,7 @@ def activate_allotment(
         "case": case_service.case_to_read(case, db),
         "assignment_id": assignment.id,
         "parent_invite_urls": parent_invite_urls,
+        "activation_complete": True,
     }
 
 

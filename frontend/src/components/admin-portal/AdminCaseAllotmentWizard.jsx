@@ -282,7 +282,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
     try {
       const res = await apiFetch(`/api/v1/admin/cases/${createdCase.id}/activate-allotment`, {
         method: 'POST',
-        timeoutMs: 120_000,
+        timeoutMs: 45_000,
       })
       setCreatedCase(res.case)
       setActivationInvites(res.parent_invite_urls || [])

@@ -257,7 +257,7 @@ export function RbacEditor({
             )
           })}
         </div>
-      </fieldset>
+      </div>
 
       {isSuperAdmin ? (
         <div className="capability-preview rbac-preview">

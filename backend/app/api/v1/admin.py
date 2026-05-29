@@ -136,7 +136,12 @@ def list_product_modules(
     return payload
 
 
-def _user_to_read(u: User) -> UserRead:
+def _user_to_read(u: User, *, db: Session | None = None) -> UserRead:
+    login_meta: dict = {}
+    if db is not None:
+        from app.services import user_provision_service
+
+        login_meta = user_provision_service.login_metadata_for_user(db, u)
     return UserRead(
         id=u.id,
         email=u.email,
@@ -151,6 +156,10 @@ def _user_to_read(u: User) -> UserRead:
         service_access_grants=getattr(u, "service_access_grants", None) or {},
         org_capability_grants=getattr(u, "org_capability_grants", None) or {},
         feature_overrides=getattr(u, "feature_overrides", None) or {},
+        login_ready=login_meta.get("login_ready", bool(u.is_active)),
+        invite_status=login_meta.get("invite_status"),
+        last_invite_sent_at=login_meta.get("last_invite_sent_at"),
+        pending_invite_url=login_meta.get("pending_invite_url"),
     )
 
 
@@ -1467,7 +1476,7 @@ def list_users(
 ):
     stmt = select(User).order_by(User.email)
     users, total = paginate_query(db, stmt, page=page, page_size=page_size)
-    items = [_user_to_read(u) for u in users]
+    items = [_user_to_read(u, db=db) for u in users]
     return PaginatedList[UserRead](
         items=items,
         total=total,
@@ -1558,7 +1567,7 @@ def update_user(
     log_audit(db, actor_user_id=current.id, action="update", entity_type="user", entity_id=user_id, **meta)
     db.commit()
     db.refresh(target)
-    return _user_to_read(target)
+    return _user_to_read(target, db=db)
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -1592,7 +1601,7 @@ def create_user(
     log_audit(db, actor_user_id=user.id, action="create", entity_type="user", entity_id=new_user.id, **meta)
     db.commit()
     db.refresh(new_user)
-    return _user_to_read(new_user)
+    return _user_to_read(new_user, db=db)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1609,6 +1618,68 @@ def deactivate_user(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=current.id, action="deactivate", entity_type="user", entity_id=user_id, **meta)
     db.commit()
+
+
+@router.post("/users/{user_id}/activate-for-login")
+def admin_activate_user_for_login(
+    user_id: int,
+    request: Request,
+    current: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.schemas.user_provision import UserProvisionResult
+    from app.services import user_provision_service
+
+    try:
+        result = user_provision_service.activate_user_for_login(db, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=current.id,
+        action="activate_for_login",
+        entity_type="user",
+        entity_id=user_id,
+        **meta,
+    )
+    db.commit()
+    return UserProvisionResult(**result)
+
+
+@router.post("/users/{user_id}/invite-to-login")
+def admin_invite_user_to_login(
+    user_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    send_email: bool = Query(True),
+    current: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.schemas.user_provision import UserProvisionResult
+    from app.services import user_provision_service
+
+    try:
+        result = user_provision_service.invite_user_to_login(
+            db,
+            user_id,
+            actor_user_id=current.id,
+            background_tasks=background_tasks,
+            send_email=send_email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=current.id,
+        action="invite_to_login",
+        entity_type="user",
+        entity_id=user_id,
+        **meta,
+    )
+    db.commit()
+    return UserProvisionResult(**result)
 
 
 @router.post("/users/{user_id}/set-password", response_model=UserRead)
@@ -1635,7 +1706,7 @@ def admin_set_user_password(
     )
     db.commit()
     db.refresh(target)
-    return _user_to_read(target)
+    return _user_to_read(target, db=db)
 
 
 @router.post("/therapists/invite")
@@ -2300,6 +2371,7 @@ def admin_create_family(
 def admin_invite_parent(
     parent_user_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     child_id: Optional[int] = Query(None),
     user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
@@ -2308,14 +2380,19 @@ def admin_invite_parent(
 
     try:
         url = family_admin_service.issue_parent_invite(
-            db, parent_user_id, user.id, child_id=child_id
+            db,
+            parent_user_id,
+            user.id,
+            child_id=child_id,
+            send_email=True,
+            background_tasks=background_tasks,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="invite", entity_type="user", entity_id=parent_user_id, **meta)
     db.commit()
-    return {"invite_url": url}
+    return {"invite_url": url, "email": db.get(User, parent_user_id).email if db.get(User, parent_user_id) else None}
 
 
 class StatusRequestReview(BaseModel):
@@ -2843,6 +2920,7 @@ def admin_allot_case(
 def admin_activate_allotment(
     case_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: User = Depends(require_mutation_permission("case.create")),
     db: Session = Depends(get_db),
 ):
@@ -2853,7 +2931,7 @@ def admin_activate_allotment(
         raise HTTPException(status_code=404, detail="Case not found")
     ensure_case_write_access(user, case, db)
     try:
-        result = allotment_service.activate_allotment(db, user, case_id)
+        result = allotment_service.activate_allotment(db, user, case_id, background_tasks)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)

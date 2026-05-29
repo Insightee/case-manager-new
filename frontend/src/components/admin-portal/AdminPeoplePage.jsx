@@ -151,13 +151,17 @@ export function AdminPeoplePage() {
     [invites],
   )
 
-  async function inviteParent(userId, childId) {
+  async function inviteParent(userId, childId, parentEmail) {
     setError('')
     try {
       const qs = childId ? `?child_id=${childId}` : ''
-      const res = await apiFetch(`/api/v1/admin/families/${userId}/invite${qs}`, { method: 'POST' })
+      const res = await apiFetch(`/api/v1/admin/families/${userId}/invite${qs}`, {
+        method: 'POST',
+        timeoutMs: 20_000,
+      })
+      const email = res.email || parentEmail || 'parent'
       setInviteUrl(res.invite_url)
-      setSuccess('Parent invite link generated')
+      setSuccess(`Parent invite link generated for ${email}. Email is sent separately — copy the link if needed.`)
     } catch (err) {
       setError(err.message || 'Invite failed')
     }
@@ -210,7 +214,7 @@ export function AdminPeoplePage() {
           <button
             type="button"
             className="admin-btn admin-btn--ghost admin-btn--sm"
-            onClick={() => inviteParent(primary.userId, f.childId)}
+            onClick={() => inviteParent(primary.userId, f.childId, primary.parentEmail)}
           >
             Invite parent
           </button>

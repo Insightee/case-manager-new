@@ -41,6 +41,54 @@ test.describe('Production deploy verify', () => {
     expect(body.smtp_configured).toBe(true)
   })
 
+  test('API — activate-for-login and invite-to-login', async ({ request }) => {
+    const token = await adminToken(request)
+    const email = `e2e.provision.${ts}@demo.com`
+    const create = await request.post(`${API}/api/v1/admin/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        email,
+        password: 'demo123',
+        full_name: 'E2E Provision',
+        role_names: ['CASE_MANAGER'],
+        module_assignments: ['homecare'],
+      },
+    })
+    expect(create.ok(), await create.text()).toBeTruthy()
+    const userId = (await create.json()).id
+
+    await request.delete(`${API}/api/v1/admin/users/${userId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    const activate = await request.post(`${API}/api/v1/admin/users/${userId}/activate-for-login`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (activate.status() === 404) {
+      test.skip(true, 'Deploy API with activate-for-login not live yet')
+    }
+    expect(activate.ok(), await activate.text()).toBeTruthy()
+    const actBody = await activate.json()
+    expect(actBody.email).toBe(email)
+    expect(actBody.user_active).toBe(true)
+    expect(actBody.login_ready).toBe(true)
+
+    const invite = await request.post(`${API}/api/v1/admin/users/${userId}/invite-to-login`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(invite.ok(), await invite.text()).toBeTruthy()
+    const invBody = await invite.json()
+    expect(invBody.email).toBe(email)
+    expect(invBody.user_active).toBe(true)
+    expect(typeof invBody.invite_sent).toBe('boolean')
+    expect(invBody.login_ready).toBe(true)
+
+    const login = await request.post(`${API}/api/v1/auth/login`, {
+      data: { email, password: 'demo123' },
+    })
+    expect(login.ok(), await login.text()).toBeTruthy()
+  })
+
   test('API — staff super-admin invite with email', async ({ request }) => {
     const token = await adminToken(request)
     const res = await request.post(`${API}/api/v1/admin/therapists/invite`, {
@@ -89,13 +137,7 @@ test.describe('Production deploy verify', () => {
 
     const superAdminChip = staffPanel.getByRole('button', { name: 'Super Admin' })
     await superAdminChip.click()
-    const chipActive = await superAdminChip.evaluate((el) => el.classList.contains('is-active'))
-    if (!chipActive) {
-      test.skip(
-        true,
-        'Production UI has not deployed RBAC role-chip fix yet — API invite test covers super-admin email',
-      )
-    }
+    await expect(superAdminChip).toHaveClass(/is-active/, { timeout: 5_000 })
 
     await staffPanel.getByRole('button', { name: 'Send invite' }).click()
     await expect(
