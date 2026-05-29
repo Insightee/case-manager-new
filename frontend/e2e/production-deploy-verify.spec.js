@@ -146,7 +146,7 @@ test.describe('Production deploy verify', () => {
       )
     }
 
-    await staffPanel.getByRole('button', { name: 'Send invite' }).click()
+    await staffPanel.locator('form').getByRole('button', { name: 'Send invite' }).click()
     await expect(
       page.getByText(/Invite link generated|Check the inbox|queued|spam|SMTP is not configured/i).first(),
     ).toBeVisible({ timeout: 60_000 })
