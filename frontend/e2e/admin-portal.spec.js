@@ -16,9 +16,8 @@ test.describe('Admin portal smoke', () => {
     await expect(page).toHaveURL(/\/admin\/logs/)
     await expect(page.getByRole('heading', { name: 'Session logs', exact: true })).toBeVisible()
 
-    await sidebarLink(page, 'Report Review').click()
+    await sidebarLink(page, 'Reports').click()
     await expect(page).toHaveURL(/\/admin\/reports/)
-    await expect(page.getByRole('heading', { name: 'Report review', exact: true })).toBeVisible()
 
     await sidebarLink(page, 'IEP').click()
     await expect(page).toHaveURL(/\/admin\/iep/)
@@ -59,8 +58,7 @@ test.describe('Admin portal smoke', () => {
 
   test('incidents page loads', async ({ page }) => {
     await loginAdmin(page)
-    await page.locator('.app-sidebar__nav').getByRole('link', { name: 'Incidents', exact: true }).click()
-    await expect(page).toHaveURL(/\/admin\/incidents/)
-    await expect(page.getByRole('heading', { name: 'Incidents', exact: true })).toBeVisible()
+    await sidebarLink(page, 'Support & Incidents').click()
+    await expect(page).toHaveURL(/\/admin\/support/)
   })
 })

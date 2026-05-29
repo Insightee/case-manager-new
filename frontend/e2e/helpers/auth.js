@@ -1,4 +1,9 @@
 /** @param {import('@playwright/test').Page} page */
+export function portalNav(page) {
+  return page.getByRole('navigation', { name: 'Portal navigation' }).first()
+}
+
+/** @param {import('@playwright/test').Page} page */
 export async function login(page, { email, password = 'demo123' }) {
   await page.goto('/login')
   await page.getByRole('textbox', { name: 'Email' }).fill(email)
@@ -10,12 +15,12 @@ export async function login(page, { email, password = 'demo123' }) {
 export async function loginTherapist(page) {
   await login(page, { email: 'therapist@demo.com' })
   await page.waitForURL(/\/therapist/)
-  await page.locator('.app-sidebar__nav').waitFor()
+  await portalNav(page).waitFor()
 }
 
 /** Sidebar nav link (avoids duplicate quick-action links). */
 export function sidebarLink(page, label) {
-  return page.locator('.app-sidebar__nav').getByRole('link', { name: label, exact: true })
+  return portalNav(page).getByRole('link', { name: label, exact: true })
 }
 
 /** @param {import('@playwright/test').Page} page */
@@ -26,7 +31,7 @@ export async function loginParent(page) {
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
   await page.waitForURL(/\/parent/)
-  await page.locator('.app-sidebar__nav').waitFor()
+  await portalNav(page).waitFor()
 }
 
 /** @param {import('@playwright/test').Page} page */
@@ -37,9 +42,10 @@ export async function loginAdmin(page) {
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
   await page.waitForURL(/\/admin/)
+  await portalNav(page).waitFor()
 }
 
-/** @param {import('@playwright.test').Page} page */
+/** @param {import('@playwright/test').Page} page */
 export async function loginCaseManager(page) {
   await page.goto('/login')
   await page.getByRole('tab', { name: 'Staff' }).click()
@@ -47,10 +53,12 @@ export async function loginCaseManager(page) {
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
   await page.waitForURL(/\/admin/)
+  await portalNav(page).waitFor()
 }
 
 /** @param {import('@playwright/test').Page} page */
 export async function loginFinance(page) {
   await login(page, { email: 'finance@demo.com' })
   await page.waitForURL(/\/admin/)
+  await portalNav(page).waitFor()
 }

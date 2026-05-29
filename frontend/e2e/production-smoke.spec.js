@@ -8,7 +8,7 @@
  *   npx playwright test e2e/production-smoke.spec.js
  */
 import { test, expect } from '@playwright/test'
-import { loginAdmin, loginTherapist, loginParent, sidebarLink } from './helpers/auth.js'
+import { loginAdmin, loginTherapist, loginParent, portalNav, sidebarLink } from './helpers/auth.js'
 
 const API = process.env.PLAYWRIGHT_API_URL || 'https://case-manager-new-production.up.railway.app'
 
@@ -37,19 +37,19 @@ test.describe('Production UI — admin', () => {
     await sidebarLink(page, 'Session Logs').click()
     await expect(page).toHaveURL(/\/admin\/logs/)
 
-    await sidebarLink(page, 'Report Review').click()
+    await sidebarLink(page, 'Reports').click()
     await expect(page).toHaveURL(/\/admin\/reports/)
 
     await sidebarLink(page, 'IEP').click()
     await expect(page).toHaveURL(/\/admin\/iep/)
 
-    const incidents = page.locator('.app-sidebar__nav').getByRole('link', { name: 'Incidents', exact: true })
-    if (await incidents.isVisible()) {
-      await incidents.click()
-      await expect(page).toHaveURL(/\/admin\/incidents/)
+    const support = sidebarLink(page, 'Support & Incidents')
+    if (await support.isVisible()) {
+      await support.click()
+      await expect(page).toHaveURL(/\/admin\/support/)
     }
 
-    const people = page.locator('.app-sidebar__nav').getByRole('link', { name: /People|Therapists/i }).first()
+    const people = portalNav(page).getByRole('link', { name: 'People', exact: true })
     if (await people.isVisible()) {
       await people.click()
       await expect(page).not.toHaveURL(/\/login/)
@@ -58,10 +58,7 @@ test.describe('Production UI — admin', () => {
 
   test('admin billing or invoices area loads', async ({ page }) => {
     await loginAdmin(page)
-    const billingLink = page
-      .locator('.app-sidebar__nav')
-      .getByRole('link', { name: /Billing|Invoices/i })
-      .first()
+    const billingLink = portalNav(page).getByRole('link', { name: 'Invoices & payments', exact: true })
     if (!(await billingLink.isVisible().catch(() => false))) {
       test.skip(true, 'Billing nav not visible for this admin role')
     }
@@ -75,7 +72,8 @@ test.describe('Production UI — therapist', () => {
   test('therapist dashboard and logs', async ({ page }) => {
     await loginTherapist(page)
     await expect(page).toHaveURL(/\/therapist/)
-    await sidebarLink(page, 'Session Logs').click()
+    const logsLink = portalNav(page).getByRole('link', { name: /Session logs|Session Logs|Logs/i }).first()
+    await logsLink.click()
     await expect(page).toHaveURL(/\/therapist\/logs/)
     await expect(page.locator('body')).not.toContainText('Network error')
   })
@@ -85,20 +83,13 @@ test.describe('Production UI — parent', () => {
   test('parent dashboard and reports', async ({ page }) => {
     await loginParent(page)
     await expect(page).toHaveURL(/\/parent/)
-    const reports = sidebarLink(page, 'Reports')
-    if (await reports.isVisible().catch(() => false)) {
-      await reports.click()
-      await expect(page).toHaveURL(/\/parent\/reports/)
-    }
+    await sidebarLink(page, 'Reports').click()
+    await expect(page).toHaveURL(/\/parent\/reports/)
   })
 
   test('parent incidents or support when available', async ({ page }) => {
     await loginParent(page)
-    const support = page.locator('.app-sidebar__nav').getByRole('link', { name: /Support|Incidents/i }).first()
-    if (!(await support.isVisible().catch(() => false))) {
-      test.skip(true, 'Parent support nav not present')
-    }
-    await support.click()
+    await sidebarLink(page, 'Support & Incidents').click()
     await expect(page).not.toHaveURL(/\/login/)
   })
 })
