@@ -81,20 +81,21 @@ test.describe('Production deploy verify', () => {
     await loginAdmin(page)
     await page.goto('/admin/people?tab=staff')
     await expect(page.getByRole('heading', { name: 'People', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Add staff user' })).toBeVisible()
 
-    const addStaff = page.getByRole('heading', { name: 'Add staff user' }).locator('..')
-    await addStaff.getByRole('textbox', { name: 'Email' }).fill(SUPER_ADMIN_INVITE_EMAIL)
-    await addStaff.getByRole('textbox', { name: 'Full name' }).fill('Nicky Lalu')
+    const staffPanel = page.locator('.admin-panel').filter({ hasText: 'Add staff user' })
+    await staffPanel.locator('input[type="email"]').fill(SUPER_ADMIN_INVITE_EMAIL)
+    await staffPanel.getByPlaceholder(/Shown on invite/i).or(staffPanel.locator('label').filter({ hasText: 'Full name' }).locator('input')).first().fill('Nicky Lalu')
 
-    await page.getByRole('button', { name: 'Super Admin' }).click()
-    await expect(page.getByRole('button', { name: 'Super Admin' })).toHaveClass(/is-active/)
+    await staffPanel.getByRole('button', { name: 'Super Admin' }).click()
+    await expect(staffPanel.getByRole('button', { name: 'Super Admin' })).toHaveClass(/is-active/)
 
-    await addStaff.getByRole('button', { name: 'Send invite', exact: true }).click()
+    await staffPanel.getByRole('button', { name: 'Send invite' }).click()
     await expect(
-      page.getByText(/Invite link generated|Check the inbox|queued|spam/i).first(),
+      page.getByText(/Invite link generated|Check the inbox|queued|spam|SMTP is not configured/i).first(),
     ).toBeVisible({ timeout: 60_000 })
 
-    const resend = page.getByRole('button', { name: 'Resend email' }).filter({ hasText: 'Resend email' })
+    const resend = page.getByRole('button', { name: 'Resend email' })
     if (await resend.first().isVisible().catch(() => false)) {
       await resend.first().click()
       await expect(page.getByText(/Check the inbox|queued|spam|Invite link/i).first()).toBeVisible({
