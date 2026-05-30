@@ -53,12 +53,17 @@ class ClientInvoiceLineCreate(BaseModel):
 
 class AdminClientInvoiceCreate(BaseModel):
     case_id: int
-    invoice_type: Literal["PREPAID", "POSTPAID"]
+    invoice_type: Literal["PREPAID", "POSTPAID", "MONTHLY_FIXED", "MANUAL", "B2B"]
     billing_month: str = Field(min_length=3, max_length=32)
     due_date: Optional[date] = None
     notes: Optional[str] = None
     discount_inr: float = Field(default=0, ge=0)
-    lines: list[ClientInvoiceLineCreate] = Field(min_length=1)
+    lines: list[ClientInvoiceLineCreate] = Field(default_factory=list)
+
+
+class OnboardingInvoiceDraftRequest(BaseModel):
+    billing_month: Optional[str] = None
+    send_to_queue_only: bool = False
 
 
 class AdminClientInvoiceUpdate(BaseModel):
@@ -90,6 +95,7 @@ class ClientInvoiceLineUpsert(BaseModel):
     therapist_user_id: Optional[int] = None
     finance_note: Optional[str] = None
     parent_summary: Optional[str] = None
+    hsn_sac_code: Optional[str] = Field(default=None, max_length=32)
 
 
 class ClientInvoiceLinePatch(BaseModel):
@@ -106,6 +112,7 @@ class ClientInvoiceLinePatch(BaseModel):
     taxable_amount_inr: Optional[float] = None
     finance_note: Optional[str] = None
     parent_summary: Optional[str] = None
+    hsn_sac_code: Optional[str] = Field(default=None, max_length=32)
 
 
 class RemindTherapistRequest(BaseModel):

@@ -73,8 +73,38 @@ export function InvoicesPage() {
     setLoading(true)
     try {
       const rows = await apiFetch('/api/v1/invoices')
+      // #region agent log
+      fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
+        body: JSON.stringify({
+          sessionId: '3264f0',
+          hypothesisId: 'D',
+          location: 'InvoicesPage.jsx:load',
+          message: 'therapist invoices list ok',
+          data: { count: Array.isArray(rows) ? rows.length : 0 },
+          timestamp: Date.now(),
+          runId: 'browser',
+        }),
+      }).catch(() => {})
+      // #endregion
       setInvoices(rows)
-    } catch {
+    } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
+        body: JSON.stringify({
+          sessionId: '3264f0',
+          hypothesisId: 'D',
+          location: 'InvoicesPage.jsx:load',
+          message: 'therapist invoices list failed',
+          data: { error: err?.message?.slice(0, 120) },
+          timestamp: Date.now(),
+          runId: 'browser',
+        }),
+      }).catch(() => {})
+      // #endregion
       setInvoices([])
     } finally {
       setLoading(false)

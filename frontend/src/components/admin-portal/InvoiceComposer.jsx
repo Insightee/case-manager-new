@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import { useBillingAction } from '../../hooks/useBillingAction.js'
 import { AdminPageHeader, AdminSearchInput, ServiceFilterSelect } from './ui/index.js'
+import { BillingActionAlert } from './ui/BillingActionAlert.jsx'
 import { InvoiceComposerPreviewPanel } from './InvoiceComposerPreviewPanel.jsx'
 import './admin-client-invoices.css'
 import './admin-client-invoices-composer.css'
@@ -50,6 +52,7 @@ export function InvoiceComposer() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { canWriteBilling } = useModuleWrite()
+  const { loading, error, successMessage, run, clearMessages, setError, setSuccessMessage } = useBillingAction()
   const isMobile = useIsMobile()
   const [billingMonth, setBillingMonth] = useState(searchParams.get('billing_month') || defaultMonth())
   const [queue, setQueue] = useState(searchParams.get('queue') || 'not_invoiced_this_month')
@@ -61,6 +64,7 @@ export function InvoiceComposer() {
   const [selectedCaseId, setSelectedCaseId] = useState(
     searchParams.get('case_id') ? Number(searchParams.get('case_id')) : null
   )
+  const [selectedIds, setSelectedIds] = useState([])
   const [mobileDetail, setMobileDetail] = useState(Boolean(searchParams.get('case_id')))
   const [preview, setPreview] = useState(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
@@ -133,6 +137,7 @@ export function InvoiceComposer() {
   function selectCase(caseId) {
     setSelectedCaseId(caseId)
     if (isMobile) setMobileDetail(true)
+    clearMessages()
   }
 
   function clearSelection() {
@@ -140,22 +145,92 @@ export function InvoiceComposer() {
     setMobileDetail(false)
   }
 
+  function toggleSelect(caseId) {
+    setSelectedIds((prev) =>
+      prev.includes(caseId) ? prev.filter((id) => id !== caseId) : [...prev, caseId]
+    )
+  }
+
   async function buildFromLedger(includePending = false) {
     if (!selectedCaseId || !canWriteBilling) return
-    const inv = await apiFetch(
-      `/api/v1/admin/client-billing/cases/${selectedCaseId}/build-from-ledger?billing_month=${encodeURIComponent(billingMonth)}&include_pending=${includePending}`,
-      { method: 'POST' }
+    try {
+      const inv = await run(
+        () =>
+          apiFetch(
+            `/api/v1/admin/client-billing/cases/${selectedCaseId}/build-from-ledger?billing_month=${encodeURIComponent(billingMonth)}&include_pending=${includePending}`,
+            { method: 'POST' }
+          ),
+        { successMsg: 'Draft invoice created from ledger' }
+      )
+      navigate(`/admin/invoices/client/${inv.id}`)
+    } catch (err) {
+      const msg = err?.message || ''
+      if (msg.toLowerCase().includes('no billable ledger')) {
+        setError(
+          'No billable ledger rows for this month. Approve daily logs first, or use Create invoice manually.'
+        )
+      }
+    }
+  }
+
+  async function createManualInvoice() {
+    if (!selectedCaseId || !canWriteBilling) return
+    const inv = await run(
+      () =>
+        apiFetch('/api/v1/admin/client-billing/invoices', {
+          method: 'POST',
+          body: JSON.stringify({
+            case_id: selectedCaseId,
+            invoice_type: preview?.billingRule?.invoiceType || 'POSTPAID',
+            billing_month: billingMonth,
+            lines: [],
+          }),
+        }),
+      { successMsg: 'Manual draft invoice created' }
     )
     navigate(`/admin/invoices/client/${inv.id}`)
   }
 
   async function remindTherapist() {
     if (!selectedCaseId) return
-    await apiFetch('/api/v1/admin/client-billing/remind-therapist', {
-      method: 'POST',
-      body: JSON.stringify({ case_id: selectedCaseId, billing_month: billingMonth }),
-    })
+    try {
+      const res = await run(() =>
+        apiFetch('/api/v1/admin/client-billing/remind-therapist', {
+          method: 'POST',
+          body: JSON.stringify({ case_id: selectedCaseId, billing_month: billingMonth }),
+        })
+      )
+      const n = res?.notifiedCount ?? 0
+      setSuccessMessage(
+        n > 0 ? `Reminder sent to ${n} therapist${n === 1 ? '' : 's'}` : 'No therapist assigned to notify'
+      )
+    } catch {
+      /* error shown via hook */
+    }
     loadPreview()
+  }
+
+  async function bulkBuildFromLedger() {
+    if (!selectedIds.length || !canWriteBilling) return
+    const result = await run(
+      () =>
+        apiFetch('/api/v1/admin/finance-bulk/client-invoices', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'build_from_ledger',
+            case_ids: selectedIds,
+            billing_month: billingMonth,
+          }),
+        }),
+      { successMsg: `Built ${selectedIds.length} draft(s)` }
+    )
+    const ok = result?.succeeded?.length ?? 0
+    const fail = result?.failed?.length ?? 0
+    if (fail) {
+      setError(`${ok} succeeded, ${fail} failed. Check cases without approved ledger rows.`)
+    }
+    setSelectedIds([])
+    loadCases()
   }
 
   return (
@@ -168,6 +243,8 @@ export function InvoiceComposer() {
       <p style={{ margin: 0 }}>
         <Link to="/admin/invoices?tab=client">← Back to client invoices</Link>
       </p>
+
+      <BillingActionAlert error={error} successMessage={successMessage} onDismiss={clearMessages} />
 
       <div className="client-inv-composer__toolbar">
         <div className="client-inv-composer__toolbar-filters">
@@ -182,11 +259,7 @@ export function InvoiceComposer() {
           </label>
           <label className="client-inv__filter-field">
             <span className="client-inv__filter-label">Service</span>
-            <ServiceFilterSelect
-              className="client-inv__filter-input"
-              value={module}
-              onChange={setModule}
-            />
+            <ServiceFilterSelect className="client-inv__filter-input" value={module} onChange={setModule} />
           </label>
           <AdminSearchInput
             className="client-inv__filter-field--search-compact"
@@ -209,6 +282,16 @@ export function InvoiceComposer() {
             </button>
           ))}
         </div>
+        {canWriteBilling && selectedIds.length > 0 ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--secondary admin-btn--sm"
+            disabled={loading}
+            onClick={bulkBuildFromLedger}
+          >
+            Build {selectedIds.length} from ledger
+          </button>
+        ) : null}
       </div>
 
       <div className={bodyClass}>
@@ -231,27 +314,33 @@ export function InvoiceComposer() {
               <p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>No cases in this queue.</p>
             ) : (
               cases.map((c) => (
-                <button
-                  key={c.caseId}
-                  type="button"
-                  className={`client-inv-composer__case-card ${selectedCaseId === c.caseId ? 'is-selected' : ''}`}
-                  onClick={() => selectCase(c.caseId)}
-                >
-                  <strong>{c.caseCode}</strong> — {c.childName}
-                  <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b', marginTop: 4 }}>
-                    {c.serviceType} · {c.sessionsCompletedThisMonth ?? 0} sessions
-                  </span>
-                  <div className="client-inv-composer__badges">
-                    {(c.badges || []).map((b) => (
-                      <span
-                        key={b}
-                        className={`client-inv-composer__badge ${b === 'therapist_pending' ? 'client-inv-composer__badge--warn' : ''} ${b === 'ledger_ready' ? 'client-inv-composer__badge--ok' : ''}`}
-                      >
-                        {BADGE_LABELS[b] || b}
-                      </span>
-                    ))}
-                  </div>
-                </button>
+                <div key={c.caseId} className={`client-inv-composer__case-card ${selectedCaseId === c.caseId ? 'is-selected' : ''}`}>
+                  {canWriteBilling ? (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(c.caseId)}
+                      onChange={() => toggleSelect(c.caseId)}
+                      aria-label={`Select ${c.caseCode}`}
+                      style={{ marginRight: 8 }}
+                    />
+                  ) : null}
+                  <button type="button" className="client-inv-composer__case-card-btn" onClick={() => selectCase(c.caseId)}>
+                    <strong>{c.caseCode}</strong> — {c.childName}
+                    <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b', marginTop: 4 }}>
+                      {c.serviceType} · {c.sessionsCompletedThisMonth ?? 0} sessions
+                    </span>
+                    <div className="client-inv-composer__badges">
+                      {(c.badges || []).map((b) => (
+                        <span
+                          key={b}
+                          className={`client-inv-composer__badge ${b === 'therapist_pending' ? 'client-inv-composer__badge--warn' : ''} ${b === 'ledger_ready' ? 'client-inv-composer__badge--ok' : ''}`}
+                        >
+                          {BADGE_LABELS[b] || b}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -279,7 +368,9 @@ export function InvoiceComposer() {
                   card={selectedCard}
                   billingMonth={billingMonth}
                   canWriteBilling={canWriteBilling}
+                  actionLoading={loading}
                   onBuildFromLedger={buildFromLedger}
+                  onCreateManualInvoice={createManualInvoice}
                   onRemindTherapist={remindTherapist}
                   onRefresh={loadPreview}
                 />

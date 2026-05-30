@@ -91,10 +91,20 @@ function historyRowActions(row) {
   )
 }
 
-export function AdminSupportReportsPage({ embedded = false }) {
+export function AdminSupportReportsPage({ embedded = false, capabilities = null }) {
+  const recordTypeOptions = useMemo(() => {
+    const hist = capabilities?.history
+    if (!hist) return RECORD_TYPE_OPTIONS
+    const opts = [{ value: 'all', label: 'All types' }]
+    if (hist.tickets) opts.push({ value: 'tickets', label: 'Tickets only' })
+    if (hist.incidents) opts.push({ value: 'incidents', label: 'Incidents only' })
+    return opts.length > 1 ? opts : RECORD_TYPE_OPTIONS
+  }, [capabilities])
+
   const [rows, setRows] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [cases, setCases] = useState([])
   const [therapists, setTherapists] = useState([])
   const [search, setSearch] = useState('')
@@ -164,8 +174,9 @@ export function AdminSupportReportsPage({ embedded = false }) {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
     try {
-      const qs = new URLSearchParams({ record_type: recordType, page_size: '100' })
+      const qs = new URLSearchParams({ record_type: recordType, page_size: '200' })
       if (status) qs.set('status', status)
       if (moduleFilter) qs.set('product_module', moduleFilter)
       if (dateFrom) qs.set('date_from', dateFrom)
@@ -175,9 +186,10 @@ export function AdminSupportReportsPage({ embedded = false }) {
       const data = await apiFetch(`/api/v1/admin/support/history?${qs.toString()}`)
       setRows(data.items || [])
       setTotal(data.total ?? 0)
-    } catch {
+    } catch (err) {
       setRows([])
       setTotal(0)
+      setLoadError(err.message || 'Could not load support history')
     } finally {
       setLoading(false)
     }
@@ -227,7 +239,7 @@ export function AdminSupportReportsPage({ embedded = false }) {
         label="Type"
         value={recordType}
         onChange={(e) => setRecordType(e.target.value)}
-        options={RECORD_TYPE_OPTIONS}
+        options={recordTypeOptions}
       />
       <FilterSelect
         label="Status"
@@ -284,9 +296,18 @@ export function AdminSupportReportsPage({ embedded = false }) {
       ) : null}
 
       <p className="admin-reports__scope admin-reports__scope--all" role="note" style={{ marginBottom: 12 }}>
-        Tickets and incidents only — for monthly and observation reports, open{' '}
+        Combined ticket and incident history across your access scope. Use <strong>Tickets</strong> or{' '}
+        <strong>Incidents</strong> tabs to review or update open items. Monthly clinical reports are under{' '}
         <strong>Report management</strong> in the sidebar.
       </p>
+
+      {capabilities?.history?.incidents === false ? (
+        <p className="admin-muted" role="note" style={{ marginBottom: 12 }}>
+          Incident history requires incident access. Ticket-only history is shown below.
+        </p>
+      ) : null}
+
+      {loadError ? <p className="admin-alert admin-alert--error">{loadError}</p> : null}
 
       <div className="admin-reports__kpis" style={{ marginBottom: 16 }}>
         <div className="admin-reports__kpi">
@@ -335,7 +356,12 @@ export function AdminSupportReportsPage({ embedded = false }) {
             <div style={{ padding: '0 16px 16px' }}>
               <AdminEmptyState
                 title="No records"
-                hints={['Widen the date range', 'Clear status or service filters', 'Try All types']}
+                hints={[
+                  'Widen the date range',
+                  'Clear status or service filters',
+                  'Try All types',
+                  'Demo data includes seeded tickets and incidents after a fresh seed',
+                ]}
               />
             </div>
           ) : (

@@ -18,6 +18,10 @@ from app.models.incident import Incident, IncidentStatus, normalize_incident_sta
 from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.user import User
 from app.services import case_service
+from app.services.support_access_service import (
+    can_view_support_incidents,
+    can_view_support_tickets,
+)
 
 
 def _parse_date_start(value: Optional[str]) -> Optional[datetime]:
@@ -64,6 +68,8 @@ def _case_visible(db: Session, user: User, case: Case | None) -> bool:
         return True
     if user_has_permission(user, "admin.override"):
         return True
+    if user_has_permission(user, "ticket.manage") and user_has_permission(user, "case.read.all"):
+        return True
     if not case_scope_check(db, user, case):
         return False
     if case.product_module and not case_product_module_allowed(user, case.product_module, db):
@@ -82,7 +88,7 @@ def _ticket_rows(
     therapist_user_id: Optional[int],
     child_id: Optional[int],
 ) -> list[dict[str, Any]]:
-    if not user_has_permission(user, "ticket.manage") and not user_has_permission(user, "admin.override"):
+    if not can_view_support_tickets(user, db):
         return []
 
     stmt = select(SupportTicket).order_by(SupportTicket.created_at.desc())
@@ -153,7 +159,7 @@ def _incident_rows(
     therapist_user_id: Optional[int],
     child_id: Optional[int],
 ) -> list[dict[str, Any]]:
-    if not user_has_permission(user, "incident.read_sensitive"):
+    if not can_view_support_incidents(user, db):
         return []
 
     stmt = select(Incident).order_by(Incident.created_at.desc())

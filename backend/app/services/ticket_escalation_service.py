@@ -61,6 +61,22 @@ def escalation_roles(topic: TicketTopic) -> list[str]:
     return ESCALATION_MATRIX.get(topic, ESCALATION_MATRIX[TicketTopic.OTHER])
 
 
+def ticket_visible_to_hr_desk(ticket: SupportTicket) -> bool:
+    """HR desk: therapist-chain tickets and HR-category items."""
+    if ticket.category == TicketCategory.HR:
+        return True
+    return ticket.topic == TicketTopic.THERAPIST
+
+
+def ticket_visible_to_finance_desk(ticket: SupportTicket, *, user_id: int) -> bool:
+    """Finance desk: billing-topic/category or self-raised."""
+    if ticket.raised_by_user_id == user_id:
+        return True
+    if ticket.category == TicketCategory.FINANCE:
+        return True
+    return ticket.topic == TicketTopic.BILLING_PAYMENT
+
+
 _ADMIN_TAG_ROLES = frozenset(
     {RoleName.ADMIN.value, RoleName.MODULE_ADMIN.value, RoleName.SUPER_ADMIN.value}
 )

@@ -195,7 +195,7 @@ def widget_section_billing(db: Session, user: User, *, limit: int = WIDGET_ITEM_
                 "month": inv.month,
                 "amount_inr": float(inv.amount_inr),
                 "status": inv.status.value if hasattr(inv.status, "value") else inv.status,
-                "href": "/admin/invoices",
+                "href": "/admin/therapist-payouts?sub=payouts",
             }
             for inv in rows
         ],

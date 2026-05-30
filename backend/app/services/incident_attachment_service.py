@@ -51,17 +51,9 @@ def attachment_to_dict(att: IncidentAttachment) -> dict:
 
 
 def can_access_incident(db: Session, user: User, incident: Incident) -> bool:
-    if incident.reported_by_user_id == user.id:
-        return True
-    if incident.assigned_to_user_id == user.id:
-        return True
-    if user_has_permission(user, "incident.read_sensitive"):
-        if incident.case_id:
-            case = case_service.get_case(db, incident.case_id)
-            if case and case_scope_check(db, user, case):
-                return True
-        return True
-    return False
+    from app.services.support_access_service import can_read_incident
+
+    return can_read_incident(db, user, incident)
 
 
 async def validate_and_read_files(files: Sequence[UploadFile]) -> list[tuple[str, str, bytes]]:

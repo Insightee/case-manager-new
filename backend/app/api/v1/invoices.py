@@ -28,9 +28,14 @@ router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 def _invoice_read(i: Invoice, db: Optional[Session] = None) -> InvoiceRead:
     therapist_name = None
+    employment_status = None
+    is_active = None
     if db:
         u = db.get(User, i.therapist_user_id)
-        therapist_name = u.full_name if u else None
+        if u:
+            therapist_name = u.full_name
+            employment_status = u.employment_status.value if u.employment_status else "ACTIVE"
+            is_active = bool(u.is_active)
     return InvoiceRead(
         id=i.id,
         therapist_user_id=i.therapist_user_id,
@@ -46,6 +51,8 @@ def _invoice_read(i: Invoice, db: Optional[Session] = None) -> InvoiceRead:
         leave_deduction_inr=float(i.leave_deduction_inr) if i.leave_deduction_inr else None,
         adjustment_inr=float(i.adjustment_inr) if i.adjustment_inr else None,
         notes=i.notes,
+        therapist_employment_status=employment_status,
+        therapist_is_active=is_active,
     )
 
 
@@ -220,7 +227,10 @@ def approve_invoice(
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    invoice_service.review_invoice(db, invoice, user.id, ReviewDecision.APPROVE, payload.comment)
+    try:
+        invoice_service.review_invoice(db, invoice, user.id, ReviewDecision.APPROVE, payload.comment)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve", entity_type="invoice", entity_id=invoice.id, **meta)
     db.commit()
@@ -242,7 +252,10 @@ def reject_invoice(
     comment = (payload.comment or "").strip()
     if not comment:
         raise HTTPException(status_code=400, detail="Rejection comment is required")
-    invoice_service.review_invoice(db, invoice, user.id, ReviewDecision.REJECT, comment)
+    try:
+        invoice_service.review_invoice(db, invoice, user.id, ReviewDecision.REJECT, comment)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="invoice", entity_id=invoice.id, **meta)
     db.commit()
@@ -261,6 +274,8 @@ def update_payment(
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    if payload.status == InvoiceStatus.PAID and invoice.status != InvoiceStatus.APPROVED:
+        raise HTTPException(status_code=400, detail="Only approved invoices can be marked paid")
     old = {"paid_amount_inr": float(invoice.paid_amount_inr) if invoice.paid_amount_inr else None}
     invoice.paid_amount_inr = payload.paid_amount_inr
     invoice.status = payload.status

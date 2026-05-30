@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiUpload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
@@ -18,7 +18,7 @@ import '../support/support-tickets.css'
 
 const STATUS_FILTERS = ['ALL', 'REPORTED', 'IN_REVIEW', 'ACTION_TAKEN', 'ESCALATED', 'CLOSED']
 
-export function AdminIncidentsPage({ embedded = false }) {
+export function AdminIncidentsPage({ embedded = false, canManageIncidents = true }) {
   const [searchParams] = useSearchParams()
   const deepLinkIncidentId = searchParams.get('incident')
   const handledDeepLink = useRef(null)
@@ -29,32 +29,35 @@ export function AdminIncidentsPage({ embedded = false }) {
   const [createError, setCreateError] = useState('')
   const [createSuccess, setCreateSuccess] = useState('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('REPORTED')
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [loadError, setLoadError] = useState('')
   const [moduleFilter, setModuleFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
   const [detail, setDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
     try {
       const qs = new URLSearchParams({ page_size: '100' })
       if (moduleFilter) qs.set('product_module', moduleFilter)
       setIncidents(unwrapList(await apiFetch(`/api/v1/incidents?${qs.toString()}`)))
-    } catch {
+    } catch (err) {
       setIncidents([])
+      setLoadError(err.message || 'Could not load incidents')
     } finally {
       setLoading(false)
     }
-  }
+  }, [moduleFilter])
 
   useEffect(() => {
     load()
     apiFetch('/api/v1/cases?page_size=100')
       .then((d) => setCases(unwrapList(d)))
       .catch(() => setCases([]))
-  }, [])
+  }, [load])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -174,6 +177,15 @@ export function AdminIncidentsPage({ embedded = false }) {
         />
       ) : null}
 
+      {embedded ? (
+        <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
+          Active incident reports for review. For a combined log of tickets and incidents, open the{' '}
+          <Link to="/admin/support?tab=reports">History</Link> tab.
+        </p>
+      ) : null}
+
+      {loadError ? <p className="admin-alert admin-alert--error">{loadError}</p> : null}
+
       <AdminPanel
         title={`${filtered.length} incidents`}
         padded={false}
@@ -235,7 +247,11 @@ export function AdminIncidentsPage({ embedded = false }) {
           ) : filtered.length === 0 ? (
             <AdminEmptyState
               title="No incidents"
-              description="Incident reports filed by therapists and clients will appear here."
+              description={
+                statusFilter !== 'ALL'
+                  ? 'Nothing matches this status filter. Try All statuses, or check History for closed items.'
+                  : 'Incident reports filed by therapists and clients will appear here.'
+              }
             />
           ) : (
             <ul className="admin-queue">
@@ -310,7 +326,7 @@ export function AdminIncidentsPage({ embedded = false }) {
                           incident={detail}
                           onUpdated={onDetailUpdated}
                           apiBase="/api/v1/incidents"
-                          canManage
+                          canManage={canManageIncidents}
                         />
                       ) : null}
                     </div>

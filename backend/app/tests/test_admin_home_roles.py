@@ -84,7 +84,7 @@ def _assert_no_hidden_workbench_payload(home: dict) -> None:
         ("shadowcm@demo.com", "CASE_MANAGER", "/admin/cm"),
         ("viewonly@demo.com", "CASE_MANAGER", "/admin/cm"),
         ("finance@demo.com", "FINANCE", "/admin/invoices"),
-        ("hr@demo.com", "HR", "/admin/people"),
+        ("hr@demo.com", "HR", "/admin"),
     ],
 )
 def test_admin_home_role_label_and_landing(email, expected_role, landing_route):

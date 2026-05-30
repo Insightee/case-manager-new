@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { formatSessionWhen } from '../../lib/sessionDisplay.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -26,8 +27,9 @@ const EMPTY_BILLING = {
 }
 
 export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
+  const navigate = useNavigate()
   const { user } = useAuth()
-  const { canCreateProductCase } = useModuleWrite()
+  const { canCreateProductCase, canWriteBilling } = useModuleWrite()
   const [step, setStep] = useState(1)
   const [familyMode, setFamilyMode] = useState('existing')
   const [childId, setChildId] = useState('')
@@ -72,6 +74,8 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   const [previewData, setPreviewData] = useState(null)
   const [activating, setActivating] = useState(false)
   const [activationInvites, setActivationInvites] = useState([])
+  const [billingStepMsg, setBillingStepMsg] = useState('')
+  const [billingStepBusy, setBillingStepBusy] = useState(false)
 
   const serviceTypeOptions = useMemo(
     () => filterServiceCategoriesForModule(serviceCategories, productModule),
@@ -846,6 +850,73 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             <p style={{ fontSize: '0.875rem', color: '#047857', wordBreak: 'break-all' }}>
               Parent invite: {inviteUrl}
             </p>
+          ) : null}
+          {canWriteBilling ? (
+            <div className="admin-allotment-wizard__billing-step" style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
+              <h4 className="admin-allotment-wizard__section-title" style={{ fontSize: '1rem' }}>
+                Billing next step
+              </h4>
+              <p className="admin-muted" style={{ fontSize: '0.85rem' }}>
+                {billing.client_billing_mode === 'PREPAID' || billing.billing_type === 'PACKAGE'
+                  ? 'Prepaid or package case — you can raise an invoice now or send to the finance queue.'
+                  : 'Postpaid case — invoice later from approved ledger, or queue for finance.'}
+              </p>
+              {billingStepMsg ? <p className="admin-alert admin-alert--success">{billingStepMsg}</p> : null}
+              <div className="admin-btn-group" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+                {(billing.client_billing_mode === 'PREPAID' || billing.billing_type === 'PACKAGE') ? (
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary admin-btn--sm"
+                    disabled={billingStepBusy}
+                    onClick={async () => {
+                      setBillingStepBusy(true)
+                      try {
+                        const inv = await apiFetch(
+                          `/api/v1/admin/client-billing/cases/${createdCase.id}/onboarding-invoice-draft`,
+                          { method: 'POST', body: JSON.stringify({}) }
+                        )
+                        navigate(`/admin/invoices/client/${inv.id}`)
+                      } catch (e) {
+                        setBillingStepMsg(e.message || 'Could not create invoice')
+                      } finally {
+                        setBillingStepBusy(false)
+                      }
+                    }}
+                  >
+                    Raise invoice now
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--secondary admin-btn--sm"
+                  disabled={billingStepBusy}
+                  onClick={async () => {
+                    setBillingStepBusy(true)
+                    try {
+                      await apiFetch(
+                        `/api/v1/admin/client-billing/cases/${createdCase.id}/onboarding-invoice-draft`,
+                        {
+                          method: 'POST',
+                          body: JSON.stringify({ send_to_queue_only: true }),
+                        }
+                      )
+                      setBillingStepMsg(
+                        'Case will appear in Finance → Composer → New clients / Not invoiced (month).'
+                      )
+                    } catch (e) {
+                      setBillingStepMsg(e.message || 'Request failed')
+                    } finally {
+                      setBillingStepBusy(false)
+                    }
+                  }}
+                >
+                  Send to billing queue
+                </button>
+                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => onComplete?.(createdCase, inviteUrl)}>
+                  Skip for now
+                </button>
+              </div>
+            </div>
           ) : null}
         </div>
       ) : null}

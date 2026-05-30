@@ -8,20 +8,24 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.core.permissions import user_has_permission
 from app.models.user import User
 from app.services import support_history_service as hist_svc
+from app.services.support_access_service import support_hub_capabilities, support_scope
 
 router = APIRouter(prefix="/admin/support", tags=["admin-support"])
 
 
-def _require_support_reports(user: User) -> None:
-    if not (
-        user_has_permission(user, "ticket.manage")
-        or user_has_permission(user, "incident.read_sensitive")
-        or user_has_permission(user, "admin.override")
-    ):
+def _require_support_reports(user: User, db: Session) -> None:
+    if support_scope(user, db) == "none":
         raise HTTPException(status_code=403, detail="Support reports access required")
+
+
+@router.get("/capabilities")
+def support_capabilities(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return support_hub_capabilities(user, db)
 
 
 @router.get("/history")
@@ -38,7 +42,7 @@ def support_history(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_support_reports(user)
+    _require_support_reports(user, db)
     return hist_svc.list_support_history(
         db,
         user,
@@ -66,7 +70,7 @@ def support_history_export(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_support_reports(user)
+    _require_support_reports(user, db)
     csv_text = hist_svc.export_support_history_csv(
         db,
         user,

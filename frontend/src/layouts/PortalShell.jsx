@@ -65,7 +65,7 @@ function caseManagerNav(clinicalModuleIds) {
     { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports' },
     { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep' },
     { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
-    { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', moduleIds: clinicalModuleIds, icon: 'mail' },
+    { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail' },
   ]
 }
 
@@ -77,13 +77,15 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid', section: 'Operations' },
     { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports', section: 'Operations' },
     { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep', section: 'Operations' },
-    { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: 'tickets', moduleIds: clinicalModuleIds, icon: 'mail', section: 'Operations' },
+    { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail', section: 'Operations' },
     { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },
     { to: '/admin/invoices', label: 'Invoices & payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices', section: 'Finance' },
+    { to: '/admin/therapist-payouts', label: 'Therapist payouts', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'wallet', section: 'Finance' },
     { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },
     { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope', section: 'People & HR' },
     { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave', section: 'People & HR' },
     { to: '/admin/memos', label: 'Memos', perm: 'memo.send', feature: null, icon: 'mail', section: 'People & HR' },
+    { to: '/admin/hr-reports', label: 'Reports', perm: null, feature: 'hr_reports', icon: 'reports', section: 'People & HR' },
     { to: '/admin/hr-cases', label: 'HR case view', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'People & HR' },
     { to: '/admin/settings/services', label: 'Service categories', perm: 'user.manage', feature: null, icon: 'settings', section: 'Settings' },
   ]
@@ -136,6 +138,7 @@ function iconForNavPath(to) {
   if (to.includes('/cases') || to.includes('/cm')) return 'cases'
   if (to.includes('/reports')) return 'reports'
   if (to.includes('/workbench') || to.includes('/logs')) return 'workbench'
+  if (to.includes('/therapist-payouts')) return 'wallet'
   if (to.includes('/invoices')) return 'invoices'
   return 'dashboard'
 }
@@ -201,10 +204,10 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
     return navVisible(item) && (can('iep.read') || can('iep.manage') || can('attachment.manage'))
   }
   if (item.to === '/admin/support') {
-    const ticketsOk = can('ticket.manage') && hasFeature('tickets')
-    const incidentsOk = can('incident.read_sensitive') && hasFeature('incidents')
-    if (!ticketsOk && !incidentsOk) return false
-    return !item.moduleIds?.length || navVisible(item)
+    return can('ticket.manage') || can('incident.read_sensitive') || can('admin.override')
+  }
+  if (item.to === '/admin/hr-reports') {
+    return hasFeature('hr_reports') || can('hr_report.export')
   }
   if (item.perm || item.feature || item.moduleIds?.length) {
     return navVisible(item)

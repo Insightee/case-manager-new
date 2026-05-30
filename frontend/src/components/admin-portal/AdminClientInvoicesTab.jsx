@@ -19,6 +19,7 @@ import {
   formatCurrency,
 } from './ui/index.js'
 import { InvoiceLineItemEditor } from './InvoiceLineItemEditor.jsx'
+import { ClientInvoiceOverviewPanel } from './ClientInvoiceOverviewPanel.jsx'
 import './admin-client-invoices.css'
 import './admin-client-invoices-composer.css'
 
@@ -92,6 +93,10 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
   useEffect(() => {
     if (detail?.balanceInr != null) setPayAmount(String(detail.balanceInr))
   }, [detail])
+
+  useEffect(() => {
+    if (tab === 'overview' && invoiceId) load()
+  }, [tab, invoiceId, load])
 
   async function sendToClient() {
     setActing(true)
@@ -223,46 +228,21 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
             </div>
 
             {tab === 'overview' ? (
-              <div>
-                <span className={statusPillClass(displayStatus(detail))}>{displayStatus(detail)}</span>
-                <div className="client-inv__amount-grid" style={{ marginTop: 16 }}>
-                  <div><span style={{ color: '#64748b' }}>Total</span><br /><strong>{formatCurrency(detail.totalInr)}</strong></div>
-                  <div><span style={{ color: '#64748b' }}>Balance</span><br /><strong>{formatCurrency(detail.balanceInr)}</strong></div>
-                  <div><span style={{ color: '#64748b' }}>Paid</span><br />{formatCurrency(detail.amountPaidInr)}</div>
-                  <div><span style={{ color: '#64748b' }}>Due</span><br />{detail.dueDate || '—'}</div>
-                </div>
-                <p style={{ fontSize: '0.85rem', marginTop: 12 }}>Parent: {detail.parentName} ({detail.parentEmail})</p>
-                <p style={{ fontSize: '0.85rem', marginTop: 8 }}>
-                  {detail.invoiceType} · {detail.serviceType} · Tax {formatCurrency(detail.taxInr)}
-                  {detail.gatewayEnabled ? ' · Payment gateway on' : ''}
-                </p>
-                {detail.notes ? <p style={{ fontSize: '0.85rem', color: '#64748b' }}>{detail.notes}</p> : null}
-                {canWriteBilling ? (
-                <div className="admin-btn-group" style={{ marginTop: 16, flexWrap: 'wrap' }}>
-                  {detail.status === 'DRAFT' ? (
-                    <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={acting} onClick={markGenerated}>
-                      Mark ready
-                    </button>
-                  ) : null}
-                  <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={acting} onClick={sendToClient}>
-                    Send to client
-                  </button>
-                  {detail.balanceInr > 0 ? (
-                    <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setPaymentOpen(true)}>
-                      Record payment
-                    </button>
-                  ) : null}
-                </div>
-                ) : (
-                  <p className="admin-muted" style={{ marginTop: 12, fontSize: '0.8rem' }}>View-only billing access.</p>
-                )}
-              </div>
+              <ClientInvoiceOverviewPanel
+                detail={detail}
+                canWriteBilling={canWriteBilling}
+                acting={acting}
+                onSendToClient={sendToClient}
+                onMarkGenerated={markGenerated}
+                onOpenPayment={detail.balanceInr > 0 ? () => setPaymentOpen(true) : null}
+              />
             ) : null}
 
             {tab === 'lines' ? (
               <InvoiceLineItemEditor
                 invoiceId={invoiceId}
                 lines={detail.lines || []}
+                detail={detail}
                 canWrite={canWriteBilling && detail.status === 'DRAFT'}
                 onUpdated={load}
               />
@@ -413,6 +393,7 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
 export function AdminClientInvoicesTab({
   highlightClaimsPending = false,
   claimsOnly = false,
+  paymentsMode = false,
   openInvoiceId = null,
 }) {
   const navigate = useNavigate()
@@ -519,6 +500,11 @@ export function AdminClientInvoicesTab({
 
   return (
     <div className="client-inv">
+      {paymentsMode ? (
+        <p className="admin-muted" style={{ marginBottom: 12 }}>
+          Record and verify client payments. Open an invoice to confirm or reject payment claims.
+        </p>
+      ) : null}
       {highlightClaimsPending && pendingClaimsCount > 0 ? (
         <p className="admin-alert admin-alert--warning" style={{ marginBottom: 12 }}>
           Showing invoices with payment claims awaiting review. Open an invoice to confirm or reject each claim.

@@ -18,6 +18,26 @@ function recordApiMetric(path, elapsedMs, ok) {
   }
 }
 
+// #region agent log
+const BILLING_PATH_RE = /\/(billing|invoices|client-billing|finance|payout)/i
+function debugBillingApiLog(location, message, data, hypothesisId = 'E') {
+  if (!BILLING_PATH_RE.test(data?.path || '')) return
+  fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
+    body: JSON.stringify({
+      sessionId: '3264f0',
+      location,
+      message,
+      data,
+      hypothesisId,
+      timestamp: Date.now(),
+      runId: data?.runId || 'browser',
+    }),
+  }).catch(() => {})
+}
+// #endregion
+
 export function getApiBaseUrl() {
   return API_URL
 }
@@ -115,6 +135,13 @@ export async function apiFetch(path, options = {}) {
   } catch (err) {
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
     recordApiMetric(path, elapsed, false)
+    // #region agent log
+    debugBillingApiLog('apiClient.js:apiFetch', 'billing fetch network error', {
+      path,
+      ok: false,
+      error: err?.message?.slice(0, 120),
+    })
+    // #endregion
     if (err?.message?.startsWith('Request timed out')) throw err
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
     const onVercel = /\.vercel\.app$/i.test(hostname)
@@ -152,6 +179,13 @@ export async function apiFetch(path, options = {}) {
   if (!res.ok) {
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
     recordApiMetric(path, elapsed, false)
+    // #region agent log
+    debugBillingApiLog('apiClient.js:apiFetch', 'billing fetch http error', {
+      path,
+      ok: false,
+      status: res.status,
+    })
+    // #endregion
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
     const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join(', ') : res.statusText

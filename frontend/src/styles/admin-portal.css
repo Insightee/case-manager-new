@@ -382,6 +382,12 @@ button.admin-stat--link {
   font-size: 0.75rem;
 }
 
+.admin-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .admin-btn-group {
   display: flex;
   flex-wrap: wrap;

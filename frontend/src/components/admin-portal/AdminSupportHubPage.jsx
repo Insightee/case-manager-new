@@ -1,30 +1,55 @@
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { apiFetch } from '../../lib/apiClient.js'
+import { tabsFromCapabilities } from '../../lib/supportAccess.js'
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { AdminTicketsPage } from './AdminTicketsPage.jsx'
 import { AdminIncidentsPage } from './AdminIncidentsPage.jsx'
 import { AdminSupportReportsPage } from './AdminSupportReportsPage.jsx'
 import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
 
-const TABS = [
-  { id: 'tickets', label: 'Tickets', perm: 'ticket.manage' },
-  { id: 'incidents', label: 'Incidents', permAny: ['ticket.manage', 'incident.read_sensitive'] },
-  { id: 'reports', label: 'History', permAny: ['ticket.manage', 'incident.read_sensitive'] },
-]
+function normalizeSupportTab(raw) {
+  if (raw === 'history') return 'reports'
+  return raw
+}
 
 export function AdminSupportHubPage() {
-  const { can } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab') || 'tickets'
+  const [capabilities, setCapabilities] = useState(null)
+  const [capError, setCapError] = useState('')
+
+  useEffect(() => {
+    apiFetch('/api/v1/admin/support/capabilities')
+      .then((data) => {
+        setCapabilities(data)
+        setCapError('')
+      })
+      .catch((err) => {
+        setCapabilities(null)
+        setCapError(err.message || 'Could not load support access')
+      })
+  }, [])
+
+  const visibleTabs = useMemo(() => tabsFromCapabilities(capabilities), [capabilities])
+
+  const tabParam = normalizeSupportTab(searchParams.get('tab'))
+  const defaultTab = visibleTabs[0]?.id || 'tickets'
+  const tab = visibleTabs.some((t) => t.id === tabParam) ? tabParam : defaultTab
+
+  useEffect(() => {
+    if (!tabParam || tab === tabParam) return
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', tab)
+    setSearchParams(next, { replace: true })
+  }, [tab, tabParam, searchParams, setSearchParams])
 
   function setTab(id) {
-    setSearchParams({ tab: id }, { replace: true })
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', id)
+    setSearchParams(next, { replace: true })
   }
 
-  const visibleTabs = TABS.filter((t) => {
-    if (t.permAny) return t.permAny.some((p) => can(p))
-    return can(t.perm)
-  })
+  const canManageIncidents = capabilities?.can_manage_incidents === true
 
   return (
     <div className="admin-page">
@@ -35,32 +60,48 @@ export function AdminSupportHubPage() {
         actions={<PoliciesBotButton />}
       />
 
-      <AdminMobilePillTabs
-        ariaLabel="Support sections"
-        activeId={tab}
-        onChange={setTab}
-        primaryIds={visibleTabs.map((t) => t.id)}
-        overflowIds={[]}
-        tabs={visibleTabs}
-      />
+      {capError ? <p className="admin-alert admin-alert--error">{capError}</p> : null}
 
-      <PortalTabBar
-        className="admin-page__tabs-scroll admin-desktop-only"
-        ariaLabel="Support sections"
-        activeId={tab}
-        onChange={setTab}
-        tabs={visibleTabs}
-      />
+      {visibleTabs.length === 0 && !capError ? (
+        <p className="admin-muted">You do not have access to the support hub.</p>
+      ) : null}
 
-      <div className="admin-hub-embedded" style={{ display: tab === 'tickets' ? 'block' : 'none' }}>
-        <AdminTicketsPage embedded />
-      </div>
-      <div className="admin-hub-embedded" style={{ display: tab === 'incidents' ? 'block' : 'none' }}>
-        <AdminIncidentsPage embedded />
-      </div>
-      <div className="admin-hub-embedded" style={{ display: tab === 'reports' ? 'block' : 'none' }}>
-        <AdminSupportReportsPage embedded />
-      </div>
+      {visibleTabs.length > 0 ? (
+        <>
+          <AdminMobilePillTabs
+            ariaLabel="Support sections"
+            activeId={tab}
+            onChange={setTab}
+            primaryIds={visibleTabs.map((t) => t.id)}
+            overflowIds={[]}
+            tabs={visibleTabs}
+          />
+
+          <PortalTabBar
+            className="admin-page__tabs-scroll admin-desktop-only"
+            ariaLabel="Support sections"
+            activeId={tab}
+            onChange={setTab}
+            tabs={visibleTabs}
+          />
+        </>
+      ) : null}
+
+      {tab === 'tickets' && visibleTabs.some((t) => t.id === 'tickets') ? (
+        <div className="admin-hub-embedded">
+          <AdminTicketsPage embedded />
+        </div>
+      ) : null}
+      {tab === 'incidents' && visibleTabs.some((t) => t.id === 'incidents') ? (
+        <div className="admin-hub-embedded">
+          <AdminIncidentsPage embedded canManageIncidents={canManageIncidents} />
+        </div>
+      ) : null}
+      {tab === 'reports' && visibleTabs.some((t) => t.id === 'reports') ? (
+        <div className="admin-hub-embedded">
+          <AdminSupportReportsPage embedded capabilities={capabilities} />
+        </div>
+      ) : null}
     </div>
   )
 }

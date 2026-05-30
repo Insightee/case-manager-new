@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
+import { CaseBillingActionsCard } from './CaseBillingActionsCard.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { PortalTabBar, StatusBadge } from './ui/index.js'
 import { AdminCaseReportsPanel } from './AdminCaseReportsPanel.jsx'
@@ -357,6 +358,9 @@ export function AdminCaseDetailPage() {
 
       {tab === 'billing' && can('case.update') && (
         <section className="admin-layout admin-layout--stack">
+          {(can('invoice.approve') || can('case.update')) && caseRow?.id ? (
+            <CaseBillingActionsCard caseId={caseRow.id} />
+          ) : null}
           {!canEditCase ? (
             <p className="admin-alert" style={{ color: '#b45309' }}>
               View-only access — you cannot change billing for this module.

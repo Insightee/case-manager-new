@@ -82,6 +82,11 @@ const AdminReportViewPage = lazy(() =>
 const AdminInvoicesPage = lazy(() =>
   import('../components/admin-portal/AdminInvoicesPage.jsx').then((m) => ({ default: m.AdminInvoicesPage }))
 )
+const AdminTherapistPayoutsPage = lazy(() =>
+  import('../components/admin-portal/AdminTherapistPayoutsPage.jsx').then((m) => ({
+    default: m.AdminTherapistPayoutsPage,
+  }))
+)
 const AdminClientInvoicePage = lazy(() =>
   import('../components/admin-portal/AdminClientInvoicePage.jsx').then((m) => ({ default: m.AdminClientInvoicePage }))
 )
@@ -96,6 +101,9 @@ const AdminIepPage = lazy(() =>
 )
 const AdminSupportHubPage = lazy(() =>
   import('../components/admin-portal/AdminSupportHubPage.jsx').then((m) => ({ default: m.AdminSupportHubPage }))
+)
+const AdminHrReportsPage = lazy(() =>
+  import('../components/admin-portal/AdminHrReportsPage.jsx').then((m) => ({ default: m.AdminHrReportsPage }))
 )
 const AdminTherapistProfilesPage = lazy(() =>
   import('../components/admin-portal/AdminTherapistProfilesPage.jsx').then((m) => ({
@@ -399,6 +407,14 @@ export function AppRoutes() {
           }
         />
         <Route
+          path="therapist-payouts"
+          element={
+            <Lazy>
+              <AdminTherapistPayoutsPage />
+            </Lazy>
+          }
+        />
+        <Route
           path="invoices/compose"
           element={
             <Lazy>
@@ -502,6 +518,14 @@ export function AppRoutes() {
           element={
             <Lazy>
               <HRCasesPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="hr-reports"
+          element={
+            <Lazy>
+              <AdminHrReportsPage />
             </Lazy>
           }
         />

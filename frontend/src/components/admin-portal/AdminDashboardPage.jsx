@@ -27,6 +27,10 @@ const DASHBOARD_COPY = {
     eyebrow: 'Operations',
     subtitle: 'Case lifecycle, reviews, billing, and support — at a glance.',
   },
+  hr: {
+    eyebrow: 'People & HR',
+    subtitle: 'Leave, therapist records, memos, and your support items — at a glance.',
+  },
 }
 
 export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRole }) {
@@ -71,6 +75,11 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
       reports: '/admin/reports?tab=queue',
       logs: '/admin/workbench?section=logs',
       tickets: '/admin/support?tab=tickets',
+      leave: '/admin/leave',
+      memos: '/admin/memos',
+      therapist_hr: '/admin/therapist-profiles',
+      people: '/admin/people',
+      hr_reports: '/admin/hr-reports',
       observations: '/admin/workbench?section=observations',
       status_requests: '/admin/workbench?section=status_requests',
       client_claims: '/admin/invoices?tab=client&claims=pending',
@@ -236,7 +245,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
                     </div>
                     <div className="admin-btn-group">
                       <StatusBadge status={inv.status} />
-                      <Link to="/admin/invoices" className="admin-btn admin-btn--ghost admin-btn--sm">
+                      <Link to="/admin/therapist-payouts?sub=payouts" className="admin-btn admin-btn--ghost admin-btn--sm">
                         Review
                       </Link>
                     </div>

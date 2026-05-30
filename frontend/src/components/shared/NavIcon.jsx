@@ -75,6 +75,12 @@ const ICONS = {
       <path d="M6 4h8l2 3v9H6V4zM8 10h4M8 13h3" {...STROKE} />
     </Svg>
   ),
+  wallet: (
+    <Svg>
+      <path d="M4 6h12a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2z" {...STROKE} />
+      <path d="M14 11h3M4 6V5a2 2 0 012-2h8" {...STROKE} />
+    </Svg>
+  ),
   iep: (
     <Svg>
       <path d="M7 4h6v12H7V4zM9 8h4M9 11h3" {...STROKE} />

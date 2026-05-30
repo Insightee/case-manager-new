@@ -62,6 +62,7 @@ ALL_PERMISSIONS = [
     "iep.manage",
     "case_document.create",
     "case_document.review",
+    "hr_report.export",
 ]
 
 _ROLE_MODULE_ADMIN = [
@@ -157,6 +158,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "leave.manage",
         "memo.send",
         "ticket.manage",
+        "hr_report.export",
         "attachment.manage",
         "slot.read",
         "user.manage",

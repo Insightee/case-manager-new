@@ -1,0 +1,40 @@
+{
+  "runId": "1780056318753",
+  "startedAt": "2026-05-29T12:05:18.753Z",
+  "finishedAt": "2026-05-29T12:06:43.223Z",
+  "baseURL": "https://frontend-omega-eight-92.vercel.app",
+  "apiURL": "https://case-manager-new-production.up.railway.app",
+  "steps": [
+    {
+      "step": "Create therapist (People)",
+      "status": "PASS",
+      "detail": "e2e.therapist.1780056318753@insighte.com",
+      "at": "2026-05-29T12:05:27.263Z"
+    },
+    {
+      "step": "Wizard success screen",
+      "status": "SKIP",
+      "detail": "Case ACTIVE via API; UI may need deploy (120s activate timeout)",
+      "at": "2026-05-29T12:06:36.798Z"
+    },
+    {
+      "step": "Allotment wizard end-to-end",
+      "status": "PASS",
+      "detail": "IC-2026-HC-017 ACTIVE",
+      "at": "2026-05-29T12:06:37.789Z"
+    },
+    {
+      "step": "Case on admin board",
+      "status": "PASS",
+      "detail": "IC-2026-HC-017",
+      "at": "2026-05-29T12:06:43.112Z"
+    }
+  ],
+  "artifacts": {
+    "therapistEmail": "e2e.therapist.1780056318753@insighte.com",
+    "parentEmail": "e2e.parent.1780056318753@demo.com",
+    "childName": "E2E Child1780056318753",
+    "caseCode": "IC-2026-HC-017",
+    "caseId": "20"
+  }
+}

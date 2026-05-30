@@ -106,4 +106,49 @@ Invoice generated, payment recorded, dispute updated, package low (future). What
 ## UI
 
 - **Parent:** `ParentBillingPage` — summary, packages table, filters, invoice detail drawer, session drill-down, dispute form, print view.
-- **Admin:** extend invoice approval UI with client dispute queue (API ready).
+- **Admin:** Finance hub at `/admin/invoices` with tabs: Overview, Client invoices, Client payments, Therapist payouts, Rules & packages, Reports. Composer at `/admin/invoices/compose`.
+
+## Finance module audit (2026 maturity pass)
+
+### Schema reused (do not duplicate)
+
+| Domain | Tables |
+|--------|--------|
+| Client billing | `client_invoices`, `client_invoice_lines`, `billing_ledger`, `client_payments`, `billing_disputes`, `care_packages`, `product_billing_rules`, `case_billing_preferences` |
+| Therapist payout | `invoices`, `invoice_case_lines`, `invoice_session_lines`, `invoice_manual_lines`, `reviews` |
+
+UI labels: **Client invoices** = `client_invoices`; **Therapist payouts** = backend table `invoices`.
+
+### Avoided / legacy (not used for new flows)
+
+- No `finance_charge_heads`, `therapist_payouts`, or `payout_items` tables.
+- `payouts` model exists but has no API — do not wire.
+- `parent_billing_statements` is legacy; parent portal uses `client_invoices` routes.
+- No separate billing queue table — composer queues are computed from case/invoice/ledger state (`new_clients`, `not_invoiced_this_month`, etc.).
+
+### Operational pipeline (why buttons fail)
+
+```text
+Session COMPLETED → Daily log approved → billing_ledger BILLABLE → Build from ledger → client_invoices DRAFT
+```
+
+Build from ledger requires billable ledger rows. Completed sessions alone are insufficient until logs are approved.
+
+### Key admin APIs (maturity pass)
+
+| Method | Path |
+|--------|------|
+| POST | `/admin/client-billing/cases/{id}/onboarding-invoice-draft` |
+| POST | `/admin/client-billing/invoices` (manual draft) |
+| POST | `/admin/client-billing/cases/{id}/build-from-ledger` |
+| POST | `/admin/client-billing/remind-therapist` |
+| GET | `/admin/finance-overview/summary` |
+| GET | `/admin/finance-reports/{report_key}` |
+| POST | `/admin/finance-bulk/client-invoices` |
+| POST | `/admin/finance-bulk/therapist-payouts` |
+
+### Migration policy
+
+- Single Alembic head; additive migrations only.
+- Optional: `invoice_manual_lines.line_category` (nullable VARCHAR) for payout reporting.
+- `client_invoice_lines.line_item_type` is `String(32)` — extend via constants without DB enum migration when possible.

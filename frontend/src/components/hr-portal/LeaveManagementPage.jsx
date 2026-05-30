@@ -49,8 +49,10 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     try {
       const data = await apiFetch('/api/v1/leave')
       setLeaves(Array.isArray(data) ? data : [])
-    } catch {
-      setLeaves([])
+      return true
+    } catch (err) {
+      setError(err.message || 'Could not load leave requests')
+      return false
     } finally {
       setLoading(false)
     }
@@ -99,7 +101,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     setProcessing((p) => ({ ...p, [id]: true }))
     setError('')
     try {
-      await apiFetch(`/api/v1/leave/${id}`, {
+      const updated = await apiFetch(`/api/v1/leave/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status, review_note: note }),
       })
@@ -107,7 +109,21 @@ export function LeaveManagementPage({ portal = 'hr' }) {
         setRejectingId(null)
         setRejectComment('')
       }
-      load()
+      if (updated?.id) {
+        setLeaves((prev) =>
+          prev.map((row) =>
+            row.id === id
+              ? {
+                  ...row,
+                  status: updated.status ?? status,
+                  review_note: updated.review_note ?? note,
+                  reviewer_name: updated.reviewer_name ?? row.reviewer_name,
+                }
+              : row,
+          ),
+        )
+      }
+      await load()
     } catch (err) {
       setError(err.message || 'Could not update leave status')
     } finally {
@@ -125,13 +141,13 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     setRejectComment('')
   }
 
-  function confirmReject(id) {
+  async function confirmReject(id) {
     const note = rejectComment.trim()
     if (!note) {
       setError('Add a comment explaining why this leave was rejected.')
       return
     }
-    reviewLeave(id, 'REJECTED', note)
+    await reviewLeave(id, 'REJECTED', note)
   }
 
   async function exportCsv() {
@@ -190,7 +206,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
           </div>
 
           <AdminPanel title={`${displayed.length} requests`} padded={false}>
-            <div className="admin-panel__body" style={{ padding: '0 16px 16px' }}>
+            <div className="leave-mgmt__list">
               {loading ? (
                 <div className="admin-skeleton" />
               ) : displayed.length === 0 ? (
@@ -252,17 +268,24 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                           </p>
                         ) : null}
                         {l.status === 'PENDING' ? (
-                          <RejectWithComment
-                            rejecting={rejectingId === l.id}
-                            comment={rejectingId === l.id ? rejectComment : ''}
-                            onCommentChange={setRejectComment}
-                            onStartReject={() => startReject(l.id)}
-                            onCancelReject={cancelReject}
-                            onConfirmReject={() => confirmReject(l.id)}
-                            onApprove={() => reviewLeave(l.id, 'APPROVED', null)}
-                            processing={processing[l.id]}
-                            placeholder="Why is this leave rejected? (required)"
-                          />
+                          <div className="leave-mgmt__card-actions">
+                            {rejectingId === l.id && !rejectComment.trim() ? (
+                              <p className="leave-mgmt__inline-error">
+                                Add a rejection comment, then confirm reject.
+                              </p>
+                            ) : null}
+                            <RejectWithComment
+                              rejecting={rejectingId === l.id}
+                              comment={rejectingId === l.id ? rejectComment : ''}
+                              onCommentChange={setRejectComment}
+                              onStartReject={() => startReject(l.id)}
+                              onCancelReject={cancelReject}
+                              onConfirmReject={() => confirmReject(l.id)}
+                              onApprove={() => reviewLeave(l.id, 'APPROVED', null)}
+                              processing={!!processing[l.id]}
+                              placeholder="Why is this leave rejected? (required)"
+                            />
+                          </div>
                         ) : null}
                       </div>
                     )

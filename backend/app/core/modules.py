@@ -32,7 +32,7 @@ CLINICAL_FEATURES: tuple[ModuleFeature, ...] = (
     ModuleFeature("iep", "IEP documents", ("attachment.manage", "iep.read")),
     ModuleFeature("cm_meetings", "CM meetings & case review calls", ("case.read.team", "case.read.scoped")),
     ModuleFeature("tickets", "Support tickets", ("ticket.manage",)),
-    ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive",)),
+    ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive", "ticket.manage")),
 )
 
 # Legacy alias for rbac_access imports
@@ -47,6 +47,8 @@ ORG_PRODUCT_MODULES: tuple[ProductModule, ...] = (
         features=(
             ModuleFeature("invoices", "Invoice review", ("invoice.approve", "invoice.generate", "payout.override")),
             ModuleFeature("dashboard", "Finance dashboard", ()),
+            ModuleFeature("tickets", "Support tickets", ("ticket.manage",)),
+            ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive", "ticket.manage")),
         ),
     ),
     ProductModule(
@@ -67,6 +69,9 @@ ORG_PRODUCT_MODULES: tuple[ProductModule, ...] = (
             ModuleFeature("leave", "Leave management", ("leave.manage",)),
             ModuleFeature("memos", "Memos", ("memo.send",)),
             ModuleFeature("therapist_hr", "Therapist HR", ("therapist.read",)),
+            ModuleFeature("hr_reports", "HR reports & exports", ("hr_report.export",)),
+            ModuleFeature("tickets", "Support tickets", ("ticket.manage",)),
+            ModuleFeature("incidents", "Incident reports", ("incident.read_sensitive", "ticket.manage")),
         ),
     ),
     ProductModule(

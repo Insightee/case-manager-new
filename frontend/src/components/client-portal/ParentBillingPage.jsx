@@ -142,8 +142,38 @@ export function ParentBillingPage() {
       if (paymentTab) params.set('payment_bucket', paymentTab)
       const qs = params.toString()
       const data = await apiFetch(`/api/v1/parent/billing/dashboard${qs ? `?${qs}` : ''}`)
+      // #region agent log
+      fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
+        body: JSON.stringify({
+          sessionId: '3264f0',
+          hypothesisId: 'C',
+          location: 'ParentBillingPage.jsx:load',
+          message: 'parent billing dashboard ok',
+          data: { invoiceCount: data?.invoices?.length ?? 0 },
+          timestamp: Date.now(),
+          runId: 'browser',
+        }),
+      }).catch(() => {})
+      // #endregion
       setDashboard(data)
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
+        body: JSON.stringify({
+          sessionId: '3264f0',
+          hypothesisId: 'C',
+          location: 'ParentBillingPage.jsx:load',
+          message: 'parent billing dashboard failed',
+          data: { error: err?.message?.slice(0, 120) },
+          timestamp: Date.now(),
+          runId: 'browser',
+        }),
+      }).catch(() => {})
+      // #endregion
       setError(err.message || 'Could not load billing')
       setDashboard(null)
     } finally {

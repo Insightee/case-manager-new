@@ -30,6 +30,8 @@ class InvoiceRead(BaseModel):
     leave_deduction_inr: Optional[float] = None
     adjustment_inr: Optional[float] = None
     notes: Optional[str] = None
+    therapist_employment_status: Optional[str] = None
+    therapist_is_active: Optional[bool] = None
 
     model_config = {"from_attributes": True}
 

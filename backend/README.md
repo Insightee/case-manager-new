@@ -115,6 +115,8 @@ PYTHONPATH=.:alembic alembic heads   # must show exactly one head
 
 Copy [`backend/.env.example`](.env.example) to `.env` and set:
 
+**Full variable list:** [docs/ENVIRONMENT_VARIABLES.md](../docs/ENVIRONMENT_VARIABLES.md) (local, Railway, Vercel, CI).
+
 | Variable | Purpose |
 |----------|---------|
 | `JWT_SECRET_KEY` / `JWT_REFRESH_SECRET_KEY` | Sign access and refresh tokens (use long random values in production) |

@@ -62,6 +62,8 @@ def review_invoice(
     decision: ReviewDecision,
     comment: str | None,
 ) -> Invoice:
+    if invoice.status != InvoiceStatus.IN_REVIEW:
+        raise ValueError(f"Only invoices in review can be approved or rejected (current: {invoice.status.value})")
     review = Review(
         entity_type="invoice",
         entity_id=invoice.id,

@@ -12,6 +12,8 @@
 
 ## Documentation
 
+- [docs/README.md](docs/README.md) — full documentation index
+- [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md) — all env vars (local, Railway, Vercel)
 - [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) — delivery, RBAC, billing, deploy, and agent checklists (from chat workflow capture).
 - [docs/DATA_IMPORT.md](docs/DATA_IMPORT.md) — production bulk import for therapists, families, and cases (templates and API order).
 

@@ -14,15 +14,20 @@ from app.models.support_ticket import SupportTicket, TicketCategory
 from app.models.ticket_attachment import TicketAttachment
 from app.models.user import User
 from app.services import case_service, ticket_escalation_service as ticket_esc
+from app.services.support_access_service import can_view_support_tickets, support_scope
 
 
 def staff_may_see_ticket(db: Session, user: User, ticket: SupportTicket) -> bool:
     if user_has_permission(user, "admin.override"):
         return True
+    if ticket.raised_by_user_id == user.id:
+        return True
+    if not can_view_support_tickets(user, db):
+        return False
     if ticket.case_id:
         case = case_service.get_case(db, ticket.case_id)
         return bool(case and case_scope_check(db, user, case))
-    if ticket.product_module and not case_product_module_allowed(user, ticket.product_module):
+    if ticket.product_module and not case_product_module_allowed(user, ticket.product_module, db):
         return False
     return True
 
@@ -43,7 +48,9 @@ def list_tickets_for_user(
     if product_module:
         stmt = stmt.where(SupportTicket.product_module == product_module)
 
-    if user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override"):
+    if support_scope(user, db) == "none":
+        stmt = stmt.where(SupportTicket.raised_by_user_id == user.id)
+    elif user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override"):
         allowed = get_allowed_case_product_modules(user)
         if allowed is not None:
             if not allowed:
@@ -86,13 +93,8 @@ def list_tickets_for_user(
 
     items = []
     for t in rows:
-        if t.case_id:
-            case = cases_by_id.get(t.case_id)
-            if case and not case_scope_check(db, user, case) and not user_has_permission(user, "admin.override"):
-                continue
-        elif t.product_module and not case_product_module_allowed(user, t.product_module):
-            if not user_has_permission(user, "admin.override"):
-                continue
+        if not staff_may_see_ticket(db, user, t):
+            continue
         assignee = users_by_id.get(t.assigned_to_user_id) if t.assigned_to_user_id else None
         raiser = users_by_id.get(t.raised_by_user_id)
         items.append(

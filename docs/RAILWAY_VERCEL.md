@@ -1,5 +1,7 @@
 # Railway + Vercel configuration
 
+**Complete env reference:** [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md)
+
 Split deploy: **API on Railway** (project below), **UI on Vercel**. SMTP and secrets live on Railway only.
 
 ## Railway project

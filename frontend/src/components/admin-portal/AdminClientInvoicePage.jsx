@@ -4,6 +4,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminPageHeader } from './ui/index.js'
 import { InvoiceLineItemEditor } from './InvoiceLineItemEditor.jsx'
+import { ClientInvoiceOverviewPanel } from './ClientInvoiceOverviewPanel.jsx'
 import { formatCurrency } from './ui/index.js'
 import './admin-client-invoices.css'
 import './admin-client-invoices-composer.css'
@@ -17,6 +18,7 @@ export function AdminClientInvoicePage() {
   const [audit, setAudit] = useState([])
   const [paymentPolicy, setPaymentPolicy] = useState('')
   const [gatewayEnabled, setGatewayEnabled] = useState(false)
+  const [acting, setActing] = useState(false)
 
   const load = useCallback(() => {
     if (!id) return
@@ -39,6 +41,24 @@ export function AdminClientInvoicePage() {
       .then((r) => setAudit(r.items || []))
       .catch(() => setAudit([]))
   }, [id, tab])
+
+  async function sendToClient() {
+    setActing(true)
+    try {
+      await apiFetch(`/api/v1/admin/client-billing/invoices/${id}/notify-parent?resend=true`, { method: 'POST' })
+      load()
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function markGenerated() {
+    await apiFetch(`/api/v1/admin/client-billing/invoices/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'GENERATED' }),
+    })
+    load()
+  }
 
   async function saveMeta() {
     await apiFetch(`/api/v1/admin/client-billing/invoices/${id}`, {
@@ -97,20 +117,20 @@ export function AdminClientInvoicePage() {
       </div>
 
       {tab === 'overview' ? (
-        <div className="client-inv__amount-grid" style={{ marginTop: 16 }}>
-          <div><span style={{ color: '#64748b' }}>Total</span><br /><strong>{formatCurrency(detail.totalInr)}</strong></div>
-          <div><span style={{ color: '#64748b' }}>Balance</span><br /><strong>{formatCurrency(detail.balanceInr)}</strong></div>
-          <div><span style={{ color: '#64748b' }}>Type</span><br />{detail.invoiceType}</div>
-          <div><span style={{ color: '#64748b' }}>Month</span><br />{detail.billingMonth}</div>
-          <div><span style={{ color: '#64748b' }}>Service</span><br />{detail.serviceType}</div>
-          <div><span style={{ color: '#64748b' }}>Tax</span><br />{formatCurrency(detail.taxInr)}</div>
-        </div>
+        <ClientInvoiceOverviewPanel
+          detail={detail}
+          canWriteBilling={canWriteBilling}
+          acting={acting}
+          onSendToClient={sendToClient}
+          onMarkGenerated={markGenerated}
+        />
       ) : null}
 
       {tab === 'lines' ? (
         <InvoiceLineItemEditor
           invoiceId={id}
           lines={detail.lines || []}
+          detail={detail}
           canWrite={canWriteBilling && detail.status === 'DRAFT'}
           onUpdated={load}
         />

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -24,6 +25,7 @@ from app.schemas.client_billing import (
     ClientPaymentRecord,
     PaymentClaimReject,
     RemindTherapistRequest,
+    OnboardingInvoiceDraftRequest,
     SaveCaseBillingPreferences,
 )
 from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service
@@ -420,6 +422,27 @@ def admin_create_client_invoice(
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
+    if not payload.lines:
+        try:
+            result = client_billing_service.create_draft_from_case_defaults(
+                db,
+                case_id=payload.case_id,
+                billing_month=payload.billing_month,
+                admin_user_id=user.id,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="create_client_invoice",
+            entity_type="client_invoice",
+            entity_id=result["id"],
+            **meta,
+        )
+        db.commit()
+        return result
     try:
         inv = client_billing_service.admin_create_invoice(
             db,
@@ -547,6 +570,59 @@ def admin_composer_preview(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@admin_router.get("/cases/{case_id}/billing-summary")
+def admin_case_billing_summary(
+    case_id: int,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return client_billing_service.case_billing_summary(db, case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@admin_router.post("/cases/{case_id}/onboarding-invoice-draft", status_code=201)
+def admin_onboarding_invoice_draft(
+    case_id: int,
+    payload: OnboardingInvoiceDraftRequest,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    if payload.send_to_queue_only:
+        return {
+            "queued": True,
+            "message": "Case will appear in Finance composer under New clients / Not invoiced.",
+            "caseId": case_id,
+        }
+    ym = billing_composer_service.normalize_billing_month(
+        payload.billing_month or date.today().strftime("%Y-%m")
+    )
+    try:
+        result = client_billing_service.create_draft_from_case_defaults(
+            db,
+            case_id=case_id,
+            billing_month=ym,
+            admin_user_id=user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="onboarding_invoice_draft",
+        entity_type="client_invoice",
+        entity_id=result.get("id"),
+        case_id=case_id,
+        **meta,
+    )
+    db.commit()
+    return result
 
 
 @admin_router.post("/cases/{case_id}/build-from-ledger", status_code=201)

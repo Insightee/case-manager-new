@@ -92,7 +92,7 @@ export function buildAdminKpis({ summary, role, canNavigate, can }) {
 
   if (showFinanceInvoices) {
     items.push(
-      kpi('Therapist invoices', summary.invoices_pending, 'Payout approval queue', 'rose', '₹', '/admin/invoices?tab=therapist'),
+      kpi('Therapist invoices', summary.invoices_pending, 'Payout approval queue', 'rose', '₹', '/admin/therapist-payouts?sub=payouts'),
     )
   }
 

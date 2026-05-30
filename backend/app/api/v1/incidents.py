@@ -67,8 +67,8 @@ class IncidentEscalateRequest(BaseModel):
     reason: Optional[str] = None
 
 
-def _has_manage(user: User) -> bool:
-    return user_has_permission(user, "incident.read_sensitive") and user_has_feature(user, "incidents")
+def _has_manage(user: User, db: Session | None = None) -> bool:
+    return user_has_permission(user, "incident.read_sensitive") and user_has_feature(user, "incidents", db)
 
 
 def _is_therapist_reporter(user: User) -> bool:
@@ -95,16 +95,9 @@ def _guard_incident_write(user: User, incident: Incident, db: Session) -> None:
 
 
 def _can_access(incident: Incident, user: User, db: Session) -> bool:
-    if incident.reported_by_user_id == user.id:
-        return True
-    if _has_manage(user):
-        if incident.case_id:
-            case = case_service.get_case(db, incident.case_id)
-            return case is None or case_scope_check(db, user, case)
-        return True
-    if incident.assigned_to_user_id == user.id:
-        return True
-    return False
+    from app.services.support_access_service import can_read_incident
+
+    return can_read_incident(db, user, incident)
 
 
 @router.get("/meta")
@@ -138,9 +131,12 @@ def list_incidents(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    has_manage = _has_manage(user)
+    from app.services.support_access_service import can_read_incident, can_view_support_incidents
 
-    if has_manage:
+    has_manage = _has_manage(user, db)
+    support_view = can_view_support_incidents(user, db)
+
+    if support_view:
         stmt = select(Incident).order_by(Incident.created_at.desc())
     elif assigned_to_me:
         stmt = (
@@ -185,7 +181,7 @@ def list_incidents(
     result = []
     for i in incidents:
         case = cases_by_id.get(i.case_id) if i.case_id else None
-        if has_manage and case and not case_scope_check(db, user, case):
+        if support_view and not can_read_incident(db, user, i):
             continue
         if product_module and (not case or case.product_module != product_module):
             continue
@@ -209,7 +205,7 @@ def get_incident(
     if not _can_access(incident, user, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    is_owner = incident.assigned_to_user_id == user.id and _has_manage(user)
+    is_owner = incident.assigned_to_user_id == user.id and _has_manage(user, db)
     if is_owner:
         inc_svc.mark_in_review_on_owner_open(incident, user.id)
         db.commit()
@@ -287,7 +283,7 @@ def create_incident(
         case = case_service.get_case(db, payload.case_id)
         if not case or not case_scope_check(db, user, case):
             raise HTTPException(status_code=404, detail="Case not found")
-        if _has_manage(user):
+        if _has_manage(user, db):
             guard_clinical_case(user, case, db, feature="incidents")
 
     service_type = payload.service_type
@@ -404,7 +400,7 @@ def add_incident_message(
         raise HTTPException(status_code=403, detail="Access denied")
 
     is_reporter = incident.reported_by_user_id == user.id
-    is_owner = incident.assigned_to_user_id == user.id and _has_manage(user)
+    is_owner = incident.assigned_to_user_id == user.id and _has_manage(user, db)
     if is_owner:
         _guard_incident_write(user, incident, db)
 
@@ -442,7 +438,7 @@ def update_incident(
     user: User = Depends(require_mutation_permission("incident.read_sensitive")),
     db: Session = Depends(get_db),
 ):
-    if not user_has_feature(user, "incidents"):
+    if not user_has_feature(user, "incidents", db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Incidents module access required")
     incident = inc_svc.get_incident_detail(db, incident_id)
     if not incident:

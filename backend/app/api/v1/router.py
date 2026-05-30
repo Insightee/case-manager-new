@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    finance_ops,
+    hr_ops,
     admin,
     admin_support,
     assignment_acceptance,
@@ -48,6 +50,8 @@ api_router.include_router(daily_logs.router)
 api_router.include_router(reports.router)
 api_router.include_router(invoices.router)
 api_router.include_router(admin.router)
+api_router.include_router(finance_ops.router)
+api_router.include_router(hr_ops.router)
 api_router.include_router(admin_support.router)
 api_router.include_router(parent.router)
 api_router.include_router(client_billing.parent_router)

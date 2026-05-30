@@ -25,6 +25,8 @@ def test_support_history_list():
     data = r.json()
     assert "items" in data
     assert "total" in data
+    types = {row["record_type"] for row in data["items"]}
+    assert "incident" in types, "seeded demo incidents should appear in combined history"
 
 
 def test_support_history_csv_export():

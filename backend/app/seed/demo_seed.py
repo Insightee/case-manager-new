@@ -52,6 +52,7 @@ from app.core.permissions import get_active_assignment
 from app.services import case_service_service
 from app.services import slot_calendar_service as cal
 from app.models.incident import Incident, IncidentStatus
+from app.models.support_ticket import SupportTicket, TicketCategory, TicketStatus
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.visibility import VisibilityStatus
 from app.models.service_category import ServiceCategory
@@ -276,8 +277,23 @@ def run():
             module_assignments=["homecare", "billing"],
             view_only=False,
         )
-        get_or_create_user(
-            db, "hr@demo.com", "demo123", "HR Manager Priya", RoleName.HR.value, module_assignments=["homecare", "shadow_support"]
+        hr_user = get_or_create_user(
+            db, "hr@demo.com", "demo123", "HR Manager Priya", RoleName.HR.value, module_assignments=["people_admin", "hr_ops"]
+        )
+        sync_user_access_fields(
+            hr_user,
+            role_names=[RoleName.HR.value],
+            org_capability_grants={
+                "people_admin": {"enabled": True, "access": "write"},
+                "hr_ops": {"enabled": True, "access": "write"},
+            },
+            view_only=False,
+        )
+        sync_user_access_fields(
+            finance,
+            role_names=[RoleName.FINANCE.value],
+            org_capability_grants={"billing": {"enabled": True, "access": "write"}},
+            view_only=False,
         )
 
         aarav = Child(first_name="Aarav", last_name="M.")
@@ -870,6 +886,33 @@ def run():
                 )
             )
 
+        if not db.scalars(
+            select(SupportTicket).where(SupportTicket.subject == "Demo finance billing query")
+        ).first():
+            db.add(
+                SupportTicket(
+                    raised_by_user_id=finance.id,
+                    subject="Demo finance billing query",
+                    body="Seeded ticket for finance support hub history.",
+                    category=TicketCategory.FINANCE,
+                    status=TicketStatus.OPEN,
+                    product_module=None,
+                )
+            )
+        if not db.scalars(
+            select(SupportTicket).where(SupportTicket.subject == "Demo HR leave policy question")
+        ).first():
+            db.add(
+                SupportTicket(
+                    raised_by_user_id=hr_user.id,
+                    subject="Demo HR leave policy question",
+                    body="Seeded ticket for HR support hub history.",
+                    category=TicketCategory.HR,
+                    status=TicketStatus.OPEN,
+                    product_module=None,
+                )
+            )
+
         if not db.scalars(select(Incident).limit(1)).first():
             db.add(
                 Incident(
@@ -897,6 +940,24 @@ def run():
                     subcategory="communication_delay",
                     priority="NORMAL",
                     status=IncidentStatus.IN_REVIEW,
+                )
+            )
+
+        if not db.scalars(
+            select(Incident).where(Incident.ticket_code == "INC-2026-00003")
+        ).first():
+            db.add(
+                Incident(
+                    case_id=case2.id,
+                    reported_by_user_id=hr_user.id,
+                    title="HR workplace concern (demo)",
+                    description="Seeded incident reported by HR for own-scope history.",
+                    is_sensitive=False,
+                    ticket_code="INC-2026-00003",
+                    primary_category="OTHER",
+                    subcategory="other",
+                    priority="NORMAL",
+                    status=IncidentStatus.REPORTED,
                 )
             )
 

@@ -11,7 +11,7 @@ from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.case import Case
+from app.models.case import BillingType, Case, ClientBillingMode
 from app.models.child import Child
 from app.models.parent import ParentGuardian
 from app.models.client_billing import (
@@ -30,7 +30,7 @@ from app.models.client_billing import (
 from app.models.daily_log import DailyLog
 from app.models.user import User
 from app.core.config import settings
-from app.services import billing_composer_service, notification_service, parent_service
+from app.services import billing_composer_service, notification_service, parent_service, product_billing_rule_service
 from app.services.email.service import enqueue_parent_invoice_email, parent_invoice_ready_email
 
 
@@ -765,6 +765,23 @@ def admin_get_invoice_detail(db: Session, invoice_id: int) -> dict:
             ],
         }
     )
+    try:
+        preview = billing_composer_service.get_composer_preview(
+            db, case_id=inv.case_id, billing_month=inv.billing_month or ""
+        )
+        ov = preview.get("overview") or {}
+        detail["billingPreview"] = {
+            "sessionsCompleted": ov.get("sessionsCompleted"),
+            "sessionsBillable": ov.get("sessionsBillable"),
+            "leavesTotal": ov.get("leavesTotal"),
+            "therapistPayoutTotalInr": ov.get("therapistPayoutTotal"),
+            "estimatedMarginInr": ov.get("estimatedMargin"),
+            "subtotalInr": ov.get("subtotal"),
+            "taxAmountInr": ov.get("taxAmount"),
+            "suggestedTotalInr": ov.get("total"),
+        }
+    except ValueError:
+        detail["billingPreview"] = None
     return detail
 
 
@@ -820,6 +837,8 @@ def admin_create_invoice(
                 service_label=ln["service_label"],
                 session_status=ln.get("session_status", "COMPLETED"),
                 amount_inr=ln["amount_inr"],
+                line_item_type=ln.get("line_item_type"),
+                gst_rate_percent=ln.get("gst_rate_percent"),
                 parent_summary=ln.get("parent_summary"),
                 sort_order=i,
             )
@@ -875,6 +894,46 @@ def _require_draft_invoice(inv: ClientInvoice) -> None:
         raise ValueError("Only draft invoices can be edited")
 
 
+def _normalize_client_invoice_line(line: ClientInvoiceLine) -> None:
+    """Derive unit rate, taxable base, GST, and line total from qty × rate + tax."""
+    qty = float(line.quantity or 1)
+    if qty <= 0:
+        qty = 1.0
+        line.quantity = qty
+
+    gst_pct = float(line.gst_rate_percent or 0)
+    rate = line.unit_rate_inr
+
+    if rate is None and line.amount_inr and qty:
+        total = float(line.amount_inr)
+        if gst_pct > 0:
+            taxable_unit = total / (1 + gst_pct / 100) / qty
+            line.unit_rate_inr = round(taxable_unit, 2)
+            rate = line.unit_rate_inr
+        else:
+            line.unit_rate_inr = round(total / qty, 2)
+            rate = line.unit_rate_inr
+
+    if rate is not None:
+        taxable = round(qty * float(rate), 2)
+        line.taxable_amount_inr = taxable
+        if gst_pct > 0:
+            line.gst_amount_inr = round(taxable * gst_pct / 100, 2)
+            line.amount_inr = round(taxable + float(line.gst_amount_inr), 2)
+        else:
+            line.gst_amount_inr = 0
+            line.amount_inr = taxable
+    elif line.amount_inr is not None:
+        taxable = float(line.taxable_amount_inr if line.taxable_amount_inr is not None else line.amount_inr)
+        line.taxable_amount_inr = round(taxable, 2)
+        if gst_pct > 0:
+            line.gst_amount_inr = round(taxable * gst_pct / 100, 2)
+            line.amount_inr = round(taxable + float(line.gst_amount_inr), 2)
+        else:
+            line.gst_amount_inr = 0
+            line.amount_inr = round(taxable, 2)
+
+
 def _serialize_line(line: ClientInvoiceLine) -> dict:
     return {
         "id": line.id,
@@ -912,6 +971,7 @@ def recalculate_client_invoice(db: Session, invoice_id: int) -> ClientInvoice:
     subtotal = 0.0
     tax = 0.0
     for line in inv.lines or []:
+        _normalize_client_invoice_line(line)
         if line.line_item_type == "DISCOUNT":
             continue
         taxable = float(line.taxable_amount_inr if line.taxable_amount_inr is not None else line.amount_inr)
@@ -965,9 +1025,12 @@ def admin_add_invoice_line(db: Session, invoice_id: int, data: dict) -> ClientIn
         therapist_user_id=data.get("therapist_user_id"),
         finance_note=data.get("finance_note"),
         parent_summary=data.get("parent_summary"),
+        hsn_sac_code=data.get("hsn_sac_code"),
         sort_order=sort,
     )
     db.add(line)
+    db.flush()
+    _normalize_client_invoice_line(line)
     db.flush()
     recalculate_client_invoice(db, invoice_id)
     return line
@@ -998,13 +1061,11 @@ def admin_patch_invoice_line(
         ("taxable_amount_inr", "taxable_amount_inr"),
         ("finance_note", "finance_note"),
         ("parent_summary", "parent_summary"),
+        ("hsn_sac_code", "hsn_sac_code"),
     ):
         if key in data and data[key] is not None:
             setattr(line, attr, data[key])
-    if line.quantity and line.unit_rate_inr:
-        line.amount_inr = round(float(line.quantity) * float(line.unit_rate_inr), 2)
-        if line.taxable_amount_inr is None:
-            line.taxable_amount_inr = line.amount_inr
+    _normalize_client_invoice_line(line)
     db.flush()
     recalculate_client_invoice(db, invoice_id)
     line._audit_before = before  # noqa: SLF001 — consumed by API layer
@@ -1387,6 +1448,123 @@ def admin_update_package(db: Session, package_id: int, updates: dict) -> dict:
     db.flush()
     rows = admin_list_packages(db, case_id=pkg.case_id)
     return next((r for r in rows if r["id"] == package_id), rows[0] if rows else {})
+
+
+def create_draft_from_case_defaults(
+    db: Session,
+    *,
+    case_id: int,
+    billing_month: str,
+    admin_user_id: int,
+) -> dict:
+    """Create a DRAFT client invoice with lines prefilled from case billing settings."""
+    case = db.get(Case, case_id)
+    if not case:
+        raise ValueError("Case not found")
+
+    ym = billing_composer_service.normalize_billing_month(billing_month)
+    warnings: list[str] = []
+
+    from app.models.ledger_billing import ProductBillingModel
+
+    rule = None
+    if case.product_billing_rule_id:
+        rule = product_billing_rule_service.get_rule(db, case.product_billing_rule_id)
+
+    invoice_type = "POSTPAID"
+    if case.client_billing_mode == ClientBillingMode.PREPAID or case.billing_type == BillingType.PACKAGE:
+        invoice_type = "PREPAID"
+    elif rule and rule.billing_model == ProductBillingModel.MONTHLY_FIXED:
+        invoice_type = "MONTHLY_FIXED"
+
+    lines: list[dict] = []
+    today = date.today()
+    therapist_name = "—"
+    service_label = case.service_type or "Service"
+    gst_rate = float(rule.gst_rate_percent or 0) if rule else 0.0
+
+    amount = 0.0
+    if case.package_amount_inr and float(case.package_amount_inr) > 0:
+        amount = float(case.package_amount_inr)
+        line_type = "PACKAGE_CHARGE"
+    elif case.client_rate_per_session_inr and float(case.client_rate_per_session_inr) > 0:
+        amount = float(case.client_rate_per_session_inr)
+        line_type = "SESSION_CHARGE"
+    else:
+        warnings.append("no_default_rule")
+        amount = 0.01
+        line_type = "MANUAL_FEE"
+
+    if amount > 0:
+        lines.append(
+            {
+                "session_date": today,
+                "therapist_name": therapist_name,
+                "service_label": service_label,
+                "session_status": "COMPLETED",
+                "amount_inr": amount,
+                "line_item_type": line_type,
+                "gst_rate_percent": gst_rate if gst_rate else None,
+            }
+        )
+
+    inv = admin_create_invoice(
+        db,
+        case_id=case_id,
+        invoice_type=invoice_type,
+        billing_month=ym,
+        due_date=None,
+        lines=lines,
+        notes=case.billing_notes,
+        discount_inr=0,
+        admin_user_id=admin_user_id,
+    )
+    detail = admin_get_invoice_detail(db, inv.id)
+    detail["warnings"] = warnings
+    return detail
+
+
+def case_billing_summary(db: Session, case_id: int) -> dict:
+    case = db.get(Case, case_id)
+    if not case:
+        raise ValueError("Case not found")
+    last_inv = db.scalar(
+        select(ClientInvoice)
+        .where(ClientInvoice.case_id == case_id)
+        .order_by(ClientInvoice.id.desc())
+        .limit(1)
+    )
+    open_balance = 0.0
+    if last_inv and last_inv.status in (
+        ClientInvoiceStatus.SENT,
+        ClientInvoiceStatus.PARTIALLY_PAID,
+        ClientInvoiceStatus.OVERDUE,
+        ClientInvoiceStatus.GENERATED,
+    ):
+        open_balance = max(0, float(last_inv.total_inr or 0) - float(last_inv.amount_paid_inr or 0))
+
+    rule_name = None
+    if case.product_billing_rule_id:
+        rule = product_billing_rule_service.get_rule(db, case.product_billing_rule_id)
+        rule_name = rule.product_name if rule else None
+
+    return {
+        "caseId": case_id,
+        "billingType": case.billing_type.value if case.billing_type else None,
+        "clientBillingMode": case.client_billing_mode.value if case.client_billing_mode else None,
+        "clientRatePerSessionInr": float(case.client_rate_per_session_inr) if case.client_rate_per_session_inr else None,
+        "packageAmountInr": float(case.package_amount_inr) if case.package_amount_inr else None,
+        "productBillingRuleName": rule_name,
+        "lastInvoice": {
+            "id": last_inv.id,
+            "status": last_inv.status.value,
+            "billingMonth": last_inv.billing_month,
+            "totalInr": float(last_inv.total_inr or 0),
+        }
+        if last_inv
+        else None,
+        "openBalanceInr": open_balance,
+    }
 
 
 def admin_list_disputes(db: Session) -> list[dict]:

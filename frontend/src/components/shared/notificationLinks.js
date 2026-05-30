@@ -67,7 +67,7 @@ export function resolveNotificationLink(entityType, entityId, portal) {
     case 'invite_token':
       return '/admin/people'
     case 'payout':
-      return portal === 'therapist' ? '/therapist/invoices' : '/admin/invoices'
+      return portal === 'therapist' ? '/therapist/invoices' : '/admin/therapist-payouts?sub=payouts'
     default:
       return null
   }

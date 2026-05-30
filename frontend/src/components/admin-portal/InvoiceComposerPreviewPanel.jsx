@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { formatCurrency } from './ui/index.js'
 
 export function InvoiceComposerPreviewPanel({
@@ -7,7 +8,9 @@ export function InvoiceComposerPreviewPanel({
   card,
   billingMonth,
   canWriteBilling,
+  actionLoading = false,
   onBuildFromLedger,
+  onCreateManualInvoice,
   onRemindTherapist,
   onRefresh,
 }) {
@@ -19,6 +22,12 @@ export function InvoiceComposerPreviewPanel({
   const ov = preview.overview || {}
   const rule = preview.billingRule || {}
   const warnings = preview.warnings || []
+  const ledgerReady = (card?.ledgerReadyCount ?? ov.ledgerReadyCount ?? 0) > 0
+
+  function handleWarningAction(w) {
+    if (w.action === 'manual_invoice') onCreateManualInvoice?.()
+    else if (w.action === 'remind_therapist') onRemindTherapist?.()
+  }
 
   return (
     <div>
@@ -32,17 +41,30 @@ export function InvoiceComposerPreviewPanel({
           </p>
         </div>
         {canWriteBilling ? (
-          <div className="admin-btn-group">
-            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => onBuildFromLedger(false)}>
-              Build from ledger
+          <div className="admin-btn-group client-inv-composer__primary-actions">
+            <button
+              type="button"
+              className={`admin-btn admin-btn--sm ${ledgerReady ? 'admin-btn--primary' : 'admin-btn--secondary'}`}
+              disabled={actionLoading}
+              onClick={() => onBuildFromLedger(false)}
+            >
+              {actionLoading ? 'Working…' : 'Build from ledger'}
             </button>
-            {card?.actions?.remindTherapist ? (
-              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={onRemindTherapist}>
-                Remind therapist
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className={`admin-btn admin-btn--sm ${ledgerReady ? 'admin-btn--secondary' : 'admin-btn--primary'}`}
+              disabled={actionLoading}
+              onClick={onCreateManualInvoice}
+            >
+              Create invoice manually
+            </button>
             {card?.actions?.useLedgerAnyway ? (
-              <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => onBuildFromLedger(true)}>
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                disabled={actionLoading}
+                onClick={() => onBuildFromLedger(true)}
+              >
                 Use ledger anyway
               </button>
             ) : null}
@@ -59,6 +81,25 @@ export function InvoiceComposerPreviewPanel({
       {warnings.map((w) => (
         <div key={w.code} className="client-inv-composer__warn" style={{ marginTop: 12 }}>
           {w.message}
+          {w.action && canWriteBilling ? (
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              style={{ marginLeft: 8 }}
+              onClick={() => handleWarningAction(w)}
+            >
+              {w.action === 'manual_invoice' ? 'Create manually' : w.action === 'remind_therapist' ? 'Remind' : 'Review ledger'}
+            </button>
+          ) : null}
+          {w.action === 'review_ledger' && preview.case?.caseId ? (
+            <Link
+              to={`/admin/invoices?tab=ledger&case_id=${preview.case.caseId}`}
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              style={{ marginLeft: 8 }}
+            >
+              Session ledger
+            </Link>
+          ) : null}
         </div>
       ))}
 
@@ -77,6 +118,9 @@ export function InvoiceComposerPreviewPanel({
 
       <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 8 }}>
         Billing model: {rule.billingModel || '—'} · {rule.invoiceType || 'POSTPAID'} · Month {billingMonth}
+      </p>
+      <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4 }}>
+        Ledger rows are created when daily logs are approved — not when sessions complete alone.
       </p>
 
       <div className="client-inv-composer__preview-tabs" style={{ marginTop: 20 }}>

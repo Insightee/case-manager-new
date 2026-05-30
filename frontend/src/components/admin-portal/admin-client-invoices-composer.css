@@ -226,6 +226,17 @@
   }
 }
 
+.client-inv-composer__primary-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.client-inv-composer__primary-actions .admin-btn {
+  flex: 1 1 auto;
+  min-width: 8.5rem;
+}
+
 @media (max-width: 1023px) {
   .client-inv-composer__body--detail-only .client-inv-composer__list-pane {
     display: none;

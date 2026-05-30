@@ -43,7 +43,13 @@ function widgetHref(widget, widgetFooter) {
   return widgetFooter(widget)
 }
 
-export function AdminRoleQueueSection({ roleHome, loading, widgetFooter }) {
+export function AdminRoleQueueSection({
+  roleHome,
+  loading,
+  widgetFooter,
+  landingHref,
+  landingLabel = 'Open workbench',
+}) {
   if (loading) {
     return (
       <section className="admin-home-queue" aria-busy="true" aria-label="Loading your queues">
@@ -61,7 +67,12 @@ export function AdminRoleQueueSection({ roleHome, loading, widgetFooter }) {
 
   if (!roleHome?.widgets?.length) return null
 
-  const landing = roleHome.landing_route && roleHome.landing_route !== '/admin' ? roleHome.landing_route : null
+  const landing =
+    landingHref !== undefined
+      ? landingHref
+      : roleHome.landing_route && roleHome.landing_route !== '/admin'
+        ? roleHome.landing_route
+        : null
 
   return (
     <section className="admin-home-queue" aria-labelledby="admin-home-queue-title">
@@ -80,7 +91,7 @@ export function AdminRoleQueueSection({ roleHome, loading, widgetFooter }) {
         </div>
         {landing ? (
           <Link to={landing} className="admin-btn admin-btn--primary admin-home-queue__cta">
-            {landing === '/admin/cm' ? 'Open my caseload' : 'Open workbench'}
+            {landing === '/admin/cm' ? 'Open my caseload' : landingLabel}
           </Link>
         ) : null}
       </div>

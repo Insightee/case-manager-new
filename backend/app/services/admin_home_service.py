@@ -30,7 +30,7 @@ def _landing_route(role: str, user: User, db: Session) -> str:
     if role == RoleName.FINANCE.value:
         return "/admin/invoices"
     if role == RoleName.HR.value:
-        return "/admin/people"
+        return "/admin"
     if role == RoleName.CASE_MANAGER.value:
         return "/admin/cm"
     if role in (RoleName.VIEWER.value, RoleName.SUPERVISOR.value):
@@ -44,6 +44,8 @@ def _landing_route(role: str, user: User, db: Session) -> str:
 def _dashboard_variant(role: str) -> str:
     if role == RoleName.FINANCE.value:
         return "finance"
+    if role == RoleName.HR.value:
+        return "hr"
     if role == RoleName.CASE_MANAGER.value:
         return "caseload"
     if role in (RoleName.MODULE_ADMIN.value, RoleName.SUPER_ADMIN.value):

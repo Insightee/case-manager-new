@@ -190,7 +190,7 @@ def test_incident_patch():
         headers=headers,
         json={"status": "ACTION_TAKEN"},
     )
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     assert res.json()["status"] == "ACTION_TAKEN"
 
 

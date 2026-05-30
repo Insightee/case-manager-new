@@ -32,3 +32,23 @@
 .leave-mgmt__card + .leave-mgmt__card {
   margin-top: 10px;
 }
+
+.leave-mgmt__actions {
+  position: relative;
+  z-index: 2;
+  isolation: isolate;
+}
+
+.leave-mgmt__card-actions {
+  margin-top: 4px;
+}
+
+.leave-mgmt__inline-error {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: #b91c1c;
+}
+
+.leave-mgmt__list {
+  padding: 0 16px 16px;
+}
