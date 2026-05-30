@@ -184,7 +184,7 @@ export function InvoiceBreakdownView({
               />
               {pendingLines.length > 0 ? (
                 <div className="mt-4 border-t border-amber-100 pt-3">
-                  <p className="mb-2 text-xs font-semibold uppercase text-amber-800">Pending approval</p>
+                  <p className="mb-2 text-xs font-semibold uppercase text-amber-800">Forgotten session — pending approval</p>
                   <SessionTable
                     lines={pendingLines}
                     editable={editable}

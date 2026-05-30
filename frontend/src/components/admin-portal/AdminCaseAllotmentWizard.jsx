@@ -8,6 +8,7 @@ import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { CaseSchedulingHub } from './CaseSchedulingHub.jsx'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import { filterServiceCategoriesForModule } from '../../lib/accountStatus.js'
 import './admin-allotment-wizard.css'
 
 const TOTAL_STEPS = 5
@@ -50,12 +51,15 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   const [productModule, setProductModule] = useState('homecare')
   const canSubmitAllot = canCreateProductCase(productModule)
   const [caseCode, setCaseCode] = useState('')
+  const [caseCodeLoading, setCaseCodeLoading] = useState(false)
   const [serviceType, setServiceType] = useState('')
   const [serviceCategories, setServiceCategories] = useState([])
   const [clinicalCatalog, setClinicalCatalog] = useState([])
   const [serviceProductId, setServiceProductId] = useState('')
+  const [serviceLocationType, setServiceLocationType] = useState('home')
   const [serviceAddr, setServiceAddr] = useState(emptyAddress())
-  const [addressSource, setAddressSource] = useState('manual')
+  const [billingAddr, setBillingAddr] = useState(emptyAddress())
+  const [billingSameAsService, setBillingSameAsService] = useState(true)
   const [billing, setBilling] = useState(EMPTY_BILLING)
   const [therapistId, setTherapistId] = useState('')
   const [therapistLabel, setTherapistLabel] = useState('')
@@ -69,12 +73,16 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   const [activating, setActivating] = useState(false)
   const [activationInvites, setActivationInvites] = useState([])
 
+  const serviceTypeOptions = useMemo(
+    () => filterServiceCategoriesForModule(serviceCategories, productModule),
+    [serviceCategories, productModule],
+  )
+
   useEffect(() => {
     apiFetch('/api/v1/admin/service-categories')
       .then((rows) => {
         const active = (rows || []).filter((r) => r.is_active !== false)
         setServiceCategories(active)
-        if (active.length && !serviceType) setServiceType(active[0].label)
       })
       .catch(() => setServiceCategories([]))
     apiFetch('/api/v1/auth/catalog/clinical-services')
@@ -88,10 +96,19 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   }, [clinicalCatalog, productModule])
 
   useEffect(() => {
-    const cat = serviceCategories.find((c) => c.id === productModule)
-    if (cat?.label) setServiceType(cat.label)
+    if (!serviceTypeOptions.length) {
+      setServiceType('')
+      return
+    }
+    setServiceType(serviceTypeOptions[0].label)
     setServiceProductId('')
-  }, [productModule, serviceCategories])
+  }, [productModule, serviceTypeOptions])
+
+  useEffect(() => {
+    if (billingSameAsService) {
+      setBillingAddr({ ...serviceAddr })
+    }
+  }, [billingSameAsService, serviceAddr])
 
   useEffect(() => {
     if (!serviceProductId) return
@@ -126,9 +143,14 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   }, [parentSearch, parentIsExisting, familyMode])
 
   useEffect(() => {
+    if (!productModule) return
+    setCaseCodeLoading(true)
     apiFetch(`/api/v1/admin/cases/next-code?product_module=${encodeURIComponent(productModule)}`)
-      .then((r) => setCaseCode(r.case_code))
+      .then((r) => {
+        setCaseCode(r.case_code || '')
+      })
       .catch(() => setCaseCode(''))
+      .finally(() => setCaseCodeLoading(false))
   }, [productModule])
 
   useEffect(() => {
@@ -209,6 +231,8 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
     setSaving(true)
     setError('')
     try {
+      if (!serviceType.trim()) throw new Error('Select a service type')
+      if (!therapistId) throw new Error('Select a therapist')
       const cid = await ensureChildId()
       const payload = {
         child_id: cid,
@@ -233,7 +257,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
           payload.therapist_fixed_pay_inr = Number(billing.therapist_fixed_pay_inr)
         }
       }
-      if (serviceAddr.address_line1) {
+      if (serviceLocationType !== 'online' && serviceAddr.address_line1) {
         const base = addressToPayload(serviceAddr)
         Object.assign(payload, {
           service_address_line1: base.address_line1,
@@ -241,8 +265,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
           service_city: base.city,
           service_state: base.state,
           service_pincode: base.pincode,
-          service_landmark: base.landmark,
+          service_landmark: [serviceLocationType, base.landmark].filter(Boolean).join(' · '),
         })
+      } else if (serviceLocationType === 'online') {
+        Object.assign(payload, { service_landmark: 'online' })
       }
       const result = await apiFetch('/api/v1/admin/cases/allot', {
         method: 'POST',
@@ -414,9 +440,14 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
 
       {step === 2 ? (
         <div className="admin-form-grid" style={{ maxWidth: 520 }}>
-          <label>
+          <label htmlFor="allot-module">
             Module
-            <select className="admin-input" value={productModule} onChange={(e) => setProductModule(e.target.value)}>
+            <select
+              id="allot-module"
+              className="admin-input"
+              value={productModule}
+              onChange={(e) => setProductModule(e.target.value)}
+            >
               {moduleOptions.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
@@ -424,18 +455,39 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
               ))}
             </select>
           </label>
-          <label>
-            Case code
-            <input className="admin-input" value={caseCode} readOnly />
+          <label htmlFor="allot-case-ref">
+            Case reference
+            <input
+              id="allot-case-ref"
+              className="admin-input"
+              value={caseCodeLoading ? 'Generating…' : caseCode || 'Generating…'}
+              readOnly
+              aria-busy={caseCodeLoading}
+              aria-describedby="allot-case-ref-hint"
+            />
+            <span id="allot-case-ref-hint" className="admin-muted" style={{ fontSize: '0.75rem' }}>
+              Auto-generated; cannot be edited.
+            </span>
           </label>
-          <label>
+          <label htmlFor="allot-service-type">
             Service type
-            <select className="admin-input" value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
-              {serviceCategories.map((c) => (
-                <option key={c.id} value={c.label}>
-                  {c.label}
-                </option>
-              ))}
+            <select
+              id="allot-service-type"
+              className="admin-input"
+              value={serviceType}
+              onChange={(e) => setServiceType(e.target.value)}
+              required
+              aria-invalid={serviceTypeOptions.length === 0}
+            >
+              {serviceTypeOptions.length === 0 ? (
+                <option value="">No services for this module</option>
+              ) : (
+                serviceTypeOptions.map((c) => (
+                  <option key={c.id} value={c.label}>
+                    {c.label}
+                  </option>
+                ))
+              )}
             </select>
           </label>
           {productsForModule.length > 0 ? (
@@ -460,44 +512,88 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             </label>
           ) : null}
           <div style={{ gridColumn: '1 / -1' }}>
-            <p className="admin-drawer__subtitle">Service address (optional)</p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-              {['manual', 'parent_home'].map((src) => (
-                <label key={src} style={{ fontSize: '0.85rem' }}>
-                  <input
-                    type="radio"
-                    name="addrSrc"
-                    checked={addressSource === src}
-                    onChange={() => setAddressSource(src)}
-                  />{' '}
-                  {src === 'manual' ? 'Enter manually' : 'Copy parent home (when available)'}
-                </label>
-              ))}
-            </div>
-            {addressSource === 'parent_home' && selectedFamily?.parents?.[0]?.userId ? (
+            <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
+              <legend className="admin-drawer__subtitle">Service address</legend>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }} role="radiogroup" aria-label="Service location type">
+                {[
+                  { id: 'home', label: 'Home' },
+                  { id: 'school', label: 'School' },
+                  { id: 'online', label: 'Online' },
+                ].map((opt) => (
+                  <label key={opt.id} style={{ fontSize: '0.85rem', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="radio"
+                      name="svcLoc"
+                      value={opt.id}
+                      checked={serviceLocationType === opt.id}
+                      onChange={() => setServiceLocationType(opt.id)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            {serviceLocationType !== 'online' && selectedFamily?.parents?.[0]?.userId ? (
               <button
                 type="button"
                 className="admin-btn admin-btn--ghost admin-btn--sm"
                 style={{ marginBottom: 8 }}
                 onClick={async () => {
                   try {
-                    const rows = await apiFetch(
-                      `/api/v1/admin/families?search=${encodeURIComponent(selectedFamily.parents[0].parentEmail || '')}`,
-                    )
-                    const match = (rows || []).find((r) => r.childId === Number(childId))
-                    if (match?.parents?.[0]?.userId) {
-                      const u = await apiFetch(`/api/v1/admin/users/${match.parents[0].userId}`).catch(() => null)
-                      if (u?.home_address) setServiceAddr(addressFromApi(u.home_address))
-                    }
+                    const u = await apiFetch(`/api/v1/admin/users/${selectedFamily.parents[0].userId}`)
+                    const addr =
+                      serviceLocationType === 'school' ? u.school_address : u.home_address
+                    if (addr) setServiceAddr(addressFromApi(addr))
+                    else setError(`No ${serviceLocationType} address on parent profile`)
                   } catch {
                     setError('Could not load parent address')
                   }
                 }}
               >
-                Load parent home address
+                Load from parent profile
               </button>
             ) : null}
-            <AddressFormFields value={serviceAddr} onChange={setServiceAddr} idPrefix="wiz-svc" showLocationButton={false} />
+            {serviceLocationType === 'online' ? (
+              <p className="admin-muted" style={{ fontSize: '0.8125rem' }}>
+                Online sessions — physical service address is optional. Add billing address below if needed.
+              </p>
+            ) : (
+              <AddressFormFields
+                value={serviceAddr}
+                onChange={setServiceAddr}
+                idPrefix="wiz-svc"
+                showLocationButton
+              />
+            )}
+            </fieldset>
+          </div>
+          <div style={{ gridColumn: '1 / -1', marginTop: 8 }}>
+            <p className="admin-drawer__subtitle" id="allot-billing-heading">
+              Billing address
+            </p>
+            <label
+              htmlFor="allot-billing-same"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem', minHeight: 44 }}
+            >
+              <input
+                id="allot-billing-same"
+                type="checkbox"
+                checked={billingSameAsService}
+                onChange={(e) => setBillingSameAsService(e.target.checked)}
+              />
+              Billing address same as service address
+            </label>
+            {!billingSameAsService ? (
+              <AddressFormFields
+                value={billingAddr}
+                onChange={setBillingAddr}
+                idPrefix="wiz-bill"
+                showLocationButton
+              />
+            ) : (
+              <p className="admin-muted" style={{ fontSize: '0.8125rem' }}>
+                Billing will use the service address entered above. Parents can update addresses in their profile later.
+              </p>
+            )}
           </div>
         </div>
       ) : null}

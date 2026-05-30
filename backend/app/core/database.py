@@ -168,6 +168,14 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN service_line VARCHAR(64)"))
             if "billing_category" not in tl_cols:
                 conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN billing_category VARCHAR(32)"))
+            if "case_id" not in tl_cols:
+                conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN case_id INTEGER"))
+
+    if insp.has_table("sessions"):
+        sess_cols = {c["name"] for c in insp.get_columns("sessions")}
+        if "auto_end_reason" not in sess_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN auto_end_reason VARCHAR(64)"))
 
     _service_category_seed = [
         ("shadow_support", "Shadow support", 0),
@@ -669,6 +677,47 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(
                     text("ALTER TABLE case_manager_meetings ADD COLUMN staff_attendee_user_ids_json TEXT")
                 )
+            if "completed_at" not in cols:
+                conn.execute(text("ALTER TABLE case_manager_meetings ADD COLUMN completed_at DATETIME"))
+            if "completed_by_user_id" not in cols:
+                conn.execute(text("ALTER TABLE case_manager_meetings ADD COLUMN completed_by_user_id INTEGER"))
+
+    if not insp.has_table("invoice_manual_lines"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE invoice_manual_lines (
+                        id INTEGER PRIMARY KEY,
+                        invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+                        case_id INTEGER REFERENCES cases(id),
+                        description VARCHAR(512) NOT NULL,
+                        quantity NUMERIC(10, 2) NOT NULL DEFAULT 1,
+                        amount_inr NUMERIC(12, 2) NOT NULL,
+                        pay_share_inr NUMERIC(12, 2) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                        added_by_user_id INTEGER NOT NULL REFERENCES users(id),
+                        approved_by_user_id INTEGER REFERENCES users(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_invoice_manual_lines_invoice_id ON invoice_manual_lines (invoice_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_invoice_manual_lines_case_id ON invoice_manual_lines (case_id)")
+            )
+
+    if insp.has_table("client_invoice_lines"):
+        cil_cols = {c["name"] for c in insp.get_columns("client_invoice_lines")}
+        with engine.begin() as conn:
+            if "approval_status" not in cil_cols:
+                conn.execute(text("ALTER TABLE client_invoice_lines ADD COLUMN approval_status VARCHAR(32)"))
+            if "approved_by_user_id" not in cil_cols:
+                conn.execute(text("ALTER TABLE client_invoice_lines ADD COLUMN approved_by_user_id INTEGER"))
 
     if insp.has_table("therapist_profiles"):
         tp_cols = {c["name"] for c in insp.get_columns("therapist_profiles")}

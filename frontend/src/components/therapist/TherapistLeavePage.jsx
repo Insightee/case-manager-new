@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
+import { unwrapList } from '../../lib/listApi.js'
 import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
 import './therapist-leave.css'
 
@@ -10,12 +11,7 @@ const BILLING_CATEGORIES = [
   { value: 'CARRY_FORWARD', label: 'Carry forward' },
   { value: 'UNPAID', label: 'Unpaid' },
 ]
-const SERVICE_LINES = [
-  { value: 'shadow_support', label: 'Shadow support' },
-  { value: 'homecare', label: 'Homecare' },
-  { value: 'counselling', label: 'Counselling' },
-  { value: 'occupational_therapy', label: 'Occupational therapy' },
-]
+const SERVICE_LINES = [{ value: 'shadow_support', label: 'Shadow support' }]
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
@@ -105,10 +101,13 @@ export function TherapistLeavePage() {
   const [form, setForm] = useState({
     service_line: 'shadow_support',
     billing_category: 'PAID',
+    case_id: '',
     start_date: '',
     end_date: '',
     reason: '',
   })
+  const [shadowCases, setShadowCases] = useState([])
+  const [moduleProfile, setModuleProfile] = useState({ shadow: false, homecare: false })
   const [pickStart, setPickStart] = useState(null)
   const [pickEnd, setPickEnd] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -139,6 +138,18 @@ export function TherapistLeavePage() {
   useEffect(() => {
     if (authLoading || !user) return
     loadLeaves()
+    apiFetch('/api/v1/cases?assigned=true&page_size=200')
+      .then((data) => {
+        const items = unwrapList(data)
+        const shadow = items.filter((c) => (c.product_module || c.service_type || '').toLowerCase() === 'shadow_support')
+        setShadowCases(shadow)
+        const mods = new Set(items.map((c) => (c.product_module || c.service_type || '').toLowerCase()))
+        setModuleProfile({ shadow: mods.has('shadow_support'), homecare: mods.has('homecare') })
+      })
+      .catch(() => {
+        setShadowCases([])
+        setModuleProfile({ shadow: false, homecare: false })
+      })
   }, [authLoading, user, loadLeaves])
 
   useEffect(() => {
@@ -224,6 +235,14 @@ export function TherapistLeavePage() {
 
   async function submitLeave(e) {
     e.preventDefault()
+    if (!moduleProfile.shadow) {
+      setError('Leave is only available for shadow support. Cancel affected homecare sessions from your schedule instead.')
+      return
+    }
+    if (!form.case_id) {
+      setError('Select the shadow support case this leave applies to.')
+      return
+    }
     setSubmitting(true)
     setError('')
     setSuccess('')
@@ -231,8 +250,9 @@ export function TherapistLeavePage() {
       await apiFetch('/api/v1/leave', {
         method: 'POST',
         body: JSON.stringify({
-          service_line: form.service_line,
+          service_line: 'shadow_support',
           billing_category: form.billing_category,
+          case_id: Number(form.case_id),
           start_date: form.start_date,
           end_date: form.end_date,
           reason: form.reason || null,
@@ -241,6 +261,7 @@ export function TherapistLeavePage() {
       setForm({
         service_line: 'shadow_support',
         billing_category: 'PAID',
+        case_id: '',
         start_date: '',
         end_date: '',
         reason: '',
@@ -340,6 +361,8 @@ export function TherapistLeavePage() {
     URL.revokeObjectURL(url)
   }
 
+  const homecareOnly = moduleProfile.homecare && !moduleProfile.shadow
+
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
@@ -355,26 +378,41 @@ export function TherapistLeavePage() {
         <button
           type="button"
           onClick={() => {
+            if (homecareOnly) return
             const next = !showForm
             setShowForm(next)
             if (!next) clearPickRange()
             setError('')
             setSuccess('')
           }}
+          disabled={homecareOnly}
           style={{
             padding: '8px 18px',
-            background: '#6366f1',
+            background: homecareOnly ? '#94a3b8' : '#6366f1',
             color: '#fff',
             border: 'none',
             borderRadius: 8,
             fontWeight: 600,
             fontSize: '0.875rem',
-            cursor: 'pointer',
+            cursor: homecareOnly ? 'not-allowed' : 'pointer',
           }}
         >
           {showForm ? 'Close form' : '+ Request leave'}
         </button>
       </div>
+
+      {homecareOnly ? (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem', color: '#1e40af' }}>
+          <p style={{ margin: 0, fontWeight: 600 }}>Homecare therapists</p>
+          <p style={{ margin: '6px 0 0' }}>
+            Paid leave applies to shadow support only. To mark time away from homecare visits,{' '}
+            <Link to="/therapist/sessions" style={{ fontWeight: 600 }}>
+              cancel affected sessions
+            </Link>{' '}
+            from your schedule instead.
+          </p>
+        </div>
+      ) : null}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -561,24 +599,27 @@ export function TherapistLeavePage() {
         ) : null}
       </div>
 
-      {showForm ? (
+      {showForm && moduleProfile.shadow ? (
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
-          <p style={{ fontWeight: 600, marginBottom: 16 }}>New leave request</p>
+          <p style={{ fontWeight: 600, marginBottom: 16 }}>New shadow support leave</p>
           <form onSubmit={submitLeave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-              Service line
+              Shadow case (required)
               <select
-                value={form.service_line}
-                onChange={(e) => setForm({ ...form, service_line: e.target.value })}
+                required
+                value={form.case_id}
+                onChange={(e) => setForm({ ...form, case_id: e.target.value })}
                 style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
               >
-                {SERVICE_LINES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
+                <option value="">Select case…</option>
+                {shadowCases.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {[c.child_name || c.child?.full_name, c.case_code].filter(Boolean).join(' · ')}
                   </option>
                 ))}
               </select>
             </label>
+            <input type="hidden" value="shadow_support" readOnly />
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
               Category
               <select
@@ -601,9 +642,9 @@ export function TherapistLeavePage() {
                   : ''}
               </p>
             ) : null}
-            {form.service_line !== 'shadow_support' && form.billing_category === 'PAID' ? (
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#b45309' }}>
-                No paid leaves for this service line — choose unpaid or carry forward.
+            {form.billing_category === 'CARRY_FORWARD' ? (
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
+                Carry forward applies to shadow support paid leave policy only.
               </p>
             ) : null}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

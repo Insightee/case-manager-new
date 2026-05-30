@@ -18,7 +18,9 @@ import {
   AdminTaskCard,
   AdminToolbar,
   StatusBadge,
+  CopyLinkButton,
 } from './ui/index.js'
+import { accountStatusLabel, accountStatusTone, clientAccountStatus } from '../../lib/accountStatus.js'
 
 export function AdminPeoplePage() {
   const { can, user, isViewOnly } = useAuth()
@@ -167,11 +169,6 @@ export function AdminPeoplePage() {
     }
   }
 
-  function copyLink(url) {
-    navigator.clipboard?.writeText(url)
-    setSuccess('Link copied to clipboard')
-  }
-
   const canCreateCase = can('case.create')
 
   function clientCases(f) {
@@ -180,21 +177,12 @@ export function AdminPeoplePage() {
   }
 
   function clientStatusBadges(f) {
-    const badges = []
-    if (!f.hasParent && !f.pendingInvite) {
-      badges.push(
-        <span key="no-parent" className="admin-chip">
-          No parent
-        </span>,
-      )
-    }
-    if (f.pendingInvite) {
-      badges.push(
-        <span key="pending" className="admin-chip">
-          Invite pending
-        </span>,
-      )
-    }
+    const status = clientAccountStatus(f)
+    const badges = [
+      <StatusBadge key="status" tone={accountStatusTone(status)}>
+        {status}
+      </StatusBadge>,
+    ]
     const cases = clientCases(f)
     if (cases.length) {
       badges.push(
@@ -280,11 +268,7 @@ export function AdminPeoplePage() {
       {success ? <p className="admin-alert admin-alert--success">{success}</p> : null}
       {inviteUrl ? (
         <p className="admin-alert" style={{ wordBreak: 'break-all', fontSize: '0.875rem' }}>
-          Invite link:{' '}
-          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => copyLink(inviteUrl)}>
-            Copy
-          </button>{' '}
-          {inviteUrl}
+          Invite link: <CopyLinkButton url={inviteUrl} label="Copy" copiedLabel="Copied" /> {inviteUrl}
         </p>
       ) : null}
 
@@ -399,6 +383,7 @@ export function AdminPeoplePage() {
                               <th>Email</th>
                               <th>Phone</th>
                               <th>Profile</th>
+                              <th>Status</th>
                               <th>Primary CM</th>
                               <th>Services</th>
                             </tr>
@@ -429,6 +414,11 @@ export function AdminPeoplePage() {
                                       </Link>
                                     )}
                                   </td>
+                                  <td>
+                                    <StatusBadge tone={accountStatusTone(accountStatusLabel(u))}>
+                                      {accountStatusLabel(u)}
+                                    </StatusBadge>
+                                  </td>
                                   <td>{prof?.supervisor_name || '—'}</td>
                                   <td>{(prof?.services_offered || u.module_assignments || []).join(', ') || '—'}</td>
                                 </tr>
@@ -453,11 +443,16 @@ export function AdminPeoplePage() {
                                 }
                                 meta={[u.email, u.phone].filter(Boolean).join(' · ')}
                                 badges={
-                                  prof ? (
-                                    <StatusBadge status={prof.status} />
-                                  ) : (
-                                    <span className="admin-muted">No profile</span>
-                                  )
+                                  <>
+                                    <StatusBadge tone={accountStatusTone(accountStatusLabel(u))}>
+                                      {accountStatusLabel(u)}
+                                    </StatusBadge>
+                                    {prof ? (
+                                      <StatusBadge status={prof.status} />
+                                    ) : (
+                                      <span className="admin-muted">No profile</span>
+                                    )}
+                                  </>
                                 }
                                 actions={
                                   <Link to={profileHref} className="admin-btn admin-btn--primary admin-btn--sm">
@@ -489,8 +484,10 @@ export function AdminPeoplePage() {
                 canManageUsers={canManageUsers}
                 isHrPortal={isHrPortal}
                 pendingInvites={parentPendingInvites}
-                onCopyLink={copyLink}
                 onAddFamily={() => setShowFamilyWizard(true)}
+                onSuccess={setSuccess}
+                onError={setError}
+                onReload={load}
               />
               <AdminPanel
                 title={`Clients (${filteredClients.length})`}
@@ -550,7 +547,9 @@ export function AdminPeoplePage() {
                                   <td>{primary?.parentEmail || '—'}</td>
                                   <td>{primary?.parentPhone || '—'}</td>
                                   <td>
-                                    <div className="admin-chip-row admin-chip-row--wrap">{clientStatusBadges(f)}</div>
+                                    <StatusBadge tone={accountStatusTone(clientAccountStatus(f))}>
+                                      {clientAccountStatus(f)}
+                                    </StatusBadge>
                                   </td>
                                   <td>{renderClientCaseLinks(f)}</td>
                                   <td>{clientRowActions(f)}</td>

@@ -59,6 +59,8 @@ class SessionRead(BaseModel):
     actual_start_at: Optional[datetime] = None
     actual_end_at: Optional[datetime] = None
     auto_ended: bool = False
+    auto_end_reason: Optional[str] = None
+    auto_end_label: Optional[str] = None
     slot_duration_minutes: Optional[int] = None
     mode: SessionMode
     status: SessionStatus

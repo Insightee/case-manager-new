@@ -44,3 +44,9 @@ def test_parent_can_create_incident():
     data = r.json()
     assert data["ticket_code"].startswith("INC-")
     assert data.get("confirmation")
+
+    listed = client.get("/api/v1/parent/incidents", headers=_headers(token))
+    assert listed.status_code == 200, listed.text
+    rows = listed.json()
+    assert any(row["ticket_code"] == data["ticket_code"] for row in rows)
+    assert rows[0]["status"] == "REPORTED"

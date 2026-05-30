@@ -27,6 +27,7 @@ class LeaveCreate(BaseModel):
     leave_type: Optional[LeaveType] = None
     service_line: str = Field(default="shadow_support", min_length=2, max_length=64)
     billing_category: Optional[LeaveBillingCategory] = None
+    case_id: Optional[int] = None
     start_date: date
     end_date: date
     reason: Optional[str] = None
@@ -59,6 +60,7 @@ def _serialise(leave: TherapistLeave, db: Session) -> dict:
         "therapist_name": _user_name(db, leave.therapist_user_id),
         "leave_type": leave.leave_type.value,
         "service_line": leave.service_line,
+        "case_id": leave.case_id,
         "billing_category": leave.billing_category.value if leave.billing_category else None,
         "start_date": leave.start_date.isoformat(),
         "end_date": leave.end_date.isoformat(),
@@ -216,6 +218,24 @@ def create_leave(
             )
 
     service_line = payload.service_line.strip().lower()
+    if not policy.is_staff_leave_user(user) and service_line != "shadow_support":
+        raise HTTPException(
+            status_code=400,
+            detail="Leave requests are only available for shadow support. For homecare, cancel affected sessions instead.",
+        )
+
+    if payload.case_id is not None:
+        from app.models.case import Case
+        from app.core.permissions import get_active_assignment
+
+        case = db.get(Case, payload.case_id)
+        if not case:
+            raise HTTPException(status_code=400, detail="Case not found")
+        if (case.product_module or "").strip().lower() != "shadow_support":
+            raise HTTPException(status_code=400, detail="Leave case must be a shadow support case")
+        if not get_active_assignment(db, payload.case_id, user.id):
+            raise HTTPException(status_code=400, detail="You are not assigned to this case")
+
     try:
         billing = policy.resolve_billing_category(
             db,
@@ -235,6 +255,7 @@ def create_leave(
         leave_type=leave_type,
         service_line=service_line,
         billing_category=billing,
+        case_id=payload.case_id,
         start_date=payload.start_date,
         end_date=payload.end_date,
         reason=payload.reason,

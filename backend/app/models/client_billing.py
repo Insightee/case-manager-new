@@ -134,6 +134,8 @@ class ClientInvoiceLine(Base):
     unit_rate_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     finance_note: Mapped[Optional[str]] = mapped_column(Text)
     therapist_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True)
+    approval_status: Mapped[Optional[str]] = mapped_column(String(32))
+    approved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
 
     invoice = relationship("ClientInvoice", back_populates="lines")
 

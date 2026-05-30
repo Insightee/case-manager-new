@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import csv
+import io
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -265,3 +268,140 @@ def update_payment(
     log_audit(db, actor_user_id=user.id, action="payment_override", entity_type="invoice", entity_id=invoice.id, old_value=old, new_value=payload.model_dump(), **meta)
     db.commit()
     return {"status": "updated"}
+
+
+class ManualLineCreate(BaseModel):
+    description: str = Field(..., min_length=1, max_length=512)
+    amount_inr: float = Field(..., gt=0)
+    pay_share_inr: float = Field(..., gt=0)
+    case_id: Optional[int] = None
+    quantity: float = Field(1, gt=0)
+
+
+@router.get("/preview/export.csv")
+def export_preview_csv(
+    month: str = Query(..., description="YYYY-MM or Mon YYYY"),
+    user: User = Depends(require_permission("invoice.generate")),
+    db: Session = Depends(get_db),
+):
+    try:
+        content = invoice_billing_service.export_month_preview_csv(db, user.id, month)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="invoice-preview-{month}.csv"'},
+    )
+
+
+@router.get("/{invoice_id}/export.csv")
+def export_invoice_csv(
+    invoice_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if user_has_permission(user, "invoice.generate") and not user_has_permission(user, "invoice.approve"):
+        if invoice.therapist_user_id != user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif not user_has_permission(user, "invoice.approve") and not user_has_permission(user, "invoice.generate"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    try:
+        content = invoice_billing_service.export_invoice_csv(db, invoice_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="invoice-{invoice_id}.csv"'},
+    )
+
+
+@router.get("/{invoice_id}/manual-lines")
+def list_manual_lines(
+    invoice_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if invoice.therapist_user_id != user.id and not user_has_permission(user, "invoice.approve"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return invoice_billing_service.list_manual_lines(db, invoice_id)
+
+
+@router.post("/{invoice_id}/manual-lines", status_code=status.HTTP_201_CREATED)
+def create_manual_line(
+    invoice_id: int,
+    payload: ManualLineCreate,
+    request: Request,
+    user: User = Depends(require_permission("invoice.generate")),
+    db: Session = Depends(get_db),
+):
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if invoice.therapist_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        line = invoice_billing_service.create_manual_line(
+            db,
+            invoice,
+            added_by_user_id=user.id,
+            description=payload.description,
+            amount_inr=payload.amount_inr,
+            pay_share_inr=payload.pay_share_inr,
+            case_id=payload.case_id,
+            quantity=payload.quantity,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="create", entity_type="invoice_manual_line", entity_id=line.id, **meta)
+    db.commit()
+    db.refresh(line)
+    return invoice_billing_service._manual_line_dict(line)
+
+
+@router.post("/{invoice_id}/manual-lines/{line_id}/approve")
+def approve_manual_line(
+    invoice_id: int,
+    line_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.models.invoice_manual_line import InvoiceManualLine
+
+    line = db.get(InvoiceManualLine, line_id)
+    if not line or line.invoice_id != invoice_id:
+        raise HTTPException(status_code=404, detail="Manual line not found")
+    invoice_billing_service.review_manual_line(db, line, approver_user_id=user.id, approve=True)
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="approve", entity_type="invoice_manual_line", entity_id=line.id, **meta)
+    db.commit()
+    return invoice_billing_service._manual_line_dict(line)
+
+
+@router.post("/{invoice_id}/manual-lines/{line_id}/reject")
+def reject_manual_line(
+    invoice_id: int,
+    line_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.models.invoice_manual_line import InvoiceManualLine
+
+    line = db.get(InvoiceManualLine, line_id)
+    if not line or line.invoice_id != invoice_id:
+        raise HTTPException(status_code=404, detail="Manual line not found")
+    invoice_billing_service.review_manual_line(db, line, approver_user_id=user.id, approve=False)
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="reject", entity_type="invoice_manual_line", entity_id=line.id, **meta)
+    db.commit()
+    return invoice_billing_service._manual_line_dict(line)

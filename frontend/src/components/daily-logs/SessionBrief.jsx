@@ -34,6 +34,11 @@ export function SessionBrief({ session, childName, caseCode }) {
   return (
     <section className="ic-session-brief" aria-label="Session summary">
       <p className="ic-session-brief__eyebrow">Session ended</p>
+      {session.auto_end_label ? (
+        <p className="ic-session-brief__auto-end" style={{ margin: '0 0 8px', fontSize: '0.8125rem', fontWeight: 600, color: '#b45309' }}>
+          {session.auto_end_label}
+        </p>
+      ) : null}
       <h3 className="ic-session-brief__title">{display}</h3>
       {code ? <p className="ic-session-brief__code">{code}</p> : null}
       <dl className="ic-session-brief__grid">

@@ -14,6 +14,7 @@ from app.models.case import BillingType, Case, CompensationMode
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine, SessionLineSource, SessionLineType
+from app.models.invoice_manual_line import InvoiceManualLine, ManualLineStatus
 from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
@@ -262,6 +263,14 @@ def create_late_session(
 
     if end_time <= start_time:
         raise ValueError("End time must be after start time")
+
+    from datetime import datetime, timezone
+
+    from app.services import session_service
+
+    start_dt = datetime.combine(session_date, start_time, tzinfo=timezone.utc)
+    end_dt = datetime.combine(session_date, end_time, tzinfo=timezone.utc)
+    session_service.validate_manual_duration(start_dt, end_dt)
 
     case = db.scalars(select(Case).where(Case.id == case_id).options(selectinload(Case.child))).first()
     if not case:
@@ -713,6 +722,7 @@ def invoice_breakdown(db: Session, invoice_id: int) -> dict | None:
         .where(Invoice.id == invoice_id)
         .options(
             selectinload(Invoice.case_lines).selectinload(InvoiceCaseLine.session_lines),
+            selectinload(Invoice.manual_lines),
         )
     ).first()
     if not invoice:
@@ -804,4 +814,221 @@ def invoice_breakdown(db: Session, invoice_id: int) -> dict | None:
         "notes": invoice.notes,
         "reviewer_comment": invoice.reviewer_comment,
         "cases": cases,
+        "manual_lines": [_manual_line_dict(ml) for ml in list(invoice.manual_lines or [])],
     }
+
+
+def _manual_line_dict(line: InvoiceManualLine) -> dict:
+    status = line.status.value if hasattr(line.status, "value") else str(line.status)
+    return {
+        "id": line.id,
+        "invoice_id": line.invoice_id,
+        "case_id": line.case_id,
+        "description": line.description,
+        "quantity": float(line.quantity),
+        "amount_inr": float(line.amount_inr),
+        "pay_share_inr": float(line.pay_share_inr),
+        "status": status,
+        "added_by_user_id": line.added_by_user_id,
+        "approved_by_user_id": line.approved_by_user_id,
+    }
+
+
+def list_manual_lines(db: Session, invoice_id: int) -> list[dict]:
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise ValueError("Invoice not found")
+    return [_manual_line_dict(ml) for ml in list(invoice.manual_lines or [])]
+
+
+def create_manual_line(
+    db: Session,
+    invoice: Invoice,
+    *,
+    added_by_user_id: int,
+    description: str,
+    amount_inr: float,
+    pay_share_inr: float,
+    case_id: int | None = None,
+    quantity: float = 1,
+) -> InvoiceManualLine:
+    if invoice.status not in (InvoiceStatus.DRAFT, InvoiceStatus.IN_REVIEW):
+        raise ValueError("Manual lines can only be added to draft or in-review invoices")
+    if case_id is not None:
+        case = db.get(Case, case_id)
+        if not case:
+            raise ValueError("Case not found")
+    line = InvoiceManualLine(
+        invoice_id=invoice.id,
+        case_id=case_id,
+        description=description.strip(),
+        quantity=quantity,
+        amount_inr=amount_inr,
+        pay_share_inr=pay_share_inr,
+        status=ManualLineStatus.PENDING,
+        added_by_user_id=added_by_user_id,
+    )
+    db.add(line)
+    db.flush()
+    return line
+
+
+def review_manual_line(
+    db: Session,
+    line: InvoiceManualLine,
+    *,
+    approver_user_id: int,
+    approve: bool,
+) -> InvoiceManualLine:
+    line.status = ManualLineStatus.APPROVED if approve else ManualLineStatus.REJECTED
+    line.approved_by_user_id = approver_user_id
+    db.flush()
+    return line
+
+
+def approved_manual_lines_total(invoice: Invoice) -> float:
+    total = 0.0
+    for ml in invoice.manual_lines or []:
+        if ml.status == ManualLineStatus.APPROVED:
+            total += float(ml.pay_share_inr)
+    return round(total, 2)
+
+
+def export_invoice_csv(db: Session, invoice_id: int) -> str:
+    import csv
+    import io
+
+    data = invoice_breakdown(db, invoice_id)
+    if not data:
+        raise ValueError("Invoice not found")
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "date",
+            "case_code",
+            "child_name",
+            "duration_minutes",
+            "line_type",
+            "amount_inr",
+            "included",
+            "approval_status",
+            "late_addition",
+            "auto_ended",
+            "source",
+        ]
+    )
+    for case_group in data.get("cases", []):
+        child = case_group.get("child_name") or ""
+        code = case_group.get("case_code") or ""
+        for sl in case_group.get("session_lines", []):
+            flags = sl.get("flags") or {}
+            writer.writerow(
+                [
+                    sl.get("session_date", ""),
+                    code,
+                    child,
+                    sl.get("duration_minutes", ""),
+                    sl.get("line_type", ""),
+                    sl.get("amount_inr", ""),
+                    sl.get("included", ""),
+                    sl.get("approval_status", ""),
+                    flags.get("added_late", False),
+                    "",
+                    sl.get("source", ""),
+                ]
+            )
+        for sl in case_group.get("pending_late_lines", []):
+            flags = sl.get("flags") or {}
+            writer.writerow(
+                [
+                    sl.get("session_date", ""),
+                    code,
+                    child,
+                    sl.get("duration_minutes", ""),
+                    sl.get("line_type", ""),
+                    sl.get("amount_inr", ""),
+                    False,
+                    sl.get("approval_status", "PENDING"),
+                    True,
+                    "",
+                    "forgotten",
+                ]
+            )
+    for ml in data.get("manual_lines", []):
+        if ml.get("status") != "APPROVED":
+            continue
+        writer.writerow(
+            [
+                "",
+                "",
+                "",
+                "",
+                "MANUAL",
+                ml.get("pay_share_inr", ""),
+                True,
+                ml.get("status", ""),
+                False,
+                "",
+                ml.get("description", ""),
+            ]
+        )
+    return output.getvalue()
+
+
+def export_month_preview_csv(db: Session, therapist_user_id: int, month: str) -> str:
+    import csv
+    import io
+
+    preview = build_month_preview(db, therapist_user_id, month)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "date",
+            "case_code",
+            "child_name",
+            "duration_minutes",
+            "line_type",
+            "amount_inr",
+            "included",
+            "approval_status",
+            "late_addition",
+            "source",
+        ]
+    )
+    for case_group in preview.get("cases", []):
+        child = case_group.get("child_name") or ""
+        code = case_group.get("case_code") or ""
+        for sl in case_group.get("session_lines", []):
+            flags = sl.get("flags") or {}
+            writer.writerow(
+                [
+                    sl.get("session_date", ""),
+                    code,
+                    child,
+                    sl.get("duration_minutes", ""),
+                    sl.get("line_type", ""),
+                    sl.get("amount_inr", ""),
+                    sl.get("included", ""),
+                    sl.get("approval_status", ""),
+                    flags.get("added_late", False),
+                    sl.get("source", ""),
+                ]
+            )
+        for sl in case_group.get("pending_late_lines", []):
+            writer.writerow(
+                [
+                    sl.get("session_date", ""),
+                    code,
+                    child,
+                    sl.get("duration_minutes", ""),
+                    sl.get("line_type", ""),
+                    sl.get("amount_inr", ""),
+                    False,
+                    sl.get("approval_status", "PENDING"),
+                    True,
+                    "forgotten",
+                ]
+            )
+    return output.getvalue()

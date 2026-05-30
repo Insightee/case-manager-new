@@ -38,6 +38,7 @@ from app.services import (
     address_service,
     appointment_booking_service as appt_booking,
     appointment_policy,
+    case_service,
     notification_service,
     parent_home_service,
     parent_reports_service,

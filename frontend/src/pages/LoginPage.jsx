@@ -69,10 +69,20 @@ function flattenDemos(portal) {
 function formatLoginError(err) {
   const msg = err?.message || 'Sign-in failed.'
   if (/invalid credentials/i.test(msg)) {
-    return `${msg} For local dev, run: cd backend && python3 -m app.seed.demo_seed (resets demo123 passwords).`
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
+    const localDev = hostname === 'localhost' || hostname === '127.0.0.1'
+    if (localDev) {
+      return `${msg} For local dev, run: cd backend && python3 -m app.seed.demo_seed (resets demo123 passwords).`
+    }
+    return `${msg} Demo accounts use password demo123 — pick one from the list below (Staff tab for admin). Invited personal emails must open the invite link and set a password first; demo123 does not apply to those accounts.`
   }
   if (/timed out/i.test(msg)) {
-    return `${msg} Ensure uvicorn is running on port 8000, or use an empty VITE_API_URL with npm run dev.`
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
+    const localDev = hostname === 'localhost' || hostname === '127.0.0.1'
+    if (localDev) {
+      return `${msg} Ensure uvicorn is running on port 8000, or use an empty VITE_API_URL with npm run dev.`
+    }
+    return `${msg} The API may be unreachable — check your connection or contact your administrator.`
   }
   return msg
 }

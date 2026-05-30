@@ -115,6 +115,11 @@ export function ClientIncidentPage({ cases = [] }) {
           )
           setShowForm(false)
           setExpandedId(created.id)
+          setIncidents((prev) => {
+            const exists = prev.some((row) => row.id === created.id)
+            if (exists) return prev
+            return [{ ...created }, ...prev]
+          })
           await loadIncidents()
           try {
             setExpandedDetail(await apiFetch(`/api/v1/parent/incidents/${created.id}`))
@@ -127,6 +132,13 @@ export function ClientIncidentPage({ cases = [] }) {
       setFormSuccess(created.confirmation || 'Your report has been submitted.')
       setShowForm(false)
       setExpandedId(created.id)
+      setIncidents((prev) => {
+        const exists = prev.some((row) => row.id === created.id)
+        if (exists) {
+          return prev.map((row) => (row.id === created.id ? { ...row, ...created } : row))
+        }
+        return [{ ...created }, ...prev]
+      })
       await loadIncidents()
       setExpandedDetail(await apiFetch(`/api/v1/parent/incidents/${created.id}`))
     } catch (err) {

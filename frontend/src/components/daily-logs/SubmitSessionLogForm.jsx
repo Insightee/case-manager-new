@@ -246,7 +246,6 @@ export function SubmitSessionLogForm({
 
   return (
     <div className={`ic-session-log-panel${required ? ' ic-session-log-panel--required' : ''}`}>
-      {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}
       <header className="ic-session-log-panel__head">
         <div>
           <p className="ic-session-log-panel__eyebrow">
@@ -364,6 +363,8 @@ export function SubmitSessionLogForm({
             />
           </label>
         ) : null}
+
+        {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}
 
         <div className="ic-session-log-form__actions">
           <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>

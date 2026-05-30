@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.tests.session_helpers import backdate_in_progress_session
 
 client = TestClient(app)
 
@@ -22,7 +23,9 @@ def _complete_session_with_log(headers):
         pytest.skip("No scheduled sessions")
     sid = upcoming[0]["id"]
     client.post(f"/api/v1/sessions/{sid}/start", headers=headers)
-    client.post(f"/api/v1/sessions/{sid}/end", headers=headers)
+    backdate_in_progress_session(sid)
+    end = client.post(f"/api/v1/sessions/{sid}/end", headers=headers)
+    assert end.status_code == 200, end.text
     payload = {
         "session_id": sid,
         "attendance_status": "PRESENT",

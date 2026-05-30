@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
-import { AdminPanel } from './ui/index.js'
+import { AdminPanel, CopyLinkButton, AdminInviteRowActions } from './ui/index.js'
 
 function defaultTherapistServices(roleDefaults) {
   const fromRole = roleDefaults?.THERAPIST
@@ -68,7 +68,6 @@ export function AdminTherapistOnboardPanel({
   const [bulkPreview, setBulkPreview] = useState(null)
   const [bulkPhase, setBulkPhase] = useState('edit')
   const [lastResult, setLastResult] = useState(null)
-  const [resendingId, setResendingId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -200,26 +199,6 @@ export function AdminTherapistOnboardPanel({
     setBulkText('')
   }
 
-  function copyLink(url) {
-    navigator.clipboard?.writeText(url)
-    onSuccess('Link copied')
-  }
-
-  async function resendInviteEmail(inviteId, email) {
-    onError('')
-    setResendingId(inviteId)
-    try {
-      const res = await apiFetch(`/api/v1/admin/invites/${inviteId}/resend-email`, { method: 'POST' })
-      const msg = inviteEmailMessage(email, res.email_delivery)
-      if (res.email_delivery === 'skipped_no_smtp') onError(msg)
-      else onSuccess(msg)
-    } catch (err) {
-      onError(err.message || 'Could not resend invite email')
-    } finally {
-      setResendingId(null)
-    }
-  }
-
   return (
     <>
       <div className="admin-btn-group" style={{ marginBottom: 12 }}>
@@ -244,11 +223,7 @@ export function AdminTherapistOnboardPanel({
         <p className="admin-alert" style={{ wordBreak: 'break-all', fontSize: '0.875rem' }}>
           {lastResult.invite_url ? (
             <>
-              Invite:{' '}
-              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => copyLink(lastResult.invite_url)}>
-                Copy link
-              </button>{' '}
-              {lastResult.invite_url}
+              Invite: <CopyLinkButton url={lastResult.invite_url} /> {lastResult.invite_url}
             </>
           ) : null}
           {lastResult.temporary_password ? (
@@ -273,23 +248,12 @@ export function AdminTherapistOnboardPanel({
                   <td>{inv.email}</td>
                   <td>{new Date(inv.expires_at).toLocaleDateString()}</td>
                   <td>
-                    <div className="admin-btn-group">
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--ghost admin-btn--sm"
-                        onClick={() => copyLink(inv.invite_url)}
-                      >
-                        Copy link
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--ghost admin-btn--sm"
-                        disabled={resendingId === inv.id}
-                        onClick={() => resendInviteEmail(inv.id, inv.email)}
-                      >
-                        {resendingId === inv.id ? 'Sending…' : 'Resend email'}
-                      </button>
-                    </div>
+                    <AdminInviteRowActions
+                      invite={inv}
+                      onSuccess={onSuccess}
+                      onError={onError}
+                      onReload={onReload}
+                    />
                   </td>
                 </tr>
               ))}
@@ -567,11 +531,7 @@ export function AdminTherapistOnboardPanel({
                         <td>{r.success ? 'OK' : r.error}</td>
                         <td>
                           {r.user_id ? `User #${r.user_id}` : null}
-                          {r.invite_url ? (
-                            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => copyLink(r.invite_url)}>
-                              Copy link
-                            </button>
-                          ) : null}
+                          {r.invite_url ? <CopyLinkButton url={r.invite_url} /> : null}
                           {r.temporary_password ? <span className="admin-muted"> pwd: {r.temporary_password}</span> : null}
                         </td>
                       </tr>

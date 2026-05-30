@@ -41,3 +41,4 @@ class Invoice(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     case_lines = relationship("InvoiceCaseLine", back_populates="invoice", cascade="all, delete-orphan")
+    manual_lines = relationship("InvoiceManualLine", back_populates="invoice", cascade="all, delete-orphan")

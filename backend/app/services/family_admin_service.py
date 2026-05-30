@@ -31,6 +31,8 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
             "parentName": u.full_name,
             "parentEmail": u.email,
             "parentPhone": u.phone,
+            "parentIsActive": bool(u.is_active),
+            "parentLoginReady": bool(u.is_active and u.password_hash),
         }
         seen_child: set[int] = set()
         for c in pg.children:
@@ -59,6 +61,8 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
         if inv.linked_child_id and inv.linked_child_id not in pending_by_child:
             pending_by_child[inv.linked_child_id] = {
                 "pendingEmail": inv.email,
+                "inviteId": inv.id,
+                "inviteUrl": f"{settings.frontend_url.rstrip('/')}/invite/{inv.token}",
                 "inviteExpiresAt": inv.expires_at.isoformat() if inv.expires_at else None,
             }
 

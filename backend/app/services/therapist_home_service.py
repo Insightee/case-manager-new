@@ -6,6 +6,7 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.session_rules import auto_end_label as auto_end_label_for_reason
 from app.core.timezone import ensure_utc_aware
 from app.models.case import Case
 from app.models.report import MonthlyReport, ReportStatus
@@ -62,6 +63,8 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         actual_start_at=ensure_utc_aware(s.actual_start_at),
         actual_end_at=ensure_utc_aware(s.actual_end_at),
         auto_ended=bool(s.auto_ended),
+        auto_end_reason=getattr(s, "auto_end_reason", None),
+        auto_end_label=auto_end_label_for_reason(getattr(s, "auto_end_reason", None)),
         slot_duration_minutes=s.slot_duration_minutes,
         mode=s.mode,
         status=s.status,

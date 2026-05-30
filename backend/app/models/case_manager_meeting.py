@@ -51,6 +51,8 @@ class CaseManagerMeeting(Base):
     status: Mapped[MeetingStatus] = mapped_column(
         Enum(MeetingStatus), default=MeetingStatus.SCHEDULED, nullable=False, index=True
     )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 

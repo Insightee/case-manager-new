@@ -1,7 +1,9 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAdminCmHome } from '../../hooks/useAdminCmHome.js'
+import { apiFetch } from '../../lib/apiClient.js'
+import { formatApiDateIN } from '../../lib/datetime.js'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminSearchInput, AdminStatCard, StatusBadge } from './ui/index.js'
 import './admin-cm-home.css'
 
@@ -166,7 +168,14 @@ export function AdminCaseManagerHomePage() {
   const { data, isLoading, error, refetch } = useAdminCmHome()
   const [caseloadFilter, setCaseloadFilter] = useState('needs_action')
   const [search, setSearch] = useState('')
+  const [pendingMeetings, setPendingMeetings] = useState([])
   const caseloadPanelRef = useRef(null)
+
+  useEffect(() => {
+    apiFetch('/api/v1/cm-meetings/pending-completion')
+      .then((rows) => setPendingMeetings(Array.isArray(rows) ? rows : []))
+      .catch(() => setPendingMeetings([]))
+  }, [])
 
   function selectCaseloadFilter(next) {
     setCaseloadFilter(next)
@@ -308,6 +317,37 @@ export function AdminCaseManagerHomePage() {
               </Link>
             </div>
           </section>
+
+          {pendingMeetings.length > 0 ? (
+            <AdminPanel
+              title="Meetings pending completion"
+              subtitle="Scheduled meetings that passed without completion notes"
+              padded={false}
+            >
+              <ul className="admin-cm-queue-list" style={{ margin: 0, padding: '8px 16px 16px', listStyle: 'none' }}>
+                {pendingMeetings.slice(0, 8).map((m) => (
+                  <li key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 600 }}>
+                          {m.title || m.child_name || m.case_code || 'CM meeting'}
+                        </p>
+                        <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: '#64748b' }}>
+                          {formatApiDateIN(m.scheduled_date?.slice(0, 10))}
+                          {m.scheduled_time ? ` · ${m.scheduled_time}` : ''}
+                          {' · '}
+                          <StatusBadge tone="amber">Overdue</StatusBadge>
+                        </p>
+                      </div>
+                      <Link to="/admin/cm-meetings" className="admin-btn admin-btn--secondary admin-btn--sm">
+                        Mark completed
+                      </Link>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </AdminPanel>
+          ) : null}
 
           {sectionIds.length > 0 ? (
             <div className="admin-cm-queues">

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { todayIsoIST } from '../../lib/datetime.js'
+import { formatApiDateIN } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
 
 const MODES = [
@@ -56,14 +57,7 @@ function formatDurationLabel(start, end) {
 }
 
 function formatDisplayDate(dateStr) {
-  if (!dateStr) return ''
-  const [y, m, d] = dateStr.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
+  return formatApiDateIN(dateStr) || dateStr || ''
 }
 
 const fieldStyle = {
@@ -110,6 +104,7 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
   })
   const [cases, setCases] = useState([])
   const [localError, setLocalError] = useState('')
+  const [selectedPresetMinutes, setSelectedPresetMinutes] = useState(null)
 
   useEffect(() => {
     apiFetch('/api/v1/cases?assigned=true&page_size=100')
@@ -142,6 +137,7 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
   const isToday = form.session_date === today
 
   function setStartTime(time) {
+    setSelectedPresetMinutes(null)
     setForm((f) => ({ ...f, start_time: time }))
   }
 
@@ -150,6 +146,7 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
     const start = combineDateAndTime(form.session_date, form.start_time)
     if (!start) return
     const end = new Date(start.getTime() + minutes * 60000)
+    setSelectedPresetMinutes(minutes)
     setForm((f) => ({ ...f, end_time: toTimeInput(end) }))
   }
 
@@ -164,6 +161,11 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
     }
     if (end <= start) {
       setLocalError('End time must be after start time.')
+      return
+    }
+    const durationMins = Math.round((end - start) / 60000)
+    if (durationMins < 5) {
+      setLocalError('Session must be at least 5 minutes to be recorded.')
       return
     }
     if (form.session_date > today) {
@@ -393,25 +395,32 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>Duration:</span>
-          {DURATION_PRESETS.map((p) => (
+          {DURATION_PRESETS.map((p) => {
+            const chipsDisabled = !form.start_time
+            const active = selectedPresetMinutes === p.minutes
+            return (
             <button
               key={p.minutes}
               type="button"
+              disabled={chipsDisabled}
+              title={chipsDisabled ? 'Set a start time first' : undefined}
               onClick={() => applyDurationPreset(p.minutes)}
               style={{
                 padding: '4px 10px',
                 borderRadius: 20,
-                border: '1px solid #e2e8f0',
-                background: '#fff',
+                border: active ? '2px solid #6366f1' : '1px solid #e2e8f0',
+                background: active ? '#eef2ff' : chipsDisabled ? '#f8fafc' : '#fff',
                 fontSize: '0.75rem',
                 fontWeight: 600,
-                color: '#475569',
-                cursor: 'pointer',
+                color: active ? '#4338ca' : chipsDisabled ? '#94a3b8' : '#475569',
+                cursor: chipsDisabled ? 'not-allowed' : 'pointer',
+                opacity: chipsDisabled ? 0.7 : 1,
               }}
             >
               {p.label}
             </button>
-          ))}
+            )
+          })}
         </div>
 
         {durationLabel ? (

@@ -1,13 +1,15 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { AdminPanel } from './ui/index.js'
+import { AdminInviteRowActions, AdminPanel } from './ui/index.js'
 
 export function AdminClientOnboardPanel({
   canCreateCase,
   canManageUsers,
   isHrPortal,
   pendingInvites,
-  onCopyLink,
   onAddFamily,
+  onSuccess,
+  onError,
+  onReload,
 }) {
   const navigate = useNavigate()
 
@@ -57,13 +59,12 @@ export function AdminClientOnboardPanel({
                     <td>{inv.email}</td>
                     <td>{new Date(inv.expires_at).toLocaleDateString()}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--ghost admin-btn--sm"
-                        onClick={() => onCopyLink(inv.invite_url)}
-                      >
-                        Copy link
-                      </button>
+                      <AdminInviteRowActions
+                        invite={inv}
+                        onSuccess={onSuccess}
+                        onError={onError}
+                        onReload={onReload}
+                      />
                     </td>
                   </tr>
                 ))}

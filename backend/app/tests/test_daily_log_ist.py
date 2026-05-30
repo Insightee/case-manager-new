@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.core.timezone import today_ist
 from app.main import app
 from app.seed.demo_seed import run as seed_run
+from app.tests.session_helpers import backdate_in_progress_session
 
 client = TestClient(app)
 
@@ -33,6 +34,7 @@ def _end_upcoming_session(headers) -> dict:
         pytest.skip("No scheduled sessions")
     sid = upcoming[0]["id"]
     client.post(f"/api/v1/sessions/{sid}/start", headers=headers)
+    backdate_in_progress_session(sid)
     end = client.post(f"/api/v1/sessions/{sid}/end", headers=headers)
     assert end.status_code == 200
     return end.json()

@@ -8,12 +8,13 @@ import {
   AdminTaskCard,
   AdminToolbar,
   StatusBadge,
+  CopyLinkButton,
+  AdminInviteRowActions,
 } from './ui/index.js'
 import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
+import { accountStatusLabel, accountStatusTone } from '../../lib/accountStatus.js'
 import {
-  formatInviteStatus,
-  formatLoginReady,
   provisionActivateSuccess,
   provisionInviteFailure,
   provisionInviteSuccess,
@@ -57,7 +58,6 @@ export function AdminStaffManageSection({
   const [editViewOnly, setEditViewOnly] = useState(false)
   const [editRoles, setEditRoles] = useState([])
   const [submitting, setSubmitting] = useState(false)
-  const [resendingId, setResendingId] = useState(null)
   const [rowBusy, setRowBusy] = useState(null)
   const [lastProvision, setLastProvision] = useState(null)
 
@@ -206,15 +206,8 @@ export function AdminStaffManageSection({
     }
   }
 
-  function loginMetaLine(u) {
-    const parts = [
-      formatLoginReady(u.login_ready, u.is_active),
-      formatInviteStatus(u.invite_status),
-    ]
-    if (u.last_invite_sent_at) {
-      parts.push(`Last email ${new Date(u.last_invite_sent_at).toLocaleString()}`)
-    }
-    return parts.join(' · ')
+  function staffStatus(u) {
+    return accountStatusLabel(u)
   }
 
   function rowLoginActions(u) {
@@ -242,9 +235,7 @@ export function AdminStaffManageSection({
           {busyInvite ? 'Sending…' : u.invite_status === 'pending' ? 'Resend invite' : 'Invite to login'}
         </button>
         {link ? (
-          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => copyLink(link)}>
-            Copy login link
-          </button>
+          <CopyLinkButton url={link} label="Copy login link" />
         ) : null}
         {u.is_active ? (
           <button
@@ -281,31 +272,6 @@ export function AdminStaffManageSection({
       onSuccess?.('Access updated.')
     } catch (err) {
       onError?.(err.message || 'Could not update modules')
-    }
-  }
-
-  function copyLink(url) {
-    navigator.clipboard?.writeText(url)
-    onSuccess?.('Link copied to clipboard')
-  }
-
-  async function resendInviteEmail(inviteId, email) {
-    onError?.('')
-    setResendingId(inviteId)
-    try {
-      const res = await apiFetch(`/api/v1/admin/invites/${inviteId}/resend-email`, {
-        method: 'POST',
-      })
-      const msg = inviteEmailMessage(email, res.email_delivery)
-      if (res.email_delivery === 'skipped_no_smtp') {
-        onError?.(msg)
-      } else {
-        onSuccess?.(msg)
-      }
-    } catch (err) {
-      onError?.(err.message || 'Could not resend invite email')
-    } finally {
-      setResendingId(null)
     }
   }
 
@@ -417,13 +383,7 @@ export function AdminStaffManageSection({
         {inviteUrl ? (
           <div className="admin-alert" style={{ marginTop: 12, wordBreak: 'break-all', fontSize: '0.875rem' }}>
             <strong>Invite link:</strong>{' '}
-            <button
-              type="button"
-              className="admin-btn admin-btn--ghost admin-btn--sm"
-              onClick={() => copyLink(inviteUrl)}
-            >
-              Copy
-            </button>{' '}
+            <CopyLinkButton url={inviteUrl} label="Copy" copiedLabel="Copied" />{' '}
             {inviteUrl}
           </div>
         ) : null}
@@ -440,25 +400,12 @@ export function AdminStaffManageSection({
                     {inv.role_name?.replace(/_/g, ' ')} · Expires {new Date(inv.expires_at).toLocaleDateString()}
                   </p>
                 </div>
-                <div className="admin-btn-group">
-                  {inv.invite_url ? (
-                    <button
-                      type="button"
-                      className="admin-btn admin-btn--ghost admin-btn--sm"
-                      onClick={() => copyLink(inv.invite_url)}
-                    >
-                      Copy link
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="admin-btn admin-btn--ghost admin-btn--sm"
-                    disabled={resendingId === inv.id}
-                    onClick={() => resendInviteEmail(inv.id, inv.email)}
-                  >
-                    {resendingId === inv.id ? 'Sending…' : 'Resend email'}
-                  </button>
-                </div>
+                <AdminInviteRowActions
+                  invite={inv}
+                  onSuccess={onSuccess}
+                  onError={onError}
+                  onReload={onReload}
+                />
               </li>
             ))}
           </ul>
@@ -486,7 +433,6 @@ export function AdminStaffManageSection({
                     <th>Role</th>
                     <th>Access</th>
                     <th>Status</th>
-                    <th>Login</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -533,14 +479,9 @@ export function AdminStaffManageSection({
                           </div>
                         </td>
                         <td>
-                          <StatusBadge tone={u.is_active ? 'success' : 'neutral'}>
-                            {u.is_active ? 'Active' : 'Inactive'}
+                          <StatusBadge tone={accountStatusTone(staffStatus(u))}>
+                            {staffStatus(u)}
                           </StatusBadge>
-                        </td>
-                        <td>
-                          <p className="admin-muted" style={{ margin: 0, fontSize: '0.8125rem' }}>
-                            {loginMetaLine(u)}
-                          </p>
                         </td>
                         <td>
                           <div className="admin-btn-group admin-btn-group--wrap">
@@ -575,7 +516,7 @@ export function AdminStaffManageSection({
                       </tr>
                       {editingId === u.id ? (
                         <tr>
-                          <td colSpan={8} style={{ padding: '12px 16px', background: '#f8fafc' }}>
+                          <td colSpan={7} style={{ padding: '12px 16px', background: '#f8fafc' }}>
                             {hasDeprecatedStaffRole(u.roles) ? (
                               <p className="admin-alert admin-alert--warn rbac-editor__hint">
                                 Legacy role detected. Prefer Module Admin, Case Manager, or Finance when re-provisioning access.
@@ -628,14 +569,9 @@ export function AdminStaffManageSection({
                         title={u.full_name}
                         meta={u.email}
                         badges={
-                          <>
-                            <StatusBadge tone={u.is_active ? 'success' : 'neutral'}>
-                              {u.is_active ? 'Active' : 'Inactive'}
-                            </StatusBadge>
-                            <StatusBadge tone={u.login_ready ? 'success' : 'neutral'}>
-                              {u.login_ready ? 'Login ready' : 'Not login-ready'}
-                            </StatusBadge>
-                          </>
+                          <StatusBadge tone={accountStatusTone(staffStatus(u))}>
+                            {staffStatus(u)}
+                          </StatusBadge>
                         }
                         actions={
                           <div className="admin-btn-group admin-btn-group--wrap">
@@ -668,9 +604,6 @@ export function AdminStaffManageSection({
                           </div>
                         }
                       >
-                        <p className="admin-muted" style={{ margin: '0 0 8px', fontSize: '0.8125rem' }}>
-                          {loginMetaLine(u)}
-                        </p>
                         <div className="admin-chip-row" style={{ marginBottom: 8 }}>
                           {(u.roles || []).map((r) => {
                             const id = String(r).toUpperCase()

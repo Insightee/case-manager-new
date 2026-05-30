@@ -200,6 +200,11 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
             if case.child:
                 child_name = case.child.full_name
     attendees = build_attendee_rows(meeting, db)
+    from app.core.timezone import today_ist
+
+    display_status = meeting.status.value if meeting.status else None
+    if meeting.status == MeetingStatus.SCHEDULED and meeting.scheduled_date and meeting.scheduled_date < today_ist():
+        display_status = "OVERDUE"
     return {
         "id": meeting.id,
         "case_manager_user_id": meeting.case_manager_user_id,
@@ -217,6 +222,9 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
         "meeting_type": meeting.meeting_type.value if meeting.meeting_type else None,
         "title": meeting.title,
         "status": meeting.status.value if meeting.status else None,
+        "display_status": display_status,
+        "completed_at": meeting.completed_at.isoformat() if getattr(meeting, "completed_at", None) else None,
+        "completed_by_user_id": getattr(meeting, "completed_by_user_id", None),
         "notes_concerns": meeting.notes_concerns,
         "notes_follow_up": meeting.notes_follow_up,
         "notes_action": meeting.notes_action,
@@ -404,6 +412,34 @@ def list_cm_meetings(
     return [_serialize(m, db) for m in meetings]
 
 
+@router.get("/cm-meetings/pending-completion")
+def list_pending_completion_meetings(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.core.timezone import today_ist
+    from app.services.cm_meeting_service import user_can_view_meeting
+
+    _require_cm_meetings_read(user)
+    today = today_ist()
+    stmt = (
+        select(CaseManagerMeeting)
+        .where(
+            CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
+            CaseManagerMeeting.scheduled_date < today,
+        )
+        .order_by(CaseManagerMeeting.scheduled_date.asc())
+        .limit(50)
+    )
+    role = _role_name(user)
+    if role == RoleName.CASE_MANAGER.value and not user_has_permission(user, "admin.override"):
+        stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == user.id)
+    meetings = db.scalars(stmt).all()
+    if role == RoleName.THERAPIST.value:
+        meetings = [m for m in meetings if user_can_view_meeting(m, user.id)]
+    return [_serialize(m, db) for m in meetings]
+
+
 @router.patch("/cm-meetings/{meeting_id}")
 def update_cm_meeting(
     meeting_id: int,
@@ -424,8 +460,26 @@ def update_cm_meeting(
     old_duration = meeting.duration_minutes
     old_url = meeting.meeting_url
     old_guests = meeting.guest_emails_json
+    completing = payload.status == MeetingStatus.COMPLETED
     if payload.status is not None:
+        if payload.status == MeetingStatus.COMPLETED and meeting.status != MeetingStatus.COMPLETED:
+            notes = [
+                payload.notes_concerns if payload.notes_concerns is not None else meeting.notes_concerns,
+                payload.notes_follow_up if payload.notes_follow_up is not None else meeting.notes_follow_up,
+                payload.notes_action if payload.notes_action is not None else meeting.notes_action,
+                payload.notes_other if payload.notes_other is not None else meeting.notes_other,
+            ]
+            if not any(n and str(n).strip() for n in notes):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Add at least one completion note (concerns, follow-up, action, or other) before marking completed.",
+                )
         meeting.status = payload.status
+        if payload.status == MeetingStatus.COMPLETED:
+            from datetime import datetime, timezone
+
+            meeting.completed_at = datetime.now(timezone.utc)
+            meeting.completed_by_user_id = user.id
     if payload.title is not None:
         meeting.title = payload.title
     if payload.notes_concerns is not None:

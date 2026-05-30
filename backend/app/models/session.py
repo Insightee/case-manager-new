@@ -5,7 +5,7 @@ from typing import Optional
 import enum
 from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Time, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Time, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -43,6 +43,7 @@ class Session(Base):
     actual_start_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     actual_end_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     auto_ended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    auto_end_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     slot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("therapist_slots.id"), nullable=True, index=True)
     # Duration hint copied from the linked slot (used for auto-end threshold)
     slot_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

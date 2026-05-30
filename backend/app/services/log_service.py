@@ -158,4 +158,13 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
         data["session_notes"] = log.session_notes
         data["observations"] = log.observations
         data["parent_notes"] = log.parent_notes
+    if log.late_addition:
+        data["source"] = "forgotten"
+        status = log.approval_status.value if hasattr(log.approval_status, "value") else str(log.approval_status)
+        if status == "PENDING":
+            data["status_label"] = "Forgotten session — pending approval"
+        elif status == "APPROVED":
+            data["status_label"] = "Forgotten session — approved"
+        elif status == "REJECTED":
+            data["status_label"] = "Forgotten session — rejected"
     return data

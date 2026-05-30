@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import invoiceData from '../../data/invoices.json'
 import { ChecklistPanel } from './ChecklistPanel.jsx'
 import { EarningsTrendChart } from './EarningsTrendChart.jsx'
@@ -249,7 +249,11 @@ export function InvoicesPage() {
                         invoice={inv}
                         onViewDetails={() => setBreakdownInvoice(inv)}
                         onSessionBreakdown={() => setBreakdownInvoice(inv)}
-                        onDownloadCsv={() => showToast(`CSV export for ${inv.month} coming soon`)}
+                        onDownloadCsv={() =>
+                          apiDownload(`/api/v1/invoices/${inv.id}/export.csv`, `invoice-${inv.id}.csv`).catch((e) =>
+                            showToast(e.message || 'CSV export failed'),
+                          )
+                        }
                       />
                     ))}
                   </div>

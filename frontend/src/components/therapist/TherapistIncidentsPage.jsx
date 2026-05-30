@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch, apiUpload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { INCIDENT_STATUS_META, isOpenIncidentStatus, PRIORITY_META } from '../../lib/incidentCatalog.js'
@@ -26,6 +27,8 @@ function PriorityPill({ priority }) {
 }
 
 export function TherapistIncidentsPage() {
+  const [searchParams] = useSearchParams()
+  const initialCaseId = searchParams.get('case_id') || ''
   const [cases, setCases] = useState([])
   const [incidents, setIncidents] = useState([])
   const [loading, setLoading] = useState(true)
@@ -182,6 +185,7 @@ export function TherapistIncidentsPage() {
             <IncidentReportForm
               cases={cases}
               caseRequired
+              initialCaseId={initialCaseId}
               hideServiceType={cases.length > 0}
               onSubmit={submitReport}
               submitting={submitting}

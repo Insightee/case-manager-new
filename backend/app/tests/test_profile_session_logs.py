@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
+from app.tests.session_helpers import backdate_in_progress_session
 
 client = TestClient(app)
 
@@ -77,6 +78,7 @@ def test_session_start_end_and_log():
     start = client.post(f"/api/v1/sessions/{sid}/start", headers=headers)
     assert start.status_code == 200
     assert start.json()["status"] == "IN_PROGRESS"
+    backdate_in_progress_session(sid)
     active = client.get("/api/v1/sessions/active", headers=headers)
     assert active.status_code == 200
     assert active.json()["id"] == sid
@@ -106,6 +108,7 @@ def test_parent_session_logs_omit_internal_fields():
         pytest.skip("No scheduled sessions")
     sid = upcoming[0]["id"]
     client.post(f"/api/v1/sessions/{sid}/start", headers=th)
+    backdate_in_progress_session(sid)
     client.post(f"/api/v1/sessions/{sid}/end", headers=th)
     created = client.post(
         "/api/v1/daily-logs",
@@ -143,4 +146,5 @@ def test_cannot_start_two_sessions():
     assert client.post(f"/api/v1/sessions/{s1}/start", headers=headers).status_code == 200
     second = client.post(f"/api/v1/sessions/{s2}/start", headers=headers)
     assert second.status_code == 400
+    backdate_in_progress_session(s1)
     client.post(f"/api/v1/sessions/{s1}/end", headers=headers)

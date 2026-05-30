@@ -41,13 +41,19 @@ export function IncidentReportForm({
   cases = [],
   caseRequired = false,
   hideServiceType = false,
+  initialCaseId = '',
   onSubmit,
   submitting = false,
   error = '',
 }) {
   const [meta, setMeta] = useState(null)
-  const [form, setForm] = useState(() => ({ ...EMPTY_FORM, incident_at: toLocalDatetimeInput() }))
+  const [form, setForm] = useState(() => ({
+    ...EMPTY_FORM,
+    incident_at: toLocalDatetimeInput(),
+    case_id: initialCaseId ? String(initialCaseId) : '',
+  }))
   const [files, setFiles] = useState([])
+  const [caseError, setCaseError] = useState('')
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -105,6 +111,11 @@ export function IncidentReportForm({
 
   async function handleSubmit(e) {
     e.preventDefault()
+    setCaseError('')
+    if (caseRequired && !form.case_id) {
+      setCaseError('Select a client case before submitting this incident report.')
+      return
+    }
     const incidentAt = form.incident_at ? new Date(form.incident_at).toISOString() : new Date().toISOString()
     const selectedCase = cases.find((c) => String(c.id) === String(form.case_id))
     const derivedServiceType =
@@ -132,17 +143,48 @@ export function IncidentReportForm({
     return <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Loading form…</p>
   }
 
+  const noCasesBlocked = caseRequired && cases.length === 0
+  const caseSelected = Boolean(form.case_id)
+  const showFormFields = !caseRequired || caseSelected
+
   return (
     <form onSubmit={handleSubmit} className="incident-report-form">
-      {cases.length > 0 ? (
+      {caseRequired ? (
+        cases.length > 0 ? (
+          <label className="parent-support__field">
+            Client case (required)
+            <select
+              required
+              value={form.case_id}
+              onChange={(e) => {
+                setForm({ ...form, case_id: e.target.value })
+                setCaseError('')
+              }}
+            >
+              <option value="">Select client…</option>
+              {cases.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {[c.case_code, c.child_name || c.childName, c.service_type || c.serviceType]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </option>
+              ))}
+            </select>
+            {caseError ? <span style={{ color: '#b91c1c', fontSize: '0.8125rem' }}>{caseError}</span> : null}
+          </label>
+        ) : (
+          <p style={{ color: '#b45309', fontSize: '0.875rem', padding: '12px 14px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde047' }}>
+            You have no active cases — contact your case manager before filing an incident.
+          </p>
+        )
+      ) : cases.length > 0 ? (
         <label className="parent-support__field">
-          Case {caseRequired ? '(required)' : '(optional)'}
+          Case (optional)
           <select
-            required={caseRequired}
             value={form.case_id}
             onChange={(e) => setForm({ ...form, case_id: e.target.value })}
           >
-            <option value="">{caseRequired ? 'Select client…' : 'Not linked to a specific case'}</option>
+            <option value="">Not linked to a specific case</option>
             {cases.map((c) => (
               <option key={c.id} value={c.id}>
                 {[c.case_code, c.child_name || c.childName, c.service_type || c.serviceType]
@@ -152,10 +194,10 @@ export function IncidentReportForm({
             ))}
           </select>
         </label>
-      ) : caseRequired ? (
-        <p style={{ color: '#b45309', fontSize: '0.875rem' }}>You have no active cases assigned. Contact your case manager before filing an incident.</p>
       ) : null}
 
+      {showFormFields ? (
+        <>
       {!hideServiceType ? (
         <label className="parent-support__field">
           Service type
@@ -336,10 +378,14 @@ export function IncidentReportForm({
       </div>
 
       {error ? <p className="incident-report-form__error" role="alert">{error}</p> : null}
+        </>
+      ) : caseRequired ? (
+        <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Select a case above to continue the incident report.</p>
+      ) : null}
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={submitting || noCasesBlocked || (caseRequired && !caseSelected)}
         className="parent-support__submit"
         style={{ background: '#ef4444', borderColor: '#ef4444' }}
       >

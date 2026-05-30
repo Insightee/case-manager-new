@@ -286,7 +286,11 @@ export function DailyLogsPage() {
             approvalStatus={l.approval_status}
             attendanceStatus={l.attendance_status}
           />
-          {l.late_addition ? (
+          {l.status_label ? (
+            <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
+              {l.status_label}
+            </span>
+          ) : l.late_addition ? (
             <span className="ic-session-log-recent__meta">Late submission</span>
           ) : null}
           {l.case_id ? (
@@ -451,7 +455,13 @@ export function DailyLogsPage() {
           <p className="ic-case-active__title">Session in progress</p>
           <p style={{ margin: '0 0 4px', fontSize: '0.875rem' }}>
             {active.child_name || active.case_code} · {active.scheduled_date}
-            {active.auto_ended ? ' (auto-ended — start a new session to continue)' : ''}
+            {active.auto_end_label ? (
+              <span style={{ display: 'block', marginTop: 4, fontSize: '0.8125rem', fontWeight: 600, color: '#b45309' }}>
+                {active.auto_end_label}
+              </span>
+            ) : active.auto_ended ? (
+              <span style={{ color: '#b45309' }}> (auto-ended)</span>
+            ) : null}
             {active.case_id ? (
               <>
                 {' · '}

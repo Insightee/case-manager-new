@@ -35,6 +35,7 @@ from app.models.document_comment import DocumentComment
 from app.models.incident import Incident, IncidentMessage
 from app.models.invoice import Invoice
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine
+from app.models.invoice_manual_line import InvoiceManualLine, ManualLineStatus
 from app.models.notification import Notification
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.parent_billing import ParentBillingStatement, ParentBillingStatus

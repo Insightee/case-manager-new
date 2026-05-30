@@ -1523,6 +1523,23 @@ def users_directory(
     return out
 
 
+@router.get("/users/{user_id}")
+def get_user_detail(
+    user_id: int,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.address_service import user_home_address_read, user_school_address_read
+
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    data = _user_to_read(target, db=db).model_dump()
+    data["home_address"] = user_home_address_read(target)
+    data["school_address"] = user_school_address_read(target)
+    return data
+
+
 @router.patch("/users/{user_id}", response_model=UserRead)
 def update_user(
     user_id: int,
@@ -3727,6 +3744,31 @@ def resend_invite_email(
         )
     db.commit()
     return {"ok": True, "email": invite.email, "email_delivery": email_delivery}
+
+
+@router.post("/invites/{invite_id}/revoke")
+def revoke_invite(
+    invite_id: int,
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    """Cancel an unused invite so the link can no longer be used."""
+    invite = db.get(InviteToken, invite_id)
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.used_at is not None:
+        raise HTTPException(status_code=400, detail="Invite has already been used")
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="revoke_invite",
+        entity_type="invite_token",
+        entity_id=invite.id,
+        new_value={"email": invite.email, "role_name": invite.role_name},
+    )
+    db.delete(invite)
+    db.commit()
+    return {"ok": True, "email": invite.email}
 
 
 @router.post("/invites")
