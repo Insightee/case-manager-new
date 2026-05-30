@@ -1,0 +1,47 @@
+# CODEOWNERS — auto-request reviewers (set GitHub usernames; replace @Insightee/TBD)
+# Docs: docs/TEAM_OWNERSHIP.md · CONTRIBUTING.md
+
+# Default fallback for unlisted paths
+* @Insightee/TBD
+
+# Core RBAC and product modules — require dedicated review
+/backend/app/core/permissions.py @Insightee/TBD
+/backend/app/core/modules.py @Insightee/TBD
+
+# Migrations — only one head on main
+/backend/alembic/ @Insightee/TBD
+
+# Billing
+/backend/app/services/invoice_billing_service.py @Insightee/TBD
+/backend/app/services/invoice_service.py @Insightee/TBD
+/backend/app/services/client_billing_service.py @Insightee/TBD
+/backend/app/api/v1/invoices.py @Insightee/TBD
+/backend/app/api/v1/client_billing.py @Insightee/TBD
+/backend/app/api/v1/finance_ops.py @Insightee/TBD
+/frontend/src/components/admin-portal/AdminInvoicesPage.jsx @Insightee/TBD
+/frontend/src/components/admin-portal/InvoiceComposer.jsx @Insightee/TBD
+
+# Support hub
+/backend/app/services/support_access_service.py @Insightee/TBD
+/backend/app/services/support_history_service.py @Insightee/TBD
+/backend/app/services/ticket_list_service.py @Insightee/TBD
+/backend/app/api/v1/admin_support.py @Insightee/TBD
+/frontend/src/components/admin-portal/AdminSupportHubPage.jsx @Insightee/TBD
+/frontend/src/lib/supportAccess.js @Insightee/TBD
+
+# HR
+/backend/app/api/v1/hr_ops.py @Insightee/TBD
+/backend/app/services/hr_reports_service.py @Insightee/TBD
+/frontend/src/components/hr-portal/ @Insightee/TBD
+
+# Deploy & CI
+/.github/workflows/ @Insightee/TBD
+/railway.toml @Insightee/TBD
+/vercel.json @Insightee/TBD
+/docs/DEPLOY.md @Insightee/TBD
+/docs/RAILWAY_VERCEL.md @Insightee/TBD
+
+# Team workflow docs
+/CONTRIBUTING.md @Insightee/TBD
+/CHANGELOG.md @Insightee/TBD
+/docs/RELEASE_CHECKLIST.md @Insightee/TBD

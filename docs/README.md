@@ -11,6 +11,10 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | [../frontend/README.md](../frontend/README.md) | Vite app, build, E2E |
 | [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md) | **All env vars** — local, Railway, Vercel, CI |
 | [AGENT_WORKFLOW.md](./AGENT_WORKFLOW.md) | Delivery, RBAC, billing, deploy checklists for agents |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | **Team workflow** — PRs, pre-push, hooks, release |
+| [../CHANGELOG.md](../CHANGELOG.md) | **Change log** — `[Unreleased]` + dated releases |
+| [TEAM_OWNERSHIP.md](./TEAM_OWNERSHIP.md) | Area owners, CODEOWNERS |
+| [GITHUB_SETUP.md](./GITHUB_SETUP.md) | Branch protection and required CI checks |
 
 ## Deploy & infrastructure
 

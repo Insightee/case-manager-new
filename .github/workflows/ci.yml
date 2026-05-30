@@ -70,3 +70,31 @@ jobs:
         run: npm run build --prefix frontend
       - name: SPA output exists
         run: test -f frontend/dist/index.html
+
+  contributor-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Team workflow files present
+        run: |
+          test -f CONTRIBUTING.md
+          test -f CHANGELOG.md
+          test -f .github/pull_request_template.md
+          test -f docs/TEAM_OWNERSHIP.md
+          grep -q '^\## \[Unreleased\]' CHANGELOG.md
+      - name: Fetch base branch for PR diff
+        if: github.event_name == 'pull_request'
+        run: git fetch origin "${{ github.base_ref }}" --depth=1
+      - name: No secrets in PR diff
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: bash scripts/check_staged_secrets.sh --ci
+      - name: Shell scripts syntax
+        run: |
+          chmod +x scripts/*.sh
+          bash -n scripts/pre-push-check.sh
+          bash -n scripts/pre-release-check.sh
+          bash -n scripts/check_staged_secrets.sh
+          bash -n scripts/run-ci-parity-checks.sh

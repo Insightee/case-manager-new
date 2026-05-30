@@ -2,11 +2,15 @@
 
 Use before promoting a build to production or onboarding real client data. See also [`STAGING_SMOKE.md`](STAGING_SMOKE.md) for API-level import and session-log flows.
 
+**Team process:** [../CONTRIBUTING.md](../CONTRIBUTING.md) · **Automated gate:** `make release-check` or `./scripts/pre-release-check.sh` · **Change log:** move [../CHANGELOG.md](../CHANGELOG.md) `[Unreleased]` → `## [YYYY-MM-DD]`
+
 ## Pre-deploy
 
-- [ ] `cd backend && python3 -m pytest app/tests -q` — green
+- [ ] `./scripts/pre-release-check.sh` (or `make release-check`) — tests, build, Alembic head, CHANGELOG structure
+- [ ] [CHANGELOG.md](../CHANGELOG.md) — `[Unreleased]` reviewed; dated section added for this release
+- [ ] `cd backend && python3 -m pytest app/tests -q` — green *(included in release-check)*
 - [ ] `cd backend && PYTHONPATH=.:alembic python3 -m alembic heads` — exactly **one** `(head)`
-- [ ] `cd frontend && npm run build` — green
+- [ ] `cd frontend && npm run build` — green *(included in release-check)*
 - [ ] Railway API: `APP_ENV=production`, `SEED_DEMO_DATA=false`, Postgres `DATABASE_URL`, **`REDIS_URL=${{Redis.REDIS_URL}}`**, **`WEB_CONCURRENCY=3`**, **`DB_POOL_SIZE=10`**, **`DB_MAX_OVERFLOW=20`** (peak ~90 DB conns), JWT secrets (not dev defaults), `STORAGE_PROVIDER=r2` + `R2_*`, Zepto `SMTP_*`, `FRONTEND_URL` + `CORS_ORIGINS` (Vercel URL)
 - [ ] Vercel UI: team **`insightes-projects`**, project **`frontend`** only — **`VITE_API_URL`** = Railway API URL (no trailing slash). No backend secrets on Vercel ([`scripts/vercel_clean_backend_env_api.py`](../scripts/vercel_clean_backend_env_api.py))
 - [ ] Optional: `cd backend && python3 scripts/production_smoke.py` with production env loaded

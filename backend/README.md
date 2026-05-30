@@ -117,6 +117,8 @@ Copy [`backend/.env.example`](.env.example) to `.env` and set:
 
 **Full variable list:** [docs/ENVIRONMENT_VARIABLES.md](../docs/ENVIRONMENT_VARIABLES.md) (local, Railway, Vercel, CI).
 
+**Team workflow:** [CONTRIBUTING.md](../CONTRIBUTING.md) · Pre-push: `make check` from repo root.
+
 | Variable | Purpose |
 |----------|---------|
 | `JWT_SECRET_KEY` / `JWT_REFRESH_SECRET_KEY` | Sign access and refresh tokens (use long random values in production) |

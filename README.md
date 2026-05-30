@@ -37,6 +37,15 @@ API-only smoke (backend must be on `:8000`): `python3 scripts/therapist_flow_smo
 
 See [backend/README.md](backend/README.md) for API details and role matrix. System architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). **Environment variables:** [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md). **Full doc index:** [docs/README.md](docs/README.md).
 
+## Contributing (team of 3+)
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — branch/PR workflow, pre-push checks, release steps
+- **[CHANGELOG.md](CHANGELOG.md)** — log every merge under `[Unreleased]`; date on release
+- **Before push:** `make check` or `./scripts/pre-push-check.sh`
+- **Before production release:** `make release-check` + [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
+- **Git hooks (optional):** `make hooks` — blocks commits to `main`, `.env`, and runs tests on pre-push
+- **Repo admins:** [docs/GITHUB_SETUP.md](docs/GITHUB_SETUP.md) — branch protection + required CI checks
+
 ### Dev preview (Vercel + API)
 
 To share the UI with reviewers:
@@ -46,6 +55,8 @@ To share the UI with reviewers:
 3. Add your Vercel URL to API `CORS_ORIGINS`, then run seed on the API host.
 
 CI runs backend tests and `npm run build` on push (`.github/workflows/ci.yml`).
+
+**Team workflow:** PRs only to `main`; required checks include `contributor-guards`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

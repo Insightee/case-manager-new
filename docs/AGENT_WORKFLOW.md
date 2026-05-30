@@ -2,7 +2,7 @@
 
 Durable preferences extracted from recent Cursor sessions on InsightCase / case-manager-new. Use this when planning features, imports, deploys, or agent tasks—not as a product spec.
 
-**Related:** [ARCHITECTURE.md](./ARCHITECTURE.md), [RBAC_SCOPE.md](./RBAC_SCOPE.md), [HANDOVER_SUPPORT_HR.md](./HANDOVER_SUPPORT_HR.md), [adr-0001-support-hub-access-scopes.md](./adr/adr-0001-support-hub-access-scopes.md), [DEPLOY.md](./DEPLOY.md), [DATA_IMPORT.md](./DATA_IMPORT.md), repo root [AGENTS.md](../AGENTS.md).
+**Related:** [ARCHITECTURE.md](./ARCHITECTURE.md), [RBAC_SCOPE.md](./RBAC_SCOPE.md), [HANDOVER_SUPPORT_HR.md](./HANDOVER_SUPPORT_HR.md), [adr-0001-support-hub-access-scopes.md](./adr/adr-0001-support-hub-access-scopes.md), [DEPLOY.md](./DEPLOY.md), [DATA_IMPORT.md](./DATA_IMPORT.md), [../CONTRIBUTING.md](../CONTRIBUTING.md), [../CHANGELOG.md](../CHANGELOG.md), repo root [AGENTS.md](../AGENTS.md).
 
 ---
 
@@ -105,12 +105,13 @@ Subagent runs (tests, explore, CI fix) informed implementation but are not cited
 
 ## Agent checklist (quick)
 
-1. Read [AGENTS.md](../AGENTS.md) and this file for standing prefs.
+1. Read [AGENTS.md](../AGENTS.md), [CONTRIBUTING.md](../CONTRIBUTING.md), and this file for standing prefs.
 2. For schema/API work: assignments + sessions + audit; pass `db` into module feature checks where required.
 3. For UI: role-aware login; scoped therapist data; admin density.
-4. For prod: migrate → import ([DATA_IMPORT.md](./DATA_IMPORT.md)) → env on Railway/Vercel → smoke login.
-5. Run `python3 -m pytest app/tests -q` (backend) before claiming CI-ready.
-6. Do not commit or push unless asked.
+4. For prod: migrate → import ([DATA_IMPORT.md](./DATA_IMPORT.md)) → env on Railway/Vercel → [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) smoke login.
+5. Run `./scripts/pre-push-check.sh` or `python3 -m pytest app/tests -q` (backend) before claiming CI-ready.
+6. Update [CHANGELOG.md](../CHANGELOG.md) `[Unreleased]` when user asks to commit/merge substantial work.
+7. Do not commit or push unless asked.
 
 ---
 

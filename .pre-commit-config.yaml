@@ -1,0 +1,39 @@
+# InsightCase git hooks — see CONTRIBUTING.md
+# Install: pip install pre-commit && pre-commit install && pre-commit install --hook-type pre-push
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: no-commit-to-branch
+        name: block commit to main/master
+        args: [--branch, main, --branch, master]
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        exclude: ^docs/import-templates/
+
+  - repo: local
+    hooks:
+      - id: check-staged-secrets
+        name: block .env and secrets in commit
+        entry: bash scripts/check_staged_secrets.sh
+        language: system
+        pass_filenames: false
+      - id: alembic-single-head
+        name: alembic single head
+        entry: bash -c 'cd backend && PYTHONPATH=.:alembic python3 -m alembic heads | tee /tmp/precommit_heads.txt && test "$(grep -c "(head)" /tmp/precommit_heads.txt)" -eq 1'
+        language: system
+        pass_filenames: false
+        files: ^backend/alembic/
+
+  - repo: local
+    hooks:
+      - id: pre-push-parity
+        name: pre-push tests and build (slow)
+        entry: bash scripts/run-ci-parity-checks.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

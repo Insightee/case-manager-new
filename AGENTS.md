@@ -13,9 +13,21 @@
 ## Documentation
 
 - [docs/README.md](docs/README.md) — full documentation index
+- [CONTRIBUTING.md](CONTRIBUTING.md) — team PR workflow, pre-push/release scripts, hooks
+- [CHANGELOG.md](CHANGELOG.md) — update `[Unreleased]` on every merge; date section before prod release
+- [docs/TEAM_OWNERSHIP.md](docs/TEAM_OWNERSHIP.md) — area owners and CODEOWNERS
+- [docs/GITHUB_SETUP.md](docs/GITHUB_SETUP.md) — branch protection (admins)
 - [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md) — all env vars (local, Railway, Vercel)
 - [docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md) — delivery, RBAC, billing, deploy, and agent checklists (from chat workflow capture).
 - [docs/DATA_IMPORT.md](docs/DATA_IMPORT.md) — production bulk import for therapists, families, and cases (templates and API order).
+
+## Team workflow (humans + agents)
+
+- **Do not push directly to `main`.** Use a PR; CI (`backend`, `frontend`, `vercel-monorepo-build`, `contributor-guards`) must pass.
+- **Before push:** `./scripts/pre-push-check.sh` or `make check`.
+- **Before production release:** `./scripts/pre-release-check.sh` + [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) + move [CHANGELOG.md](CHANGELOG.md) `[Unreleased]` to a dated heading.
+- **One concern per PR** when possible; RBAC/migration changes need tests.
+- Agents: still **commit only when the user asks**; when committing, follow [CONTRIBUTING.md](CONTRIBUTING.md) message style.
 
 ## Deploy split (do not confuse names)
 
