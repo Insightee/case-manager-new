@@ -81,6 +81,43 @@ def test_parent_profile_get_and_update():
     assert patch.json()["phone"] == "9876543210"
 
 
+def test_parent_profile_email_cannot_be_changed():
+    headers = _login("parent@demo.com")
+    profile = client.get("/api/v1/parent/profile", headers=headers).json()
+    original_email = profile["email"]
+
+    # Email field removed from schema — extra field is ignored; login email stays the same
+    patch = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={"email": "hacker@example.com", "full_name": profile["full_name"]},
+    )
+    assert patch.status_code == 200
+    assert patch.json()["email"] == original_email
+
+    again = client.get("/api/v1/parent/profile", headers=headers).json()
+    assert again["email"] == original_email
+
+
+def test_parent_profile_secondary_contact():
+    headers = _login("parent@demo.com")
+    profile = client.get("/api/v1/parent/profile", headers=headers).json()
+
+    patch = client.patch(
+        "/api/v1/parent/profile",
+        headers=headers,
+        json={
+            "full_name": profile["full_name"],
+            "secondary_contact_name": "Spouse Name",
+            "secondary_contact_email": "spouse@example.com",
+        },
+    )
+    assert patch.status_code == 200, patch.text
+    body = patch.json()
+    assert body["secondary_contact_name"] == "Spouse Name"
+    assert body["secondary_contact_email"] == "spouse@example.com"
+
+
 def test_parent_profile_home_and_school_addresses_are_separate():
     headers = _login("parent@demo.com")
     r = client.patch(

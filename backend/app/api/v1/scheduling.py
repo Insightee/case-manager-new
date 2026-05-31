@@ -491,6 +491,13 @@ def invite_client_to_slot(
         raise HTTPException(status_code=403, detail="Only the slot owner can invite a client")
     if slot.status != SlotStatus.AVAILABLE:
         raise HTTPException(status_code=400, detail="Slot must be available")
+    from app.services.invite_policy_service import assert_can_create_invite
+
+    email = str(payload.client_email).lower()
+    try:
+        assert_can_create_invite(db, email, "PARENT")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     token = secrets.token_urlsafe(32)
     invite = InviteToken(
         email=str(payload.client_email).lower(),

@@ -27,6 +27,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[Optional[str]] = mapped_column(String(32))
+    secondary_contact_name: Mapped[Optional[str]] = mapped_column(String(255))
+    secondary_contact_email: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     employment_status: Mapped[EmploymentStatus] = mapped_column(
         Enum(EmploymentStatus), default=EmploymentStatus.ACTIVE, nullable=False

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
-import { AdminPanel, CopyLinkButton, AdminInviteRowActions } from './ui/index.js'
+import { AdminPanel, CopyLinkButton, AdminInviteRowActions, PeopleBulkToolbar, PeopleSelectCheckbox } from './ui/index.js'
 
 function defaultTherapistServices(roleDefaults) {
   const fromRole = roleDefaults?.THERAPIST
@@ -69,6 +69,7 @@ export function AdminTherapistOnboardPanel({
   const [bulkPhase, setBulkPhase] = useState('edit')
   const [lastResult, setLastResult] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [selectedInviteIds, setSelectedInviteIds] = useState(() => new Set())
 
   useEffect(() => {
     apiFetch('/api/v1/therapist/service-categories')
@@ -234,9 +235,19 @@ export function AdminTherapistOnboardPanel({
 
       {pendingInvites.length > 0 ? (
         <AdminPanel title={`Pending therapist invites (${pendingInvites.length})`} subtitle="Links expire after 7 days">
+          <PeopleBulkToolbar
+            selectedInviteIds={[...selectedInviteIds]}
+            onReload={() => {
+              setSelectedInviteIds(new Set())
+              onReload?.()
+            }}
+            onSuccess={onSuccess}
+            onError={onError}
+          />
           <table className="admin-table">
             <thead>
               <tr>
+                <th style={{ width: 36 }} aria-label="Select" />
                 <th>Email</th>
                 <th>Expires</th>
                 <th />
@@ -245,6 +256,20 @@ export function AdminTherapistOnboardPanel({
             <tbody>
               {pendingInvites.map((inv) => (
                 <tr key={inv.id}>
+                  <td>
+                    <PeopleSelectCheckbox
+                      checked={selectedInviteIds.has(inv.id)}
+                      onChange={() =>
+                        setSelectedInviteIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(inv.id)) next.delete(inv.id)
+                          else next.add(inv.id)
+                          return next
+                        })
+                      }
+                      ariaLabel={`Select invite ${inv.email}`}
+                    />
+                  </td>
                   <td>{inv.email}</td>
                   <td>{new Date(inv.expires_at).toLocaleDateString()}</td>
                   <td>

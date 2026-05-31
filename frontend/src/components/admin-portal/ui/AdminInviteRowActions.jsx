@@ -56,6 +56,9 @@ export function AdminInviteRowActions({
 
   return (
     <div className="admin-btn-group" role="group" aria-label={`Invite actions for ${invite?.email || 'user'}`}>
+      <p className="admin-muted" style={{ flexBasis: '100%', margin: '0 0 4px', fontSize: '0.75rem' }}>
+        Cancel only affects unused links. After someone registers, use Deactivate or Invite to login on their row.
+      </p>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {actionMessage}
       </span>

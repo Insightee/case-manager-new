@@ -5,6 +5,30 @@
     display: none;
   }
 
+  .client-portal-page-head {
+    margin-bottom: 10px;
+  }
+
+  .client-portal-page-head .ic-page-head__title {
+    font-size: 1.25rem;
+  }
+
+  .parent-portal-filters--compact {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+  }
+
+  .parent-portal-filters--compact .parent-portal-filters__grid {
+    gap: 8px;
+  }
+
+  .parent-portal-filters--compact .parent-portal-filters__control {
+    min-height: 40px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    font-size: 0.875rem;
+  }
+
   .parent-portal-lead,
   .parent-profile__intro,
   .parent-profile__hint,

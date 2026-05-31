@@ -58,6 +58,13 @@ export function getParentLogSections(log) {
   return sections
 }
 
+/** Combined plain text for expand/collapse preview length checks. */
+export function getParentLogFullText(log) {
+  return getParentLogSections(log)
+    .map((s) => s.value)
+    .join('\n\n')
+}
+
 /** Dashboard/list preview when only a teaser is needed. */
 export function getParentLogPreview(log) {
   const sections = getParentLogSections(log)

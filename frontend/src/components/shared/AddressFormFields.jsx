@@ -213,7 +213,11 @@ export function UseCurrentLocationButton({ value, onChange, disabled }) {
         >
           {feedback.text}
         </p>
-      ) : null}
+      ) : (
+        <p style={{ fontSize: '0.72rem', marginTop: 8, marginBottom: 0, color: '#64748b' }}>
+          Optional — you can always type the address manually.
+        </p>
+      )}
     </div>
   )
 }

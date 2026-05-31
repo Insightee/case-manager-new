@@ -63,6 +63,32 @@ function StatusChip({ status }) {
   return <span className={`status ${tone}`}>{label}</span>
 }
 
+function reportListLabels(item, tab) {
+  if (tab === 'documents') {
+    return {
+      name: item.child_name || item.childName || 'Document',
+      meta: [item.case_code || item.caseId, categoryLabel(item.category)].filter(Boolean).join(' · '),
+      subtitle: item.title,
+    }
+  }
+  return {
+    name: item.childName || 'Report',
+    meta: item.caseId || '',
+    subtitle: item.label || item.month || '',
+  }
+}
+
+function reportListStatus(item, tab) {
+  if (tab === 'documents') {
+    return item.parent_review_status === 'PENDING'
+      ? 'pending_review'
+      : item.parent_review_status === 'APPROVED'
+        ? 'approved'
+        : item.status
+  }
+  return item.status
+}
+
 async function fetchBlobUrl(downloadPath) {
   const { access } = getTokens()
   const url = `${API_URL}${downloadPath}`
@@ -428,36 +454,26 @@ export function ParentReportsPage() {
                 : 'No reports shared for your review yet.'}
           </p>
         ) : (
-          <ul className="log-list">
-            {filtered.map((item) => (
+          <ul className="log-list parent-reports__list">
+            {filtered.map((item) => {
+              const labels = reportListLabels(item, tab)
+              return (
               <li key={`${item.kind || tab}-${item.id}`}>
                 <button type="button" className="parent-reports__list-btn" onClick={() => openDetail(item)}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 600 }}>
-                      {tab === 'documents'
-                        ? `${item.child_name || item.childName} · ${item.title}`
-                        : `${item.childName} · ${item.label || item.month}`}
-                    </p>
-                    <span style={{ fontSize: 13, color: '#6b7280' }}>
-                      {tab === 'documents'
-                        ? `${item.case_code || item.caseId} · ${categoryLabel(item.category)}`
-                        : item.caseId}
-                    </span>
+                  <div className="parent-reports__list-main">
+                    <p className="parent-reports__list-name">{labels.name}</p>
+                    {labels.meta ? <p className="parent-reports__list-meta">{labels.meta}</p> : null}
+                    {labels.subtitle ? (
+                      <p className="parent-reports__list-sub">{labels.subtitle}</p>
+                    ) : null}
                   </div>
-                  <StatusChip
-                    status={
-                      tab === 'documents'
-                        ? item.parent_review_status === 'PENDING'
-                          ? 'pending_review'
-                          : item.parent_review_status === 'APPROVED'
-                            ? 'approved'
-                            : item.status
-                        : item.status
-                    }
-                  />
+                  <div className="parent-reports__list-foot">
+                    <StatusChip status={reportListStatus(item, tab)} />
+                  </div>
                 </button>
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
       </section>

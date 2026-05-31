@@ -23,14 +23,39 @@ def _login(email: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-def _create_pending_invite(email: str) -> InviteToken:
+"""Admin invite revoke and related provisioning flows."""
+
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.main import app
+from app.models.user import InviteToken
+from app.seed.demo_seed import run as seed_run
+
+client = TestClient(app)
+
+
+def setup_module():
+    seed_run()
+
+
+def _login(email: str) -> dict[str, str]:
+    r = client.post("/api/v1/auth/login", json={"email": email, "password": "demo123"})
+    assert r.status_code == 200
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def _create_pending_invite(email: str, role_name: str = "CASE_MANAGER") -> InviteToken:
     from app.core.database import SessionLocal
 
     with SessionLocal() as db:
         token = secrets.token_urlsafe(16)
         inv = InviteToken(
             email=email,
-            role_name="CASE_MANAGER",
+            role_name=role_name,
             module_assignments=[],
             token=token,
             expires_at=datetime.now(timezone.utc) + timedelta(days=7),
@@ -39,6 +64,96 @@ def _create_pending_invite(email: str) -> InviteToken:
         db.commit()
         db.refresh(inv)
         return inv
+
+
+def _staff_invite_payload(email: str, role_name: str = "CASE_MANAGER") -> dict:
+    return {
+        "email": email,
+        "role_name": role_name,
+        "send_email": False,
+        "module_assignments": ["homecare"],
+    }
+
+
+def test_invite_cap_blocks_third_pending():
+    headers = _login("superadmin@demo.com")
+    email = f"cap.test.{secrets.token_hex(4)}@demo.com"
+    _create_pending_invite(email)
+    _create_pending_invite(email)
+
+    res = client.post(
+        "/api/v1/admin/therapists/invite",
+        headers=headers,
+        json=_staff_invite_payload(email),
+    )
+    assert res.status_code == 400
+    assert "Maximum invites sent" in res.json()["detail"]
+
+
+def test_revoke_then_new_invite_allowed():
+    headers = _login("superadmin@demo.com")
+    email = f"revoke.cap.{secrets.token_hex(4)}@demo.com"
+    inv1 = _create_pending_invite(email)
+    _create_pending_invite(email)
+
+    revoke = client.post(f"/api/v1/admin/invites/{inv1.id}/revoke", headers=headers)
+    assert revoke.status_code == 200
+
+    res = client.post(
+        "/api/v1/admin/therapists/invite",
+        headers=headers,
+        json=_staff_invite_payload(email),
+    )
+    assert res.status_code == 200
+    assert res.json().get("invite_url")
+
+
+def test_cross_role_invite_blocked():
+    headers = _login("superadmin@demo.com")
+    email = f"cross.role.{secrets.token_hex(4)}@demo.com"
+    _create_pending_invite(email, role_name="THERAPIST")
+
+    res = client.post(
+        "/api/v1/admin/therapists/invite",
+        headers=headers,
+        json=_staff_invite_payload(email, "CASE_MANAGER"),
+    )
+    assert res.status_code == 400
+    assert "Pending invite exists" in res.json()["detail"]
+
+
+def test_bulk_user_status_and_invite_revoke():
+    headers = _login("superadmin@demo.com")
+    email = f"bulk.test.{secrets.token_hex(4)}@demo.com"
+    inv = _create_pending_invite(email)
+
+    bulk_revoke = client.post(
+        "/api/v1/admin/invites/bulk-revoke",
+        headers=headers,
+        json={"invite_ids": [inv.id]},
+    )
+    assert bulk_revoke.status_code == 200
+    assert bulk_revoke.json()["revoked"] == 1
+
+    from app.core.database import SessionLocal
+
+    with SessionLocal() as db:
+        row = db.scalars(select(InviteToken).where(InviteToken.id == inv.id)).first()
+        assert row is None
+
+    # Deactivate a seeded staff user then bulk-activate
+    staff = client.get("/api/v1/admin/users?page_size=5", headers=headers).json()
+    items = staff.get("items") or staff
+    target = next((u for u in items if u.get("email") == "admin@demo.com"), None)
+    if target:
+        client.delete(f"/api/v1/admin/users/{target['id']}", headers=headers)
+        bulk = client.post(
+            "/api/v1/admin/users/bulk-status",
+            headers=headers,
+            json={"user_ids": [target["id"]], "is_active": True},
+        )
+        assert bulk.status_code == 200
+        assert bulk.json()["updated"] == 1
 
 
 def test_revoke_invite_blocks_preview():

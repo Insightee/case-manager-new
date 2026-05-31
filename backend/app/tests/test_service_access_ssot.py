@@ -24,6 +24,9 @@ def test_rbac_catalog_has_service_and_org_sections():
     data = r.json()
     assert "service_categories" in data
     assert "org_capabilities" in data
+    assert "clinical_features" in data
+    assert isinstance(data["clinical_features"], list)
+    assert len(data["clinical_features"]) >= 1
     assert isinstance(data["service_categories"], list)
     assert isinstance(data["org_capabilities"], list)
     ids = {row["id"] for row in data["service_categories"]}

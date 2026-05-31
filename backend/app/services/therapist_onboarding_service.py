@@ -24,20 +24,19 @@ def _invite_url(token: str) -> str:
     return f"{settings.frontend_url.rstrip('/')}/invite/{token}"
 
 
-def _check_email_available(db: Session, email: str) -> None:
+def _ensure_email_free_for_new_user(db: Session, email: str) -> None:
     email_l = email.lower().strip()
     if db.scalars(select(User).where(User.email == email_l)).first():
         raise ValueError("A user with this email already exists")
-    now = datetime.now(timezone.utc)
-    pending = db.scalars(
-        select(InviteToken).where(
-            InviteToken.email == email_l,
-            InviteToken.used_at.is_(None),
-            InviteToken.expires_at > now,
-        )
-    ).first()
-    if pending:
-        raise ValueError("A pending invite already exists for this email")
+
+
+def _assert_new_invite_allowed(db: Session, email: str, role_name: str) -> None:
+    from app.services.invite_policy_service import assert_can_create_invite
+
+    assert_can_create_invite(db, email, role_name)
+    existing = db.scalars(select(User).where(User.email == email.lower().strip())).first()
+    if existing:
+        raise ValueError("User already exists. Use Invite to login instead of sending a new invite.")
 
 
 def _create_therapist_profile(
@@ -106,7 +105,7 @@ def onboard_therapist_invite(
     primary_case_manager_user_id: int,
     mentor_user_id: int | None = None,
 ) -> dict:
-    _check_email_available(db, email)
+    _assert_new_invite_allowed(db, email, "THERAPIST")
     modules = validate_module_assignments(["THERAPIST"], module_assignments, db)
     services = validate_service_ids(services_offered, db) if services_offered else []
 
@@ -172,7 +171,7 @@ def onboard_therapist_direct(
     primary_case_manager_user_id: int,
     mentor_user_id: int | None = None,
 ) -> dict:
-    _check_email_available(db, email)
+    _ensure_email_free_for_new_user(db, email)
     validated_services = validate_service_ids(services_offered, db) if services_offered else []
     mods = module_assignments or validated_services
     validate_module_assignments(["THERAPIST"], mods, db)

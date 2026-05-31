@@ -1,5 +1,11 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AdminInviteRowActions, AdminPanel } from './ui/index.js'
+import {
+  AdminInviteRowActions,
+  AdminPanel,
+  PeopleBulkToolbar,
+  PeopleSelectCheckbox,
+} from './ui/index.js'
 
 export function AdminClientOnboardPanel({
   canCreateCase,
@@ -12,6 +18,7 @@ export function AdminClientOnboardPanel({
   onReload,
 }) {
   const navigate = useNavigate()
+  const [selectedInviteIds, setSelectedInviteIds] = useState(() => new Set())
 
   return (
     <>
@@ -44,10 +51,20 @@ export function AdminClientOnboardPanel({
           title={`Pending parent invites (${pendingInvites.length})`}
           subtitle="Invites not yet accepted"
         >
+          <PeopleBulkToolbar
+            selectedInviteIds={[...selectedInviteIds]}
+            onReload={() => {
+              setSelectedInviteIds(new Set())
+              onReload?.()
+            }}
+            onSuccess={onSuccess}
+            onError={onError}
+          />
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
                 <tr>
+                  <th style={{ width: 36 }} aria-label="Select" />
                   <th>Email</th>
                   <th>Expires</th>
                   <th />
@@ -56,6 +73,20 @@ export function AdminClientOnboardPanel({
               <tbody>
                 {pendingInvites.map((inv) => (
                   <tr key={inv.id}>
+                    <td>
+                      <PeopleSelectCheckbox
+                        checked={selectedInviteIds.has(inv.id)}
+                        onChange={() =>
+                          setSelectedInviteIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(inv.id)) next.delete(inv.id)
+                            else next.add(inv.id)
+                            return next
+                          })
+                        }
+                        ariaLabel={`Select invite ${inv.email}`}
+                      />
+                    </td>
                     <td>{inv.email}</td>
                     <td>{new Date(inv.expires_at).toLocaleDateString()}</td>
                     <td>

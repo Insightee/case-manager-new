@@ -3,21 +3,24 @@
  * Geolocation requires HTTPS or http://localhost.
  */
 
-function geolocationErrorMessage(error) {
+import { apiFetch } from './apiClient.js'
+
+function geolocationErrorMessage(error, { manualHint = true } = {}) {
   if (!error) return 'Could not get your location.'
+  const suffix = manualHint ? ' You can type the address below — GPS is optional.' : ''
   switch (error.code) {
     case error.PERMISSION_DENIED:
-      return 'Location permission denied. Allow location for this site in browser settings, then try again.'
+      return `Location permission denied. Allow location for this site in browser settings, then try again.${suffix}`
     case error.POSITION_UNAVAILABLE:
-      return 'Location unavailable. Check that system location services are on.'
+      return `Location unavailable. Check that system location services are on, or enter the address manually.${suffix}`
     case error.TIMEOUT:
-      return 'Location request timed out. Try again or enter the address manually.'
+      return `Location request timed out. Try again or enter the address manually.${suffix}`
     default:
-      return error.message || 'Could not get your location.'
+      return (error.message || 'Could not get your location.') + suffix
   }
 }
 
-export function getCurrentPosition(options = {}) {
+function requestPosition(options) {
   return new Promise((resolve, reject) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       reject(new Error('Geolocation is not supported in this browser.'))
@@ -31,28 +34,48 @@ export function getCurrentPosition(options = {}) {
       )
       return
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      (err) => reject(new Error(geolocationErrorMessage(err))),
-      {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 60000,
-        ...options,
-      },
-    )
+    navigator.geolocation.getCurrentPosition(resolve, reject, options)
+  })
+}
+
+export function getCurrentPosition(options = {}) {
+  const highAccuracy = {
+    timeout: 20000,
+    maximumAge: 60000,
+    ...options,
+    enableHighAccuracy: true,
+  }
+  const lowAccuracy = {
+    timeout: 30000,
+    maximumAge: 300000,
+    ...options,
+    enableHighAccuracy: false,
+  }
+
+  return requestPosition(highAccuracy).then((pos) => ({
+    latitude: pos.coords.latitude,
+    longitude: pos.coords.longitude,
+  })).catch(async (firstErr) => {
+    const POSITION_UNAVAILABLE = 2
+    const TIMEOUT = 3
+    const retryable = firstErr?.code === POSITION_UNAVAILABLE || firstErr?.code === TIMEOUT
+    if (!retryable) {
+      throw new Error(geolocationErrorMessage(firstErr))
+    }
+    try {
+      const pos = await requestPosition(lowAccuracy)
+      return { latitude: pos.coords.latitude, longitude: pos.coords.longitude }
+    } catch (secondErr) {
+      throw new Error(geolocationErrorMessage(secondErr))
+    }
   })
 }
 
 /** @returns {Promise<{ address_line1?: string, address_line2?: string, city?: string, state?: string, pincode?: string, landmark?: string }>} */
 export async function reverseGeocode(latitude, longitude) {
-  const url = `/api/v1/geocode/reverse?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`
-  const res = await fetch(url, { headers: { Accept: 'application/json' } })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || 'Could not look up address for this location.')
-  }
-  const data = await res.json()
+  const data = await apiFetch(
+    `/api/v1/geocode/reverse?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`,
+  )
   return {
     address_line1: data.address_line1 || '',
     address_line2: data.address_line2 || '',

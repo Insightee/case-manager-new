@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { useParentDocumentsList } from '../../hooks/useCaseDocuments.js'
 import { categoryLabel } from '../../lib/caseDocumentCategories.js'
 import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
+import { buildSessionDisputeState, SessionCard } from './SessionCard.jsx'
 import '../cases/my-cases.css'
 import '../documents/case-documents.css'
 import '../reports/report-editor.css'
+import './parent-session-updates.css'
 
 const TABS = [
   { id: 'overview', label: 'Profile' },
@@ -30,6 +32,7 @@ function StatusChip({ status }) {
 
 export function ParentCaseDetailPage() {
   const { caseId } = useParams()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
   const [caseRow, setCaseRow] = useState(null)
@@ -179,6 +182,10 @@ export function ParentCaseDetailPage() {
     }
   }
 
+  function handleSessionDispute(log) {
+    navigate('/parent/support?tab=support', { state: buildSessionDisputeState(log) })
+  }
+
   if (loading) return <p style={{ color: '#6b7280' }}>Loading case…</p>
   if (error || !caseRow) {
     return (
@@ -271,28 +278,20 @@ export function ParentCaseDetailPage() {
       )}
 
       {tab === 'sessions' && (
-        <section className="card" style={{ padding: 16 }}>
+        <>
           {logs.length === 0 ? (
             <p style={{ color: '#9ca3af' }}>No approved session updates yet.</p>
           ) : (
-            <ul className="log-list">
-              {logs.map((log) => (
-                <li key={log.id}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 600 }}>{log.scheduled_date}</p>
-                    <span>
-                      {log.attendance_status} · {log.therapist_name}
-                    </span>
-                  </div>
-                  {log.parent_notes ? <p style={{ marginTop: 8 }}>{log.parent_notes}</p> : null}
-                  {log.activities_done ? (
-                    <p style={{ marginTop: 8, fontSize: '0.875rem', color: '#475569' }}>{log.activities_done}</p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            logs.map((log) => (
+              <SessionCard
+                key={log.id}
+                log={log}
+                onSaved={load}
+                onDispute={handleSessionDispute}
+              />
+            ))
           )}
-        </section>
+        </>
       )}
 
       {tab === 'observation' && (
@@ -473,8 +472,44 @@ export function ParentCaseDetailPage() {
       )}
 
       <style>{`
+        .parent-case-hub .ic-case-tabs {
+          display: flex;
+          flex-wrap: nowrap;
+          gap: 6px;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          margin-bottom: 16px;
+          padding: 4px;
+          border-bottom: none;
+          background: #f1f5f9;
+          border-radius: 12px;
+          border: 1px solid #e2e8f0;
+        }
+        .parent-case-hub .ic-case-tabs__btn {
+          flex: 0 0 auto;
+          min-height: 44px;
+          padding: 10px 14px;
+          border: none;
+          border-radius: 8px;
+          background: transparent;
+          font-size: 0.8125rem;
+          font-weight: 600;
+          color: #64748b;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        .parent-case-hub .ic-case-tabs__btn:hover {
+          color: #334155;
+          background: rgba(255, 255, 255, 0.6);
+        }
+        .parent-case-hub .ic-case-tabs__btn.is-active {
+          background: #fff;
+          color: #4f46e5;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+        }
         .parent-case-hub__modal { position: fixed; inset: 0; z-index: 50; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
         .parent-case-hub__modal-panel { background: #fff; border-radius: 16px; padding: 24px; max-width: 640px; width: 100%; max-height: 90vh; overflow: auto; }
+        .parent-case-hub .session-card { margin-bottom: 12px; }
       `}</style>
     </div>
   )

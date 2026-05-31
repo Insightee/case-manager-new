@@ -10,15 +10,13 @@ import {
   StatusBadge,
   CopyLinkButton,
   AdminInviteRowActions,
+  PeopleRowActions,
+  PeopleBulkToolbar,
+  PeopleSelectCheckbox,
 } from './ui/index.js'
 import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
 import { accountStatusLabel, accountStatusTone } from '../../lib/accountStatus.js'
-import {
-  provisionActivateSuccess,
-  provisionInviteFailure,
-  provisionInviteSuccess,
-} from '../../lib/userProvision.js'
 import {
   hasDeprecatedStaffRole,
   moduleAccessSummary,
@@ -60,6 +58,8 @@ export function AdminStaffManageSection({
   const [submitting, setSubmitting] = useState(false)
   const [rowBusy, setRowBusy] = useState(null)
   const [lastProvision, setLastProvision] = useState(null)
+  const [selectedStaffIds, setSelectedStaffIds] = useState(() => new Set())
+  const [selectedInviteIds, setSelectedInviteIds] = useState(() => new Set())
 
   const deprecatedSet = useMemo(
     () => new Set((deprecatedRoles || []).map((r) => String(r).toUpperCase())),
@@ -151,104 +151,26 @@ export function AdminStaffManageSection({
     }
   }
 
-  async function deactivateUser(userId, name) {
-    if (!window.confirm(`Deactivate ${name}? They will not be able to sign in.`)) return
-    onError?.('')
-    try {
-      await apiFetch(`/api/v1/admin/users/${userId}`, { method: 'DELETE' })
-      onReload?.()
-      onSuccess?.('User deactivated.')
-    } catch (err) {
-      onError?.(err.message || 'Could not deactivate user')
-    }
-  }
-
-  async function activateForLogin(u) {
-    const key = `${u.id}:activate`
-    if (rowBusy) return
-    onError?.('')
-    setRowBusy(key)
-    try {
-      const res = await apiFetch(`/api/v1/admin/users/${u.id}/activate-for-login`, {
-        method: 'POST',
-        timeoutMs: 20_000,
-      })
-      setLastProvision({ email: res.email, ...res })
-      onSuccess?.(provisionActivateSuccess(res))
-      onReload?.()
-    } catch (err) {
-      onError?.(err.message || `Could not activate ${u.email}`)
-    } finally {
-      setRowBusy(null)
-    }
-  }
-
-  async function inviteToLogin(u) {
-    const key = `${u.id}:invite`
-    if (rowBusy) return
-    onError?.('')
-    setRowBusy(key)
-    try {
-      const res = await apiFetch(`/api/v1/admin/users/${u.id}/invite-to-login`, {
-        method: 'POST',
-        timeoutMs: 20_000,
-      })
-      setLastProvision({ email: res.email, ...res })
-      const fail = provisionInviteFailure(res)
-      if (fail) onError?.(fail)
-      onSuccess?.(provisionInviteSuccess(res))
-      if (res.invite_url) setInviteUrl(res.invite_url)
-      onReload?.()
-    } catch (err) {
-      onError?.(err.message || `Could not invite ${u.email}`)
-    } finally {
-      setRowBusy(null)
-    }
-  }
-
   function staffStatus(u) {
     return accountStatusLabel(u)
   }
 
-  function rowLoginActions(u) {
-    const busyActivate = rowBusy === `${u.id}:activate`
-    const busyInvite = rowBusy === `${u.id}:invite`
-    const link = u.pending_invite_url || (lastProvision?.email === u.email ? lastProvision.invite_url : null)
-    return (
-      <div className="admin-btn-group admin-btn-group--wrap">
-        {!u.is_active ? (
-          <button
-            type="button"
-            className="admin-btn admin-btn--primary admin-btn--sm"
-            disabled={!!rowBusy}
-            onClick={() => activateForLogin(u)}
-          >
-            {busyActivate ? 'Activating…' : 'Activate user'}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="admin-btn admin-btn--ghost admin-btn--sm"
-          disabled={!!rowBusy}
-          onClick={() => inviteToLogin(u)}
-        >
-          {busyInvite ? 'Sending…' : u.invite_status === 'pending' ? 'Resend invite' : 'Invite to login'}
-        </button>
-        {link ? (
-          <CopyLinkButton url={link} label="Copy login link" />
-        ) : null}
-        {u.is_active ? (
-          <button
-            type="button"
-            className="admin-btn admin-btn--ghost admin-btn--sm"
-            disabled={!!rowBusy}
-            onClick={() => deactivateUser(u.id, u.full_name)}
-          >
-            Deactivate
-          </button>
-        ) : null}
-      </div>
-    )
+  function toggleStaffSelect(id) {
+    setSelectedStaffIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleInviteSelect(id) {
+    setSelectedInviteIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   async function saveEditAccess(userId) {
@@ -391,9 +313,23 @@ export function AdminStaffManageSection({
 
       {filteredInvites.length > 0 ? (
         <AdminPanel title={`Pending staff invitations (${filteredInvites.length})`} subtitle="Links expire after 7 days">
+          <PeopleBulkToolbar
+            selectedInviteIds={[...selectedInviteIds]}
+            onReload={() => {
+              setSelectedInviteIds(new Set())
+              onReload?.()
+            }}
+            onSuccess={onSuccess}
+            onError={onError}
+          />
           <ul className="admin-queue">
             {filteredInvites.map((inv) => (
               <li key={inv.id} className="admin-queue__item">
+                <PeopleSelectCheckbox
+                  checked={selectedInviteIds.has(inv.id)}
+                  onChange={() => toggleInviteSelect(inv.id)}
+                  ariaLabel={`Select invite ${inv.email}`}
+                />
                 <div>
                   <p className="admin-queue__title">{inv.email}</p>
                   <p className="admin-queue__meta">
@@ -422,12 +358,23 @@ export function AdminStaffManageSection({
           {filtered.length === 0 ? (
             <AdminEmptyState title="No staff users" description="Add a user above or adjust search." />
           ) : (
+            <>
+            <PeopleBulkToolbar
+              selectedUserIds={[...selectedStaffIds]}
+              onReload={() => {
+                setSelectedStaffIds(new Set())
+                onReload?.()
+              }}
+              onSuccess={onSuccess}
+              onError={onError}
+            />
             <AdminDataList
               desktop={
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 36 }} aria-label="Select" />
                     <th>Name</th>
                     <th>Email</th>
                     <th>Role</th>
@@ -440,6 +387,13 @@ export function AdminStaffManageSection({
                   {filtered.map((u) => (
                     <Fragment key={u.id}>
                       <tr>
+                        <td>
+                          <PeopleSelectCheckbox
+                            checked={selectedStaffIds.has(u.id)}
+                            onChange={() => toggleStaffSelect(u.id)}
+                            ariaLabel={`Select ${u.full_name}`}
+                          />
+                        </td>
                         <td>
                           <span className="admin-table__primary">{u.full_name}</span>
                         </td>
@@ -510,13 +464,22 @@ export function AdminStaffManageSection({
                             >
                               {editingId === u.id ? 'Cancel' : 'Edit access'}
                             </button>
-                            {rowLoginActions(u)}
+                            <PeopleRowActions
+                              user={u}
+                              rowBusy={rowBusy}
+                              setRowBusy={setRowBusy}
+                              onReload={onReload}
+                              onSuccess={onSuccess}
+                              onError={onError}
+                              lastProvision={lastProvision}
+                              setLastProvision={setLastProvision}
+                            />
                           </div>
                         </td>
                       </tr>
                       {editingId === u.id ? (
                         <tr>
-                          <td colSpan={7} style={{ padding: '12px 16px', background: '#f8fafc' }}>
+                          <td colSpan={8} style={{ padding: '12px 16px', background: '#f8fafc' }}>
                             {hasDeprecatedStaffRole(u.roles) ? (
                               <p className="admin-alert admin-alert--warn rbac-editor__hint">
                                 Legacy role detected. Prefer Module Admin, Case Manager, or Finance when re-provisioning access.
@@ -600,7 +563,16 @@ export function AdminStaffManageSection({
                             >
                               {editingId === u.id ? 'Cancel' : 'Edit access'}
                             </button>
-                            {rowLoginActions(u)}
+                            <PeopleRowActions
+                              user={u}
+                              rowBusy={rowBusy}
+                              setRowBusy={setRowBusy}
+                              onReload={onReload}
+                              onSuccess={onSuccess}
+                              onError={onError}
+                              lastProvision={lastProvision}
+                              setLastProvision={setLastProvision}
+                            />
                           </div>
                         }
                       >
@@ -672,6 +644,7 @@ export function AdminStaffManageSection({
                 </ul>
               }
             />
+            </>
           )}
         </div>
       </AdminPanel>

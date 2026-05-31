@@ -570,6 +570,20 @@
     overflow-x: hidden;
   }
 
+  .rbac-service-multiselect {
+    min-height: 10rem;
+  }
+
+  .rbac-service-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rbac-service-toolbar .admin-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .rbac-access-summary .admin-badge {
     white-space: normal;
   }

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
-from app.models.case import Case
+from app.models.case import Case, CaseStatus
 from app.models.child import Child
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import InviteToken, User
@@ -44,9 +44,15 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
                 parents.append(info)
 
     cases_by_child: dict[int, list[dict]] = {}
-    for case in db.scalars(select(Case)).all():
+    for case in db.scalars(select(Case).order_by(Case.id.desc())).all():
+        status_val = case.status.value if case.status else None
         cases_by_child.setdefault(case.child_id, []).append(
-            {"caseId": case.id, "caseCode": case.case_code}
+            {
+                "caseId": case.id,
+                "caseCode": case.case_code,
+                "status": status_val,
+                "caseManagerUserId": case.case_manager_user_id,
+            }
         )
 
     now = datetime.now(timezone.utc)
@@ -73,6 +79,17 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
         label = child.full_name
         child_cases = cases_by_child.get(child.id, [])
         case_codes = [c["caseCode"] for c in child_cases if c.get("caseCode")]
+        has_cases = len(child_cases) > 0
+        closed_val = CaseStatus.CLOSED.value
+        all_cases_closed = has_cases and all(c.get("status") == closed_val for c in child_cases)
+        has_open_case = any(c.get("status") != closed_val for c in child_cases)
+        primary_case_id = None
+        for c in child_cases:
+            if c.get("status") != closed_val:
+                primary_case_id = c["caseId"]
+                break
+        if primary_case_id is None and child_cases:
+            primary_case_id = child_cases[0]["caseId"]
         if q:
             hay = f"{label} {' '.join(p['parentEmail'] for p in parents)} {' '.join(case_codes)}".lower()
             if q not in hay:
@@ -88,6 +105,9 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
                 "parents": parents,
                 "cases": child_cases,
                 "caseCodes": case_codes,
+                "allCasesClosed": all_cases_closed,
+                "hasOpenCase": has_open_case,
+                "primaryCaseId": primary_case_id,
                 "hasParent": bool(parents),
                 "pendingInvite": pending,
             }
@@ -116,12 +136,14 @@ def create_family(
     created_by_user_id: int,
 ) -> dict:
     from app.core.permissions import RoleName
+    from app.services.invite_policy_service import assert_can_create_invite
 
     email = parent_email.lower().strip()
     existing = db.scalars(select(User).where(User.email == email)).first()
     if existing:
         if RoleName.PARENT.value not in existing.role_names:
-            raise ValueError("A user with this email already exists but is not a parent account")
+            primary = existing.role_names[0].replace("_", " ").title() if existing.role_names else "another role"
+            raise ValueError(f"User already present as {primary}.")
         child = create_child(db, child_first, child_last, child_dob)
         pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == existing.id)).first()
         if not pg:
@@ -142,6 +164,7 @@ def create_family(
 
     invite_url = None
     if send_invite:
+        assert_can_create_invite(db, email, RoleName.PARENT.value)
         token = secrets.token_urlsafe(32)
         invite = InviteToken(
             email=email,
@@ -228,10 +251,12 @@ def issue_parent_invite(
     background_tasks=None,
 ) -> str:
     from app.core.permissions import RoleName
+    from app.services.invite_policy_service import assert_can_create_invite
 
     user = db.get(User, parent_user_id)
     if not user or RoleName.PARENT.value not in user.role_names:
         raise ValueError("Parent user not found")
+    assert_can_create_invite(db, user.email, RoleName.PARENT.value)
     linked_child_id = child_id
     if linked_child_id is None:
         pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == user.id)).first()

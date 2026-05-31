@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
+import { unwrapList, fetchAllPages } from '../../lib/listApi.js'
+import { AdminStaffDirectoryReadOnly } from './AdminStaffDirectoryReadOnly.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
 import { AdminClientOnboardPanel } from './AdminClientOnboardPanel.jsx'
@@ -19,14 +20,19 @@ import {
   AdminToolbar,
   StatusBadge,
   CopyLinkButton,
+  PeopleRowActions,
+  PeopleBulkToolbar,
+  PeopleSelectCheckbox,
+  ClientCaseAccessModal,
 } from './ui/index.js'
-import { accountStatusLabel, accountStatusTone, clientAccountStatus } from '../../lib/accountStatus.js'
+import { accountStatusLabel, accountStatusTone, clientAccountStatus, clientStatusHint } from '../../lib/accountStatus.js'
 
 export function AdminPeoplePage() {
   const { can, user, isViewOnly } = useAuth()
   const isHrPortal = (user?.roles || []).includes('HR')
   const canManageUsers = can('user.manage') && !isViewOnly
-  const canReadTherapists = canManageUsers || can('therapist.read')
+  const canReadStaffDirectory = (canManageUsers || can('user.read')) && !isViewOnly
+  const canReadTherapists = canManageUsers || canReadStaffDirectory || can('therapist.read')
   const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState(() => searchParams.get('tab') || 'staff')
   const [users, setUsers] = useState([])
@@ -44,6 +50,13 @@ export function AdminPeoplePage() {
   const [inviteUrl, setInviteUrl] = useState('')
   const [showFamilyWizard, setShowFamilyWizard] = useState(false)
   const [familySearchDebounced, setFamilySearchDebounced] = useState('')
+  const [rowBusy, setRowBusy] = useState(null)
+  const [lastProvision, setLastProvision] = useState(null)
+  const [selectedTherapistIds, setSelectedTherapistIds] = useState(() => new Set())
+  const [selectedClientUserIds, setSelectedClientUserIds] = useState(() => new Set())
+  const [clientAccessFamily, setClientAccessFamily] = useState(null)
+  const [usersTotal, setUsersTotal] = useState(0)
+  const [userSearchDebounced, setUserSearchDebounced] = useState('')
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -56,6 +69,12 @@ export function AdminPeoplePage() {
     return () => clearTimeout(t)
   }, [search, tab])
 
+  useEffect(() => {
+    if (tab === 'clients') return
+    const t = setTimeout(() => setUserSearchDebounced(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search, tab])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -64,16 +83,37 @@ export function AdminPeoplePage() {
         tab === 'clients' && familySearchDebounced
           ? `?search=${encodeURIComponent(familySearchDebounced)}`
           : ''
-      const userFetch = canManageUsers
-        ? apiFetch('/api/v1/admin/users?page_size=100')
+
+      async function loadDirectoryUsers() {
+        const buildQs = (page, pageSize) => {
+          const p = new URLSearchParams({
+            page: String(page),
+            page_size: String(pageSize),
+            sort: 'created_at_desc',
+          })
+          if (userSearchDebounced) p.set('search', userSearchDebounced)
+          return p.toString()
+        }
+        if (userSearchDebounced) {
+          const data = await apiFetch(`/api/v1/admin/users?${buildQs(1, 100)}`)
+          const items = unwrapList(data)
+          return { items, total: data.total ?? items.length }
+        }
+        return fetchAllPages((page, pageSize) =>
+          apiFetch(`/api/v1/admin/users?${buildQs(page, pageSize)}`),
+        )
+      }
+
+      const userFetch = canReadStaffDirectory
+        ? loadDirectoryUsers()
         : canReadTherapists
           ? apiFetch('/api/v1/admin/users/directory?roles=THERAPIST&active_only=false')
-          : Promise.resolve([])
+          : Promise.resolve({ items: [], total: 0 })
       const modulesFetch = canManageUsers ? apiFetch('/api/v1/admin/modules') : Promise.resolve({ modules: [], role_defaults: {} })
       const rbacFetch = canManageUsers
         ? apiFetch('/api/v1/admin/rbac/catalog').catch(() => null)
         : Promise.resolve(null)
-      const [userRows, moduleMeta, rbacMeta, profileRows, clientRows, inviteRows] = await Promise.all([
+      const [userResult, moduleMeta, rbacMeta, profileRows, clientRows, inviteRows] = await Promise.all([
         userFetch,
         modulesFetch,
         rbacFetch,
@@ -81,9 +121,9 @@ export function AdminPeoplePage() {
         apiFetch(`/api/v1/admin/families${familyQs}`),
         canManageUsers ? apiFetch('/api/v1/admin/invites').catch(() => []) : Promise.resolve([]),
       ])
-      const normalizedUsers = canManageUsers
-        ? unwrapList(userRows)
-        : (Array.isArray(userRows) ? userRows : []).map((u) => ({
+      const normalizedUsers = canReadStaffDirectory
+        ? userResult.items
+        : (Array.isArray(userResult) ? userResult : userResult.items || []).map((u) => ({
             id: u.id,
             email: u.email,
             full_name: u.full_name,
@@ -92,6 +132,7 @@ export function AdminPeoplePage() {
             module_assignments: u.module_assignments || [],
           }))
       setUsers(normalizedUsers)
+      setUsersTotal(canReadStaffDirectory ? userResult.total : normalizedUsers.length)
       setCatalog(
         rbacMeta ?? {
           modules: moduleMeta.modules ?? [],
@@ -111,7 +152,7 @@ export function AdminPeoplePage() {
     } finally {
       setLoading(false)
     }
-  }, [tab, familySearchDebounced, canManageUsers, canReadTherapists])
+  }, [tab, familySearchDebounced, userSearchDebounced, canManageUsers, canReadStaffDirectory, canReadTherapists])
 
   useEffect(() => {
     load()
@@ -131,7 +172,10 @@ export function AdminPeoplePage() {
   const therapists = useMemo(() => users.filter((u) => u.roles?.includes('THERAPIST')), [users])
 
   const q = search.trim().toLowerCase()
-  const filterText = (hay) => !q || hay.toLowerCase().includes(q)
+  const filterText = (hay) =>
+    !q || hay.toLowerCase().includes(q) || (canReadStaffDirectory && userSearchDebounced)
+
+  const usersTruncated = canReadStaffDirectory && users.length < usersTotal
 
   const filteredStaff = staff.filter(
     (u) => filterText(`${u.full_name} ${u.email} ${(u.roles || []).join(' ')}`),
@@ -176,13 +220,153 @@ export function AdminPeoplePage() {
     return (f.caseCodes || []).map((code) => ({ caseId: null, caseCode: code }))
   }
 
+  function toggleSet(setter, id) {
+    setter((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function clientUserFromFamily(f) {
+    const primary = f.parents?.[0]
+    if (!primary?.userId) return null
+    return {
+      id: primary.userId,
+      email: primary.parentEmail,
+      full_name: primary.parentName,
+      is_active: primary.parentIsActive,
+      login_ready: primary.parentLoginReady,
+      invite_status: f.pendingInvite ? 'pending' : undefined,
+      pending_invite_url: f.pendingInvite?.inviteUrl,
+      _reactivateCaseId:
+        f.allCasesClosed && primary.parentIsActive !== false ? f.primaryCaseId : null,
+    }
+  }
+
+  async function invitePendingParent(f) {
+    if (f.pendingInvite?.inviteId) {
+      setError('')
+      try {
+        await apiFetch(`/api/v1/admin/invites/${f.pendingInvite.inviteId}/resend-email`, {
+          method: 'POST',
+        })
+        setSuccess(`Invite resent to ${f.pendingInvite.pendingEmail}.`)
+      } catch (err) {
+        setError(err.message || 'Could not resend invite')
+      }
+      return
+    }
+    const primary = f.parents?.[0]
+    if (primary?.userId) {
+      await inviteParent(primary.userId, f.childId, primary.parentEmail)
+    }
+  }
+
+  function clientRowActions(f) {
+    const primary = f.parents?.[0]
+    const clientUser = clientUserFromFamily(f)
+    const secondary = []
+    if (!f.hasOpenCase && canCreateCase) {
+      secondary.push(
+        <Link key="allot" to="/admin/cases?allot=1" className="admin-btn admin-btn--ghost admin-btn--sm">
+          Allot case
+        </Link>,
+      )
+    }
+    if (!primary && !f.pendingInvite) {
+      secondary.push(
+        <button
+          key="add-parent"
+          type="button"
+          className="admin-btn admin-btn--ghost admin-btn--sm"
+          onClick={() => setShowFamilyWizard(true)}
+        >
+          Add parent
+        </button>,
+      )
+    }
+    if (clientUser && canManageUsers) {
+      return (
+        <div className="admin-btn-group admin-btn-group--wrap">
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            onClick={() => setClientAccessFamily(f)}
+          >
+            Edit access
+          </button>
+          <PeopleRowActions
+            user={clientUser}
+            rowBusy={rowBusy}
+            setRowBusy={setRowBusy}
+            onReload={load}
+            onSuccess={setSuccess}
+            onError={setError}
+            lastProvision={lastProvision}
+            setLastProvision={setLastProvision}
+            extraActions={secondary}
+          />
+        </div>
+      )
+    }
+    if (f.pendingInvite && canManageUsers) {
+      return (
+        <div className="admin-btn-group admin-btn-group--wrap">
+          {secondary}
+          <CopyLinkButton url={f.pendingInvite.inviteUrl} label="Copy invite link" />
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            onClick={() => invitePendingParent(f)}
+          >
+            Resend invite
+          </button>
+        </div>
+      )
+    }
+    return <div className="admin-btn-group admin-btn-group--wrap">{secondary}</div>
+  }
+
+  function therapistRowActions(u) {
+    const profileHref = `/admin/therapist-profiles?user_id=${u.id}`
+    return (
+      <div className="admin-btn-group admin-btn-group--wrap">
+        <Link to={profileHref} className="admin-btn admin-btn--ghost admin-btn--sm">
+          Edit access
+        </Link>
+        {canManageUsers ? (
+          <PeopleRowActions
+            user={u}
+            rowBusy={rowBusy}
+            setRowBusy={setRowBusy}
+            onReload={load}
+            onSuccess={setSuccess}
+            onError={setError}
+            lastProvision={lastProvision}
+            setLastProvision={setLastProvision}
+          />
+        ) : null}
+      </div>
+    )
+  }
+
   function clientStatusBadges(f) {
     const status = clientAccountStatus(f)
+    const hint = clientStatusHint(f)
     const badges = [
       <StatusBadge key="status" tone={accountStatusTone(status)}>
         {status}
       </StatusBadge>,
     ]
+    if (hint) {
+      badges.push(
+        <span key="hint" className="admin-muted" style={{ fontSize: '0.75rem' }}>
+          {hint}
+        </span>,
+      )
+    }
     const cases = clientCases(f)
     if (cases.length) {
       badges.push(
@@ -192,41 +376,6 @@ export function AdminPeoplePage() {
       )
     }
     return badges
-  }
-
-  function clientRowActions(f) {
-    const primary = f.parents?.[0]
-    return (
-      <div className="admin-btn-group">
-        {primary?.userId ? (
-          <button
-            type="button"
-            className="admin-btn admin-btn--ghost admin-btn--sm"
-            onClick={() => inviteParent(primary.userId, f.childId, primary.parentEmail)}
-          >
-            Invite parent
-          </button>
-        ) : null}
-        {!f.hasParent && !f.pendingInvite ? (
-          <button
-            type="button"
-            className="admin-btn admin-btn--ghost admin-btn--sm"
-            onClick={() => setShowFamilyWizard(true)}
-          >
-            Add parent
-          </button>
-        ) : null}
-        {isHrPortal ? (
-          <Link to="/hr/cases" className="admin-btn admin-btn--primary admin-btn--sm">
-            View cases
-          </Link>
-        ) : canCreateCase ? (
-          <Link to="/admin/cases?allot=1" className="admin-btn admin-btn--primary admin-btn--sm">
-            Allot case
-          </Link>
-        ) : null}
-      </div>
-    )
   }
 
   function renderClientCaseLinks(f) {
@@ -266,6 +415,12 @@ export function AdminPeoplePage() {
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
       {success ? <p className="admin-alert admin-alert--success">{success}</p> : null}
+      {usersTruncated ? (
+        <p className="admin-alert admin-alert--warn">
+          Showing {users.length} of {usersTotal} users. Search by email or name to find someone, or contact
+          Super Admin if the directory looks incomplete.
+        </p>
+      ) : null}
       {inviteUrl ? (
         <p className="admin-alert" style={{ wordBreak: 'break-all', fontSize: '0.875rem' }}>
           Invite link: <CopyLinkButton url={inviteUrl} label="Copy" copiedLabel="Copied" /> {inviteUrl}
@@ -328,11 +483,15 @@ export function AdminPeoplePage() {
             />
           ) : null}
 
-          {tab === 'staff' && !canManageUsers ? (
+          {tab === 'staff' && canReadStaffDirectory && !canManageUsers ? (
+            <AdminStaffDirectoryReadOnly staff={filteredStaff} />
+          ) : null}
+
+          {tab === 'staff' && !canReadStaffDirectory ? (
             <AdminPanel title="Staff">
               <AdminEmptyState
                 title="Directory access required"
-                description="Your role cannot manage staff accounts. Contact an administrator or HR."
+                description="Your role cannot view the staff directory. Contact an administrator or HR."
               />
             </AdminPanel>
           ) : null}
@@ -372,12 +531,25 @@ export function AdminPeoplePage() {
                 {filteredTherapists.length === 0 ? (
                   <AdminEmptyState title="No therapists yet" description="Use Add therapist or Bulk upload above." />
                 ) : (
+                  <>
+                    {canManageUsers ? (
+                      <PeopleBulkToolbar
+                        selectedUserIds={[...selectedTherapistIds]}
+                        onReload={() => {
+                          setSelectedTherapistIds(new Set())
+                          load()
+                        }}
+                        onSuccess={setSuccess}
+                        onError={setError}
+                      />
+                    ) : null}
                   <AdminDataList
                     desktop={
                       <div className="admin-table-wrap">
                         <table className="admin-table">
                           <thead>
                             <tr>
+                              {canManageUsers ? <th style={{ width: 36 }} aria-label="Select" /> : null}
                               <th>ID</th>
                               <th>Name</th>
                               <th>Email</th>
@@ -386,6 +558,7 @@ export function AdminPeoplePage() {
                               <th>Status</th>
                               <th>Primary CM</th>
                               <th>Services</th>
+                              {canManageUsers ? <th>Actions</th> : null}
                             </tr>
                           </thead>
                           <tbody>
@@ -393,6 +566,15 @@ export function AdminPeoplePage() {
                               const prof = profileByUser.get(u.id)
                               return (
                                 <tr key={u.id}>
+                                  {canManageUsers ? (
+                                    <td>
+                                      <PeopleSelectCheckbox
+                                        checked={selectedTherapistIds.has(u.id)}
+                                        onChange={() => toggleSet(setSelectedTherapistIds, u.id)}
+                                        ariaLabel={`Select ${u.full_name}`}
+                                      />
+                                    </td>
+                                  ) : null}
                                   <td className="admin-muted">{u.id}</td>
                                   <td>
                                     <Link
@@ -421,6 +603,7 @@ export function AdminPeoplePage() {
                                   </td>
                                   <td>{prof?.supervisor_name || '—'}</td>
                                   <td>{(prof?.services_offered || u.module_assignments || []).join(', ') || '—'}</td>
+                                  {canManageUsers ? <td>{therapistRowActions(u)}</td> : null}
                                 </tr>
                               )
                             })}
@@ -455,9 +638,13 @@ export function AdminPeoplePage() {
                                   </>
                                 }
                                 actions={
-                                  <Link to={profileHref} className="admin-btn admin-btn--primary admin-btn--sm">
-                                    {prof ? 'Open profile' : 'Create profile'}
-                                  </Link>
+                                  canManageUsers ? (
+                                    therapistRowActions(u)
+                                  ) : (
+                                    <Link to={profileHref} className="admin-btn admin-btn--primary admin-btn--sm">
+                                      {prof ? 'Open profile' : 'Create profile'}
+                                    </Link>
+                                  )
                                 }
                               >
                                 <p>
@@ -472,6 +659,7 @@ export function AdminPeoplePage() {
                       </ul>
                     }
                   />
+                  </>
                 )}
               </AdminPanel>
             </>
@@ -505,12 +693,25 @@ export function AdminPeoplePage() {
                     description="Use Add client & case, Add family, or Bulk import above."
                   />
                 ) : (
+                  <>
+                    {canManageUsers ? (
+                      <PeopleBulkToolbar
+                        selectedUserIds={[...selectedClientUserIds]}
+                        onReload={() => {
+                          setSelectedClientUserIds(new Set())
+                          load()
+                        }}
+                        onSuccess={setSuccess}
+                        onError={setError}
+                      />
+                    ) : null}
                   <AdminDataList
                     desktop={
                       <div className="admin-table-wrap">
                         <table className="admin-table">
                           <thead>
                             <tr>
+                              {canManageUsers ? <th style={{ width: 36 }} aria-label="Select" /> : null}
                               <th>ID</th>
                               <th>Child</th>
                               <th>Parent</th>
@@ -524,6 +725,7 @@ export function AdminPeoplePage() {
                           <tbody>
                             {filteredClients.map((f) => {
                               const primary = f.parents?.[0]
+                              const clientUser = clientUserFromFamily(f)
                               const firstCase = clientCases(f)[0]
                               const childHref = firstCase?.caseId
                                 ? `/admin/cases/${firstCase.caseId}`
@@ -532,6 +734,17 @@ export function AdminPeoplePage() {
                                   : null
                               return (
                                 <tr key={f.childId}>
+                                  {canManageUsers ? (
+                                    <td>
+                                      {clientUser ? (
+                                        <PeopleSelectCheckbox
+                                          checked={selectedClientUserIds.has(clientUser.id)}
+                                          onChange={() => toggleSet(setSelectedClientUserIds, clientUser.id)}
+                                          ariaLabel={`Select parent for ${f.childName}`}
+                                        />
+                                      ) : null}
+                                    </td>
+                                  ) : null}
                                   <td className="admin-muted">{f.childId}</td>
                                   <td>
                                     {childHref ? (
@@ -550,6 +763,11 @@ export function AdminPeoplePage() {
                                     <StatusBadge tone={accountStatusTone(clientAccountStatus(f))}>
                                       {clientAccountStatus(f)}
                                     </StatusBadge>
+                                    {clientStatusHint(f) ? (
+                                      <span className="admin-muted" style={{ display: 'block', fontSize: '0.75rem' }}>
+                                        {clientStatusHint(f)}
+                                      </span>
+                                    ) : null}
                                   </td>
                                   <td>{renderClientCaseLinks(f)}</td>
                                   <td>{clientRowActions(f)}</td>
@@ -603,6 +821,7 @@ export function AdminPeoplePage() {
                       </ul>
                     }
                   />
+                  </>
                 )}
               </AdminPanel>
             </>
@@ -610,6 +829,17 @@ export function AdminPeoplePage() {
 
         </>
       )}
+
+      <ClientCaseAccessModal
+        family={clientAccessFamily}
+        open={!!clientAccessFamily}
+        onClose={() => setClientAccessFamily(null)}
+        onSuccess={(msg) => {
+          setSuccess(msg)
+          load()
+        }}
+        onError={setError}
+      />
 
       {showFamilyWizard ? (
         <div

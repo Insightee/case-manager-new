@@ -1,52 +1,57 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import {
-  useMarkAllNotificationsRead,
-  useMarkNotificationRead,
-  useNotifications,
-} from '../../hooks/useNotifications.js'
+import { useNavigate } from 'react-router-dom'
+import { useMarkNotificationRead, useNotifications } from '../../hooks/useNotifications.js'
 import { QueryState } from './QueryState.jsx'
 import { resolveNotificationLink } from './notificationLinks.js'
+import './notification-center.css'
+
+function fmtTime(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  const diffMin = Math.floor((now - d) / 60000)
+  if (diffMin < 1) return 'Just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffH = Math.floor(diffMin / 60)
+  if (diffH < 24) return `${diffH}h ago`
+  const diffD = Math.floor(diffH / 24)
+  if (diffD < 7) return `${diffD}d ago`
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
 
 export function NotificationCenterPage({ portal }) {
+  const navigate = useNavigate()
   const [filter, setFilter] = useState('all')
   const unreadOnly = filter === 'unread'
   const { data, isLoading, isError, error, refetch } = useNotifications(unreadOnly)
   const markRead = useMarkNotificationRead()
-  const markAll = useMarkAllNotificationsRead()
 
   const notifications = data?.notifications || []
-  const centerPath =
-    portal === 'parent'
-      ? '/parent/notifications'
-      : portal === 'therapist'
-        ? '/therapist/notifications'
-        : '/admin/notifications'
+  const unreadCount = data?.unread_count ?? 0
+
+  async function handleOpen(n) {
+    if (!n.is_read) {
+      markRead.mutate(n.id)
+    }
+    const href = resolveNotificationLink(n.entity_type, n.entity_id, portal)
+    if (href) navigate(href)
+  }
 
   return (
     <div className="notification-center">
-      <header className="topbar">
-        <div>
-          <h2>Notifications</h2>
-          <p>{data?.unread_count ? `${data.unread_count} unread` : 'You’re all caught up'}</p>
-        </div>
-        <div className="topbar-actions">
-          {data?.unread_count > 0 ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => markAll.mutate()}
-              disabled={markAll.isPending}
-            >
-              Mark all read
-            </button>
-          ) : null}
-        </div>
+      <header className="notification-center__header">
+        <h2 className="notification-center__title">Notifications</h2>
+        <p className="notification-center__subtitle">
+          {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
+        </p>
       </header>
 
-      <div className="notification-center__filters">
+      <div className="notification-center__filters" role="tablist" aria-label="Filter notifications">
         <button
           type="button"
+          role="tab"
+          aria-selected={filter === 'all'}
           className={filter === 'all' ? 'is-active' : ''}
           onClick={() => setFilter('all')}
         >
@@ -54,10 +59,12 @@ export function NotificationCenterPage({ portal }) {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={filter === 'unread'}
           className={filter === 'unread' ? 'is-active' : ''}
           onClick={() => setFilter('unread')}
         >
-          Unread
+          Unread{unreadCount > 0 ? ` (${unreadCount})` : ''}
         </button>
       </div>
 
@@ -70,43 +77,26 @@ export function NotificationCenterPage({ portal }) {
         emptyMessage="No notifications yet."
       >
         <ul className="notification-center__list">
-          {notifications.map((n) => {
-            const href = resolveNotificationLink(n.entity_type, n.entity_id, portal)
-            return (
-              <li key={n.id} className={n.is_read ? '' : 'is-unread'}>
-                <div className="notification-center__item">
-                  <div>
-                    <strong>{n.title}</strong>
-                    {n.body ? <p>{n.body}</p> : null}
-                    <time dateTime={n.created_at}>
-                      {new Date(n.created_at).toLocaleString()}
-                    </time>
-                  </div>
-                  <div className="notification-center__actions">
-                    {href ? (
-                      <Link to={href} className="btn btn-secondary btn-sm">
-                        Open
-                      </Link>
-                    ) : null}
-                    {!n.is_read ? (
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => markRead.mutate(n.id)}
-                      >
-                        Mark read
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </li>
-            )
-          })}
+          {notifications.map((n) => (
+            <li key={n.id}>
+              <button
+                type="button"
+                className={`notification-center__row${n.is_read ? ' is-read' : ' is-unread'}`}
+                onClick={() => handleOpen(n)}
+              >
+                <span className="notification-center__dot" aria-hidden />
+                <span className="notification-center__body">
+                  <span className="notification-center__row-title">{n.title}</span>
+                  {n.body ? <p className="notification-center__row-text">{n.body}</p> : null}
+                  <time className="notification-center__row-time" dateTime={n.created_at}>
+                    {fmtTime(n.created_at)}
+                  </time>
+                </span>
+              </button>
+            </li>
+          ))}
         </ul>
       </QueryState>
-      <p className="notification-center__foot">
-        <Link to={centerPath}>Refresh list</Link>
-      </p>
     </div>
   )
 }

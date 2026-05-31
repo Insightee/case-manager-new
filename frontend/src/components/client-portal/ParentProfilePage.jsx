@@ -194,8 +194,10 @@ export function ParentProfilePage() {
   const [success, setSuccess] = useState('')
 
   const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
+  const [loginEmail, setLoginEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [secondaryContactName, setSecondaryContactName] = useState('')
+  const [secondaryContactEmail, setSecondaryContactEmail] = useState('')
   const [children, setChildren] = useState([])
   const [services, setServices] = useState([])
   const [homeAddr, setHomeAddr] = useState(emptyAddress())
@@ -212,8 +214,10 @@ export function ParentProfilePage() {
     try {
       const p = await apiFetch('/api/v1/parent/profile', { timeoutMs: 45_000 })
       setFullName(p.full_name || '')
-      setEmail(p.email || '')
+      setLoginEmail(p.email || '')
       setPhone(p.phone || '')
+      setSecondaryContactName(p.secondary_contact_name || '')
+      setSecondaryContactEmail(p.secondary_contact_email || '')
       setChildren(
         dedupeChildren(p.children).map((c) => ({
           id: c.id,
@@ -311,8 +315,9 @@ export function ParentProfilePage() {
     try {
       const body = {
         full_name: fullName.trim(),
-        email: email.trim(),
         phone: phone.trim() || null,
+        secondary_contact_name: secondaryContactName.trim() || null,
+        secondary_contact_email: secondaryContactEmail.trim() || null,
         address_type: addressType,
         ...addressToPayload(homeAddr, 'home_'),
         ...addressToPayload(schoolAddr, 'school_'),
@@ -390,12 +395,48 @@ export function ParentProfilePage() {
             </div>
             <div className="parent-profile__field">
               <label>
+                Login email
+                <input
+                  type="email"
+                  value={loginEmail}
+                  readOnly
+                  disabled
+                  autoComplete="email"
+                  aria-describedby="login-email-hint"
+                />
+              </label>
+              <p id="login-email-hint" className="parent-profile__hint" style={{ marginTop: 4, marginBottom: 0 }}>
+                Used to sign in — contact support if you need to change it.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="parent-profile__card">
+          <h3>Additional contact for communication</h3>
+          <p className="parent-profile__hint">
+            Optional — another person we can reach for appointments or updates (e.g. spouse, co-parent).
+          </p>
+          <div className="parent-profile__grid">
+            <div className="parent-profile__field">
+              <label>
+                Name
+                <input
+                  value={secondaryContactName}
+                  onChange={(e) => setSecondaryContactName(e.target.value)}
+                  placeholder="e.g. Alex Jenkins"
+                  autoComplete="name"
+                />
+              </label>
+            </div>
+            <div className="parent-profile__field">
+              <label>
                 Email
                 <input
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+                  value={secondaryContactEmail}
+                  onChange={(e) => setSecondaryContactEmail(e.target.value)}
+                  placeholder="e.g. alex@example.com"
                   autoComplete="email"
                 />
               </label>
@@ -460,7 +501,7 @@ export function ParentProfilePage() {
         <section className="parent-profile__card">
           <h3>Service address</h3>
           <p className="parent-profile__hint">
-            Save separate home and school locations. Choose which one you are editing — each is stored independently.
+            Please enter your service address here.
           </p>
 
           <fieldset style={{ border: 'none', padding: 0, margin: '0 0 16px' }}>

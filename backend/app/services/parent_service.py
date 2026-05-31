@@ -482,6 +482,8 @@ def get_parent_profile(db: Session, user: User) -> ParentProfileRead:
         full_name=user.full_name,
         email=user.email,
         phone=user.phone,
+        secondary_contact_name=user.secondary_contact_name,
+        secondary_contact_email=user.secondary_contact_email,
         home_address=user_home_address_read(user),
         school_address=user_school_address_read(user),
         address_type=(user.preferred_visit_address_type or "home"),
@@ -499,11 +501,22 @@ def update_parent_profile(db: Session, user: User, payload: dict[str, Any]) -> P
         user.full_name = name
 
     if payload.get("email") is not None:
-        email = str(payload["email"]).strip().lower()
-        existing = db.scalars(select(User).where(User.email == email, User.id != user.id)).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="Email is already in use")
-        user.email = email
+        requested = str(payload["email"]).strip().lower()
+        if requested != (user.email or "").strip().lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Login email cannot be changed from the client portal. Contact support if you need to update it.",
+            )
+
+    if "secondary_contact_name" in payload:
+        name = payload.get("secondary_contact_name")
+        user.secondary_contact_name = name.strip() if name and str(name).strip() else None
+
+    if "secondary_contact_email" in payload:
+        email_val = payload.get("secondary_contact_email")
+        user.secondary_contact_email = (
+            str(email_val).strip().lower() if email_val and str(email_val).strip() else None
+        )
 
     if "phone" in payload:
         phone = payload.get("phone")

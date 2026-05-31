@@ -186,6 +186,63 @@ input {
   gap: 4px;
 }
 
+.app-sidebar__footer--drawer {
+  flex-shrink: 0;
+  padding-top: 12px;
+  margin-top: auto;
+}
+
+.app-sidebar__drawer-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.app-sidebar__drawer-action:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.app-sidebar__drawer-action--logout {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.65);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  padding-top: 14px;
+}
+
+.app-sidebar__drawer-action-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  opacity: 0.85;
+}
+
+.app-sidebar__drawer-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
 .app-sidebar__usage-widget {
   display: flex;
   align-items: center;
@@ -2761,6 +2818,63 @@ th {
     padding: 4px 6px calc(4px + env(safe-area-inset-bottom, 0px));
   }
 
+  .app-mobile-tabs--app {
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 0.5px solid rgba(15, 23, 42, 0.1);
+    box-shadow:
+      0 -1px 0 rgba(255, 255, 255, 0.8) inset,
+      0 -10px 40px rgba(15, 23, 42, 0.07);
+    padding: 6px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-mobile-tabs--app .app-mobile-tabs__link {
+    position: relative;
+    gap: 5px;
+    padding: 6px 4px 8px;
+    min-height: 54px;
+    color: #94a3b8;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border-radius: 12px;
+  }
+
+  .app-mobile-tabs--app .app-mobile-tabs__link.is-active {
+    color: #4f46e5;
+    background: transparent;
+    box-shadow: none;
+    border: none;
+  }
+
+  .app-mobile-tabs--app .app-mobile-tabs__link.is-active::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 20px;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: #4f46e5;
+  }
+
+  .app-mobile-tabs--app .app-mobile-tabs__icon {
+    width: 1.375rem;
+    height: 1.375rem;
+    opacity: 0.72;
+  }
+
+  .app-mobile-tabs--app .app-mobile-tabs__link.is-active .app-mobile-tabs__icon {
+    color: #4f46e5;
+    opacity: 1;
+  }
+
+  .app-mobile-tabs--app .app-mobile-tabs__label {
+    line-height: 1.2;
+  }
+
   .content {
     padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
   }
@@ -3562,69 +3676,6 @@ th {
   margin-top: 8px;
   font-weight: 600;
   font-size: 0.875rem;
-}
-
-.notification-center__filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.notification-center__filters button {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 44px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-@media (max-width: 900px) {
-  .notification-center__filters button {
-    flex: 1 1 calc(50% - 4px);
-  }
-
-  .notification-center .topbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .notification-center .topbar-actions {
-    width: 100%;
-  }
-
-  .notification-center .topbar-actions .btn {
-    width: 100%;
-    min-height: 44px;
-  }
-}
-
-.notification-center__filters button.is-active {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
-
-.notification-center__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.notification-center__item {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.notification-center__list li.is-unread {
-  background: #f0f9ff;
 }
 
 .report-save-status {
