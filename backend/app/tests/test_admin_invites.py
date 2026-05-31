@@ -23,31 +23,6 @@ def _login(email: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-"""Admin invite revoke and related provisioning flows."""
-
-import secrets
-from datetime import datetime, timedelta, timezone
-
-from fastapi.testclient import TestClient
-from sqlalchemy import select
-
-from app.main import app
-from app.models.user import InviteToken
-from app.seed.demo_seed import run as seed_run
-
-client = TestClient(app)
-
-
-def setup_module():
-    seed_run()
-
-
-def _login(email: str) -> dict[str, str]:
-    r = client.post("/api/v1/auth/login", json={"email": email, "password": "demo123"})
-    assert r.status_code == 200
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-
 def _create_pending_invite(email: str, role_name: str = "CASE_MANAGER") -> InviteToken:
     from app.core.database import SessionLocal
 
@@ -79,7 +54,6 @@ def test_invite_cap_blocks_third_pending():
     headers = _login("superadmin@demo.com")
     email = f"cap.test.{secrets.token_hex(4)}@demo.com"
     _create_pending_invite(email)
-    _create_pending_invite(email)
 
     res = client.post(
         "/api/v1/admin/therapists/invite",
@@ -94,7 +68,6 @@ def test_revoke_then_new_invite_allowed():
     headers = _login("superadmin@demo.com")
     email = f"revoke.cap.{secrets.token_hex(4)}@demo.com"
     inv1 = _create_pending_invite(email)
-    _create_pending_invite(email)
 
     revoke = client.post(f"/api/v1/admin/invites/{inv1.id}/revoke", headers=headers)
     assert revoke.status_code == 200

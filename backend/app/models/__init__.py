@@ -55,6 +55,7 @@ from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessa
 from app.models.ticket_attachment import TicketAttachment
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.email_log import EmailLog, EmailLogStatus
+from app.models.email_suppression import EmailSuppression
 from app.models.password_reset import PasswordResetToken
 from app.models.service_category import ServiceCategory
 from app.models.service_product import ServiceProduct
@@ -117,6 +118,7 @@ __all__ = [
     "InviteToken",
     "EmailLog",
     "EmailLogStatus",
+    "EmailSuppression",
     "PasswordResetToken",
     "SupportTicket",
     "TicketMessage",

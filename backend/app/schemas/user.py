@@ -38,6 +38,15 @@ class UserRead(BaseModel):
     invite_status: Optional[str] = None
     last_invite_sent_at: Optional[str] = None
     pending_invite_url: Optional[str] = None
+    email_delivery_status: Optional[str] = None
+    email_attempt_count: Optional[int] = None
+    last_email_status: Optional[str] = None
+    last_email_sent_at: Optional[str] = None
+    next_retry_at: Optional[str] = None
+    resend_allowed_at: Optional[str] = None
+    is_email_suppressed: bool = False
+    suppression_reason: Optional[str] = None
+    delivery_message: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

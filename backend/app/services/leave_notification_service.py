@@ -110,6 +110,7 @@ def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) 
             date_range=date_range,
             leave_type=leave.leave_type.value,
             portal_url=hr_portal,
+            db=db,
         )
         count += 1
 
@@ -134,7 +135,7 @@ def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) 
         )
         u = db.get(User, parent_user_id)
         if u:
-            email_service.send_email(to=u.email, subject="Therapist leave requested", body_text=body)
+            email_service.send_email(to=u.email, subject="Therapist leave requested", body_text=body, db=db)
         count += 1
     return count
 
@@ -212,6 +213,7 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
                 date_range=date_range,
                 lines=lines,
                 portal_url=portal,
+                db=db,
             )
         notified_parents.add(parent_user_id)
         count += 1
@@ -235,7 +237,7 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         )
         u = db.get(User, parent_user_id)
         if u:
-            email_service.send_email(to=u.email, subject="Therapist on leave", body_text=body)
+            email_service.send_email(to=u.email, subject="Therapist on leave", body_text=body, db=db)
         count += 1
 
     cancel_n = sum(len(v) for v in cancelled_by_parent.values())
@@ -257,6 +259,7 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         date_range=date_range,
         cancelled_count=cancel_n,
         portal_url=f"{settings.frontend_url}/therapist/leave",
+        db=db,
     )
     for admin_email in settings.admin_notification_email_list:
         email_service.leave_admin_summary_email(
@@ -264,6 +267,7 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
             therapist_name=therapist.full_name,
             date_range=date_range,
             cancelled_count=cancel_n,
+            db=db,
         )
 
     return count
@@ -293,6 +297,7 @@ def notify_leave_rejected(db: Session, leave: TherapistLeave, therapist: User) -
         date_range=date_range,
         review_note=leave.review_note,
         portal_url=therapist_portal,
+        db=db,
     )
     count += 1
     for parent_user_id, cases in _parents_for_therapist_cases(db, leave.therapist_user_id).items():
@@ -316,6 +321,7 @@ def notify_leave_rejected(db: Session, leave: TherapistLeave, therapist: User) -
                 therapist_name=therapist.full_name,
                 date_range=date_range,
                 portal_url=portal,
+                db=db,
             )
         count += 1
     return count

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { apiFetch } from '../../../lib/apiClient.js'
 import { CopyLinkButton } from './CopyLinkButton.jsx'
 import {
+  inviteResendBlocked,
   provisionActivateSuccess,
   provisionInviteFailure,
   provisionInviteSuccess,
@@ -27,10 +28,12 @@ export function PeopleRowActions({
 
   const busyActivate = rowBusy === `${user.id}:activate`
   const busyInvite = rowBusy === `${user.id}:invite`
+  const busyForceInvite = rowBusy === `${user.id}:force-invite`
   const busyReactivate = rowBusy === `${user.id}:reactivate`
   const link =
     user.pending_invite_url ||
     (lastProvision?.email === user.email ? lastProvision.invite_url : null)
+  const resendBlocked = inviteResendBlocked(user)
 
   async function activateForLogin() {
     const key = `${user.id}:activate`
@@ -52,13 +55,18 @@ export function PeopleRowActions({
     }
   }
 
-  async function inviteToLogin() {
-    const key = `${user.id}:invite`
+  async function inviteToLogin(forceResend = false) {
+    const key = forceResend ? `${user.id}:force-invite` : `${user.id}:invite`
     if (rowBusy) return
+    if (!forceResend && resendBlocked) {
+      onError?.(resendBlocked)
+      return
+    }
     onError?.('')
     setRowBusy?.(key)
     try {
-      const res = await apiFetch(`/api/v1/admin/users/${user.id}/invite-to-login`, {
+      const qs = forceResend ? '?force_resend=true' : ''
+      const res = await apiFetch(`/api/v1/admin/users/${user.id}/invite-to-login${qs}`, {
         method: 'POST',
         timeoutMs: 20_000,
       })
@@ -136,10 +144,22 @@ export function PeopleRowActions({
         type="button"
         className="admin-btn admin-btn--ghost admin-btn--sm"
         disabled={disabled || !!rowBusy}
-        onClick={inviteToLogin}
+        onClick={() => inviteToLogin(false)}
+        aria-busy={busyInvite}
       >
         {busyInvite ? 'Sending…' : user.invite_status === 'pending' ? 'Resend invite' : 'Invite to login'}
       </button>
+      {(user.is_email_suppressed || user.invite_status === 'delivery_failed') && (
+        <button
+          type="button"
+          className="admin-btn admin-btn--ghost admin-btn--sm"
+          disabled={disabled || !!rowBusy}
+          onClick={() => inviteToLogin(true)}
+          aria-busy={busyForceInvite}
+        >
+          {busyForceInvite ? 'Sending…' : 'Force resend'}
+        </button>
+      )}
       {link ? <CopyLinkButton url={link} label="Copy login link" /> : null}
       {showDeactivate && user.is_active ? (
         <button

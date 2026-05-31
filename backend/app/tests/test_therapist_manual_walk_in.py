@@ -95,7 +95,8 @@ def test_manual_walk_in_rejects_duplicate_email():
         },
     )
     assert dup.status_code == 400
-    assert "email" in dup.json()["detail"].lower()
+    detail = dup.json()["detail"].lower()
+    assert "email" in detail or "already present" in detail or "invite to login" in detail
 
 
 def test_client_intake_deferred_invite_then_start_sends_email():

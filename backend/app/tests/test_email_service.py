@@ -95,7 +95,7 @@ def test_deliver_noop_when_smtp_missing():
     try:
         log = db.get(EmailLog, log_id)
         assert log is not None
-        assert log.status == EmailLogStatus.SENT.value
+        assert log.status == EmailLogStatus.ACCEPTED.value
         assert log.provider == "noop"
         assert log.sent_at is not None
     finally:

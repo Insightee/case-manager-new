@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserProvisionResult(BaseModel):
@@ -16,5 +16,19 @@ class UserProvisionResult(BaseModel):
     invite_error: Optional[str] = None
     login_ready: bool = False
     invite_url: Optional[str] = None
-    invite_status: Optional[str] = None  # none | pending | expired | used
+    invite_status: Optional[str] = None
     last_invite_sent_at: Optional[str] = None
+    email_delivery_status: Optional[str] = None
+    email_attempt_count: Optional[int] = None
+    last_email_status: Optional[str] = None
+    last_email_sent_at: Optional[str] = None
+    next_retry_at: Optional[str] = None
+    resend_allowed_at: Optional[str] = None
+    is_email_suppressed: bool = False
+    suppression_reason: Optional[str] = None
+    delivery_message: Optional[str] = None
+
+
+class ClearEmailSuppressionBody(BaseModel):
+    clear_reason: str = Field(..., min_length=3)
+    corrected_email: Optional[EmailStr] = None

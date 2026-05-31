@@ -139,6 +139,7 @@ def onboard_therapist_invite(
                 full_name=full_name,
                 role_label="Therapist",
                 recipient_role="therapist",
+                invite_id=invite.id,
             )
         else:
             therapist_staff_invite_email(

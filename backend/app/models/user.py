@@ -98,3 +98,13 @@ class InviteToken(Base):
     created_by_user_id: Mapped[Optional[int ]] = mapped_column(ForeignKey("users.id"))
     linked_child_id: Mapped[Optional[int]] = mapped_column(ForeignKey("children.id"), nullable=True)
     invite_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    email_delivery_status: Mapped[Optional[str]] = mapped_column(String(32), default="not_sent")
+    email_attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    email_first_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    email_last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    email_next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    delivery_failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    expired_due_to_delivery_failure: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
+    resend_allowed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

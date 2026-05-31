@@ -34,6 +34,9 @@ _REQUIRED_AT_HEAD: dict[str, tuple[str, ...]] = {
         "parent_accepted_at",
         "assignment_offer_sent_at",
     ),
+    "email_suppressions": ("email",),
+    "email_logs": ("attempt_count", "entity_type"),
+    "invite_tokens": ("email_delivery_status",),
 }
 
 

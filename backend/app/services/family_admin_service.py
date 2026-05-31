@@ -226,6 +226,7 @@ def queue_parent_portal_invite_email(
     invite_url: str,
     full_name: str,
     child_name: str,
+    invite_id: int | None = None,
 ) -> None:
     from app.services.email.service import enqueue_portal_invite_email
 
@@ -238,6 +239,7 @@ def queue_parent_portal_invite_email(
         role_label="Parent",
         intro_line=f"You have been invited to the Insighte parent portal for {child_name}.",
         recipient_role="parent",
+        invite_id=invite_id,
     )
 
 
@@ -289,6 +291,7 @@ def issue_parent_invite(
                 invite_url=url,
                 full_name=user.full_name or user.email,
                 child_name=child_name,
+                invite_id=invite.id,
             )
         else:
             _send_parent_invite_email(user.email, url, user.full_name or user.email, child_name)

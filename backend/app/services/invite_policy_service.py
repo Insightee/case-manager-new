@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.user import InviteToken, User
 
-MAX_PENDING_INVITES = 2
+MAX_PENDING_INVITES = 1
 
 
 def _normalize_email(email: str) -> str:
@@ -54,9 +54,10 @@ def assert_can_create_invite(db: Session, email: str, role_name: str) -> None:
         # Same role — caller may resend via invite-to-login; block duplicate token storm below
 
     pending = active_pending_invites(db, email_l)
-    if len(pending) >= MAX_PENDING_INVITES:
+    role_pending = [inv for inv in pending if (inv.role_name or "").strip().upper() == role]
+    if len(role_pending) >= MAX_PENDING_INVITES:
         raise ValueError(
-            "Maximum invites sent. Cancel an existing invite before sending a new one."
+            "Maximum invites sent. Cancel the existing invite before sending a new one."
         )
 
     for inv in pending:

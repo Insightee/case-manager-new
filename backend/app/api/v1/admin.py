@@ -19,6 +19,7 @@ from app.core.database import get_db
 from app.core.pagination import paginate_query, paginated_response
 from app.core.security import hash_password
 from app.schemas.pagination import PaginatedList
+from app.schemas.user_provision import ClearEmailSuppressionBody
 from app.core.module_access import (
     get_allowed_case_product_modules,
     get_user_features,
@@ -160,6 +161,15 @@ def _user_to_read(u: User, *, db: Session | None = None) -> UserRead:
         invite_status=login_meta.get("invite_status"),
         last_invite_sent_at=login_meta.get("last_invite_sent_at"),
         pending_invite_url=login_meta.get("pending_invite_url"),
+        email_delivery_status=login_meta.get("email_delivery_status"),
+        email_attempt_count=login_meta.get("email_attempt_count"),
+        last_email_status=login_meta.get("last_email_status"),
+        last_email_sent_at=login_meta.get("last_email_sent_at"),
+        next_retry_at=login_meta.get("next_retry_at"),
+        resend_allowed_at=login_meta.get("resend_allowed_at"),
+        is_email_suppressed=login_meta.get("is_email_suppressed", False),
+        suppression_reason=login_meta.get("suppression_reason"),
+        delivery_message=login_meta.get("delivery_message"),
     )
 
 
@@ -1711,6 +1721,7 @@ def admin_invite_user_to_login(
     request: Request,
     background_tasks: BackgroundTasks,
     send_email: bool = Query(True),
+    force_resend: bool = Query(False),
     current: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
@@ -1724,6 +1735,7 @@ def admin_invite_user_to_login(
             actor_user_id=current.id,
             background_tasks=background_tasks,
             send_email=send_email,
+            force_resend=force_resend,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1870,6 +1882,7 @@ def invite_therapist(
             full_name=display_name,
             role_label=role_label,
             recipient_role=role.lower(),
+            invite_id=invite.id,
         )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="invite", entity_type="invite_token", entity_id=invite.id, **meta)
@@ -3754,6 +3767,11 @@ def admin_list_invites(
             "pending_slot_id": (inv.invite_metadata or {}).get("pending_slot_id"),
             "client_name": (inv.invite_metadata or {}).get("client_name"),
             "therapist_user_id": (inv.invite_metadata or {}).get("therapist_user_id"),
+            "email_delivery_status": inv.email_delivery_status,
+            "email_attempt_count": inv.email_attempt_count or 0,
+            "email_next_retry_at": inv.email_next_retry_at.isoformat() if inv.email_next_retry_at else None,
+            "resend_allowed_at": inv.resend_allowed_at.isoformat() if inv.resend_allowed_at else None,
+            "expired_due_to_delivery_failure": bool(inv.expired_due_to_delivery_failure),
         }
         for inv in rows
     ]
@@ -3763,6 +3781,7 @@ def admin_list_invites(
 def resend_invite_email(
     invite_id: int,
     background_tasks: BackgroundTasks,
+    force_resend: bool = Query(False),
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
@@ -3775,7 +3794,12 @@ def resend_invite_email(
     now = datetime.now(timezone.utc)
     if invite.used_at is not None:
         raise HTTPException(status_code=400, detail="Invite has already been used")
-    if ensure_utc_aware(invite.expires_at) <= now:
+    if invite.expired_due_to_delivery_failure and not force_resend:
+        raise HTTPException(
+            status_code=400,
+            detail="Invite delivery failed. Correct the email and use force resend.",
+        )
+    if ensure_utc_aware(invite.expires_at) <= now and not force_resend:
         raise HTTPException(status_code=400, detail="Invite has expired")
     from app.services.email.service import enqueue_portal_invite_email, invite_email_delivery_status
 
@@ -3785,8 +3809,9 @@ def resend_invite_email(
     role = invite.role_name or "THERAPIST"
     role_label = role.replace("_", " ").title()
     email_delivery = invite_email_delivery_status(send_email=True, background_tasks=background_tasks)
+    log_id = None
     if email_delivery != "skipped_no_smtp":
-        enqueue_portal_invite_email(
+        log_id = enqueue_portal_invite_email(
             background_tasks,
             db,
             to=invite.email,
@@ -3794,9 +3819,43 @@ def resend_invite_email(
             full_name=display_name,
             role_label=role_label,
             recipient_role=role.lower(),
+            invite_id=invite.id,
+            force_resend=force_resend,
         )
     db.commit()
-    return {"ok": True, "email": invite.email, "email_delivery": email_delivery}
+    return {
+        "ok": True,
+        "email": invite.email,
+        "email_delivery": email_delivery,
+        "email_log_id": log_id,
+        "skipped": log_id is None and email_delivery != "skipped_no_smtp",
+    }
+
+
+@router.post("/email-suppressions/{email}/clear")
+def clear_email_suppression(
+    email: str,
+    payload: ClearEmailSuppressionBody,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.email.suppression_service import clear_suppression, linked_user_count
+
+    row = clear_suppression(
+        db,
+        email,
+        cleared_by_user_id=user.id,
+        clear_reason=payload.clear_reason,
+        corrected_email=str(payload.corrected_email) if payload.corrected_email else None,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="No active suppression for this email")
+    db.commit()
+    return {
+        "ok": True,
+        "email": email.lower().strip(),
+        "linked_user_count": linked_user_count(db, email),
+    }
 
 
 class BulkUserStatusUpdate(BaseModel):

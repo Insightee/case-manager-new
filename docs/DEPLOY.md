@@ -185,6 +185,23 @@ Full matrix: [backend/README.md](../backend/README.md).
 | CORS error in browser | Add exact Vercel URL to `CORS_ORIGINS` on API; redeploy API |
 | Blank page after refresh on `/parent/...` | Ensure `vercel.json` rewrites are deployed |
 
+## Email retry cron (Railway)
+
+Invite and password-reset emails retry transient SMTP failures via a **separate Railway Cron service** (not inside the API process):
+
+1. Create a new Railway service in the same project, same repo, **root directory** `backend`.
+2. **Cron schedule:** every 10 minutes (`*/10 * * * *`).
+3. **Start command:**
+
+   ```bash
+   python scripts/run_email_jobs.py all
+   ```
+
+4. Copy **`DATABASE_URL`** and **`REDIS_URL`** from the API service (Redis lock prevents double retries across replicas).
+5. Optional Phase 2: set `ZEPTOMAIL_LOG_SYNC_ENABLED=true` after validating Zepto log API credentials; `all` then runs `sync-zeptomail` as well.
+
+PR1 runs **`retry-invites` only** when the Zepto flag is false (default).
+
 ## Current gaps (checklist)
 
 | Item | Status | Action |
