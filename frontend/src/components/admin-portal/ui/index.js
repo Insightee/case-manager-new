@@ -17,3 +17,9 @@ export { RejectWithComment } from './RejectWithComment.jsx'
 export { ServiceFilterSelect } from './ServiceFilterSelect.jsx'
 export { CopyLinkButton } from './CopyLinkButton.jsx'
 export { AdminInviteRowActions } from './AdminInviteRowActions.jsx'
+export {
+  PeopleRowActions,
+  PeopleBulkToolbar,
+  PeopleSelectCheckbox,
+} from './PeopleRowActions.jsx'
+export { ClientCaseAccessModal } from './ClientCaseAccessModal.jsx'

@@ -28,6 +28,7 @@ class ParentRecentUpdate(BaseModel):
     what_we_did: Optional[str] = None
     what_is_next: Optional[str] = None
     scheduled_date: date
+    session_start_time: Optional[str] = None
     therapist_name: Optional[str] = None
     submitted_at: Optional[datetime] = None
 

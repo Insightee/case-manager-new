@@ -36,7 +36,11 @@ export function ParentFilterField({ label, children, className = '' }) {
 }
 
 export function ParentFilterSelect(props) {
-  return <select className="parent-portal-filters__control" {...props} />
+  return (
+    <span className="parent-portal-filters__select-wrap">
+      <select className="parent-portal-filters__control" {...props} />
+    </span>
+  )
 }
 
 export function ParentPortalTabs({ tabs, value, onChange, ariaLabel = 'Sections' }) {

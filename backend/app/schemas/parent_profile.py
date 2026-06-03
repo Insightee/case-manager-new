@@ -47,6 +47,8 @@ class ParentProfileRead(BaseModel):
     full_name: str
     email: str
     phone: Optional[str] = None
+    secondary_contact_name: Optional[str] = None
+    secondary_contact_email: Optional[str] = None
     home_address: Optional[AddressRead] = None
     school_address: Optional[AddressRead] = None
     address_type: VisitAddressType = "home"
@@ -62,8 +64,9 @@ class ParentServiceAddressPatch(BaseModel):
 
 class ParentProfileUpdate(BaseModel):
     full_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    email: Optional[EmailStr] = None
     phone: Optional[str] = Field(default=None, max_length=32)
+    secondary_contact_name: Optional[str] = Field(default=None, max_length=255)
+    secondary_contact_email: Optional[EmailStr] = None
     home_address_line1: Optional[str] = None
     home_address_line2: Optional[str] = None
     home_city: Optional[str] = None

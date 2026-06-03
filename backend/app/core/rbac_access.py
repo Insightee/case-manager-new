@@ -170,12 +170,16 @@ def module_catalog_entries(db: Session | None = None) -> list[dict]:
 
 
 def rbac_catalog_payload(db: Session | None = None) -> dict:
-    from app.core.modules import role_defaults_for_api
+    from app.core.modules import CLINICAL_FEATURES, role_defaults_for_api
 
     return {
         "service_categories": service_catalog_entries(db),
         "org_capabilities": org_catalog_for_api(),
         "modules": module_catalog_entries(db),
+        "clinical_features": [
+            {"id": f.id, "label": f.label, "permissions": list(f.permissions)}
+            for f in CLINICAL_FEATURES
+        ],
         "role_defaults": role_defaults_for_api(db),
     }
 

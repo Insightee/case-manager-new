@@ -57,7 +57,7 @@ ORG_PRODUCT_MODULES: tuple[ProductModule, ...] = (
         description="Staff directory, invites, and access configuration.",
         case_product_modules=(),
         features=(
-            ModuleFeature("people", "People directory", ("user.manage",)),
+            ModuleFeature("people", "People directory", ("user.manage", "user.read")),
         ),
     ),
     ProductModule(

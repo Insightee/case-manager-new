@@ -65,12 +65,15 @@ class SmtpEmailProvider:
         body_html: str | None,
         from_header: str,
         envelope_from: str,
+        client_reference: str | None = None,
     ) -> SendResult:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
             msg["From"] = from_header
             msg["To"] = ", ".join(to)
+            if client_reference:
+                msg["X-TM-CLIENT-REF"] = client_reference
             msg.attach(MIMEText(body_text, "plain", "utf-8"))
             if body_html:
                 msg.attach(MIMEText(body_html, "html", "utf-8"))

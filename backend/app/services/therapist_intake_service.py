@@ -42,10 +42,13 @@ def _create_intake_case(
     start_date: date,
     notes_suffix: str,
 ) -> tuple[Case, InviteToken, str, object]:
+    from app.services.invite_policy_service import assert_can_create_invite
+
     email = client_email.lower().strip()
+    assert_can_create_invite(db, email, RoleName.PARENT.value)
     existing = db.scalars(select(User).where(User.email == email)).first()
     if existing:
-        raise ValueError("A user with this email already exists")
+        raise ValueError("User already exists. Use Invite to login instead of sending a new invite.")
 
     child_label = (child_name or client_name).strip()
     child_first, child_last = _split_child_name(child_label)

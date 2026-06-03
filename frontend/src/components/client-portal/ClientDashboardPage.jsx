@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useParentHome } from '../../hooks/useParentHome.js'
 import { QueryState } from '../shared/QueryState.jsx'
 import './parent-dashboard.css'
@@ -9,6 +10,127 @@ function fmt(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr + 'T00:00:00')
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+function formatUpdateSessionWhen(update) {
+  const parts = []
+  if (update.scheduled_date) {
+    parts.push(fmt(update.scheduled_date))
+  }
+  if (update.session_start_time) {
+    parts.push(update.session_start_time)
+  } else if (update.submitted_at) {
+    try {
+      parts.push(
+        new Date(update.submitted_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+  return parts.join(' · ')
+}
+
+function nextAppointment(appointments) {
+  return [...(appointments || [])].sort((a, b) => {
+    const da = `${a.slotDate}T${a.startTime || '00:00'}`
+    const db = `${b.slotDate}T${b.startTime || '00:00'}`
+    return da < db ? -1 : da > db ? 1 : 0
+  })[0]
+}
+
+function NextUpcomingSessionCard({ appointments }) {
+  const navigate = useNavigate()
+  const appt = nextAppointment(appointments)
+  if (!appt) {
+    return (
+      <section className="parent-next-session parent-next-session--empty">
+        <p className="parent-next-session__empty">No upcoming sessions scheduled.</p>
+        <Link to="/parent/book" className="parent-next-session__link">
+          Book a session →
+        </Link>
+      </section>
+    )
+  }
+  return (
+    <section className="parent-next-session">
+      <div className="parent-next-session__head">
+        <span className="parent-next-session__eyebrow">Next session</span>
+        <Link to="/parent/book" className="parent-next-session__link">
+          Full schedule →
+        </Link>
+      </div>
+      <button
+        type="button"
+        className="parent-next-session__card"
+        onClick={() => navigate('/parent/book', { state: { openApptId: appt.id } })}
+      >
+        <div className="parent-next-session__when">
+          <strong>{fmt(appt.slotDate)}</strong>
+          <span>
+            {appt.startTime}
+            {appt.endTime ? `–${appt.endTime}` : ''}
+          </span>
+        </div>
+        <div className="parent-next-session__detail">
+          <p className="parent-next-session__title">
+            {appt.isCmMeeting ? 'Case manager meeting' : appt.childName || 'Therapy session'}
+          </p>
+          <p className="parent-next-session__meta">
+            {appt.isCmMeeting
+              ? appt.caseMgrName || 'With your case manager'
+              : [appt.therapistName, appt.childName].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <span className="parent-next-session__chevron" aria-hidden>
+          →
+        </span>
+      </button>
+    </section>
+  )
+}
+
+function RecentUpdatesSection({ updates }) {
+  if (!updates?.length) return null
+  return (
+    <section className="parent-recent-updates">
+      <div className="parent-recent-updates__head">
+        <h2>Recent session updates</h2>
+        <Link to="/parent/session-logs" className="parent-recent-updates__link">
+          View all →
+        </Link>
+      </div>
+      <ul className="parent-update-list">
+        {updates.map((u) => {
+          const when = formatUpdateSessionWhen(u)
+          const metaParts = [when, u.child_name, u.therapist_name].filter(Boolean)
+          return (
+            <li key={u.id}>
+              <Link
+                to={`/parent/cases/${u.case_id}?tab=sessions`}
+                className="card parent-update-list__item parent-update-list__item--link"
+              >
+                <div className="parent-update-list__row">
+                  <div className="parent-update-list__main">
+                    <div className="parent-update-list__headline">{u.attendance_label || u.headline}</div>
+                    {metaParts.length ? (
+                      <p className="parent-update-list__meta">{metaParts.join(' · ')}</p>
+                    ) : null}
+                    {u.summary_paragraph ? (
+                      <p className="parent-update-list__body">{u.summary_paragraph}</p>
+                    ) : null}
+                  </div>
+                  <span className="parent-update-list__chevron" aria-hidden>
+                    →
+                  </span>
+                </div>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
 }
 
 function PendingAssignmentBanner({ items, onAccepted }) {
@@ -95,151 +217,57 @@ function PendingAssignmentBanner({ items, onAccepted }) {
   )
 }
 
-function StatusBadge({ status }) {
-  if (status === 'PENDING_THERAPIST') {
-    return (
-      <span
-        style={{
-          display: 'inline-block',
-          fontSize: '0.7rem',
-          fontWeight: 600,
-          color: '#92400e',
-          background: '#fef3c7',
-          border: '1px solid #fde68a',
-          borderRadius: 99,
-          padding: '1px 8px',
-          marginLeft: 6,
-          verticalAlign: 'middle',
-        }}
-      >
-        Pending approval
-      </span>
-    )
-  }
-  if (status === 'CANCELLED') {
-    return (
-      <span
-        style={{
-          display: 'inline-block',
-          fontSize: '0.7rem',
-          fontWeight: 600,
-          color: '#991b1b',
-          background: '#fee2e2',
-          border: '1px solid #fca5a5',
-          borderRadius: 99,
-          padding: '1px 8px',
-          marginLeft: 6,
-          verticalAlign: 'middle',
-        }}
-      >
-        Cancelled
-      </span>
-    )
-  }
-  return null
-}
+const NOTIFICATION_PREVIEW_COUNT = 3
 
-function UpcomingSessionsStrip({ appointments }) {
-  const navigate = useNavigate()
-  const next5 = [...(appointments || [])]
-    .sort((a, b) => {
-      const da = a.slotDate + 'T' + (a.startTime || '00:00')
-      const db = b.slotDate + 'T' + (b.startTime || '00:00')
-      return da < db ? -1 : da > db ? 1 : 0
-    })
-    .slice(0, 5)
+function RecentNotificationsPanel({ notifications, onMarkRead }) {
+  const [expanded, setExpanded] = useState(false)
+  const list = notifications || []
+  const hasMore = list.length > NOTIFICATION_PREVIEW_COUNT
+  const visible = expanded ? list : list.slice(0, NOTIFICATION_PREVIEW_COUNT)
 
   return (
-    <section style={{ marginBottom: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e293b', margin: 0 }}>Upcoming sessions</h2>
-        <Link
-          to="/parent/book"
-          style={{ fontSize: '0.8rem', color: '#4f46e5', fontWeight: 600, textDecoration: 'none' }}
-        >
-          View schedule →
-        </Link>
+    <article className="card parent-notifications-panel">
+      <div className="card-head parent-notifications-panel__head">
+        <h3>Recent Notifications</h3>
+        {list.length > 0 ? (
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>{list.length} total</span>
+        ) : null}
       </div>
-
-      {next5.length === 0 ? (
-        <div
-          style={{
-            background: '#f8fafc',
-            border: '1px dashed #cbd5e1',
-            borderRadius: 12,
-            padding: '16px 20px',
-            textAlign: 'center',
-          }}
-        >
-          <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>No upcoming sessions.</p>
-          <Link
-            to="/parent/book"
-            style={{
-              display: 'inline-block',
-              marginTop: 8,
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              color: '#4f46e5',
-              textDecoration: 'none',
-            }}
-          >
-            Book a session →
+      <ul className="parent-notifications-panel__list">
+        {list.length === 0 ? (
+          <li className="parent-notifications-panel__item">No new notifications.</li>
+        ) : (
+          visible.map((n) => (
+            <li
+              key={n.id}
+              className={`parent-notifications-panel__item${n.isRead ? '' : ' parent-notifications-panel__item--unread'}`}
+            >
+              <button type="button" onClick={() => onMarkRead?.(n.id)}>
+                <strong>{n.title}</strong>
+                {n.detail ? <p>{n.detail}</p> : null}
+                {n.createdAt ? <time dateTime={n.createdAt}>{n.createdAt}</time> : null}
+              </button>
+            </li>
+          ))
+        )}
+      </ul>
+      {list.length > 0 ? (
+        <div className="parent-notifications-panel__footer">
+          {hasMore ? (
+            <button
+              type="button"
+              className="parent-notifications-panel__toggle"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? 'Show less' : `View all (${list.length})`}
+            </button>
+          ) : null}
+          <Link to="/parent/notifications" className="parent-notifications-panel__link">
+            Open notifications page →
           </Link>
         </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
-          {next5.map((appt) => (
-            <button
-              key={appt.id}
-              type="button"
-              onClick={() => navigate('/parent/book', { state: { openApptId: appt.id } })}
-              style={{
-                flex: '0 0 auto',
-                minWidth: 190,
-                maxWidth: 220,
-                background: appt.isCmMeeting ? '#faf5ff' : '#fff',
-                border: `1px solid ${appt.isCmMeeting ? '#ddd6fe' : '#e2e8f0'}`,
-                borderRadius: 14,
-                padding: '12px 14px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                textAlign: 'left',
-                cursor: 'pointer',
-              }}
-            >
-              <p
-                style={{
-                  margin: '0 0 4px',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  color: appt.isCmMeeting ? '#7c3aed' : '#4f46e5',
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {fmt(appt.slotDate)}
-              </p>
-              <p style={{ margin: '0 0 2px', fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}>
-                {appt.startTime}
-                {appt.endTime ? `–${appt.endTime}` : ''}
-                {!appt.isCmMeeting ? <StatusBadge status={appt.approvalStatus} /> : null}
-              </p>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
-                {appt.isCmMeeting ? 'Case manager meeting' : `Therapy · ${appt.childName || '—'}`}
-              </p>
-              <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>
-                {appt.isCmMeeting
-                  ? appt.caseMgrName
-                    ? `With: ${appt.caseMgrName}`
-                    : 'With your case manager'
-                  : appt.therapistName
-                    ? `Therapist: ${appt.therapistName}`
-                    : null}
-              </p>
-            </button>
-          ))}
-        </div>
-      )}
-    </section>
+      ) : null}
+    </article>
   )
 }
 
@@ -332,8 +360,10 @@ export function ClientDashboardPage({
   onMarkRead,
   onMarkNotificationRead,
 }) {
+  const { user } = useAuth()
   const { data: home, isLoading: homeLoading, isError, error, refetch } = useParentHome()
   const stats = home?.stats
+  const firstName = user?.full_name?.split(/\s+/)[0] || 'there'
   const homeCases = useMemo(() => {
     if (!home?.cases?.length) return cases || []
     return home.cases.map((c) => ({
@@ -353,9 +383,22 @@ export function ClientDashboardPage({
   const pendingIepCount =
     stats?.pending_iep ?? (iepItems || []).filter((item) => item.status === 'pending').length
   const handleMarkRead = onMarkRead || onMarkNotificationRead
+  const pendingIepByChild = useMemo(() => {
+    const map = new Map()
+    for (const item of iepItems || []) {
+      if (item.status === 'pending' && item.childName) {
+        map.set(item.childName.toLowerCase(), item)
+      }
+    }
+    return map
+  }, [iepItems])
 
   return (
     <>
+      <header className="parent-dashboard-greeting parent-dashboard-greeting--compact">
+        <h1 className="parent-dashboard-greeting__title">Dear {firstName},</h1>
+      </header>
+
       <QueryState
         isLoading={homeLoading}
         isError={isError}
@@ -363,6 +406,11 @@ export function ClientDashboardPage({
         onRetry={() => refetch()}
       >
       <PendingAssignmentBanner items={pendingAcceptance} onAccepted={() => refetch()} />
+      <ActionAlertsBanner billingSummary={billingSummary} pendingIepCount={pendingIepCount} />
+
+      <NextUpcomingSessionCard appointments={appointments} />
+      <RecentUpdatesSection updates={recentUpdates} />
+
       {highlight ? (
         <section className="parent-home-hero card" style={{ marginBottom: 20, padding: 20 }}>
           <p className="parent-home-hero__eyebrow">
@@ -393,52 +441,54 @@ export function ClientDashboardPage({
           </Link>
         </section>
       ) : null}
-
-      {recentUpdates.length > 0 ? (
-        <section style={{ marginBottom: 20 }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 4px' }}>Recent updates</h2>
-          <ul className="parent-update-list">
-            {recentUpdates.map((u) => (
-              <li key={u.id} className="card parent-update-list__item">
-                <div className="parent-update-list__headline">{u.headline}</div>
-                <p className="parent-update-list__meta">
-                  {u.child_name} · {u.attendance_label}
-                </p>
-                {u.summary_paragraph ? (
-                  <p className="parent-update-list__body">{u.summary_paragraph}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
       </QueryState>
 
-      <ActionAlertsBanner billingSummary={billingSummary} pendingIepCount={pendingIepCount} />
-
-      <UpcomingSessionsStrip appointments={appointments} />
+      {stats ? (
+        <section className="parent-dashboard-hero" aria-label="Current progress">
+          <p className="parent-dashboard-hero__label">Current progress</p>
+          <p className="parent-dashboard-hero__count">
+            {stats.case_count} active case{stats.case_count === 1 ? '' : 's'}
+          </p>
+          <p className="parent-dashboard-hero__meta">
+            {recentUpdates.length > 0
+              ? `${recentUpdates.length} recent session update${recentUpdates.length === 1 ? '' : 's'}`
+              : 'Session updates and reports appear here after your therapist logs a visit.'}
+            {pendingIepCount > 0
+              ? ` · ${pendingIepCount} IEP review${pendingIepCount === 1 ? '' : 's'} pending`
+              : ''}
+          </p>
+          <Link
+            to={homeCases[0] ? `/parent/cases/${homeCases[0].id}` : '/parent/session-logs'}
+            className="parent-dashboard-hero__cta"
+          >
+            View all details
+          </Link>
+        </section>
+      ) : null}
 
       {stats ? (
-        <section className="therapist-dashboard-stats" aria-label="Family summary" style={{ marginBottom: 20 }}>
-          <ul className="therapist-dashboard-stats__grid">
+        <section className="parent-dashboard-stats" aria-label="Family summary">
+          <ul className="parent-dashboard-stats__grid">
             <li>
-              <strong>{stats.case_count}</strong>
-              <span>Active cases</span>
+              <div className="parent-dashboard-stats__tile">
+                <strong>{stats.case_count}</strong>
+                <span>Active cases</span>
+              </div>
             </li>
             <li>
-              <Link to="/parent/session-logs">
+              <Link to="/parent/session-logs" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--updates">
                 <strong>{recentUpdates.length}</strong>
                 <span>Recent updates</span>
               </Link>
             </li>
             <li>
-              <Link to="/parent/reports?type=iep">
+              <Link to="/parent/reports?type=iep" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--iep">
                 <strong>{stats.pending_iep}</strong>
                 <span>IEP pending</span>
               </Link>
             </li>
             <li>
-              <Link to="/parent/notifications">
+              <Link to="/parent/notifications" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--alerts">
                 <strong>{stats.unread_notifications}</strong>
                 <span>Unread alerts</span>
               </Link>
@@ -447,87 +497,56 @@ export function ClientDashboardPage({
         </section>
       ) : null}
 
-      <section className="kpi-grid">
-        <article className="card kpi-card">
-          <p className="kpi-title">Active Cases</p>
-          <p className="kpi-value">{(homeCases || []).length}</p>
-          <p className="kpi-meta">Mapped to your account only</p>
-        </article>
-        <article className="card kpi-card">
-          <p className="kpi-title">Approved Reports</p>
-          <p className="kpi-value">{(reports || []).length}</p>
-          <p className="kpi-meta">Visible after manager approval</p>
-        </article>
-        <article className="card kpi-card">
-          <p className="kpi-title">IEP Pending</p>
-          <p className="kpi-value">{pendingIepCount}</p>
-          <p className="kpi-meta">Acknowledgement required</p>
-        </article>
-      </section>
-
-      <section className="panel-grid">
+      <section className="parent-dashboard-panel-grid">
         <article className="card">
           <div className="card-head">
             <h3>Your Active Cases</h3>
           </div>
-          <ul className="log-list">
-            {(homeCases || []).map((item) => (
-              <li key={item.id}>
-                <div>
-                  <p>
-                    <Link to={`/parent/cases/${item.id}`}>
-                      {item.childName} ({item.caseId})
-                    </Link>
-                  </p>
-                  <span>
-                    {item.serviceType}
-                    <br />
-                    Therapist: {item.therapist}
-                    <br />
-                    Case manager: {item.caseManager}
-                  </span>
-                </div>
-                <div>
-                  <p>{item.latestApprovedReportMonth}</p>
-                  <span>Latest approved report</span>
-                </div>
-              </li>
-            ))}
-          </ul>
+          {(homeCases || []).length === 0 ? (
+            <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>No active cases on your account yet.</p>
+          ) : (
+            <ul className="parent-case-card">
+              {(homeCases || []).map((item) => {
+                const pendingIep = pendingIepByChild.get(item.childName?.toLowerCase())
+                return (
+                  <li key={item.id} className="parent-case-card__item">
+                    <div className="parent-case-card__head">
+                      <div>
+                        <p className="parent-case-card__name">
+                          <Link to={`/parent/cases/${item.id}`}>{item.childName}</Link>
+                        </p>
+                        <span className="parent-case-card__code">{item.caseId}</span>
+                      </div>
+                      <span className="parent-case-card__tag">{item.serviceType}</span>
+                    </div>
+                    <p className="parent-case-card__meta">
+                      Therapist: {item.therapist}
+                      <br />
+                      Case manager: {item.caseManager}
+                      <br />
+                      Latest approved report: {item.latestApprovedReportMonth}
+                    </p>
+                    <div className="parent-case-card__actions">
+                      <Link to="/parent/reports" className="parent-case-card__btn parent-case-card__btn--outline">
+                        Latest report
+                      </Link>
+                      {pendingIep ? (
+                        <Link
+                          to="/parent/reports?type=iep"
+                          className="parent-case-card__btn parent-case-card__btn--primary"
+                        >
+                          Review IEP
+                        </Link>
+                      ) : null}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </article>
 
-        <article className="card">
-          <div className="card-head">
-            <h3>Recent Notifications</h3>
-          </div>
-          <ul className="alerts-list">
-            {(notifications || []).length === 0 ? (
-              <li>No new notifications.</li>
-            ) : (
-              (notifications || []).map((n) => (
-                <li key={n.id}>
-                  <button
-                    type="button"
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      background: n.isRead ? 'transparent' : '#f0f9ff',
-                      border: 'none',
-                      padding: 8,
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => handleMarkRead?.(n.id)}
-                  >
-                    <strong>{n.title}</strong>
-                    <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: '#6b7280' }}>{n.detail}</p>
-                    <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{n.createdAt}</span>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </article>
+        <RecentNotificationsPanel notifications={notifications} onMarkRead={handleMarkRead} />
       </section>
     </>
   )

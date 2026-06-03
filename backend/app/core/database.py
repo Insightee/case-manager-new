@@ -113,6 +113,10 @@ def ensure_sqlite_schema_patches() -> None:
             if col not in user_cols:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
+        for col in ("secondary_contact_name", "secondary_contact_email"):
+            if col not in user_cols:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} VARCHAR(255)"))
 
     if insp.has_table("children"):
         child_cols = {c["name"] for c in insp.get_columns("children")}

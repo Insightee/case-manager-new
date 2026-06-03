@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import './parent-payments.css'
 import './parent-portal-filters.css'
-import { ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
+import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 
 const DISPUTE_STATUS_LABELS = {
   open: 'Submitted — finance will review',
@@ -142,38 +142,8 @@ export function ParentBillingPage() {
       if (paymentTab) params.set('payment_bucket', paymentTab)
       const qs = params.toString()
       const data = await apiFetch(`/api/v1/parent/billing/dashboard${qs ? `?${qs}` : ''}`)
-      // #region agent log
-      fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
-        body: JSON.stringify({
-          sessionId: '3264f0',
-          hypothesisId: 'C',
-          location: 'ParentBillingPage.jsx:load',
-          message: 'parent billing dashboard ok',
-          data: { invoiceCount: data?.invoices?.length ?? 0 },
-          timestamp: Date.now(),
-          runId: 'browser',
-        }),
-      }).catch(() => {})
-      // #endregion
       setDashboard(data)
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
-        body: JSON.stringify({
-          sessionId: '3264f0',
-          hypothesisId: 'C',
-          location: 'ParentBillingPage.jsx:load',
-          message: 'parent billing dashboard failed',
-          data: { error: err?.message?.slice(0, 120) },
-          timestamp: Date.now(),
-          runId: 'browser',
-        }),
-      }).catch(() => {})
-      // #endregion
       setError(err.message || 'Could not load billing')
       setDashboard(null)
     } finally {
@@ -340,9 +310,6 @@ export function ParentBillingPage() {
     <div className="parent-pay">
       <header className="parent-pay__hero">
         <h1>Payments</h1>
-        <p className="parent-portal-lead">
-          Review invoices raised by your care team, download statements, and keep track of what is due.
-        </p>
       </header>
 
       {error ? (
@@ -354,25 +321,20 @@ export function ParentBillingPage() {
 
       {(summary.needsPaymentCount || 0) > 0 && (summary.dueTotalInr || 0) > 0 ? (
         <section className={`parent-pay__banner ${urgentBanner ? 'parent-pay__banner--urgent' : ''}`}>
-          <div>
+          <div className="parent-pay__banner-main">
             <h2>{urgentBanner ? 'Payment overdue' : 'Payment required'}</h2>
             <p>
               {urgentBanner
-                ? `You have ${summary.overdueCount} invoice(s) past the due date. Please arrange payment or contact your coordinator if you need help.`
-                : `You have ${summary.needsPaymentCount} invoice(s) with an outstanding balance. Open an invoice below to review line items and payment options.`}
+                ? `${summary.overdueCount} overdue · ${summary.needsPaymentCount} open`
+                : `${summary.needsPaymentCount} invoice(s) with balance due`}
             </p>
           </div>
-          <div className="parent-pay__banner-actions">
-            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
-              Total due
-            </span>
-            <strong>{formatInr(summary.dueTotalInr)}</strong>
-          </div>
+          <strong className="parent-pay__banner-amount">{formatInr(summary.dueTotalInr)}</strong>
         </section>
       ) : null}
 
       {dashboard?.summary ? (
-        <ul className="parent-pay__stats" aria-label="Payment summary">
+        <ul className="parent-pay__stats parent-pay__stats--compact" aria-label="Payment summary">
           <li className="parent-pay__stat parent-pay__stat--due">
             <strong>{formatInr(summary.dueTotalInr)}</strong>
             <span>Balance due</span>

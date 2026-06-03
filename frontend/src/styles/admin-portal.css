@@ -657,6 +657,12 @@ button.admin-stat--link {
   color: #b91c1c;
 }
 
+.admin-alert--success {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+}
+
 .admin-form-grid {
   display: grid;
   gap: 12px;
@@ -1096,6 +1102,57 @@ button.admin-stat--link {
 .rbac-editor__hint {
   margin: 0;
   font-size: 0.8125rem;
+}
+
+.rbac-service-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.rbac-service-multiselect__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.rbac-service-multiselect {
+  width: 100%;
+  min-height: 8rem;
+  padding: 8px;
+  font-size: 0.875rem;
+}
+
+.rbac-service-multiselect option {
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.rbac-service-multiselect option:checked {
+  background: linear-gradient(0deg, #eef2ff 0%, #eef2ff 100%);
+  color: #312e81;
+}
+
+.rbac-service-meta {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.rbac-global-features {
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.rbac-global-features .rbac-editor__legend {
+  margin-bottom: 4px;
 }
 
 .rbac-module-list {

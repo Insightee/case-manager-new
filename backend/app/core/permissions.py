@@ -48,6 +48,7 @@ ALL_PERMISSIONS = [
     "incident.read_sensitive",
     "admin.override",
     "user.manage",
+    "user.read",
     "parent.read",
     "ticket.manage",
     "attachment.manage",
@@ -113,6 +114,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "slot.book_any",
         "case_document.create",
         "case_document.review",
+        "user.read",
     ],
     RoleName.VIEWER: [
         "case.read.scoped",
@@ -130,6 +132,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "incident.read_sensitive",
         "iep.read",
         "case_document.review",
+        "user.read",
     ],
     RoleName.THERAPIST: [
         "case.read.assigned",

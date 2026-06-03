@@ -71,9 +71,14 @@ def record_rate_limit_hit(email: str) -> None:
     _memory_rate[key] = hits
 
 
-def create_reset_token(db: Session, user: User) -> str:
-    """Invalidate prior unused tokens, persist a new one, return plaintext token."""
+def create_reset_token(db: Session, user: User, *, force_new: bool = False) -> str:
+    """Create a new reset token; invalidates other unused tokens for the user."""
     now = datetime.now(timezone.utc)
+    if not force_new:
+        reused = try_reuse_reset_token(db, user)
+        if reused:
+            return reused
+
     pending = db.scalars(
         select(PasswordResetToken).where(
             PasswordResetToken.user_id == user.id,
@@ -93,6 +98,68 @@ def create_reset_token(db: Session, user: User) -> str:
     db.add(token_row)
     db.flush()
     return plain
+
+
+def try_reuse_reset_token(db: Session, user: User) -> str | None:
+    """Return existing plaintext token if a valid unused row exists and URL is in email_logs."""
+    from app.models.email_log import EmailLog
+
+    row = get_valid_reset_token_row(db, user.id)
+    if not row:
+        return None
+    log = db.scalars(
+        select(EmailLog)
+        .where(
+            EmailLog.entity_type == "password_reset_token",
+            EmailLog.entity_id == row.id,
+            EmailLog.template_key == "password_reset",
+        )
+        .order_by(EmailLog.id.desc())
+        .limit(1)
+    ).first()
+    if log and log.payload_json.get("reset_url"):
+        url = str(log.payload_json["reset_url"])
+        prefix = f"{settings.frontend_url.rstrip('/')}/reset-password/"
+        if url.startswith(prefix):
+            return url[len(prefix) :]
+    return None
+
+
+def get_valid_reset_token_row(db: Session, user_id: int) -> PasswordResetToken | None:
+    now = datetime.now(timezone.utc)
+    rows = db.scalars(
+        select(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == user_id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .order_by(PasswordResetToken.id.desc())
+    ).all()
+    for row in rows:
+        expires = row.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires >= now:
+            return row
+    return None
+
+
+def get_or_create_reset_token(db: Session, user: User, *, force_new: bool = False) -> tuple[str, int]:
+    """Return (plain_token, token_row_id)."""
+    if not force_new:
+        plain = try_reuse_reset_token(db, user)
+        row = get_valid_reset_token_row(db, user.id)
+        if plain and row:
+            return plain, row.id
+    plain = create_reset_token(db, user, force_new=True)
+    row = db.scalars(
+        select(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
+        .order_by(PasswordResetToken.id.desc())
+    ).first()
+    if not row:
+        raise RuntimeError("reset token row missing after create")
+    return plain, row.id
 
 
 def get_valid_token_row(db: Session, plain_token: str) -> PasswordResetToken | None:
@@ -125,7 +192,7 @@ def request_password_reset(
     if not user:
         return None
     record_rate_limit_hit(email_l)
-    plain = create_reset_token(db, user)
+    plain, token_id = get_or_create_reset_token(db, user)
     reset_url = f"{settings.frontend_url.rstrip('/')}/reset-password/{plain}"
     return enqueue_password_reset_email(
         background_tasks,
@@ -134,6 +201,7 @@ def request_password_reset(
         full_name=user.full_name or user.email,
         reset_url=reset_url,
         expires_hours=settings.password_reset_expire_hours,
+        entity_id=token_id,
     )
 
 

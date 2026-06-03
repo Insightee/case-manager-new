@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     admin_notification_emails: str = ""
     password_reset_expire_hours: int = 1
     password_reset_rate_limit_per_hour: int = 3
+    email_invite_retry_delay_minutes: int = 15
+    email_invite_max_attempts_24h: int = 3
+    email_template_dedupe_minutes: int = 15
+    email_recipient_max_per_day: int = 10
+    email_admin_alert_on_failed_final: bool = True
+    zeptomail_log_sync_enabled: bool = False
+    zeptomail_log_sync_lookback_hours: int = 48
+    zeptomail_api_key: str = ""
+    zeptomail_mailagent_key: str = ""
     # IANA timezone for Google Calendar links in CM meeting invite emails (ctz=).
     meeting_invite_calendar_timezone: str = "Asia/Kolkata"
 

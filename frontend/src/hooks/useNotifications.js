@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../lib/apiClient.js'
 import { queryKeys } from '../lib/queryClient.js'
 
-export function useNotifications(unreadOnly = false) {
+export function useNotifications(unreadOnly = false, options = {}) {
   return useQuery({
     queryKey: queryKeys.notifications(unreadOnly),
     queryFn: () =>
@@ -10,6 +10,7 @@ export function useNotifications(unreadOnly = false) {
         params: unreadOnly ? { unread_only: true } : {},
       }),
     staleTime: 20_000,
+    enabled: options.enabled !== false,
   })
 }
 

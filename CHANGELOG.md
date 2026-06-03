@@ -10,12 +10,19 @@ All notable changes to InsightCase are documented here. Format follows [Keep a C
 
 ### Added
 - Team workflow: `CONTRIBUTING.md`, PR template, CODEOWNERS, pre-push/pre-release scripts, pre-commit hooks, CI contributor guards.
+- RBAC editor: bulk Select all / Clear all for service categories, multi-select dropdown, unified clinical features panel.
+- People module: central invite policy (max 2 pending per email, one role per email), uniform row actions (staff/therapists/clients), bulk activate/deactivate and bulk invite cancel, client Deactivated when all cases closed with reactivate case flow, case CM edit modal.
+- `user.read` permission for Case Manager and Supervisor — read-only Staff directory in People without account management.
+- People directory loads all user pages (not just first 100); server-side search by email/name.
 
 ### Changed
 - *(Add PR bullets here: `- **@author** — short description (#PR)`)*
+- People → Clients: family list includes case status, `allCasesClosed`, and primary case id for actions.
+- Pending invite UI explains cancel vs post-registration login paths.
 
 ### Fixed
-- *(none yet)*
+- Use current location: reverse geocode now uses API base URL (works on Vercel production).
+- Security: active portal users no longer hidden from People when total users exceeds 100.
 
 ---
 

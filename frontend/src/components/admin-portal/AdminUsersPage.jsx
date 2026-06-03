@@ -33,6 +33,7 @@ export function AdminUsersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [showCreatePassword, setShowCreatePassword] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -248,14 +249,34 @@ export function AdminUsersPage() {
           {needsPassword && (
             <label>
               Password
-              <input
-                className="admin-input"
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                minLength={6}
-                required
-              />
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  className="admin-input"
+                  type={showCreatePassword ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  minLength={6}
+                  required
+                  style={{ width: '100%', paddingRight: '50px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePassword(!showCreatePassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: '#4f46e5',
+                    padding: '4px 8px',
+                  }}
+                >
+                  {showCreatePassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
             </label>
           )}
 

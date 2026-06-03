@@ -41,12 +41,18 @@ export function accountStatusTone(status) {
 /** Client/family row: Invited | Active | Deactivated */
 export function clientAccountStatus(family) {
   if (!family) return 'Deactivated'
+  if (family.allCasesClosed) return 'Deactivated'
   if (family.pendingInvite) return 'Invited'
   const primary = family.parents?.[0]
   if (!primary) return 'Invited'
   if (primary.parentIsActive === false) return 'Deactivated'
   if (primary.parentLoginReady) return 'Active'
   return 'Invited'
+}
+
+export function clientStatusHint(family) {
+  if (family?.allCasesClosed) return 'All cases closed'
+  return null
 }
 
 /** Service types available for a case program module (homecare vs shadow). */

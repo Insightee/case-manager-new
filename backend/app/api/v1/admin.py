@@ -19,6 +19,7 @@ from app.core.database import get_db
 from app.core.pagination import paginate_query, paginated_response
 from app.core.security import hash_password
 from app.schemas.pagination import PaginatedList
+from app.schemas.user_provision import ClearEmailSuppressionBody
 from app.core.module_access import (
     get_allowed_case_product_modules,
     get_user_features,
@@ -160,6 +161,15 @@ def _user_to_read(u: User, *, db: Session | None = None) -> UserRead:
         invite_status=login_meta.get("invite_status"),
         last_invite_sent_at=login_meta.get("last_invite_sent_at"),
         pending_invite_url=login_meta.get("pending_invite_url"),
+        email_delivery_status=login_meta.get("email_delivery_status"),
+        email_attempt_count=login_meta.get("email_attempt_count"),
+        last_email_status=login_meta.get("last_email_status"),
+        last_email_sent_at=login_meta.get("last_email_sent_at"),
+        next_retry_at=login_meta.get("next_retry_at"),
+        resend_allowed_at=login_meta.get("resend_allowed_at"),
+        is_email_suppressed=login_meta.get("is_email_suppressed", False),
+        suppression_reason=login_meta.get("suppression_reason"),
+        delivery_message=login_meta.get("delivery_message"),
     )
 
 
@@ -1461,20 +1471,61 @@ def export_session_logs(
 
 
 def require_user_directory_read(user: User = Depends(get_current_user)) -> User:
-    """Staff pickers (tickets, CM meetings) use therapist.read; People uses user.manage."""
-    if user_has_permission(user, "user.manage") or user_has_permission(user, "therapist.read"):
+    """Staff pickers and People directory — manage, read-only directory, or therapist pickers."""
+    if (
+        user_has_permission(user, "user.manage")
+        or user_has_permission(user, "user.read")
+        or user_has_permission(user, "therapist.read")
+    ):
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to list users")
+
+
+def _users_list_stmt(
+    *,
+    search: str | None,
+    exclude_roles: str | None,
+    sort: str,
+):
+    from app.models.role import Role, user_roles
+
+    stmt = select(User)
+    q = (search or "").strip().lower()
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(User.email).like(pattern),
+                func.lower(User.full_name).like(pattern),
+            )
+        )
+    if exclude_roles:
+        excluded = {r.strip().upper() for r in exclude_roles.split(",") if r.strip()}
+        if excluded:
+            excluded_ids = (
+                select(user_roles.c.user_id)
+                .join(Role, Role.id == user_roles.c.role_id)
+                .where(Role.name.in_(excluded))
+            )
+            stmt = stmt.where(User.id.not_in(excluded_ids))
+    if sort == "created_at_desc":
+        stmt = stmt.order_by(User.created_at.desc(), User.email.asc())
+    else:
+        stmt = stmt.order_by(User.email.asc())
+    return stmt
 
 
 @router.get("/users", response_model=PaginatedList[UserRead])
 def list_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
+    search: Optional[str] = Query(None, description="Filter by email or full name"),
+    exclude_roles: Optional[str] = Query(None, description="Comma-separated roles to exclude"),
+    sort: str = Query("email_asc", pattern="^(email_asc|created_at_desc)$"),
     user: User = Depends(require_user_directory_read),
     db: Session = Depends(get_db),
 ):
-    stmt = select(User).order_by(User.email)
+    stmt = _users_list_stmt(search=search, exclude_roles=exclude_roles, sort=sort)
     users, total = paginate_query(db, stmt, page=page, page_size=page_size)
     items = [_user_to_read(u, db=db) for u in users]
     return PaginatedList[UserRead](
@@ -1670,6 +1721,7 @@ def admin_invite_user_to_login(
     request: Request,
     background_tasks: BackgroundTasks,
     send_email: bool = Query(True),
+    force_resend: bool = Query(False),
     current: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
@@ -1683,6 +1735,7 @@ def admin_invite_user_to_login(
             actor_user_id=current.id,
             background_tasks=background_tasks,
             send_email=send_email,
+            force_resend=force_resend,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1775,6 +1828,18 @@ def invite_therapist(
             "invite_id": result.get("invite_id"),
             "email_delivery": result.get("email_delivery"),
         }
+    from app.services.invite_policy_service import assert_can_create_invite
+
+    try:
+        assert_can_create_invite(db, payload.email, role)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    existing_user = db.scalars(select(User).where(User.email == payload.email.lower().strip())).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User already exists. Use Invite to login instead of sending a new invite.",
+        )
     token = secrets.token_urlsafe(32)
     invite_meta: dict = {}
     if payload.full_name and payload.full_name.strip():
@@ -1817,6 +1882,7 @@ def invite_therapist(
             full_name=display_name,
             role_label=role_label,
             recipient_role=role.lower(),
+            invite_id=invite.id,
         )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="invite", entity_type="invite_token", entity_id=invite.id, **meta)
@@ -3701,6 +3767,11 @@ def admin_list_invites(
             "pending_slot_id": (inv.invite_metadata or {}).get("pending_slot_id"),
             "client_name": (inv.invite_metadata or {}).get("client_name"),
             "therapist_user_id": (inv.invite_metadata or {}).get("therapist_user_id"),
+            "email_delivery_status": inv.email_delivery_status,
+            "email_attempt_count": inv.email_attempt_count or 0,
+            "email_next_retry_at": inv.email_next_retry_at.isoformat() if inv.email_next_retry_at else None,
+            "resend_allowed_at": inv.resend_allowed_at.isoformat() if inv.resend_allowed_at else None,
+            "expired_due_to_delivery_failure": bool(inv.expired_due_to_delivery_failure),
         }
         for inv in rows
     ]
@@ -3710,6 +3781,7 @@ def admin_list_invites(
 def resend_invite_email(
     invite_id: int,
     background_tasks: BackgroundTasks,
+    force_resend: bool = Query(False),
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
@@ -3722,7 +3794,12 @@ def resend_invite_email(
     now = datetime.now(timezone.utc)
     if invite.used_at is not None:
         raise HTTPException(status_code=400, detail="Invite has already been used")
-    if ensure_utc_aware(invite.expires_at) <= now:
+    if invite.expired_due_to_delivery_failure and not force_resend:
+        raise HTTPException(
+            status_code=400,
+            detail="Invite delivery failed. Correct the email and use force resend.",
+        )
+    if ensure_utc_aware(invite.expires_at) <= now and not force_resend:
         raise HTTPException(status_code=400, detail="Invite has expired")
     from app.services.email.service import enqueue_portal_invite_email, invite_email_delivery_status
 
@@ -3732,8 +3809,9 @@ def resend_invite_email(
     role = invite.role_name or "THERAPIST"
     role_label = role.replace("_", " ").title()
     email_delivery = invite_email_delivery_status(send_email=True, background_tasks=background_tasks)
+    log_id = None
     if email_delivery != "skipped_no_smtp":
-        enqueue_portal_invite_email(
+        log_id = enqueue_portal_invite_email(
             background_tasks,
             db,
             to=invite.email,
@@ -3741,9 +3819,109 @@ def resend_invite_email(
             full_name=display_name,
             role_label=role_label,
             recipient_role=role.lower(),
+            invite_id=invite.id,
+            force_resend=force_resend,
         )
     db.commit()
-    return {"ok": True, "email": invite.email, "email_delivery": email_delivery}
+    return {
+        "ok": True,
+        "email": invite.email,
+        "email_delivery": email_delivery,
+        "email_log_id": log_id,
+        "skipped": log_id is None and email_delivery != "skipped_no_smtp",
+    }
+
+
+@router.post("/email-suppressions/{email}/clear")
+def clear_email_suppression(
+    email: str,
+    payload: ClearEmailSuppressionBody,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.email.suppression_service import clear_suppression, linked_user_count
+
+    row = clear_suppression(
+        db,
+        email,
+        cleared_by_user_id=user.id,
+        clear_reason=payload.clear_reason,
+        corrected_email=str(payload.corrected_email) if payload.corrected_email else None,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="No active suppression for this email")
+    db.commit()
+    return {
+        "ok": True,
+        "email": email.lower().strip(),
+        "linked_user_count": linked_user_count(db, email),
+    }
+
+
+class BulkUserStatusUpdate(BaseModel):
+    user_ids: list[int] = Field(..., min_length=1)
+    is_active: bool
+
+
+class BulkInviteRevoke(BaseModel):
+    invite_ids: list[int] = Field(..., min_length=1)
+
+
+@router.post("/users/bulk-status")
+def bulk_update_user_status(
+    payload: BulkUserStatusUpdate,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    updated = 0
+    meta = get_request_meta(request)
+    for uid in payload.user_ids:
+        target = db.get(User, uid)
+        if not target:
+            continue
+        if target.is_active == payload.is_active:
+            continue
+        target.is_active = payload.is_active
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="activate" if payload.is_active else "deactivate",
+            entity_type="user",
+            entity_id=uid,
+            **meta,
+        )
+        updated += 1
+    db.commit()
+    return {"ok": True, "updated": updated}
+
+
+@router.post("/invites/bulk-revoke")
+def bulk_revoke_invites(
+    payload: BulkInviteRevoke,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    revoked = 0
+    meta = get_request_meta(request)
+    for invite_id in payload.invite_ids:
+        invite = db.get(InviteToken, invite_id)
+        if not invite or invite.used_at is not None:
+            continue
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="revoke_invite",
+            entity_type="invite_token",
+            entity_id=invite.id,
+            new_value={"email": invite.email, "role_name": invite.role_name},
+            **meta,
+        )
+        db.delete(invite)
+        revoked += 1
+    db.commit()
+    return {"ok": True, "revoked": revoked}
 
 
 @router.post("/invites/{invite_id}/revoke")

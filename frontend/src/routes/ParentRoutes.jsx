@@ -57,7 +57,7 @@ export function ParentDashboardRoute() {
   }
 
   return (
-    <ClientPortalLayout title="Family dashboard" subtitle="Approved updates for your children.">
+    <ClientPortalLayout title="Family dashboard" subtitle="">
       <ErrorBanner message={error?.message} onRetry={() => refetch()} />
       {isLoading && !data ? <p className="muted">Loading your family dashboard…</p> : null}
       <ClientDashboardPage

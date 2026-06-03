@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
-import { AdminPanel, CopyLinkButton, AdminInviteRowActions } from './ui/index.js'
+import { AdminPanel, CopyLinkButton, AdminInviteRowActions, PeopleBulkToolbar, PeopleSelectCheckbox } from './ui/index.js'
 
 function defaultTherapistServices(roleDefaults) {
   const fromRole = roleDefaults?.THERAPIST
@@ -69,6 +69,8 @@ export function AdminTherapistOnboardPanel({
   const [bulkPhase, setBulkPhase] = useState('edit')
   const [lastResult, setLastResult] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [selectedInviteIds, setSelectedInviteIds] = useState(() => new Set())
+  const [showCreatePassword, setShowCreatePassword] = useState(false)
 
   useEffect(() => {
     apiFetch('/api/v1/therapist/service-categories')
@@ -234,9 +236,19 @@ export function AdminTherapistOnboardPanel({
 
       {pendingInvites.length > 0 ? (
         <AdminPanel title={`Pending therapist invites (${pendingInvites.length})`} subtitle="Links expire after 7 days">
+          <PeopleBulkToolbar
+            selectedInviteIds={[...selectedInviteIds]}
+            onReload={() => {
+              setSelectedInviteIds(new Set())
+              onReload?.()
+            }}
+            onSuccess={onSuccess}
+            onError={onError}
+          />
           <table className="admin-table">
             <thead>
               <tr>
+                <th style={{ width: 36 }} aria-label="Select" />
                 <th>Email</th>
                 <th>Expires</th>
                 <th />
@@ -245,6 +257,20 @@ export function AdminTherapistOnboardPanel({
             <tbody>
               {pendingInvites.map((inv) => (
                 <tr key={inv.id}>
+                  <td>
+                    <PeopleSelectCheckbox
+                      checked={selectedInviteIds.has(inv.id)}
+                      onChange={() =>
+                        setSelectedInviteIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(inv.id)) next.delete(inv.id)
+                          else next.add(inv.id)
+                          return next
+                        })
+                      }
+                      ariaLabel={`Select invite ${inv.email}`}
+                    />
+                  </td>
                   <td>{inv.email}</td>
                   <td>{new Date(inv.expires_at).toLocaleDateString()}</td>
                   <td>
@@ -294,7 +320,33 @@ export function AdminTherapistOnboardPanel({
               {form.mode === 'direct' ? (
                 <label>
                   Password (optional — auto-generated if blank)
-                  <input type="password" className="admin-input" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} minLength={6} />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showCreatePassword ? 'text' : 'password'}
+                      className="admin-input"
+                      value={form.password}
+                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                      minLength={6}
+                      style={{ width: '100%', paddingRight: '50px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatePassword(!showCreatePassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: '#4f46e5',
+                        padding: '4px 8px',
+                      }}
+                    >
+                      {showCreatePassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
                 </label>
               ) : (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

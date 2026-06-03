@@ -8,16 +8,68 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.models.email_log import EmailLog
+from app.models.email_log import EmailLog, LOGIN_TEMPLATE_KEYS, TRANSACTIONAL_DEDUPE_TEMPLATE_KEYS
 from app.services.email import logging as email_logging
 from app.services.email.events import EmailEvent
 from app.services.email.providers.smtp import SmtpEmailProvider, parse_envelope_from
+from app.services.email.safe_send import (
+    check_suppression_only,
+    deliver_email_log_smtp,
+    is_login_template,
+    prepare_login_email_log,
+)
 from app.services.email.senders import from_header_for_event
 from app.services.email.templates import render_template
 
 logger = logging.getLogger(__name__)
 
 _smtp_provider = SmtpEmailProvider()
+
+
+def _transactional_dedupe_hit(
+    db: Session,
+    *,
+    recipient: str,
+    template_key: str,
+    payload: dict[str, Any],
+    entity_type: str | None,
+    entity_id: int | None,
+) -> bool:
+    """Return True if a recent successful send exists for invoice/report-style mail."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.services.email.status_helpers import is_submission_success
+
+    if template_key not in TRANSACTIONAL_DEDUPE_TEMPLATE_KEYS:
+        return False
+    since = datetime.now(timezone.utc) - timedelta(minutes=settings.email_template_dedupe_minutes)
+    email_l = recipient.lower().strip()
+    rows = list(
+        db.scalars(
+            select(EmailLog)
+            .where(
+                EmailLog.recipient_email == email_l,
+                EmailLog.template_key == template_key,
+                EmailLog.created_at >= since,
+            )
+            .order_by(EmailLog.id.desc())
+            .limit(5)
+        ).all()
+    )
+    if entity_type and entity_id:
+        rows = [r for r in rows if r.entity_type == entity_type and r.entity_id == entity_id]
+    elif template_key == "invoice_generated" and payload.get("invoice_number"):
+        inv_no = str(payload["invoice_number"])
+        rows = [r for r in rows if str((r.payload_json or {}).get("invoice_number")) == inv_no]
+    elif template_key == "report_published" and payload.get("report_label"):
+        label = str(payload["report_label"])
+        rows = [r for r in rows if str((r.payload_json or {}).get("report_label")) == label]
+    for row in rows:
+        if is_submission_success(row.status):
+            return True
+    return False
 
 
 def invite_email_delivery_status(*, send_email: bool, background_tasks: BackgroundTasks | None) -> str:
@@ -50,12 +102,19 @@ def send_email(
     body_html: Optional[str] = None,
     event: EmailEvent | None = None,
     from_email: str | None = None,
+    db: Session | None = None,
 ) -> bool:
     """Send one email. Returns True if sent or skipped (no config), False on hard failure."""
     recipients = [to] if isinstance(to, str) else list(to)
     recipients = [r.strip() for r in recipients if r and r.strip()]
     if not recipients:
         return False
+
+    if db is not None:
+        recipients = [r for r in recipients if check_suppression_only(db, r)]
+        if not recipients:
+            logger.info("[email] suppressed; skip send to %s", to)
+            return True
 
     if not is_smtp_configured():
         logger.info("[email] SMTP not configured; would send to %s: %s", recipients, subject)
@@ -89,10 +148,52 @@ def enqueue_email_event(
     payload: dict[str, Any],
     subject: str | None = None,
     recipient_role: str | None = None,
+    entity_type: str | None = None,
+    entity_id: int | None = None,
+    force_resend: bool = False,
 ) -> int | None:
     """Queue an email for background delivery. Returns email_logs.id or None if no recipient."""
     to_clean = (to or "").strip()
     if not to_clean:
+        return None
+
+    if is_login_template(template_key):
+        prep = prepare_login_email_log(
+            db,
+            event=event,
+            recipient_email=to_clean,
+            template_key=template_key,
+            payload=payload,
+            subject=subject,
+            recipient_role=recipient_role,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            force_resend=force_resend,
+        )
+        if prep.skipped or not prep.email_log_id:
+            logger.info(
+                "[email] login send skipped to=%s status=%s reason=%s",
+                to_clean,
+                prep.status,
+                prep.reason,
+            )
+            return prep.email_log_id
+        background_tasks.add_task(_deliver_email_log, prep.email_log_id)
+        return prep.email_log_id
+
+    if not check_suppression_only(db, to_clean):
+        logger.info("[email] suppressed skip enqueue to=%s template=%s", to_clean, template_key)
+        return None
+
+    if _transactional_dedupe_hit(
+        db,
+        recipient=to_clean,
+        template_key=template_key,
+        payload=payload,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    ):
+        logger.info("[email] transactional dedupe skip to=%s template=%s", to_clean, template_key)
         return None
 
     subj, _, _ = render_template(template_key, payload)
@@ -108,6 +209,8 @@ def enqueue_email_event(
         payload=payload,
         recipient_role=recipient_role,
         provider=provider,
+        entity_type=entity_type,
+        entity_id=entity_id,
     )
     background_tasks.add_task(_deliver_email_log, row.id)
     return row.id
@@ -135,6 +238,10 @@ def _deliver_email_log(log_id: int) -> None:
 
 
 def _deliver_with_session(db: Session, log: EmailLog) -> None:
+    if is_login_template(log.template_key):
+        deliver_email_log_smtp(db, log)
+        return
+
     subject, body_text, body_html = render_template(log.template_key, log.payload_json)
     if log.subject:
         subject = log.subject
@@ -147,7 +254,16 @@ def _deliver_with_session(db: Session, log: EmailLog) -> None:
             log.recipient_email,
             subject,
         )
-        email_logging.mark_email_sent(db, log, provider="noop")
+        email_logging.mark_email_accepted(db, log, provider="noop")
+        return
+
+    if not check_suppression_only(db, log.recipient_email):
+        email_logging.mark_email_status(
+            db,
+            log,
+            "skipped_suppressed",
+            error_message="suppressed",
+        )
         return
 
     try:
@@ -163,9 +279,10 @@ def _deliver_with_session(db: Session, log: EmailLog) -> None:
         body_html=body_html,
         from_header=from_header,
         envelope_from=envelope,
+        client_reference=f"email_log:{log.id}",
     )
     if result.ok:
-        email_logging.mark_email_sent(
+        email_logging.mark_email_accepted(
             db,
             log,
             provider=_smtp_provider.name,
@@ -259,6 +376,8 @@ def enqueue_password_reset_email(
     full_name: str,
     reset_url: str,
     expires_hours: int = 1,
+    entity_id: int | None = None,
+    force_resend: bool = False,
 ) -> int | None:
     return enqueue_email_event(
         background_tasks,
@@ -272,6 +391,9 @@ def enqueue_password_reset_email(
             "expires_hours": expires_hours,
         },
         recipient_role="user",
+        entity_type="password_reset_token" if entity_id else None,
+        entity_id=entity_id,
+        force_resend=force_resend,
     )
 
 
@@ -391,6 +513,8 @@ def enqueue_portal_invite_email(
     role_label: str,
     intro_line: str | None = None,
     recipient_role: str | None = None,
+    invite_id: int | None = None,
+    force_resend: bool = False,
 ) -> int | None:
     return enqueue_email_event(
         background_tasks,
@@ -406,6 +530,9 @@ def enqueue_portal_invite_email(
             or f"You have been invited to join Insighte as a {role_label.lower()}.",
         },
         recipient_role=recipient_role,
+        entity_type="invite_token" if invite_id else None,
+        entity_id=invite_id,
+        force_resend=force_resend,
     )
 
 
@@ -416,6 +543,7 @@ def leave_sessions_cancelled_email(
     date_range: str,
     lines: list[str],
     portal_url: str,
+    db: Session | None = None,
 ) -> None:
     detail = "\n".join(f"• {ln}" for ln in lines) if lines else "No individual session lines."
     body = (
@@ -423,7 +551,7 @@ def leave_sessions_cancelled_email(
         f"The following session(s) were cancelled:\n{detail}\n\n"
         f"{portal_url}\n"
     )
-    send_email(to=to, subject="Sessions cancelled — therapist on leave", body_text=body)
+    send_email(to=to, subject="Sessions cancelled — therapist on leave", body_text=body, db=db)
 
 
 def leave_approved_therapist_email(
@@ -433,6 +561,7 @@ def leave_approved_therapist_email(
     date_range: str,
     cancelled_count: int,
     portal_url: str,
+    db: Session | None = None,
 ) -> None:
     body = (
         f"Hi {therapist_name},\n\n"
@@ -440,7 +569,7 @@ def leave_approved_therapist_email(
         f"{cancelled_count} booked session(s) were cancelled and clients were notified.\n\n"
         f"{portal_url}\n"
     )
-    send_email(to=to, subject="Leave approved", body_text=body)
+    send_email(to=to, subject="Leave approved", body_text=body, db=db)
 
 
 def leave_admin_summary_email(
@@ -449,12 +578,13 @@ def leave_admin_summary_email(
     therapist_name: str,
     date_range: str,
     cancelled_count: int,
+    db: Session | None = None,
 ) -> None:
     body = (
         f"Therapist {therapist_name} — leave {date_range} approved.\n"
         f"Booked sessions cancelled: {cancelled_count}.\n"
     )
-    send_email(to=to, subject=f"[Admin] Leave approved — {therapist_name}", body_text=body)
+    send_email(to=to, subject=f"[Admin] Leave approved — {therapist_name}", body_text=body, db=db)
 
 
 def leave_pending_hr_email(
@@ -464,6 +594,7 @@ def leave_pending_hr_email(
     date_range: str,
     leave_type: str,
     portal_url: str,
+    db: Session | None = None,
 ) -> None:
     body = (
         f"A new leave request needs your review.\n\n"
@@ -472,7 +603,7 @@ def leave_pending_hr_email(
         f"Type: {leave_type}\n\n"
         f"Review here: {portal_url}\n"
     )
-    send_email(to=to, subject=f"Leave request — {therapist_name}", body_text=body)
+    send_email(to=to, subject=f"Leave request — {therapist_name}", body_text=body, db=db)
 
 
 def leave_rejected_therapist_email(
@@ -482,6 +613,7 @@ def leave_rejected_therapist_email(
     date_range: str,
     review_note: str | None,
     portal_url: str,
+    db: Session | None = None,
 ) -> None:
     note_line = f"\nNote from reviewer: {review_note}\n" if review_note else ""
     body = (
@@ -489,7 +621,7 @@ def leave_rejected_therapist_email(
         f"Your leave request for {date_range} was not approved.{note_line}\n"
         f"View details: {portal_url}\n"
     )
-    send_email(to=to, subject="Leave request not approved", body_text=body)
+    send_email(to=to, subject="Leave request not approved", body_text=body, db=db)
 
 
 def leave_sessions_reinstated_email(
@@ -498,12 +630,13 @@ def leave_sessions_reinstated_email(
     therapist_name: str,
     date_range: str,
     portal_url: str,
+    db: Session | None = None,
 ) -> None:
     body = (
         f"The leave request for {therapist_name} ({date_range}) was withdrawn or not approved.\n"
         f"Your scheduled sessions remain as planned.\n\n{portal_url}\n"
     )
-    send_email(to=to, subject="Sessions unchanged", body_text=body)
+    send_email(to=to, subject="Sessions unchanged", body_text=body, db=db)
 
 
 def parent_invoice_ready_email(

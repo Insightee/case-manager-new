@@ -167,7 +167,8 @@ def build_parent_home(db: Session, user: User) -> ParentHomeResponse:
                 child_name=case.child.full_name if case and case.child else None,
                 submitted_at=log.submitted_at,
                 scheduled_date=s.scheduled_date,
-                **{k: v for k, v in fields.items() if k != "scheduled_date"},
+                session_start_time=s.start_time.strftime("%H:%M") if s.start_time else None,
+                **{k: v for k, v in fields.items() if k not in ("scheduled_date",)},
             )
         )
 

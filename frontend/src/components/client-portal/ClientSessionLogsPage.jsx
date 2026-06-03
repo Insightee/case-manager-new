@@ -4,174 +4,8 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { useParentPortal } from '../../hooks/useParentPortal.js'
 import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
-import { formatParentLogSessionTime } from '../../lib/parentSessionLogDisplay.js'
-import { SessionLogParentBody } from './SessionLogParentBody.jsx'
+import { buildSessionDisputeState, SessionCard } from './SessionCard.jsx'
 import './parent-session-updates.css'
-
-function StarRating({ value, onChange, disabled }) {
-  return (
-    <div className="session-card__stars" role="group" aria-label="Rate this session">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <button
-          key={n}
-          type="button"
-          className={`session-card__star ${value >= n ? 'is-active' : ''}`}
-          onClick={() => !disabled && onChange(n)}
-          disabled={disabled}
-          aria-label={`${n} stars`}
-        >
-          ★
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function formatSubmittedAt(iso) {
-  if (!iso) return ''
-  try {
-    return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-  } catch {
-    return iso
-  }
-}
-
-function SessionCard({ log, onSaved, onDispute }) {
-  const hasSubmitted = !!(log.parent_feedback_at && (log.parent_session_rating || log.parent_feedback))
-  const [editing, setEditing] = useState(!hasSubmitted)
-  const [rating, setRating] = useState(log.parent_session_rating || 0)
-  const [feedback, setFeedback] = useState(log.parent_feedback || '')
-  const [sharePublicly, setSharePublicly] = useState(!!log.parent_feedback_public)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [localLog, setLocalLog] = useState(log)
-
-  useEffect(() => {
-    setLocalLog(log)
-    if (log.parent_feedback_at && (log.parent_session_rating || log.parent_feedback)) {
-      setEditing(false)
-    }
-  }, [log])
-
-  async function saveFeedback() {
-    if (!rating && !feedback.trim()) return
-    setSaving(true)
-    setError('')
-    try {
-      const updated = await apiFetch(`/api/v1/parent/session-logs/${localLog.id}/feedback`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          rating: rating || undefined,
-          feedback: feedback.trim() || undefined,
-          share_publicly: sharePublicly,
-        }),
-      })
-      setLocalLog((prev) => ({ ...prev, ...updated }))
-      setEditing(false)
-      onSaved?.(updated)
-    } catch (err) {
-      setError(err.message || 'Could not save feedback')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const dateLabel = localLog.scheduled_date
-    ? new Date(localLog.scheduled_date).toLocaleDateString(undefined, {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
-    : ''
-  const timeLabel = formatParentLogSessionTime(localLog)
-
-  const showClosed = hasSubmitted || (localLog.parent_feedback_at && !editing)
-
-  return (
-    <article className="session-card">
-      <header className="session-card__head">
-        <div>
-          <h3 className="session-card__title">{localLog.child_name || localLog.case_code}</h3>
-          <p className="session-card__meta">
-            {dateLabel}
-            {localLog.therapist_name ? ` · ${localLog.therapist_name}` : ''}
-            {timeLabel ? ` · ${timeLabel}` : ''}
-          </p>
-        </div>
-        <span className="session-card__badge">
-          {localLog.attendance_label || localLog.attendance_status}
-        </span>
-      </header>
-
-      <SessionLogParentBody log={localLog} />
-
-      {showClosed && !editing ? (
-        <div className="session-card__feedback session-card__feedback--closed">
-          <strong style={{ fontSize: '0.875rem' }}>Your feedback</strong>
-          <div style={{ marginTop: 8 }}>
-            <StarRating value={localLog.parent_session_rating || 0} onChange={() => {}} disabled />
-          </div>
-          {localLog.parent_feedback ? (
-            <p style={{ fontSize: '0.85rem', color: '#475569', margin: '8px 0' }}>{localLog.parent_feedback}</p>
-          ) : null}
-          <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>
-            Submitted {formatSubmittedAt(localLog.parent_feedback_at)}
-            {localLog.parent_feedback_public ? ' · Shared on therapist profile' : ''}
-          </p>
-          <button type="button" className="session-card__edit-link" onClick={() => setEditing(true)}>
-            Edit feedback
-          </button>
-        </div>
-      ) : (
-        <div className="session-card__feedback">
-          <strong style={{ fontSize: '0.875rem' }}>Rate this session</strong>
-          <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 8px' }}>
-            Give a 1–5 star rating and optional review. Your therapist sees this on their profile.
-          </p>
-          <StarRating value={rating} onChange={setRating} disabled={saving} />
-          <textarea
-            className="session-card__textarea"
-            placeholder="Your review (optional)"
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            disabled={saving}
-          />
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, fontSize: '0.8rem', color: '#475569' }}>
-            <input
-              type="checkbox"
-              checked={sharePublicly}
-              onChange={(e) => setSharePublicly(e.target.checked)}
-              disabled={saving}
-              style={{ marginTop: 3 }}
-            />
-            <span>Share this review on the therapist&apos;s public profile when available.</span>
-          </label>
-          {error ? <p style={{ color: '#b91c1c', fontSize: '0.8rem' }}>{error}</p> : null}
-          <div className="session-card__feedback-actions">
-            <button type="button" className="session-card__save" onClick={saveFeedback} disabled={saving}>
-              {saving ? 'Saving…' : 'Save feedback'}
-            </button>
-            {hasSubmitted ? (
-              <button type="button" className="session-card__ghost" onClick={() => setEditing(false)} disabled={saving}>
-                Cancel
-              </button>
-            ) : null}
-          </div>
-        </div>
-      )}
-
-      <div className="session-card__footer-actions">
-        <button type="button" className="session-card__dispute" onClick={() => onDispute(localLog)}>
-          Raise a dispute
-        </button>
-        <Link to="/parent/book" className="session-card__link-schedule">
-          Session schedule →
-        </Link>
-      </div>
-    </article>
-  )
-}
 
 function CmMeetingCard({ meeting }) {
   const dateLabel = meeting.scheduled_date
@@ -311,41 +145,20 @@ export function ClientSessionLogsPage() {
   }, [logs, attendanceFilter])
 
   function handleDispute(log) {
-    const dateLabel = log.scheduled_date
-      ? new Date(log.scheduled_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-      : 'session'
-    navigate('/parent/support?tab=support', {
-      state: {
-        topic: 'THERAPIST',
-        case_id: log.case_id,
-        subject: `Session dispute — ${dateLabel} (${log.child_name || log.case_code})`,
-        message: [
-          `I would like to dispute or raise a concern about the following session.`,
-          ``,
-          `Session log ID: ${log.id}`,
-          `Date: ${log.scheduled_date || '—'}`,
-          `Therapist: ${log.therapist_name || '—'}`,
-          `Attendance: ${log.attendance_status || '—'}`,
-          ``,
-          `Please describe your concern below:`,
-        ].join('\n'),
-      },
-    })
+    navigate('/parent/support?tab=support', { state: buildSessionDisputeState(log) })
   }
 
   const monthLabel = selectedMeta.label
 
   return (
-    <ClientPortalLayout
-      title="Session updates"
-      subtitle="Therapist session notes and case manager meetings. Your case manager and therapist are assigned separately on each case."
-    >
+    <ClientPortalLayout title="Session updates" subtitle="">
       <ParentFilterBar
         ariaLabel="Filter session updates"
-        layout="stack"
+        className="parent-portal-filters--compact"
+        gridClass="parent-portal-filters__grid--tablet-2 parent-portal-filters__grid--desktop-3"
         actions={
           <Link to="/parent/book" className="parent-portal-filters__link">
-            Session schedule →
+            Schedule →
           </Link>
         }
       >
@@ -382,8 +195,6 @@ export function ClientSessionLogsPage() {
           </ParentFilterSelect>
         </ParentFilterField>
       </ParentFilterBar>
-
-      <h2 className="parent-portal-section-title">{monthLabel}</h2>
 
       {loading ? (
         <p style={{ color: '#94a3b8' }}>Loading session updates…</p>

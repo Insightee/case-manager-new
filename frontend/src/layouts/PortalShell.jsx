@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
 import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
+import { useNotifications } from '../hooks/useNotifications.js'
 import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
 import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
@@ -43,10 +44,10 @@ const PARENT_NAV = [
 ]
 
 const PARENT_MOBILE_NAV = [
-  { to: '/parent/session-logs', label: 'Updates' },
-  { to: '/parent/book', label: 'Book' },
-  { to: '/parent/billing', label: 'Billing' },
-  { to: '/parent', label: 'Home', end: true },
+  { to: '/parent', label: 'Home', end: true, icon: 'dashboard' },
+  { to: '/parent/session-logs', label: 'Sessions', icon: 'grid' },
+  { to: '/parent/reports', label: 'Reports', icon: 'reports' },
+  { to: '/parent/billing', label: 'Billing', icon: 'invoices' },
 ]
 
 const ADMIN_CM_MOBILE_NAV = [
@@ -298,6 +299,18 @@ export function PortalShell({ portal }) {
           ? '/admin/profile'
           : null
 
+  const notificationsPath =
+    portal === 'parent'
+      ? '/parent/notifications'
+      : portal === 'therapist'
+        ? '/therapist/notifications'
+        : '/admin/notifications'
+
+  const { data: notifData } = useNotifications(false, {
+    enabled: showMobileDrawer,
+  })
+  const unreadNotifCount = notifData?.unread_count ?? 0
+
   const activeDurationLabel = useMemo(() => {
     const h = Math.floor(activeElapsedSeconds / 3600)
     const m = Math.floor((activeElapsedSeconds % 3600) / 60)
@@ -310,7 +323,7 @@ export function PortalShell({ portal }) {
   return (
     <div className={shellClass}>
       <SkipLink />
-      <header className="app-mobile-topbar">
+      <header className={`app-mobile-topbar${showMobileDrawer ? ' app-mobile-topbar--drawer-only' : ''}`}>
         <div className="app-mobile-topbar__start">
           {showMobileDrawer ? (
             <button
@@ -334,50 +347,52 @@ export function PortalShell({ portal }) {
             </div>
           </div>
         </div>
-        <div className="app-mobile-topbar__account">
-          <NotificationBell portal={portal} />
-          <button
-            type="button"
-            className="app-mobile-topbar__profile"
-            aria-expanded={accountOpen}
-            aria-controls="mobile-account-menu"
-            aria-haspopup="menu"
-            onClick={() => setAccountOpen((o) => !o)}
-          >
-            <AuthenticatedAvatar user={user} className="app-mobile-topbar__avatar" size={36} />
-            <span className="app-mobile-topbar__name">{firstName}</span>
-            <span className="app-mobile-topbar__chevron" aria-hidden>
-              {accountOpen ? '▲' : '▼'}
-            </span>
-          </button>
-          {accountOpen ? (
-            <div id="mobile-account-menu" className="app-mobile-account-menu" role="menu">
-              <p className="app-mobile-account-menu__name">{user?.full_name}</p>
-              {profilePath ? (
-                <NavLink
-                  to={profilePath}
-                  className="app-mobile-account-menu__link"
+        {!showMobileDrawer ? (
+          <div className="app-mobile-topbar__account">
+            <NotificationBell portal={portal} />
+            <button
+              type="button"
+              className="app-mobile-topbar__profile"
+              aria-expanded={accountOpen}
+              aria-controls="mobile-account-menu"
+              aria-haspopup="menu"
+              onClick={() => setAccountOpen((o) => !o)}
+            >
+              <AuthenticatedAvatar user={user} className="app-mobile-topbar__avatar" size={36} />
+              <span className="app-mobile-topbar__name">{firstName}</span>
+              <span className="app-mobile-topbar__chevron" aria-hidden>
+                {accountOpen ? '▲' : '▼'}
+              </span>
+            </button>
+            {accountOpen ? (
+              <div id="mobile-account-menu" className="app-mobile-account-menu" role="menu">
+                <p className="app-mobile-account-menu__name">{user?.full_name}</p>
+                {profilePath ? (
+                  <NavLink
+                    to={profilePath}
+                    className="app-mobile-account-menu__link"
+                    role="menuitem"
+                    onClick={() => setAccountOpen(false)}
+                  >
+                    My profile
+                  </NavLink>
+                ) : null}
+                <button
+                  type="button"
+                  className="app-mobile-account-menu__logout"
                   role="menuitem"
-                  onClick={() => setAccountOpen(false)}
+                  onClick={logout}
                 >
-                  My profile
-                </NavLink>
-              ) : null}
-              <button
-                type="button"
-                className="app-mobile-account-menu__logout"
-                role="menuitem"
-                onClick={logout}
-              >
-                Logout
-              </button>
-            </div>
-          ) : null}
-        </div>
+                  Logout
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </header>
 
       <nav
-        className="app-mobile-tabs app-mobile-tabs--bottom app-mobile-tabs--compact"
+        className={`app-mobile-tabs app-mobile-tabs--bottom app-mobile-tabs--compact${portal === 'parent' ? ' app-mobile-tabs--app' : ''}`}
         aria-label="Quick navigation"
       >
         {mobileTabs.map((item) => (
@@ -434,6 +449,39 @@ export function PortalShell({ portal }) {
               showIcons={showNavIcons}
               onNavigate={() => setMobileNavOpen(false)}
             />
+            <div className="app-sidebar__footer app-sidebar__footer--drawer">
+              <NavLink
+                to={notificationsPath}
+                className="app-sidebar__drawer-action"
+                onClick={() => setMobileNavOpen(false)}
+              >
+                <NavIcon name="mail" className="app-sidebar__drawer-action-icon" />
+                <span>Notifications</span>
+                {unreadNotifCount > 0 ? (
+                  <span className="app-sidebar__drawer-badge">{unreadNotifCount > 99 ? '99+' : unreadNotifCount}</span>
+                ) : null}
+              </NavLink>
+              {profilePath ? (
+                <NavLink
+                  to={profilePath}
+                  className="app-sidebar__drawer-action"
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  <NavIcon name="user" className="app-sidebar__drawer-action-icon" />
+                  <span>My profile</span>
+                </NavLink>
+              ) : null}
+              <button
+                type="button"
+                className="app-sidebar__drawer-action app-sidebar__drawer-action--logout"
+                onClick={() => {
+                  setMobileNavOpen(false)
+                  logout()
+                }}
+              >
+                Sign out
+              </button>
+            </div>
           </aside>
         </>
       ) : null}
