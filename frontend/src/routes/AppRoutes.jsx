@@ -177,7 +177,12 @@ function PortalRedirect() {
 function Protected({ portal, children }) {
   const { user, portal: current, loading } = useAuth()
   if (loading) return <RouteLoading />
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) {
+    if (portal === 'parent') return <Navigate to="/clientlogin" replace />
+    if (portal === 'therapist') return <Navigate to="/therapistlogin" replace />
+    if (portal === 'admin') return <Navigate to="/stafflogin" replace />
+    return <Navigate to="/login" replace />
+  }
   if (current !== portal) return <Navigate to="/" replace />
   return children
 }
@@ -186,6 +191,11 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/clientlogin" element={<LoginPage key="client" portalType="parent" />} />
+      <Route path="/clinetlogin" element={<LoginPage key="client" portalType="parent" />} />
+      <Route path="/therapistlogin" element={<LoginPage key="therapist" portalType="therapist" />} />
+      <Route path="/stafflogin" element={<LoginPage key="staff" portalType="admin" />} />
+      <Route path="/devlogin" element={<LoginPage key="dev" portalType="dev" />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
       <Route path="/invite/:token" element={<InvitePage />} />

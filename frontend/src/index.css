@@ -1253,6 +1253,26 @@ th {
   z-index: 1;
 }
 
+.login-card--single {
+  width: min(440px, 100%);
+  min-height: auto;
+}
+
+.login-card--single .login-main {
+  padding: 40px 36px;
+  align-items: flex-start;
+}
+
+.login-card--single .login-header {
+  text-align: left;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.login-card--single .login-form {
+  width: 100%;
+}
+
 .login-card--split {
   position: relative;
   min-height: 580px;

@@ -27,6 +27,18 @@ const ADMIN_ROLES = [
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [selectedPortal, setSelectedPortal] = useState(() => {
+    return localStorage.getItem('insightcase_login_portal') || null
+  })
+
+  const updateLoginPortal = useCallback((p) => {
+    setSelectedPortal(p)
+    if (p) {
+      localStorage.setItem('insightcase_login_portal', p)
+    } else {
+      localStorage.removeItem('insightcase_login_portal')
+    }
+  }, [])
 
   const loadMe = useCallback(async () => {
     const { access } = getTokens()
@@ -69,15 +81,20 @@ export function AuthProvider({ children }) {
   const logout = () => {
     clearTokens()
     setUser(null)
+    updateLoginPortal(null)
   }
 
   const portal = useMemo(() => {
     if (!user?.roles?.length) return null
+    if (selectedPortal === 'parent' && user.roles.includes('PARENT')) return 'parent'
+    if (selectedPortal === 'therapist' && user.roles.includes('THERAPIST')) return 'therapist'
+    if (selectedPortal === 'admin' && user.roles.some((r) => ADMIN_ROLES.includes(r))) return 'admin'
+
     if (user.roles.includes('PARENT')) return 'parent'
     if (user.roles.some((r) => ADMIN_ROLES.includes(r))) return 'admin'
     if (user.roles.includes('THERAPIST')) return 'therapist'
     return 'admin'
-  }, [user])
+  }, [user, selectedPortal])
 
   const can = useCallback(
     (permission) => {
@@ -133,6 +150,7 @@ export function AuthProvider({ children }) {
       login,
       logout,
       portal,
+      updateLoginPortal,
       can,
       hasFeature,
       hasModule: hasModuleAccess,
@@ -148,6 +166,7 @@ export function AuthProvider({ children }) {
       user,
       loading,
       portal,
+      updateLoginPortal,
       can,
       hasFeature,
       hasModuleAccess,
