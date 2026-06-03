@@ -93,6 +93,7 @@ export function LoginPage() {
   const [portal, setPortal] = useState('therapist')
   const [email, setEmail] = useState('therapist@demo.com')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [selectedDemoEmail, setSelectedDemoEmail] = useState('')
@@ -190,13 +191,33 @@ export function LoginPage() {
               </label>
               <label>
                 Password
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                />
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    style={{ width: '100%', paddingRight: '50px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: '#4f46e5',
+                      padding: '4px 8px',
+                    }}
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </label>
               <p className="login-sub" style={{ marginTop: '-0.5rem', textAlign: 'right' }}>
                 <Link to="/forgot-password">Forgot password?</Link>

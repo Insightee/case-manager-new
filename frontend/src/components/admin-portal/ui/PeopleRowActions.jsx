@@ -95,6 +95,26 @@ export function PeopleRowActions({
     }
   }
 
+  async function setPasswordForUser() {
+    const nextPassword = window.prompt(`Set a new password for ${user.email} (min 6 characters):`)
+    if (!nextPassword) return
+    if (nextPassword.length < 6) {
+      onError?.('Password must be at least 6 characters')
+      return
+    }
+    onError?.('')
+    onSuccess?.('')
+    try {
+      await apiFetch(`/api/v1/admin/users/${user.id}/set-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password: nextPassword }),
+      })
+      onSuccess?.(`Password updated for ${user.email}.`)
+    } catch (err) {
+      onError?.(err.message || 'Could not update password')
+    }
+  }
+
   async function reactivateCase(caseId) {
     if (!caseId) return
     if (!window.confirm('Reactivate this case? Status will return to Active.')) return
@@ -161,6 +181,14 @@ export function PeopleRowActions({
         </button>
       )}
       {link ? <CopyLinkButton url={link} label="Copy login link" /> : null}
+      <button
+        type="button"
+        className="admin-btn admin-btn--ghost admin-btn--sm"
+        disabled={disabled || !!rowBusy}
+        onClick={setPasswordForUser}
+      >
+        Set password
+      </button>
       {showDeactivate && user.is_active ? (
         <button
           type="button"

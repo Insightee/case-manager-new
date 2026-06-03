@@ -70,6 +70,7 @@ export function AdminTherapistOnboardPanel({
   const [lastResult, setLastResult] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [selectedInviteIds, setSelectedInviteIds] = useState(() => new Set())
+  const [showCreatePassword, setShowCreatePassword] = useState(false)
 
   useEffect(() => {
     apiFetch('/api/v1/therapist/service-categories')
@@ -319,7 +320,33 @@ export function AdminTherapistOnboardPanel({
               {form.mode === 'direct' ? (
                 <label>
                   Password (optional — auto-generated if blank)
-                  <input type="password" className="admin-input" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} minLength={6} />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showCreatePassword ? 'text' : 'password'}
+                      className="admin-input"
+                      value={form.password}
+                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                      minLength={6}
+                      style={{ width: '100%', paddingRight: '50px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatePassword(!showCreatePassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: '#4f46e5',
+                        padding: '4px 8px',
+                      }}
+                    >
+                      {showCreatePassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
                 </label>
               ) : (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
