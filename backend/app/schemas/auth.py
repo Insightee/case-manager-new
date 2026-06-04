@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 from app.schemas.address import AddressRead
 
@@ -10,6 +10,17 @@ from app.schemas.address import AddressRead
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    portal: Optional[Literal["parent", "therapist", "staff", "admin"]] = None
+
+    @field_validator("portal", mode="before")
+    @classmethod
+    def _normalize_portal(cls, value: object) -> object:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if isinstance(value, str):
+            key = value.strip().lower()
+            return "staff" if key == "admin" else key
+        return value
 
 
 class TokenResponse(BaseModel):

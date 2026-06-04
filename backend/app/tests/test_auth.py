@@ -32,6 +32,70 @@ def test_login_and_me():
     assert "THERAPIST" in me.json()["roles"]
 
 
+def test_login_without_portal_still_works():
+    r = client.post("/api/v1/auth/login", json={"email": "therapist@demo.com", "password": "demo123"})
+    assert r.status_code == 200
+
+
+def test_login_portal_therapist_accepts_therapist():
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "therapist@demo.com", "password": "demo123", "portal": "therapist"},
+    )
+    assert r.status_code == 200
+
+
+def test_login_portal_rejects_therapist_on_client_portal():
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "therapist@demo.com", "password": "demo123", "portal": "parent"},
+    )
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Invalid Login. Use the correct portal."
+
+
+def test_login_portal_rejects_parent_on_staff_portal():
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "parent@demo.com", "password": "demo123", "portal": "staff"},
+    )
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Invalid Login. Use the correct portal."
+
+
+def test_login_portal_accepts_parent_on_client_portal():
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "parent@demo.com", "password": "demo123", "portal": "parent"},
+    )
+    assert r.status_code == 200
+
+
+def test_login_portal_accepts_superadmin_on_staff_portal():
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "superadmin@demo.com", "password": "demo123", "portal": "staff"},
+    )
+    assert r.status_code == 200
+
+
+def test_login_portal_rejects_superadmin_on_client_portal():
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "superadmin@demo.com", "password": "demo123", "portal": "parent"},
+    )
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Invalid Login. Use the correct portal."
+
+
+def test_login_portal_admin_alias_maps_to_staff():
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": "finance@demo.com", "password": "demo123", "portal": "admin"},
+    )
+    assert r.status_code == 200
+
+
 def test_parent_cannot_see_internal_reports():
     r = client.post("/api/v1/auth/login", json={"email": "parent@demo.com", "password": "demo123"})
     token = r.json()["access_token"]

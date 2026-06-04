@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { usePageMeta } from '../hooks/usePageMeta.js'
+import { formatLoginErrorMessage } from '../lib/portalLogin.js'
 
 const DEMO_PASSWORD = 'demo123'
 
@@ -67,15 +68,7 @@ function flattenDemos(portal) {
 }
 
 function formatLoginError(err) {
-  const msg = err?.message || 'Sign-in failed.'
-  if (/invalid credentials/i.test(msg)) {
-    const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
-    const localDev = hostname === 'localhost' || hostname === '127.0.0.1'
-    if (localDev) {
-      return `${msg} For local dev, run: cd backend && python3 -m app.seed.demo_seed (resets demo123 passwords).`
-    }
-    return `${msg} Demo accounts use password demo123 — pick one from the list below (Staff tab for admin). Invited personal emails must open the invite link and set a password first; demo123 does not apply to those accounts.`
-  }
+  const msg = err?.message || ''
   if (/timed out/i.test(msg)) {
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
     const localDev = hostname === 'localhost' || hostname === '127.0.0.1'
@@ -84,12 +77,13 @@ function formatLoginError(err) {
     }
     return `${msg} The API may be unreachable — check your connection or contact your administrator.`
   }
-  return msg
+  return formatLoginErrorMessage(msg)
 }
 
 export function LoginPage({ portalType }) {
   const { login, updateLoginPortal } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const queryParams = useMemo(() => {
     return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
@@ -130,6 +124,13 @@ export function LoginPage({ portalType }) {
     }
   }, [portalType, updateLoginPortal])
 
+  useEffect(() => {
+    const message = location.state?.loginError
+    if (!message) return
+    setError(message)
+    navigate(location.pathname + location.search, { replace: true, state: {} })
+  }, [location.state?.loginError, location.pathname, location.search, navigate])
+
   const currentPortalId = useMemo(() => {
     if (portalType && portalType !== 'dev') return portalType
     return portal
@@ -164,7 +165,7 @@ export function LoginPage({ portalType }) {
       } else {
         updateLoginPortal(portal)
       }
-      await login(demoEmail.trim().toLowerCase(), DEMO_PASSWORD)
+      await login(demoEmail.trim().toLowerCase(), DEMO_PASSWORD, portalType === 'dev' ? null : currentPortalId)
       navigate('/')
     } catch (err) {
       setError(formatLoginError(err))
@@ -183,7 +184,7 @@ export function LoginPage({ portalType }) {
       } else {
         updateLoginPortal(portal)
       }
-      await login(email.trim().toLowerCase(), password)
+      await login(email.trim().toLowerCase(), password, portalType === 'dev' ? null : currentPortalId)
       navigate('/')
     } catch (err) {
       setError(formatLoginError(err))

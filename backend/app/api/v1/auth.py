@@ -39,6 +39,11 @@ from app.schemas.auth import (
     UserMeResponse,
 )
 from app.services import address_service, auth_service, avatar_service, password_reset_service
+from app.services.portal_login_service import (
+    normalize_login_portal,
+    portal_login_rejection_message,
+    user_may_login_on_portal,
+)
 from app.services.address_service import user_home_address_read
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -49,6 +54,12 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     user = auth_service.authenticate_user(db, payload.email, payload.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    login_portal = normalize_login_portal(payload.portal)
+    if login_portal is not None and not user_may_login_on_portal(user, login_portal):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=portal_login_rejection_message(login_portal, user),
+        )
     access, refresh = auth_service.issue_tokens(user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="login", entity_type="user", entity_id=user.id, **meta)

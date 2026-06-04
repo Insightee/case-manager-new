@@ -9,20 +9,16 @@ import {
   moduleAccess,
   navItemVisible,
 } from '../lib/moduleAccess.js'
+import {
+  portalMismatchMessage,
+  resolveAuthPortal,
+  STAFF_LOGIN_ROLES,
+  userMatchesLoginPortal,
+} from '../lib/portalLogin.js'
 
 const AuthContext = createContext(null)
 
-const ADMIN_ROLES = [
-  'SUPER_ADMIN',
-  'ADMIN',
-  'MODULE_ADMIN',
-  'VIEWER',
-  'CASE_MANAGER',
-  'SUPERVISOR',
-  'FINANCE',
-  'HR',
-  'SCHOOL_COORDINATOR',
-]
+const ADMIN_ROLES = STAFF_LOGIN_ROLES
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -62,21 +58,43 @@ export function AuthProvider({ children }) {
     loadMe()
   }, [loadMe])
 
-  const login = async (email, password) => {
+  const clearSessionForPortalRetry = useCallback(() => {
     clearTokens()
-    const data = await apiFetch('/api/v1/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    })
-    setTokens(data.access_token, data.refresh_token)
-    if (data.user) {
-      setUser(data.user)
-      setLoading(false)
-      return data
+    setUser(null)
+    setLoading(false)
+  }, [])
+
+  const login = useCallback(async (email, password, portal = null) => {
+    clearTokens()
+    setUser(null)
+    const body = { email, password }
+    if (portal) {
+      body.portal = portal === 'admin' ? 'staff' : portal
     }
-    await loadMe()
-    return data
-  }
+    try {
+      const data = await apiFetch('/api/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      let signedInUser = data.user
+      if (!signedInUser) {
+        setTokens(data.access_token, data.refresh_token)
+        signedInUser = await apiFetch('/api/v1/auth/me')
+      }
+      if (portal && signedInUser && !userMatchesLoginPortal(signedInUser, portal)) {
+        throw new Error(portalMismatchMessage())
+      }
+      setTokens(data.access_token, data.refresh_token)
+      setUser(signedInUser)
+      setLoading(false)
+      return { ...data, user: signedInUser }
+    } catch (err) {
+      clearTokens()
+      setUser(null)
+      setLoading(false)
+      throw err
+    }
+  }, [loadMe])
 
   const logout = () => {
     clearTokens()
@@ -84,17 +102,7 @@ export function AuthProvider({ children }) {
     updateLoginPortal(null)
   }
 
-  const portal = useMemo(() => {
-    if (!user?.roles?.length) return null
-    if (selectedPortal === 'parent' && user.roles.includes('PARENT')) return 'parent'
-    if (selectedPortal === 'therapist' && user.roles.includes('THERAPIST')) return 'therapist'
-    if (selectedPortal === 'admin' && user.roles.some((r) => ADMIN_ROLES.includes(r))) return 'admin'
-
-    if (user.roles.includes('PARENT')) return 'parent'
-    if (user.roles.some((r) => ADMIN_ROLES.includes(r))) return 'admin'
-    if (user.roles.includes('THERAPIST')) return 'therapist'
-    return 'admin'
-  }, [user, selectedPortal])
+  const portal = useMemo(() => resolveAuthPortal(user, selectedPortal), [user, selectedPortal])
 
   const can = useCallback(
     (permission) => {
@@ -150,6 +158,8 @@ export function AuthProvider({ children }) {
       login,
       logout,
       portal,
+      selectedPortal,
+      clearSessionForPortalRetry,
       updateLoginPortal,
       can,
       hasFeature,
@@ -165,7 +175,10 @@ export function AuthProvider({ children }) {
     [
       user,
       loading,
+      login,
       portal,
+      selectedPortal,
+      clearSessionForPortalRetry,
       updateLoginPortal,
       can,
       hasFeature,

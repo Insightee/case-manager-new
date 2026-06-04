@@ -1,6 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import {
+  LOGIN_ERROR_WRONG_PORTAL,
+  portalLoginPath,
+  portalMismatchMessage,
+  preferredLoginPathForUser,
+} from '../lib/portalLogin.js'
 import { apiFetch } from '../lib/apiClient.js'
 import { PortalShell } from '../layouts/PortalShell.jsx'
 import { LoginPage } from '../pages/LoginPage.jsx'
@@ -150,8 +156,16 @@ function Lazy({ children }) {
   return <Suspense fallback={<RouteFallback />}>{children}</Suspense>
 }
 
+function RedirectToPortalLogin({ to, message }) {
+  const { clearSessionForPortalRetry } = useAuth()
+  useEffect(() => {
+    clearSessionForPortalRetry()
+  }, [clearSessionForPortalRetry])
+  return <Navigate to={to} replace state={{ loginError: message }} />
+}
+
 function PortalRedirect() {
-  const { portal, loading } = useAuth()
+  const { portal, loading, user, selectedPortal } = useAuth()
   const [adminLanding, setAdminLanding] = useState('/admin')
 
   useEffect(() => {
@@ -168,6 +182,10 @@ function PortalRedirect() {
   }, [portal])
 
   if (loading) return <RouteLoading />
+  if (user && !portal) {
+    const dest = preferredLoginPathForUser(user, selectedPortal)
+    return <RedirectToPortalLogin to={dest} message={portalMismatchMessage()} />
+  }
   if (portal === 'admin') return <Navigate to={adminLanding} replace />
   if (portal === 'parent') return <Navigate to="/parent" replace />
   if (portal === 'therapist') return <Navigate to="/therapist" replace />
@@ -183,7 +201,9 @@ function Protected({ portal, children }) {
     if (portal === 'admin') return <Navigate to="/stafflogin" replace />
     return <Navigate to="/login" replace />
   }
-  if (current !== portal) return <Navigate to="/" replace />
+  if (current !== portal) {
+    return <RedirectToPortalLogin to={portalLoginPath(portal)} message={LOGIN_ERROR_WRONG_PORTAL} />
+  }
   return children
 }
 
