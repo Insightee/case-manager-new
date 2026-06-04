@@ -41,7 +41,7 @@ def check(name: str, ok: bool, detail: str = "", hypothesis_id: str = "H0") -> b
 
 
 def main() -> int:
-    print("InsightCase health check\n")
+    print("InsighteCase health check\n")
     seed_run()
     client = TestClient(app)
     all_ok = True

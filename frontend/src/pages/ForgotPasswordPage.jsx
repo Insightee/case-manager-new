@@ -32,7 +32,7 @@ export function ForgotPasswordPage() {
     <div className="login-shell">
       <section className="login-card is-signin">
         <div className="login-main">
-          <p className="login-brand">InsightCase</p>
+          <p className="login-brand">InsighteCase</p>
           <h1>Reset your password</h1>
           <p className="login-sub">Enter your account email and we will send a reset link.</p>
 

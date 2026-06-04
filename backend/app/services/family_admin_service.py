@@ -207,13 +207,13 @@ def create_family(
 def _send_parent_invite_email(to: str, invite_url: str, parent_name: str, child_name: str) -> None:
     body = (
         f"Hi {parent_name},\n\n"
-        f"You have been invited to the InsightCase parent portal for {child_name}.\n\n"
+        f"You have been invited to the InsighteCase parent portal for {child_name}.\n\n"
         f"Create your account here:\n{invite_url}\n\n"
         "If you did not expect this, you can ignore this email.\n"
     )
     email_service.send_email(
         to=to,
-        subject="You're invited to InsightCase — Parent portal",
+        subject="You're invited to InsighteCase — Parent portal",
         body_text=body,
     )
 

@@ -43,7 +43,7 @@ def unwrap_items(payload: dict | list) -> list[dict]:
 
 
 def main() -> int:
-    print("=== InsightCase therapist flow smoke test ===\n")
+    print("=== InsighteCase therapist flow smoke test ===\n")
     th = login("therapist@demo.com", "demo123")
     admin = login("superadmin@demo.com", "demo123")
     print("✓ Login (therapist + admin)")

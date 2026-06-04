@@ -4,11 +4,11 @@ test.describe('UX, SEO, and accessibility review', () => {
   test('login page has document meta, landmarks, and form labels', async ({ page }) => {
     await page.goto('/login')
 
-    await expect(page).toHaveTitle(/InsightCase/)
+    await expect(page).toHaveTitle(/InsighteCase/)
     await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 
     const description = page.locator('meta[name="description"]')
-    await expect(description).toHaveAttribute('content', /InsightCase/i)
+    await expect(description).toHaveAttribute('content', /InsighteCase/i)
 
     const viewport = page.locator('meta[name="viewport"]')
     await expect(viewport).toHaveAttribute('content', /width=device-width/)
@@ -29,7 +29,7 @@ test.describe('UX, SEO, and accessibility review', () => {
     await page.getByRole('button', { name: 'Sign in' }).click()
     await page.waitForURL(/\/therapist/)
 
-    await expect(page).toHaveTitle(/Therapist Portal.*InsightCase/)
+    await expect(page).toHaveTitle(/Therapist Portal.*InsighteCase/)
     await expect(page.locator('#main-content')).toBeVisible()
     await expect(page.getByRole('navigation', { name: 'Portal navigation' })).toBeVisible()
   })

@@ -1,4 +1,4 @@
-# InsightCase — Prioritized product & engineering roadmap
+# InsighteCase — Prioritized product & engineering roadmap
 
 Prioritized from CEO/platform review (May 2026).  
 **Legend:** P0 = pilot blocker · P1 = competitive differentiation · P2 = scale · P3 = polish

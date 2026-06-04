@@ -1,6 +1,6 @@
 # Environment variables reference
 
-Single reference for **all** configuration used by InsightCase. **Never commit secrets** — use `.env` locally (gitignored), Railway for production API secrets, and Vercel for frontend build vars only.
+Single reference for **all** configuration used by InsighteCase. **Never commit secrets** — use `.env` locally (gitignored), Railway for production API secrets, and Vercel for frontend build vars only.
 
 ## Quick pairing (deploy)
 

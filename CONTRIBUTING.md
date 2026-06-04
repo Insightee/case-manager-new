@@ -1,6 +1,6 @@
-# Contributing to InsightCase
+# Contributing to InsighteCase
 
-Thank you for working on InsightCase. This repo is built by a small team on a **case-centric** monorepo (FastAPI + React/Vite). Follow this guide so three (or more) contributors can ship in parallel without breaking `main`.
+Thank you for working on InsighteCase. This repo is built by a small team on a **case-centric** monorepo (FastAPI + React/Vite). Follow this guide so three (or more) contributors can ship in parallel without breaking `main`.
 
 **Quick links:** [CHANGELOG.md](./CHANGELOG.md) · [docs/TEAM_OWNERSHIP.md](./docs/TEAM_OWNERSHIP.md) · [docs/RELEASE_CHECKLIST.md](./docs/RELEASE_CHECKLIST.md) · [docs/GITHUB_SETUP.md](./docs/GITHUB_SETUP.md) (branch protection)
 

@@ -342,7 +342,7 @@ export function PortalShell({ portal }) {
           <div className="app-mobile-topbar__brand">
             <span className="app-mobile-topbar__logo" aria-hidden />
             <div className="app-mobile-topbar__brand-text">
-              <span className="app-mobile-topbar__title">InsightCase</span>
+              <span className="app-mobile-topbar__title">InsighteCase</span>
               <span className="app-mobile-topbar__sub">{subtitle}</span>
             </div>
           </div>
@@ -438,7 +438,7 @@ export function PortalShell({ portal }) {
             <div className="app-sidebar__brand">
               <span className="app-sidebar__logo" aria-hidden />
               <div>
-                <p className="app-sidebar__title">InsightCase</p>
+                <p className="app-sidebar__title">InsighteCase</p>
                 <p className="app-sidebar__sub">{subtitle}</p>
               </div>
             </div>
@@ -491,7 +491,7 @@ export function PortalShell({ portal }) {
           <div style={{ flex: 1 }}>
             <span className="app-sidebar__logo" aria-hidden />
             <div>
-              <h1 className="app-sidebar__title">InsightCase</h1>
+              <h1 className="app-sidebar__title">InsighteCase</h1>
               <p className="app-sidebar__sub">{subtitle}</p>
             </div>
           </div>

@@ -17,7 +17,7 @@ from app.core.request_middleware import RequestIdMiddleware
 from app.core.security import ping_redis_for_health, verify_redis_at_startup, warm_redis_connection
 from app.db.bootstrap import bootstrap_schema
 
-app = FastAPI(title="InsightCase API", version="0.1.0")
+app = FastAPI(title="InsighteCase API", version="0.1.0")
 
 
 @app.exception_handler(OperationalError)
@@ -162,7 +162,7 @@ app.include_router(api_router)
 @app.get("/")
 def root():
     return {
-        "service": "InsightCase API",
+        "service": "InsighteCase API",
         "health": "/health",
         "api": "/api/v1",
         "docs": "/docs",

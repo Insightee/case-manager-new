@@ -76,7 +76,7 @@ export function InvitePage() {
     <div className="login-shell">
       <section className="login-card is-signin">
         <div className="login-main">
-          <p className="login-brand">InsightCase</p>
+          <p className="login-brand">InsighteCase</p>
           <h1>Welcome — activate your account</h1>
           <p className="login-sub">
             {preview?.roleLabel || copy.sub}

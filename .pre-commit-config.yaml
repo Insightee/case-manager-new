@@ -1,4 +1,4 @@
-# InsightCase git hooks — see CONTRIBUTING.md
+# InsighteCase git hooks — see CONTRIBUTING.md
 # Install: pip install pre-commit && pre-commit install && pre-commit install --hook-type pre-push
 
 repos:

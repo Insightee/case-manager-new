@@ -1,6 +1,6 @@
 # Production data import (therapists, clients, cases)
 
-How to load **real** people and cases into InsightCase without using `demo_seed` (dev/demo only).
+How to load **real** people and cases into InsighteCase without using `demo_seed` (dev/demo only).
 
 **See also:** [AGENT_WORKFLOW.md](./AGENT_WORKFLOW.md), [backend/README.md](../backend/README.md), [RBAC_SCOPE.md](./RBAC_SCOPE.md).
 

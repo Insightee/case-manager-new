@@ -1,5 +1,5 @@
 #!/bin/sh
-# Link and configure Vercel project insightes-projects/frontend (InsightCase UI).
+# Link and configure Vercel project insightes-projects/frontend (InsighteCase UI).
 # Run from repo root after: npx vercel login
 # Do not commit .vercel/ or scripts/vercel_env.sh
 

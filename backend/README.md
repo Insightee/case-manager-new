@@ -1,4 +1,4 @@
-# InsightCase Backend
+# InsighteCase Backend
 
 Case-centric healthcare operations API (FastAPI + SQLAlchemy + PostgreSQL/SQLite).
 

@@ -1,4 +1,4 @@
-# InsightCase — System Architecture (CTO view)
+# InsighteCase — System Architecture (CTO view)
 
 _Last updated: May 2026 — reflects therapist-first delivery, dual work surfaces (Session Logs vs My Cases), and API-backed operations._
 
@@ -6,7 +6,7 @@ _Last updated: May 2026 — reflects therapist-first delivery, dual work surface
 
 ## Executive summary
 
-InsightCase is a **case-centric operations platform** for Insighte Childcare. Every engagement is anchored on a **Case ID**; sessions, daily logs, monthly reports, bookings, invoices, and parent visibility all roll up to that case.
+InsighteCase is a **case-centric operations platform** for Insighte Childcare. Every engagement is anchored on a **Case ID**; sessions, daily logs, monthly reports, bookings, invoices, and parent visibility all roll up to that case.
 
 The current build prioritizes the **therapist portal** (daily execution) while the **admin portal** governs review, billing, and configuration. A **parent portal** consumes approved, visibility-scoped artifacts.
 

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to InsightCase are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to InsighteCase are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 **How to update:** Add bullets under `[Unreleased]` when your PR merges. Before each production release, move `[Unreleased]` into a dated section (`## [YYYY-MM-DD]`) and run `./scripts/pre-release-check.sh`.
 

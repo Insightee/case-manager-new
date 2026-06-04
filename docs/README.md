@@ -1,4 +1,4 @@
-# InsightCase documentation index
+# InsighteCase documentation index
 
 Central index for all repo documentation. Start here or from [AGENTS.md](../AGENTS.md) for agent/onboarding rules.
 

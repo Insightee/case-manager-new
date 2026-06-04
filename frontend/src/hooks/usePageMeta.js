@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-export const APP_NAME = 'InsightCase'
+export const APP_NAME = 'InsighteCase'
 export const DEFAULT_DESCRIPTION =
   'Case-centric care management for therapists, families, HR, and operations — session logs, reports, billing, and IEP in one platform.'
 

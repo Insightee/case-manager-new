@@ -101,7 +101,7 @@ Email/DNS detail: [`EMAIL_DNS.md`](EMAIL_DNS.md).
 
 > **Agent rule:** GitHub repo is `case-manager-new`, but the **Vercel project name is `frontend`**. Railway uses `case-manager-new`. Every `vercel` CLI command must include `--project frontend` (or link `.vercel` to that project). Do **not** create or target a Vercel project named `case-manager-new`.
 
-InsightCase UI lives on team **`insightes-projects`**, project name **`frontend`** (not `case-manager-new`).
+InsighteCase UI lives on team **`insightes-projects`**, project name **`frontend`** (not `case-manager-new`).
 
 | Item | Value |
 |------|--------|

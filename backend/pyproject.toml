@@ -1,7 +1,7 @@
 [project]
 name = "insightcase-backend"
 version = "0.1.0"
-description = "Case-centric healthcare operations backend for InsightCase"
+description = "Case-centric healthcare operations backend for InsighteCase"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",

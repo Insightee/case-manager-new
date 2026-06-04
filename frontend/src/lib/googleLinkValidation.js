@@ -31,4 +31,4 @@ export function validateGoogleLink(url) {
 }
 
 export const GOOGLE_LINK_WARNING =
-  'Access depends on Google sharing settings. InsightCase stores the link only and does not sync Google content.'
+  'Access depends on Google sharing settings. InsighteCase stores the link only and does not sync Google content.'

@@ -1,6 +1,6 @@
 # Handover: Support hub, HR dashboard, and HR reports
 
-For engineers taking over InsightCase / case-manager-new. Read this with [ARCHITECTURE.md](./ARCHITECTURE.md), [RBAC_SCOPE.md](./RBAC_SCOPE.md), [AGENT_WORKFLOW.md](./AGENT_WORKFLOW.md), and ADR [adr-0001-support-hub-access-scopes.md](./adr/adr-0001-support-hub-access-scopes.md).
+For engineers taking over InsighteCase / case-manager-new. Read this with [ARCHITECTURE.md](./ARCHITECTURE.md), [RBAC_SCOPE.md](./RBAC_SCOPE.md), [AGENT_WORKFLOW.md](./AGENT_WORKFLOW.md), and ADR [adr-0001-support-hub-access-scopes.md](./adr/adr-0001-support-hub-access-scopes.md).
 
 ## Run the app locally
 

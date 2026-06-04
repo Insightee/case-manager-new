@@ -55,7 +55,7 @@ Staff portal pages share one mobile layout system. Desktop (≥901px) keeps exis
 />
 ```
 
-## Colors (align with InsightCase)
+## Colors (align with InsighteCase)
 
 - Active pill: `#0d9488` / gradient `#0f766e` → `#0d9488`
 - Muted text: `#64748b`

@@ -49,7 +49,7 @@ export function ResetPasswordPage() {
     <div className="login-shell">
       <section className="login-card is-signin">
         <div className="login-main">
-          <p className="login-brand">InsightCase</p>
+          <p className="login-brand">InsighteCase</p>
           <h1>Choose a new password</h1>
           {preview?.email ? (
             <p className="login-sub" style={{ fontSize: '0.85rem' }}>

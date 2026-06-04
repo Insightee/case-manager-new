@@ -1,4 +1,4 @@
-# Cloudflare R2 for InsightCase
+# Cloudflare R2 for InsighteCase
 
 Production uploads use **R2** via S3-compatible API keys (not the `cfat_` dashboard API token).
 

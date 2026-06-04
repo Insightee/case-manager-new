@@ -1,6 +1,6 @@
 # Agent & delivery workflow (from project chats)
 
-Durable preferences extracted from recent Cursor sessions on InsightCase / case-manager-new. Use this when planning features, imports, deploys, or agent tasks—not as a product spec.
+Durable preferences extracted from recent Cursor sessions on InsighteCase / case-manager-new. Use this when planning features, imports, deploys, or agent tasks—not as a product spec.
 
 **Related:** [ARCHITECTURE.md](./ARCHITECTURE.md), [RBAC_SCOPE.md](./RBAC_SCOPE.md), [HANDOVER_SUPPORT_HR.md](./HANDOVER_SUPPORT_HR.md), [adr-0001-support-hub-access-scopes.md](./adr/adr-0001-support-hub-access-scopes.md), [DEPLOY.md](./DEPLOY.md), [DATA_IMPORT.md](./DATA_IMPORT.md), [../CONTRIBUTING.md](../CONTRIBUTING.md), [../CHANGELOG.md](../CHANGELOG.md), repo root [AGENTS.md](../AGENTS.md).
 

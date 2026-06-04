@@ -1,4 +1,4 @@
-# Deploying InsightCase for dev previews
+# Deploying InsighteCase for dev previews
 
 This app is a **split deployment**: the React UI on Vercel and the FastAPI API on a host with Postgres (or SQLite for demos only).
 
@@ -211,5 +211,5 @@ PR1 runs **`retry-invites` only** when the Zepto flag is false (default).
 | Railway API code | `/health` OK but `db_migration` behind; `forgot-password` **404** | Redeploy API from GitHub after push so `start-production.sh` runs migrations to head |
 | CORS / `FRONTEND_URL` | May point at `insighte-session-logger` (wrong app) | Set Railway to your **`frontend`** production domain from Vercel |
 
-`midhuns-projects/insighte-session-logger` is a **different** payroll app — not InsightCase.
+`midhuns-projects/insighte-session-logger` is a **different** payroll app — not InsighteCase.
 | API 500 on first request | Run migrations + seed; check `DATABASE_URL` |

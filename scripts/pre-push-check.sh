@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "==> InsightCase pre-push check"
+echo "==> InsighteCase pre-push check"
 echo ""
 
 if [[ "$(git branch --show-current 2>/dev/null || true)" == "main" ]] || [[ "$(git branch --show-current 2>/dev/null || true)" == "master" ]]; then

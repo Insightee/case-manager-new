@@ -1,4 +1,4 @@
-# InsightCase — Board one-pager
+# InsighteCase — Board one-pager
 
 **Product:** Case-centric operations platform for therapy and childcare programmes (homecare, shadow support).  
 **Stage:** Controlled pilot ready · Enterprise scale not yet  

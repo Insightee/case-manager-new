@@ -145,7 +145,7 @@ def invite_preview(token: str, db: Session = Depends(get_db)):
         "THERAPIST": "Therapist portal",
         "HR": "HR portal",
         "ADMIN": "Admin portal",
-    }.get(invite.role_name, "InsightCase portal")
+    }.get(invite.role_name, "InsighteCase portal")
     return {
         "email": invite.email,
         "role": invite.role_name,

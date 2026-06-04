@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "==> InsightCase pre-release check"
+echo "==> InsighteCase pre-release check"
 echo ""
 
 if ! grep -q '^\## \[Unreleased\]' CHANGELOG.md; then

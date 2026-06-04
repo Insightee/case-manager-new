@@ -140,7 +140,7 @@ export function LoginPage({ portalType }) {
 
   usePageMeta({
     title: 'Sign in',
-    description: `Sign in to the InsightCase ${active.label.toLowerCase()} portal.`,
+    description: `Sign in to the InsighteCase ${active.label.toLowerCase()} portal.`,
   })
 
   function selectPortal(id) {
@@ -206,8 +206,8 @@ export function LoginPage({ portalType }) {
         <div className="login-shell">
           <section className="login-card" style={{ maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '2rem', padding: '3rem' }}>
             <header className="login-header" style={{ textAlign: 'center', marginBottom: '1rem' }}>
-              <p className="login-brand" style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.025em', color: 'var(--color-primary, #6366f1)', marginBottom: '0.5rem' }}>InsightCase</p>
-              <h1 className="login-title" style={{ fontSize: '2.25rem', fontWeight: '800', tracking: '-0.025em', margin: '0' }}>Welcome to InsightCase</h1>
+              <p className="login-brand" style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.025em', color: 'var(--color-primary, #6366f1)', marginBottom: '0.5rem' }}>InsighteCase</p>
+              <h1 className="login-title" style={{ fontSize: '2.25rem', fontWeight: '800', tracking: '-0.025em', margin: '0' }}>Welcome to InsighteCase</h1>
               <p className="login-sub" style={{ fontSize: '1rem', color: 'var(--color-text-muted, #6b7280)', marginTop: '0.5rem' }}>Please select your portal to sign in to your dashboard</p>
             </header>
 
@@ -299,7 +299,7 @@ export function LoginPage({ portalType }) {
         <section className={`login-card ${portalType === 'dev' ? '' : 'login-card--single'}`}>
           <main id="main-content" className="login-main" tabIndex={-1}>
             <header className="login-header">
-              <p className="login-brand">InsightCase</p>
+              <p className="login-brand">InsighteCase</p>
               <h1 className="login-title">{active.label} portal</h1>
               <p className="login-sub">{active.subtitle}</p>
             </header>

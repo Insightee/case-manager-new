@@ -1,4 +1,4 @@
-# InsightCase
+# InsighteCase
 
 Case-Centric Operations Platform for Insighte Childcare Pvt. Ltd.
 
@@ -62,7 +62,7 @@ CI runs backend tests and `npm run build` on push (`.github/workflows/ci.yml`).
 
 ## Product Overview
 
-InsightCase replaces spreadsheet-led operations with a case-centric system where every converted engagement becomes a unique `Case ID`.
+InsighteCase replaces spreadsheet-led operations with a case-centric system where every converted engagement becomes a unique `Case ID`.
 
 Core principle:
 - `Case` is the operational source of truth.

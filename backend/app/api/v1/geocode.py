@@ -26,7 +26,7 @@ def reverse_geocode(lat: float = Query(..., ge=-90, le=90), lon: float = Query(.
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "InsightCase/1.0 (contact@insighte.local)",
+            "User-Agent": "InsighteCase/1.0 (contact@insighte.local)",
             "Accept": "application/json",
             "Accept-Language": "en",
         },

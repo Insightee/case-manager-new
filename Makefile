@@ -1,4 +1,4 @@
-# InsightCase — common commands (see CONTRIBUTING.md)
+# InsighteCase — common commands (see CONTRIBUTING.md)
 
 .PHONY: check push-check release-check hooks
 

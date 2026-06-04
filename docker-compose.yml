@@ -45,7 +45,7 @@ services:
       # SMTP_PORT: 587
       # SMTP_USER:
       # SMTP_PASSWORD:
-      # SMTP_FROM: InsightCase <noreply@insighte.com>
+      # SMTP_FROM: InsighteCase <noreply@insighte.com>
       # SMTP_TLS: "true"
       # ADMIN_NOTIFICATION_EMAILS:
     depends_on:
