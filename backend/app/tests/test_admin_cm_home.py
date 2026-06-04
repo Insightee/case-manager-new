@@ -36,6 +36,11 @@ def test_cm_home_forbidden_for_finance():
     assert r.status_code == 403
 
 
+def test_cm_home_for_super_admin():
+    r = client.get("/api/v1/admin/cm/home", headers=_login("superadmin@demo.com"))
+    assert r.status_code == 200
+
+
 def test_caseload_target_tab_mapping():
     assert _caseload_target_tab("reports_logs", reports_under_review=2, missing_logs=0) == "reports"
     assert _caseload_target_tab("reports_logs", reports_under_review=0, missing_logs=3) == "logs"

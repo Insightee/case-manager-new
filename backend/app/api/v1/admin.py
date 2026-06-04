@@ -565,12 +565,18 @@ def admin_home(
 
 
 def _require_case_manager_home(user: User = Depends(get_current_user)) -> User:
-    if "CASE_MANAGER" not in user.role_names:
+    allowed_roles = {"CASE_MANAGER", "SUPER_ADMIN", "ADMIN", "MODULE_ADMIN"}
+    user_roles = set(user.role_names or [])
+    if not user_roles.intersection(allowed_roles):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Case Manager home requires CASE_MANAGER role",
         )
-    if not user_has_permission(user, "case.read.team"):
+    if not (
+        user_has_permission(user, "case.read.team")
+        or user_has_permission(user, "case.read.all")
+        or user_has_permission(user, "admin.override")
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
     return user
 

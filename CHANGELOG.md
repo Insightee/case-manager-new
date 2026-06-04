@@ -16,7 +16,8 @@ All notable changes to InsightCase are documented here. Format follows [Keep a C
 - People directory loads all user pages (not just first 100); server-side search by email/name.
 
 ### Changed
-- *(Add PR bullets here: `- **@author** — short description (#PR)`)*
+- **@antigravity** — Enforced role-specific portal logins on backend and frontend, preventing users from logging in via incorrect portal URLs.
+- **@antigravity** — Allowed SUPER_ADMIN, ADMIN, and MODULE_ADMIN users to view the Case Manager home dashboard.
 - People → Clients: family list includes case status, `allCasesClosed`, and primary case id for actions.
 - Pending invite UI explains cancel vs post-registration login paths.
 
