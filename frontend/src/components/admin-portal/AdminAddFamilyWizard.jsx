@@ -403,6 +403,10 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
                 Therapist share %
                 <input
                   type="number"
+                  min="50"
+                  max="100"
+                  step="0.01"
+                  inputMode="decimal"
                   className="admin-input"
                   value={billing.pay_share_pct}
                   onChange={(e) => setBill('pay_share_pct', e.target.value)}

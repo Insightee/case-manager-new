@@ -134,7 +134,7 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
           </label>
           <label>
             Therapist share %
-            <input type="number" min="50" max="70" required value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
+            <input type="number" min="50" max="100" step="0.01" inputMode="decimal" required value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
           </label>
         </>
       ) : (
@@ -157,7 +157,7 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
           {form.compensation_mode === 'PERCENTAGE' ? (
             <label>
               Therapist share %
-              <input type="number" min="50" max="70" value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
+              <input type="number" min="50" max="100" step="0.01" inputMode="decimal" value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
             </label>
           ) : (
             <label>

@@ -671,14 +671,16 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     <input
                       type="number"
                       min="50"
-                      max="70"
+                      max="100"
+                      step="0.01"
+                      inputMode="decimal"
                       className="admin-input"
                       value={billing.pay_share_pct}
                       onChange={(e) => setBill('pay_share_pct', e.target.value)}
                       disabled={!therapistId}
                     />
                     <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Share of client session fee paid to the assigned therapist (typically 50–70%).
+                      Share of client session fee paid to the assigned therapist (50–100%, decimals OK).
                     </span>
                   </label>
                 </>
@@ -709,14 +711,16 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     <input
                       type="number"
                       min="50"
-                      max="70"
+                      max="100"
+                      step="0.01"
+                      inputMode="decimal"
                       className="admin-input"
                       value={billing.pay_share_pct}
                       onChange={(e) => setBill('pay_share_pct', e.target.value)}
                       disabled={!therapistId}
                     />
                     <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Percentage of package value for therapist payout.
+                      Percentage of package value for therapist payout (50–100%, decimals OK).
                     </span>
                   </label>
                 </>
