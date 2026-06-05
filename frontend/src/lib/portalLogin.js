@@ -18,16 +18,35 @@ export const STAFF_LOGIN_ROLES = [
   'SCHOOL_COORDINATOR',
 ]
 
-const SIGN_IN_PATH = {
+export const SIGN_IN_PATH = {
   parent: '/clientlogin',
   therapist: '/therapistlogin',
   admin: '/stafflogin',
 }
 
+/** Default when role is unknown — staff portal (most internal users). */
+export const DEFAULT_SIGN_IN_PATH = SIGN_IN_PATH.admin
+
 /** @param {'parent' | 'therapist' | 'admin' | null | undefined} portal */
 export function portalLoginPath(portal) {
-  if (!portal) return '/login'
-  return SIGN_IN_PATH[portal] || '/login'
+  if (!portal) return DEFAULT_SIGN_IN_PATH
+  return SIGN_IN_PATH[portal] || DEFAULT_SIGN_IN_PATH
+}
+
+/** @param {'parent' | 'therapist' | 'staff' | null | undefined} apiPortal */
+export function loginPathFromApiPortal(apiPortal) {
+  if (apiPortal === 'parent') return SIGN_IN_PATH.parent
+  if (apiPortal === 'therapist') return SIGN_IN_PATH.therapist
+  if (apiPortal === 'staff') return SIGN_IN_PATH.admin
+  return DEFAULT_SIGN_IN_PATH
+}
+
+/** @param {string | null | undefined} roleName */
+export function loginPathFromRoleName(roleName) {
+  const role = String(roleName || '').toUpperCase()
+  if (role === 'PARENT') return SIGN_IN_PATH.parent
+  if (role === 'THERAPIST') return SIGN_IN_PATH.therapist
+  return SIGN_IN_PATH.admin
 }
 
 /**
@@ -82,5 +101,5 @@ export function preferredLoginPathForUser(user, selectedPortal) {
   if (user?.roles?.includes('PARENT')) return SIGN_IN_PATH.parent
   if (user?.roles?.includes('THERAPIST')) return SIGN_IN_PATH.therapist
   if (user?.roles?.some((r) => STAFF_LOGIN_ROLES.includes(r))) return SIGN_IN_PATH.admin
-  return '/login'
+  return DEFAULT_SIGN_IN_PATH
 }

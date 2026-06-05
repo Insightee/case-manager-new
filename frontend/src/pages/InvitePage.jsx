@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { apiFetch } from '../lib/apiClient.js'
-import { setTokens } from '../lib/apiClient.js'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { apiFetch, setTokens } from '../lib/apiClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
+import { loginPathFromRoleName } from '../lib/portalLogin.js'
 
 const ROLE_LABELS = {
   PARENT: { sub: 'Set your password to activate your family account.', cta: 'Activate account' },
@@ -132,9 +132,9 @@ export function InvitePage() {
 
           <p style={{ marginTop: 16, fontSize: '0.8rem', color: '#94a3b8', textAlign: 'center' }}>
             Already have an account?{' '}
-            <a href="/login" style={{ color: '#6366f1', fontWeight: 600 }}>
+            <Link to={loginPathFromRoleName(preview?.role || roleHint)} style={{ color: '#6366f1', fontWeight: 600 }}>
               Sign in
-            </a>
+            </Link>
           </p>
         </div>
       </section>

@@ -40,6 +40,7 @@ from app.schemas.auth import (
 )
 from app.services import address_service, auth_service, avatar_service, password_reset_service
 from app.services.portal_login_service import (
+    default_login_portal_for_roles,
     normalize_login_portal,
     portal_login_rejection_message,
     user_may_login_on_portal,
@@ -116,10 +117,15 @@ def reset_password_preview(token: str, db: Session = Depends(get_db)):
     row = password_reset_service.get_valid_token_row(db, token)
     if not row:
         raise HTTPException(status_code=404, detail="Reset link not found or expired")
-    user = db.get(User, row.user_id)
+    user = db.scalars(
+        select(User).where(User.id == row.user_id).options(selectinload(User.roles))
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="Reset link not found or expired")
-    return ResetPasswordPreviewResponse(email=password_reset_service.mask_email(user.email))
+    return ResetPasswordPreviewResponse(
+        email=password_reset_service.mask_email(user.email),
+        login_portal=default_login_portal_for_roles(user.role_names),
+    )
 
 
 @router.post("/reset-password", response_model=ForgotPasswordResponse)

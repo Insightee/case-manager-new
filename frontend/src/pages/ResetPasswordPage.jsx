@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiFetch } from '../lib/apiClient.js'
+import { loginPathFromApiPortal } from '../lib/portalLogin.js'
 
 export function ResetPasswordPage() {
   const { token } = useParams()
@@ -12,6 +13,11 @@ export function ResetPasswordPage() {
 
   const [preview, setPreview] = useState(null)
   const [previewError, setPreviewError] = useState('')
+
+  const signInPath = useMemo(
+    () => loginPathFromApiPortal(preview?.login_portal),
+    [preview?.login_portal],
+  )
 
   useEffect(() => {
     if (!token) return
@@ -64,7 +70,7 @@ export function ResetPasswordPage() {
                 Your password has been updated. You can sign in with your new password.
               </p>
               <p className="login-sub" style={{ marginTop: '1.25rem' }}>
-                <Link to="/login">Sign in</Link>
+                <Link to={signInPath}>Sign in</Link>
               </p>
             </>
           ) : (
@@ -110,7 +116,7 @@ export function ResetPasswordPage() {
 
           {!done ? (
             <p className="login-sub" style={{ marginTop: '1.25rem' }}>
-              <Link to="/login">Back to sign in</Link>
+              <Link to={signInPath}>Back to sign in</Link>
             </p>
           ) : null}
         </div>

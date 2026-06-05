@@ -52,3 +52,13 @@ PORTAL_LOGIN_REJECTION_MESSAGE = "Invalid Login. Use the correct portal."
 def portal_login_rejection_message(portal: LoginPortal, user: User) -> str:
     del portal, user  # same message for all wrong-portal attempts
     return PORTAL_LOGIN_REJECTION_MESSAGE
+
+
+def default_login_portal_for_roles(role_names: list[str] | None) -> LoginPortal:
+    """Sign-in page key for password reset / invite links (parent, therapist, staff)."""
+    roles = {str(r).upper() for r in (role_names or [])}
+    if RoleName.PARENT.value in roles:
+        return "parent"
+    if RoleName.THERAPIST.value in roles:
+        return "therapist"
+    return "staff"

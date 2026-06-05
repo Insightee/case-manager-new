@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
+  DEFAULT_SIGN_IN_PATH,
   LOGIN_ERROR_WRONG_PORTAL,
   portalLoginPath,
   portalMismatchMessage,
@@ -189,7 +190,7 @@ function PortalRedirect() {
   if (portal === 'admin') return <Navigate to={adminLanding} replace />
   if (portal === 'parent') return <Navigate to="/parent" replace />
   if (portal === 'therapist') return <Navigate to="/therapist" replace />
-  return <Navigate to="/login" replace />
+  return <LoginPage />
 }
 
 function Protected({ portal, children }) {
@@ -199,7 +200,7 @@ function Protected({ portal, children }) {
     if (portal === 'parent') return <Navigate to="/clientlogin" replace />
     if (portal === 'therapist') return <Navigate to="/therapistlogin" replace />
     if (portal === 'admin') return <Navigate to="/stafflogin" replace />
-    return <Navigate to="/login" replace />
+    return <Navigate to={DEFAULT_SIGN_IN_PATH} replace />
   }
   if (current !== portal) {
     return <RedirectToPortalLogin to={portalLoginPath(portal)} message={LOGIN_ERROR_WRONG_PORTAL} />
@@ -210,7 +211,7 @@ function Protected({ portal, children }) {
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/clientlogin" element={<LoginPage key="client" portalType="parent" />} />
       <Route path="/clinetlogin" element={<LoginPage key="client" portalType="parent" />} />
       <Route path="/therapistlogin" element={<LoginPage key="therapist" portalType="therapist" />} />

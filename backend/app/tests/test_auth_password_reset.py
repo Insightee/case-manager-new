@@ -40,7 +40,9 @@ def test_password_reset_flow(mock_enqueue_email):
 
     preview = client.get(f"/api/v1/auth/reset-password/{plain_token}/preview")
     assert preview.status_code == 200
-    assert "@" in preview.json()["email"]
+    body = preview.json()
+    assert "@" in body["email"]
+    assert body["login_portal"] == "therapist"
 
     reset = client.post(
         "/api/v1/auth/reset-password",

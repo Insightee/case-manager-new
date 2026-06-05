@@ -1,11 +1,22 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/apiClient.js'
+import { loginPathFromApiPortal, portalLoginPath } from '../lib/portalLogin.js'
 
 const SUCCESS_MESSAGE =
   'If an account exists for that email, you will receive password reset instructions shortly.'
 
 export function ForgotPasswordPage() {
+  const [searchParams] = useSearchParams()
+  const signInPath = useMemo(() => {
+    const portal = searchParams.get('portal')
+    if (portal === 'parent' || portal === 'therapist' || portal === 'admin') {
+      return portalLoginPath(portal)
+    }
+    if (portal === 'staff') return loginPathFromApiPortal('staff')
+    return portalLoginPath('admin')
+  }, [searchParams])
+
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -65,7 +76,7 @@ export function ForgotPasswordPage() {
           )}
 
           <p className="login-sub" style={{ marginTop: '1.25rem' }}>
-            <Link to="/login">Back to sign in</Link>
+            <Link to={signInPath}>Back to sign in</Link>
           </p>
         </div>
       </section>

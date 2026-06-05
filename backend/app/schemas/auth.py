@@ -93,6 +93,7 @@ class ForgotPasswordResponse(BaseModel):
 
 class ResetPasswordPreviewResponse(BaseModel):
     email: str
+    login_portal: Optional[Literal["parent", "therapist", "staff"]] = None
 
 
 TokenResponse.model_rebuild()

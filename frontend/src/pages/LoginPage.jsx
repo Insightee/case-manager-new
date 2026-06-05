@@ -366,7 +366,15 @@ export function LoginPage({ portalType }) {
                 </div>
               </label>
               <p className="login-sub" style={{ marginTop: '-0.5rem', textAlign: 'right' }}>
-                <Link to="/forgot-password">Forgot password?</Link>
+                <Link
+                  to={
+                    portalType && portalType !== 'dev'
+                      ? `/forgot-password?portal=${encodeURIComponent(currentPortalId)}`
+                      : '/forgot-password?portal=admin'
+                  }
+                >
+                  Forgot password?
+                </Link>
               </p>
               {error ? (
                 <p className="login-error" role="alert">
