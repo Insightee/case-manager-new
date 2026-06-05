@@ -7,7 +7,35 @@ from sqlalchemy.orm import Session
 
 from app.models.assignment import BookingMode, CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
+from app.models.therapist_profile import TherapistProfile
 from app.services import case_service_service
+
+
+def resolve_primary_case_manager_user_id(db: Session, therapist_user_id: int) -> int | None:
+    profile = db.scalars(
+        select(TherapistProfile).where(TherapistProfile.user_id == therapist_user_id)
+    ).first()
+    if not profile or not profile.supervisor_user_id:
+        return None
+    return profile.supervisor_user_id
+
+
+def sync_case_manager_from_therapist(db: Session, case: Case, therapist_user_id: int) -> bool:
+    """Link case.case_manager_user_id from therapist primary CM when the case has none."""
+    if case.case_manager_user_id:
+        return False
+    cm_id = resolve_primary_case_manager_user_id(db, therapist_user_id)
+    if not cm_id:
+        return False
+    case.case_manager_user_id = cm_id
+    db.flush()
+    return True
+
+
+def _sync_case_manager_after_assignment(db: Session, case_id: int, therapist_user_id: int) -> None:
+    case = db.get(Case, case_id)
+    if case:
+        sync_case_manager_from_therapist(db, case, therapist_user_id)
 
 
 def list_assignments(db: Session, case_id: int) -> list[CaseAssignment]:
@@ -77,6 +105,7 @@ def add_assignment_to_service(
     )
     db.add(assignment)
     db.flush()
+    _sync_case_manager_after_assignment(db, case_id, therapist_user_id)
     return assignment
 
 
@@ -115,6 +144,7 @@ def replace_assignment_in_service(
     )
     db.add(assignment)
     db.flush()
+    _sync_case_manager_after_assignment(db, case_id, therapist_user_id)
     return assignment
 
 

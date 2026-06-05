@@ -16,6 +16,10 @@ from app.models.session import SessionStatus
 from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
+from app.services.assignment_service import (
+    resolve_primary_case_manager_user_id,
+    sync_case_manager_from_therapist,
+)
 
 PIPELINE_COLUMNS = [
     ("pending_allotment", "Pending allotment", "slate"),
@@ -89,13 +93,17 @@ def _next_action(column: str, *, missing_logs: int, reports_under_review: int, h
     return None
 
 
-def build_pipeline_board(db: Session, user: User) -> dict:
+def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
     filters = _case_filters(user)
     cases = db.scalars(
         select(Case).options(selectinload(Case.child)).where(*filters).order_by(Case.case_code)
     ).all()
     if not cases:
-        return {"columns": [{"id": c[0], "title": c[1], "tone": c[2], "count": 0, "cases": []} for c in PIPELINE_COLUMNS], "total_cases": 0}
+        empty = {
+            "columns": [{"id": c[0], "title": c[1], "tone": c[2], "count": 0, "cases": []} for c in PIPELINE_COLUMNS],
+            "total_cases": 0,
+        }
+        return empty, False
 
     case_ids = [c.id for c in cases]
 
@@ -115,6 +123,14 @@ def build_pipeline_board(db: Session, user: User) -> dict:
     assign_by_case: dict[int, tuple[int | None, str | None, date | None]] = {}
     for row in active_assignments:
         assign_by_case[row.case_id] = (row.therapist_user_id, row.full_name, row.end_date)
+
+    linked_any = False
+    for case in cases:
+        if case.case_manager_user_id:
+            continue
+        therapist_user_id = assign_by_case.get(case.id, (None, None, None))[0]
+        if therapist_user_id and sync_case_manager_from_therapist(db, case, therapist_user_id):
+            linked_any = True
 
     cm_ids = {c.case_manager_user_id for c in cases if c.case_manager_user_id}
     cm_names: dict[int, str] = {}
@@ -205,6 +221,10 @@ def build_pipeline_board(db: Session, user: User) -> dict:
             open_incidents=incidents,
         )
 
+        cm_user_id = case.case_manager_user_id
+        if not cm_user_id and therapist_user_id:
+            cm_user_id = resolve_primary_case_manager_user_id(db, therapist_user_id)
+
         card = {
             "id": case.id,
             "case_code": case.case_code,
@@ -214,8 +234,8 @@ def build_pipeline_board(db: Session, user: User) -> dict:
             "product_module": case.product_module,
             "status": case.status.value,
             "pipeline_column": column,
-            "case_manager_user_id": case.case_manager_user_id,
-            "case_manager_name": cm_names.get(case.case_manager_user_id) if case.case_manager_user_id else None,
+            "case_manager_user_id": cm_user_id,
+            "case_manager_name": cm_names.get(cm_user_id) if cm_user_id else None,
             "therapist_user_id": therapist_user_id,
             "therapist_name": therapist_name,
             "assignment_end_date": end_date.isoformat() if end_date else None,
@@ -246,4 +266,4 @@ def build_pipeline_board(db: Session, user: User) -> dict:
         }
         for col_id, title, tone in PIPELINE_COLUMNS
     ]
-    return {"columns": columns, "total_cases": len(cases)}
+    return {"columns": columns, "total_cases": len(cases)}, linked_any

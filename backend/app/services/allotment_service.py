@@ -183,6 +183,10 @@ def activate_allotment(
     if not assignment:
         raise ValueError("No active assignment on this case")
 
+    from app.services.assignment_service import sync_case_manager_from_therapist
+
+    sync_case_manager_from_therapist(db, case, assignment.therapist_user_id)
+
     now = datetime.now(timezone.utc)
     case.status = CaseStatus.ACTIVE
     assignment.assignment_offer_sent_at = now

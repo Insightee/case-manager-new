@@ -2260,7 +2260,9 @@ def admin_cases_pipeline_board(
     db: Session = Depends(get_db),
 ):
     """Action-oriented case kanban columns (allotment, reassignment, reports, IEP, compliance)."""
-    data = case_pipeline_svc.build_pipeline_board(db, user)
+    data, linked_any = case_pipeline_svc.build_pipeline_board(db, user)
+    if linked_any:
+        db.commit()
     return AdminCasePipelineBoard(**data)
 
 
