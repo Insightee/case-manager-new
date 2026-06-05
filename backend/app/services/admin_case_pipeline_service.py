@@ -71,7 +71,7 @@ def _classify_pipeline(
 
 def _next_action(column: str, *, missing_logs: int, reports_under_review: int, has_iep: bool) -> str | None:
     if column == "pending_allotment":
-        return "Allot case & assign therapist"
+        return "Confirm allotment to activate"
     if column == "needs_therapist":
         return "Assign therapist"
     if column == "reassignment":

@@ -1,3 +1,5 @@
+import { apiFetch } from './apiClient.js'
+
 /** Flatten and sort admin case pipeline board for table / queue views. */
 
 export const PIPELINE_COLUMN_META = {
@@ -342,17 +344,30 @@ export function pipelineQueueCounts(rows) {
   return counts
 }
 
+/** Activate a pending-allotment case (sends invites; status → ACTIVE). */
+export async function activateCaseAllotment(caseId) {
+  return apiFetch(`/api/v1/admin/cases/${caseId}/activate-allotment`, {
+    method: 'POST',
+    timeoutMs: 45_000,
+  })
+}
+
 /**
  * Primary + secondary actions for a pipeline row (no navigation on row click).
  */
-export function buildPipelineActions(row, { canAssign, canUpdate, canWrite = true }) {
+export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true }) {
   const actions = []
   const col = row.pipeline_column
   const write = canWrite && canAssign
   const writeCase = canWrite && canUpdate
+  const writeCreate = canWrite && canCreate
 
-  if (write && col === 'pending_allotment') {
-    actions.push({ id: 'allot', label: 'Allot', variant: 'primary' })
+  if (col === 'pending_allotment') {
+    if (writeCreate && row.therapist_user_id) {
+      actions.push({ id: 'allot', label: 'Allot', variant: 'primary' })
+    } else if (write && !row.therapist_user_id) {
+      actions.push({ id: 'reallot', label: 'Assign therapist', variant: 'primary' })
+    }
   }
   if (write && (col === 'needs_therapist' || col === 'reassignment')) {
     actions.push({ id: 'reallot', label: col === 'reassignment' ? 'Reallot' : 'Assign', variant: 'primary' })

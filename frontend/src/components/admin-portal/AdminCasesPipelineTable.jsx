@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import {
   CASE_STATE_OPTIONS,
   OPENED_DATE_PRESETS,
+  activateCaseAllotment,
   buildPipelineActions,
   countActivePipelineFilters,
   defaultCaseManagerFilterId,
@@ -66,6 +67,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
 
   const canAssign = can('case.assign') && !isViewOnly
   const canUpdate = can('case.update') && !isViewOnly
+  const canCreate = can('case.create') && !isViewOnly
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -175,12 +177,33 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
     }
   }
 
+  async function confirmAllotment(card) {
+    const therapist = card.therapist_name ? ` (${card.therapist_name})` : ''
+    if (
+      !window.confirm(
+        `Allot case ${card.case_code}${therapist}? It will become active and parent/therapist notifications may be sent.`,
+      )
+    ) {
+      return
+    }
+    setActingId(card.id)
+    try {
+      await activateCaseAllotment(card.id)
+      await load()
+      setToast(`Case ${card.case_code} is now active.`)
+    } catch (err) {
+      setToast(err.message || 'Could not allot case')
+    } finally {
+      setActingId(null)
+    }
+  }
+
   function runAction(action, row) {
-    if (action.id === 'reallot' || action.id === 'allot') {
-      if (action.id === 'allot') {
-        navigate(`/admin/cases/${row.id}?tab=assignments`)
-        return
-      }
+    if (action.id === 'allot') {
+      confirmAllotment(row)
+      return
+    }
+    if (action.id === 'reallot') {
       setAssignCard(row)
       return
     }
@@ -460,10 +483,12 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                 const actions = buildPipelineActions(row, {
                   canAssign,
                   canUpdate,
+                  canCreate,
                   canWrite: rowCanWrite,
                 })
                 const selectable =
                   canAssign && rowCanWrite && ['needs_therapist', 'reassignment'].includes(row.pipeline_column)
+                const allotBusy = actingId === row.id
                 return (
                   <tr key={row.id} className="admin-cases-pipeline__row">
                     {canAssign && bulkEligible ? (
@@ -543,10 +568,10 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                                       ? 'admin-btn--ghost'
                                       : 'admin-btn--secondary'
                               }`}
-                              disabled={actingId === row.id}
+                              disabled={allotBusy}
                               onClick={() => runAction(action, row)}
                             >
-                              {action.label}
+                              {allotBusy && action.id === 'allot' ? 'Allotting…' : action.label}
                             </button>
                           ),
                         )}
@@ -564,6 +589,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                 const actions = buildPipelineActions(row, {
                   canAssign,
                   canUpdate,
+                  canCreate,
                   canWrite: rowCanWrite,
                 })
                 const primary = actions[0]
@@ -600,7 +626,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                                 disabled={actingId === row.id}
                                 onClick={() => runAction(action, row)}
                               >
-                                {action.label}
+                                {actingId === row.id && action.id === 'allot' ? 'Allotting…' : action.label}
                               </button>
                             ),
                           )}
