@@ -830,3 +830,9 @@
 .admin-reports-view__case-link {
   margin-top: 24px;
 }
+
+@media (max-width: 640px) {
+  .book-meeting-modal__datetime-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

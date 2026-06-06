@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-MIN_SESSION_MINUTES = 5
-MIN_SESSION_DURATION_ERROR = "Session must be at least 5 minutes to be recorded."
+MIN_SESSION_MINUTES = 0
+MIN_SESSION_DURATION_ERROR = "Session duration must be positive."
 
 HOMECARE_AUTO_END_HOURS = 3
 SHADOW_AUTO_END_HOURS = 10
@@ -21,7 +21,7 @@ def duration_minutes_between(start: datetime, end: datetime) -> int:
 
 
 def validate_session_duration_minutes(minutes: int) -> None:
-    if minutes < MIN_SESSION_MINUTES:
+    if minutes < 0:
         raise ValueError(MIN_SESSION_DURATION_ERROR)
 
 

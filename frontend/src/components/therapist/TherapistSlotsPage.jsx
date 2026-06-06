@@ -7,6 +7,7 @@ import { SlotDetailSheet } from '../scheduling/SlotDetailSheet.jsx'
 import { SlotEditSheet } from '../scheduling/SlotEditSheet.jsx'
 import { clearScheduleCache } from '../../lib/scheduleCache.js'
 import { addDays, dateStr, startOfWeek } from '../scheduling/slotCalendarUtils.js'
+import '../scheduling/scheduling-day.css'
 
 export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
   const navigate = useNavigate()
@@ -28,21 +29,21 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div className="therapist-slots-page">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Availability</p>
           <h1 className="text-2xl font-bold text-slate-900">My calendar</h1>
           <p className="mt-1 text-sm text-slate-500">Tap an empty cell to add a slot, or tap a slot to manage it.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
           <button
             type="button"
             onClick={() => {
               setScheduleTab('recurring')
               setScheduleOpen(true)
             }}
-            className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+            className="w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-800 hover:bg-indigo-100 sm:w-auto"
           >
             Book recurring
           </button>
@@ -52,7 +53,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
               setScheduleTab('availability')
               setScheduleOpen(true)
             }}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 sm:w-auto"
           >
             Weekly schedule
           </button>

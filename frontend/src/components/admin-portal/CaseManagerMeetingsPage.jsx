@@ -96,6 +96,11 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
     onOpen?.()
   }, [onOpen])
 
+  useEffect(() => {
+    if (!isTherapistBooking || form.case_id || cases.length !== 1) return
+    setForm((f) => ({ ...f, case_id: String(cases[0].id) }))
+  }, [isTherapistBooking, cases, form.case_id])
+
   const filteredCases = useMemo(() => {
     const q = caseSearch.trim().toLowerCase()
     if (!q) return cases
@@ -172,6 +177,10 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
   async function submit(e) {
     e.preventDefault()
     if (!form.scheduled_date) { setError('Date is required'); return }
+    if (isTherapistBooking && !form.case_id) {
+      setError('Select a case — meetings are booked with your case manager for that client.')
+      return
+    }
     if (!attendees.client && !attendees.therapist && !attendees.caseManager && !attendees.admin) {
       setError('Select at least one attendee')
       return
@@ -234,9 +243,17 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
             />
           </label>
           <label style={labelStyle}>
-            Case (optional)
-            <select style={inputStyle} value={form.case_id} onChange={(e) => set('case_id', e.target.value)}>
-              <option value="">— No specific case —</option>
+            {isTherapistBooking ? 'Case' : 'Case (optional)'}
+            <select
+              style={inputStyle}
+              value={form.case_id}
+              required={isTherapistBooking}
+              onChange={(e) => set('case_id', e.target.value)}
+            >
+              {!isTherapistBooking ? <option value="">— No specific case —</option> : null}
+              {!isTherapistBooking && cases.length === 0 ? null : !form.case_id && isTherapistBooking ? (
+                <option value="">Choose client…</option>
+              ) : null}
               {filteredCases.map((c) => (
                 <option key={c.id} value={c.id}>{c.childName} ({c.caseCode || c.caseId || c.id})</option>
               ))}
@@ -314,9 +331,6 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
             <legend style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569', padding: '0 6px' }}>
               Invite attendees
             </legend>
-            <p style={{ margin: '0 0 10px', fontSize: '0.78rem', color: '#64748b' }}>
-              Invited people receive an email with join and Add to Google Calendar links (you will not get a duplicate email), an in-app notification, and see this meeting in their CM meetings list and calendar.
-            </p>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
               <input
                 type="checkbox"
@@ -385,7 +399,7 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
             ) : null}
           </fieldset>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="book-meeting-modal__datetime-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={labelStyle}>
               Date
               <input type="date" style={inputStyle} value={form.scheduled_date} required onChange={(e) => set('scheduled_date', e.target.value)} />

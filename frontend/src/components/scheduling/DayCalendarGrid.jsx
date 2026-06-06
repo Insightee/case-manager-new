@@ -6,6 +6,7 @@ import {
   dateStr,
   defaultHourRows,
 } from './slotCalendarUtils.js'
+import './scheduling-day.css'
 
 function groupSlotsByDayHour(slots, hourField = 'start_time') {
   const map = {}
@@ -36,6 +37,47 @@ export function DayCalendarGrid({
   const slotsByDayHour = useMemo(() => groupSlotsByDayHour(calendarGridEvents(calendar)), [calendar])
   const overlay = calendar?.day_overlays?.[ds]
   const isToday = ds === today
+
+  function renderHourCell(hour) {
+    const key = `${ds}-${hour}`
+    const cellSlots = slotsByDayHour[key] || []
+    if (overlay) {
+      return (
+        <div className="min-h-[44px] rounded bg-slate-200/80 text-center text-[10px] leading-[44px] text-slate-500">
+          Unavailable
+        </div>
+      )
+    }
+    return (
+      <>
+        {cellSlots.length === 0 && onCellClick ? (
+          <button
+            type="button"
+            className="mb-1 min-h-[44px] w-full rounded border border-dashed border-slate-200 text-[10px] text-slate-400 hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-600"
+            onClick={() => onCellClick(dayDate, hour)}
+          >
+            +
+          </button>
+        ) : null}
+        {cellSlots.map((s) => {
+          const style = calendarEventStyle(s, mode)
+          const label = calendarEventLabel(s, mode)
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onSlotClick?.(s)}
+              className={`mb-1 w-full min-h-[40px] rounded border px-1 py-1 text-left text-[10px] font-semibold ${style} ${
+                selectedSlotId === s.id ? 'ring-2 ring-indigo-500' : ''
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </>
+    )
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-sm">
@@ -69,81 +111,81 @@ export function DayCalendarGrid({
       {loading ? (
         <p className="p-8 text-center text-slate-500">Loading calendar…</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[320px] border-collapse">
-            <thead>
-              <tr>
-                <th className="w-14 bg-slate-50 p-2 text-xs text-slate-400">Time</th>
-                <th
-                  className={`border-l border-[#E2E8F0] bg-slate-50 p-2 text-center ${isToday ? 'text-indigo-600' : ''}`}
+        <>
+          <div className="day-cal__agenda">
+            {overlay ? (
+              <p className="px-4 py-6 text-center text-sm text-amber-800">Leave day — unavailable</p>
+            ) : (
+              hours.map((hour) => (
+                <div key={hour} className="day-cal__agenda-item">
+                  <span className="day-cal__agenda-time">{String(hour).padStart(2, '0')}:00</span>
+                  <div className="day-cal__agenda-body">{renderHourCell(hour)}</div>
+                </div>
+              ))
+            )}
+            {showLeaveActions && onMarkLeave && !overlay ? (
+              <div className="border-t border-[#E2E8F0] px-4 py-3">
+                <button
+                  type="button"
+                  className="text-sm text-slate-600 underline"
+                  onClick={() => onMarkLeave(dayDate)}
                 >
-                  <div className="text-lg font-bold">{dayDate.getDate()}</div>
-                  {overlay ? (
-                    <span className="mt-1 block text-[10px] font-semibold text-amber-800">Leave</span>
-                  ) : showLeaveActions && onMarkLeave ? (
-                    <button
-                      type="button"
-                      className="mt-1 text-[10px] text-slate-500 underline"
-                      onClick={() => onMarkLeave(dayDate)}
-                    >
-                      Mark leave
-                    </button>
-                  ) : null}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {hours.map((hour) => {
-                const key = `${ds}-${hour}`
-                const cellSlots = slotsByDayHour[key] || []
-                if (overlay) {
+                  Mark leave for this day
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="day-cal__table-wrap overflow-x-auto">
+            <table className="w-full min-w-[320px] border-collapse">
+              <thead>
+                <tr>
+                  <th className="w-14 bg-slate-50 p-2 text-xs text-slate-400">Time</th>
+                  <th
+                    className={`border-l border-[#E2E8F0] bg-slate-50 p-2 text-center ${isToday ? 'text-indigo-600' : ''}`}
+                  >
+                    <div className="text-lg font-bold">{dayDate.getDate()}</div>
+                    {overlay ? (
+                      <span className="mt-1 block text-[10px] font-semibold text-amber-800">Leave</span>
+                    ) : showLeaveActions && onMarkLeave ? (
+                      <button
+                        type="button"
+                        className="mt-1 text-[10px] text-slate-500 underline"
+                        onClick={() => onMarkLeave(dayDate)}
+                      >
+                        Mark leave
+                      </button>
+                    ) : null}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {hours.map((hour) => {
+                  const key = `${ds}-${hour}`
+                  const cellSlots = slotsByDayHour[key] || []
+                  if (overlay) {
+                    return (
+                      <tr key={hour} className="border-t border-[#E2E8F0]">
+                        <td className="p-2 text-right text-xs text-slate-400">{String(hour).padStart(2, '0')}:00</td>
+                        <td className="border-l border-[#E2E8F0] bg-slate-100 p-1 align-top">
+                          <div className="min-h-[44px] rounded bg-slate-200/80 text-center text-[10px] leading-[44px] text-slate-500">
+                            Unavailable
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  }
                   return (
                     <tr key={hour} className="border-t border-[#E2E8F0]">
                       <td className="p-2 text-right text-xs text-slate-400">{String(hour).padStart(2, '0')}:00</td>
-                      <td className="border-l border-[#E2E8F0] bg-slate-100 p-1 align-top">
-                        <div className="min-h-[44px] rounded bg-slate-200/80 text-center text-[10px] leading-[44px] text-slate-500">
-                          Unavailable
-                        </div>
-                      </td>
+                      <td className="border-l border-[#E2E8F0] p-1 align-top">{renderHourCell(hour)}</td>
                     </tr>
                   )
-                }
-                return (
-                  <tr key={hour} className="border-t border-[#E2E8F0]">
-                    <td className="p-2 text-right text-xs text-slate-400">{String(hour).padStart(2, '0')}:00</td>
-                    <td className="border-l border-[#E2E8F0] p-1 align-top">
-                      {cellSlots.length === 0 && onCellClick ? (
-                        <button
-                          type="button"
-                          className="mb-1 min-h-[44px] w-full rounded border border-dashed border-slate-200 text-[10px] text-slate-400 hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-600"
-                          onClick={() => onCellClick(dayDate, hour)}
-                        >
-                          +
-                        </button>
-                      ) : null}
-                      {cellSlots.map((s) => {
-                        const style = calendarEventStyle(s, mode)
-                        const label = calendarEventLabel(s, mode)
-                        return (
-                          <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => onSlotClick?.(s)}
-                            className={`mb-1 w-full min-h-[40px] rounded border px-1 py-1 text-left text-[10px] font-semibold ${style} ${
-                              selectedSlotId === s.id ? 'ring-2 ring-indigo-500' : ''
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        )
-                      })}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )

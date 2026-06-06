@@ -10,10 +10,10 @@ import { ObservationChecklistPanel } from './ObservationChecklistPanel.jsx'
 import './my-cases.css'
 
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'observation', label: 'Observation' },
-  { id: 'sessions', label: 'Sessions & logs' },
-  { id: 'documents', label: 'Documents' },
+  { id: 'overview', label: 'Overview', shortLabel: 'Overview' },
+  { id: 'observation', label: 'Observation', shortLabel: 'Observe' },
+  { id: 'sessions', label: 'Sessions & logs', shortLabel: 'Sessions' },
+  { id: 'documents', label: 'Documents', shortLabel: 'Docs' },
 ]
 
 const CLINICAL_PLACEHOLDERS = [
@@ -141,7 +141,8 @@ export function CaseDetailPage() {
             className={`ic-case-tabs__btn${tab === t.id ? ' is-active' : ''}`}
             onClick={() => setTab(t.id)}
           >
-            {t.label}
+            <span className="ic-case-tabs__label-full">{t.label}</span>
+            <span className="ic-case-tabs__label-short">{t.shortLabel || t.label}</span>
           </button>
         ))}
         <Link to="/therapist/tickets" className="ic-case-tabs__support">

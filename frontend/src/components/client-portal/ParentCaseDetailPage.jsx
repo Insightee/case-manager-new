@@ -11,13 +11,13 @@ import '../reports/report-editor.css'
 import './parent-session-updates.css'
 
 const TABS = [
-  { id: 'overview', label: 'Profile' },
-  { id: 'sessions', label: 'Session updates' },
-  { id: 'observation', label: 'Observation' },
-  { id: 'iep', label: 'IEP' },
-  { id: 'goals', label: 'Goals' },
-  { id: 'documents', label: 'Documents' },
-  { id: 'bookings', label: 'Bookings' },
+  { id: 'overview', label: 'Profile', shortLabel: 'Profile' },
+  { id: 'sessions', label: 'Session updates', shortLabel: 'Sessions' },
+  { id: 'observation', label: 'Observation', shortLabel: 'Observe' },
+  { id: 'iep', label: 'IEP', shortLabel: 'IEP' },
+  { id: 'goals', label: 'Goals', shortLabel: 'Goals' },
+  { id: 'documents', label: 'Documents', shortLabel: 'Docs' },
+  { id: 'bookings', label: 'Bookings', shortLabel: 'Book' },
 ]
 
 function StatusChip({ status }) {
@@ -233,9 +233,15 @@ export function ParentCaseDetailPage() {
             className={`ic-case-tabs__btn${tab === t.id ? ' is-active' : ''}`}
             onClick={() => setTab(t.id)}
           >
-            {t.label}
-            {summary && t.id === 'observation' && summary.observationCount > 0 ? ` (${summary.observationCount})` : ''}
-            {summary && t.id === 'documents' && summary.documentsCount > 0 ? ` (${summary.documentsCount})` : ''}
+            <span className="ic-case-tabs__label-full">
+              {t.label}
+              {summary && t.id === 'observation' && summary.observationCount > 0 ? ` (${summary.observationCount})` : ''}
+              {summary && t.id === 'documents' && summary.documentsCount > 0 ? ` (${summary.documentsCount})` : ''}
+            </span>
+            <span className="ic-case-tabs__label-short">
+              {t.shortLabel || t.label}
+              {summary && t.id === 'observation' && summary.observationCount > 0 ? ` (${summary.observationCount})` : ''}
+            </span>
           </button>
         ))}
       </nav>

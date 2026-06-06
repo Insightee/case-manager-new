@@ -1,6 +1,7 @@
 import { useSearchParams } from 'react-router-dom'
 import { TherapistTicketsPage } from './TherapistTicketsPage.jsx'
 import { TherapistIncidentsPage } from './TherapistIncidentsPage.jsx'
+import '../client-portal/parent-support.css'
 
 const TABS = [
   { id: 'tickets', label: 'Support Tickets' },
@@ -17,46 +18,23 @@ export function TherapistSupportHubPage() {
 
   return (
     <div>
-      {/* Tab bar — identical to ClientSupportHubPage */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 0,
-          borderBottom: '2px solid #e2e8f0',
-          marginBottom: 0,
-          paddingLeft: '1rem',
-          paddingTop: '1rem',
-          background: '#fff',
-        }}
-      >
+      <nav className="parent-support-hub__tabs" aria-label="Support sections">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
+            className={`parent-support-hub__tab${tab === t.id ? ' is-active' : ''}`}
             onClick={() => setTab(t.id)}
-            style={{
-              padding: '10px 20px',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              borderBottom: tab === t.id ? '2px solid #6366f1' : '2px solid transparent',
-              color: tab === t.id ? '#4338ca' : '#64748b',
-              marginBottom: -2,
-              transition: 'color 0.15s',
-            }}
           >
             {t.label}
           </button>
         ))}
-      </div>
+      </nav>
 
-      {/* Content — keep both mounted, show active tab */}
-      <div style={{ display: tab === 'tickets' ? 'block' : 'none' }}>
+      <div className="parent-support-hub__panel" hidden={tab !== 'tickets'}>
         <TherapistTicketsPage />
       </div>
-      <div style={{ display: tab === 'incidents' ? 'block' : 'none' }}>
+      <div className="parent-support-hub__panel" hidden={tab !== 'incidents'}>
         <TherapistIncidentsPage />
       </div>
     </div>

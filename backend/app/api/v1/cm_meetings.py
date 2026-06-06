@@ -171,15 +171,42 @@ def _require_cm_meetings_write(user: User) -> None:
         raise HTTPException(status_code=403, detail="View-only access — changes are not allowed")
 
 
-def _guard_cm_meeting_write(user: User, case_id: int | None, db: Session) -> None:
+def _therapist_may_write_cm_meeting(
+    user: User,
+    db: Session,
+    *,
+    case_id: int | None,
+    meeting: CaseManagerMeeting | None = None,
+) -> None:
+    """Therapists book and edit CM meetings on their caseload — not module-feature gated."""
+    from app.services.cm_meeting_service import user_can_view_meeting
+
+    if meeting is not None and user_can_view_meeting(meeting, user.id):
+        return
+    if case_id:
+        case = db.get(Case, case_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if not case_scope_check(db, user, case):
+            raise HTTPException(status_code=403, detail="Not your case")
+        return
+    raise HTTPException(status_code=400, detail="Select a case with an assigned case manager")
+
+
+def _guard_cm_meeting_write(
+    user: User,
+    case_id: int | None,
+    db: Session,
+    *,
+    meeting: CaseManagerMeeting | None = None,
+) -> None:
     role = _role_name(user)
+    if role == RoleName.THERAPIST.value:
+        _therapist_may_write_cm_meeting(user, db, case_id=case_id, meeting=meeting)
+        return
     if case_id:
         case = db.get(Case, case_id)
         if case:
-            if role == RoleName.THERAPIST.value:
-                if not case_scope_check(db, user, case):
-                    raise HTTPException(status_code=403, detail="Not your case")
-                return
             guard_clinical_case(user, case, db, feature="cm_meetings")
             return
     ensure_feature_write_access(user, "cm_meetings", db=db)
@@ -451,7 +478,7 @@ def update_cm_meeting(
     meeting = db.get(CaseManagerMeeting, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
-    _guard_cm_meeting_write(user, meeting.case_id, db)
+    _guard_cm_meeting_write(user, meeting.case_id, db, meeting=meeting)
     role = user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
     if role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your meeting")
@@ -540,7 +567,7 @@ def cancel_cm_meeting(
     meeting = db.get(CaseManagerMeeting, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
-    _guard_cm_meeting_write(user, meeting.case_id, db)
+    _guard_cm_meeting_write(user, meeting.case_id, db, meeting=meeting)
     role = user.role_name if hasattr(user, "role_name") else (user.roles[0].name if user.roles else "")
     if role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your meeting")

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
@@ -11,9 +11,19 @@ const BILLING_CATEGORIES = [
   { value: 'CARRY_FORWARD', label: 'Carry forward' },
   { value: 'UNPAID', label: 'Unpaid' },
 ]
-const SERVICE_LINES = [{ value: 'shadow_support', label: 'Shadow support' }]
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+
+function caseServiceLine(c) {
+  const mod = (c.product_module || c.service_type || 'homecare').toLowerCase()
+  return mod === 'shadow_support' ? 'shadow_support' : 'homecare'
+}
+
+function caseLabel(c) {
+  const name = c.child_name || c.child?.full_name
+  const mod = caseServiceLine(c) === 'shadow_support' ? 'Shadow' : 'Homecare'
+  return [name, c.case_code, mod].filter(Boolean).join(' · ')
+}
 
 const STATUS_COLORS = {
   PENDING: { bg: '#fefce8', color: '#a16207', border: '#fde047' },
@@ -51,6 +61,13 @@ function pad2(n) {
 
 function toDateStr(year, month, day) {
   return `${year}-${pad2(month + 1)}-${pad2(day)}`
+}
+
+function startOfWeekDate(d) {
+  const copy = new Date(d)
+  copy.setHours(0, 0, 0, 0)
+  copy.setDate(copy.getDate() - copy.getDay())
+  return copy
 }
 
 function leaveOnDate(dateStr, leaves) {
@@ -101,15 +118,15 @@ export function TherapistLeavePage() {
   const [form, setForm] = useState({
     service_line: 'shadow_support',
     billing_category: 'PAID',
-    case_id: '',
+    case_ids: [],
     start_date: '',
     end_date: '',
     reason: '',
   })
-  const [shadowCases, setShadowCases] = useState([])
-  const [moduleProfile, setModuleProfile] = useState({ shadow: false, homecare: false })
+  const [assignedCases, setAssignedCases] = useState([])
   const [pickStart, setPickStart] = useState(null)
   const [pickEnd, setPickEnd] = useState(null)
+  const [stripAnchor, setStripAnchor] = useState(() => new Date())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -140,20 +157,22 @@ export function TherapistLeavePage() {
     loadLeaves()
     apiFetch('/api/v1/cases?assigned=true&page_size=200')
       .then((data) => {
-        const items = unwrapList(data)
-        const shadow = items.filter((c) => (c.product_module || c.service_type || '').toLowerCase() === 'shadow_support')
-        setShadowCases(shadow)
-        const mods = new Set(items.map((c) => (c.product_module || c.service_type || '').toLowerCase()))
-        setModuleProfile({ shadow: mods.has('shadow_support'), homecare: mods.has('homecare') })
+        setAssignedCases(unwrapList(data))
       })
       .catch(() => {
-        setShadowCases([])
-        setModuleProfile({ shadow: false, homecare: false })
+        setAssignedCases([])
       })
   }, [authLoading, user, loadLeaves])
 
+  const selectedCases = useMemo(
+    () => assignedCases.filter((c) => form.case_ids.includes(Number(c.id))),
+    [assignedCases, form.case_ids],
+  )
+  const hasShadowSelection = selectedCases.some((c) => caseServiceLine(c) === 'shadow_support')
+  const hasHomecareSelection = selectedCases.some((c) => caseServiceLine(c) === 'homecare')
+
   useEffect(() => {
-    if (!form.start_date || !form.end_date || form.end_date < form.start_date) {
+    if (!form.start_date || !form.end_date || form.end_date < form.start_date || !hasShadowSelection) {
       setSuggestion(null)
       return
     }
@@ -170,7 +189,7 @@ export function TherapistLeavePage() {
         else setForm((f) => ({ ...f, billing_category: 'UNPAID' }))
       })
       .catch(() => setSuggestion(null))
-  }, [form.start_date, form.end_date, form.service_line])
+  }, [form.start_date, form.end_date, form.service_line, hasShadowSelection])
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {
@@ -200,8 +219,10 @@ export function TherapistLeavePage() {
     setPickEnd(null)
   }
 
-  function handleDayClick(day) {
-    const ds = toDateStr(calYear, calMonth, day)
+  function handleDateSelect(ds) {
+    const [y, m, day] = ds.split('-').map(Number)
+    setCalYear(y)
+    setCalMonth(m - 1)
     if (!pickStart || (pickStart && pickEnd)) {
       setPickStart(ds)
       setPickEnd(null)
@@ -224,6 +245,10 @@ export function TherapistLeavePage() {
     setSuccess('')
   }
 
+  function handleDayClick(day) {
+    handleDateSelect(toDateStr(calYear, calMonth, day))
+  }
+
   function syncRangeFromForm(start, end) {
     if (!start) {
       clearPickRange()
@@ -233,35 +258,49 @@ export function TherapistLeavePage() {
     setPickEnd(end && end >= start ? end : start)
   }
 
+  function toggleCaseId(caseId) {
+    const id = Number(caseId)
+    setForm((f) => {
+      const ids = f.case_ids.includes(id) ? f.case_ids.filter((x) => x !== id) : [...f.case_ids, id]
+      return { ...f, case_ids: ids }
+    })
+  }
+
   async function submitLeave(e) {
     e.preventDefault()
-    if (!moduleProfile.shadow) {
-      setError('Leave is only available for shadow support. Cancel affected homecare sessions from your schedule instead.')
-      return
-    }
-    if (!form.case_id) {
-      setError('Select the shadow support case this leave applies to.')
+    if (assignedCases.length && !form.case_ids.length) {
+      setError('Select at least one case this leave applies to.')
       return
     }
     setSubmitting(true)
     setError('')
     setSuccess('')
     try {
-      await apiFetch('/api/v1/leave', {
-        method: 'POST',
-        body: JSON.stringify({
-          service_line: 'shadow_support',
-          billing_category: form.billing_category,
-          case_id: Number(form.case_id),
-          start_date: form.start_date,
-          end_date: form.end_date,
-          reason: form.reason || null,
-        }),
-      })
+      const targets =
+        form.case_ids.length > 0
+          ? form.case_ids.map((id) => assignedCases.find((c) => Number(c.id) === Number(id))).filter(Boolean)
+          : [null]
+
+      for (const caseRow of targets) {
+        const serviceLine = caseRow ? caseServiceLine(caseRow) : 'shadow_support'
+        const billingCategory = serviceLine === 'shadow_support' ? form.billing_category : 'UNPAID'
+        await apiFetch('/api/v1/leave', {
+          method: 'POST',
+          body: JSON.stringify({
+            service_line: serviceLine,
+            billing_category: billingCategory,
+            case_id: caseRow ? Number(caseRow.id) : null,
+            start_date: form.start_date,
+            end_date: form.end_date,
+            reason: form.reason || null,
+          }),
+        })
+      }
+
       setForm({
         service_line: 'shadow_support',
         billing_category: 'PAID',
-        case_id: '',
+        case_ids: [],
         start_date: '',
         end_date: '',
         reason: '',
@@ -269,7 +308,11 @@ export function TherapistLeavePage() {
       setSuggestion(null)
       setShowForm(false)
       clearPickRange()
-      setSuccess('Leave request submitted.')
+      setSuccess(
+        targets.length > 1
+          ? `${targets.length} leave requests submitted.`
+          : 'Leave request submitted.',
+      )
       await loadLeaves()
     } catch (err) {
       setError(err.message || 'Could not submit leave')
@@ -317,6 +360,34 @@ export function TherapistLeavePage() {
   const isSelectingRange = Boolean(rangeStart)
   const awaitingEndDate = Boolean(pickStart && !pickEnd)
 
+  const stripWeekStart = useMemo(() => startOfWeekDate(stripAnchor), [stripAnchor])
+
+  const stripDays = useMemo(() => {
+    const days = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(stripWeekStart)
+      d.setDate(d.getDate() + i)
+      const ds = toDateStr(d.getFullYear(), d.getMonth(), d.getDate())
+      days.push({
+        ds,
+        day: d.getDate(),
+        dow: WEEKDAYS[d.getDay()],
+        isToday: ds === todayStr,
+      })
+    }
+    return days
+  }, [stripWeekStart, todayStr])
+
+  const stripWeekLabel = useMemo(() => {
+    const end = new Date(stripWeekStart)
+    end.setDate(end.getDate() + 6)
+    const sameMonth = stripWeekStart.getMonth() === end.getMonth()
+    if (sameMonth) {
+      return `${MONTHS[stripWeekStart.getMonth()]} ${stripWeekStart.getDate()}–${end.getDate()}, ${stripWeekStart.getFullYear()}`
+    }
+    return `${MONTHS[stripWeekStart.getMonth()].slice(0, 3)} ${stripWeekStart.getDate()} – ${MONTHS[end.getMonth()].slice(0, 3)} ${end.getDate()}, ${end.getFullYear()}`
+  }, [stripWeekStart])
+
   const listYearOptions = useMemo(() => {
     const years = new Set([now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1])
     leaves.forEach((l) => {
@@ -361,58 +432,162 @@ export function TherapistLeavePage() {
     URL.revokeObjectURL(url)
   }
 
-  const homecareOnly = moduleProfile.homecare && !moduleProfile.shadow
+  const leaveForm = showForm ? (
+    <div className="therapist-leave-page__form-card">
+      <p style={{ fontWeight: 600, marginBottom: 8 }}>New leave request</p>
+      <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: '#475569', lineHeight: 1.5 }}>
+        Paid leave balances apply to shadow support clients only. For homecare and other services, leave is recorded
+        as therapist absence — sessions are treated like a cancellation or no-show, not paid leave.
+      </p>
+      <form onSubmit={submitLeave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
+          <legend style={{ fontSize: '0.875rem', fontWeight: 500, marginBottom: 8 }}>
+            Cases {assignedCases.length ? '(select one or more)' : '(optional)'}
+          </legend>
+          {assignedCases.length ? (
+            <div className="therapist-leave-page__case-list">
+              {assignedCases.map((c) => (
+                <label key={c.id} className="therapist-leave-page__case-option">
+                  <input
+                    type="checkbox"
+                    checked={form.case_ids.includes(Number(c.id))}
+                    onChange={() => toggleCaseId(c.id)}
+                  />
+                  <span>{caseLabel(c)}</span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: '0.8125rem', color: '#64748b' }}>
+              No cases assigned yet — you can still submit leave for HR tracking.
+            </p>
+          )}
+        </fieldset>
+        {hasShadowSelection ? (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+            Shadow leave category
+            <select
+              value={form.billing_category}
+              onChange={(e) => setForm({ ...form, billing_category: e.target.value })}
+              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', minHeight: 44 }}
+            >
+              {BILLING_CATEGORIES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {hasHomecareSelection ? (
+          <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
+            Homecare cases on this request will be submitted as unpaid therapist absence (not deducted from paid leave).
+          </p>
+        ) : null}
+        {suggestion ? (
+          <p style={{ margin: 0, fontSize: '0.8rem', color: '#4f46e5', background: '#eef2ff', padding: '8px 12px', borderRadius: 8 }}>
+            {suggestion.message}
+            {suggestion.paid_days > 0 || suggestion.carry_forward_days > 0
+              ? ` (${suggestion.paid_days} paid, ${suggestion.carry_forward_days} carry forward, ${suggestion.unpaid_days} unpaid)`
+              : ''}
+          </p>
+        ) : null}
+        {form.billing_category === 'CARRY_FORWARD' ? (
+          <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
+            Carry forward applies to shadow support paid leave policy only.
+          </p>
+        ) : null}
+        <div className="therapist-leave-page__form-dates">
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+            From date
+            <input
+              type="date"
+              value={form.start_date}
+              onChange={(e) => {
+                const start = e.target.value
+                const end = form.end_date && form.end_date >= start ? form.end_date : start
+                setForm({ ...form, start_date: start, end_date: end })
+                syncRangeFromForm(start, end)
+              }}
+              required
+              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', minHeight: 44 }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+            To date
+            <input
+              type="date"
+              value={form.end_date}
+              min={form.start_date || undefined}
+              onChange={(e) => {
+                const end = e.target.value
+                setForm({ ...form, end_date: end })
+                syncRangeFromForm(form.start_date, end)
+              }}
+              required
+              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', minHeight: 44 }}
+            />
+          </label>
+        </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+          Reason (optional)
+          <textarea
+            value={form.reason}
+            onChange={(e) => setForm({ ...form, reason: e.target.value })}
+            rows={3}
+            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', resize: 'vertical' }}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={submitting || balance?.requires_employment_start_date}
+          className="therapist-leave-page__request-btn"
+          style={{ opacity: submitting ? 0.7 : 1 }}
+        >
+          {submitting ? 'Submitting…' : 'Submit request'}
+        </button>
+      </form>
+    </div>
+  ) : null
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-            Leave management
-          </p>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>My Leave</h1>
-          <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>
-            Click dates on the calendar to request leave, or use the button below.
-          </p>
-        </div>
+    <div className="therapist-leave-page">
+      <div className="therapist-leave-page__header">
+        <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+          Leave management
+        </p>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>My Leave</h1>
+        <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>
+          Pick dates on the calendar or use Request leave to open the form.
+        </p>
+      </div>
+
+      <div className="therapist-leave-page__sticky-actions">
         <button
           type="button"
+          className="therapist-leave-page__request-btn"
           onClick={() => {
-            if (homecareOnly) return
             const next = !showForm
             setShowForm(next)
             if (!next) clearPickRange()
             setError('')
             setSuccess('')
-          }}
-          disabled={homecareOnly}
-          style={{
-            padding: '8px 18px',
-            background: homecareOnly ? '#94a3b8' : '#6366f1',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            fontWeight: 600,
-            fontSize: '0.875rem',
-            cursor: homecareOnly ? 'not-allowed' : 'pointer',
+            if (next && !form.start_date) openRequestForm()
           }}
         >
           {showForm ? 'Close form' : '+ Request leave'}
         </button>
       </div>
 
-      {homecareOnly ? (
-        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem', color: '#1e40af' }}>
-          <p style={{ margin: 0, fontWeight: 600 }}>Homecare therapists</p>
-          <p style={{ margin: '6px 0 0' }}>
-            Paid leave applies to shadow support only. To mark time away from homecare visits,{' '}
-            <Link to="/therapist/sessions" style={{ fontWeight: 600 }}>
-              cancel affected sessions
-            </Link>{' '}
-            from your schedule instead.
-          </p>
-        </div>
-      ) : null}
+      {leaveForm}
+
+      <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem', color: '#1e40af' }}>
+        <p style={{ margin: 0, fontWeight: 600 }}>How leave affects your caseload</p>
+        <p style={{ margin: '6px 0 0' }}>
+          Paid leave is adjusted only for shadow support clients. For homecare and other services, approved leave marks
+          you absent for those sessions — similar to cancelling or marking the client absent.
+        </p>
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -432,7 +607,7 @@ export function TherapistLeavePage() {
       </div>
 
       {balance ? (
-        <div style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem' }}>
+        <div className="therapist-leave-page__balance" style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem' }}>
           <p style={{ margin: '0 0 6px', fontWeight: 700, color: '#3730a3' }}>
             Paid leave remaining ({calYear}): {leaveBalanceRemainingLabel(balance)}
             {!isLeaveBalanceUpdated(balance) ? (
@@ -460,16 +635,16 @@ export function TherapistLeavePage() {
         </div>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+      <div className="therapist-leave-page__stats">
+        <div className="therapist-leave-page__stat-card">
           <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Approved days ({calYear})</p>
           <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : approvedDaysYtd}</p>
         </div>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+        <div className="therapist-leave-page__stat-card">
           <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending</p>
           <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a16207' }}>{loading ? '…' : pendingCount}</p>
         </div>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+        <div className="therapist-leave-page__stat-card">
           <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Rejected ({calYear})</p>
           <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#b91c1c' }}>{loading ? '…' : rejectedCount}</p>
         </div>
@@ -498,7 +673,74 @@ export function TherapistLeavePage() {
         <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#15803d', fontSize: '0.875rem' }}>{success}</div>
       ) : null}
 
-      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
+      <div className="therapist-leave-page__cal-card">
+        <div className="leave-mobile-cal">
+          <div className="leave-mobile-cal__nav">
+            <button
+              type="button"
+              className="leave-mobile-cal__nav-btn"
+              aria-label="Previous week"
+              onClick={() => {
+                const prev = new Date(stripWeekStart)
+                prev.setDate(prev.getDate() - 7)
+                setStripAnchor(prev)
+              }}
+            >
+              ‹
+            </button>
+            <p>{stripWeekLabel}</p>
+            <button
+              type="button"
+              className="leave-mobile-cal__nav-btn"
+              aria-label="Next week"
+              onClick={() => {
+                const next = new Date(stripWeekStart)
+                next.setDate(next.getDate() + 7)
+                setStripAnchor(next)
+              }}
+            >
+              ›
+            </button>
+          </div>
+          <p
+            className={isSelectingRange ? 'leave-cal__hint--selecting' : ''}
+            style={{ fontSize: '0.75rem', color: isSelectingRange ? undefined : '#6b7280', textAlign: 'center', marginBottom: 12 }}
+          >
+            {awaitingEndDate
+              ? `Start: ${pickStart} — tap end date`
+              : rangeStart && rangeEnd
+                ? `Selected: ${rangeStart} → ${rangeEnd}`
+                : 'Tap start date, then end date'}
+          </p>
+          <div className="leave-mobile-cal__strip">
+            {stripDays.map((d) => {
+              const entry = leaveOnDate(d.ds, leaves)
+              const rangeRole = pickRangeRole(d.ds, rangeStart, rangeEnd)
+              const className = dayClassName(d.ds, leaves, d.isToday, rangeRole)
+              return (
+                <button
+                  key={d.ds}
+                  type="button"
+                  className={`leave-mobile-cal__day ${className}`}
+                  onClick={() => handleDateSelect(d.ds)}
+                  title={entry ? `${entry.leave_type} (${entry.status})` : 'Select for leave request'}
+                >
+                  <span className="leave-mobile-cal__dow">{d.dow}</span>
+                  <span className="leave-mobile-cal__num">{d.day}</span>
+                </button>
+              )
+            })}
+          </div>
+          {rangeStart ? (
+            <div className="leave-mobile-cal__day-panel">
+              {leaveOnDate(rangeStart, leaves)
+                ? `Leave on ${rangeStart}: ${leaveOnDate(rangeStart, leaves).status}`
+                : `Selected ${rangeStart}${rangeEnd && rangeEnd !== rangeStart ? ` → ${rangeEnd}` : ''}. Complete the form above.`}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="leave-cal--month">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <button
             type="button"
@@ -597,121 +839,13 @@ export function TherapistLeavePage() {
             .
           </p>
         ) : null}
-      </div>
-
-      {showForm && moduleProfile.shadow ? (
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 20 }}>
-          <p style={{ fontWeight: 600, marginBottom: 16 }}>New shadow support leave</p>
-          <form onSubmit={submitLeave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-              Shadow case (required)
-              <select
-                required
-                value={form.case_id}
-                onChange={(e) => setForm({ ...form, case_id: e.target.value })}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
-              >
-                <option value="">Select case…</option>
-                {shadowCases.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {[c.child_name || c.child?.full_name, c.case_code].filter(Boolean).join(' · ')}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <input type="hidden" value="shadow_support" readOnly />
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-              Category
-              <select
-                value={form.billing_category}
-                onChange={(e) => setForm({ ...form, billing_category: e.target.value })}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
-              >
-                {BILLING_CATEGORIES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {suggestion ? (
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#4f46e5', background: '#eef2ff', padding: '8px 12px', borderRadius: 8 }}>
-                {suggestion.message}
-                {suggestion.paid_days > 0 || suggestion.carry_forward_days > 0
-                  ? ` (${suggestion.paid_days} paid, ${suggestion.carry_forward_days} carry forward, ${suggestion.unpaid_days} unpaid)`
-                  : ''}
-              </p>
-            ) : null}
-            {form.billing_category === 'CARRY_FORWARD' ? (
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-                Carry forward applies to shadow support paid leave policy only.
-              </p>
-            ) : null}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-                From date
-                <input
-                  type="date"
-                  value={form.start_date}
-                  onChange={(e) => {
-                    const start = e.target.value
-                    const end = form.end_date && form.end_date >= start ? form.end_date : start
-                    setForm({ ...form, start_date: start, end_date: end })
-                    syncRangeFromForm(start, end)
-                  }}
-                  required
-                  style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
-                />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-                To date
-                <input
-                  type="date"
-                  value={form.end_date}
-                  min={form.start_date || undefined}
-                  onChange={(e) => {
-                    const end = e.target.value
-                    setForm({ ...form, end_date: end })
-                    syncRangeFromForm(form.start_date, end)
-                  }}
-                  required
-                  style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
-                />
-              </label>
-            </div>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-              Reason (optional)
-              <textarea
-                value={form.reason}
-                onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                rows={3}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', resize: 'vertical' }}
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={submitting || balance?.requires_employment_start_date}
-              style={{
-                padding: '10px',
-                background: '#6366f1',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                fontWeight: 600,
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                opacity: submitting ? 0.7 : 1,
-              }}
-            >
-              {submitting ? 'Submitting…' : 'Submit request'}
-            </button>
-          </form>
         </div>
-      ) : null}
+      </div>
 
       <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', minHeight: 120 }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={{ fontWeight: 600, margin: 0 }}>All requests</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div className="leave-filters">
             <select
               value={listMonthFilter}
               onChange={(e) => setListMonthFilter(e.target.value)}
