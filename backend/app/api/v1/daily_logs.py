@@ -82,6 +82,28 @@ def list_daily_logs(
     return [DailyLogRead(**log_service.log_to_read(l)) for l in logs]
 
 
+@router.get("/{log_id}", response_model=DailyLogRead)
+def get_daily_log(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.review"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    if user_has_permission(user, "session.read") and not user_has_feature(user, "session_logs", db) and not user_has_permission(user, "daily_log.create"):
+        raise HTTPException(status_code=403, detail="Session logs module access required")
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    own_logs_only = _therapist_lists_own_logs_only(user)
+    if own_logs_only:
+        if not log.session or log.session.therapist_user_id != user.id:
+            raise HTTPException(status_code=403, detail="Log access denied")
+    else:
+        _log_case_scope(db, user, log)
+    return DailyLogRead(**log_service.log_to_read(log))
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_daily_log(
     payload: DailyLogCreate,

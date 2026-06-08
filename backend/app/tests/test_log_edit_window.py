@@ -56,6 +56,25 @@ def test_log_can_edit_within_24_hours():
     assert updated.json()["activities_done"] == "Updated within window"
 
 
+def test_get_daily_log_by_id():
+    token = _login("therapist@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    log = _complete_session_with_log(headers)
+    got = client.get(f"/api/v1/daily-logs/{log['id']}", headers=headers)
+    assert got.status_code == 200
+    assert got.json()["id"] == log["id"]
+    assert got.json()["activities_done"] == log["activities_done"]
+
+
+def test_get_daily_log_admin_can_read():
+    therapist_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
+    log = _complete_session_with_log(therapist_headers)
+    admin_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
+    got = client.get(f"/api/v1/daily-logs/{log['id']}", headers=admin_headers)
+    assert got.status_code == 200
+    assert got.json()["id"] == log["id"]
+
+
 def test_log_cannot_edit_after_24_hours(monkeypatch):
     from app.models.daily_log import DailyLog
     from app.services import log_service

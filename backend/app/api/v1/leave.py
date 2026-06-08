@@ -218,11 +218,6 @@ def create_leave(
             )
 
     service_line = payload.service_line.strip().lower()
-    if not policy.is_staff_leave_user(user) and service_line != "shadow_support":
-        raise HTTPException(
-            status_code=400,
-            detail="Leave requests are only available for shadow support. For homecare, cancel affected sessions instead.",
-        )
 
     if payload.case_id is not None:
         from app.models.case import Case
@@ -231,10 +226,13 @@ def create_leave(
         case = db.get(Case, payload.case_id)
         if not case:
             raise HTTPException(status_code=400, detail="Case not found")
-        if (case.product_module or "").strip().lower() != "shadow_support":
-            raise HTTPException(status_code=400, detail="Leave case must be a shadow support case")
         if not get_active_assignment(db, payload.case_id, user.id):
             raise HTTPException(status_code=400, detail="You are not assigned to this case")
+        case_module = (case.product_module or "homecare").strip().lower()
+        if case_module == "shadow_support":
+            service_line = "shadow_support"
+        elif case_module == "homecare":
+            service_line = "homecare"
 
     try:
         billing = policy.resolve_billing_category(

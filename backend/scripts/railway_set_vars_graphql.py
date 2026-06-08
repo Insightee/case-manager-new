@@ -155,6 +155,15 @@ def main() -> int:
         "WEB_CONCURRENCY": "3",
         "DB_POOL_SIZE": "10",
         "DB_MAX_OVERFLOW": "20",
+        # Email safety (invite / password-reset gateway)
+        "EMAIL_INVITE_RETRY_DELAY_MINUTES": "15",
+        "EMAIL_INVITE_MAX_ATTEMPTS_24H": "3",
+        "EMAIL_TEMPLATE_DEDUPE_MINUTES": "15",
+        "EMAIL_RECIPIENT_MAX_PER_DAY": "10",
+        "EMAIL_ADMIN_ALERT_ON_FAILED_FINAL": "true",
+        "ZEPTOMAIL_LOG_SYNC_ENABLED": "false",
+        "PASSWORD_RESET_EXPIRE_HOURS": "1",
+        "PASSWORD_RESET_RATE_LIMIT_PER_HOUR": "3",
     }
     if r2_key and r2_secret:
         pairs["R2_ACCESS_KEY_ID"] = r2_key

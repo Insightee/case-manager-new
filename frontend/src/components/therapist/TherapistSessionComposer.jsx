@@ -166,13 +166,8 @@ export function TherapistSessionComposer({
   return (
     <section className="ic-session-composer" aria-label="Add or start session">
       <div className="ic-session-composer__head">
-        <div>
-          <h2 className="ic-session-composer__title">Session</h2>
-          <p className="ic-session-composer__sub">
-            Start a visit now or log a session you forgot to record (needs client approval when backdated).
-          </p>
-        </div>
-        <div className="ic-segment" role="tablist">
+        <h2 className="ic-session-composer__title">Session</h2>
+        <div className="ic-segment ic-segment--primary" role="tablist">
           <button
             type="button"
             role="tab"
@@ -182,17 +177,6 @@ export function TherapistSessionComposer({
           >
             Start now
           </button>
-          {!lockCaseId ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'newClient'}
-              className={mode === 'newClient' ? 'active' : ''}
-              onClick={() => setMode('newClient')}
-            >
-              Add new client
-            </button>
-          ) : null}
           <button
             type="button"
             role="tab"
@@ -253,22 +237,31 @@ export function TherapistSessionComposer({
               {lockCaseLabel}
             </p>
           ) : (
-            <label className="ic-session-composer__field">
-              <span>Client</span>
-              <select
-                value={caseId}
-                onChange={(e) => setCaseId(e.target.value)}
-                className="ic-session-composer__input"
+            <div className="ic-session-composer__client-pick">
+              <label className="ic-session-composer__field">
+                <span>Client</span>
+                <select
+                  value={caseId}
+                  onChange={(e) => setCaseId(e.target.value)}
+                  className="ic-session-composer__input"
+                >
+                  <option value="">Choose client…</option>
+                  {caseOptions.map((c) => (
+                    <option key={c.case_id} value={c.case_id}>
+                      {c.child_name || c.case_code}
+                      {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="ic-session-composer__add-client"
+                onClick={() => setMode('newClient')}
               >
-                <option value="">Choose client…</option>
-                {caseOptions.map((c) => (
-                  <option key={c.case_id} value={c.case_id}>
-                    {c.child_name || c.case_code}
-                    {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
+                + Add new client
+              </button>
+            </div>
           )}
 
           {selectedCaseId ? (

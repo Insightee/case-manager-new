@@ -1,4 +1,4 @@
-"""Session minimum duration and product-aware auto-end rules."""
+"""Session duration and product-aware auto-end rules."""
 
 from __future__ import annotations
 
@@ -17,12 +17,16 @@ from app.models.user import User
 from app.services import session_service
 
 
-def test_validate_session_duration_rejects_under_five_minutes():
-    with pytest.raises(ValueError, match="5 minutes"):
-        validate_session_duration_minutes(4)
+def test_validate_session_duration_rejects_negative_minutes():
+    with pytest.raises(ValueError, match=MIN_SESSION_DURATION_ERROR):
+        validate_session_duration_minutes(-1)
 
 
-def test_end_session_rejects_short_manual_end():
+def test_validate_session_duration_allows_zero_minutes():
+    validate_session_duration_minutes(0)
+
+
+def test_end_session_allows_short_manual_end():
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
@@ -44,8 +48,39 @@ def test_end_session_rejects_short_manual_end():
         )
         db.add(session)
         db.flush()
-        with pytest.raises(ValueError, match=MIN_SESSION_DURATION_ERROR):
-            session_service.end_session(db, session)
+        ended = session_service.end_session(db, session)
+        assert ended.status == SessionStatus.COMPLETED
+    finally:
+        db.close()
+
+
+def test_cancel_session_reverts_in_progress_to_scheduled():
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assignment = db.scalars(
+            select(CaseAssignment).where(
+                CaseAssignment.therapist_user_id == therapist.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).first()
+        assert assignment
+        session = TherapySession(
+            case_id=assignment.case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=date.today(),
+            start_time=time(10, 0),
+            mode=SessionMode.HOME,
+            status=SessionStatus.IN_PROGRESS,
+            actual_start_at=datetime.now(timezone.utc),
+            checkin_lat=12.34,
+        )
+        db.add(session)
+        db.flush()
+        cancelled = session_service.cancel_session(db, session, therapist.id)
+        assert cancelled.status == SessionStatus.SCHEDULED
+        assert cancelled.actual_start_at is None
+        assert cancelled.checkin_lat is None
     finally:
         db.close()
 
@@ -79,7 +114,7 @@ def test_auto_end_homecare_caps_at_three_hours():
         db.close()
 
 
-def test_create_manual_session_rejects_short_duration():
+def test_create_manual_session_allows_short_duration():
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
@@ -92,15 +127,15 @@ def test_create_manual_session_rejects_short_duration():
         assert assignment
         start = datetime.now(timezone.utc) - timedelta(minutes=10)
         end = start + timedelta(minutes=2)
-        with pytest.raises(ValueError, match="5 minutes"):
-            session_service.create_manual_session(
-                db,
-                case_id=assignment.case_id,
-                therapist_user_id=therapist.id,
-                scheduled_date=date.today(),
-                actual_start_at=start,
-                actual_end_at=end,
-                mode=SessionMode.HOME,
-            )
+        session = session_service.create_manual_session(
+            db,
+            case_id=assignment.case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=date.today(),
+            actual_start_at=start,
+            actual_end_at=end,
+            mode=SessionMode.HOME,
+        )
+        assert session.status == SessionStatus.COMPLETED
     finally:
         db.close()

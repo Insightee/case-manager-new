@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginTherapist, sidebarLink } from './helpers/auth.js'
+import { loginTherapist, navigateTherapist, sidebarLink } from './helpers/auth.js'
 
 test.describe('Therapist portal smoke', () => {
   test('dashboard, navigation, and core pages load with API data', async ({ page }) => {
@@ -12,7 +12,13 @@ test.describe('Therapist portal smoke', () => {
     await expect(page).toHaveURL(/\/therapist\/logs/)
     await expect(page.getByRole('heading', { name: 'Session Logs' })).toBeVisible()
     await expect(page.getByRole('tablist', { name: 'Session log lists' })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Add new client' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Start now' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Forgot to log' })).toBeVisible()
+    await page.getByRole('tab', { name: 'Forgot to log' }).click()
+    await expect(page.getByRole('heading', { name: 'Log a session you missed' })).toBeVisible()
+    await expect(page.getByLabel('Session date')).toBeVisible()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.getByRole('button', { name: '+ Add new client' })).toBeVisible()
     await page.getByRole('tab', { name: 'Approved' }).click()
     const viewBtn = page.getByRole('button', { name: 'View log' }).first()
     if (await viewBtn.isVisible()) {
@@ -66,7 +72,7 @@ test.describe('Therapist portal smoke', () => {
     if (await startBtn.isVisible()) {
       await startBtn.click()
       await expect(page.getByText('Session in progress')).toBeVisible({ timeout: 15_000 })
-      await page.getByRole('button', { name: 'End session' }).click()
+      await page.getByRole('button', { name: /End session/i }).click()
       await expect(page.getByRole('heading', { name: 'Submit session log' })).toBeVisible({ timeout: 15_000 })
       await page.getByLabel('Attendance').selectOption('PRESENT')
       await page.getByLabel('Session notes (internal)').fill('Playwright E2E session notes')
@@ -108,5 +114,67 @@ test.describe('Therapist portal smoke', () => {
     await expect(page.getByRole('heading', { name: /new monthly report draft/i })).toBeVisible()
     await page.getByRole('button', { name: 'Cancel' }).click()
     await expect(page.getByRole('dialog')).toBeHidden()
+  })
+})
+
+test.describe('Therapist portal mobile', () => {
+  test.use({ viewport: { width: 375, height: 812 } })
+
+  test('session composer and case tabs on narrow viewport', async ({ page }) => {
+    await loginTherapist(page)
+    await navigateTherapist(page, 'Session Logs')
+    await expect(page.getByRole('tab', { name: 'Start now' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Forgot to log' })).toBeVisible()
+    await page.getByRole('tab', { name: 'Forgot to log' }).click()
+    await expect(page.getByRole('heading', { name: 'Log a session you missed' })).toBeVisible()
+    await expect(page.getByLabel('Session date')).toBeVisible()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.getByRole('button', { name: '+ Add new client' })).toBeVisible()
+
+    await navigateTherapist(page, 'My Cases')
+    const caseLink = page.getByRole('link', { name: 'View case' }).first()
+    await caseLink.click()
+    await expect(page.getByRole('navigation', { name: 'Case sections' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sessions' })).toBeVisible()
+  })
+
+  test('leave request form opens on mobile', async ({ page }) => {
+    await loginTherapist(page)
+    await navigateTherapist(page, 'Leave')
+    await expect(page.getByRole('heading', { name: 'My Leave' })).toBeVisible()
+    await page.getByRole('button', { name: '+ Request leave' }).click()
+    await expect(page.getByText('New leave request')).toBeVisible()
+    await expect(page.getByLabel('From date')).toBeVisible()
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
+    expect(overflow).toBe(false)
+  })
+
+  test('my cases filters collapse on mobile', async ({ page }) => {
+    await loginTherapist(page)
+    await navigateTherapist(page, 'My Cases')
+    await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
+    const filtersBtn = page.getByRole('button', { name: /^Filters/ })
+    await expect(filtersBtn).toBeVisible()
+    await expect(page.getByLabel('Filter by stage')).toBeHidden()
+    await filtersBtn.click()
+    await expect(page.getByLabel('Filter by stage')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Grid' })).toBeVisible()
+  })
+
+  test('drawer nav omits duplicate My Profile link', async ({ page }) => {
+    await loginTherapist(page)
+    await page.getByRole('button', { name: /Open navigation menu/i }).click()
+    const drawerNav = page.locator('#portal-nav-drawer .app-sidebar__nav')
+    await expect(drawerNav.getByRole('link', { name: 'My Profile' })).toHaveCount(0)
+    await expect(page.locator('.app-sidebar__drawer-action').getByRole('link', { name: 'My profile' })).toBeVisible()
+  })
+
+  test('open slots page fits viewport without horizontal scroll', async ({ page }) => {
+    await loginTherapist(page)
+    await navigateTherapist(page, 'Open Slots')
+    await expect(page.getByRole('heading', { name: 'My calendar' })).toBeVisible()
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
+    expect(overflow).toBe(false)
   })
 })

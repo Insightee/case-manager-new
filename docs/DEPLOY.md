@@ -202,6 +202,17 @@ Invite and password-reset emails retry transient SMTP failures via a **separate 
 
 PR1 runs **`retry-invites` only** when the Zepto flag is false (default).
 
+**Automated setup (API token with project access):**
+
+```bash
+cd backend
+export RAILWAY_API_TOKEN='...'   # Account token (Bearer), not Project-Access-Token
+export ADMIN_NOTIFICATION_EMAILS='you@example.com'
+python3 scripts/railway_setup_email_safety.py
+```
+
+Uses [`railway.email-cron.toml`](../backend/railway.email-cron.toml) for the `email-jobs` service. After first create, connect the GitHub repo in Railway if the cron service has no deployments yet, then redeploy.
+
 ## Current gaps (checklist)
 
 | Item | Status | Action |

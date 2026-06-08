@@ -30,7 +30,12 @@ export function TherapistCalendar({
   onCalendarLoad,
   focusDate,
 }) {
-  const [view, setView] = useState(() => 'week')
+  const [view, setView] = useState(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+      return 'day'
+    }
+    return 'week'
+  })
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
   const [dayDate, setDayDate] = useState(() => {
     const t = new Date()
@@ -178,7 +183,9 @@ export function TherapistCalendar({
       {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
 
       {view === 'week' ? (
-        <WeekCalendarGrid
+        <>
+          <p className="mb-2 text-xs text-slate-500 md:hidden">Swipe horizontally to see all times.</p>
+          <WeekCalendarGrid
           calendar={calendar}
           loading={loading}
           weekStart={weekStart}
@@ -191,6 +198,7 @@ export function TherapistCalendar({
           onMarkLeave={handleMarkLeave}
           onReload={load}
         />
+        </>
       ) : null}
 
       {view === 'day' ? (

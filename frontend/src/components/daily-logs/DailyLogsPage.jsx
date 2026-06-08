@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { queryKeys } from '../../lib/queryClient.js'
 import {
   patchCachesAfterLogSave,
+  patchCachesAfterSessionCancel,
   patchCachesAfterSessionEnd,
   patchCachesAfterSessionStart,
   refreshTherapistLogDraftIds,
@@ -81,6 +82,7 @@ export function DailyLogsPage() {
   const [logSession, setLogSession] = useState(null)
   const [visitSession, setVisitSession] = useState(null)
   const [visitBusy, setVisitBusy] = useState(false)
+  const [cancelBusy, setCancelBusy] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
   const [logRequired, setLogRequired] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -376,6 +378,25 @@ export function DailyLogsPage() {
     }
   }
 
+  async function handleCancel(sessionId) {
+    if (!window.confirm('Cancel this session? The timer will stop and no log will be created.')) return
+    setCancelBusy(true)
+    setError('')
+    try {
+      const cancelled = await apiFetch(`/api/v1/sessions/${sessionId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      patchCachesAfterSessionCancel(cancelled)
+      if (visitSession?.id === sessionId) setVisitSession(null)
+      setSuccess('Session cancelled — you can start again when ready.')
+    } catch (err) {
+      setError(err.message || 'Could not cancel session')
+    } finally {
+      setCancelBusy(false)
+    }
+  }
+
   async function handleManualSession(payload) {
     setSubmitting(true)
     setError('')
@@ -486,14 +507,24 @@ export function DailyLogsPage() {
           <p className="attendance-timer" style={{ fontSize: '2rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: '0 0 16px' }}>
             {formatDuration(active.actual_start_at, tick)}
           </p>
-          <button
-            type="button"
-            className="ic-btn ic-btn--primary"
-            style={{ background: '#dc2626', borderColor: '#dc2626' }}
-            onClick={() => handleEnd(active.id)}
-          >
-            End session & write log
-          </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            <button
+              type="button"
+              className="ic-btn ic-btn--primary"
+              style={{ background: '#dc2626', borderColor: '#dc2626' }}
+              onClick={() => handleEnd(active.id)}
+            >
+              End session & write log
+            </button>
+            <button
+              type="button"
+              className="ic-btn ic-btn--ghost"
+              disabled={cancelBusy}
+              onClick={() => handleCancel(active.id)}
+            >
+              {cancelBusy ? 'Cancelling…' : 'Cancel session'}
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -505,6 +536,7 @@ export function DailyLogsPage() {
             busy={visitBusy}
             onStart={handleVisitStart}
             onEnd={handleVisitEnd}
+            onCancel={handleCancel}
             onClose={closeVisitFocus}
           />
         </section>

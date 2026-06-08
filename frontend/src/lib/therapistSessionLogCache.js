@@ -67,6 +67,20 @@ export function applyLogSavedToCaseLogs(logs, savedLog, caseId, { isEdit = false
   return applyLogSavedToDailyLogs(logs, withCase, { isEdit })
 }
 
+export function applySessionCancelledToWorkspace(workspace, cancelled) {
+  if (!workspace || !cancelled?.id) return workspace
+  const sid = Number(cancelled.id)
+  const upcoming = workspace.upcoming || []
+  const inUpcoming = upcoming.some((s) => s.id === sid)
+  return {
+    ...workspace,
+    active_session: workspace.active_session?.id === sid ? null : workspace.active_session,
+    upcoming: inUpcoming
+      ? upcoming.map((s) => (s.id === sid ? { ...s, ...cancelled } : s))
+      : [cancelled, ...upcoming],
+  }
+}
+
 export function patchCachesAfterSessionStart(started) {
   queryClient.setQueryData(queryKeys.therapistWorkspace, (old) =>
     applySessionStartedToWorkspace(old, started),
@@ -77,6 +91,13 @@ export function patchCachesAfterSessionStart(started) {
 export function patchCachesAfterSessionEnd(ended) {
   queryClient.setQueryData(queryKeys.therapistWorkspace, (old) =>
     applySessionEndedToWorkspace(old, ended),
+  )
+  void queryClient.invalidateQueries({ queryKey: queryKeys.therapistHome })
+}
+
+export function patchCachesAfterSessionCancel(cancelled) {
+  queryClient.setQueryData(queryKeys.therapistWorkspace, (old) =>
+    applySessionCancelledToWorkspace(old, cancelled),
   )
   void queryClient.invalidateQueries({ queryKey: queryKeys.therapistHome })
 }

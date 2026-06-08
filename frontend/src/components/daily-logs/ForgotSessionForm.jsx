@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { formatApiDateIN } from '../../lib/datetime.js'
+import { formatApiDateIN, todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
 
 const MODES = [
@@ -161,11 +161,6 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
     }
     if (end <= start) {
       setLocalError('End time must be after start time.')
-      return
-    }
-    const durationMins = Math.round((end - start) / 60000)
-    if (durationMins < 5) {
-      setLocalError('Session must be at least 5 minutes to be recorded.')
       return
     }
     if (form.session_date > today) {

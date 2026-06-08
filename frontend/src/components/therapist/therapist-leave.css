@@ -145,3 +145,248 @@
   background: #fecaca;
   border: 1px solid #dc2626;
 }
+
+.therapist-leave-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2rem;
+  min-width: 0;
+  width: 100%;
+  overflow-x: clip;
+  box-sizing: border-box;
+}
+
+.therapist-leave-page__header {
+  margin-bottom: 12px;
+}
+
+.therapist-leave-page__sticky-actions {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #f8fafc;
+  padding: 8px 0 12px;
+  margin-bottom: 8px;
+}
+
+.therapist-leave-page__request-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 18px;
+  background: #6366f1;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.therapist-leave-page__request-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.therapist-leave-page__form-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.therapist-leave-page__form-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.leave-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+
+.leave-filters select,
+.leave-filters button {
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+.therapist-leave-page__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+  min-width: 0;
+}
+
+.therapist-leave-page__stat-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px 20px;
+  min-width: 0;
+}
+
+.therapist-leave-page__cal-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.therapist-leave-page__balance {
+  word-break: break-word;
+}
+
+.leave-cal--month {
+  display: block;
+}
+
+.leave-mobile-cal {
+  display: none;
+}
+
+.leave-mobile-cal__nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.leave-mobile-cal__nav p {
+  flex: 1;
+  text-align: center;
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.leave-mobile-cal__nav-btn {
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 1rem;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.leave-mobile-cal__strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.leave-mobile-cal__day.leave-cal__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: 4px 2px;
+}
+
+.leave-mobile-cal__dow {
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #9ca3af;
+  text-transform: uppercase;
+}
+
+.leave-mobile-cal__num {
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.leave-mobile-cal__day-panel {
+  padding: 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  font-size: 0.8125rem;
+  color: #475569;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .therapist-leave-page {
+    padding: 1rem 0.75rem 2rem;
+  }
+
+  .therapist-leave-page__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .therapist-leave-page__balance {
+    padding: 12px 14px;
+  }
+
+  .therapist-leave-page__cal-card {
+    padding: 16px 12px;
+  }
+
+  .leave-cal--month {
+    display: none;
+  }
+
+  .leave-mobile-cal {
+    display: block;
+  }
+
+  .leave-cal__day {
+    min-height: 44px;
+    font-size: 0.875rem;
+  }
+
+  .therapist-leave-page__form-dates {
+    grid-template-columns: 1fr;
+  }
+
+  .leave-filters {
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .leave-filters::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.therapist-leave-page__case-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.therapist-leave-page__case-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fafafa;
+}
+
+.therapist-leave-page__case-option input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}

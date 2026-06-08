@@ -32,6 +32,7 @@ export function TherapistTicketsPage() {
   const [activeTicket, setActiveTicket] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [formPanel, setFormPanel] = useState('ticket')
   const [form, setForm] = useState({ subject: '', body: '', category: 'OTHER' })
   const [formFiles, setFormFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
@@ -102,60 +103,91 @@ export function TherapistTicketsPage() {
     <div className="parent-support">
       {/* Form card */}
       <section className="parent-support__form-card">
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>Raise a new ticket</h2>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <PoliciesBotButton />
-            <button
-              type="button"
-              onClick={() => { setShowForm((v) => !v); setError(''); setSuccess('') }}
-              style={{ padding: '7px 16px', background: showForm ? '#f1f5f9' : '#6366f1', color: showForm ? '#475569' : '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
-            >
-              {showForm ? 'Cancel' : '+ New ticket'}
-            </button>
-          </div>
+        <div className="parent-support__form-card-head">
+          <h2>Raise a new ticket</h2>
+          <button
+            type="button"
+            className="parent-support__form-toggle"
+            data-cancel={showForm ? 'true' : undefined}
+            style={showForm ? { background: '#f1f5f9', color: '#475569' } : undefined}
+            onClick={() => {
+              setShowForm((v) => !v)
+              setError('')
+              setSuccess('')
+              if (!showForm) setFormPanel('ticket')
+            }}
+          >
+            {showForm ? 'Cancel' : '+ New ticket'}
+          </button>
         </div>
         <p className="parent-support__hint">
           Choose a category so your request reaches the right team. You can track and reply on tickets below.
         </p>
 
         {showForm ? (
-          <form onSubmit={createTicket} style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <label className="parent-support__field">
-              Category
-              <select
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
+          <>
+            <nav className="parent-support-hub__tabs parent-support-hub__tabs--inner" aria-label="Ticket actions">
+              <button
+                type="button"
+                className={`parent-support-hub__tab${formPanel === 'ticket' ? ' is-active' : ''}`}
+                onClick={() => setFormPanel('ticket')}
               >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </label>
-            <label className="parent-support__field">
-              Subject
-              <input
-                value={form.subject}
-                onChange={(e) => setForm({ ...form, subject: e.target.value })}
-                required
-                placeholder="Brief summary"
-              />
-            </label>
-            <label className="parent-support__field">
-              Details
-              <textarea
-                value={form.body}
-                onChange={(e) => setForm({ ...form, body: e.target.value })}
-                rows={4}
-                required
-                placeholder="Describe your concern…"
-              />
-            </label>
-            <TicketFileInput files={formFiles} onChange={setFormFiles} disabled={submitting} />
-            <button type="submit" className="parent-support__submit" disabled={submitting}>
-              {submitting ? 'Submitting…' : 'Submit ticket'}
-            </button>
-          </form>
+                New ticket
+              </button>
+              <button
+                type="button"
+                className={`parent-support-hub__tab${formPanel === 'policies' ? ' is-active' : ''}`}
+                onClick={() => setFormPanel('policies')}
+              >
+                Policies bot
+              </button>
+            </nav>
+            {formPanel === 'ticket' ? (
+              <form onSubmit={createTicket} className="parent-support__form-body">
+                <label className="parent-support__field">
+                  Category
+                  <select
+                    value={form.category}
+                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="parent-support__field">
+                  Subject
+                  <input
+                    value={form.subject}
+                    onChange={(e) => setForm({ ...form, subject: e.target.value })}
+                    required
+                    placeholder="Brief summary"
+                  />
+                </label>
+                <label className="parent-support__field">
+                  Details
+                  <textarea
+                    value={form.body}
+                    onChange={(e) => setForm({ ...form, body: e.target.value })}
+                    rows={4}
+                    required
+                    placeholder="Describe your concern…"
+                  />
+                </label>
+                <TicketFileInput files={formFiles} onChange={setFormFiles} disabled={submitting} />
+                <button type="submit" className="parent-support__submit" disabled={submitting}>
+                  {submitting ? 'Submitting…' : 'Submit ticket'}
+                </button>
+              </form>
+            ) : (
+              <div className="parent-support__policies-panel">
+                <p className="parent-support__hint">
+                  Ask policy and HR clarification questions through the policies bot when it is enabled for your org.
+                </p>
+                <PoliciesBotButton />
+              </div>
+            )}
+          </>
         ) : null}
 
         {error ? <p style={{ color: '#b91c1c', marginTop: 10, fontSize: '0.875rem' }}>{error}</p> : null}

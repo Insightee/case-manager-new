@@ -10,6 +10,7 @@ export function SessionVisitPanel({
   busy,
   onStart,
   onEnd,
+  onCancel,
   onClose,
 }) {
   if (!session) return null
@@ -69,15 +70,27 @@ export function SessionVisitPanel({
           </button>
         ) : null}
         {isInProgress && isActive && !anotherActive ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--primary"
-            style={{ background: '#dc2626', borderColor: '#dc2626' }}
-            disabled={busy}
-            onClick={() => onEnd?.(session.id)}
-          >
-            {busy ? 'Ending…' : 'End session & write log'}
-          </button>
+          <>
+            <button
+              type="button"
+              className="ic-btn ic-btn--primary"
+              style={{ background: '#dc2626', borderColor: '#dc2626' }}
+              disabled={busy}
+              onClick={() => onEnd?.(session.id)}
+            >
+              {busy ? 'Ending…' : 'End session & write log'}
+            </button>
+            {onCancel ? (
+              <button
+                type="button"
+                className="ic-btn ic-btn--ghost"
+                disabled={busy}
+                onClick={() => onCancel?.(session.id)}
+              >
+                Cancel session
+              </button>
+            ) : null}
+          </>
         ) : null}
         {session.case_id ? (
           <Link to={`/therapist/cases/${session.case_id}?tab=sessions`} className="ic-btn ic-btn--ghost">

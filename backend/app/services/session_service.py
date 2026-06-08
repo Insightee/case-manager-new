@@ -144,6 +144,31 @@ def end_session(
     return session
 
 
+def cancel_session(
+    db: Session,
+    session: TherapySession,
+    therapist_user_id: int,
+) -> TherapySession:
+    """Revert an accidental start — session returns to scheduled with no visit recorded."""
+    if session.therapist_user_id != therapist_user_id:
+        raise ValueError("Not your session")
+    if session.status != SessionStatus.IN_PROGRESS:
+        raise ValueError("Session is not in progress")
+    if session.daily_log is not None:
+        raise ValueError("Cannot cancel a session that already has a log")
+    session.status = SessionStatus.SCHEDULED
+    session.actual_start_at = None
+    session.actual_end_at = None
+    session.auto_ended = False
+    session.auto_end_reason = None
+    session.checkin_lat = None
+    session.checkin_lng = None
+    session.checkout_lat = None
+    session.checkout_lng = None
+    db.flush()
+    return session
+
+
 def list_upcoming_sessions(
     db: Session,
     therapist_user_id: int,

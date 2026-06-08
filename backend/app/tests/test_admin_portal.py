@@ -643,6 +643,54 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
     assert body.get("therapist_name")
 
 
+def test_therapist_cm_meeting_without_case_returns_400_not_module_error():
+    th_token = _login("therapist@demo.com")
+    th_headers = {"Authorization": f"Bearer {th_token}"}
+    created = client.post(
+        "/api/v1/cm-meetings",
+        headers=th_headers,
+        json={
+            "scheduled_date": "2026-06-02",
+            "scheduled_time": "11:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "CLIENT_AND_THERAPIST",
+            "title": "Missing case",
+        },
+    )
+    assert created.status_code == 400, created.text
+    assert "case" in created.json()["detail"].lower()
+    assert "cm_meetings" not in created.json()["detail"]
+
+
+def test_therapist_can_update_cm_meeting_notes():
+    th_token = _login("therapist@demo.com")
+    th_headers = {"Authorization": f"Bearer {th_token}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    assert cases.status_code == 200, cases.text
+    case_id = cases.json()[0]["id"]
+    created = client.post(
+        "/api/v1/cm-meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": "2026-06-03",
+            "scheduled_time": "15:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "CLIENT_AND_THERAPIST",
+            "title": "Therapist note test",
+        },
+    )
+    assert created.status_code == 201, created.text
+    meeting_id = created.json()["id"]
+    updated = client.patch(
+        f"/api/v1/cm-meetings/{meeting_id}",
+        headers=th_headers,
+        json={"notes_other": "Therapist follow-up from supervision call"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["notes_other"] == "Therapist follow-up from supervision call"
+
+
 def test_cm_meetings_filters_and_case_code():
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}

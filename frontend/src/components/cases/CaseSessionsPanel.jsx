@@ -7,11 +7,15 @@ import {
   applyLogSavedToCaseLogs,
   applyLogSavedToSessions,
   patchCachesAfterLogSave,
+  patchCachesAfterSessionCancel,
   patchCachesAfterSessionEnd,
 } from '../../lib/therapistSessionLogCache.js'
 import { formatScheduleWhen } from '../../lib/therapistSchedule.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
+import { SessionLogHistoryRow } from '../daily-logs/SessionLogHistoryRow.jsx'
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 function formatTime(t) {
   if (!t) return '—'
@@ -39,6 +43,8 @@ export function CaseSessionsPanel({
   const [logRequired, setLogRequired] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [historyMonth, setHistoryMonth] = useState('ALL')
+  const [historyYear, setHistoryYear] = useState(() => String(new Date().getFullYear()))
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -87,6 +93,29 @@ export function CaseSessionsPanel({
     [sessions],
   )
 
+  const historyYears = useMemo(() => {
+    const years = new Set([new Date().getFullYear()])
+    past.forEach((s) => {
+      if (s.scheduled_date) years.add(Number(s.scheduled_date.slice(0, 4)))
+    })
+    return Array.from(years).filter(Number.isFinite).sort((a, b) => b - a).map(String)
+  }, [past])
+
+  const filteredPast = useMemo(() => {
+    return past.filter((s) => {
+      if (!s.scheduled_date) return false
+      const d = new Date(`${s.scheduled_date}T00:00:00`)
+      if (String(d.getFullYear()) !== historyYear) return false
+      if (historyMonth === 'ALL') return true
+      return d.getMonth() === Number(historyMonth)
+    })
+  }, [past, historyMonth, historyYear])
+
+  const historyFilterLabel = useMemo(() => {
+    if (historyMonth === 'ALL') return historyYear
+    return `${MONTHS[Number(historyMonth)]} ${historyYear}`
+  }, [historyMonth, historyYear])
+
   function openLogForm(session, { required = false, log = null } = {}) {
     setError('')
     setLogSession(session)
@@ -118,6 +147,26 @@ export function CaseSessionsPanel({
       onScheduleChange?.()
     } catch (err) {
       setError(err.message || 'Could not end session')
+    }
+  }
+
+  async function handleCancel(sessionId) {
+    if (!window.confirm('Cancel this session? The timer will stop and no log will be created.')) return
+    setError('')
+    try {
+      const cancelled = await apiFetch(`/api/v1/sessions/${sessionId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      patchCachesAfterSessionCancel(cancelled)
+      setActive(null)
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, ...cancelled, status: 'SCHEDULED' } : s)),
+      )
+      setSuccess('Session cancelled.')
+      onScheduleChange?.()
+    } catch (err) {
+      setError(err.message || 'Could not cancel session')
     }
   }
 
@@ -216,9 +265,14 @@ export function CaseSessionsPanel({
       {active ? (
         <div className="ic-case-active">
           <p className="ic-case-active__title">Session in progress</p>
-          <button type="button" className="ic-btn ic-btn--primary" style={{ background: '#dc2626', borderColor: '#dc2626' }} onClick={() => handleEnd(active.id)}>
-            End session & write log
-          </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            <button type="button" className="ic-btn ic-btn--primary" style={{ background: '#dc2626', borderColor: '#dc2626' }} onClick={() => handleEnd(active.id)}>
+              End session & write log
+            </button>
+            <button type="button" className="ic-btn ic-btn--ghost" onClick={() => handleCancel(active.id)}>
+              Cancel session
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -291,48 +345,79 @@ export function CaseSessionsPanel({
       ) : null}
 
       <section className="ic-case-sessions__block">
-        <h4>History</h4>
-        {past.length === 0 ? (
-          <p className="ic-case-panel__muted">No completed sessions yet.</p>
+        {past.length > 0 ? (
+          <div className="ic-case-history-head">
+            <h4>History</h4>
+            <div className="ic-case-history-filters">
+              <label>
+                <span className="sr-only">Month</span>
+                <select
+                  value={historyMonth}
+                  onChange={(e) => setHistoryMonth(e.target.value)}
+                  aria-label="Filter history by month"
+                >
+                  <option value="ALL">All months</option>
+                  {MONTHS.map((m, idx) => (
+                    <option key={m} value={idx}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="sr-only">Year</span>
+                <select
+                  value={historyYear}
+                  onChange={(e) => setHistoryYear(e.target.value)}
+                  aria-label="Filter history by year"
+                >
+                  {historyYears.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
         ) : (
-          <ul className="ic-case-sessions__list">
-            {past.map((s) => {
+          <h4>History</h4>
+        )}
+        {filteredPast.length === 0 ? (
+          <p className="ic-case-panel__muted">
+            {past.length === 0 ? 'No completed sessions yet.' : `No sessions in ${historyFilterLabel}.`}
+          </p>
+        ) : (
+          <ul className="ic-case-sessions__list ic-case-sessions__list--history">
+            {filteredPast.map((s) => {
               const log = logs.find((l) => l.session_id === s.id)
               return (
-                <li key={s.id} className="ic-case-sessions__row">
-                  <span>
-                    <strong>{s.scheduled_date}</strong> · {formatTime(s.start_time)}–{formatTime(s.end_time)} · {s.status}
-                    {log ? (
-                      <span className="ic-case-sessions__log-meta">
-                        Log: {log.approval_status}
-                        {log.late_addition ? ' (late)' : ''}
-                      </span>
-                    ) : null}
-                  </span>
-                  {s.status === 'COMPLETED' && !log ? (
-                    <button type="button" className="ic-case-sessions__link-btn" onClick={() => openLogForm(s)}>
-                      Submit log
-                    </button>
-                  ) : log && log.can_edit ? (
-                    <button
-                      type="button"
-                      className="ic-case-sessions__link-btn"
-                      onClick={() =>
-                        openLogForm(
-                          {
-                            id: s.id,
-                            scheduled_date: s.scheduled_date,
-                            actual_start_at: s.actual_start_at,
-                            actual_end_at: s.actual_end_at,
-                          },
-                          { log },
-                        )
-                      }
-                    >
-                      Edit log
-                    </button>
-                  ) : null}
-                </li>
+                <SessionLogHistoryRow
+                  key={s.id}
+                  session={s}
+                  logSummary={log || null}
+                  childName={childName}
+                  caseCode={caseCode}
+                  onSubmitLog={
+                    s.status === 'COMPLETED' && !log
+                      ? () => openLogForm(s)
+                      : undefined
+                  }
+                  onEditLog={
+                    log?.can_edit
+                      ? () =>
+                          openLogForm(
+                            {
+                              id: s.id,
+                              scheduled_date: s.scheduled_date,
+                              actual_start_at: s.actual_start_at,
+                              actual_end_at: s.actual_end_at,
+                            },
+                            { log },
+                          )
+                      : undefined
+                  }
+                />
               )
             })}
           </ul>
