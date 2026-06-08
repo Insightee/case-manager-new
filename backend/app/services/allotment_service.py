@@ -5,7 +5,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.module_access import case_product_module_allowed
+from app.core.service_access import therapist_eligible_for_product_module
 from app.core.permissions import RoleName
 from app.models.role import Role
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
@@ -52,18 +52,21 @@ def list_allotment_therapists(
     tokens = [tok for tok in q.split() if tok]
     result = []
     for t in therapists:
-        mods = t.module_assignments or []
-        if mods and product_module not in mods and not case_product_module_allowed(t, product_module):
+        prof = profiles.get(t.id)
+        if not therapist_eligible_for_product_module(
+            db,
+            services_offered=prof.services_offered if prof else None,
+            module_assignments=t.module_assignments,
+            product_module=product_module,
+        ):
             continue
         if approved_only:
-            prof = profiles.get(t.id)
             if prof and prof.status != TherapistProfileStatus.APPROVED:
                 continue
         if tokens:
             hay = f"{(t.full_name or '').lower()} {(t.email or '').lower()}"
             if not all(tok in hay for tok in tokens):
                 continue
-        prof = profiles.get(t.id)
         result.append(
             {
                 "therapist_user_id": t.id,

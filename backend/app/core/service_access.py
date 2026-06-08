@@ -96,6 +96,47 @@ def parent_service_id_for_product_module(db: Session | None, module_id: str) -> 
     return None
 
 
+def service_ids_eligible_for_product_module(db: Session | None, product_module: str) -> set[str]:
+    """Service category ids a therapist may offer to be allotted on this case module."""
+    pm = normalize_service_id(product_module)
+    eligible = {pm}
+    if db is None:
+        return eligible
+    try:
+        from sqlalchemy import select
+
+        from app.models.service_category import ServiceCategory
+        from app.services.service_category_service import resolved_product_modules
+
+        for cat in db.scalars(select(ServiceCategory).where(ServiceCategory.is_active.is_(True))).all():
+            cat_id = normalize_service_id(cat.id)
+            module_ids = {
+                normalize_service_id(item["id"]) for item in resolved_product_modules(cat)
+            }
+            if pm in module_ids:
+                eligible.add(cat_id)
+    except Exception:
+        pass
+    return eligible
+
+
+def therapist_eligible_for_product_module(
+    db: Session | None,
+    *,
+    services_offered: list[str] | None,
+    module_assignments: list[str] | None,
+    product_module: str,
+) -> bool:
+    """True when the therapist's declared services cover the requested case module."""
+    eligible = service_ids_eligible_for_product_module(db, product_module)
+    offered = [normalize_service_id(s) for s in (services_offered or []) if s]
+    if not offered:
+        offered = [normalize_service_id(s) for s in (module_assignments or []) if s]
+    if not offered:
+        return False
+    return bool(set(offered) & eligible)
+
+
 def legacy_module_assignments_to_service_grants(
   module_assignments: list[str] | None,
   module_access_grants: dict | None,

@@ -73,7 +73,7 @@ def _create_therapist_profile(
     return profile
 
 
-def _apply_therapist_service_access(db: Session, user: User, services_offered: list[str]) -> None:
+def sync_therapist_service_access(db: Session, user: User, services_offered: list[str]) -> None:
     from app.core.rbac_access import sync_user_access_fields
     from app.core.service_access import normalize_service_access_grants
 
@@ -187,7 +187,7 @@ def onboard_therapist_direct(
     )
     if phone:
         user.phone = phone.strip()
-    _apply_therapist_service_access(db, user, validated_services)
+    sync_therapist_service_access(db, user, validated_services)
     profile = _create_therapist_profile(
         db,
         user,
@@ -313,7 +313,7 @@ def apply_therapist_invite_metadata(db: Session, user: User, invite: InviteToken
         user.phone = meta["phone"]
     services = meta.get("services_offered") or []
     full_name = meta.get("full_name") or user.full_name
-    _apply_therapist_service_access(db, user, services)
+    sync_therapist_service_access(db, user, services)
     _create_therapist_profile(
         db,
         user,

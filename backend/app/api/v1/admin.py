@@ -2131,12 +2131,19 @@ def admin_update_therapist_profile(
     profile = db.get(TherapistProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    profile_svc.apply_profile_fields(profile, payload.model_dump(exclude_unset=True), db)
+    data = payload.model_dump(exclude_unset=True)
+    profile_svc.apply_profile_fields(profile, data, db)
+    target = db.get(User, profile.user_id)
+    if target and "services_offered" in data:
+        from app.services.therapist_onboarding_service import sync_therapist_service_access
+
+        sync_therapist_service_access(db, target, profile.services_offered or [])
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="therapist_profile", entity_id=profile_id, **meta)
     db.commit()
     db.refresh(profile)
-    target = db.get(User, profile.user_id)
+    if not target:
+        target = db.get(User, profile.user_id)
     return TherapistProfileRead(**profile_svc.profile_to_dict(profile, target))
 
 
