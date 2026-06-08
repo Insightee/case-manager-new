@@ -61,7 +61,7 @@ Or use browser login: `npx @railway/cli login` (no token needed for local `link`
 | `DB_MAX_OVERFLOW` | yes | `20` per worker; keep `WEB_CONCURRENCY × (DB_POOL_SIZE + DB_MAX_OVERFLOW)` below Postgres `max_connections` (default `3×30=90`) |
 | `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY` | yes | Strong unique values |
 | `STORAGE_PROVIDER` | yes | `r2` + all `R2_*` vars |
-| `FRONTEND_URL`, `CORS_ORIGINS` | yes | **Exact** Vercel production domain from Settings → Domains (e.g. `https://frontend-omega-eight-92.vercel.app`). Not localhost-only. |
+| `FRONTEND_URL`, `CORS_ORIGINS` | yes | Canonical UI + every active production origin (see **Custom domain** below). Not localhost-only. |
 | `EMAIL_PROVIDER`, `SMTP_*` | yes | ZeptoMail on Railway only |
 
 Template: [`backend/env.railway.example`](../backend/env.railway.example).
@@ -151,13 +151,44 @@ If Root Directory is `frontend` but Install still uses `--prefix frontend`, the 
 
 After a green deploy, copy **Settings → Domains** production URL into Railway `FRONTEND_URL` and `CORS_ORIGINS`.
 
+### Custom domain (`insighte.org`) — three parallel production hosts
+
+Vercel **frontend** project (`insightes-projects/frontend`) can serve the same build on multiple domains. Keep **all** attached hosts in Railway `CORS_ORIGINS` until you remove a domain from Vercel.
+
+| Domain | Role |
+|--------|------|
+| `https://www.insighte.org` | **Production** — canonical URL for team, emails, bookmarks |
+| `https://insighte.org` | **308 redirect** → `www.insighte.org` |
+| `https://frontend-omega-eight-92.vercel.app` | **Production** — legacy Vercel hostname (parallel) |
+
+| Variable | Production value |
+|----------|------------------|
+| `FRONTEND_URL` | `https://www.insighte.org` |
+| `CORS_ORIGINS` | `http://localhost:5173,https://www.insighte.org,https://insighte.org,https://frontend-omega-eight-92.vercel.app` |
+| `VITE_API_URL` (Vercel only) | `https://case-manager-new-production.up.railway.app` (unchanged) |
+
+Custom domains **do not** match the API default CORS regex (`frontend-*.vercel.app`) in [`backend/app/core/config.py`](../backend/app/core/config.py) — list them explicitly.
+
+One-shot Railway update (no SMTP changes):
+
+```bash
+export RAILWAY_API_TOKEN='...'   # Account → Tokens, Workspace = No workspace
+chmod +x backend/scripts/railway_set_insighte_domain_cors.sh
+./backend/scripts/railway_set_insighte_domain_cors.sh
+```
+
+Or: `python3 backend/scripts/railway_set_insighte_domain_cors.py` with `RAILWAY_PROJECT_TOKEN`.
+
+**Future cleanup:** remove a domain from Vercel Domains first, then remove that host from `CORS_ORIGINS`, then redeploy API.
+
 ### CORS / “Cannot reach API” on Vercel
 
 If login or invite shows **Cannot reach the API** but `curl …/health` works, the browser origin is usually **not allowed by CORS**.
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
-| UI at `https://frontend-omega-eight-92.vercel.app` | That host was missing from `CORS_ORIGINS` | Set `FRONTEND_URL` and add the same URL to `CORS_ORIGINS` on Railway, redeploy API |
+| UI at `https://www.insighte.org` | Custom domain not in `CORS_ORIGINS` | Add `https://www.insighte.org` and `https://insighte.org` to `CORS_ORIGINS`, redeploy API |
+| UI at `https://frontend-omega-eight-92.vercel.app` | That host was missing from `CORS_ORIGINS` | Keep legacy host in `CORS_ORIGINS` until removed from Vercel Domains |
 | Invite email opens a different host | `FRONTEND_URL` was wrong when email was sent | Update Railway `FRONTEND_URL`, redeploy API, **re-send invite** from Admin |
 | Git preview URLs | `frontend-git-*-insightes-projects.vercel.app` | Allowed by API CORS regex after latest backend deploy (`frontend-*.vercel.app`) |
 
@@ -206,8 +237,12 @@ After any change: **redeploy API** (Railway) and **redeploy frontend** (Vercel).
 
 ```bash
 curl -s https://case-manager-new-production.up.railway.app/health
+curl -sI -H "Origin: https://www.insighte.org" \
+  https://case-manager-new-production.up.railway.app/health | grep -i access-control
 curl -sI -H "Origin: https://frontend-omega-eight-92.vercel.app" \
   https://case-manager-new-production.up.railway.app/health | grep -i access-control
-# Open https://frontend-omega-eight-92.vercel.app/login → sign in
-# Open invite link on the same host (or re-send invite after FRONTEND_URL fix)
+# Open https://www.insighte.org/therapistlogin → sign in
+# https://insighte.org should 308 → www
+# Legacy https://frontend-omega-eight-92.vercel.app should still work
+# Re-send invites after FRONTEND_URL → www.insighte.org
 ```
