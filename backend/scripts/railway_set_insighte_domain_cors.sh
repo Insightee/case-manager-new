@@ -1,17 +1,17 @@
 #!/bin/sh
-# Set Railway FRONTEND_URL + CORS_ORIGINS for production UI hosts (no SMTP changes).
+# Set Railway FRONTEND_URL + CORS_ORIGINS for insighte.org production (three parallel hosts).
 #
-# For insighte.org cutover (www + apex + legacy vercel.app), prefer:
+# Usage:
+#   export RAILWAY_API_TOKEN='...'   # Account → Tokens, Workspace = No workspace
+#   chmod +x backend/scripts/railway_set_insighte_domain_cors.sh
 #   ./backend/scripts/railway_set_insighte_domain_cors.sh
 #
-# Legacy single-host usage:
-#   export VERCEL_URL='https://frontend-omega-eight-92.vercel.app'
-#   export RAILWAY_API_TOKEN='...'
-#   ./backend/scripts/railway_set_frontend_cors.sh
+# Or with project token:
+#   export RAILWAY_PROJECT_TOKEN='...'
+#   python3 backend/scripts/railway_set_insighte_domain_cors.py
 set -eu
 
-VERCEL_URL="${VERCEL_URL:-https://www.insighte.org}"
-VERCEL_URL="${VERCEL_URL%/}"
+FRONTEND_URL="${FRONTEND_URL:-https://www.insighte.org}"
 CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:5173,https://www.insighte.org,https://insighte.org,https://frontend-omega-eight-92.vercel.app}"
 PROJECT_ID="${RAILWAY_PROJECT_ID:-ead85fb6-1826-4eed-bad9-2513e89c4854}"
 BACKEND="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,9 +25,10 @@ unset RAILWAY_TOKEN
 cd "$BACKEND"
 npx @railway/cli link --project "$PROJECT_ID" --environment production --service case-manager-new
 npx @railway/cli variable set \
-  FRONTEND_URL="$VERCEL_URL" \
+  FRONTEND_URL="${FRONTEND_URL%/}" \
   CORS_ORIGINS="$CORS_ORIGINS"
 
-echo "Set FRONTEND_URL=$VERCEL_URL"
+echo "Set FRONTEND_URL=${FRONTEND_URL%/}"
 echo "Set CORS_ORIGINS=$CORS_ORIGINS"
-echo "Restart the API: npx @railway/cli redeploy --from-source -y -s case-manager-new"
+echo "Redeploying API..."
+npx @railway/cli redeploy --from-source -y -s case-manager-new
