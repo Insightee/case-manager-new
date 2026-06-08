@@ -2,10 +2,15 @@ import { useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
+import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
 
 function formatTime(t) {
   if (!t) return '—'
   return String(t).slice(0, 5)
+}
+
+function formatSessionWhen(session) {
+  return formatSessionDisplayRange(session) || `${formatTime(session.start_time)}–${formatTime(session.end_time)}`
 }
 
 export function SessionLogHistoryRow({
@@ -54,7 +59,7 @@ export function SessionLogHistoryRow({
         <div className="ic-session-history-row__info">
           <strong>{session.scheduled_date}</strong>
           <span className="ic-session-history-row__time">
-            {formatTime(session.start_time)}–{formatTime(session.end_time)} · {session.status}
+            {formatSessionWhen(session)} · {session.status}
           </span>
           {logSummary ? (
             <SessionLogStatusBadge

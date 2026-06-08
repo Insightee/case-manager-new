@@ -1,0 +1,86 @@
+"""Session start_time/end_time use IST wall clock from actual clock-in/out."""
+
+from __future__ import annotations
+
+from datetime import date, datetime, time, timezone
+from unittest.mock import patch
+
+from sqlalchemy import select
+
+from app.core.database import SessionLocal
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+from app.models.session import Session as TherapySession
+from app.models.session import SessionMode, SessionStatus
+from app.models.user import User
+from app.services import session_service
+
+
+def test_end_session_overwrites_scheduled_times_with_ist_actuals():
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assignment = db.scalars(
+            select(CaseAssignment).where(
+                CaseAssignment.therapist_user_id == therapist.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).first()
+        assert assignment
+
+        # Scheduled morning slot (IST-style local labels)
+        checkin_utc = datetime(2026, 6, 8, 9, 30, tzinfo=timezone.utc)  # 15:00 IST
+        checkout_utc = datetime(2026, 6, 8, 10, 30, tzinfo=timezone.utc)  # 16:00 IST
+
+        session = TherapySession(
+            case_id=assignment.case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=date(2026, 6, 8),
+            start_time=time(9, 30),
+            end_time=time(10, 30),
+            mode=SessionMode.HOME,
+            status=SessionStatus.IN_PROGRESS,
+            actual_start_at=checkin_utc,
+        )
+        db.add(session)
+        db.flush()
+
+        ended = session_service.end_session(db, session, end_at=checkout_utc)
+        assert ended.start_time == time(15, 0)
+        assert ended.end_time == time(16, 0)
+    finally:
+        db.close()
+
+
+def test_start_session_sets_ist_checkin_time():
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assignment = db.scalars(
+            select(CaseAssignment).where(
+                CaseAssignment.therapist_user_id == therapist.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).first()
+        assert assignment
+
+        session = TherapySession(
+            case_id=assignment.case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=date.today(),
+            start_time=time(9, 30),
+            end_time=time(10, 30),
+            mode=SessionMode.HOME,
+            status=SessionStatus.SCHEDULED,
+        )
+        db.add(session)
+        db.flush()
+
+        checkin_utc = datetime(2026, 6, 8, 9, 31, tzinfo=timezone.utc)
+
+        with patch.object(session_service, "_now", return_value=checkin_utc):
+            started = session_service.start_session(db, session, therapist.id)
+
+        assert started.start_time == time(15, 1)  # 09:31 UTC → 15:01 IST
+        assert started.actual_start_at == checkin_utc
+    finally:
+        db.close()

@@ -2,6 +2,21 @@ import { formatSessionActualRange, todayIsoIST } from './datetime.js'
 
 export { todayIsoIST }
 
+function formatWallClock(t) {
+  if (!t) return null
+  return String(t).slice(0, 5)
+}
+
+/** Prefer actual check-in/out (IST); fall back to scheduled start_time/end_time. */
+export function formatSessionDisplayRange(session) {
+  const actual = formatSessionActualRange(session, { suffix: '' })
+  if (actual) return actual
+  const start = formatWallClock(session?.start_time)
+  const end = formatWallClock(session?.end_time)
+  if (start && end) return `${start}–${end}`
+  return start || end || null
+}
+
 export function formatSessionTimeRange(session) {
   return formatSessionActualRange(session)
 }

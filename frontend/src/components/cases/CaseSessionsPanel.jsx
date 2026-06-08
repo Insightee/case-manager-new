@@ -14,12 +14,17 @@ import { formatScheduleWhen } from '../../lib/therapistSchedule.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
 import { SessionLogHistoryRow } from '../daily-logs/SessionLogHistoryRow.jsx'
+import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 function formatTime(t) {
   if (!t) return '—'
   return String(t).slice(0, 5)
+}
+
+function formatSessionWhen(session) {
+  return formatSessionDisplayRange(session) || `${formatTime(session.start_time)}–${formatTime(session.end_time)}`
 }
 
 export function CaseSessionsPanel({
@@ -320,7 +325,7 @@ export function CaseSessionsPanel({
             {needsLog.map((s) => (
               <li key={s.id}>
                 <button type="button" className="ic-case-sessions__row ic-case-sessions__row--warn" onClick={() => openLogForm(s)}>
-                  {s.scheduled_date} · {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                  {s.scheduled_date} · {formatSessionWhen(s)}
                   <span>Submit log</span>
                 </button>
               </li>

@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.timezone import wall_clock_time_ist
 from app.core.session_rules import (
     MIN_SESSION_DURATION_ERROR,
     auto_end_reason_for_module,
@@ -98,8 +99,7 @@ def start_session(
     now = _now()
     session.status = SessionStatus.IN_PROGRESS
     session.actual_start_at = now
-    if not session.start_time:
-        session.start_time = now.time().replace(second=0, microsecond=0)
+    session.start_time = wall_clock_time_ist(now)
     if lat is not None:
         session.checkin_lat = lat
     if lng is not None:
@@ -131,9 +131,9 @@ def end_session(
             validate_session_duration_minutes(mins)
     session.status = SessionStatus.COMPLETED
     session.actual_end_at = end_time
-    session.end_time = end_time.time().replace(second=0, microsecond=0)
-    if session.actual_start_at and not session.start_time:
-        session.start_time = _aware(session.actual_start_at).time().replace(second=0, microsecond=0)
+    session.end_time = wall_clock_time_ist(end_time)
+    if session.actual_start_at:
+        session.start_time = wall_clock_time_ist(_aware(session.actual_start_at))
     session.auto_ended = auto_ended
     session.auto_end_reason = auto_end_reason if auto_ended else None
     if lat is not None:
@@ -214,8 +214,8 @@ def create_manual_session(
         case_id=case_id,
         therapist_user_id=therapist_user_id,
         scheduled_date=scheduled_date,
-        start_time=actual_start_at.time().replace(second=0, microsecond=0),
-        end_time=actual_end_at.time().replace(second=0, microsecond=0),
+        start_time=wall_clock_time_ist(actual_start_at),
+        end_time=wall_clock_time_ist(actual_end_at),
         mode=mode,
         status=SessionStatus.COMPLETED,
         actual_start_at=actual_start_at,

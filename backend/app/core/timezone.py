@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -21,3 +21,12 @@ def ensure_utc_aware(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=ZoneInfo("UTC"))
     return dt
+
+
+def wall_clock_time_ist(dt: datetime | None) -> time | None:
+    """IST wall-clock time for session start_time / end_time columns."""
+    if dt is None:
+        return None
+    aware = ensure_utc_aware(dt)
+    assert aware is not None
+    return aware.astimezone(IST).time().replace(second=0, microsecond=0)
