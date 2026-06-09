@@ -117,6 +117,12 @@ def default_clinical_service_ids(db=None) -> list[str]:
     return sorted(active_service_category_ids(db))
 
 
+def therapist_default_service_ids(db=None) -> list[str]:
+    """Default services pre-selected when onboarding a therapist."""
+    clinical = set(default_clinical_service_ids(db))
+    return [service_id for service_id in FIXED_CLINICAL_IDS if service_id in clinical]
+
+
 def role_defaults_for_api(db=None) -> dict[str, dict[str, list[str]]]:
     """Role → default service ids and org capability ids."""
     clinical = default_clinical_service_ids(db)
@@ -131,7 +137,7 @@ def role_defaults_for_api(db=None) -> dict[str, dict[str, list[str]]]:
         "VIEWER": {"services": list(clinical), "org": []},
         "SUPERVISOR": {"services": list(clinical), "org": []},
         "SCHOOL_COORDINATOR": {"services": ["shadow_support"] if "shadow_support" in clinical else clinical[:1], "org": []},
-        "THERAPIST": {"services": list(clinical), "org": []},
+        "THERAPIST": {"services": therapist_default_service_ids(db), "org": []},
     }
 
 

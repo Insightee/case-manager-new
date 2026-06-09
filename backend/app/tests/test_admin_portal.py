@@ -99,6 +99,13 @@ def test_module_catalog_and_scoped_admin():
         else admin_defaults
     )
     assert "homecare" in service_defaults
+    therapist_defaults = catalog.json()["role_defaults"]["THERAPIST"]
+    therapist_services = (
+        therapist_defaults.get("services", therapist_defaults)
+        if isinstance(therapist_defaults, dict)
+        else therapist_defaults
+    )
+    assert therapist_services == ["homecare", "shadow_support"]
 
     scoped = _login("admin@demo.com")
     scoped_headers = {"Authorization": f"Bearer {scoped}"}

@@ -3,11 +3,13 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
 import { AdminPanel, CopyLinkButton, AdminInviteRowActions, PeopleBulkToolbar, PeopleSelectCheckbox } from './ui/index.js'
 
+const THERAPIST_DEFAULT_SERVICES = ['homecare', 'shadow_support']
+
 function defaultTherapistServices(roleDefaults) {
   const fromRole = roleDefaults?.THERAPIST
   if (fromRole?.services?.length) return [...fromRole.services]
   if (Array.isArray(fromRole) && fromRole.length) return [...fromRole]
-  return []
+  return [...THERAPIST_DEFAULT_SERVICES]
 }
 
 function buildEmptyForm(roleDefaults) {
