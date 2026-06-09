@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.child import Child
 from app.models.attachment import Attachment
-from app.models.case import Case
+from app.models.case import Case, CaseStatus
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.parent_billing import ParentBillingStatement
 from app.models.report import MonthlyReport, ReportStatus
@@ -22,6 +22,11 @@ from app.services import address_service
 from app.services.address_service import user_home_address_read, user_school_address_read
 
 PARENT_VISIBLE = (VisibilityStatus.APPROVED_FOR_PARENT, VisibilityStatus.SHARED_WITH_PARENT)
+
+PARENT_PORTAL_ACTIVE_CASE_STATUSES = (
+    CaseStatus.ACTIVE,
+    CaseStatus.PENDING_ALLOTMENT,
+)
 
 
 def _unique_children(children: list[Child]) -> list[Child]:
@@ -337,7 +342,12 @@ def list_parent_cases(db: Session, user: User) -> list[dict]:
     if not child_ids:
         return []
     cases = db.scalars(
-        select(Case).where(Case.child_id.in_(child_ids)).options(selectinload(Case.child))
+        select(Case)
+        .where(
+            Case.child_id.in_(child_ids),
+            Case.status.in_(PARENT_PORTAL_ACTIVE_CASE_STATUSES),
+        )
+        .options(selectinload(Case.child))
     ).all()
     case_ids = [c.id for c in cases]
     therapists = _batch_active_therapist_names(db, case_ids)

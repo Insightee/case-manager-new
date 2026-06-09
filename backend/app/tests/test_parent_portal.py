@@ -31,6 +31,89 @@ def test_parent_cases_enriched():
     c = cases[0]
     assert "therapistName" in c
     assert "latestApprovedReportMonth" in c
+    for row in cases:
+        assert row["status"] in ("ACTIVE", "PENDING_ALLOTMENT")
+
+
+def test_parent_cases_hide_closed_and_suspended():
+    import uuid
+
+    suffix = uuid.uuid4().hex[:8]
+    parent_email = f"closed-case-{suffix}@demo.com"
+    parent_password = "demo123"
+    admin_headers = _login("superadmin@demo.com")
+
+    fam = client.post(
+        "/api/v1/admin/families",
+        headers=admin_headers,
+        json={
+            "parent_email": parent_email,
+            "parent_full_name": "Closed Case Parent",
+            "child": {"first_name": "Closed", "last_name": suffix},
+            "send_invite": False,
+        },
+    )
+    assert fam.status_code == 201, fam.text
+    child_id = fam.json()["childId"]
+    parent_user_id = fam.json()["parentUserId"]
+
+    pwd = client.post(
+        f"/api/v1/admin/users/{parent_user_id}/set-password",
+        headers=admin_headers,
+        json={"password": parent_password},
+    )
+    assert pwd.status_code == 200, pwd.text
+
+    therapists = client.get("/api/v1/admin/users/directory?roles=THERAPIST", headers=admin_headers)
+    assert therapists.status_code == 200, therapists.text
+    therapist_rows = therapists.json()
+    assert therapist_rows, "seed should include at least one therapist"
+    therapist_id = therapist_rows[0]["id"]
+
+    allot = client.post(
+        "/api/v1/admin/cases/allot",
+        headers=admin_headers,
+        json={
+            "child_id": child_id,
+            "service_type": "Shadow support",
+            "product_module": "shadow_support",
+            "billing_type": "PER_SESSION",
+            "compensation_mode": "PERCENTAGE",
+            "client_billing_mode": "POSTPAID",
+            "client_rate_per_session_inr": 1200,
+            "pay_share_pct": 60,
+            "therapist_user_id": therapist_id,
+        },
+    )
+    assert allot.status_code == 201, allot.text
+    case_id = allot.json()["case"]["id"]
+
+    activate = client.post(
+        f"/api/v1/admin/cases/{case_id}/activate-allotment",
+        headers=admin_headers,
+    )
+    assert activate.status_code == 200, activate.text
+
+    parent = _login(parent_email, parent_password)
+    visible_before = client.get("/api/v1/parent/cases", headers=parent).json()
+    assert any(row["id"] == case_id for row in visible_before)
+
+    close = client.patch(
+        f"/api/v1/cases/{case_id}",
+        headers=admin_headers,
+        json={"status": "CLOSED"},
+    )
+    assert close.status_code == 200, close.text
+
+    visible = client.get("/api/v1/parent/cases", headers=parent).json()
+    assert all(row["id"] != case_id for row in visible)
+
+    home = client.get("/api/v1/parent/home", headers=parent).json()
+    assert all(row["id"] != case_id for row in home["cases"])
+    assert home["stats"]["case_count"] == len(visible)
+
+    detail = client.get(f"/api/v1/parent/cases/{case_id}", headers=parent)
+    assert detail.status_code == 200
 
 
 def test_parent_report_detail_and_other_family_denied():

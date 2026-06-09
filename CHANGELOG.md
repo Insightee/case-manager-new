@@ -36,6 +36,7 @@ Therapist org IDs on People and duplicate-child prevention on family onboarding.
 - Duplicate-child guard on `POST /api/v1/admin/families` and `POST /api/v1/admin/children`: blocks a second child profile for the same parent when first name, last name, and date of birth match an existing linked child.
 
 ### Fixed
+- Parent portal **Your Active Cases** listed closed and suspended cases; `/api/v1/parent/cases` and `/api/v1/parent/home` now return only `ACTIVE` and `PENDING_ALLOTMENT` cases (direct case URLs still work for history).
 - Admin family onboarding could create duplicate client rows for one parent email (same child entered twice); API now returns 400 with the existing child id.
 
 ---
