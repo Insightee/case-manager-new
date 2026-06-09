@@ -63,9 +63,18 @@ Loaded from environment via [`backend/app/core/config.py`](../backend/app/core/c
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `CORS_ORIGINS` | yes (prod) | `http://localhost:5173,...` | Comma-separated browser origins allowed for API calls. Include production Vercel URL. |
+| `CORS_ORIGINS` | yes (prod) | `http://localhost:5173,...` | Comma-separated browser origins allowed for API calls. Include **every** active production UI host (custom domains + legacy `vercel.app`). Custom domains like `insighte.org` are **not** covered by the default regex. |
 | `CORS_ORIGIN_REGEX` | no | auto in prod | Optional regex for extra origins (e.g. Vercel previews). If unset in production, defaults to `https://frontend-*.vercel.app`. |
-| `FRONTEND_URL` | yes (prod) | `http://localhost:5173` | Base URL for invite links, password reset, booking emails — must match Vercel production domain. |
+| `FRONTEND_URL` | yes (prod) | `http://localhost:5173` | Base URL for invite links, password reset, booking emails — use the **canonical** production host (`https://www.insighte.org`). |
+
+**Production example (three parallel Vercel domains):**
+
+```
+FRONTEND_URL=https://www.insighte.org
+CORS_ORIGINS=http://localhost:5173,https://www.insighte.org,https://insighte.org,https://frontend-omega-eight-92.vercel.app
+```
+
+Remove a host from `CORS_ORIGINS` only after removing it from Vercel Domains. Detail: [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md#custom-domain-insighteorg--three-parallel-production-hosts).
 
 ### Email (SMTP / ZeptoMail)
 
