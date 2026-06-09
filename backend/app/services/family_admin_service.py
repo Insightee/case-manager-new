@@ -115,6 +115,45 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
     return result
 
 
+def _child_identity_key(first_name: str, last_name: str, date_of_birth) -> tuple[str, str, object]:
+    return (first_name.strip().lower(), last_name.strip().lower(), date_of_birth)
+
+
+def find_duplicate_child_for_parent(
+    pg: ParentGuardian,
+    *,
+    first_name: str,
+    last_name: str,
+    date_of_birth=None,
+) -> Child | None:
+    """Return an existing child on this parent with the same name and date of birth."""
+    target = _child_identity_key(first_name, last_name, date_of_birth)
+    for child in pg.children:
+        if _child_identity_key(child.first_name, child.last_name, child.date_of_birth) == target:
+            return child
+    return None
+
+
+def assert_no_duplicate_child_for_parent(
+    pg: ParentGuardian,
+    *,
+    first_name: str,
+    last_name: str,
+    date_of_birth=None,
+) -> None:
+    duplicate = find_duplicate_child_for_parent(
+        pg,
+        first_name=first_name,
+        last_name=last_name,
+        date_of_birth=date_of_birth,
+    )
+    if duplicate:
+        raise ValueError(
+            f"This parent already has a child profile for {duplicate.full_name}"
+            f" (child id {duplicate.id}). Use the existing record or add a different child."
+        )
+
+
 def create_child(db: Session, first_name: str, last_name: str, date_of_birth=None) -> Child:
     child = Child(first_name=first_name.strip(), last_name=last_name.strip(), date_of_birth=date_of_birth)
     db.add(child)
@@ -144,12 +183,22 @@ def create_family(
         if RoleName.PARENT.value not in existing.role_names:
             primary = existing.role_names[0].replace("_", " ").title() if existing.role_names else "another role"
             raise ValueError(f"User already present as {primary}.")
-        child = create_child(db, child_first, child_last, child_dob)
-        pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == existing.id)).first()
+        pg = db.scalars(
+            select(ParentGuardian)
+            .where(ParentGuardian.user_id == existing.id)
+            .options(selectinload(ParentGuardian.children))
+        ).first()
         if not pg:
             pg = ParentGuardian(user_id=existing.id)
             db.add(pg)
             db.flush()
+        assert_no_duplicate_child_for_parent(
+            pg,
+            first_name=child_first,
+            last_name=child_last,
+            date_of_birth=child_dob,
+        )
+        child = create_child(db, child_first, child_last, child_dob)
         if child not in pg.children:
             pg.children.append(child)
         db.flush()
@@ -347,12 +396,22 @@ def add_child_to_parent(
     user = db.get(User, parent_user_id)
     if not user or RoleName.PARENT.value not in user.role_names:
         raise ValueError("Parent user not found")
-    child = create_child(db, first_name, last_name, date_of_birth)
-    pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == user.id)).first()
+    pg = db.scalars(
+        select(ParentGuardian)
+        .where(ParentGuardian.user_id == user.id)
+        .options(selectinload(ParentGuardian.children))
+    ).first()
     if not pg:
         pg = ParentGuardian(user_id=user.id)
         db.add(pg)
         db.flush()
+    assert_no_duplicate_child_for_parent(
+        pg,
+        first_name=first_name,
+        last_name=last_name,
+        date_of_birth=date_of_birth,
+    )
+    child = create_child(db, first_name, last_name, date_of_birth)
     if child not in pg.children:
         pg.children.append(child)
     db.flush()

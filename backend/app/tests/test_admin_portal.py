@@ -561,7 +561,73 @@ def test_admin_families_search_and_link_by_email():
     assert fam2.json().get("linkedExistingParent") is True
 
 
-def test_cm_meetings_bookable_cases_for_case_manager():
+def test_admin_create_family_rejects_duplicate_child_for_existing_parent():
+    import uuid
+
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    suffix = uuid.uuid4().hex[:8]
+    email = f"dup-child-{suffix}@demo.com"
+    child = {"first_name": "Ida", "last_name": f"Banerjee{suffix}"}
+    fam = client.post(
+        "/api/v1/admin/families",
+        headers=headers,
+        json={
+            "parent_email": email,
+            "parent_full_name": "Duplicate Parent",
+            "child": child,
+            "send_invite": False,
+        },
+    )
+    assert fam.status_code == 201, fam.text
+    first_child_id = fam.json()["childId"]
+
+    dup = client.post(
+        "/api/v1/admin/families",
+        headers=headers,
+        json={
+            "parent_email": email,
+            "parent_full_name": "Duplicate Parent",
+            "child": child,
+            "send_invite": False,
+        },
+    )
+    assert dup.status_code == 400, dup.text
+    assert str(first_child_id) in dup.json()["detail"]
+    assert "already has a child profile" in dup.json()["detail"]
+
+
+def test_admin_create_child_rejects_duplicate_for_parent():
+    import uuid
+
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    suffix = uuid.uuid4().hex[:8]
+    email = f"dup-add-{suffix}@demo.com"
+    fam = client.post(
+        "/api/v1/admin/families",
+        headers=headers,
+        json={
+            "parent_email": email,
+            "parent_full_name": "Add Child Parent",
+            "child": {"first_name": "Sam", "last_name": suffix},
+            "send_invite": False,
+        },
+    )
+    assert fam.status_code == 201, fam.text
+    parent_user_id = fam.json()["parentUserId"]
+
+    dup = client.post(
+        "/api/v1/admin/children",
+        headers=headers,
+        json={
+            "parent_user_id": parent_user_id,
+            "first_name": "Sam",
+            "last_name": suffix,
+        },
+    )
+    assert dup.status_code == 400, dup.text
+    assert "already has a child profile" in dup.json()["detail"]
     cm_token = _login("casemanager@demo.com")
     cm_headers = {"Authorization": f"Bearer {cm_token}"}
     listed = client.get("/api/v1/cm-meetings/bookable-cases", headers=cm_headers)
