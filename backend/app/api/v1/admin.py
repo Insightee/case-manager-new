@@ -1086,10 +1086,15 @@ def sessions_analytics(
             "end_time": s.end_time.isoformat() if s.end_time else None,
             "actual_start_at": s.actual_start_at.isoformat() if s.actual_start_at else None,
             "actual_end_at": s.actual_end_at.isoformat() if s.actual_end_at else None,
+            "edited_start_at": s.edited_start_at.isoformat() if getattr(s, "edited_start_at", None) else None,
+            "edited_end_at": s.edited_end_at.isoformat() if getattr(s, "edited_end_at", None) else None,
+            "actual_times_edit_reason": getattr(s, "actual_times_edit_reason", None),
             "mode": s.mode.value if hasattr(s.mode, "value") else s.mode,
             "status": s.status.value if hasattr(s.status, "value") else s.status,
             "duration_mins": duration_mins,
             "has_daily_log": s.daily_log is not None,
+            "actual_times_edited": bool(getattr(s, "actual_times_edited", False)),
+            "duplicate_day_session": bool(getattr(s, "is_additional_visit", False)),
         })
 
     return {

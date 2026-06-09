@@ -1,5 +1,6 @@
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
+import { formatClockRange, formatEditedRange, formatScheduledRange } from '../../lib/sessionTimes.js'
 
 export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'attendance_status', label: 'Attendance' },
@@ -70,6 +71,34 @@ export function SessionLogReadOnly({
           Rejected
           {log.review_note ? `: ${log.review_note}` : '.'}
         </p>
+      ) : null}
+      {isAdmin && session ? (
+        <dl className="admin-session-log-detail__times" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', margin: '0 0 12px', fontSize: '0.8125rem' }}>
+          {formatScheduledRange(session) ? (
+            <>
+              <dt style={{ color: '#64748b' }}>Scheduled</dt>
+              <dd style={{ margin: 0, fontWeight: 600 }}>{formatScheduledRange(session)}</dd>
+            </>
+          ) : null}
+          {formatClockRange(session) ? (
+            <>
+              <dt style={{ color: '#64748b' }}>Clock</dt>
+              <dd style={{ margin: 0, fontWeight: 600 }}>{formatClockRange(session)}</dd>
+            </>
+          ) : null}
+          {formatEditedRange(session) ? (
+            <>
+              <dt style={{ color: '#64748b' }}>Corrected</dt>
+              <dd style={{ margin: 0, fontWeight: 600, color: '#6d28d9' }}>{formatEditedRange(session)}</dd>
+            </>
+          ) : null}
+          {session.actual_times_edit_reason || log?.actual_times_edit_reason ? (
+            <>
+              <dt style={{ color: '#64748b' }}>Edit reason</dt>
+              <dd style={{ margin: 0 }}>{session.actual_times_edit_reason || log.actual_times_edit_reason}</dd>
+            </>
+          ) : null}
+        </dl>
       ) : null}
       <dl className={dlClass}>
         {SESSION_LOG_READONLY_FIELDS.map(({ key, label }) => {

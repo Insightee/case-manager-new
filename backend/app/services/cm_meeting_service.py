@@ -155,6 +155,45 @@ def fetch_cm_meetings_for_user(
     return [m for m in rows if user_can_view_meeting(m, user_id)]
 
 
+def fetch_pending_completion_for_therapist(
+    db: Session,
+    therapist_user_id: int,
+    *,
+    limit: int = 10,
+) -> list[CaseManagerMeeting]:
+    """Past-due scheduled CM meetings the therapist attended but has not marked complete."""
+    from app.core.timezone import today_ist
+
+    today = today_ist()
+    stmt = (
+        select(CaseManagerMeeting)
+        .where(
+            CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
+            CaseManagerMeeting.scheduled_date < today,
+        )
+        .order_by(CaseManagerMeeting.scheduled_date.asc())
+        .limit(50)
+    )
+    rows = db.scalars(stmt).all()
+    visible = [m for m in rows if user_can_view_meeting(m, therapist_user_id)]
+    return visible[:limit]
+
+
+def meeting_to_pending_dict(meeting: CaseManagerMeeting, db: Session) -> dict[str, Any]:
+    case = db.get(Case, meeting.case_id) if meeting.case_id else None
+    child_name = case.child.full_name if case and case.child else None
+    return {
+        "id": meeting.id,
+        "case_id": meeting.case_id,
+        "case_code": case.case_code if case else None,
+        "child_name": child_name,
+        "scheduled_date": meeting.scheduled_date.isoformat() if meeting.scheduled_date else None,
+        "scheduled_time": meeting.scheduled_time.strftime("%H:%M") if meeting.scheduled_time else None,
+        "title": meeting.title or _meeting_type_label(meeting.meeting_type),
+        "meeting_type": meeting.meeting_type.value if meeting.meeting_type else None,
+    }
+
+
 def fetch_cm_meetings_for_therapist_calendar(
     db: Session,
     therapist_user_id: int,

@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import settings
 from app.core.module_access import get_allowed_case_product_modules
 from app.core.permissions import case_scope_check, user_has_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
@@ -18,6 +19,10 @@ from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.services import case_service, log_service, notification_service
 from app.services import parent_service
+from app.services.email.service import (
+    session_log_published_parent_email,
+    session_log_submitted_parent_email,
+)
 
 AdminLogStatus = Literal["missing", "pending", "submitted", "approved"]
 
@@ -102,6 +107,7 @@ def create_therapist_session_log(db: Session, user: User, payload: dict) -> Dail
         raise ValueError("Case access denied")
     log = log_service.create_daily_log(db, **payload)
     notify_case_managers_log_submitted(db, log, therapist=user)
+    notify_parents_session_log_submitted(db, log, therapist=user)
     return log
 
 
@@ -149,11 +155,71 @@ def parent_user_ids_for_case(db: Session, case: Case) -> list[int]:
     return list(dict.fromkeys(rows))
 
 
+def _parent_portal_logs_url(case_id: int | None) -> str:
+    base = settings.frontend_url.rstrip("/")
+    if case_id:
+        return f"{base}/parent/session-logs?case_id={case_id}"
+    return f"{base}/parent/session-logs"
+
+
+def notify_parents_session_log_submitted(
+    db: Session,
+    log: DailyLog,
+    *,
+    therapist: User | None = None,
+) -> int:
+    """Email parents when a therapist submits a session log (pending CM review)."""
+    session = log.session or db.get(TherapySession, log.session_id)
+    if not session:
+        return 0
+    case = session.case or case_service.get_case(db, session.case_id)
+    if not case:
+        return 0
+    child_name = case.child.full_name if case.child else "your child"
+    if therapist and therapist.full_name:
+        therapist_name = therapist.full_name
+    else:
+        therapist_user = db.get(User, session.therapist_user_id) if session.therapist_user_id else None
+        therapist_name = (therapist_user.full_name if therapist_user else None) or parent_service.active_therapist_name(
+            db, case.id
+        ) or "your therapist"
+    session_date = session.scheduled_date.isoformat()
+    portal_url = _parent_portal_logs_url(case.id)
+    title = f"Session log submitted for {child_name}"
+    body = (
+        f"{therapist_name} submitted a session log for {child_name} on {session_date}. "
+        f"It is pending review and will appear in your portal once approved."
+    )
+    count = 0
+    for uid in parent_user_ids_for_case(db, case):
+        notification_service.create_notification(
+            db,
+            user_id=uid,
+            title=title,
+            body=body,
+            entity_type="daily_log",
+            entity_id=log.id,
+        )
+        parent_user = db.get(User, uid)
+        if parent_user and parent_user.email:
+            session_log_submitted_parent_email(
+                to=parent_user.email,
+                parent_name=parent_user.full_name or parent_user.email,
+                child_name=child_name,
+                therapist_name=therapist_name,
+                session_date=session_date,
+                portal_url=portal_url,
+                db=db,
+            )
+        count += 1
+    return count
+
+
 def notify_parents_session_log_approved(
     db: Session,
     log: DailyLog,
     *,
-    send_email: bool = False,
+    send_email: bool = True,
 ) -> int:
     session = log.session or db.get(TherapySession, log.session_id)
     if not session:
@@ -163,9 +229,11 @@ def notify_parents_session_log_approved(
         return 0
     child_name = case.child.full_name if case.child else "your child"
     therapist_name = parent_service.active_therapist_name(db, case.id) or "your therapist"
+    session_date = session.scheduled_date.isoformat()
+    portal_url = _parent_portal_logs_url(case.id)
     title = f"Session update for {child_name}"
     body = (
-        f"A session log from {therapist_name} on {session.scheduled_date.isoformat()} "
+        f"A session log from {therapist_name} on {session_date} "
         f"has been approved and is ready to view in the parent portal."
     )
     count = 0
@@ -179,6 +247,18 @@ def notify_parents_session_log_approved(
             entity_type="daily_log",
             entity_id=log.id,
         )
+        if send_email:
+            parent_user = db.get(User, uid)
+            if parent_user and parent_user.email:
+                session_log_published_parent_email(
+                    to=parent_user.email,
+                    parent_name=parent_user.full_name or parent_user.email,
+                    child_name=child_name,
+                    therapist_name=therapist_name,
+                    session_date=session_date,
+                    portal_url=portal_url,
+                    db=db,
+                )
         count += 1
     if count:
         log.parent_notified_at = now

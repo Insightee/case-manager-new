@@ -33,6 +33,8 @@ def test_therapist_home():
     assert "stats" in board
     assert "sections" in board
     assert data["stats"]["case_count"] >= 0
+    assert "pending_cm_meetings" in data
+    assert isinstance(data["pending_cm_meetings"], list)
 
 
 def test_therapist_sessions_workspace():

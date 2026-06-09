@@ -536,6 +536,62 @@ def enqueue_portal_invite_email(
     )
 
 
+def session_log_submitted_parent_email(
+    *,
+    to: str,
+    parent_name: str,
+    child_name: str,
+    therapist_name: str,
+    session_date: str,
+    portal_url: str,
+    db: Session | None = None,
+) -> None:
+    payload = {
+        "parent_name": parent_name,
+        "child_name": child_name,
+        "therapist_name": therapist_name,
+        "session_date": session_date,
+        "portal_url": portal_url,
+    }
+    subject, body_text, body_html = render_template("session_log_submitted", payload)
+    send_email(
+        to=to,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        event=EmailEvent.SESSION_LOG_SUBMITTED,
+        db=db,
+    )
+
+
+def session_log_published_parent_email(
+    *,
+    to: str,
+    parent_name: str,
+    child_name: str,
+    therapist_name: str,
+    session_date: str,
+    portal_url: str,
+    db: Session | None = None,
+) -> None:
+    payload = {
+        "parent_name": parent_name,
+        "child_name": child_name,
+        "therapist_name": therapist_name,
+        "session_date": session_date,
+        "portal_url": portal_url,
+    }
+    subject, body_text, body_html = render_template("session_log_published", payload)
+    send_email(
+        to=to,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        event=EmailEvent.SESSION_LOG_PUBLISHED,
+        db=db,
+    )
+
+
 def leave_sessions_cancelled_email(
     *,
     to: str,
@@ -543,15 +599,30 @@ def leave_sessions_cancelled_email(
     date_range: str,
     lines: list[str],
     portal_url: str,
+    parent_name: str = "there",
     db: Session | None = None,
 ) -> None:
-    detail = "\n".join(f"• {ln}" for ln in lines) if lines else "No individual session lines."
-    body = (
-        f"Leave for {therapist_name} ({date_range}) is confirmed.\n\n"
-        f"The following session(s) were cancelled:\n{detail}\n\n"
-        f"{portal_url}\n"
+    detail = (
+        "The following session(s) were cancelled:\n" + "\n".join(f"• {ln}" for ln in lines)
+        if lines
+        else "The therapist will be unavailable on these dates."
     )
-    send_email(to=to, subject="Sessions cancelled — therapist on leave", body_text=body, db=db)
+    payload = {
+        "parent_name": parent_name,
+        "therapist_name": therapist_name,
+        "date_range": date_range,
+        "detail": detail,
+        "portal_url": portal_url,
+    }
+    subject, body_text, body_html = render_template("leave_approved_parent", payload)
+    send_email(
+        to=to,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        event=EmailEvent.LEAVE_APPROVED,
+        db=db,
+    )
 
 
 def leave_approved_therapist_email(
@@ -563,13 +634,21 @@ def leave_approved_therapist_email(
     portal_url: str,
     db: Session | None = None,
 ) -> None:
-    body = (
-        f"Hi {therapist_name},\n\n"
-        f"Your leave from {date_range} has been approved.\n"
-        f"{cancelled_count} booked session(s) were cancelled and clients were notified.\n\n"
-        f"{portal_url}\n"
+    payload = {
+        "therapist_name": therapist_name,
+        "date_range": date_range,
+        "cancelled_count": cancelled_count,
+        "portal_url": portal_url,
+    }
+    subject, body_text, body_html = render_template("leave_approved_therapist", payload)
+    send_email(
+        to=to,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        event=EmailEvent.LEAVE_APPROVED,
+        db=db,
     )
-    send_email(to=to, subject="Leave approved", body_text=body, db=db)
 
 
 def leave_admin_summary_email(

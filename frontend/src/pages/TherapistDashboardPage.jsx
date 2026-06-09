@@ -12,7 +12,6 @@ export function TherapistDashboardPage() {
   const { user } = useAuth()
   const { data: home, isLoading, isError, error, refetch } = useTherapistHome()
   const { actions, personalized, trackClick } = useTherapistFrequentActions(4)
-  const primary = actions[0]
   const secondary = actions.slice(1)
 
   const greeting = (() => {
@@ -28,6 +27,27 @@ export function TherapistDashboardPage() {
   const schedule = home?.schedule_preview || []
   const criticalCases = (home?.cases_board?.allCases || []).filter((c) => c.critical).slice(0, 5)
   const pendingAssignments = home?.pending_assignment_acceptance || []
+  const pendingCmMeetings = home?.pending_cm_meetings || []
+  const pendingActions = [
+    ...needsLog.map((s) => ({
+      key: `log-${s.id}`,
+      to: `/therapist/logs?session=${s.id}`,
+      eyebrow: 'Session log due',
+      title: s.child_name || s.case_code || 'Client',
+      meta: s.scheduled_date ? `Visit · ${s.scheduled_date}` : 'Completed visit',
+      tone: 'primary',
+      icon: 'log',
+    })),
+    ...pendingCmMeetings.map((m) => ({
+      key: `cm-${m.id}`,
+      to: '/therapist/cm-meetings',
+      eyebrow: 'CM meeting notes',
+      title: m.child_name || m.case_code || 'Client',
+      meta: `${m.scheduled_date}${m.scheduled_time ? ` · ${String(m.scheduled_time).slice(0, 5)}` : ''}`,
+      tone: 'amber',
+      icon: 'meeting',
+    })),
+  ]
   const [acceptBusy, setAcceptBusy] = useState(null)
   const [acceptErr, setAcceptErr] = useState('')
 
@@ -45,21 +65,6 @@ export function TherapistDashboardPage() {
         {active ? (
           <Link to="/therapist/logs" className="therapist-dashboard__cta">
             Active session — open logs
-          </Link>
-        ) : needsLog[0] ? (
-          <Link
-            to={`/therapist/logs?session=${needsLog[0].id}`}
-            className="therapist-dashboard__cta"
-          >
-            Submit log
-          </Link>
-        ) : primary ? (
-          <Link
-            to={primary.to}
-            className="therapist-dashboard__cta"
-            onClick={() => trackClick(primary.id)}
-          >
-            {primary.label}
           </Link>
         ) : null}
       </header>
@@ -146,16 +151,27 @@ export function TherapistDashboardPage() {
           </section>
         ) : null}
 
-        {needsLog.length > 0 ? (
-          <section className="therapist-home-panel" aria-labelledby="needs-log-title">
-            <h3 id="needs-log-title">Needs log</h3>
-            <ul className="therapist-home-list">
-              {needsLog.map((s) => (
-                <li key={s.id}>
-                  <Link to={`/therapist/logs?session=${s.id}`}>
-                    <strong>{s.child_name || s.case_code}</strong>
-                    <span>
-                      {s.scheduled_date} · {String(s.start_time || '').slice(0, 5)}
+        {pendingActions.length > 0 ? (
+          <section className="therapist-home-panel" aria-labelledby="pending-actions-title">
+            <h3 id="pending-actions-title">Pending actions</h3>
+            <ul className="therapist-pending-actions">
+              {pendingActions.map((item) => (
+                <li key={item.key}>
+                  <Link
+                    to={item.to}
+                    className={`therapist-pending-action therapist-pending-action--${item.tone}`}
+                  >
+                    <span
+                      className={`therapist-pending-action__icon therapist-pending-action__icon--${item.icon}`}
+                      aria-hidden
+                    />
+                    <span className="therapist-pending-action__body">
+                      <span className="therapist-pending-action__eyebrow">{item.eyebrow}</span>
+                      <strong className="therapist-pending-action__title">{item.title}</strong>
+                      <span className="therapist-pending-action__meta">{item.meta}</span>
+                    </span>
+                    <span className="therapist-pending-action__chevron" aria-hidden>
+                      →
                     </span>
                   </Link>
                 </li>
@@ -201,11 +217,34 @@ export function TherapistDashboardPage() {
         <div className="therapist-quick-actions__head">
           <h3 id="therapist-shortcuts-title">More actions</h3>
           <p>
-            {personalized
-              ? 'Shortcuts ranked by what you use most often'
-              : 'Popular shortcuts'}
+            {pendingActions.length > 0
+              ? `${pendingActions.length} pending item${pendingActions.length === 1 ? '' : 's'} need your attention`
+              : personalized
+                ? 'Shortcuts ranked by what you use most often'
+                : 'Popular shortcuts'}
           </p>
         </div>
+        {pendingActions.length > 0 ? (
+          <ul className="therapist-quick-actions__grid" style={{ marginBottom: 12 }}>
+            {pendingActions.slice(0, 4).map((item) => (
+              <li key={`pending-${item.key}`}>
+                <Link
+                  to={item.to}
+                  className={`therapist-quick-actions__tile therapist-quick-actions__tile--${item.tone}`}
+                >
+                  <span className="therapist-quick-actions__icon" aria-hidden>
+                    {item.icon}
+                  </span>
+                  <span className="therapist-quick-actions__tile-body">
+                    <strong>{item.eyebrow}</strong>
+                    <span>{item.title} · {item.meta}</span>
+                  </span>
+                  <span className="therapist-quick-actions__badge">Pending</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <ul className="therapist-quick-actions__grid">
           {secondary.map((action) => (
             <li key={action.id}>

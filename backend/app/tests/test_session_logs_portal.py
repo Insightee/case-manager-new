@@ -174,3 +174,53 @@ def test_parent_sees_only_approved_session_logs():
     assert res.status_code == 200
     for row in res.json():
         assert row.get("submitted_at")
+
+
+def test_daily_log_submission_emails_parent(monkeypatch):
+    from app.tests.session_helpers import (
+        backdate_in_progress_session,
+        end_active_sessions_for_therapist,
+        ensure_scheduled_sessions_for_therapist,
+    )
+
+    submitted: list[dict] = []
+    published: list[dict] = []
+
+    monkeypatch.setattr(
+        "app.services.session_log_service.session_log_submitted_parent_email",
+        lambda **kw: submitted.append(kw),
+    )
+    monkeypatch.setattr(
+        "app.services.session_log_service.session_log_published_parent_email",
+        lambda **kw: published.append(kw),
+    )
+
+    end_active_sessions_for_therapist()
+    th_headers = _login("therapist@demo.com")
+    session_ids = ensure_scheduled_sessions_for_therapist(min_count=1)
+    if not session_ids:
+        pytest.skip("No scheduled sessions")
+    sid = session_ids[0]
+    assert client.post(f"/api/v1/sessions/{sid}/start", headers=th_headers).status_code == 200
+    backdate_in_progress_session(sid)
+    assert client.post(f"/api/v1/sessions/{sid}/end", headers=th_headers).status_code == 200
+
+    created = client.post(
+        "/api/v1/daily-logs",
+        headers=th_headers,
+        json={
+            "session_id": sid,
+            "attendance_status": "PRESENT",
+            "activities_done": "Email test activity",
+            "parent_notes": "Visible to parent after approval",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert submitted, "Expected parent email on session log submission"
+    assert submitted[0].get("to")
+
+    log_id = created.json()["id"]
+    cm_headers = _login("casemanager@demo.com")
+    approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=cm_headers)
+    assert approved.status_code == 200
+    assert published, "Expected parent email on session log approval"

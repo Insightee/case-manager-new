@@ -1,4 +1,4 @@
-"""Session start_time/end_time use IST wall clock from actual clock-in/out."""
+"""Session start_time/end_time preserve booked slot; clock lives in actual_*."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from app.models.user import User
 from app.services import session_service
 
 
-def test_end_session_overwrites_scheduled_times_with_ist_actuals():
+def test_end_session_preserves_scheduled_slot_times():
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
@@ -27,9 +27,8 @@ def test_end_session_overwrites_scheduled_times_with_ist_actuals():
         ).first()
         assert assignment
 
-        # Scheduled morning slot (IST-style local labels)
-        checkin_utc = datetime(2026, 6, 8, 9, 30, tzinfo=timezone.utc)  # 15:00 IST
-        checkout_utc = datetime(2026, 6, 8, 10, 30, tzinfo=timezone.utc)  # 16:00 IST
+        checkin_utc = datetime(2026, 6, 8, 9, 30, tzinfo=timezone.utc)
+        checkout_utc = datetime(2026, 6, 8, 10, 30, tzinfo=timezone.utc)
 
         session = TherapySession(
             case_id=assignment.case_id,
@@ -45,13 +44,15 @@ def test_end_session_overwrites_scheduled_times_with_ist_actuals():
         db.flush()
 
         ended = session_service.end_session(db, session, end_at=checkout_utc)
-        assert ended.start_time == time(15, 0)
-        assert ended.end_time == time(16, 0)
+        assert ended.start_time == time(9, 30)
+        assert ended.end_time == time(10, 30)
+        assert ended.actual_start_at == checkin_utc
+        assert ended.actual_end_at == checkout_utc
     finally:
         db.close()
 
 
-def test_start_session_sets_ist_checkin_time():
+def test_start_session_preserves_scheduled_start_time():
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
@@ -80,7 +81,8 @@ def test_start_session_sets_ist_checkin_time():
         with patch.object(session_service, "_now", return_value=checkin_utc):
             started = session_service.start_session(db, session, therapist.id)
 
-        assert started.start_time == time(15, 1)  # 09:31 UTC → 15:01 IST
+        assert started.start_time == time(9, 30)
+        assert started.end_time == time(10, 30)
         assert started.actual_start_at == checkin_utc
     finally:
         db.close()

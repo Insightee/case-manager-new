@@ -41,6 +41,12 @@ class DailyLogRead(BaseModel):
     scheduled_date: Optional[date] = None
     actual_start_at: Optional[datetime] = None
     actual_end_at: Optional[datetime] = None
+    edited_start_at: Optional[datetime] = None
+    edited_end_at: Optional[datetime] = None
+    actual_times_edited: bool = False
+    actual_times_edit_reason: Optional[str] = None
+    duplicate_day_session: bool = False
+    status_label: Optional[str] = None
     attendance_status: str
     session_notes: Optional[str] = None
     activities_done: Optional[str] = None
@@ -83,6 +89,11 @@ class ParentSessionLogRead(BaseModel):
     end_time: Optional[str] = None
     actual_start_at: Optional[datetime] = None
     actual_end_at: Optional[datetime] = None
+    clock_start_at: Optional[datetime] = None
+    clock_end_at: Optional[datetime] = None
+    edited_start_at: Optional[datetime] = None
+    edited_end_at: Optional[datetime] = None
+    actual_times_edited: bool = False
     attendance_status: str
     activities_done: Optional[str] = None
     goals_addressed: Optional[str] = None

@@ -11,7 +11,7 @@ from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.module_write import ensure_feature_write_access
-from app.core.permissions import require_mutation_permission, require_permission, user_has_permission
+from app.core.permissions import case_scope_check, require_mutation_permission, require_permission, user_has_permission
 from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage, TicketStatus, TicketTopic
 from app.models.user import User
 from app.services import (
@@ -148,7 +148,11 @@ async def create_ticket(
         product_module = payload.product_module
         topic_raw = payload.topic
 
-    case = case_service.get_case(db, case_id) if case_id else None
+    case = None
+    if case_id:
+        case = case_service.get_case(db, case_id)
+        if not case or not case_scope_check(db, user, case):
+            raise HTTPException(status_code=403, detail="Case access denied")
     topic_enum = ticket_esc.topic_from_str(topic_raw) if topic_raw else TicketTopic.OTHER
     ticket = SupportTicket(
         case_id=case_id,

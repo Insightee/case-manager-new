@@ -20,11 +20,13 @@ from app.schemas.session import (
     ManualSessionCreate,
     ManualWalkInSessionCreate,
     ManualWalkInSessionResponse,
+    SessionActualTimesUpdate,
     SessionCreate,
     SessionRead,
     SessionUpdate,
 )
 from app.core.session_rules import auto_end_label as auto_end_label_for_reason
+from app.core.session_start import SessionStartConflict
 from app.core.timezone import ensure_utc_aware
 from app.services import case_service, session_service, therapist_intake_service
 
@@ -49,10 +51,22 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         end_time=s.end_time,
         actual_start_at=ensure_utc_aware(s.actual_start_at),
         actual_end_at=ensure_utc_aware(s.actual_end_at),
+        edited_start_at=ensure_utc_aware(getattr(s, "edited_start_at", None)),
+        edited_end_at=ensure_utc_aware(getattr(s, "edited_end_at", None)),
+        actual_times_edit_reason=getattr(s, "actual_times_edit_reason", None),
         auto_ended=bool(s.auto_ended),
         auto_end_reason=getattr(s, "auto_end_reason", None),
-        auto_end_label=auto_end_label_for_reason(getattr(s, "auto_end_reason", None)),
+        auto_end_label=auto_end_label_for_reason(
+            getattr(s, "auto_end_reason", None),
+            overage_mins=getattr(s, "overage_mins", None),
+        ),
         slot_duration_minutes=s.slot_duration_minutes,
+        scheduled_duration_mins=getattr(s, "scheduled_duration_mins", None),
+        overage_mins=getattr(s, "overage_mins", None),
+        time_confirmation_required=bool(getattr(s, "time_confirmation_required", False)),
+        actual_times_edited=bool(getattr(s, "actual_times_edited", False)),
+        duplicate_day_session=bool(getattr(s, "is_additional_visit", False)),
+        resumed_count=int(getattr(s, "resumed_count", 0) or 0),
         mode=s.mode,
         status=s.status,
         has_daily_log=s.daily_log is not None,
@@ -285,14 +299,19 @@ class _LocationBody(BaseModel):
     lng: Optional[float] = None
 
 
+class SessionStartBody(_LocationBody):
+    allow_duplicate: bool = False
+
+
 @router.post("/{session_id}/start", response_model=SessionRead)
 def start_session(
     session_id: int,
     request: Request,
-    payload: _LocationBody = _LocationBody(),
+    payload: SessionStartBody = SessionStartBody(),
     user: User = Depends(require_permission("session.update")),
     db: Session = Depends(get_db),
 ):
+    idempotency_key = request.headers.get("Idempotency-Key")
     session = db.scalars(
         select(TherapySession)
         .where(TherapySession.id == session_id)
@@ -304,7 +323,17 @@ def start_session(
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Access denied")
     try:
-        session = session_service.start_session(db, session, user.id, lat=payload.lat, lng=payload.lng)
+        session = session_service.start_session(
+            db,
+            session,
+            user.id,
+            lat=payload.lat,
+            lng=payload.lng,
+            idempotency_key=idempotency_key,
+            allow_duplicate=payload.allow_duplicate,
+        )
+    except SessionStartConflict as e:
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     invite_sent, invite_email = (False, None)
@@ -351,6 +380,49 @@ def end_session(
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="end", entity_type="session", entity_id=session.id, **meta)
+    db.commit()
+    return _session_read(session, case)
+
+
+@router.patch("/{session_id}/actual-times", response_model=SessionRead)
+def patch_actual_times(
+    session_id: int,
+    payload: SessionActualTimesUpdate,
+    request: Request,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == session_id)
+        .options(selectinload(TherapySession.case).selectinload(Case.child), selectinload(TherapySession.daily_log))
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        session = session_service.update_actual_times(
+            db,
+            session,
+            user.id,
+            actual_start_at=payload.actual_start_at,
+            actual_end_at=payload.actual_end_at,
+            edit_reason=payload.edit_reason,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="edit_actual_times",
+        entity_type="session",
+        entity_id=session.id,
+        new_value=payload.model_dump(mode="json"),
+        **meta,
+    )
     db.commit()
     return _session_read(session, case)
 

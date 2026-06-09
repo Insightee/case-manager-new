@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { canStartSessionToday } from '../../lib/sessionStartRules.js'
 import { SessionBrief } from './SessionBrief.jsx'
 
 /**
@@ -19,6 +20,8 @@ export function SessionVisitPanel({
   const isScheduled = session.status === 'SCHEDULED'
   const isInProgress = session.status === 'IN_PROGRESS' || isActive
   const anotherActive = activeSessionId != null && !isActive
+  const startGuard = canStartSessionToday(session)
+  const canStart = isScheduled && !anotherActive && startGuard.ok
 
   return (
     <div className="ic-session-visit-panel">
@@ -51,7 +54,13 @@ export function SessionVisitPanel({
         </p>
       ) : null}
 
-      {isScheduled && !anotherActive ? (
+      {isScheduled && !anotherActive && !startGuard.ok ? (
+        <p className="ic-session-log-panel__banner" role="alert">
+          {startGuard.message}{' '}
+          <Link to="/therapist/logs#forgot">Use Forgot to log</Link>
+        </p>
+      ) : null}
+      {isScheduled && !anotherActive && startGuard.ok ? (
         <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
           Start the session when you begin the visit. You will write the session log when you end the timer.
         </p>
@@ -64,7 +73,7 @@ export function SessionVisitPanel({
       ) : null}
 
       <div className="ic-session-visit-panel__actions">
-        {isScheduled && !anotherActive ? (
+        {canStart ? (
           <button type="button" className="ic-btn ic-btn--primary" disabled={busy} onClick={() => onStart?.(session.id)}>
             {busy ? 'Starting…' : 'Start session'}
           </button>

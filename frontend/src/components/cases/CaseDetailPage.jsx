@@ -3,9 +3,12 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { mergeUpcomingSchedule } from '../../lib/therapistSchedule.js'
+import { therapistTicketsUrl } from '../../lib/therapistTicketOptions.js'
+import { moduleLabel } from '../../lib/moduleLabels.js'
 import { CaseSessionsPanel } from './CaseSessionsPanel.jsx'
 import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { CaseManagerPanel } from './CaseManagerPanel.jsx'
+import { CaseOperationalTimeline } from './CaseOperationalTimeline.jsx'
 import { ObservationChecklistPanel } from './ObservationChecklistPanel.jsx'
 import './my-cases.css'
 
@@ -16,13 +19,64 @@ const TABS = [
   { id: 'documents', label: 'Documents', shortLabel: 'Docs' },
 ]
 
-const CLINICAL_PLACEHOLDERS = [
-  { id: 'history', title: 'Client history' },
-  { id: 'diagnosis', title: 'Diagnosis' },
-  { id: 'strengths', title: 'Strengths' },
-  { id: 'interests', title: 'Interests' },
-  { id: 'goals', title: 'Goals' },
+const CLINICAL_SECTIONS = [
+  { id: 'diagnosis', title: 'Diagnosis', key: 'diagnosis' },
+  { id: 'strengths', title: 'Strengths', key: 'strengths' },
+  { id: 'interests', title: 'Interests', key: 'interests' },
+  { id: 'goals', title: 'Goals', key: 'goals_summary' },
 ]
+
+function StatusChangeModal({ open, onClose, statusTo, setStatusTo, statusReason, setStatusReason, statusBusy, statusMsg, onSubmit }) {
+  if (!open) return null
+  return (
+    <div className="ic-case-status-modal" role="dialog" aria-modal="true" aria-labelledby="status-modal-title">
+      <button type="button" className="ic-case-status-modal__backdrop" aria-label="Close" onClick={onClose} />
+      <div className="ic-case-status-modal__sheet">
+        <h2 id="status-modal-title">Request status change</h2>
+        <p className="ic-case-panel__hint">
+          Submit a request for admin approval. Your case stays active until reviewed.
+        </p>
+        {statusMsg ? <p className="ic-case-status-modal__msg">{statusMsg}</p> : null}
+        <div className="ic-case-status-modal__form">
+          <label>
+            New status
+            <select
+              value={statusTo}
+              onChange={(e) => setStatusTo(e.target.value)}
+              className="ic-case-panel__select"
+            >
+              <option value="SUSPENDED">Suspend case</option>
+              <option value="CLOSED">Close case</option>
+              <option value="ACTIVE">Reactivate case</option>
+            </select>
+          </label>
+          <label>
+            Reason (required)
+            <textarea
+              value={statusReason}
+              onChange={(e) => setStatusReason(e.target.value)}
+              rows={4}
+              placeholder="Why are you requesting this change?"
+            />
+          </label>
+          <div className="ic-case-status-modal__actions">
+            <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="ic-btn ic-btn--primary"
+              disabled={statusBusy || statusReason.trim().length < 5}
+              onClick={onSubmit}
+            >
+              {statusBusy ? 'Submitting…' : 'Submit request'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function CaseDetailPage() {
   const { caseId } = useParams()
@@ -36,8 +90,10 @@ export function CaseDetailPage() {
   const [statusReason, setStatusReason] = useState('')
   const [statusMsg, setStatusMsg] = useState('')
   const [statusBusy, setStatusBusy] = useState(false)
+  const [statusModalOpen, setStatusModalOpen] = useState(false)
   const [clinicalProfile, setClinicalProfile] = useState(null)
   const [statusPending, setStatusPending] = useState(null)
+  const [statusHistory, setStatusHistory] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -49,14 +105,17 @@ export function CaseDetailPage() {
       toDate.setDate(toDate.getDate() + 90)
       const to = toDate.toISOString().slice(0, 10)
 
-      const [c, upcoming, slots, profile] = await Promise.all([
+      const [c, upcoming, slots, profile, statusReqs] = await Promise.all([
         apiFetch(`/api/v1/cases/${caseId}`),
         apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
         apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`).catch(() => []),
         apiFetch(`/api/v1/cases/${caseId}/clinical-profile`).catch(() => null),
+        apiFetch(`/api/v1/cases/${caseId}/status-requests`).catch(() => ({ pending: null, history: [] })),
       ])
       setCaseRow(c)
       setClinicalProfile(profile)
+      setStatusPending(statusReqs?.pending || null)
+      setStatusHistory(statusReqs?.history || [])
       const upcomingList = Array.isArray(upcoming) ? upcoming : unwrapList(upcoming)
       const slotList = unwrapList(slots)
       const merged = mergeUpcomingSchedule({ sessions: upcomingList, slots: slotList }).filter(
@@ -79,6 +138,25 @@ export function CaseDetailPage() {
     setSearchParams({ tab: id }, { replace: true })
   }
 
+  async function submitStatusRequest() {
+    setStatusBusy(true)
+    setStatusMsg('')
+    try {
+      await apiFetch(`/api/v1/cases/${caseId}/status-requests`, {
+        method: 'POST',
+        body: JSON.stringify({ to_status: statusTo, reason: statusReason.trim() }),
+      })
+      setStatusMsg('Request submitted. Your case manager will review it.')
+      setStatusReason('')
+      setStatusModalOpen(false)
+      await load()
+    } catch (err) {
+      setStatusMsg(err.message || 'Could not submit request')
+    } finally {
+      setStatusBusy(false)
+    }
+  }
+
   if (loading) return <p className="ic-my-cases ic-case-detail__loading">Loading case…</p>
   if (error || !caseRow) {
     return (
@@ -93,6 +171,7 @@ export function CaseDetailPage() {
 
   const addr = caseRow.service_address?.formatted
   const childLabel = `${caseRow.child_name} (${caseRow.case_code})`
+  const modLabel = moduleLabel(caseRow.product_module)
   const statusLabel =
     caseRow.status === 'ACTIVE'
       ? 'Active'
@@ -117,9 +196,22 @@ export function CaseDetailPage() {
           <span className={`ic-case-status-pill ic-case-status-pill--${String(caseRow.status).toLowerCase()}`}>
             {statusLabel}
           </span>
+          <button
+            type="button"
+            className="ic-btn ic-btn--ghost ic-case-detail__status-btn"
+            onClick={() => {
+              setStatusMsg('')
+              setStatusModalOpen(true)
+            }}
+          >
+            Request change
+          </button>
         </div>
         <p className="ic-case-detail__meta">
-          {caseRow.service_type} · {caseRow.product_module}
+          {caseRow.service_type ? (
+            <span className="ic-case-service-chip">{caseRow.service_type}</span>
+          ) : null}
+          {modLabel ? <span className="ic-case-module-badge">{modLabel}</span> : null}
         </p>
         {statusPending ? (
           <p className="ic-case-detail__pending-banner" role="status">
@@ -145,96 +237,50 @@ export function CaseDetailPage() {
             <span className="ic-case-tabs__label-short">{t.shortLabel || t.label}</span>
           </button>
         ))}
-        <Link to="/therapist/tickets" className="ic-case-tabs__support">
+        <Link
+          to={therapistTicketsUrl({ topic: 'CASE_MANAGER', caseId, openForm: true })}
+          className="ic-case-tabs__support"
+        >
           Contact support
         </Link>
       </nav>
 
       {tab === 'overview' ? (
         <div className="ic-case-detail__grid">
+          <section className="ic-case-highlight">
+            <p className="ic-case-highlight__eyebrow">Client history</p>
+            {clinicalProfile?.history ? (
+              <p className="ic-case-highlight__body">{clinicalProfile.history}</p>
+            ) : (
+              <>
+                <p className="ic-case-highlight__sub">
+                  Clinical history will appear here after your case manager reviews the observation checklist.
+                </p>
+                <Link to={`/therapist/cases/${caseId}?tab=observation`} className="ic-btn ic-btn--ghost">
+                  Open observation tab
+                </Link>
+              </>
+            )}
+          </section>
+
+          <CaseOperationalTimeline history={statusHistory} />
+
           <CaseManagerPanel caseRow={caseRow} />
 
           <section className="ic-case-panel">
-            <h3>Request status change</h3>
-            <p className="ic-case-panel__hint">
-              Current status: <strong>{caseRow.status || '—'}</strong>. Submit a request for admin approval.
-            </p>
-            {statusMsg ? <p style={{ color: '#15803d', fontSize: '0.85rem' }}>{statusMsg}</p> : null}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
-              <select
-                value={statusTo}
-                onChange={(e) => setStatusTo(e.target.value)}
-                className="ic-case-panel__select"
-                style={{ padding: 8, borderRadius: 8, border: '1px solid #e2e8f0' }}
-              >
-                <option value="SUSPENDED">Suspend case</option>
-                <option value="CLOSED">Close case</option>
-                <option value="ACTIVE">Reactivate case</option>
-              </select>
-              <textarea
-                value={statusReason}
-                onChange={(e) => setStatusReason(e.target.value)}
-                rows={3}
-                placeholder="Reason for this change (required)"
-                style={{ padding: 8, borderRadius: 8, border: '1px solid #e2e8f0' }}
-              />
-              <button
-                type="button"
-                className="ic-btn ic-btn--ghost"
-                disabled={statusBusy || statusReason.trim().length < 5}
-                onClick={async () => {
-                  setStatusBusy(true)
-                  setStatusMsg('')
-                  try {
-                    await apiFetch(`/api/v1/cases/${caseId}/status-requests`, {
-                      method: 'POST',
-                      body: JSON.stringify({ to_status: statusTo, reason: statusReason.trim() }),
-                    })
-                    setStatusMsg('Request submitted. Your case manager will review it.')
-                    setStatusReason('')
-                    await load()
-                  } catch (err) {
-                    setStatusMsg(err.message || 'Could not submit request')
-                  } finally {
-                    setStatusBusy(false)
-                  }
-                }}
-              >
-                {statusBusy ? 'Submitting…' : 'Submit request'}
-              </button>
-            </div>
-          </section>
-
-          <section className="ic-case-panel">
-            <h3>Quick actions</h3>
-            <div className="ic-case-quick">
-              <Link to={`/therapist/cases/${caseId}?tab=sessions`} className="ic-case-quick__item">
-                <strong>Sessions & logs</strong>
-                <span>Upcoming visits, start session, submit logs</span>
-              </Link>
-              <Link to={`/therapist/reports?case_id=${caseId}`} className="ic-case-quick__item">
-                <strong>Monthly report</strong>
-                <span>Draft and submit in Monthly Reports</span>
-              </Link>
-              <Link to="/therapist/logs" className="ic-case-quick__item">
-                <strong>All session logs</strong>
-                <span>Timer and logs across every client</span>
-              </Link>
-            </div>
-          </section>
-
-          <section className="ic-case-panel">
             <h3>Client snapshot</h3>
-            <dl className="ic-case-dl">
+            <dl className="ic-case-stat-grid">
               <div>
                 <dt>Child</dt>
                 <dd>{caseRow.child_name}</dd>
               </div>
               <div>
                 <dt>Service</dt>
-                <dd>
-                  {caseRow.service_type} ({caseRow.product_module})
-                </dd>
+                <dd>{caseRow.service_type || '—'}</dd>
+              </div>
+              <div>
+                <dt>Programme</dt>
+                <dd>{modLabel || '—'}</dd>
               </div>
               <div>
                 <dt>Operational stage</dt>
@@ -245,7 +291,7 @@ export function CaseDetailPage() {
                 <dd>{caseRow.region || '—'}</dd>
               </div>
               {addr ? (
-                <div>
+                <div className="ic-case-stat-grid__wide">
                   <dt>Service address</dt>
                   <dd>
                     {addr}
@@ -269,19 +315,8 @@ export function CaseDetailPage() {
             ) : null}
           </section>
 
-          {CLINICAL_PLACEHOLDERS.map((section) => {
-            const value =
-              section.id === 'history'
-                ? clinicalProfile?.history
-                : section.id === 'diagnosis'
-                  ? clinicalProfile?.diagnosis
-                  : section.id === 'strengths'
-                    ? clinicalProfile?.strengths
-                    : section.id === 'interests'
-                      ? clinicalProfile?.interests
-                      : section.id === 'goals'
-                        ? clinicalProfile?.goals_summary
-                        : null
+          {CLINICAL_SECTIONS.map((section) => {
+            const value = clinicalProfile?.[section.key]
             return (
               <section
                 key={section.id}
@@ -289,7 +324,7 @@ export function CaseDetailPage() {
               >
                 <h3>{section.title}</h3>
                 {value ? (
-                  <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.9rem' }}>{value}</p>
+                  <p className="ic-case-clinical-body">{value}</p>
                 ) : (
                   <p className="ic-case-panel__hint">
                     Complete the observation checklist; your case manager will populate this after review.
@@ -330,6 +365,18 @@ export function CaseDetailPage() {
           monthlyReportsPath={`/therapist/reports?case_id=${caseId}`}
         />
       ) : null}
+
+      <StatusChangeModal
+        open={statusModalOpen}
+        onClose={() => setStatusModalOpen(false)}
+        statusTo={statusTo}
+        setStatusTo={setStatusTo}
+        statusReason={statusReason}
+        setStatusReason={setStatusReason}
+        statusBusy={statusBusy}
+        statusMsg={statusMsg}
+        onSubmit={submitStatusRequest}
+      />
     </div>
   )
 }

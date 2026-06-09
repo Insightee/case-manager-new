@@ -27,8 +27,9 @@ def test_forgot_password_always_200():
     assert "account exists" in r.json()["message"].lower()
 
 
+@patch("app.services.password_reset_service.is_rate_limited", return_value=False)
 @patch("app.services.password_reset_service.enqueue_password_reset_email", return_value=1)
-def test_password_reset_flow(mock_enqueue_email):
+def test_password_reset_flow(mock_enqueue_email, _mock_rate_limited):
     email = "therapist@demo.com"
     new_password = "newpass456"
 

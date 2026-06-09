@@ -69,6 +69,10 @@ def render_template(template_key: str, payload: dict[str, Any], *, locale: str =
         "report_published": _report_published,
         "payment_reminder": _payment_reminder,
         "cm_meeting_invite": _cm_meeting_invite,
+        "session_log_submitted": _session_log_submitted,
+        "session_log_published": _session_log_published,
+        "leave_approved_parent": _leave_approved_parent,
+        "leave_approved_therapist": _leave_approved_therapist,
     }
     fn = renderers.get(template_key)
     if not fn:
@@ -287,6 +291,102 @@ def _cm_meeting_invite(payload: dict[str, Any], *, locale: str = "en") -> tuple[
         f"{case_html}{when_html}"
         f"{link_html}{calendar_html}{portal_html}"
         '<p style="color:#6b7280;font-size:14px;">You will also see this in your Insighte notifications.</p>'
+    )
+    html = _layout(title=subject, body_html=body, locale=locale)
+    return subject, text, html
+
+
+def _session_log_submitted(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    therapist_name = payload.get("therapist_name", "your therapist")
+    session_date = payload.get("session_date", "")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Session log submitted for {child_name}"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"{therapist_name} submitted a session log for {child_name} on {session_date}. "
+        f"It is pending review by your case manager and will appear in your portal once approved.\n\n"
+        + (f"View your portal: {portal_url}\n" if portal_url else "")
+    )
+    portal_html = _button(portal_url, "Open parent portal") if portal_url else ""
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p><strong>{escape(str(therapist_name))}</strong> submitted a session log for "
+        f"<strong>{escape(str(child_name))}</strong> on <strong>{escape(str(session_date))}</strong>.</p>"
+        f"<p>Your case manager will review it shortly. You will receive another email when it is "
+        f"available to view in your portal.</p>"
+        f"{portal_html}"
+    )
+    html = _layout(title=subject, body_html=body, locale=locale)
+    return subject, text, html
+
+
+def _session_log_published(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    therapist_name = payload.get("therapist_name", "your therapist")
+    session_date = payload.get("session_date", "")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Session update ready — {child_name}"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"A session log from {therapist_name} for {child_name} on {session_date} "
+        f"has been approved and is ready to view in your portal.\n\n"
+        + (f"View session logs: {portal_url}\n" if portal_url else "")
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>A session log from <strong>{escape(str(therapist_name))}</strong> for "
+        f"<strong>{escape(str(child_name))}</strong> on <strong>{escape(str(session_date))}</strong> "
+        f"is now available in your portal.</p>"
+        f"{_button(portal_url, 'View session log') if portal_url else ''}"
+    )
+    html = _layout(title=subject, body_html=body, locale=locale)
+    return subject, text, html
+
+
+def _leave_approved_parent(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    therapist_name = payload.get("therapist_name", "your therapist")
+    date_range = payload.get("date_range", "")
+    detail = payload.get("detail", "")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = f"Therapist leave confirmed — {therapist_name}"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"Leave for {therapist_name} from {date_range} has been approved.\n\n"
+        f"{detail}\n\n"
+        + (f"Book or view sessions: {portal_url}\n" if portal_url else "")
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>Leave for <strong>{escape(str(therapist_name))}</strong> "
+        f"from <strong>{escape(str(date_range))}</strong> has been approved.</p>"
+        f"<p>{escape(str(detail))}</p>"
+        f"{_button(portal_url, 'Open parent portal') if portal_url else ''}"
+    )
+    html = _layout(title=subject, body_html=body, locale=locale)
+    return subject, text, html
+
+
+def _leave_approved_therapist(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    therapist_name = payload.get("therapist_name", "there")
+    date_range = payload.get("date_range", "")
+    cancelled_count = int(payload.get("cancelled_count", 0))
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = "Your leave request was approved"
+    text = (
+        f"Hi {therapist_name},\n\n"
+        f"Your leave from {date_range} has been approved. "
+        f"{cancelled_count} booked session(s) were cancelled and clients were notified.\n\n"
+        + (f"View leave: {portal_url}\n" if portal_url else "")
+    )
+    body = (
+        f"<p>Hi {escape(str(therapist_name))},</p>"
+        f"<p>Your leave from <strong>{escape(str(date_range))}</strong> has been approved.</p>"
+        f"<p><strong>{cancelled_count}</strong> booked session(s) were cancelled and clients were notified.</p>"
+        f"{_button(portal_url, 'View leave') if portal_url else ''}"
     )
     html = _layout(title=subject, body_html=body, locale=locale)
     return subject, text, html

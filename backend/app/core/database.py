@@ -180,6 +180,40 @@ def ensure_sqlite_schema_patches() -> None:
         if "auto_end_reason" not in sess_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE sessions ADD COLUMN auto_end_reason VARCHAR(64)"))
+        _session_integrity_cols = {
+            "scheduled_duration_mins": "INTEGER",
+            "overage_mins": "INTEGER",
+            "time_confirmation_required": "BOOLEAN NOT NULL DEFAULT 0",
+            "actual_times_edited": "BOOLEAN NOT NULL DEFAULT 0",
+            "actual_times_edited_at": "DATETIME",
+            "actual_times_edited_by": "INTEGER",
+            "actual_times_edit_reason": "VARCHAR(512)",
+            "edited_start_at": "DATETIME",
+            "edited_end_at": "DATETIME",
+            "is_additional_visit": "BOOLEAN NOT NULL DEFAULT 0",
+            "additional_visit_reason": "VARCHAR(64)",
+            "resumed_count": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for col, typedef in _session_integrity_cols.items():
+            if col not in sess_cols:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}"))
+
+    if not insp.has_table("session_start_idempotency"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE session_start_idempotency (
+                        id INTEGER PRIMARY KEY,
+                        idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+                        session_id INTEGER NOT NULL REFERENCES sessions(id),
+                        therapist_user_id INTEGER NOT NULL REFERENCES users(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
 
     _service_category_seed = [
         ("shadow_support", "Shadow support", 0),

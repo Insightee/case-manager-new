@@ -8,9 +8,20 @@ from fastapi.testclient import TestClient
 from app.core.timezone import today_ist
 from app.main import app
 from app.seed.demo_seed import run as seed_run
-from app.tests.session_helpers import backdate_in_progress_session
+from app.tests.session_helpers import (
+    backdate_in_progress_session,
+    end_active_sessions_for_therapist,
+    ensure_scheduled_sessions_for_therapist,
+)
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_therapist_sessions():
+    end_active_sessions_for_therapist()
+    yield
+    end_active_sessions_for_therapist()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -29,11 +40,12 @@ def _headers(token: str) -> dict[str, str]:
 
 
 def _end_upcoming_session(headers) -> dict:
-    upcoming = client.get("/api/v1/sessions/upcoming", headers=headers).json()
-    if not upcoming:
+    session_ids = ensure_scheduled_sessions_for_therapist(min_count=1)
+    if not session_ids:
         pytest.skip("No scheduled sessions")
-    sid = upcoming[0]["id"]
-    client.post(f"/api/v1/sessions/{sid}/start", headers=headers)
+    sid = session_ids[0]
+    started = client.post(f"/api/v1/sessions/{sid}/start", headers=headers)
+    assert started.status_code == 200, started.text
     backdate_in_progress_session(sid)
     end = client.post(f"/api/v1/sessions/{sid}/end", headers=headers)
     assert end.status_code == 200

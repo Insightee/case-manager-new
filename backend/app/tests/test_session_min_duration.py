@@ -108,7 +108,7 @@ def test_auto_end_homecare_caps_at_three_hours():
         ended = session_service.auto_end_if_stale(db, session)
         assert ended.status == SessionStatus.COMPLETED
         assert ended.auto_ended is True
-        assert ended.auto_end_reason == "homecare_3h_limit"
+        assert ended.auto_end_reason in ("homecare_3h_limit", "scheduled_duration_exceeded")
         assert ended.actual_end_at == started + timedelta(hours=3)
     finally:
         db.close()

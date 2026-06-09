@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
-import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
+import { formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import { AdminDataList, AdminTaskCard, RejectWithComment, StatusBadge } from './ui/index.js'
 import { CaseSessionMonthlyReportBar } from './CaseSessionMonthlyReportBar.jsx'
@@ -124,8 +124,9 @@ function SessionLogCard({
   setRejectComment,
 }) {
   const isHighlight = highlightSessionId && String(session.id) === String(highlightSessionId)
-  const timeRange = formatSessionTimeRange(session)
-  const title = `${fmtDate(session.scheduled_date)}${timeRange ? ` · ${timeRange}` : ''}`
+  const clockRange = formatClockRange(session)
+  const editedRange = session.actual_times_edited ? formatEditedRange(session) : null
+  const title = `${fmtDate(session.scheduled_date)}${clockRange ? ` · ${clockRange}` : ''}${editedRange ? ` → ${editedRange}` : ''}`
 
   const actions = !log ? (
     <span className="admin-muted" style={{ fontSize: '0.8125rem' }}>
@@ -174,6 +175,12 @@ function SessionLogCard({
           <>
             <StatusBadge status={session.status} />
             {log ? <StatusBadge status={log.approval_status} /> : null}
+            {session.actual_times_edited || log?.actual_times_edited ? (
+              <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
+            ) : null}
+            {session.duplicate_day_session || log?.duplicate_day_session ? (
+              <span className="admin-badge admin-badge--warning sessions-dash__pill">Same-day duplicate</span>
+            ) : null}
           </>
         }
         actions={actions}

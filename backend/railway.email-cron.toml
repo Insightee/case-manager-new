@@ -1,0 +1,18 @@
+# Railway cron service for invite/password-reset email retries.
+#
+# Dashboard setup:
+#   1. New service → name: email-jobs (or email-cron)
+#   2. Root Directory: backend
+#   3. Settings → Config file: railway.email-cron.toml
+#   4. Variables: DATABASE_URL=${{Postgres.DATABASE_URL}}, REDIS_URL=${{Redis.REDIS_URL}}
+#      (copy other EMAIL_* vars from API service if you enable Zepto sync later)
+#   5. Deploy — cronSchedule below runs every 10 minutes (UTC)
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python scripts/run_email_jobs.py all"
+cronSchedule = "*/10 * * * *"
+restartPolicyType = "ON_FAILURE"
