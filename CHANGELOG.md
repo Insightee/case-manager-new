@@ -27,6 +27,19 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 
 ---
 
+## [2026-06-09]
+
+Therapist org IDs on People and duplicate-child prevention on family onboarding.
+
+### Added
+- **Therapist ID** — optional `external_employee_id` on therapist create, onboard, and bulk CSV import; **People → Therapists** shows an editable **Therapist ID** column (HR’s existing reference, separate from internal `users.id`).
+- Duplicate-child guard on `POST /api/v1/admin/families` and `POST /api/v1/admin/children`: blocks a second child profile for the same parent when first name, last name, and date of birth match an existing linked child.
+
+### Fixed
+- Admin family onboarding could create duplicate client rows for one parent email (same child entered twice); API now returns 400 with the existing child id.
+
+---
+
 ## [2026-05-30]
 
 Support hub, finance/HR ops, billing UX, and environment documentation (`e7d9436`).
