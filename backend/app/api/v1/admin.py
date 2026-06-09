@@ -145,6 +145,7 @@ def _user_to_read(u: User, *, db: Session | None = None) -> UserRead:
         login_meta = user_provision_service.login_metadata_for_user(db, u)
     return UserRead(
         id=u.id,
+        external_employee_id=u.external_employee_id,
         email=u.email,
         full_name=u.full_name,
         phone=u.phone,
@@ -1572,6 +1573,7 @@ def users_directory(
         out.append(
             UserDirectoryItem(
                 id=u.id,
+                external_employee_id=u.external_employee_id,
                 email=u.email,
                 full_name=u.full_name or u.email,
                 roles=user_roles,
@@ -1637,6 +1639,20 @@ def update_user(
         target.region = payload.region
     if payload.is_active is not None:
         target.is_active = payload.is_active
+    user_updates = payload.model_dump(exclude_unset=True)
+    if "external_employee_id" in user_updates:
+        from app.services.external_employee_id_service import (
+            apply_external_employee_id,
+            assert_external_employee_id_available,
+        )
+
+        try:
+            assert_external_employee_id_available(
+                db, user_updates["external_employee_id"], exclude_user_id=target.id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        apply_external_employee_id(target, user_updates["external_employee_id"])
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=current.id, action="update", entity_type="user", entity_id=user_id, **meta)
     db.commit()
@@ -1652,6 +1668,12 @@ def create_user(
     db: Session = Depends(get_db),
 ):
     _ensure_assignable_roles(payload.role_names)
+    from app.services.external_employee_id_service import assert_external_employee_id_available
+
+    try:
+        assert_external_employee_id_available(db, payload.external_employee_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     new_user = auth_service.create_user(
         db,
         email=payload.email,
@@ -1659,6 +1681,7 @@ def create_user(
         full_name=payload.full_name,
         role_names=payload.role_names,
         region=payload.region,
+        external_employee_id=payload.external_employee_id,
     )
     _apply_access_payload(
         new_user,
@@ -1925,6 +1948,7 @@ def onboard_therapist(
             db,
             email=str(payload.email),
             full_name=payload.full_name,
+            external_employee_id=payload.external_employee_id,
             phone=payload.phone,
             module_assignments=payload.module_assignments or payload.services_offered,
             services_offered=payload.services_offered,
@@ -1966,7 +1990,7 @@ def therapist_bulk_template(
     ws = wb.active
     ws.title = "Therapists"
 
-    headers = ["Full Name", "Email", "Phone", "Services (pipe-separated)", "Notes"]
+    headers = ["Therapist ID", "Full Name", "Email", "Phone", "Services (pipe-separated)", "Notes"]
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="4F46E5")
     for col_idx, header in enumerate(headers, start=1):
@@ -1975,7 +1999,7 @@ def therapist_bulk_template(
         cell.fill = header_fill
         ws.column_dimensions[cell.column_letter].width = max(18, len(header) + 4)
 
-    ws.append(["Jane Doe", "jane@example.com", "+91 98765 43210", svc_ids, "Example row"])
+    ws.append(["T-101", "Jane Doe", "jane@example.com", "+91 98765 43210", svc_ids, "Example row"])
 
     svc_ws = wb.create_sheet("Service IDs")
     svc_ws.append(["Service ID", "Label"])
@@ -2007,9 +2031,9 @@ def therapist_bulk_template_csv(
     svc_ids = "|".join(s["id"] for s in svc_cats[:5])
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["Full Name", "Email", "Phone", "Services (pipe-separated)", "Notes"])
-    writer.writerow(["Jane Doe", "jane@example.com", "+91 98765 43210", svc_ids, "Example row"])
-    writer.writerow(["John Smith", "john@example.com", "", "shadow_support", ""])
+    writer.writerow(["Therapist ID", "Full Name", "Email", "Phone", "Services (pipe-separated)", "Notes"])
+    writer.writerow(["T-101", "Jane Doe", "jane@example.com", "+91 98765 43210", svc_ids, "Example row"])
+    writer.writerow(["T-102", "John Smith", "john@example.com", "", "shadow_support", ""])
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",

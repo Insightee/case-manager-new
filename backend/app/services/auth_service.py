@@ -36,11 +36,15 @@ def create_user(
     role_names: list[str],
     region: str | None = None,
     module_assignments: list[str] | None = None,
+    external_employee_id: str | None = None,
     is_view_only: bool = False,
 ) -> User:
+    from app.services.external_employee_id_service import normalize_external_employee_id
+
     roles = db.scalars(select(Role).where(Role.name.in_(role_names))).all()
     user = User(
         email=email.lower(),
+        external_employee_id=normalize_external_employee_id(external_employee_id),
         password_hash=hash_password(password),
         full_name=full_name,
         region=region,

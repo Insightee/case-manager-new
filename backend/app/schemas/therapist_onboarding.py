@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr, Field
 class TherapistOnboardCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=255)
+    external_employee_id: Optional[str] = Field(None, max_length=64)
     phone: Optional[str] = Field(None, max_length=32)
     module_assignments: list[str] = Field(default_factory=list)
     services_offered: list[str] = Field(default_factory=list)
@@ -23,6 +24,7 @@ class TherapistOnboardCreate(BaseModel):
 class TherapistBulkRow(BaseModel):
     full_name: str = Field(min_length=1)
     email: EmailStr
+    external_employee_id: Optional[str] = Field(None, max_length=64)
     phone: Optional[str] = None
     services_offered: list[str] = Field(default_factory=list)
     module_assignments: list[str] = Field(default_factory=lambda: ["homecare", "shadow_support"])

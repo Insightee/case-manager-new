@@ -23,3 +23,4 @@ export {
   PeopleSelectCheckbox,
 } from './PeopleRowActions.jsx'
 export { ClientCaseAccessModal } from './ClientCaseAccessModal.jsx'
+export { TherapistIdCell } from './TherapistIdCell.jsx'

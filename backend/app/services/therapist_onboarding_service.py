@@ -96,6 +96,7 @@ def onboard_therapist_invite(
     email: str,
     full_name: str,
     phone: str | None,
+    external_employee_id: str | None = None,
     module_assignments: list[str],
     services_offered: list[str],
     short_bio: str | None,
@@ -105,7 +106,10 @@ def onboard_therapist_invite(
     primary_case_manager_user_id: int,
     mentor_user_id: int | None = None,
 ) -> dict:
+    from app.services.external_employee_id_service import assert_external_employee_id_available
+
     _assert_new_invite_allowed(db, email, "THERAPIST")
+    assert_external_employee_id_available(db, external_employee_id)
     modules = validate_module_assignments(["THERAPIST"], module_assignments, db)
     services = validate_service_ids(services_offered, db) if services_offered else []
 
@@ -120,6 +124,7 @@ def onboard_therapist_invite(
         invite_metadata={
             "full_name": full_name.strip(),
             "phone": (phone or "").strip() or None,
+            "external_employee_id": external_employee_id,
             "services_offered": services,
             "short_bio": short_bio,
             "primary_case_manager_user_id": primary_case_manager_user_id,
@@ -164,6 +169,7 @@ def onboard_therapist_direct(
     email: str,
     full_name: str,
     phone: str | None,
+    external_employee_id: str | None = None,
     password: str | None,
     module_assignments: list[str],
     services_offered: list[str],
@@ -172,7 +178,10 @@ def onboard_therapist_direct(
     primary_case_manager_user_id: int,
     mentor_user_id: int | None = None,
 ) -> dict:
+    from app.services.external_employee_id_service import assert_external_employee_id_available
+
     _ensure_email_free_for_new_user(db, email)
+    assert_external_employee_id_available(db, external_employee_id)
     validated_services = validate_service_ids(services_offered, db) if services_offered else []
     mods = module_assignments or validated_services
     validate_module_assignments(["THERAPIST"], mods, db)
@@ -184,6 +193,7 @@ def onboard_therapist_direct(
         full_name=full_name.strip(),
         role_names=["THERAPIST"],
         module_assignments=mods,
+        external_employee_id=external_employee_id,
     )
     if phone:
         user.phone = phone.strip()
@@ -213,6 +223,7 @@ def onboard_therapist(
     email: str,
     full_name: str,
     phone: str | None = None,
+    external_employee_id: str | None = None,
     module_assignments: list[str] | None = None,
     services_offered: list[str] | None = None,
     mode: str = "invite",
@@ -232,6 +243,7 @@ def onboard_therapist(
             email=email,
             full_name=full_name,
             phone=phone,
+            external_employee_id=external_employee_id,
             password=password,
             module_assignments=mods,
             services_offered=services,
@@ -245,6 +257,7 @@ def onboard_therapist(
         email=email,
         full_name=full_name,
         phone=phone,
+        external_employee_id=external_employee_id,
         module_assignments=mods,
         services_offered=services,
         short_bio=short_bio,
@@ -275,6 +288,7 @@ def onboard_therapists_bulk(
                 email=email,
                 full_name=row["full_name"],
                 phone=row.get("phone"),
+                external_employee_id=row.get("external_employee_id"),
                 module_assignments=row.get("module_assignments") or row.get("services_offered") or [],
                 services_offered=row.get("services_offered") or [],
                 mode=mode,
@@ -308,9 +322,17 @@ def onboard_therapists_bulk(
 
 
 def apply_therapist_invite_metadata(db: Session, user: User, invite: InviteToken) -> None:
+    from app.services.external_employee_id_service import (
+        apply_external_employee_id,
+        assert_external_employee_id_available,
+    )
+
     meta = invite.invite_metadata or {}
     if meta.get("phone"):
         user.phone = meta["phone"]
+    if meta.get("external_employee_id"):
+        assert_external_employee_id_available(db, meta["external_employee_id"], exclude_user_id=user.id)
+        apply_external_employee_id(user, meta["external_employee_id"])
     services = meta.get("services_offered") or []
     full_name = meta.get("full_name") or user.full_name
     sync_therapist_service_access(db, user, services)

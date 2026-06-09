@@ -12,6 +12,7 @@ function defaultTherapistServices(roleDefaults) {
 
 function buildEmptyForm(roleDefaults) {
   return {
+    external_employee_id: '',
     full_name: '',
     email: '',
     phone: '',
@@ -32,11 +33,26 @@ function parseBulkLines(text) {
     .filter(Boolean)
   return lines.map((line) => {
     const parts = line.includes('\t') ? line.split('\t') : line.split(',').map((p) => p.trim())
-    const [full_name, email, phone = '', servicesRaw = ''] = parts
+    let external_employee_id = ''
+    let full_name
+    let email
+    let phone = ''
+    let servicesRaw = ''
+    if (parts.length >= 6) {
+      ;[external_employee_id, full_name, email, phone = '', servicesRaw = ''] = parts
+    } else {
+      ;[full_name, email, phone = '', servicesRaw = ''] = parts
+    }
     const services_offered = servicesRaw
       ? servicesRaw.split(/[|;]/).map((s) => s.trim().toLowerCase()).filter(Boolean)
       : []
-    return { full_name: full_name || '', email: email || '', phone, services_offered }
+    return {
+      external_employee_id: external_employee_id?.trim() || null,
+      full_name: full_name || '',
+      email: email || '',
+      phone,
+      services_offered,
+    }
   })
 }
 
@@ -44,7 +60,11 @@ function parseCsvFile(text) {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
   if (lines.length === 0) return ''
   const headerLine = lines[0].toLowerCase()
-  const isHeader = headerLine.includes('full name') || headerLine.includes('email') || headerLine.includes('name')
+  const isHeader =
+    headerLine.includes('full name') ||
+    headerLine.includes('email') ||
+    headerLine.includes('name') ||
+    headerLine.includes('therapist id')
   const dataLines = isHeader ? lines.slice(1) : lines
   return dataLines.join('\n')
 }
@@ -112,6 +132,7 @@ export function AdminTherapistOnboardPanel({
         body: JSON.stringify({
           email: form.email.trim(),
           full_name: form.full_name.trim(),
+          external_employee_id: form.external_employee_id.trim() || null,
           phone: form.phone.trim() || null,
           mode: form.mode,
           password: form.mode === 'direct' && form.password ? form.password : null,
@@ -129,7 +150,12 @@ export function AdminTherapistOnboardPanel({
         if (res.email_delivery === 'skipped_no_smtp') onError(msg)
         else onSuccess(msg)
       } else {
-        onSuccess(`Therapist account created (ID ${res.user_id})`)
+        const therapistId = form.external_employee_id.trim()
+        onSuccess(
+          therapistId
+            ? `Therapist account created (Therapist ID ${therapistId})`
+            : `Therapist account created (system ref ${res.user_id})`,
+        )
       }
       resetForm()
       setShowAdd(false)
@@ -298,6 +324,16 @@ export function AdminTherapistOnboardPanel({
               </button>
             </header>
             <form onSubmit={submitAdd} className="admin-form-grid admin-drawer__body">
+              <label>
+                Therapist ID
+                <input
+                  className="admin-input"
+                  value={form.external_employee_id}
+                  onChange={(e) => setForm((f) => ({ ...f, external_employee_id: e.target.value }))}
+                  placeholder="e.g. T-101 or your HR employee number"
+                  maxLength={64}
+                />
+              </label>
               <label>
                 Full name
                 <input className="admin-input" value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} required />
@@ -508,6 +544,7 @@ export function AdminTherapistOnboardPanel({
                 <table className="admin-table" style={{ marginBottom: 16 }}>
                   <thead>
                     <tr>
+                      <th>Therapist ID</th>
                       <th>Name</th>
                       <th>Email</th>
                       <th>Phone</th>
@@ -517,6 +554,7 @@ export function AdminTherapistOnboardPanel({
                   <tbody>
                     {bulkPreview.map((r) => (
                       <tr key={r.email}>
+                        <td>{r.external_employee_id || '—'}</td>
                         <td>{r.full_name}</td>
                         <td>{r.email}</td>
                         <td>{r.phone || '—'}</td>
@@ -532,7 +570,9 @@ export function AdminTherapistOnboardPanel({
                   <textarea
                     className="admin-input"
                     rows={10}
-                    placeholder={'Jane Doe, jane@example.com, +91 98765 43210, shadow|homecare\nJohn Smith, john@example.com,, speech_therapy'}
+                    placeholder={
+                      'T-101, Jane Doe, jane@example.com, +91 98765 43210, shadow|homecare\nT-102, John Smith, john@example.com,, speech_therapy'
+                    }
                     value={bulkText}
                     onChange={(e) => setBulkText(e.target.value)}
                     style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem' }}

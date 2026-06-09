@@ -10,6 +10,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=6)
     full_name: str
     role_names: list[str]
+    external_employee_id: Optional[str] = Field(None, max_length=64)
     region: Optional[str] = None
     module_assignments: list[str] = []
     module_access_grants: Optional[dict] = None
@@ -52,6 +53,7 @@ class UserRead(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    external_employee_id: Optional[str] = Field(None, max_length=64)
     module_assignments: Optional[list[str]] = None
     module_access_grants: Optional[dict] = None
     service_access_grants: Optional[dict] = None
@@ -65,6 +67,7 @@ class UserUpdate(BaseModel):
 
 class UserDirectoryItem(BaseModel):
     id: int
+    external_employee_id: Optional[str] = None
     email: str
     full_name: str
     roles: list[str] = Field(default_factory=list)

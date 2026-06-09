@@ -24,6 +24,7 @@ import {
   PeopleBulkToolbar,
   PeopleSelectCheckbox,
   ClientCaseAccessModal,
+  TherapistIdCell,
 } from './ui/index.js'
 import { accountStatusLabel, accountStatusTone, clientAccountStatus, clientStatusHint } from '../../lib/accountStatus.js'
 
@@ -125,6 +126,7 @@ export function AdminPeoplePage() {
         ? userResult.items
         : (Array.isArray(userResult) ? userResult : userResult.items || []).map((u) => ({
             id: u.id,
+            external_employee_id: u.external_employee_id ?? null,
             email: u.email,
             full_name: u.full_name,
             roles: u.roles || ['THERAPIST'],
@@ -550,7 +552,7 @@ export function AdminPeoplePage() {
                           <thead>
                             <tr>
                               {canManageUsers ? <th style={{ width: 36 }} aria-label="Select" /> : null}
-                              <th>ID</th>
+                              <th>Therapist ID</th>
                               <th>Name</th>
                               <th>Email</th>
                               <th>Phone</th>
@@ -575,7 +577,26 @@ export function AdminPeoplePage() {
                                       />
                                     </td>
                                   ) : null}
-                                  <td className="admin-muted">{u.id}</td>
+                                  <td>
+                                    <TherapistIdCell
+                                      key={`${u.id}-${u.external_employee_id || 'none'}`}
+                                      user={u}
+                                      canEdit={canManageUsers}
+                                      onSaved={(updated) => {
+                                        const therapistId = updated?.external_employee_id ?? null
+                                        setUsers((prev) =>
+                                          prev.map((row) =>
+                                            row.id === updated.id
+                                              ? { ...row, external_employee_id: therapistId }
+                                              : row,
+                                          ),
+                                        )
+                                        setSuccess('Therapist ID updated.')
+                                      }}
+                                      onError={setError}
+                                      onReload={load}
+                                    />
+                                  </td>
                                   <td>
                                     <Link
                                       to={`/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : ''}`}
@@ -624,7 +645,13 @@ export function AdminPeoplePage() {
                                     {u.full_name}
                                   </Link>
                                 }
-                                meta={[u.email, u.phone].filter(Boolean).join(' · ')}
+                                meta={[
+                                  u.external_employee_id ? `ID ${u.external_employee_id}` : null,
+                                  u.email,
+                                  u.phone,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')}
                                 badges={
                                   <>
                                     <StatusBadge tone={accountStatusTone(accountStatusLabel(u))}>
@@ -647,6 +674,28 @@ export function AdminPeoplePage() {
                                   )
                                 }
                               >
+                                {canManageUsers ? (
+                                  <p style={{ marginBottom: 8 }}>
+                                    <TherapistIdCell
+                                      key={`${u.id}-${u.external_employee_id || 'none'}`}
+                                      user={u}
+                                      canEdit={canManageUsers}
+                                      onSaved={(updated) => {
+                                        const therapistId = updated?.external_employee_id ?? null
+                                        setUsers((prev) =>
+                                          prev.map((row) =>
+                                            row.id === updated.id
+                                              ? { ...row, external_employee_id: therapistId }
+                                              : row,
+                                          ),
+                                        )
+                                        setSuccess('Therapist ID updated.')
+                                      }}
+                                      onError={setError}
+                                      onReload={load}
+                                    />
+                                  </p>
+                                ) : null}
                                 <p>
                                   Primary CM: {prof?.supervisor_name || '—'}
                                   <br />
