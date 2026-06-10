@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
-import { formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
+import {
+  formatSessionLogRowTitle,
+  sessionHasTimeEdit,
+} from '../../lib/sessionTimes.js'
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import { AdminDataList, AdminTaskCard, RejectWithComment, StatusBadge } from './ui/index.js'
 import { CaseSessionMonthlyReportBar } from './CaseSessionMonthlyReportBar.jsx'
@@ -53,6 +56,7 @@ function SessionLogExpandableBody({
 }) {
   if (!log) return null
 
+  const hasTimeEdit = sessionHasTimeEdit(session, log)
   const analyticsHref = analyticsSessionId
     ? `/admin/logs?tab=sessions&case_id=${caseId}&session_id=${analyticsSessionId}`
     : `/admin/logs?tab=sessions&case_id=${caseId}`
@@ -96,6 +100,7 @@ function SessionLogExpandableBody({
                 }}
                 onApprove={() => onReviewLog(log.id, 'approve')}
                 processing={actingLogId === log.id}
+                approveLabel={hasTimeEdit ? 'Approve log & times' : 'Approve'}
                 placeholder="Why is this log rejected? (required)"
               />
             </div>
@@ -124,9 +129,7 @@ function SessionLogCard({
   setRejectComment,
 }) {
   const isHighlight = highlightSessionId && String(session.id) === String(highlightSessionId)
-  const clockRange = formatClockRange(session)
-  const editedRange = session.actual_times_edited ? formatEditedRange(session) : null
-  const title = `${fmtDate(session.scheduled_date)}${clockRange ? ` · ${clockRange}` : ''}${editedRange ? ` → ${editedRange}` : ''}`
+  const title = formatSessionLogRowTitle(session, { fmtDate })
 
   const actions = !log ? (
     <span className="admin-muted" style={{ fontSize: '0.8125rem' }}>
@@ -175,7 +178,7 @@ function SessionLogCard({
           <>
             <StatusBadge status={session.status} />
             {log ? <StatusBadge status={log.approval_status} /> : null}
-            {session.actual_times_edited || log?.actual_times_edited ? (
+            {sessionHasTimeEdit(session, log) ? (
               <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
             ) : null}
             {session.duplicate_day_session || log?.duplicate_day_session ? (
@@ -378,8 +381,8 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     <>
       <CaseSessionMonthlyReportBar caseId={caseId} />
       <p className="case-sessions-logs__intro admin-portal-lead" style={{ margin: '0 0 12px', fontSize: '0.8125rem', color: '#64748b' }}>
-        Sessions appear when scheduled. Daily logs appear after the therapist submits notes. Use View full log to
-        review and approve or reject.
+        Sessions appear when scheduled. Daily logs appear after the therapist submits notes. When times were
+        corrected, approving the log also approves the corrected clock for billing.
       </p>
       <AdminDataList
         desktop={
@@ -387,7 +390,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
             {sortedSessions.map((session) => {
               const log = logsBySessionId.get(session.id)
               const isHighlight = highlightSessionId && String(session.id) === String(highlightSessionId)
-              const timeRange = formatSessionTimeRange(session)
+              const rowTitle = formatSessionLogRowTitle(session, { fmtDate })
               const expandKey = sessionExpandKey(session.id)
               const expanded = expandedKeys.has(expandKey)
 
@@ -401,8 +404,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                     <div>
                       <p className="admin-queue__title">
-                        {fmtDate(session.scheduled_date)}
-                        {timeRange ? ` · ${timeRange}` : ''}
+                        {rowTitle}
                       </p>
                       <p className="admin-queue__meta">
                         Session #{session.id}
@@ -412,6 +414,12 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <StatusBadge status={session.status} />
                       {log ? <StatusBadge status={log.approval_status} /> : null}
+                      {sessionHasTimeEdit(session, log) ? (
+                        <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
+                      ) : null}
+                      {session.duplicate_day_session || log?.duplicate_day_session ? (
+                        <span className="admin-badge admin-badge--warning sessions-dash__pill">Same-day duplicate</span>
+                      ) : null}
                     </div>
                   </div>
 

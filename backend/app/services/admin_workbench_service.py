@@ -81,7 +81,7 @@ def widget_section_logs(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIM
                 child.full_name if child else None,
                 case.id,
                 id=log.id,
-                href=f"/admin/cases/{case.id}?tab=logs",
+                href=f"/admin/cases/{case.id}?tab=logs&session_id={log.session_id}",
             )
             for log, case, child in log_rows
         ],
