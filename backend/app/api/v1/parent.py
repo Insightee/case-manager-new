@@ -179,10 +179,13 @@ def parent_cases(user: User = Depends(get_current_user), db: Session = Depends(g
 
 
 def _parent_session_log_read(log: DailyLog, case: Case | None, therapist: User | None) -> ParentSessionLogRead:
+    from app.core.session_times import effective_session_datetimes
+
     fields = parent_home_service.parent_log_card_fields(
         log, case=case, therapist_name=therapist.full_name if therapist else None
     )
     s = log.session
+    eff_start, eff_end = effective_session_datetimes(s, log) if s else (None, None)
     return ParentSessionLogRead(
         id=log.id,
         case_id=s.case_id if s else 0,
@@ -192,8 +195,13 @@ def _parent_session_log_read(log: DailyLog, case: Case | None, therapist: User |
         scheduled_date=s.scheduled_date if s else log.created_at.date(),
         start_time=s.start_time.isoformat() if s and s.start_time else None,
         end_time=s.end_time.isoformat() if s and s.end_time else None,
-        actual_start_at=s.actual_start_at if s else None,
-        actual_end_at=s.actual_end_at if s else None,
+        actual_start_at=eff_start,
+        actual_end_at=eff_end,
+        clock_start_at=s.actual_start_at if s else None,
+        clock_end_at=s.actual_end_at if s else None,
+        edited_start_at=getattr(s, "edited_start_at", None) if s else None,
+        edited_end_at=getattr(s, "edited_end_at", None) if s else None,
+        actual_times_edited=bool(getattr(s, "actual_times_edited", False)) if s else False,
         attendance_status=log.attendance_status,
         activities_done=log.activities_done,
         goals_addressed=log.goals_addressed,

@@ -45,6 +45,7 @@ from app.models.report_image import ReportImage
 from app.models.review import Review
 from app.models.role import Permission, Role, role_permissions, user_roles
 from app.models.session import Session as TherapySession
+from app.models.session_start_idempotency import SessionStartIdempotency
 from app.models.leave import TherapistLeave
 from app.models.memo import Memo
 from app.models.schedule_template import TherapistScheduleTemplate

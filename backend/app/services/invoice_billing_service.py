@@ -19,6 +19,7 @@ from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
 from app.models.user import User
+from app.core.session_times import effective_session_datetimes
 
 
 def parse_month(month: str) -> tuple[int, int, str]:
@@ -41,10 +42,9 @@ def month_date_range(year: int, month: int) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, last)
 
 
-def session_duration_minutes(session: TherapySession) -> int:
-    if session.actual_start_at and session.actual_end_at:
-        start = session.actual_start_at
-        end = session.actual_end_at
+def session_duration_minutes(session: TherapySession, log: DailyLog | None = None) -> int:
+    start, end = effective_session_datetimes(session, log)
+    if start and end:
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone.utc)
         if end.tzinfo is None:
@@ -165,7 +165,7 @@ def session_line_dict(
         "session_id": session.id,
         "daily_log_id": log.id,
         "session_date": session.scheduled_date.isoformat(),
-        "duration_minutes": session_duration_minutes(session),
+        "duration_minutes": session_duration_minutes(session, log),
         "line_type": line_type.value,
         "amount_inr": amount,
         "source": source.value,

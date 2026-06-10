@@ -1,46 +1,52 @@
+import { formatTimeIST, isStartedLateOnSchedule } from '../../lib/datetime.js'
 import {
-  actualDurationMinsIST,
-  formatSessionActualRange,
-  formatTimeIST,
-  isStartedLateOnSchedule,
-} from '../../lib/datetime.js'
-
-function formatScheduledTime(t) {
-  if (!t) return '—'
-  return String(t).slice(0, 5)
-}
+  canEditSessionTimes,
+  effectiveDurationMins,
+  editedApprovalLabel,
+  formatClockRange,
+  formatEditedRange,
+  formatScheduledRange,
+} from '../../lib/sessionTimes.js'
 
 /**
  * Summary shown immediately after ending a visit, before the therapist submits the log.
  */
-export function SessionBrief({ session, childName, caseCode }) {
+export function SessionBrief({ session, childName, caseCode, log = null, onEditTimes }) {
   if (!session) return null
 
   const display = childName || session.child_name || caseCode || session.case_code || 'Client'
   const code = caseCode || session.case_code
-  const actualRange = formatSessionActualRange(session)
-  const duration = actualDurationMinsIST(session.actual_start_at, session.actual_end_at)
-  const scheduledLine =
-    session.scheduled_date && (session.start_time || session.end_time)
-      ? `${session.scheduled_date} · ${formatScheduledTime(session.start_time)}–${formatScheduledTime(session.end_time)}`
-      : session.scheduled_date || null
+  const scheduledLine = formatScheduledRange(session)
+  const clockRange = formatClockRange(session)
+  const editedRange = formatEditedRange(session)
+  const duration = effectiveDurationMins(session, log)
   const startedLate = isStartedLateOnSchedule(
     session.actual_start_at,
     session.scheduled_date,
     session.start_time,
   )
   const logPending = session.status === 'COMPLETED' && !session.has_daily_log
+  const showEdit = canEditSessionTimes(session) && typeof onEditTimes === 'function'
+  const hasEdit = Boolean(session.actual_times_edited && editedRange)
 
   return (
     <section className="ic-session-brief" aria-label="Session summary">
-      <p className="ic-session-brief__eyebrow">Session ended</p>
-      {session.auto_end_label ? (
-        <p className="ic-session-brief__auto-end" style={{ margin: '0 0 8px', fontSize: '0.8125rem', fontWeight: 600, color: '#b45309' }}>
-          {session.auto_end_label}
-        </p>
-      ) : null}
-      <h3 className="ic-session-brief__title">{display}</h3>
-      {code ? <p className="ic-session-brief__code">{code}</p> : null}
+      <div className="ic-session-brief__head">
+        <div>
+          <p className="ic-session-brief__eyebrow">Session ended</p>
+          {session.auto_end_label ? (
+            <p className="ic-session-brief__auto-end">{session.auto_end_label}</p>
+          ) : null}
+          <h3 className="ic-session-brief__title">{display}</h3>
+          {code ? <p className="ic-session-brief__code">{code}</p> : null}
+        </div>
+        {showEdit ? (
+          <button type="button" className="ic-btn ic-btn--ghost ic-session-brief__edit" onClick={onEditTimes}>
+            Edit times
+          </button>
+        ) : null}
+      </div>
+
       <dl className="ic-session-brief__grid">
         {scheduledLine ? (
           <>
@@ -51,14 +57,29 @@ export function SessionBrief({ session, childName, caseCode }) {
             </dd>
           </>
         ) : null}
-        {actualRange ? (
+        {clockRange ? (
           <>
             <dt>Actual</dt>
             <dd>
-              {actualRange}
+              {clockRange}
               {startedLate ? (
-                <span className="ic-session-brief__late"> · Started late ({formatTimeIST(session.actual_start_at)} IST)</span>
+                <span className="ic-session-brief__late">
+                  {' '}
+                  · Started late ({formatTimeIST(session.actual_start_at)} IST)
+                </span>
               ) : null}
+              {session.overage_mins > 0 && session.auto_ended ? (
+                <span className="ic-session-brief__late"> · Exceeded schedule by {session.overage_mins} min</span>
+              ) : null}
+            </dd>
+          </>
+        ) : null}
+        {hasEdit ? (
+          <>
+            <dt>Edited</dt>
+            <dd>
+              {editedRange}
+              <span className="ic-session-brief__edited-badge">{editedApprovalLabel(log)}</span>
             </dd>
           </>
         ) : null}
@@ -71,6 +92,7 @@ export function SessionBrief({ session, childName, caseCode }) {
         <dt>Log</dt>
         <dd>{logPending ? <span className="ic-session-brief__pending">Required before you leave</span> : 'Submitted'}</dd>
       </dl>
+
       {(session.checkout_lat != null && session.checkout_lng != null) ? (
         <p className="ic-session-brief__location">
           <a

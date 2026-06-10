@@ -51,6 +51,7 @@ export function SubmitSessionLogForm({
   required = false,
   onSuccess,
   onCancel,
+  onEditTimes,
 }) {
   const isEdit = Boolean(existingLog?.id)
   const [form, setForm] = useState(emptyLogForm)
@@ -268,7 +269,13 @@ export function SubmitSessionLogForm({
       </header>
 
       {showBrief && !isEdit ? (
-        <SessionBrief session={session} childName={childName} caseCode={caseCode} />
+        <SessionBrief
+          session={session}
+          childName={childName}
+          caseCode={caseCode}
+          log={existingLog}
+          onEditTimes={onEditTimes}
+        />
       ) : null}
 
       {required ? (

@@ -87,18 +87,27 @@ function formatClockPart(raw) {
   return s.slice(0, 5)
 }
 
+function formatIsoTimeRange(startIso, endIso) {
+  const start = new Date(startIso).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  const end = new Date(endIso).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  return `${start} – ${end}`
+}
+
+/** Approved logs use effective times from API; show (corrected) when therapist edited clock. */
 export function formatParentLogSessionTime(log) {
   if (log?.actual_start_at && log?.actual_end_at) {
     try {
-      const start = new Date(log.actual_start_at).toLocaleTimeString(undefined, {
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-      const end = new Date(log.actual_end_at).toLocaleTimeString(undefined, {
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-      return `${start} – ${end}`
+      const range = formatIsoTimeRange(log.actual_start_at, log.actual_end_at)
+      if (log?.actual_times_edited) {
+        return `${range} (corrected)`
+      }
+      return range
     } catch {
       /* fall through */
     }
@@ -108,4 +117,14 @@ export function formatParentLogSessionTime(log) {
   }
   if (log?.start_time) return formatClockPart(log.start_time)
   return ''
+}
+
+/** Optional muted clock record when a correction was approved. */
+export function formatParentLogClockFootnote(log) {
+  if (!log?.actual_times_edited || !log?.clock_start_at || !log?.clock_end_at) return null
+  try {
+    return `Originally clocked: ${formatIsoTimeRange(log.clock_start_at, log.clock_end_at)}`
+  } catch {
+    return null
+  }
 }

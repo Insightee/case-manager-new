@@ -482,6 +482,16 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                     </td>
                     <td>
                       <StatusBadge status={s.status} />
+                      {s.actual_times_edited ? (
+                        <span className="admin-badge admin-badge--warning sessions-dash__pill" style={{ marginLeft: 6 }}>
+                          Times edited
+                        </span>
+                      ) : null}
+                      {s.duplicate_day_session ? (
+                        <span className="admin-badge admin-badge--warning sessions-dash__pill" style={{ marginLeft: 6 }}>
+                          Same-day duplicate
+                        </span>
+                      ) : null}
                     </td>
                     <td>
                       {s.has_daily_log ? (
@@ -531,7 +541,17 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                       highlight={isHighlight}
                       title={`${fmtDate(s.scheduled_date)} · ${startDisplay}${endDisplay !== '—' ? ` – ${endDisplay}` : ''}`}
                       meta={[s.case_code, s.child_name, s.therapist_name].filter(Boolean).join(' · ') || '—'}
-                      badges={<StatusBadge status={s.status} />}
+                      badges={
+                        <>
+                          <StatusBadge status={s.status} />
+                          {s.actual_times_edited ? (
+                            <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
+                          ) : null}
+                          {s.duplicate_day_session ? (
+                            <span className="admin-badge admin-badge--warning sessions-dash__pill">Same-day duplicate</span>
+                          ) : null}
+                        </>
+                      }
                       actions={
                         <>
                           {reviewHref ? (

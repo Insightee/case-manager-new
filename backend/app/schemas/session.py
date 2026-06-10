@@ -58,6 +58,9 @@ class SessionRead(BaseModel):
     end_time: Optional[time]
     actual_start_at: Optional[datetime] = None
     actual_end_at: Optional[datetime] = None
+    edited_start_at: Optional[datetime] = None
+    edited_end_at: Optional[datetime] = None
+    actual_times_edit_reason: Optional[str] = None
     auto_ended: bool = False
     auto_end_reason: Optional[str] = None
     auto_end_label: Optional[str] = None
@@ -71,8 +74,21 @@ class SessionRead(BaseModel):
     checkout_lng: Optional[float] = None
     invite_sent: bool = False
     invite_email: Optional[str] = None
+    scheduled_duration_mins: Optional[int] = None
+    overage_mins: Optional[int] = None
+    time_confirmation_required: bool = False
+    actual_times_edited: bool = False
+    duplicate_day_session: bool = False
+    resumed_count: int = 0
+    recommended_action: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class SessionActualTimesUpdate(BaseModel):
+    actual_start_at: datetime
+    actual_end_at: datetime
+    edit_reason: str = Field(..., min_length=5, max_length=512)
 
 
 class TherapistClientIntakeCreate(BaseModel):

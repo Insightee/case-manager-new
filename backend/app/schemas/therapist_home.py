@@ -81,6 +81,17 @@ class TherapistPendingAssignment(BaseModel):
     offer_sent_at: Optional[str] = None
 
 
+class TherapistPendingCmMeeting(BaseModel):
+    id: int
+    case_id: Optional[int] = None
+    case_code: Optional[str] = None
+    child_name: Optional[str] = None
+    scheduled_date: str
+    scheduled_time: Optional[str] = None
+    title: str
+    meeting_type: Optional[str] = None
+
+
 class TherapistHomeResponse(BaseModel):
     greeting_context: Optional[str] = None
     stats: TherapistHomeStats
@@ -90,6 +101,7 @@ class TherapistHomeResponse(BaseModel):
     cases_board: dict
     schedule_preview: list[SchedulePreviewItem]
     pending_assignment_acceptance: list[TherapistPendingAssignment] = []
+    pending_cm_meetings: list[TherapistPendingCmMeeting] = []
 
 
 class TherapistSessionsWorkspaceResponse(BaseModel):

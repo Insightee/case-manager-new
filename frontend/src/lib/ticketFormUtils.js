@@ -6,19 +6,27 @@ export function appendTicketFiles(formData, files, fieldName = 'files') {
   }
 }
 
-export async function createStaffTicket({ subject, body, category, case_id, files = [] }) {
+export async function createStaffTicket({ subject, body, category, topic, case_id, files = [] }) {
+  const payload = {
+    subject,
+    body,
+    category: category || 'OTHER',
+    ...(topic ? { topic } : {}),
+    ...(case_id != null && case_id !== '' ? { case_id: Number(case_id) } : {}),
+  }
   if (files.length > 0) {
     const fd = new FormData()
     fd.append('subject', subject)
     fd.append('body', body)
     fd.append('category', category || 'OTHER')
-    if (case_id != null) fd.append('case_id', String(case_id))
+    if (topic) fd.append('topic', topic)
+    if (case_id != null && case_id !== '') fd.append('case_id', String(case_id))
     appendTicketFiles(fd, files)
     return apiUpload('/api/v1/tickets', fd)
   }
   return apiFetch('/api/v1/tickets', {
     method: 'POST',
-    body: JSON.stringify({ subject, body, category: category || 'OTHER', case_id }),
+    body: JSON.stringify(payload),
   })
 }
 

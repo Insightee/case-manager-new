@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { formatParentLogSessionTime } from '../../lib/parentSessionLogDisplay.js'
+import { formatParentLogClockFootnote, formatParentLogSessionTime } from '../../lib/parentSessionLogDisplay.js'
 import { SessionLogParentBody } from './SessionLogParentBody.jsx'
 
 function StarRating({ value, onChange, disabled }) {
@@ -81,6 +81,7 @@ export function SessionCard({ log, onSaved, onDispute }) {
       })
     : ''
   const timeLabel = formatParentLogSessionTime(localLog)
+  const clockFootnote = formatParentLogClockFootnote(localLog)
   const submittedAt = localLog.parent_feedback_at ? formatSubmittedAt(localLog.parent_feedback_at) : ''
 
   return (
@@ -93,6 +94,11 @@ export function SessionCard({ log, onSaved, onDispute }) {
             {localLog.therapist_name ? ` · ${localLog.therapist_name}` : ''}
             {timeLabel ? ` · ${timeLabel}` : ''}
           </p>
+          {clockFootnote ? (
+            <p className="session-card__meta" style={{ color: '#94a3b8', fontSize: '0.78rem' }}>
+              {clockFootnote}
+            </p>
+          ) : null}
         </div>
         <span className="session-card__badge">
           {localLog.attendance_label || localLog.attendance_status}

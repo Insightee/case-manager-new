@@ -32,6 +32,12 @@ def _bootstrap_test_database() -> None:
         check=True,
     )
     subprocess.run(
+        [sys.executable, "-c", "from app.core.database import ensure_sqlite_schema_patches; ensure_sqlite_schema_patches()"],
+        cwd=_BACKEND_ROOT,
+        env=env,
+        check=True,
+    )
+    subprocess.run(
         [sys.executable, "-m", "app.seed.demo_seed"],
         cwd=_BACKEND_ROOT,
         env=env,

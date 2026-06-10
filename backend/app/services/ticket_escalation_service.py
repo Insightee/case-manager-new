@@ -161,7 +161,8 @@ def assign_ticket(db: Session, ticket: SupportTicket, case: Case | None = None) 
     assignee = find_assignee_for_role(db, role, case)
     if assignee:
         ticket.assigned_to_user_id = assignee
-    ticket.category = TOPIC_CATEGORY.get(ticket.topic, TicketCategory.OTHER)
+    if ticket.topic != TicketTopic.OTHER:
+        ticket.category = TOPIC_CATEGORY.get(ticket.topic, TicketCategory.OTHER)
 
 
 def escalate_ticket(db: Session, ticket: SupportTicket, case: Case | None = None) -> dict:

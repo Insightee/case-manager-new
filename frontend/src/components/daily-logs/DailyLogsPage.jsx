@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
@@ -28,7 +28,24 @@ import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
 import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
 import { SessionVisitPanel } from './SessionVisitPanel.jsx'
 import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
+import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
+import { todayIsoIST } from '../../lib/datetime.js'
+import { canStartSessionToday, logsPathForSession } from '../../lib/sessionStartRules.js'
+import { SameDaySessionDialog } from './SameDaySessionDialog.jsx'
+import { EditActualTimesModal } from './EditActualTimesModal.jsx'
+import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
 import '../cases/my-cases.css'
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+function logMatchesMonth(log, year, monthIndex) {
+  if (!log?.scheduled_date) return false
+  const d = new Date(`${log.scheduled_date}T00:00:00`)
+  return d.getFullYear() === year && d.getMonth() === monthIndex
+}
 
 const LOG_TABS = [
   { id: 'needs', label: 'Needs log' },
@@ -55,8 +72,12 @@ function formatDuration(startIso, tick) {
 }
 
 export function DailyLogsPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
+  const now = new Date()
+  const [logYear, setLogYear] = useState(now.getFullYear())
+  const [logMonth, setLogMonth] = useState(now.getMonth())
   const queryClient = useQueryClient()
   const therapistId = user?.id
   const { data: workspace, isLoading: wsLoading } = useTherapistSessionsWorkspace()
@@ -90,6 +111,9 @@ export function DailyLogsPage() {
   const [success, setSuccess] = useState('')
   const [logTab, setLogTab] = useState('needs')
   const [viewingLog, setViewingLog] = useState(null)
+  const [sameDayConflict, setSameDayConflict] = useState(null)
+  const [sameDayPending, setSameDayPending] = useState(null)
+  const [editTimesSession, setEditTimesSession] = useState(null)
   const logPanelRef = useRef(null)
   const deepLinkResolvedRef = useRef(null)
 
@@ -105,6 +129,24 @@ export function DailyLogsPage() {
     () => logs.filter((l) => l.approval_status === 'REJECTED'),
     [logs],
   )
+
+  const filterByMonth = useCallback(
+    (list) => list.filter((l) => logMatchesMonth(l, logYear, logMonth)),
+    [logYear, logMonth],
+  )
+
+  const filteredPending = useMemo(() => filterByMonth(pendingLogs), [filterByMonth, pendingLogs])
+  const filteredApproved = useMemo(() => filterByMonth(approvedLogs), [filterByMonth, approvedLogs])
+  const filteredRejected = useMemo(() => filterByMonth(rejectedLogs), [filterByMonth, rejectedLogs])
+  const filteredAll = useMemo(() => filterByMonth(logs), [filterByMonth, logs])
+
+  const logYears = useMemo(() => {
+    const years = new Set([now.getFullYear()])
+    logs.forEach((l) => {
+      if (l.scheduled_date) years.add(Number(l.scheduled_date.slice(0, 4)))
+    })
+    return [...years].filter(Number.isFinite).sort((a, b) => b - a)
+  }, [logs, now])
 
   const syncDraftIds = useCallback(async () => {
     const ids = await refreshTherapistLogDraftIds()
@@ -272,10 +314,8 @@ export function DailyLogsPage() {
 
   function renderLogRow(l, { allowEdit = false, allowView = false } = {}) {
     const canEdit = allowEdit && isLogEditable(l)
-    const timeRange = formatSessionActualRange({
-      actual_start_at: l.actual_start_at,
-      actual_end_at: l.actual_end_at,
-    })
+    const clockRange = formatClockRange(l)
+    const editedRange = l.actual_times_edited ? formatEditedRange(l) : null
     return (
       <div key={l.id} className="ic-session-log-recent__row">
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -283,11 +323,26 @@ export function DailyLogsPage() {
             {l.child_name || l.case_code}
             {l.scheduled_date ? <> · {l.scheduled_date}</> : null}
           </p>
-          {timeRange ? <p className="ic-session-log-recent__times">Actual: {timeRange}</p> : null}
+          {clockRange ? <p className="ic-session-log-recent__times">Clock: {clockRange}</p> : null}
+          {editedRange ? (
+            <p className="ic-session-log-recent__times" style={{ color: '#6d28d9' }}>
+              Corrected: {editedRange}
+            </p>
+          ) : null}
           <SessionLogStatusBadge
             approvalStatus={l.approval_status}
             attendanceStatus={l.attendance_status}
           />
+          {l.actual_times_edited ? (
+            <span className="ic-session-log-recent__meta" style={{ color: '#7c3aed', fontWeight: 600 }}>
+              Times edited
+            </span>
+          ) : null}
+          {l.duplicate_day_session ? (
+            <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
+              Same-day duplicate
+            </span>
+          ) : null}
           {l.status_label ? (
             <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
               {l.status_label}
@@ -301,6 +356,26 @@ export function DailyLogsPage() {
             </span>
           ) : null}
         </div>
+        {canEditSessionTimes({ ...l, id: l.session_id, status: 'COMPLETED' }) ? (
+          <button
+            type="button"
+            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
+            onClick={() =>
+              setEditTimesSession({
+                id: l.session_id,
+                actual_start_at: l.actual_start_at,
+                actual_end_at: l.actual_end_at,
+                edited_start_at: l.edited_start_at,
+                edited_end_at: l.edited_end_at,
+                child_name: l.child_name,
+                case_code: l.case_code,
+                status: 'COMPLETED',
+              })
+            }
+          >
+            Edit times
+          </button>
+        ) : null}
         {canEdit ? (
           <button
             type="button"
@@ -319,7 +394,7 @@ export function DailyLogsPage() {
               )
             }
           >
-            Edit (24h)
+            Edit log (24h)
           </button>
         ) : null}
         {allowView && !canEdit ? (
@@ -347,14 +422,39 @@ export function DailyLogsPage() {
     )
   }
 
-  async function handleStart(sessionId) {
+  async function handleStart(sessionId, sessionMeta = null, { allowDuplicate = false } = {}) {
     setError('')
     setSuccess('')
+    const meta =
+      sessionMeta ||
+      upcoming.find((s) => s.id === sessionId) ||
+      needsLog.find((s) => s.id === sessionId) ||
+      { id: sessionId, scheduled_date: todayIsoIST() }
+    const guard = canStartSessionToday(meta)
+    if (!guard.ok) {
+      setError(guard.message)
+      return
+    }
     try {
-      const started = await apiFetch(`/api/v1/sessions/${sessionId}/start`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      })
+      const result = await startClinicalSession(
+        sessionId,
+        meta,
+        therapistId,
+        allowDuplicate ? { allow_duplicate: true } : {},
+      )
+      if (!result.ok) {
+        if (result.conflict?.recommendedAction === 'DUPLICATE_SAME_DAY') {
+          setSameDayConflict(result.conflict)
+          setSameDayPending({ sessionId, meta })
+          return
+        }
+        setSuccess(result.message)
+        redirectForSessionConflict(result.conflict, navigate)
+        return
+      }
+      setSameDayConflict(null)
+      setSameDayPending(null)
+      const started = result.session
       patchCachesAfterSessionStart(started)
       if (started?.invite_sent && started?.invite_email) {
         setSuccess(`Invite sent to ${started.invite_email} — they will join the Client portal.`)
@@ -362,6 +462,45 @@ export function DailyLogsPage() {
     } catch (err) {
       setError(err.message || 'Could not start session')
     }
+  }
+
+  async function handleSameDayStartAnother() {
+    if (!sameDayPending) return
+    setVisitBusy(true)
+    try {
+      await handleStart(sameDayPending.sessionId, sameDayPending.meta, { allowDuplicate: true })
+      setSameDayConflict(null)
+      setSameDayPending(null)
+    } finally {
+      setVisitBusy(false)
+    }
+  }
+
+  function handleEditExistingSession(existingId) {
+    setSameDayConflict(null)
+    setSameDayPending(null)
+    navigate(logsPathForSession(existingId))
+  }
+
+  function handleActualTimesSaved(updated) {
+    queryClient.invalidateQueries({ queryKey: queryKeys.therapistDailyLogs(therapistId) })
+    if (updated?.id && logSession?.id === updated.id) {
+      setLogSession((prev) => (prev ? { ...prev, ...updated } : updated))
+    }
+    setSuccess('Times corrected — log is pending review again.')
+  }
+
+  function openEditTimesForSession(session) {
+    setEditTimesSession({
+      id: session.id,
+      actual_start_at: session.actual_start_at,
+      actual_end_at: session.actual_end_at,
+      edited_start_at: session.edited_start_at,
+      edited_end_at: session.edited_end_at,
+      child_name: session.child_name,
+      case_code: session.case_code,
+      status: session.status,
+    })
   }
 
   async function handleEnd(sessionId) {
@@ -562,6 +701,7 @@ export function DailyLogsPage() {
             caseCode={logSession.case_code}
             childName={logSession.child_name}
             required={logRequired && !editingLog}
+            onEditTimes={() => openEditTimesForSession(logSession)}
             onSuccess={(savedLog) => {
               setSuccess(editingLog ? 'Session log updated.' : 'Session log submitted — pending admin review.')
               closeLogForm()
@@ -696,14 +836,16 @@ export function DailyLogsPage() {
                         </p>
                       ) : null}
                     </div>
-                    {!active ? (
+                    {!active && canStartSessionToday(s).ok ? (
                       <button
                         type="button"
-                        onClick={() => handleStart(s.id)}
+                        onClick={() => handleStart(s.id, s)}
                         className="ic-btn ic-btn--primary"
                       >
                         Start session
                       </button>
+                    ) : !active && s.scheduled_date > todayIsoIST() ? (
+                      <span className="ic-session-log-recent__meta">Opens on visit day</span>
                     ) : null}
                   </article>
                 )
@@ -714,6 +856,38 @@ export function DailyLogsPage() {
       ) : null}
 
       <section className="ic-session-log-tabs-section">
+        <div className="ic-case-history-filters" style={{ marginBottom: 12 }}>
+          <label>
+            <span className="sr-only">Month</span>
+            <select
+              value={logMonth}
+              onChange={(e) => setLogMonth(Number(e.target.value))}
+              aria-label="Filter logs by month"
+              className="ic-case-panel__select"
+            >
+              {MONTHS.map((m, idx) => (
+                <option key={m} value={idx}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Year</span>
+            <select
+              value={logYear}
+              onChange={(e) => setLogYear(Number(e.target.value))}
+              aria-label="Filter logs by year"
+              className="ic-case-panel__select"
+            >
+              {logYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="ic-session-log-tabs" role="tablist" aria-label="Session log lists">
           {LOG_TABS.map((t) => (
             <button
@@ -768,41 +942,41 @@ export function DailyLogsPage() {
           ) : null}
 
           {logTab === 'pending' ? (
-            pendingLogs.length === 0 ? (
-              <p className="ic-empty-hint">No logs pending admin review.</p>
+            filteredPending.length === 0 ? (
+              <p className="ic-empty-hint">No logs pending admin review for {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {pendingLogs.map((l) => renderLogRow(l, { allowEdit: true }))}
+                {filteredPending.map((l) => renderLogRow(l, { allowEdit: true }))}
               </div>
             )
           ) : null}
 
           {logTab === 'approved' ? (
-            approvedLogs.length === 0 ? (
-              <p className="ic-empty-hint">No approved logs yet.</p>
+            filteredApproved.length === 0 ? (
+              <p className="ic-empty-hint">No approved logs for {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {approvedLogs.map((l) => renderLogRow(l, { allowView: true }))}
+                {filteredApproved.map((l) => renderLogRow(l, { allowView: true }))}
               </div>
             )
           ) : null}
 
           {logTab === 'rejected' ? (
-            rejectedLogs.length === 0 ? (
-              <p className="ic-empty-hint">No rejected logs.</p>
+            filteredRejected.length === 0 ? (
+              <p className="ic-empty-hint">No rejected logs for {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {rejectedLogs.map((l) => renderLogRow(l, { allowView: true }))}
+                {filteredRejected.map((l) => renderLogRow(l, { allowView: true }))}
               </div>
             )
           ) : null}
 
           {logTab === 'all' ? (
-            logs.length === 0 ? (
-              <p className="ic-empty-hint">No logs submitted yet.</p>
+            filteredAll.length === 0 ? (
+              <p className="ic-empty-hint">No logs for {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {logs.map((l) =>
+                {filteredAll.map((l) =>
                   renderLogRow(l, {
                     allowEdit: l.approval_status === 'PENDING',
                     allowView: l.approval_status !== 'PENDING' || !isLogEditable(l),
@@ -813,6 +987,24 @@ export function DailyLogsPage() {
           ) : null}
         </div>
       </section>
+
+      <SameDaySessionDialog
+        open={Boolean(sameDayConflict)}
+        conflict={sameDayConflict}
+        busy={visitBusy}
+        onEditExisting={handleEditExistingSession}
+        onStartAnother={handleSameDayStartAnother}
+        onClose={() => {
+          setSameDayConflict(null)
+          setSameDayPending(null)
+        }}
+      />
+      <EditActualTimesModal
+        open={Boolean(editTimesSession)}
+        session={editTimesSession}
+        onClose={() => setEditTimesSession(null)}
+        onSaved={handleActualTimesSaved}
+      />
     </div>
   )
 }

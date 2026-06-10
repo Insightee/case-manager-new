@@ -150,6 +150,11 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
         data["scheduled_date"] = session.scheduled_date
         data["actual_start_at"] = ensure_utc_aware(session.actual_start_at)
         data["actual_end_at"] = ensure_utc_aware(session.actual_end_at)
+        data["edited_start_at"] = ensure_utc_aware(getattr(session, "edited_start_at", None))
+        data["edited_end_at"] = ensure_utc_aware(getattr(session, "edited_end_at", None))
+        data["actual_times_edited"] = bool(getattr(session, "actual_times_edited", False))
+        data["actual_times_edit_reason"] = getattr(session, "actual_times_edit_reason", None)
+        data["duplicate_day_session"] = bool(getattr(session, "is_additional_visit", False))
         if case and getattr(case, "child", None):
             data["child_name"] = case.child.full_name
     if session and not data.get("case_code") and getattr(session, "case", None):
@@ -167,4 +172,12 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
             data["status_label"] = "Forgotten session — approved"
         elif status == "REJECTED":
             data["status_label"] = "Forgotten session — rejected"
+    elif session and getattr(session, "is_additional_visit", False):
+        status = log.approval_status.value if hasattr(log.approval_status, "value") else str(log.approval_status)
+        if status == "PENDING":
+            data["status_label"] = "Second session same day — pending review"
+        elif status == "APPROVED":
+            data["status_label"] = "Second session same day — approved"
+        elif status == "REJECTED":
+            data["status_label"] = "Second session same day — rejected"
     return data

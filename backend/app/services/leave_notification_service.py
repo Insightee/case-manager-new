@@ -213,6 +213,7 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
                 date_range=date_range,
                 lines=lines,
                 portal_url=portal,
+                parent_name=u.full_name or u.email,
                 db=db,
             )
         notified_parents.add(parent_user_id)
@@ -237,7 +238,15 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         )
         u = db.get(User, parent_user_id)
         if u:
-            email_service.send_email(to=u.email, subject="Therapist on leave", body_text=body, db=db)
+            email_service.leave_sessions_cancelled_email(
+                to=u.email,
+                therapist_name=therapist.full_name,
+                date_range=date_range,
+                lines=[],
+                portal_url=portal,
+                parent_name=u.full_name or u.email,
+                db=db,
+            )
         count += 1
 
     cancel_n = sum(len(v) for v in cancelled_by_parent.values())

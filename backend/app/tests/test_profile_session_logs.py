@@ -105,34 +105,86 @@ def test_session_start_end_and_log():
 
 
 def test_parent_session_logs_omit_internal_fields():
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.core.timezone import today_ist
+    from app.models.daily_log import DailyLog
+    from app.models.session import Session as TherapySession
+    from app.models.session import SessionStatus
+
     therapist_token = _login("therapist@demo.com")
     th = {"Authorization": f"Bearer {therapist_token}"}
     parent_case_id = demo_parent_case_id()
     if not parent_case_id:
         pytest.skip("Demo parent case not found")
-    session_ids = ensure_scheduled_sessions_for_therapist(
-        min_count=1,
-        preferred_case_id=parent_case_id,
-    )
-    if not session_ids:
-        pytest.skip("No scheduled sessions")
-    sid = session_ids[0]
-    client.post(f"/api/v1/sessions/{sid}/start", headers=th)
-    backdate_in_progress_session(sid)
-    client.post(f"/api/v1/sessions/{sid}/end", headers=th)
-    created = client.post(
-        "/api/v1/daily-logs",
-        headers=th,
-        json={
-            "session_id": sid,
-            "attendance_status": "PRESENT",
-            "session_notes": "internal only",
-            "observations": "clinical internal",
-            "parent_notes": "profile-parent-visible-notes",
-        },
-    )
-    assert created.status_code == 201, created.text
-    log_id = created.json()["id"]
+
+    sid = None
+    existing_log_id = None
+    db = SessionLocal()
+    try:
+        today = today_ist()
+        completed = db.scalars(
+            select(TherapySession)
+            .where(
+                TherapySession.case_id == parent_case_id,
+                TherapySession.scheduled_date == today,
+                TherapySession.status == SessionStatus.COMPLETED,
+            )
+            .order_by(TherapySession.id.desc())
+        ).first()
+        if completed:
+            sid = completed.id
+            existing_log = db.scalars(select(DailyLog).where(DailyLog.session_id == sid)).first()
+            if existing_log:
+                existing_log_id = existing_log.id
+    finally:
+        db.close()
+
+    if sid is None:
+        session_ids = ensure_scheduled_sessions_for_therapist(
+            min_count=1,
+            preferred_case_id=parent_case_id,
+        )
+        if not session_ids:
+            pytest.skip("No scheduled sessions")
+        sid = session_ids[0]
+        started = client.post(f"/api/v1/sessions/{sid}/start", headers=th)
+        if started.status_code == 409:
+            detail = started.json().get("detail") or {}
+            existing_id = detail.get("existing_session_id")
+            if existing_id and detail.get("current_status") == "COMPLETED":
+                sid = existing_id
+            else:
+                pytest.skip("No startable session on parent case today")
+        else:
+            assert started.status_code == 200, started.text
+            backdate_in_progress_session(sid)
+            ended = client.post(f"/api/v1/sessions/{sid}/end", headers=th)
+            assert ended.status_code == 200, ended.text
+
+    log_payload = {
+        "attendance_status": "PRESENT",
+        "session_notes": "internal only",
+        "observations": "clinical internal",
+        "parent_notes": "profile-parent-visible-notes",
+    }
+    if existing_log_id:
+        updated = client.patch(
+            f"/api/v1/daily-logs/{existing_log_id}",
+            headers=th,
+            json=log_payload,
+        )
+        assert updated.status_code == 200, updated.text
+        log_id = existing_log_id
+    else:
+        created = client.post(
+            "/api/v1/daily-logs",
+            headers=th,
+            json={"session_id": sid, **log_payload},
+        )
+        assert created.status_code == 201, created.text
+        log_id = created.json()["id"]
     mgr_token = _login("superadmin@demo.com")
     approve = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers={"Authorization": f"Bearer {mgr_token}"})
     assert approve.status_code == 200, approve.text
@@ -157,8 +209,23 @@ def test_cannot_start_two_sessions():
     if len(session_ids) < 2:
         pytest.skip("Need two scheduled sessions")
     s1, s2 = session_ids[0], session_ids[1]
+    from app.core.database import SessionLocal
+    from app.core.timezone import today_ist
+    from app.models.session import Session as TherapySession
+
+    db = SessionLocal()
+    try:
+        for sid in (s1, s2):
+            row = db.get(TherapySession, sid)
+            if not row or row.scheduled_date != today_ist():
+                pytest.skip("Need two sessions scheduled for today (IST)")
+    finally:
+        db.close()
     assert client.post(f"/api/v1/sessions/{s1}/start", headers=headers).status_code == 200
     second = client.post(f"/api/v1/sessions/{s2}/start", headers=headers)
-    assert second.status_code == 400
+    assert second.status_code == 409
+    body = second.json()
+    assert body.get("detail", {}).get("existing_session_id") == s1
+    assert body.get("detail", {}).get("recommended_action") == "CONTINUE_SESSION"
     backdate_in_progress_session(s1)
     client.post(f"/api/v1/sessions/{s1}/end", headers=headers)

@@ -115,6 +115,10 @@ def create_daily_log(
         log = log_service.create_daily_log(db, **payload.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    from app.services import session_log_service
+
+    session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
+    session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="daily_log", entity_id=log.id, new_value=payload.model_dump(), **meta)
     db.commit()

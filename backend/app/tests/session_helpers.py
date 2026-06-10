@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 
+from app.core.timezone import today_ist
+
 from sqlalchemy import select
 
 from app.core.database import SessionLocal
@@ -25,6 +27,27 @@ def backdate_in_progress_session(session_id: int, minutes_ago: int = 6) -> None:
         db.commit()
     finally:
         db.close()
+
+
+def _has_blocking_visit(db, session: TherapySession) -> bool:
+    """True when another session blocks starting this scheduled visit."""
+    active_statuses = (
+        SessionStatus.SCHEDULED,
+        SessionStatus.IN_PROGRESS,
+        SessionStatus.COMPLETED,
+    )
+    stmt = select(TherapySession.id).where(
+        TherapySession.case_id == session.case_id,
+        TherapySession.therapist_user_id == session.therapist_user_id,
+        TherapySession.scheduled_date == session.scheduled_date,
+        TherapySession.status.in_(active_statuses),
+        TherapySession.id != session.id,
+    )
+    if session.slot_id:
+        stmt = stmt.where(TherapySession.slot_id == session.slot_id)
+    else:
+        stmt = stmt.where(TherapySession.slot_id.is_(None))
+    return db.scalars(stmt).first() is not None
 
 
 def end_active_sessions_for_therapist(therapist_email: str = "therapist@demo.com") -> None:
@@ -99,7 +122,7 @@ def ensure_scheduled_sessions_for_therapist(
         if not case_ids:
             return []
 
-        today = date.today()
+        today = today_ist()
         window_end = today + timedelta(days=7)
         scheduled = list(
             db.scalars(
@@ -114,40 +137,93 @@ def ensure_scheduled_sessions_for_therapist(
             ).all()
         )
         if preferred_case_id is not None:
-            scheduled = [s for s in scheduled if s.case_id == preferred_case_id]
-            case_ids = [preferred_case_id]
+            preferred = [s for s in scheduled if s.case_id == preferred_case_id]
+            scheduled = preferred + [s for s in scheduled if s.case_id != preferred_case_id]
+            case_ids = [preferred_case_id] + [cid for cid in case_ids if cid != preferred_case_id]
 
-        day_offset = 0
         hour = 16
+
+        def _case_taken_on_day(case_id: int, day: date) -> bool:
+            return (
+                db.scalars(
+                    select(TherapySession.id).where(
+                        TherapySession.case_id == case_id,
+                        TherapySession.therapist_user_id == therapist.id,
+                        TherapySession.scheduled_date == day,
+                        TherapySession.status.in_(
+                            (SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS, SessionStatus.COMPLETED)
+                        ),
+                    )
+                ).first()
+                is not None
+            )
+
+        def _add_session(case_id: int, day: date) -> None:
+            nonlocal hour
+            sess = TherapySession(
+                case_id=case_id,
+                therapist_user_id=therapist.id,
+                scheduled_date=day,
+                start_time=time(hour % 23, 0),
+                end_time=time((hour % 23) + 1, 0),
+                mode=SessionMode.HOME,
+                status=SessionStatus.SCHEDULED,
+            )
+            db.add(sess)
+            db.flush()
+            scheduled.append(sess)
+            hour += 1
+
+        # Prefer today so start-session tests pass IST date guard.
+        while len(scheduled) < min_count:
+            added = False
+            for case_id in case_ids:
+                if len(scheduled) >= min_count:
+                    break
+                if not _case_taken_on_day(case_id, today):
+                    _add_session(case_id, today)
+                    added = True
+            if added:
+                continue
+            break
+
+        day_offset = 1
         while len(scheduled) < min_count and day_offset <= days_ahead:
             day = today + timedelta(days=day_offset)
             day_offset += 1
             for case_id in case_ids:
                 if len(scheduled) >= min_count:
                     break
-                taken = db.scalars(
-                    select(TherapySession.id).where(
-                        TherapySession.case_id == case_id,
-                        TherapySession.scheduled_date == day,
-                    )
-                ).first()
-                if taken:
+                if _case_taken_on_day(case_id, day):
                     continue
-                sess = TherapySession(
-                    case_id=case_id,
-                    therapist_user_id=therapist.id,
-                    scheduled_date=day,
-                    start_time=time(hour % 23, 0),
-                    end_time=time((hour % 23) + 1, 0),
-                    mode=SessionMode.HOME,
-                    status=SessionStatus.SCHEDULED,
-                )
-                db.add(sess)
-                db.flush()
-                scheduled.append(sess)
-                hour += 1
+                _add_session(case_id, day)
 
+        today_sessions = [s for s in scheduled if s.scheduled_date == today]
+        if len(today_sessions) < min_count:
+            for s in scheduled:
+                if len(today_sessions) >= min_count:
+                    break
+                if s.scheduled_date > today and s.status == SessionStatus.SCHEDULED:
+                    if _case_taken_on_day(s.case_id, today):
+                        continue
+                    s.scheduled_date = today
+                    if s not in today_sessions:
+                        today_sessions.append(s)
+
+        day_offset = 1
+        while len(today_sessions) < min_count and day_offset <= days_ahead:
+            day = today + timedelta(days=day_offset)
+            day_offset += 1
+            for case_id in case_ids:
+                if len(today_sessions) >= min_count:
+                    break
+                if _case_taken_on_day(case_id, today):
+                    continue
+                _add_session(case_id, today)
+                today_sessions = [s for s in scheduled if s.scheduled_date == today]
+
+        startable_today = [s for s in today_sessions if not _has_blocking_visit(db, s)]
         db.commit()
-        return [s.id for s in scheduled[:min_count]]
+        return [s.id for s in startable_today[:min_count]]
     finally:
         db.close()

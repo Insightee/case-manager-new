@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { createStaffTicket } from '../../lib/ticketFormUtils.js'
+import {
+  requestTypeByValue,
+  THERAPIST_REQUEST_TYPES,
+} from '../../lib/therapistTicketOptions.js'
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
 import { TicketFileInput } from '../support/TicketFileInput.jsx'
 import '../support/support-tickets.css'
 import '../client-portal/parent-support.css'
-
-const CATEGORIES = ['FINANCE', 'HR', 'SERVICE', 'POSH', 'CPP', 'OTHER']
 
 const STATUS_META = {
   OPEN: { label: 'Open', bg: '#eff6ff', color: '#1d4ed8' },
@@ -26,14 +29,26 @@ const CAT_COLORS = {
   OTHER: '#f3f4f6',
 }
 
+function topicToRequestType(topic) {
+  const match = THERAPIST_REQUEST_TYPES.find((t) => t.topic === topic)
+  return match?.value || 'OTHER'
+}
+
 export function TherapistTicketsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [tickets, setTickets] = useState([])
+  const [cases, setCases] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTicket, setActiveTicket] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [formPanel, setFormPanel] = useState('ticket')
-  const [form, setForm] = useState({ subject: '', body: '', category: 'OTHER' })
+  const [form, setForm] = useState({
+    requestType: 'OTHER',
+    case_id: '',
+    subject: '',
+    body: '',
+  })
   const [formFiles, setFormFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -53,7 +68,25 @@ export function TherapistTicketsPage() {
 
   useEffect(() => {
     loadTickets()
+    apiFetch('/api/v1/cases?assigned=true&page_size=100')
+      .then((data) => setCases(unwrapList(data)))
+      .catch(() => setCases([]))
   }, [])
+
+  useEffect(() => {
+    const openNew = searchParams.get('new') === '1'
+    const topic = searchParams.get('topic')
+    const caseId = searchParams.get('case_id') || ''
+    if (!openNew && !topic && !caseId) return
+
+    setShowForm(true)
+    setFormPanel('ticket')
+    setForm((prev) => ({
+      ...prev,
+      requestType: topic ? topicToRequestType(topic) : prev.requestType,
+      case_id: caseId,
+    }))
+  }, [searchParams])
 
   async function openTicket(t) {
     if (activeTicket?.id === t.id) {
@@ -72,22 +105,34 @@ export function TherapistTicketsPage() {
     }
   }
 
+  function clearPrefillParams() {
+    const next = new URLSearchParams(searchParams)
+    next.delete('new')
+    next.delete('topic')
+    next.delete('case_id')
+    setSearchParams(next, { replace: true })
+  }
+
   async function createTicket(e) {
     e.preventDefault()
     setSubmitting(true)
     setError('')
     setSuccess('')
+    const type = requestTypeByValue(form.requestType)
     try {
       await createStaffTicket({
         subject: form.subject,
         body: form.body,
-        category: form.category,
+        category: type.category,
+        topic: type.topic,
+        case_id: form.case_id || undefined,
         files: formFiles,
       })
-      setForm({ subject: '', body: '', category: 'OTHER' })
+      setForm({ requestType: 'OTHER', case_id: '', subject: '', body: '' })
       setFormFiles([])
       setShowForm(false)
-      setSuccess('Ticket submitted. The team will respond shortly.')
+      clearPrefillParams()
+      setSuccess('Ticket submitted. Your case manager or support team will respond in the thread below.')
       loadTickets()
     } catch (err) {
       setError(err.message || 'Could not create ticket')
@@ -101,7 +146,6 @@ export function TherapistTicketsPage() {
 
   return (
     <div className="parent-support">
-      {/* Form card */}
       <section className="parent-support__form-card">
         <div className="parent-support__form-card-head">
           <h2>Raise a new ticket</h2>
@@ -114,14 +158,19 @@ export function TherapistTicketsPage() {
               setShowForm((v) => !v)
               setError('')
               setSuccess('')
-              if (!showForm) setFormPanel('ticket')
+              if (!showForm) {
+                setFormPanel('ticket')
+              } else {
+                clearPrefillParams()
+              }
             }}
           >
             {showForm ? 'Cancel' : '+ New ticket'}
           </button>
         </div>
         <p className="parent-support__hint">
-          Choose a category so your request reaches the right team. You can track and reply on tickets below.
+          Choose who should handle your request. Link a case when the concern is about a specific client, or leave
+          case blank for general support.
         </p>
 
         {showForm ? (
@@ -145,13 +194,35 @@ export function TherapistTicketsPage() {
             {formPanel === 'ticket' ? (
               <form onSubmit={createTicket} className="parent-support__form-body">
                 <label className="parent-support__field">
-                  Category
+                  Request type
                   <select
-                    value={form.category}
-                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                    value={form.requestType}
+                    onChange={(e) => setForm({ ...form, requestType: e.target.value })}
                   >
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                    {THERAPIST_REQUEST_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {form.requestType === 'CASE_MANAGER' ? (
+                  <p className="parent-support__hint" style={{ margin: '-4px 0 8px' }}>
+                    Routed to your case manager when a case is linked; otherwise to the case manager desk.
+                  </p>
+                ) : null}
+                <label className="parent-support__field">
+                  Related case (optional)
+                  <select
+                    value={form.case_id}
+                    onChange={(e) => setForm({ ...form, case_id: e.target.value })}
+                  >
+                    <option value="">No specific case</option>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.child_name || c.case_code}
+                        {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -161,7 +232,11 @@ export function TherapistTicketsPage() {
                     value={form.subject}
                     onChange={(e) => setForm({ ...form, subject: e.target.value })}
                     required
-                    placeholder="Brief summary"
+                    placeholder={
+                      form.requestType === 'CASE_MANAGER'
+                        ? 'e.g. Log review for visit on…'
+                        : 'Brief summary'
+                    }
                   />
                 </label>
                 <label className="parent-support__field">
@@ -194,21 +269,43 @@ export function TherapistTicketsPage() {
         {success ? <p style={{ color: '#15803d', marginTop: 10, fontSize: '0.875rem' }}>{success}</p> : null}
       </section>
 
-      {/* Open tickets */}
       <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 12 }}>Open tickets ({openTickets.length})</h2>
       {loading ? (
         <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: 24 }}>Loading…</p>
       ) : openTickets.length === 0 ? (
         <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: 24 }}>No open tickets.</p>
       ) : (
-        openTickets.map((t) => <TicketRow key={t.id} ticket={t} activeTicket={activeTicket} detailLoading={detailLoading} onOpen={openTicket} onUpdated={(updated) => { setActiveTicket(updated); loadTickets() }} />)
+        openTickets.map((t) => (
+          <TicketRow
+            key={t.id}
+            ticket={t}
+            activeTicket={activeTicket}
+            detailLoading={detailLoading}
+            onOpen={openTicket}
+            onUpdated={(updated) => {
+              setActiveTicket(updated)
+              loadTickets()
+            }}
+          />
+        ))
       )}
 
-      {/* Closed tickets */}
       {closedTickets.length > 0 ? (
         <>
           <h2 style={{ fontSize: '1rem', fontWeight: 600, margin: '24px 0 12px' }}>Closed / resolved</h2>
-          {closedTickets.map((t) => <TicketRow key={t.id} ticket={t} activeTicket={activeTicket} detailLoading={detailLoading} onOpen={openTicket} onUpdated={(updated) => { setActiveTicket(updated); loadTickets() }} />)}
+          {closedTickets.map((t) => (
+            <TicketRow
+              key={t.id}
+              ticket={t}
+              activeTicket={activeTicket}
+              detailLoading={detailLoading}
+              onOpen={openTicket}
+              onUpdated={(updated) => {
+                setActiveTicket(updated)
+                loadTickets()
+              }}
+            />
+          ))}
         </>
       ) : null}
     </div>
@@ -219,6 +316,7 @@ function TicketRow({ ticket: t, activeTicket, detailLoading, onOpen, onUpdated }
   const expanded = activeTicket?.id === t.id
   const sc = STATUS_META[t.status] || STATUS_META.OPEN
   const cc = CAT_COLORS[t.category] || CAT_COLORS.OTHER
+  const typeLabel = t.topic_label && t.topic !== 'OTHER' ? t.topic_label : t.category
 
   return (
     <div className="parent-support__ticket" style={{ boxShadow: expanded ? '0 0 0 2px #6366f1' : undefined }}>
@@ -231,10 +329,40 @@ function TicketRow({ ticket: t, activeTicket, detailLoading, onOpen, onUpdated }
       >
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cc, color: '#374151' }}>{t.category}</span>
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: sc.bg, color: sc.color }}>{sc.label}</span>
+            <span
+              style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: 20,
+                background: cc,
+                color: '#374151',
+              }}
+            >
+              {typeLabel}
+            </span>
+            <span
+              style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: 20,
+                background: sc.bg,
+                color: sc.color,
+              }}
+            >
+              {sc.label}
+            </span>
+            {t.case_code ? (
+              <span style={{ fontSize: '0.7rem', color: '#6366f1', fontWeight: 600 }}>
+                {t.child_name ? `${t.child_name} · ` : ''}
+                {t.case_code}
+              </span>
+            ) : null}
             {t.attachment_count > 0 ? (
-              <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>{t.attachment_count} file{t.attachment_count !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: '0.7rem', color: '#6366f1' }}>
+                {t.attachment_count} file{t.attachment_count !== 1 ? 's' : ''}
+              </span>
             ) : null}
             <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#9ca3af' }}>
               {new Date(t.created_at).toLocaleDateString()}
@@ -242,7 +370,10 @@ function TicketRow({ ticket: t, activeTicket, detailLoading, onOpen, onUpdated }
           </div>
           <p style={{ margin: '0 0 4px', fontWeight: 600 }}>{t.subject}</p>
           {t.body ? (
-            <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280' }}>{t.body.slice(0, 100)}{t.body.length > 100 ? '…' : ''}</p>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280' }}>
+              {t.body.slice(0, 100)}
+              {t.body.length > 100 ? '…' : ''}
+            </p>
           ) : null}
         </div>
         <span style={{ color: '#94a3b8', marginLeft: 8 }}>{expanded ? '▲' : '▼'}</span>
@@ -250,7 +381,7 @@ function TicketRow({ ticket: t, activeTicket, detailLoading, onOpen, onUpdated }
 
       {expanded ? (
         <div className="ticket-detail-panel">
-          {detailLoading || activeTicket?.id === t.id && !activeTicket?.messages ? (
+          {detailLoading || (activeTicket?.id === t.id && !activeTicket?.messages) ? (
             <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>Loading thread…</p>
           ) : (
             <TicketDetailPanel ticket={activeTicket} onUpdated={onUpdated} />

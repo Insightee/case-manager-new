@@ -23,6 +23,7 @@ from app.schemas.therapist_home import (
     TherapistHomeResponse,
     TherapistHomeStats,
     TherapistPendingAssignment,
+    TherapistPendingCmMeeting,
     TherapistReportsPipelineResponse,
     TherapistSessionsWorkspaceResponse,
 )
@@ -62,10 +63,22 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         end_time=s.end_time,
         actual_start_at=ensure_utc_aware(s.actual_start_at),
         actual_end_at=ensure_utc_aware(s.actual_end_at),
+        edited_start_at=ensure_utc_aware(getattr(s, "edited_start_at", None)),
+        edited_end_at=ensure_utc_aware(getattr(s, "edited_end_at", None)),
+        actual_times_edit_reason=getattr(s, "actual_times_edit_reason", None),
         auto_ended=bool(s.auto_ended),
         auto_end_reason=getattr(s, "auto_end_reason", None),
-        auto_end_label=auto_end_label_for_reason(getattr(s, "auto_end_reason", None)),
+        auto_end_label=auto_end_label_for_reason(
+            getattr(s, "auto_end_reason", None),
+            overage_mins=getattr(s, "overage_mins", None),
+        ),
         slot_duration_minutes=s.slot_duration_minutes,
+        scheduled_duration_mins=getattr(s, "scheduled_duration_mins", None),
+        overage_mins=getattr(s, "overage_mins", None),
+        time_confirmation_required=bool(getattr(s, "time_confirmation_required", False)),
+        actual_times_edited=bool(getattr(s, "actual_times_edited", False)),
+        duplicate_day_session=bool(getattr(s, "is_additional_visit", False)),
+        resumed_count=int(getattr(s, "resumed_count", 0) or 0),
         mode=s.mode,
         status=s.status,
         has_daily_log=s.daily_log is not None,
@@ -361,7 +374,12 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
         reports_by_case=reports_by_case,
         slots=slots,
     )
-    from app.services.cm_meeting_service import fetch_cm_meetings_for_user, meeting_to_calendar_dict
+    from app.services.cm_meeting_service import (
+        fetch_cm_meetings_for_user,
+        fetch_pending_completion_for_therapist,
+        meeting_to_calendar_dict,
+        meeting_to_pending_dict,
+    )
 
     cm_rows = fetch_cm_meetings_for_user(
         db, user.id, from_date=today, to_date=slot_end
@@ -372,6 +390,10 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
     pending_assignments = [
         TherapistPendingAssignment(**row)
         for row in accept_svc.pending_acceptance_for_therapist(db, user.id)
+    ]
+    pending_cm = [
+        TherapistPendingCmMeeting(**meeting_to_pending_dict(m, db))
+        for m in fetch_pending_completion_for_therapist(db, user.id)
     ]
 
     return TherapistHomeResponse(
@@ -390,6 +412,7 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
         cases_board=board,
         schedule_preview=schedule,
         pending_assignment_acceptance=pending_assignments,
+        pending_cm_meetings=pending_cm,
     )
 
 

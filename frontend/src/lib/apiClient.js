@@ -188,7 +188,14 @@ export async function apiFetch(path, options = {}) {
     // #endregion
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
-    const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join(', ') : res.statusText
+    let message = res.statusText
+    if (typeof detail === 'string') {
+      message = detail
+    } else if (Array.isArray(detail)) {
+      message = detail.map((d) => d.msg).join(', ')
+    } else if (detail && typeof detail === 'object' && detail.message) {
+      message = detail.message
+    }
     if (res.status === 502 || res.status === 503) {
       if (message && message !== res.statusText && message !== 'Bad Gateway' && message !== 'Service Unavailable') {
         throw new Error(message)
@@ -202,7 +209,10 @@ export async function apiFetch(path, options = {}) {
           : 'API is not responding. Check that the backend service is running and VITE_API_URL points to it.',
       )
     }
-    throw new Error(message || 'Request failed')
+    const apiError = new Error(message || 'Request failed')
+    apiError.status = res.status
+    apiError.detail = detail
+    throw apiError
   }
 
   if (res.status === 204) return null
