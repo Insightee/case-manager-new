@@ -65,8 +65,11 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
         )
     ).all():
         if inv.linked_child_id and inv.linked_child_id not in pending_by_child:
+            inv_meta = inv.invite_metadata or {}
             pending_by_child[inv.linked_child_id] = {
                 "pendingEmail": inv.email,
+                "pendingParentName": inv_meta.get("full_name"),
+                "pendingParentPhone": inv_meta.get("phone"),
                 "inviteId": inv.id,
                 "inviteUrl": f"{settings.frontend_url.rstrip('/')}/invite/{inv.token}",
                 "inviteExpiresAt": inv.expires_at.isoformat() if inv.expires_at else None,
@@ -201,6 +204,8 @@ def create_family(
         child = create_child(db, child_first, child_last, child_dob)
         if child not in pg.children:
             pg.children.append(child)
+        if parent_phone and parent_phone.strip() and not existing.phone:
+            existing.phone = parent_phone.strip()
         db.flush()
         return {
             "childId": child.id,
@@ -223,6 +228,11 @@ def create_family(
             expires_at=datetime.now(timezone.utc) + timedelta(days=7),
             created_by_user_id=created_by_user_id,
             linked_child_id=child.id,
+            invite_metadata={
+                "full_name": parent_full_name.strip(),
+                "phone": (parent_phone or "").strip() or None,
+                "child_name": child.full_name,
+            },
         )
         db.add(invite)
         db.flush()
@@ -251,6 +261,15 @@ def create_family(
         }
 
     return {"childId": child.id, "parentUserId": None, "inviteUrl": invite_url, "pendingEmail": email}
+
+
+def apply_parent_invite_metadata(db: Session, user: User, invite: InviteToken) -> None:
+    meta = invite.invite_metadata or {}
+    if meta.get("phone"):
+        user.phone = str(meta["phone"]).strip()
+    if meta.get("full_name") and not (user.full_name or "").strip():
+        user.full_name = str(meta["full_name"]).strip()
+    db.flush()
 
 
 def _send_parent_invite_email(to: str, invite_url: str, parent_name: str, child_name: str) -> None:

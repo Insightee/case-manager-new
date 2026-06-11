@@ -218,6 +218,9 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
             if child and child not in pg.children:
                 pg.children.append(child)
         dedupe_parent_child_links(db, pg.id)
+        from app.services.family_admin_service import apply_parent_invite_metadata
+
+        apply_parent_invite_metadata(db, user, invite)
     elif invite.role_name == "THERAPIST":
         from app.services.therapist_onboarding_service import apply_therapist_invite_metadata
 

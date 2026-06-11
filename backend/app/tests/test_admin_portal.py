@@ -571,9 +571,13 @@ def test_admin_families_search_and_link_by_email():
 def test_admin_bulk_import_clients_creates_families():
     import uuid
 
+    from app.models.user import InviteToken
+
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     suffix = uuid.uuid4().hex[:8]
+    parent_email = f"bulk-parent-{suffix}@demo.com"
+    parent_phone = "+91 9876500001"
     res = client.post(
         "/api/v1/admin/clients/bulk-import",
         headers=headers,
@@ -582,9 +586,9 @@ def test_admin_bulk_import_clients_creates_families():
                 {
                     "child_first": "Bulk",
                     "child_last": suffix,
-                    "parent_email": f"bulk-parent-{suffix}@demo.com",
+                    "parent_email": parent_email,
                     "parent_full_name": "Bulk Parent",
-                    "parent_phone": "+91 9876500001",
+                    "parent_phone": parent_phone,
                 },
             ],
         },
@@ -597,8 +601,31 @@ def test_admin_bulk_import_clients_creates_families():
 
     families = client.get("/api/v1/admin/families", headers=headers, params={"search": suffix})
     assert families.status_code == 200
-    names = [f["childName"] for f in families.json()]
+    fam_rows = families.json()
+    names = [f["childName"] for f in fam_rows]
     assert any(f"Bulk {suffix}" in n or n == f"Bulk {suffix}" for n in names)
+    match = next(f for f in fam_rows if suffix in (f.get("childName") or ""))
+    pending = match.get("pendingInvite") or {}
+    assert pending.get("pendingEmail") == parent_email
+    assert pending.get("pendingParentName") == "Bulk Parent"
+    assert pending.get("pendingParentPhone") == parent_phone
+
+    from app.core.database import SessionLocal
+    from sqlalchemy import select
+
+    with SessionLocal() as db:
+        inv = db.scalars(select(InviteToken).where(InviteToken.email == parent_email)).first()
+        assert inv is not None
+        assert (inv.invite_metadata or {}).get("phone") == parent_phone
+        invite_token = inv.token
+
+    accept = client.post(
+        "/api/v1/auth/accept-invite",
+        json={"token": invite_token, "password": "demo12345", "full_name": "Bulk Parent"},
+    )
+    assert accept.status_code == 200, accept.text
+    me = accept.json()["user"]
+    assert me["phone"] == parent_phone
 
 
 def test_admin_create_family_rejects_duplicate_child_for_existing_parent():
