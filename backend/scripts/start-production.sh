@@ -13,8 +13,7 @@ if [ "${APP_ENV:-}" = "production" ] && { [ "${SEED_DEMO_DATA:-false}" = "true" 
   exit 1
 fi
 
-echo "Running migrations..."
-python scripts/migrate_production.py
+echo "Migrations handled by Railway preDeployCommand — skipping in start script."
 
 if [ "${SEED_DEMO_DATA:-false}" = "true" ] || [ "${SEED_DEMO_DATA:-false}" = "1" ]; then
   echo "SEED_DEMO_DATA is set — running demo seed (idempotent)..."

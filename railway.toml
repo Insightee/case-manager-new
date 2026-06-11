@@ -7,7 +7,8 @@ dockerfilePath = "Dockerfile"
 watchPatterns = ["backend/**"]
 
 [deploy]
-# Use Dockerfile CMD (scripts/start-production.sh in image). Override only if needed.
+# Run DB migrations before the app container starts (separate one-off container).
+preDeployCommand = "cd /app && PYTHONPATH=/app:/app/alembic python scripts/migrate_production.py"
 healthcheckPath = "/health"
 healthcheckTimeout = 180
 restartPolicyType = "ON_FAILURE"
