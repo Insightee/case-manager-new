@@ -568,6 +568,39 @@ def test_admin_families_search_and_link_by_email():
     assert fam2.json().get("linkedExistingParent") is True
 
 
+def test_admin_bulk_import_clients_creates_families():
+    import uuid
+
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    suffix = uuid.uuid4().hex[:8]
+    res = client.post(
+        "/api/v1/admin/clients/bulk-import",
+        headers=headers,
+        json={
+            "rows": [
+                {
+                    "child_first": "Bulk",
+                    "child_last": suffix,
+                    "parent_email": f"bulk-parent-{suffix}@demo.com",
+                    "parent_full_name": "Bulk Parent",
+                    "parent_phone": "+91 9876500001",
+                },
+            ],
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["total"] == 1
+    assert body["success_count"] == 1
+    assert body["results"][0]["success"] is True
+
+    families = client.get("/api/v1/admin/families", headers=headers, params={"search": suffix})
+    assert families.status_code == 200
+    names = [f["childName"] for f in families.json()]
+    assert any(f"Bulk {suffix}" in n or n == f"Bulk {suffix}" for n in names)
+
+
 def test_admin_create_family_rejects_duplicate_child_for_existing_parent():
     import uuid
 

@@ -67,8 +67,14 @@ export function AdminClientProfilesPage() {
         method: 'POST',
         body: JSON.stringify({ rows }),
       })
-      setSuccess(`Imported ${res.success_count} of ${res.total} families`)
-      setBulkText('')
+      const failures = (res.results || []).filter((r) => !r.success)
+      if (failures.length) {
+        setError(failures.map((r) => `${r.email}: ${r.error}`).join(' · '))
+      }
+      if (res.success_count > 0) {
+        setSuccess(`Imported ${res.success_count} of ${res.total} families`)
+        if (res.success_count === res.total) setBulkText('')
+      }
       load()
     } catch (err) {
       setError(err.message || 'Bulk import failed')

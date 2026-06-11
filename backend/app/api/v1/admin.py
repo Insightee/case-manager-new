@@ -2410,6 +2410,9 @@ def admin_bulk_import_clients(
                 parent_phone=row.parent_phone,
                 child_first=row.child_first.strip(),
                 child_last=(row.child_last or "").strip(),
+                send_invite=True,
+                password=None,
+                created_by_user_id=user.id,
             )
             results.append({"email": row.parent_email, "success": True, "error": None})
         except Exception as exc:
