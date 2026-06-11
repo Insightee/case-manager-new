@@ -61,6 +61,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             status_code=status.HTTP_403_FORBIDDEN,
             detail=portal_login_rejection_message(login_portal, user),
         )
+    auth_service.mark_user_logged_in(user)
     access, refresh = auth_service.issue_tokens(user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="login", entity_type="user", entity_id=user.id, **meta)
@@ -220,7 +221,8 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
         dedupe_parent_child_links(db, pg.id)
         from app.services.family_admin_service import apply_parent_invite_metadata
 
-        apply_parent_invite_metadata(db, user, invite)
+        apply_parent_invite_metadata(db, user, invite, form_full_name=payload.full_name)
+        auth_service.mark_user_logged_in(user)
     elif invite.role_name == "THERAPIST":
         from app.services.therapist_onboarding_service import apply_therapist_invite_metadata
 

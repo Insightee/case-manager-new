@@ -3824,6 +3824,43 @@ def admin_list_invites(
     ]
 
 
+class ParentInviteProvisionRequest(BaseModel):
+    password: str = Field(min_length=6)
+
+
+@router.post("/invites/{invite_id}/provision-parent")
+def provision_parent_invite(
+    invite_id: int,
+    payload: ParentInviteProvisionRequest,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    """Create a parent login from a pending child invite using admin-set password."""
+    from app.services import family_admin_service
+
+    try:
+        result = family_admin_service.provision_parent_from_invite(
+            db,
+            invite_id=invite_id,
+            password=payload.password,
+            created_by_user_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="provision_parent_invite",
+        entity_type="user",
+        entity_id=result["parentUserId"],
+        **meta,
+    )
+    db.commit()
+    return result
+
+
 @router.post("/invites/{invite_id}/resend-email")
 def resend_invite_email(
     invite_id: int,

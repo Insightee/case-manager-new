@@ -28,6 +28,26 @@ import {
 } from './ui/index.js'
 import { accountStatusLabel, accountStatusTone, clientAccountStatus, clientStatusHint } from '../../lib/accountStatus.js'
 
+function clientParentContact(f) {
+  const primary = f.parents?.[0]
+  if (primary) {
+    return {
+      name: primary.parentName || '—',
+      email: primary.parentEmail || '—',
+      phone: primary.parentPhone || '—',
+    }
+  }
+  const pending = f.pendingInvite
+  if (pending) {
+    return {
+      name: pending.pendingParentName || '—',
+      email: pending.pendingEmail || '—',
+      phone: pending.pendingParentPhone || '—',
+    }
+  }
+  return { name: '—', email: '—', phone: '—' }
+}
+
 export function AdminPeoplePage() {
   const { can, user, isViewOnly } = useAuth()
   const isHrPortal = (user?.roles || []).includes('HR')
@@ -266,6 +286,29 @@ export function AdminPeoplePage() {
     }
   }
 
+  async function setPasswordForPendingParent(f) {
+    const inviteId = f.pendingInvite?.inviteId
+    const email = f.pendingInvite?.pendingEmail
+    if (!inviteId || !email) return
+    const nextPassword = window.prompt(`Set password for ${email} (min 6 characters):`)
+    if (!nextPassword) return
+    if (nextPassword.length < 6) {
+      setError('Password must be at least 6 characters')
+      return
+    }
+    setError('')
+    try {
+      await apiFetch(`/api/v1/admin/invites/${inviteId}/provision-parent`, {
+        method: 'POST',
+        body: JSON.stringify({ password: nextPassword }),
+      })
+      setSuccess(`Password set for ${email}. Share login credentials — account activates on first sign-in.`)
+      load()
+    } catch (err) {
+      setError(err.message || 'Could not set password')
+    }
+  }
+
   function clientRowActions(f) {
     const primary = f.parents?.[0]
     const clientUser = clientUserFromFamily(f)
@@ -324,6 +367,13 @@ export function AdminPeoplePage() {
             onClick={() => invitePendingParent(f)}
           >
             Resend invite
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            onClick={() => setPasswordForPendingParent(f)}
+          >
+            Set password
           </button>
         </div>
       )
@@ -774,6 +824,7 @@ export function AdminPeoplePage() {
                           <tbody>
                             {filteredClients.map((f) => {
                               const primary = f.parents?.[0]
+                              const parentContact = clientParentContact(f)
                               const clientUser = clientUserFromFamily(f)
                               const firstCase = clientCases(f)[0]
                               const childHref = firstCase?.caseId
@@ -802,12 +853,9 @@ export function AdminPeoplePage() {
                                       f.childName
                                     )}
                                   </td>
-                                  <td>
-                                    {primary?.parentName ||
-                                      (f.pendingInvite ? `Pending: ${f.pendingInvite.pendingEmail}` : '—')}
-                                  </td>
-                                  <td>{primary?.parentEmail || '—'}</td>
-                                  <td>{primary?.parentPhone || '—'}</td>
+                                  <td>{parentContact.name}</td>
+                                  <td>{parentContact.email}</td>
+                                  <td>{parentContact.phone}</td>
                                   <td>
                                     <StatusBadge tone={accountStatusTone(clientAccountStatus(f))}>
                                       {clientAccountStatus(f)}
@@ -837,10 +885,10 @@ export function AdminPeoplePage() {
                           : canCreateCase
                             ? '/admin/cases?allot=1'
                             : null
-                        const metaParts = primary
-                          ? [primary.parentName, primary.parentEmail, primary.parentPhone].filter(Boolean)
-                          : f.pendingInvite
-                            ? [`Pending: ${f.pendingInvite.pendingEmail}`]
+                        const contact = clientParentContact(f)
+                        const metaParts =
+                          contact.name !== '—' || contact.email !== '—'
+                            ? [contact.name, contact.email, contact.phone].filter((v) => v && v !== '—')
                             : ['No parent linked']
                         return (
                           <li key={f.childId}>

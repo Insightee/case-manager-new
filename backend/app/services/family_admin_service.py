@@ -32,7 +32,8 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
             "parentEmail": u.email,
             "parentPhone": u.phone,
             "parentIsActive": bool(u.is_active),
-            "parentLoginReady": bool(u.is_active and u.password_hash),
+            "parentLoginReady": bool(u.is_active and u.last_login_at),
+            "parentHasPassword": bool(u.password_hash),
         }
         seen_child: set[int] = set()
         for c in pg.children:
@@ -93,11 +94,17 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
                 break
         if primary_case_id is None and child_cases:
             primary_case_id = child_cases[0]["caseId"]
+        pending = pending_by_child.get(child.id)
         if q:
-            hay = f"{label} {' '.join(p['parentEmail'] for p in parents)} {' '.join(case_codes)}".lower()
+            pending_bits = ""
+            if pending:
+                pending_bits = " ".join(
+                    str(pending.get(k) or "")
+                    for k in ("pendingParentName", "pendingEmail", "pendingParentPhone")
+                )
+            hay = f"{label} {' '.join(p['parentEmail'] for p in parents)} {pending_bits} {' '.join(case_codes)}".lower()
             if q not in hay:
                 continue
-        pending = pending_by_child.get(child.id)
         result.append(
             {
                 "childId": child.id,
@@ -263,13 +270,80 @@ def create_family(
     return {"childId": child.id, "parentUserId": None, "inviteUrl": invite_url, "pendingEmail": email}
 
 
-def apply_parent_invite_metadata(db: Session, user: User, invite: InviteToken) -> None:
+def apply_parent_invite_metadata(
+    db: Session,
+    user: User,
+    invite: InviteToken,
+    *,
+    form_full_name: str | None = None,
+) -> None:
     meta = invite.invite_metadata or {}
+    if form_full_name and form_full_name.strip():
+        user.full_name = form_full_name.strip()
+    elif meta.get("full_name"):
+        user.full_name = str(meta["full_name"]).strip()
     if meta.get("phone"):
         user.phone = str(meta["phone"]).strip()
-    if meta.get("full_name") and not (user.full_name or "").strip():
-        user.full_name = str(meta["full_name"]).strip()
     db.flush()
+
+
+def provision_parent_from_invite(
+    db: Session,
+    *,
+    invite_id: int,
+    password: str,
+    created_by_user_id: int,
+) -> dict:
+    """Create a parent account from a pending child-linked invite (admin-set password)."""
+    from app.core.permissions import RoleName
+    from app.models.parent import ParentGuardian
+    from app.services.parent_service import dedupe_parent_child_links
+
+    invite = db.get(InviteToken, invite_id)
+    if not invite or invite.used_at:
+        raise ValueError("Invalid or used invite")
+    if invite.role_name != RoleName.PARENT.value:
+        raise ValueError("Invite is not for a parent account")
+    if not invite.linked_child_id:
+        raise ValueError("Invite is not linked to a child profile")
+
+    email = invite.email.lower().strip()
+    existing = db.scalars(select(User).where(User.email == email)).first()
+    if existing:
+        raise ValueError("A user with this email already exists")
+
+    meta = invite.invite_metadata or {}
+    full_name = (meta.get("full_name") or email.split("@")[0]).strip()
+    phone = (meta.get("phone") or "").strip() or None
+
+    user = auth_service.create_user(
+        db,
+        email=email,
+        password=password,
+        full_name=full_name,
+        role_names=[RoleName.PARENT.value],
+    )
+    if phone:
+        user.phone = phone
+
+    pg = ParentGuardian(user_id=user.id)
+    db.add(pg)
+    db.flush()
+    child = db.get(Child, invite.linked_child_id)
+    if child and child not in pg.children:
+        pg.children.append(child)
+    dedupe_parent_child_links(db, pg.id)
+
+    invite.used_at = datetime.now(timezone.utc)
+    db.flush()
+    return {
+        "childId": invite.linked_child_id,
+        "parentUserId": user.id,
+        "email": email,
+        "full_name": user.full_name,
+        "phone": user.phone,
+        "created_by_user_id": created_by_user_id,
+    }
 
 
 def _send_parent_invite_email(to: str, invite_url: str, parent_name: str, child_name: str) -> None:

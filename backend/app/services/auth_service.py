@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -57,3 +59,8 @@ def create_user(
     db.add(user)
     db.flush()
     return user
+
+
+def mark_user_logged_in(user: User) -> None:
+    """Record first (or latest) portal sign-in for activation tracking."""
+    user.last_login_at = datetime.now(timezone.utc)

@@ -52,6 +52,11 @@ export function clientAccountStatus(family) {
 
 export function clientStatusHint(family) {
   if (family?.allCasesClosed) return 'All cases closed'
+  const primary = family?.parents?.[0]
+  if (primary && primary.parentHasPassword && !primary.parentLoginReady) {
+    return 'Password set — awaiting first sign-in'
+  }
+  if (family?.pendingInvite) return 'Invite sent — awaiting parent sign-up'
   return null
 }
 

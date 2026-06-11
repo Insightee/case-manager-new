@@ -628,6 +628,71 @@ def test_admin_bulk_import_clients_creates_families():
     assert me["phone"] == parent_phone
 
 
+def test_admin_provision_parent_invite_sets_password_without_activation():
+    import uuid
+
+    from app.core.database import SessionLocal
+    from app.models.user import User
+    from sqlalchemy import select
+
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    suffix = uuid.uuid4().hex[:8]
+    parent_email = f"provision-parent-{suffix}@demo.com"
+    res = client.post(
+        "/api/v1/admin/clients/bulk-import",
+        headers=headers,
+        json={
+            "rows": [
+                {
+                    "child_first": "Provision",
+                    "child_last": suffix,
+                    "parent_email": parent_email,
+                    "parent_full_name": "Provision Parent",
+                    "parent_phone": "+91 9876500099",
+                },
+            ],
+        },
+    )
+    assert res.status_code == 200, res.text
+    families = client.get("/api/v1/admin/families", headers=headers, params={"search": suffix})
+    invite_id = families.json()[0]["pendingInvite"]["inviteId"]
+
+    provision = client.post(
+        f"/api/v1/admin/invites/{invite_id}/provision-parent",
+        headers=headers,
+        json={"password": "demo12345"},
+    )
+    assert provision.status_code == 200, provision.text
+    body = provision.json()
+    assert body["email"] == parent_email
+    assert body["phone"] == "+91 9876500099"
+
+    families_after = client.get("/api/v1/admin/families", headers=headers, params={"search": suffix})
+    row = families_after.json()[0]
+    assert row.get("pendingInvite") is None
+    primary = row["parents"][0]
+    assert primary["parentName"] == "Provision Parent"
+    assert primary["parentEmail"] == parent_email
+    assert primary["parentPhone"] == "+91 9876500099"
+    assert primary["parentHasPassword"] is True
+    assert primary["parentLoginReady"] is False
+
+    with SessionLocal() as db:
+        user = db.scalars(select(User).where(User.email == parent_email)).first()
+        assert user is not None
+        assert user.last_login_at is None
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": parent_email, "password": "demo12345", "portal": "parent"},
+    )
+    assert login.status_code == 200, login.text
+
+    families_active = client.get("/api/v1/admin/families", headers=headers, params={"search": suffix})
+    assert families_active.json()[0]["parents"][0]["parentLoginReady"] is True
+
+
 def test_admin_create_family_rejects_duplicate_child_for_existing_parent():
     import uuid
 

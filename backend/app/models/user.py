@@ -65,6 +65,7 @@ class User(Base):
     org_capability_grants: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     feature_overrides: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     is_view_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     roles = relationship("Role", secondary=user_roles, back_populates="users")
