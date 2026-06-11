@@ -40,6 +40,15 @@ def main() -> int:
             if "external_employee_id" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN external_employee_id VARCHAR(64)"))
                 print("Added users.external_employee_id")
+            if "last_login_at" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMPTZ"))
+                conn.execute(
+                    text(
+                        "UPDATE users SET last_login_at = created_at "
+                        "WHERE last_login_at IS NULL AND password_hash IS NOT NULL AND password_hash != ''"
+                    )
+                )
+                print("Added users.last_login_at")
         if insp.has_table("children"):
             cols = {c["name"] for c in insp.get_columns("children")}
             if "external_client_id" not in cols:

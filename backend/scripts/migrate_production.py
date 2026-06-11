@@ -25,7 +25,7 @@ import app.models  # noqa: F401
 
 # Columns that must exist when Alembic reports head (catches false stamps on partial upgrades).
 _REQUIRED_AT_HEAD: dict[str, tuple[str, ...]] = {
-    "users": ("external_employee_id",),
+    "users": ("external_employee_id", "last_login_at"),
     "children": ("external_client_id",),
     "cases": ("external_case_ref",),
     "daily_logs": ("parent_notified_at",),
