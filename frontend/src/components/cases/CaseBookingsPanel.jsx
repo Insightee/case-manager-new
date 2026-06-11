@@ -45,7 +45,7 @@ export function CaseBookingsPanel({ caseId }) {
       <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>
         Parent or admin bookings on your calendar for this case. Tap a session to confirm or decline a parent
         reschedule request, or use{' '}
-        <Link to="/therapist/slots">Open Slots</Link> for full calendar management.
+        <Link to="/therapist/slots">Scheduling</Link> for full calendar management.
       </p>
       {pendingCount > 0 ? (
         <p style={{ fontSize: '0.85rem', color: '#b45309', marginBottom: 12 }}>

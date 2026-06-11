@@ -262,7 +262,7 @@ export function CaseSessionsPanel({
           <h4>Upcoming for this client</h4>
           <p className="ic-case-panel__hint">No upcoming sessions or bookings. Add availability in your calendar.</p>
           <Link to="/therapist/slots" className="ic-btn ic-btn--primary" style={{ marginTop: 8 }}>
-            Open slots
+            Scheduling
           </Link>
         </section>
       )}

@@ -58,7 +58,7 @@ export const THERAPIST_ACTIONS = [
   {
     id: 'slots',
     to: '/therapist/slots',
-    label: 'Open slots',
+    label: 'Scheduling',
     description: 'Mark when you are available for sessions',
     icon: '🕐',
     tone: 'teal',

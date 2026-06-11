@@ -22,7 +22,7 @@ const THERAPIST_NAV = [
   { to: '/therapist/support', label: 'Support & Incidents' },
   { to: '/therapist/cm-meetings', label: 'CM meetings' },
   { to: '/therapist/leave', label: 'Leave' },
-  { to: '/therapist/slots', label: 'Open Slots' },
+  { to: '/therapist/slots', label: 'Scheduling' },
 ]
 
 const THERAPIST_MOBILE_NAV = [
