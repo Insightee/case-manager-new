@@ -172,7 +172,7 @@ test.describe('Therapist portal mobile', () => {
 
   test('open slots page fits viewport without horizontal scroll', async ({ page }) => {
     await loginTherapist(page)
-    await navigateTherapist(page, 'Open Slots')
+    await navigateTherapist(page, 'Scheduling')
     await expect(page.getByRole('heading', { name: 'My calendar' })).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
     expect(overflow).toBe(false)

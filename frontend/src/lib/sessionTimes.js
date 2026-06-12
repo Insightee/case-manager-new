@@ -69,4 +69,26 @@ export function editedApprovalLabel(log) {
   return 'Pending approval'
 }
 
+/** Admin/therapist list title: date · clock → corrected when applicable. */
+export function formatSessionLogRowTitle(session, { fmtDate } = {}) {
+  if (!session) return '—'
+  const datePart = fmtDate ? fmtDate(session.scheduled_date) : session.scheduled_date || '—'
+  const clockRange = formatClockRange(session)
+  const editedRange =
+    session.actual_times_edited || session.edited_start_at ? formatEditedRange(session) : null
+  let title = datePart
+  if (clockRange) title += ` · ${clockRange}`
+  if (editedRange) title += ` → ${editedRange}`
+  return title
+}
+
+export function sessionHasTimeEdit(session, log) {
+  return Boolean(
+    session?.actual_times_edited ||
+      log?.actual_times_edited ||
+      session?.edited_start_at ||
+      log?.edited_start_at,
+  )
+}
+
 export { formatTimeIST }

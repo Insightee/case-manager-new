@@ -59,7 +59,7 @@ export const THERAPIST_ACTIONS = [
     id: 'slots',
     to: '/therapist/slots',
     label: 'Scheduling',
-    description: 'Manage availability and book sessions',
+    description: 'Mark when you are available for sessions',
     icon: '🕐',
     tone: 'teal',
     defaultWeight: 2,

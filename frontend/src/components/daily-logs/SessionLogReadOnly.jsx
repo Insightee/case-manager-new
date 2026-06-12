@@ -1,7 +1,12 @@
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
-import { formatClockRange, formatEditedRange, formatScheduledRange } from '../../lib/sessionTimes.js'
+import {
+  formatClockRange,
+  formatEditedRange,
+  formatScheduledRange,
+  sessionHasTimeEdit,
+} from '../../lib/sessionTimes.js'
 
 export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'attendance_status', label: 'Attendance' },
@@ -31,6 +36,9 @@ export function SessionLogReadOnly({
     .filter(Boolean)
     .join(' ')
   const dlClass = isAdmin ? 'admin-session-log-detail__dl' : 'ic-session-log-readonly__dl'
+  const timesSource = session || log
+  const hasTimeEdit = sessionHasTimeEdit(session, log)
+  const editReason = session?.actual_times_edit_reason || log?.actual_times_edit_reason
 
   return (
     <section className={rootClass} aria-label="Session log details">
@@ -73,30 +81,35 @@ export function SessionLogReadOnly({
           {log.review_note ? `: ${log.review_note}` : '.'}
         </p>
       ) : null}
-      {isAdmin && session ? (
+      {isAdmin && hasTimeEdit && log?.approval_status === 'PENDING' ? (
+        <p className="admin-session-log-detail__notice" role="status">
+          Therapist corrected session times. Approving this log accepts the corrected clock for billing.
+        </p>
+      ) : null}
+      {isAdmin && timesSource ? (
         <dl className="admin-session-log-detail__times" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', margin: '0 0 12px', fontSize: '0.8125rem' }}>
-          {formatScheduledRange(session) ? (
+          {formatScheduledRange(timesSource) ? (
             <>
               <dt style={{ color: '#64748b' }}>Scheduled</dt>
-              <dd style={{ margin: 0, fontWeight: 600 }}>{formatScheduledRange(session)}</dd>
+              <dd style={{ margin: 0, fontWeight: 600 }}>{formatScheduledRange(timesSource)}</dd>
             </>
           ) : null}
-          {formatClockRange(session) ? (
+          {formatClockRange(timesSource) ? (
             <>
               <dt style={{ color: '#64748b' }}>Clock</dt>
-              <dd style={{ margin: 0, fontWeight: 600 }}>{formatClockRange(session)}</dd>
+              <dd style={{ margin: 0, fontWeight: 600 }}>{formatClockRange(timesSource)}</dd>
             </>
           ) : null}
-          {formatEditedRange(session) ? (
+          {formatEditedRange(timesSource) ? (
             <>
               <dt style={{ color: '#64748b' }}>Corrected</dt>
-              <dd style={{ margin: 0, fontWeight: 600, color: '#6d28d9' }}>{formatEditedRange(session)}</dd>
+              <dd style={{ margin: 0, fontWeight: 600, color: '#6d28d9' }}>{formatEditedRange(timesSource)}</dd>
             </>
           ) : null}
-          {session.actual_times_edit_reason || log?.actual_times_edit_reason ? (
+          {editReason ? (
             <>
               <dt style={{ color: '#64748b' }}>Edit reason</dt>
-              <dd style={{ margin: 0 }}>{session.actual_times_edit_reason || log?.actual_times_edit_reason}</dd>
+              <dd style={{ margin: 0 }}>{editReason}</dd>
             </>
           ) : null}
         </dl>

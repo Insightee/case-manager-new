@@ -269,7 +269,7 @@ def notify_therapist_reschedule_pending(
     child = case.child.full_name if case and case.child else "a client"
     body = (
         f"{parent_name} requested to move {child} from {_slot_when(old_slot)} to {_slot_when(new_slot)}. "
-        "Confirm or decline in Open Slots."
+        "Confirm or decline in Scheduling."
     )
     notification_service.create_notification(
         db,
