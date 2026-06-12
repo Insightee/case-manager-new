@@ -14,10 +14,12 @@ const EMPTY = {
   external_url: '',
 }
 
-export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'create' }) {
+export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'create', showShareOptions = false }) {
   const [form, setForm] = useState(EMPTY)
   const [sourceTab, setSourceTab] = useState('UPLOAD')
   const [file, setFile] = useState(null)
+  const [shareWithCm, setShareWithCm] = useState(true)
+  const [shareWithParents, setShareWithParents] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -50,6 +52,8 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
       setSourceTab('UPLOAD')
     }
     setFile(null)
+    setShareWithCm(true)
+    setShareWithParents(false)
     setError('')
   }, [open, initial])
 
@@ -115,6 +119,8 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
             report_date: form.report_date || null,
             source_type: 'EXTERNAL_LINK',
             external_url: check.normalized,
+            share_with_cm: showShareOptions ? shareWithCm : false,
+            share_with_parents: showShareOptions ? shareWithParents : false,
           },
         })
       } else {
@@ -125,6 +131,10 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
         if (form.report_date) fd.append('report_date', form.report_date)
         fd.append('source_type', 'UPLOAD')
         fd.append('file', file)
+        if (showShareOptions) {
+          fd.append('share_with_cm', shareWithCm ? 'true' : 'false')
+          fd.append('share_with_parents', shareWithParents ? 'true' : 'false')
+        }
         await onSave({ formData: fd })
       }
       onClose()
@@ -234,6 +244,34 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
               {GOOGLE_LINK_WARNING}
             </p>
           </>
+        ) : null}
+
+        {mode === 'create' && showShareOptions ? (
+          <fieldset className="case-docs-modal__share" style={{ border: 'none', padding: 0, margin: '0 0 12px' }}>
+            <legend style={{ fontSize: '0.8rem', color: '#4b5563', marginBottom: 8 }}>Share with</legend>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8, fontSize: '0.875rem' }}>
+              <input type="checkbox" checked={shareWithCm} onChange={(e) => setShareWithCm(e.target.checked)} />
+              <span>
+                Case manager (review queue)
+                <span style={{ display: 'block', color: '#6b7280', fontSize: '0.75rem' }}>
+                  Sends the document for case manager review on upload.
+                </span>
+              </span>
+            </label>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: '0.875rem' }}>
+              <input
+                type="checkbox"
+                checked={shareWithParents}
+                onChange={(e) => setShareWithParents(e.target.checked)}
+              />
+              <span>
+                Parents (after approval)
+                <span style={{ display: 'block', color: '#6b7280', fontSize: '0.75rem' }}>
+                  Visible to family once the case manager approves and shares.
+                </span>
+              </span>
+            </label>
+          </fieldset>
         ) : null}
 
         {error ? (

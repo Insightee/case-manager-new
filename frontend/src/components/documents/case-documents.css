@@ -150,6 +150,36 @@
   gap: 8px;
 }
 
+.case-docs__drawer--expanded {
+  position: fixed;
+  inset: 0;
+  margin-top: 0;
+  max-height: none;
+  border-radius: 0;
+  z-index: 80;
+}
+
+.case-docs__preview-frame {
+  width: 100%;
+  min-height: 45vh;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.case-docs__drawer--expanded .case-docs__preview-frame {
+  min-height: calc(100vh - 140px);
+}
+
+.case-docs__preview-hint {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
 .case-docs-modal__backdrop {
   position: fixed;
   inset: 0;

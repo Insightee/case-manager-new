@@ -1,5 +1,7 @@
 /** Merge scheduled sessions and calendar bookings for therapist UI. */
 
+import { formatDisplayDateLabel, formatDisplayDateTimeRange } from './datetime.js'
+
 function formatTime(t) {
   if (!t) return ''
   return String(t).slice(0, 5)
@@ -61,10 +63,9 @@ export function mergeUpcomingSchedule({ sessions = [], slots = [] }) {
 
 export function formatScheduleWhen(item) {
   if (!item) return ''
-  const d = new Date(`${item.date}T12:00:00`)
-  const day = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-  if (item.startTime && item.endTime) return `${day} · ${item.startTime}–${item.endTime}`
-  return day
+  const range = formatDisplayDateTimeRange(item.date, item.startTime, item.endTime)
+  if (range) return range
+  return formatDisplayDateLabel(item.date) || item.date
 }
 
 export function isToday(dateStr) {

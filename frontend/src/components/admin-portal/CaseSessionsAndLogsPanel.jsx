@@ -5,14 +5,9 @@ import { unwrapList } from '../../lib/listApi.js'
 import { formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import { AdminDataList, AdminTaskCard, RejectWithComment, StatusBadge } from './ui/index.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { CaseSessionMonthlyReportBar } from './CaseSessionMonthlyReportBar.jsx'
 import './admin-sessions-dashboard.css'
-
-function fmtDate(s) {
-  if (!s) return '—'
-  const [y, m, d] = String(s).slice(0, 10).split('-')
-  return `${d}/${m}/${String(y).slice(2)}`
-}
 
 function sessionSortKey(session, logsBySessionId) {
   const log = logsBySessionId.get(session.id)
@@ -126,7 +121,7 @@ function SessionLogCard({
   const isHighlight = highlightSessionId && String(session.id) === String(highlightSessionId)
   const clockRange = formatClockRange(session)
   const editedRange = session.actual_times_edited ? formatEditedRange(session) : null
-  const title = `${fmtDate(session.scheduled_date)}${clockRange ? ` · ${clockRange}` : ''}${editedRange ? ` → ${editedRange}` : ''}`
+  const title = `${formatDisplayDate(session.scheduled_date)}${clockRange ? ` · ${clockRange}` : ''}${editedRange ? ` → ${editedRange}` : ''}`
 
   const actions = !log ? (
     <span className="admin-muted" style={{ fontSize: '0.8125rem' }}>
@@ -212,7 +207,7 @@ function OrphanLogRow({
           <p className="admin-queue__title">Log #{log.id}</p>
           <p className="admin-queue__meta">
             Session #{log.session_id ?? '—'}
-            {log.scheduled_date ? ` · ${fmtDate(log.scheduled_date)}` : ''}
+            {log.scheduled_date ? ` · ${formatDisplayDate(log.scheduled_date)}` : ''}
           </p>
         </div>
         <StatusBadge status={log.approval_status} />
@@ -401,7 +396,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                     <div>
                       <p className="admin-queue__title">
-                        {fmtDate(session.scheduled_date)}
+                        {formatDisplayDate(session.scheduled_date)}
                         {timeRange ? ` · ${timeRange}` : ''}
                       </p>
                       <p className="admin-queue__meta">

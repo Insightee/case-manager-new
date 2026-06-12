@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
 import { SlotDetailSheet } from '../scheduling/SlotDetailSheet.jsx'
 
 function formatTime(t) {
@@ -45,7 +46,7 @@ export function CaseBookingsPanel({ caseId }) {
       <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>
         Parent or admin bookings on your calendar for this case. Tap a session to confirm or decline a parent
         reschedule request, or use{' '}
-        <Link to="/therapist/slots">Open Slots</Link> for full calendar management.
+        <Link to="/therapist/slots">Scheduling</Link> for full calendar management.
       </p>
       {pendingCount > 0 ? (
         <p style={{ fontSize: '0.85rem', color: '#b45309', marginBottom: 12 }}>
@@ -72,7 +73,7 @@ export function CaseBookingsPanel({ caseId }) {
                   cursor: 'pointer',
                 }}
               >
-                <strong>{sl.slot_date}</strong> · {formatTime(sl.start_time)}–{formatTime(sl.end_time)}
+                <strong>{formatDisplayDateTimeRange(sl.slot_date, sl.start_time, sl.end_time)}</strong>
                 {sl.approval_status === 'PENDING_THERAPIST' ? (
                   <span style={{ marginLeft: 8, fontSize: '0.75rem', color: '#b45309', fontWeight: 600 }}>
                     Reschedule pending

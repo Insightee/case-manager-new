@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
+import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
+import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
 import { STATUS_LABELS } from './slotCalendarUtils.js'
 
 const MODULE_LABELS = {
@@ -76,6 +79,17 @@ export function SlotDetailSheet({ open, slot, onClose, onBook, onChanged }) {
   // Address display — client's homecare/shadow visit address
   const addr = caseDetail?.service_address
   const showAddress = addr && ['homecare', 'shadow_support'].includes(serviceModule)
+  const calendarEvent =
+    slot.status === 'BOOKED'
+      ? mapSlotToCalendarEvent(
+          {
+            ...slot,
+            child_name: slot.child_name || caseDetail?.child_name,
+            case_code: slot.case_code || caseDetail?.case_code,
+          },
+          { deepLinkPath: slot.session_id ? '/therapist/slots' : '/admin/cases' },
+        )
+      : null
 
   async function run(action) {
     setBusy(true)
@@ -139,7 +153,7 @@ export function SlotDetailSheet({ open, slot, onClose, onBook, onChanged }) {
             ) : null}
           </div>
           <h2 className="text-lg font-bold text-slate-900">
-            {slot.slot_date} · {slot.start_time}–{slot.end_time}
+            {formatDisplayDateTimeRange(slot.slot_date, slot.start_time, slot.end_time)}
           </h2>
           {slot.child_name || slot.case_code ? (
             <p className="mt-0.5 text-sm font-medium text-slate-700">
@@ -253,6 +267,10 @@ export function SlotDetailSheet({ open, slot, onClose, onBook, onChanged }) {
           )}
 
           {/* BOOKED slot actions */}
+          {slot.status === 'BOOKED' && calendarEvent ? (
+            <AddToGoogleCalendarButton event={calendarEvent} className="w-full" />
+          ) : null}
+
           {slot.status === 'BOOKED' && (
             <>
               {pendingTherapist ? (

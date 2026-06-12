@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMarkNotificationRead, useNotifications } from '../../hooks/useNotifications.js'
 import { QueryState } from './QueryState.jsx'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { resolveNotificationLink } from './notificationLinks.js'
 import './notification-center.css'
 
@@ -17,7 +18,7 @@ function fmtTime(iso) {
   if (diffH < 24) return `${diffH}h ago`
   const diffD = Math.floor(diffH / 24)
   if (diffD < 7) return `${diffD}d ago`
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return formatTimestampDateIN(iso) || ''
 }
 
 export function NotificationCenterPage({ portal }) {

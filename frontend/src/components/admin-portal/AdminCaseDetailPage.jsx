@@ -114,7 +114,11 @@ export function AdminCaseDetailPage() {
   }, [highlightIncidentId, tab, setSearchParams])
 
   function setTab(id) {
-    setSearchParams({ tab: id }, { replace: true })
+    const next = { tab: id }
+    if (id === 'logs' && highlightSessionId) {
+      next.session_id = highlightSessionId
+    }
+    setSearchParams(next, { replace: true })
   }
 
   async function handleAssign() {

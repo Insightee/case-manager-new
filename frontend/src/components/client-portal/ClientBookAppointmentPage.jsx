@@ -8,17 +8,11 @@ import { fetchParentAppointments } from '../../lib/parentCases.js'
 import { queryKeys } from '../../lib/queryClient.js'
 import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ErrorBanner } from '../shared/ErrorBanner.jsx'
+import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
+import { mapParentApptToCalendarEvent } from '../../lib/googleCalendar.js'
+import { formatDisplayDateLabel } from '../../lib/datetime.js'
 import { ParentBookSessionForm } from './ParentBookSessionForm.jsx'
 import './parent-book-form.css'
-
-function fmtDate(d) {
-  if (!d) return ''
-  return new Date(d + 'T00:00:00').toLocaleDateString(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  })
-}
 
 function ApptStatusBadge({ status }) {
   if (status === 'PENDING_THERAPIST') {
@@ -52,6 +46,7 @@ function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
   }, [onClose])
 
   const titleId = 'parent-appt-sheet-title'
+  const calendarEvent = mapParentApptToCalendarEvent(appt)
 
   return createPortal(
     <div className="parent-appt-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -70,7 +65,7 @@ function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
           <>
             <p className="parent-appt-sheet__eyebrow parent-appt-sheet__eyebrow--cm">Case manager meeting</p>
             <h3 id={titleId} className="parent-appt-sheet__title">
-              {fmtDate(appt.slotDate)}
+              {formatDisplayDateLabel(appt.slotDate)}
             </h3>
             <p className="parent-appt-sheet__time">
               {appt.startTime}
@@ -82,6 +77,11 @@ function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
             <p className="parent-appt-sheet__hint">
               Booked by your case manager. Contact them to change this meeting — therapy sessions are booked below.
             </p>
+            {calendarEvent ? (
+              <div style={{ marginBottom: 12 }}>
+                <AddToGoogleCalendarButton event={calendarEvent} className="w-full" />
+              </div>
+            ) : null}
             <button type="button" className="parent-appt-sheet__close-only" onClick={onClose}>
               Close
             </button>
@@ -90,7 +90,7 @@ function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
           <>
             <p className="parent-appt-sheet__eyebrow">Therapy session</p>
             <h3 id={titleId} className="parent-appt-sheet__title">
-              {fmtDate(appt.slotDate)}
+              {formatDisplayDateLabel(appt.slotDate)}
             </h3>
             <p className="parent-appt-sheet__time">
               {appt.startTime}
@@ -99,6 +99,11 @@ function UpcomingApptSheet({ appt, onReschedule, onCancel, onClose, acting }) {
             {appt.childName ? <p className="parent-appt-sheet__child">Therapy · {appt.childName}</p> : null}
             {appt.therapistName ? (
               <p className="parent-appt-sheet__with">Therapist: {appt.therapistName}</p>
+            ) : null}
+            {calendarEvent ? (
+              <div style={{ marginBottom: 12 }}>
+                <AddToGoogleCalendarButton event={calendarEvent} className="w-full" />
+              </div>
             ) : null}
             <div className="parent-appt-sheet__actions">
               <button
@@ -211,7 +216,7 @@ export function ClientBookAppointmentPage() {
                   className={`parent-schedule-page__card ${appt.isCmMeeting ? 'parent-schedule-page__card--cm' : ''}`}
                   onClick={() => setSelectedAppt(appt)}
                 >
-                  <p className="parent-schedule-page__card-date">{fmtDate(appt.slotDate)}</p>
+                  <p className="parent-schedule-page__card-date">{formatDisplayDateLabel(appt.slotDate)}</p>
                   <p className="parent-schedule-page__card-time">
                     {appt.startTime}
                     {appt.endTime ? `–${appt.endTime}` : ''}

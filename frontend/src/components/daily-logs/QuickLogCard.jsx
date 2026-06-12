@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { formatDisplayDate } from '../../lib/datetime.js'
 
 function toggleInList(list, tag) {
   if (list.includes(tag)) return list.filter((t) => t !== tag)
@@ -125,7 +126,7 @@ export function QuickLogCard({
             >
               {caseSessions.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.scheduled_date} — {s.status}
+                  {formatDisplayDate(s.scheduled_date)} — {s.status}
                 </option>
               ))}
             </select>

@@ -5,6 +5,7 @@ import {
   PieChart, Pie, Cell, AreaChart, Area,
 } from 'recharts'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDate, formatDisplayDateRange } from '../../lib/datetime.js'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -12,6 +13,7 @@ import {
   AdminTaskCard,
   StatusBadge,
 } from './ui/index.js'
+import { SessionAbsenceApprovals } from '../shared/SessionAbsenceApprovals.jsx'
 import './admin-sessions-dashboard.css'
 
 const STATUS_COLORS = {
@@ -43,11 +45,6 @@ function fmt(d) {
   return dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
-function fmtDate(s) {
-  if (!s) return '—'
-  const [y, m, d] = s.split('-')
-  return `${d}/${m}/${String(y).slice(2)}`
-}
 
 function toISODate(d) {
   return d.toISOString().slice(0, 10)
@@ -121,7 +118,7 @@ function FlagDrawer({ session, onClose, onDone }) {
       <div className="sessions-dash__flag-drawer">
         <h3 className="sessions-dash__drawer-title">Flag session for review</h3>
         <p className="sessions-dash__drawer-meta">
-          Session #{session.id} · {fmtDate(session.scheduled_date)} · {session.child_name || 'Unknown client'}
+          Session #{session.id} · {formatDisplayDate(session.scheduled_date)} · {session.child_name || 'Unknown client'}
           {session.therapist_name ? ` · ${session.therapist_name}` : ''}
         </p>
 
@@ -186,7 +183,7 @@ function OverviewTab({ data }) {
     .map(([k, v]) => ({ name: k, value: v }))
 
   const dayData = by_day.map((d) => ({
-    date: fmtDate(d.date),
+    date: formatDisplayDate(d.date),
     Completed: d.completed,
     Cancelled: d.cancelled,
     Other: d.total - d.completed - d.cancelled,
@@ -455,7 +452,7 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                     className={isHighlight ? 'sessions-dash__row--highlight' : undefined}
                   >
                     <td className="sessions-dash__when">
-                      <span className="admin-table__primary">{fmtDate(s.scheduled_date)}</span>
+                      <span className="admin-table__primary">{formatDisplayDate(s.scheduled_date)}</span>
                       <span className="admin-table__meta">
                         {startDisplay}
                         {endDisplay !== '—' ? ` – ${endDisplay}` : ''}
@@ -539,7 +536,7 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                   <li key={s.id} ref={isHighlight ? highlightRef : null}>
                     <AdminTaskCard
                       highlight={isHighlight}
-                      title={`${fmtDate(s.scheduled_date)} · ${startDisplay}${endDisplay !== '—' ? ` – ${endDisplay}` : ''}`}
+                      title={`${formatDisplayDate(s.scheduled_date)} · ${startDisplay}${endDisplay !== '—' ? ` – ${endDisplay}` : ''}`}
                       meta={[s.case_code, s.child_name, s.therapist_name].filter(Boolean).join(' · ') || '—'}
                       badges={
                         <>
@@ -686,7 +683,7 @@ export function AdminSessionLogsPage() {
 
   const filterChips = []
   if (filters.dateFrom || filters.dateTo) {
-    filterChips.push(`${fmtDate(filters.dateFrom)} – ${fmtDate(filters.dateTo)}`)
+    filterChips.push(`${formatDisplayDate(filters.dateFrom)} – ${formatDisplayDate(filters.dateTo)}`)
   }
   if (filters.therapistId) {
     const t = therapists.find((x) => String(x.therapist_user_id || x.id) === String(filters.therapistId))
@@ -710,6 +707,13 @@ export function AdminSessionLogsPage() {
         title="Session logs"
         subtitle="Scheduled sessions and submitted daily logs — filter by case, therapist, and date."
       />
+
+      <AdminTaskCard title="Pending absence requests" subtitle="Child absent and therapist leave — approve or decline.">
+        <SessionAbsenceApprovals
+          listPath="/api/v1/sessions/absence/pending"
+          emptyLabel="No absence requests in the queue."
+        />
+      </AdminTaskCard>
 
       {filters.caseId ? (
         <div className="sessions-dash__case-banner">

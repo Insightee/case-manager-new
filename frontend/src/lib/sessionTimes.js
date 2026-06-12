@@ -1,5 +1,7 @@
 import {
   actualDurationMinsIST,
+  formatDisplayDate,
+  formatDisplayDateTimeRange,
   formatSessionActualRange,
   formatTimeIST,
   parseApiDatetime,
@@ -22,9 +24,10 @@ export function formatScheduledRange(session) {
   if (!session?.scheduled_date) return null
   const start = formatWallClock(session.start_time)
   const end = formatWallClock(session.end_time)
-  if (start && end) return `${session.scheduled_date} · ${start}–${end}`
-  if (start) return `${session.scheduled_date} · ${start}`
-  return session.scheduled_date
+  const formatted =
+    formatDisplayDateTimeRange(session.scheduled_date, start, end)
+    || formatDisplayDate(session.scheduled_date, null)
+  return formatted || session.scheduled_date
 }
 
 /** Clock-in/out from actual_* (immutable record). */

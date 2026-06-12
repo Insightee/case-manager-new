@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { parseApiDatetime } from '../../lib/datetime.js'
 import { formatClockRange, formatScheduledRange } from '../../lib/sessionTimes.js'
 
@@ -120,7 +121,7 @@ export function EditActualTimesModal({ open, session, onClose, onSaved }) {
             <h2 id="edit-times-title">Correct session times</h2>
             <p className="ic-edit-times-modal__meta">
               <strong>{displayName}</strong>
-              {session.scheduled_date ? <> · {session.scheduled_date}</> : null}
+              {session.scheduled_date ? <> · {formatDisplayDate(session.scheduled_date)}</> : null}
             </p>
           </div>
           <button

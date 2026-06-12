@@ -32,7 +32,7 @@ def _ledger_month(d: date) -> str:
 def _parent_for_case(db: Session, case: Case) -> int | None:
     row = db.execute(
         select(ParentGuardian.user_id)
-        .join(parent_child_link, parent_child_link.c.parent_id == ParentGuardian.id)
+        .join(parent_child_link, parent_child_link.c.parent_guardian_id == ParentGuardian.id)
         .where(parent_child_link.c.child_id == case.child_id)
         .limit(1)
     ).first()
@@ -202,6 +202,13 @@ def sync_session_status(db: Session, session: TherapySession) -> BillingLedger |
             billable_default=BillableStatus.PENDING_REVIEW,
         )
     if status == SessionStatus.CANCELLED:
+        return upsert_from_session_event(
+            db,
+            session,
+            event_type=LedgerEventType.THERAPIST_CANCEL,
+            billable_default=BillableStatus.PENDING_REVIEW,
+        )
+    if status == SessionStatus.THERAPIST_LEAVE:
         return upsert_from_session_event(
             db,
             session,

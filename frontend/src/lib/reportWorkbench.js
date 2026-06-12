@@ -1,5 +1,7 @@
 /** Map API monthly reports + assigned cases into Monthly Reports UI sections. */
 
+import { formatTimestampDateIN } from './datetime.js'
+
 function currentMonthLabel() {
   return new Date().toLocaleString('en-US', { month: 'short', year: 'numeric' })
 }
@@ -15,7 +17,7 @@ function formatRelative(iso) {
   const days = Math.floor(hrs / 24)
   if (days === 1) return 'Yesterday'
   if (days < 7) return `${days} days ago`
-  return d.toLocaleDateString()
+  return formatTimestampDateIN(iso) || ''
 }
 
 function mapStatusForCard(status) {

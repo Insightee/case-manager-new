@@ -5,17 +5,11 @@ import { useParentPortal } from '../../hooks/useParentPortal.js'
 import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 import { buildSessionDisputeState, SessionCard } from './SessionCard.jsx'
+import { formatDisplayDateLabel, formatDisplayDateTime } from '../../lib/datetime.js'
 import './parent-session-updates.css'
 
 function CmMeetingCard({ meeting }) {
-  const dateLabel = meeting.scheduled_date
-    ? new Date(meeting.scheduled_date + 'T00:00:00').toLocaleDateString(undefined, {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
-    : ''
+  const dateLabel = meeting.scheduled_date ? formatDisplayDateLabel(meeting.scheduled_date) : ''
 
   return (
     <article className="session-card" style={{ borderLeft: '3px solid #7c3aed' }}>
@@ -26,8 +20,7 @@ function CmMeetingCard({ meeting }) {
             <span className="session-card__cm-pill">CM Meeting</span>
           </h3>
           <p className="session-card__meta">
-            {dateLabel}
-            {meeting.scheduled_time ? ` · ${meeting.scheduled_time}` : ''}
+            {formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time) || dateLabel}
             {meeting.case_manager_name ? ` · Case manager: ${meeting.case_manager_name}` : ''}
           </p>
         </div>

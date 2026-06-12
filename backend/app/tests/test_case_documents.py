@@ -154,6 +154,28 @@ def test_cm_review_approve_and_parent_sees_published():
     assert doc_id in ids
 
 
+def test_share_on_upload_submits_to_cm():
+    headers = _login("therapist@demo.com")
+    case_id = _first_case_id(headers)
+    pdf = io.BytesIO(b"%PDF-1.4 share test")
+    r = client.post(
+        f"/api/v1/cases/{case_id}/documents",
+        headers=headers,
+        data={
+            "category": "OTHER",
+            "title": "Shared on upload",
+            "source_type": "UPLOAD",
+            "share_with_cm": "true",
+            "share_with_parents": "true",
+        },
+        files={"file": ("shared.pdf", pdf, "application/pdf")},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["status"] == "CM_REVIEW"
+    assert body["visibility"] == "CLIENT_VISIBLE_AFTER_APPROVAL"
+
+
 def test_submit_sets_cm_review_status():
     headers = _login("therapist@demo.com")
     case_id = _first_case_id(headers)

@@ -1016,10 +1016,56 @@
 
 .ic-segment--primary {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  max-width: none;
+}
+
+.ic-segment--absence {
+  display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
   width: 100%;
-  max-width: 360px;
+}
+
+.ic-segment--absence button {
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.ic-session-composer__visit-meta {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ic-session-composer__visit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.875rem;
+}
+
+.ic-session-composer__visit-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ic-session-composer__time-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .ic-segment--primary button {

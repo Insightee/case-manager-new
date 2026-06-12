@@ -1,5 +1,70 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
+
+function previewText(text, maxLen = 180) {
+  const t = (text || '').trim()
+  if (!t) return '—'
+  if (t.length <= maxLen) return t
+  return `${t.slice(0, maxLen)}…`
+}
+
+function ObservationSummaryCard({ checklist, onExpand, expanded }) {
+  const previewKeys = ['summary_recommendations', 'referral_context', 'social_communication']
+  const sections = checklist.sections || []
+  const previewSections = [
+    ...previewKeys.map((k) => sections.find((s) => s.key === k)).filter(Boolean),
+    ...sections.filter((s) => !previewKeys.includes(s.key) && (checklist.responses?.[s.key] || '').trim()),
+  ].slice(0, expanded ? sections.length : 3)
+
+  return (
+    <div
+      className="ic-observation-summary"
+      style={{
+        marginTop: 16,
+        padding: 16,
+        borderRadius: 12,
+        border: '1px solid #e2e8f0',
+        background: '#f8fafc',
+      }}
+    >
+      {checklist.submitted_at ? (
+        <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#64748b' }}>
+          Submitted {formatDisplayDate(checklist.submitted_at?.slice(0, 10))}
+          {checklist.reviewed_at ? ` · Reviewed ${formatDisplayDate(checklist.reviewed_at?.slice(0, 10))}` : ''}
+        </p>
+      ) : null}
+
+      {previewSections.map((section) => (
+        <div key={section.key} style={{ marginBottom: 12 }}>
+          <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: '0.85rem' }}>{section.label}</p>
+          <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.9rem', color: '#334155' }}>
+            {expanded
+              ? checklist.responses?.[section.key] || '—'
+              : previewText(checklist.responses?.[section.key])}
+          </p>
+        </div>
+      ))}
+
+      {sections.length > 3 ? (
+        <button
+          type="button"
+          className="admin-btn admin-btn--ghost admin-btn--sm"
+          onClick={onExpand}
+          style={{ marginTop: 4 }}
+        >
+          {expanded ? 'Show less' : 'View full checklist'}
+        </button>
+      ) : null}
+
+      {checklist.observation_report_id ? (
+        <p style={{ margin: '12px 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+          Observation report #{checklist.observation_report_id} is on file for this case.
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 export function ObservationChecklistPanel({ caseId }) {
   const [checklist, setChecklist] = useState(null)
@@ -7,6 +72,7 @@ export function ObservationChecklistPanel({ caseId }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -60,6 +126,7 @@ export function ObservationChecklistPanel({ caseId }) {
         method: 'POST',
       })
       setChecklist(data)
+      setSummaryExpanded(false)
       setMessage('Submitted to your case manager for review.')
     } catch (err) {
       setError(err.message || 'Submit failed')
@@ -84,6 +151,8 @@ export function ObservationChecklistPanel({ caseId }) {
     REJECTED: 'Changes requested',
   }[checklist.status] || checklist.status
 
+  const showEditForm = checklist.can_edit
+
   return (
     <section className="ic-case-panel">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
@@ -103,7 +172,7 @@ export function ObservationChecklistPanel({ caseId }) {
 
       {checklist.due_at ? (
         <p style={{ fontSize: '0.8rem', color: checklist.is_overdue ? '#b45309' : '#64748b', margin: '8px 0' }}>
-          Due {checklist.due_at}
+          Due {formatDisplayDate(checklist.due_at?.slice?.(0, 10) || checklist.due_at)}
           {checklist.is_overdue ? ' (overdue)' : checklist.is_due ? ' (due now)' : ''}
         </p>
       ) : null}
@@ -125,43 +194,45 @@ export function ObservationChecklistPanel({ caseId }) {
         </p>
       ) : null}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
-        {(checklist.sections || []).map((section) => (
-          <div key={section.key}>
-            <label style={{ display: 'block', fontWeight: 600, marginBottom: 6, fontSize: '0.9rem' }}>
-              {section.label}
-            </label>
-            <textarea
-              value={checklist.responses?.[section.key] || ''}
-              onChange={(e) => setResponse(section.key, e.target.value)}
-              disabled={!checklist.can_edit}
-              rows={4}
-              style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #e2e8f0' }}
-              placeholder={checklist.can_edit ? 'Enter observations for this section…' : ''}
-            />
+      {showEditForm ? (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
+            {(checklist.sections || []).map((section) => (
+              <div key={section.key}>
+                <label style={{ display: 'block', fontWeight: 600, marginBottom: 6, fontSize: '0.9rem' }}>
+                  {section.label}
+                </label>
+                <textarea
+                  value={checklist.responses?.[section.key] || ''}
+                  onChange={(e) => setResponse(section.key, e.target.value)}
+                  rows={4}
+                  style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                  placeholder="Enter observations for this section…"
+                />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-
-      {checklist.can_edit ? (
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-          <button type="button" className="admin-btn admin-btn--secondary" disabled={saving} onClick={saveDraft}>
-            Save draft
-          </button>
-          <button
-            type="button"
-            className="admin-btn admin-btn--primary"
-            disabled={saving || !checklist.can_submit}
-            onClick={submit}
-          >
-            Submit for review
-          </button>
-        </div>
-      ) : checklist.observation_report_id ? (
-        <p style={{ marginTop: 12, fontSize: '0.85rem', color: '#64748b' }}>
-          Observation report #{checklist.observation_report_id} is on file for this case.
-        </p>
-      ) : null}
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+            <button type="button" className="admin-btn admin-btn--secondary" disabled={saving} onClick={saveDraft}>
+              Save draft
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn--primary"
+              disabled={saving || !checklist.can_submit}
+              onClick={submit}
+            >
+              Submit for review
+            </button>
+          </div>
+        </>
+      ) : (
+        <ObservationSummaryCard
+          checklist={checklist}
+          expanded={summaryExpanded}
+          onExpand={() => setSummaryExpanded((v) => !v)}
+        />
+      )}
     </section>
   )
 }

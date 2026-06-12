@@ -10,6 +10,9 @@ import { ONGOING_MATERIALIZE_WEEKS } from '../scheduling/scheduleTemplateUtils.j
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { billingSummary } from '../invoices/invoiceUtils.js'
 import { filterUpcomingSessions, formatSessionWhen } from '../../lib/sessionDisplay.js'
+import { formatDisplayDateTime } from '../../lib/datetime.js'
+import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
+import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import './admin-scheduling-hub.css'
 
 function addDaysIso(iso, days) {
@@ -36,6 +39,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
   const [calendarRefresh, setCalendarRefresh] = useState(0)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [bookingSuccess, setBookingSuccess] = useState(null)
   const [productRules, setProductRules] = useState([])
 
   const [fromDate, setFromDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -167,13 +171,14 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
     setTherapistId(assignedTherapistId)
   }
 
-  async function bookSingleSlot(slotId) {
+  async function bookSingleSlot(slot) {
     if (readOnly) return
     setBooking(true)
     setError('')
     setSuccess('')
+    setBookingSuccess(null)
     try {
-      await apiFetch(`/api/v1/scheduling/slots/${slotId}/book`, {
+      await apiFetch(`/api/v1/scheduling/slots/${slot.id}/book`, {
         method: 'POST',
         body: JSON.stringify({
           case_id: caseItem.id,
@@ -181,6 +186,20 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
           admin_request_comment: adminComment.trim() || null,
           force_unavailable: forceBook,
         }),
+      })
+      setBookingSuccess({
+        event: mapSlotToCalendarEvent(
+          {
+            ...slot,
+            child_name: caseItem.child_name,
+            case_code: caseItem.case_code,
+          },
+          { deepLinkPath: `/admin/cases/${caseItem.id}?tab=scheduling` },
+        ),
+        detailLines: [
+          caseItem.child_name ? `Client: ${caseItem.child_name}` : null,
+          caseItem.case_code ? `Case: ${caseItem.case_code}` : null,
+        ].filter(Boolean),
       })
       setSuccess(forceBook ? 'Booked — pending therapist confirmation.' : 'Session booked.')
       setCalendarRefresh((k) => k + 1)
@@ -420,7 +439,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
                   <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                     {recurPreview.conflicts.slice(0, 8).map((c, i) => (
                       <li key={i}>
-                        {c.date} {c.start} — {c.status}
+                        {formatDisplayDateTime(c.date, c.start)} — {c.status}
                       </li>
                     ))}
                   </ul>
@@ -490,7 +509,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
                             <li key={s.id} className="admin-queue__item">
                               <div>
                                 <p className="admin-queue__title">
-                                  {s.slot_date} {s.start_time}
+                                  {formatDisplayDateTime(s.slot_date, s.start_time)}
                                 </p>
                               </div>
                               {!readOnly ? (
@@ -498,7 +517,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
                                   type="button"
                                   className="admin-btn admin-btn--primary admin-btn--sm"
                                   disabled={booking}
-                                  onClick={() => bookSingleSlot(s.id)}
+                                  onClick={() => bookSingleSlot(s)}
                                 >
                                   Book
                                 </button>
@@ -550,6 +569,14 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
           onDone?.()
           loadUpcoming()
         }}
+      />
+
+      <BookingSuccessSheet
+        open={!!bookingSuccess}
+        title="Session booked"
+        event={bookingSuccess?.event}
+        detailLines={bookingSuccess?.detailLines}
+        onClose={() => setBookingSuccess(null)}
       />
     </section>
   )

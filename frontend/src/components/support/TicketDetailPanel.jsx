@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { replyStaffTicket } from '../../lib/ticketFormUtils.js'
 import { TicketAttachmentList } from './TicketAttachmentList.jsx'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { TicketFileInput } from './TicketFileInput.jsx'
 import { TicketFlowDialog } from './TicketFlowDialog.jsx'
 
@@ -66,11 +67,8 @@ function fmtTime(iso) {
   const d = new Date(iso)
   const today = new Date()
   const isToday = d.toDateString() === today.toDateString()
-  return isToday
-    ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-        ' · ' +
-        d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return isToday ? time : `${formatTimestampDateIN(iso) || ''} · ${time}`
 }
 
 function ActionMenu({ label, items, disabled, variant = 'ghost' }) {

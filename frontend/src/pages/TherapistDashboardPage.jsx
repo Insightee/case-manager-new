@@ -6,6 +6,7 @@ import { useTherapistFrequentActions } from '../hooks/useTherapistFrequentAction
 import { useTherapistHome } from '../hooks/useTherapistHome.js'
 import { QueryState } from '../components/shared/QueryState.jsx'
 import { TherapistTodaySchedule } from '../components/therapist/TherapistTodaySchedule.jsx'
+import { formatDisplayDate, formatDisplayDateTime } from '../lib/datetime.js'
 import { THERAPIST_ACTIONS } from '../lib/therapistActions.js'
 
 export function TherapistDashboardPage() {
@@ -34,7 +35,7 @@ export function TherapistDashboardPage() {
       to: `/therapist/logs?session=${s.id}`,
       eyebrow: 'Session log due',
       title: s.child_name || s.case_code || 'Client',
-      meta: s.scheduled_date ? `Visit · ${s.scheduled_date}` : 'Completed visit',
+      meta: s.scheduled_date ? `Visit · ${formatDisplayDate(s.scheduled_date)}` : 'Completed visit',
       tone: 'primary',
       icon: 'log',
     })),
@@ -43,7 +44,7 @@ export function TherapistDashboardPage() {
       to: '/therapist/cm-meetings',
       eyebrow: 'CM meeting notes',
       title: m.child_name || m.case_code || 'Client',
-      meta: `${m.scheduled_date}${m.scheduled_time ? ` · ${String(m.scheduled_time).slice(0, 5)}` : ''}`,
+      meta: formatDisplayDateTime(m.scheduled_date, m.scheduled_time) || m.scheduled_date,
       tone: 'amber',
       icon: 'meeting',
     })),

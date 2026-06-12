@@ -4,6 +4,10 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
+import { formatDisplayDateTime, formatDisplayDateTimeRange } from '../../lib/datetime.js'
+import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
+import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
+import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import './admin-reports.css'
 
 const MEETING_TYPES = [
@@ -91,6 +95,7 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
   const [adminUsers, setAdminUsers] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [createdMeeting, setCreatedMeeting] = useState(null)
 
   useEffect(() => {
     onOpen?.()
@@ -215,7 +220,7 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
         method: 'POST',
         body: JSON.stringify(body),
       })
-      onCreated(result)
+      setCreatedMeeting(result)
     } catch (err) {
       setError(err.message || 'Could not create meeting')
     } finally {
@@ -225,6 +230,30 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
 
   const inputStyle = { display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4, boxSizing: 'border-box' }
   const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
+  const createdEvent = createdMeeting ? mapCmMeetingToCalendarEvent(createdMeeting) : null
+
+  if (createdMeeting) {
+    const typeLabel =
+      MEETING_TYPES.find((t) => t.value === createdMeeting.meeting_type)?.label || createdMeeting.meeting_type
+    const detailLines = [
+      createdMeeting.child_name ? `Client: ${createdMeeting.child_name}` : null,
+      createdMeeting.case_code ? `Case: ${createdMeeting.case_code}` : null,
+      typeLabel ? `Type: ${typeLabel}` : null,
+      createdMeeting.duration_minutes ? `Duration: ${createdMeeting.duration_minutes} min` : null,
+    ].filter(Boolean)
+    return (
+      <BookingSuccessSheet
+        open
+        title="Meeting booked"
+        event={createdEvent}
+        detailLines={detailLines}
+        onClose={() => {
+          onCreated(createdMeeting)
+          setCreatedMeeting(null)
+        }}
+      />
+    )
+  }
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
@@ -478,7 +507,7 @@ function NotesModal({ meeting, onClose, onUpdated }) {
       <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 4px' }}>Meeting notes</h2>
         <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 20px' }}>
-          {meeting.child_name ? `${meeting.child_name} · ` : ''}{meeting.scheduled_date} {meeting.scheduled_time || ''}
+          {meeting.child_name ? `${meeting.child_name} · ` : ''}{formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
         </p>
         {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
         <form onSubmit={submit}>
@@ -539,6 +568,8 @@ function MeetingCard({ meeting, onAddNotes, onCancel }) {
     || (meeting.meeting_type === 'SUPERVISION' ? 'Internal meeting' : meeting.meeting_type)
   const hasNotes = meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
   const attendeeLine = formatAttendeeList(meeting)
+  const calendarEvent =
+    meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
 
   return (
     <article style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '16px 18px', marginBottom: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -548,8 +579,7 @@ function MeetingCard({ meeting, onAddNotes, onCancel }) {
             {meeting.title || typeLabel}
           </p>
           <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
-            {meeting.scheduled_date}
-            {meeting.scheduled_time ? ` · ${meeting.scheduled_time}` : ''}
+            {formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
             {meeting.duration_minutes ? ` · ${meeting.duration_minutes} min` : ''}
           </p>
         </div>
@@ -588,7 +618,10 @@ function MeetingCard({ meeting, onAddNotes, onCancel }) {
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {calendarEvent ? (
+          <AddToGoogleCalendarButton event={calendarEvent} variant="inline" />
+        ) : null}
         {meeting.status !== 'CANCELLED' ? (
           <button
             type="button"

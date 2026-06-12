@@ -49,6 +49,7 @@ def test_hr_recipients_includes_staff_and_therapists():
     assert r.status_code == 200
     kinds = {row.get("kind") for row in r.json()}
     assert "therapist" in kinds or "staff" in kinds
+    assert "client" in kinds
 
 
 def test_therapist_onboard_requires_primary_cm():

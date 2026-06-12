@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDateTime, formatDisplayDateTimeRange } from '../../lib/datetime.js'
+import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
+import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
 import { StatusBadge } from './ui/index.js'
 
 function formatMeetingType(type) {
@@ -13,21 +16,9 @@ function formatMeetingType(type) {
 
 function formatWhen(m) {
   if (!m.scheduled_date) return 'Date TBD'
-  try {
-    const d = new Date(`${m.scheduled_date}T${m.scheduled_time || '12:00'}`)
-    if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleString(undefined, {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-    }
-  } catch {
-    /* fallback below */
-  }
-  return `${m.scheduled_date}${m.scheduled_time ? ` · ${m.scheduled_time}` : ''}`
+  return formatDisplayDateTimeRange(m.scheduled_date, m.scheduled_time, m.end_time)
+    || formatDisplayDateTime(m.scheduled_date, m.scheduled_time)
+    || m.scheduled_date
 }
 
 function participantLine(m) {
@@ -110,6 +101,13 @@ export function AdminCaseCmMeetingsPanel({ caseId }) {
                     {people ? <p className="admin-case-cm-meeting-card__people">{people}</p> : null}
                     <div className="admin-case-cm-meeting-card__foot">
                       <StatusBadge status={m.status} />
+                      {m.status === 'SCHEDULED' ? (
+                        <AddToGoogleCalendarButton
+                          event={mapCmMeetingToCalendarEvent(m, { deepLinkPath: meetingHref(caseId) })}
+                          variant="inline"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : null}
                       <span className="admin-case-cm-meeting-card__cta">{cta} →</span>
                     </div>
                   </Link>
@@ -123,10 +121,18 @@ export function AdminCaseCmMeetingsPanel({ caseId }) {
                 <div>
                   <p className="admin-queue__title">{m.title || m.meeting_type}</p>
                   <p className="admin-queue__meta">
-                    {m.scheduled_date} {m.scheduled_time || ''} · {m.status}
+                    {formatDisplayDateTime(m.scheduled_date, m.scheduled_time)} · {m.status}
                   </p>
                 </div>
-                <span className="admin-badge">{m.meeting_type}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {m.status === 'SCHEDULED' ? (
+                    <AddToGoogleCalendarButton
+                      event={mapCmMeetingToCalendarEvent(m, { deepLinkPath: meetingHref(caseId) })}
+                      variant="inline"
+                    />
+                  ) : null}
+                  <span className="admin-badge">{m.meeting_type}</span>
+                </div>
               </li>
             ))}
           </ul>

@@ -278,6 +278,8 @@ async def create_document(
     source_type: str,
     file: UploadFile | None = None,
     external_url: str | None = None,
+    share_with_cm: bool = False,
+    share_with_parents: bool = False,
 ) -> CaseDocumentDetail:
     case = case_service.get_case(db, case_id)
     if not case or not access.can_create(db, user, case):
@@ -315,6 +317,13 @@ async def create_document(
             raise HTTPException(status_code=400, detail=str(e)) from e
     else:
         raise HTTPException(status_code=400, detail="source_type must be UPLOAD or EXTERNAL_LINK")
+
+    if share_with_parents:
+        doc.visibility = CaseDocumentVisibility.CLIENT_VISIBLE_AFTER_APPROVAL.value
+
+    if share_with_cm:
+        workflow.submit(db, user, doc)
+
     db.refresh(doc)
     return _serialize_detail(db, user, doc)
 

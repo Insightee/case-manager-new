@@ -18,6 +18,7 @@ import {
   sortPipelineRows,
 } from '../../lib/adminCasePipeline.js'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
+import { moduleLabel } from '../../lib/moduleLabels.js'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -509,8 +510,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                     </td>
                     <td>{row.child_name || '—'}</td>
                     <td>
-                      <span className="admin-chip">{row.product_module}</span>
-                      <span className="admin-table__meta">{row.service_type}</span>
+                      <span className="admin-chip">{moduleLabel(row.product_module) || '—'}</span>
                     </td>
                     <td>
                       {row.case_manager_name || (

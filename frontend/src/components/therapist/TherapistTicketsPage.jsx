@@ -7,6 +7,7 @@ import {
   requestTypeByValue,
   THERAPIST_REQUEST_TYPES,
 } from '../../lib/therapistTicketOptions.js'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
 import { TicketFileInput } from '../support/TicketFileInput.jsx'
@@ -365,7 +366,7 @@ function TicketRow({ ticket: t, activeTicket, detailLoading, onOpen, onUpdated }
               </span>
             ) : null}
             <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#9ca3af' }}>
-              {new Date(t.created_at).toLocaleDateString()}
+              {formatTimestampDateIN(t.created_at)}
             </span>
           </div>
           <p style={{ margin: '0 0 4px', fontWeight: 600 }}>{t.subject}</p>

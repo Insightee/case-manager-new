@@ -1,5 +1,6 @@
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { formatClockRange, formatEditedRange, formatScheduledRange } from '../../lib/sessionTimes.js'
 
 export const SESSION_LOG_READONLY_FIELDS = [
@@ -39,7 +40,7 @@ export function SessionLogReadOnly({
             <h3>{displayName}</h3>
             {log?.scheduled_date ? (
               <p className={isAdmin ? 'admin-session-log-detail__meta' : 'ic-session-log-readonly__meta'}>
-                {log.scheduled_date}
+                {formatDisplayDate(log.scheduled_date)}
                 {timeRange ? ` · ${timeRange}` : ''}
               </p>
             ) : null}
@@ -95,7 +96,7 @@ export function SessionLogReadOnly({
           {session.actual_times_edit_reason || log?.actual_times_edit_reason ? (
             <>
               <dt style={{ color: '#64748b' }}>Edit reason</dt>
-              <dd style={{ margin: 0 }}>{session.actual_times_edit_reason || log.actual_times_edit_reason}</dd>
+              <dd style={{ margin: 0 }}>{session.actual_times_edit_reason || log?.actual_times_edit_reason}</dd>
             </>
           ) : null}
         </dl>

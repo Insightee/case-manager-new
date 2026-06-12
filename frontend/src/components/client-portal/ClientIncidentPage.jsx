@@ -3,6 +3,7 @@ import { apiFetch, apiUpload } from '../../lib/apiClient.js'
 import { INCIDENT_STATUS_META, isOpenIncidentStatus, PRIORITY_META } from '../../lib/incidentCatalog.js'
 import { IncidentDetailPanel } from '../support/IncidentDetailPanel.jsx'
 import { IncidentReportForm } from '../support/IncidentReportForm.jsx'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import '../support/support-tickets.css'
 
 function StatusPill({ status }) {
@@ -173,7 +174,7 @@ export function ClientIncidentPage({ cases = [] }) {
               <StatusPill status={inc.status} />
               {inc.priority ? <PriorityPill priority={inc.priority} /> : null}
               <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#94a3b8' }}>
-                {new Date(inc.created_at).toLocaleDateString()}
+                {formatTimestampDateIN(inc.created_at)}
               </span>
             </div>
             <p style={{ fontWeight: 600, margin: '0 0 2px', fontSize: '0.9rem' }}>{inc.title}</p>

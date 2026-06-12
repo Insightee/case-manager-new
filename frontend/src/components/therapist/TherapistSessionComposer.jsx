@@ -5,11 +5,12 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { canStartSessionToday, logsPathForSession } from '../../lib/sessionStartRules.js'
 import { SameDaySessionDialog } from '../daily-logs/SameDaySessionDialog.jsx'
-import { todayIsoIST } from '../../lib/datetime.js'
+import { formatDisplayDate, formatDisplayDateTimeRange, todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { isToday, todayIso } from '../../lib/therapistSchedule.js'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
 import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
+import { SessionAbsenceSheet } from './SessionAbsenceSheet.jsx'
 
 const MODES = [
   { value: 'HOME', label: 'Home' },
@@ -59,6 +60,7 @@ export function TherapistSessionComposer({
   const [localError, setLocalError] = useState('')
   const [sameDayConflict, setSameDayConflict] = useState(null)
   const [sameDayPending, setSameDayPending] = useState(null)
+  const [absenceSessionId, setAbsenceSessionId] = useState(null)
 
   useEffect(() => {
     if (lockCaseId) setCaseId(String(lockCaseId))
@@ -73,7 +75,12 @@ export function TherapistSessionComposer({
   const caseOptions = useMemo(() => {
     const map = new Map()
     for (const c of cases) {
-      map.set(c.id, { case_id: c.id, child_name: c.child_name, case_code: c.case_code })
+      map.set(c.id, {
+        case_id: c.id,
+        child_name: c.child_name,
+        case_code: c.case_code,
+        product_module: c.product_module,
+      })
     }
     for (const s of upcomingSessions) {
       if (s.case_id && !map.has(s.case_id)) {
@@ -100,6 +107,51 @@ export function TherapistSessionComposer({
       (sl) => sl.case_id === selectedCaseId && sl.status === 'BOOKED' && sl.slot_date >= today,
     )
   }, [bookedSlots, selectedCaseId])
+
+  const todaySessionsForCase = useMemo(() => {
+    if (!selectedCaseId) return []
+    const today = todayIsoIST()
+    return upcomingSessions.filter(
+      (s) => s.case_id === selectedCaseId && s.scheduled_date === today && s.status === 'SCHEDULED',
+    )
+  }, [upcomingSessions, selectedCaseId])
+
+  const lockedCaseForAbsence = useMemo(() => {
+    if (!selectedCaseId) return null
+    const row = cases.find((c) => Number(c.id) === selectedCaseId)
+    if (row) {
+      return {
+        id: row.id,
+        child_name: row.child_name,
+        case_code: row.case_code,
+        product_module: row.product_module,
+        service_type: row.service_type,
+        status: row.status,
+      }
+    }
+    const opt = caseOptions.find((c) => c.case_id === selectedCaseId)
+    if (!opt) return null
+    return {
+      id: opt.case_id,
+      child_name: opt.child_name,
+      case_code: opt.case_code,
+      product_module: opt.product_module,
+    }
+  }, [selectedCaseId, cases, caseOptions])
+
+  const assignedCasesForLeave = useMemo(
+    () =>
+      cases
+        .filter((c) => c.status !== 'CLOSED' && c.status !== 'SUSPENDED')
+        .map((c) => ({
+          id: c.id,
+          child_name: c.child_name,
+          case_code: c.case_code,
+          product_module: c.product_module,
+          service_type: c.service_type,
+        })),
+    [cases],
+  )
 
   async function startSession(sessionRow, { allowDuplicate = false } = {}) {
     const sessionId = typeof sessionRow === 'object' ? sessionRow.id : sessionRow
@@ -221,6 +273,15 @@ export function TherapistSessionComposer({
           >
             Forgot to log
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'absence'}
+            className={mode === 'absence' ? 'active' : ''}
+            onClick={() => setMode('absence')}
+          >
+            Leave / Absence
+          </button>
         </div>
       </div>
 
@@ -264,6 +325,50 @@ export function TherapistSessionComposer({
           }}
           onCancel={() => setMode('live')}
         />
+      ) : mode === 'absence' ? (
+        <div className="ic-session-composer__body">
+          {lockCaseId && lockCaseLabel ? (
+            <p className="ic-session-composer__locked-client">
+              <span className="ic-session-composer__locked-label">Client</span>
+              {lockCaseLabel}
+            </p>
+          ) : (
+            <label className="ic-session-composer__field">
+              <span>Client</span>
+              <select
+                value={caseId}
+                onChange={(e) => {
+                  setCaseId(e.target.value)
+                  setAbsenceSessionId(null)
+                }}
+                className="ic-session-composer__input"
+              >
+                <option value="">Choose client…</option>
+                {caseOptions.map((c) => (
+                  <option key={c.case_id} value={c.case_id}>
+                    {c.child_name || c.case_code}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <SessionAbsenceSheet
+            sessions={todaySessionsForCase}
+            selectedSessionId={absenceSessionId || todaySessionsForCase[0]?.id}
+            onSessionChange={setAbsenceSessionId}
+            lockedCase={lockedCaseForAbsence}
+            assignedCases={assignedCasesForLeave}
+            disabled={busy}
+            onSuccess={(msg) => {
+              setLocalError('')
+              onSessionStarted?.({ message: msg })
+            }}
+            onError={(msg) => {
+              setLocalError(msg)
+              onError?.(msg)
+            }}
+          />
+        </div>
       ) : mode === 'live' ? (
         <div className="ic-session-composer__body">
           {lockCaseId && lockCaseLabel ? (
@@ -312,7 +417,7 @@ export function TherapistSessionComposer({
                         <li key={s.id}>
                           <div className="ic-session-option">
                             <div>
-                              <strong>{s.scheduled_date}</strong>
+                              <strong>{formatDisplayDate(s.scheduled_date)}</strong>
                               <span>
                                 {String(s.start_time).slice(0, 5)}–{String(s.end_time).slice(0, 5)} · {s.mode}
                               </span>
@@ -347,7 +452,7 @@ export function TherapistSessionComposer({
                       <li key={sl.id}>
                         <div className="ic-session-option ic-session-option--booking">
                           <div>
-                            <strong>{sl.slot_date}</strong>
+                            <strong>{formatDisplayDateTimeRange(sl.slot_date, sl.start_time, sl.end_time)}</strong>
                             <span>
                               {String(sl.start_time).slice(0, 5)}–{String(sl.end_time).slice(0, 5)}
                               {sl.booking_source === 'PARENT' ? ' · Parent booked' : ''}

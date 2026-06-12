@@ -4,18 +4,14 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useParentHome } from '../../hooks/useParentHome.js'
 import { QueryState } from '../shared/QueryState.jsx'
+import { formatDisplayDateLabel } from '../../lib/datetime.js'
+import { SessionAbsenceApprovals } from '../shared/SessionAbsenceApprovals.jsx'
 import './parent-dashboard.css'
-
-function fmt(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
-}
 
 function formatUpdateSessionWhen(update) {
   const parts = []
   if (update.scheduled_date) {
-    parts.push(fmt(update.scheduled_date))
+    parts.push(formatDisplayDateLabel(update.scheduled_date))
   }
   if (update.session_start_time) {
     parts.push(update.session_start_time)
@@ -66,7 +62,7 @@ function NextUpcomingSessionCard({ appointments }) {
         onClick={() => navigate('/parent/book', { state: { openApptId: appt.id } })}
       >
         <div className="parent-next-session__when">
-          <strong>{fmt(appt.slotDate)}</strong>
+          <strong>{formatDisplayDateLabel(appt.slotDate)}</strong>
           <span>
             {appt.startTime}
             {appt.endTime ? `–${appt.endTime}` : ''}
@@ -409,6 +405,17 @@ export function ClientDashboardPage({
       <ActionAlertsBanner billingSummary={billingSummary} pendingIepCount={pendingIepCount} />
 
       <NextUpcomingSessionCard appointments={appointments} />
+
+      <section className="parent-recent-updates" style={{ marginTop: 20 }}>
+        <div className="parent-recent-updates__head">
+          <h2>Absence approvals</h2>
+        </div>
+        <SessionAbsenceApprovals
+          listPath="/api/v1/parent/absence-requests"
+          emptyLabel="No child absence requests waiting for your approval."
+        />
+      </section>
+
       <RecentUpdatesSection updates={recentUpdates} />
 
       {highlight ? (

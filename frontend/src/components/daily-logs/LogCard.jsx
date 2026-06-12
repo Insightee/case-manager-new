@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { StatusBadge } from './StatusBadge.jsx'
 
 export function LogCard({ log, onView, onEdit, onDuplicate }) {
@@ -7,7 +8,7 @@ export function LogCard({ log, onView, onEdit, onDuplicate }) {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{log.caseId}</p>
           <p className="mt-1 text-lg font-semibold text-slate-900">{log.child}</p>
-          <p className="mt-2 text-sm text-slate-500">{log.date}</p>
+          <p className="mt-2 text-sm text-slate-500">{formatDisplayDate(log.date) || log.date}</p>
         </div>
         <StatusBadge status={log.status} />
       </div>

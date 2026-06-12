@@ -1,3 +1,17 @@
+.parent-book-form__calendar-success {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.parent-book-form__calendar-msg {
+  margin: 0 0 10px;
+  font-size: 0.875rem;
+  color: #14532d;
+}
+
 .parent-book-form__help {
   font-size: 0.85rem;
   color: #64748b;
