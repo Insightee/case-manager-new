@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { resolveNotificationLink } from './notificationLinks.js'
 
 const DROPDOWN_WIDTH = 360
@@ -47,7 +48,7 @@ function fmtTime(iso) {
   if (diffH < 24) return `${diffH}h ago`
   const diffD = Math.floor(diffH / 24)
   if (diffD < 7) return `${diffD}d ago`
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return formatTimestampDateIN(iso) || ''
 }
 
 export function NotificationBell({ portal }) {

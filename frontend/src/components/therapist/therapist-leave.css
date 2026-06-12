@@ -188,6 +188,39 @@
   cursor: not-allowed;
 }
 
+.therapist-leave-page__form-card--embedded {
+  margin-top: 0;
+  box-shadow: none;
+  border: 1px solid #e5e7eb;
+}
+
+.therapist-leave-page__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.therapist-leave-page__input {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 0.875rem;
+  min-height: 44px;
+}
+
+.therapist-leave-page__textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.therapist-leave-page__hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
 .therapist-leave-page__form-card {
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -234,91 +267,127 @@
   min-width: 0;
 }
 
-.therapist-leave-page__cal-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 20px;
-  min-width: 0;
-  overflow: hidden;
-}
-
 .therapist-leave-page__balance {
   word-break: break-word;
 }
 
-.leave-cal--month {
-  display: block;
+.therapist-leave-page__info {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+  color: #1e40af;
 }
 
-.leave-mobile-cal {
-  display: none;
-}
-
-.leave-mobile-cal__nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.leave-mobile-cal__nav p {
-  flex: 1;
-  text-align: center;
-  margin: 0;
-  font-weight: 600;
-  font-size: 0.9375rem;
-}
-
-.leave-mobile-cal__nav-btn {
-  background: #f9fafb;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  padding: 8px 14px;
-  cursor: pointer;
-  font-size: 1rem;
-  min-height: 44px;
-  min-width: 44px;
-}
-
-.leave-mobile-cal__strip {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
-  margin-bottom: 12px;
-}
-
-.leave-mobile-cal__day.leave-cal__day {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-height: 56px;
-  padding: 4px 2px;
-}
-
-.leave-mobile-cal__dow {
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: #9ca3af;
-  text-transform: uppercase;
-}
-
-.leave-mobile-cal__num {
-  font-weight: 600;
-  line-height: 1.1;
-}
-
-.leave-mobile-cal__day-panel {
-  padding: 12px;
+.therapist-leave-page__warn {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
   border-radius: 10px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  padding: 10px 12px;
   font-size: 0.8125rem;
-  color: #475569;
-  text-align: center;
+  color: #92400e;
+  line-height: 1.45;
+}
+
+.therapist-leave-page__suggest {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #4f46e5;
+  background: #eef2ff;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.therapist-leave-page__link-btn {
+  font-size: 0.75rem;
+  color: #6366f1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.therapist-leave-page__link-btn:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.therapist-leave-page__alert {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+}
+
+.therapist-leave-page__alert--error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+}
+
+.therapist-leave-page__alert--success {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #15803d;
+}
+
+.therapist-leave-page__requests-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 120px;
+}
+
+.therapist-leave-page__requests-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f3f4f6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.therapist-leave-page__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.therapist-leave-page__table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: #6b7280;
+  font-size: 0.75rem;
+  background: #f9fafb;
+}
+
+.therapist-leave-page__table td {
+  padding: 10px 16px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.therapist-leave-page__pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  color: #374151;
+}
+
+.therapist-leave-page__cancel-btn {
+  font-size: 0.75rem;
+  color: #ef4444;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
 }
 
 @media (max-width: 768px) {
@@ -332,23 +401,6 @@
 
   .therapist-leave-page__balance {
     padding: 12px 14px;
-  }
-
-  .therapist-leave-page__cal-card {
-    padding: 16px 12px;
-  }
-
-  .leave-cal--month {
-    display: none;
-  }
-
-  .leave-mobile-cal {
-    display: block;
-  }
-
-  .leave-cal__day {
-    min-height: 44px;
-    font-size: 0.875rem;
   }
 
   .therapist-leave-page__form-dates {

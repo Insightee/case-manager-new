@@ -6,6 +6,7 @@ import { INCIDENT_STATUS_META, isOpenIncidentStatus, PRIORITY_META } from '../..
 import { IncidentDetailPanel } from '../support/IncidentDetailPanel.jsx'
 import { IncidentReportForm } from '../support/IncidentReportForm.jsx'
 import '../support/support-tickets.css'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import '../client-portal/parent-support.css'
 
 function StatusPill({ status }) {
@@ -136,7 +137,7 @@ export function TherapistIncidentsPage() {
               <StatusPill status={inc.status} />
               {inc.priority ? <PriorityPill priority={inc.priority} /> : null}
               <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#94a3b8' }}>
-                {new Date(inc.created_at).toLocaleDateString()}
+                {formatTimestampDateIN(inc.created_at)}
               </span>
             </div>
             <p style={{ fontWeight: 600, margin: '0 0 2px', fontSize: '0.9rem', color: '#0f172a' }}>{inc.title}</p>

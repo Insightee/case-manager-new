@@ -1,3 +1,5 @@
+import { formatDisplayDateTime } from './datetime.js'
+
 /** Normalize session date/time fields from GET /sessions (scheduled_date + start_time). */
 
 const UPCOMING_STATUSES = new Set(['SCHEDULED', 'IN_PROGRESS'])
@@ -23,19 +25,7 @@ export function formatSessionWhen(session) {
   const dateKey = sessionDateKey(session)
   if (!dateKey) return 'Session'
   const time = sessionStartTime(session) || ''
-  try {
-    const normalized = time ? (String(time).length === 5 ? `${time}:00` : String(time)) : '12:00:00'
-    const d = new Date(`${dateKey}T${normalized}`)
-    if (Number.isNaN(d.getTime())) return `${dateKey}${time ? ` ${time}` : ''}`
-    return d.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  } catch {
-    return `${dateKey}${time ? ` ${time}` : ''}`
-  }
+  return formatDisplayDateTime(dateKey, time) || `${dateKey}${time ? ` ${time}` : ''}`
 }
 
 export function isUpcomingSession(session, now = new Date()) {

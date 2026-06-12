@@ -6,6 +6,7 @@ import {
   dateStr,
   defaultHourRows,
 } from './slotCalendarUtils.js'
+import { formatDisplayDateLabel } from '../../lib/datetime.js'
 import './scheduling-day.css'
 
 function groupSlotsByDayHour(slots, hourField = 'start_time') {
@@ -90,7 +91,7 @@ export function DayCalendarGrid({
           ‹
         </button>
         <p className="flex-1 text-center text-sm font-semibold text-slate-800">
-          {dayDate.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          {formatDisplayDateLabel(dateStr(dayDate))}
         </p>
         <button
           type="button"

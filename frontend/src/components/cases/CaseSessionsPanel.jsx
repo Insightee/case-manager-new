@@ -14,6 +14,7 @@ import { formatScheduleWhen } from '../../lib/therapistSchedule.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
 import { SessionLogHistoryRow } from '../daily-logs/SessionLogHistoryRow.jsx'
+import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
 import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -325,7 +326,7 @@ export function CaseSessionsPanel({
             {needsLog.map((s) => (
               <li key={s.id}>
                 <button type="button" className="ic-case-sessions__row ic-case-sessions__row--warn" onClick={() => openLogForm(s)}>
-                  {s.scheduled_date} · {formatSessionWhen(s)}
+                  {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time) || formatSessionWhen(s)}
                   <span>Submit log</span>
                 </button>
               </li>
@@ -341,7 +342,7 @@ export function CaseSessionsPanel({
             {upcoming.map((s) => (
               <li key={s.id} className="ic-case-sessions__row">
                 <span>
-                  {s.scheduled_date} · {formatTime(s.start_time)}–{formatTime(s.end_time)} · {s.mode}
+                  {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)} · {s.mode}
                 </span>
               </li>
             ))}

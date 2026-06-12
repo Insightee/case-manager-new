@@ -74,6 +74,8 @@ async def create_case_document(
             source_type=payload.source_type,
             file=None,
             external_url=payload.external_url,
+            share_with_cm=payload.share_with_cm,
+            share_with_parents=payload.share_with_parents,
         )
     else:
         form = await request.form()
@@ -91,6 +93,8 @@ async def create_case_document(
             parsed_date = date_type.fromisoformat(str(report_date_raw))
         upload = form.get("file")
         file_obj = upload if upload and hasattr(upload, "read") else None
+        share_with_cm = str(form.get("share_with_cm", "")).lower() in ("1", "true", "yes", "on")
+        share_with_parents = str(form.get("share_with_parents", "")).lower() in ("1", "true", "yes", "on")
         detail = await doc_svc.create_document(
             db,
             user,
@@ -102,6 +106,8 @@ async def create_case_document(
             source_type=str(source_type),
             file=file_obj,
             external_url=str(form.get("external_url")) if form.get("external_url") else None,
+            share_with_cm=share_with_cm,
+            share_with_parents=share_with_parents,
         )
     meta = get_request_meta(request)
     log_audit(

@@ -33,7 +33,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Availability</p>
-          <h1 className="text-2xl font-bold text-slate-900">My calendar</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Scheduling</h1>
           <p className="mt-1 text-sm text-slate-500">Tap an empty cell to add a slot, or tap a slot to manage it.</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">

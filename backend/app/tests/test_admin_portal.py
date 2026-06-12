@@ -362,6 +362,8 @@ def test_admin_iep_dashboard():
     assert filtered.status_code == 200
     for row in filtered.json()["rows"]:
         assert row["iep_status"] == "MISSING"
+    if body["rows"]:
+        assert "therapist_name" in body["rows"][0]
 
 
 def test_admin_cases_pipeline_board():

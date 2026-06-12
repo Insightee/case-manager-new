@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
 
 function formatTime(t) {
@@ -57,7 +58,7 @@ export function SessionLogHistoryRow({
     <li className="ic-session-history-row">
       <div className="ic-session-history-row__main">
         <div className="ic-session-history-row__info">
-          <strong>{session.scheduled_date}</strong>
+          <strong>{formatDisplayDate(session.scheduled_date)}</strong>
           <span className="ic-session-history-row__time">
             {formatSessionWhen(session)} · {session.status}
           </span>

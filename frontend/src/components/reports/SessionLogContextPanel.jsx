@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 
 const MAX_CSV_EXPORT_ERROR = 'Could not export session logs.'
 
@@ -166,7 +167,7 @@ export function SessionLogContextPanel({
                 <li key={log.log_id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold text-slate-800">
-                      {log.scheduled_date}
+                      {formatDisplayDate(log.scheduled_date)}
                       {log.attendance_status ? ` · ${log.attendance_status}` : ''}
                     </p>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}>

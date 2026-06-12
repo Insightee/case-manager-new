@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { canStartSessionToday } from '../../lib/sessionStartRules.js'
 import { SessionBrief } from './SessionBrief.jsx'
 
@@ -30,7 +31,7 @@ export function SessionVisitPanel({
           <p className="ic-session-log-panel__eyebrow">Scheduled visit</p>
           <h2 className="ic-session-log-panel__title">{session.child_name || session.case_code || 'Client'}</h2>
           <p className="ic-session-log-panel__meta">
-            {session.scheduled_date}
+            {formatDisplayDate(session.scheduled_date)}
             {session.start_time ? (
               <> · {formatTime(session.start_time)}–{formatTime(session.end_time)}</>
             ) : null}

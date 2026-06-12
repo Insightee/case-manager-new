@@ -550,8 +550,8 @@ export function AdminIepPage() {
                             <th>Child</th>
                             <th>Service</th>
                             <th>IEP status</th>
-                            <th>Document</th>
-                            <th>Parents</th>
+                            <th>Month</th>
+                            <th>Therapist</th>
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -572,24 +572,13 @@ export function AdminIepPage() {
                                 <IepStatusPill status={row.iep_status} />
                               </td>
                               <td>
-                                {row.file_name ? (
-                                  <>
-                                    <span>{row.file_name}</span>
-                                    {row.version ? (
-                                      <span className="admin-table__meta">{row.version}</span>
-                                    ) : null}
-                                  </>
+                                {row.version ? (
+                                  <span>{row.version}</span>
                                 ) : (
                                   <span className="admin-muted">—</span>
                                 )}
                               </td>
-                              <td>
-                                {row.parent_contacts?.length ? (
-                                  <span className="admin-table__meta">{row.parent_contacts.join('; ')}</span>
-                                ) : (
-                                  <span className="admin-muted">No parent linked</span>
-                                )}
-                              </td>
+                              <td>{row.therapist_name || <span className="admin-muted">—</span>}</td>
                               <td>
                                 <div className="admin-btn-group">
                                   {row.attachment_id ? (
@@ -664,12 +653,8 @@ export function AdminIepPage() {
                               </div>
                             }
                           >
-                            {row.file_name ? <p>Document: {row.file_name}</p> : null}
-                            {row.parent_contacts?.length ? (
-                              <p>Parents: {row.parent_contacts.join('; ')}</p>
-                            ) : (
-                              <p className="admin-muted">No parent linked</p>
-                            )}
+                            {row.version ? <p>Month: {row.version}</p> : null}
+                            <p>Therapist: {row.therapist_name || '—'}</p>
                             {row.attachment_id ? (
                               <button
                                 type="button"

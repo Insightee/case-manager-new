@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { INCIDENT_STATUS_META, PRIORITY_META } from '../../lib/incidentCatalog.js'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { TicketFlowDialog } from './TicketFlowDialog.jsx'
 
 const FLOW_API = '/api/v1/incidents'
@@ -21,11 +22,9 @@ function fmtTime(iso) {
   if (!iso) return ''
   const d = new Date(iso)
   const today = new Date()
-  return d.toDateString() === today.toDateString()
-    ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-        ' · ' +
-        d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const isToday = d.toDateString() === today.toDateString()
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return isToday ? time : `${formatTimestampDateIN(iso) || ''} · ${time}`
 }
 
 function StatusPill({ status }) {

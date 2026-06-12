@@ -54,6 +54,8 @@ class CaseDocumentCreateJson(BaseModel):
     source_type: str
     external_url: Optional[str] = None
     external_provider: Optional[str] = None
+    share_with_cm: bool = False
+    share_with_parents: bool = False
 
 
 class CaseDocumentPatch(BaseModel):

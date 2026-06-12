@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { useParentDocumentsList } from '../../hooks/useCaseDocuments.js'
 import { categoryLabel } from '../../lib/caseDocumentCategories.js'
 import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
@@ -348,7 +349,7 @@ export function ParentCaseDetailPage() {
             <ul className="log-list">
               {goalsFromLogs.map((g) => (
                 <li key={g.id}>
-                  <p style={{ margin: 0, fontWeight: 600 }}>{g.date}</p>
+                  <p style={{ margin: 0, fontWeight: 600 }}>{formatDisplayDate(g.date)}</p>
                   <span style={{ fontSize: 13, color: '#6b7280' }}>{g.therapist}</span>
                   <p style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{g.text}</p>
                 </li>

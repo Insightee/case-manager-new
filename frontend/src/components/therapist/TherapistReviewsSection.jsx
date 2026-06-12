@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDate, formatTimestampDateIN } from '../../lib/datetime.js'
 
 function Stars({ rating }) {
   const n = Math.round(rating || 0)
@@ -14,9 +15,12 @@ function Stars({ rating }) {
   )
 }
 
-function formatReviewDate(iso) {
+function formatReviewDate(iso, { dateOnly = false } = {}) {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric', day: 'numeric' })
+  if (dateOnly || /^\d{4}-\d{2}-\d{2}$/.test(String(iso).slice(0, 10))) {
+    return formatDisplayDate(iso) || ''
+  }
+  return formatTimestampDateIN(iso) || ''
 }
 
 export function TherapistReviewsSection({ apiPath = '/api/v1/therapist/reviews', title = 'Client reviews' }) {
@@ -66,7 +70,7 @@ export function TherapistReviewsSection({ apiPath = '/api/v1/therapist/reviews',
                   {r.rating ? <Stars rating={r.rating} /> : null}
                   <p className="therapist-profile__review-meta">
                     {r.child_name ? `${r.child_name}` : 'Family'}
-                    {r.scheduled_date ? ` · ${formatReviewDate(r.scheduled_date)}` : ''}
+                    {r.scheduled_date ? ` · ${formatReviewDate(r.scheduled_date, { dateOnly: true })}` : ''}
                     {r.feedback_at ? ` · ${formatReviewDate(r.feedback_at)}` : ''}
                   </p>
                 </div>

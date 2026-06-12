@@ -2,6 +2,7 @@
 export const APP_TIMEZONE = 'Asia/Kolkata'
 
 const ISO_HAS_TZ = /[zZ]|[+-]\d{2}:?\d{2}$/
+const ISO_DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})/
 
 /** Parse API ISO strings; naive values are treated as UTC. */
 export function parseApiDatetime(iso) {
@@ -12,20 +13,25 @@ export function parseApiDatetime(iso) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-/** DD-MM-YY in IST (e.g. 30-05-26). */
-export function formatDateIN(iso) {
-  const d = parseApiDatetime(iso)
-  if (!d) return null
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: APP_TIMEZONE,
-    day: '2-digit',
-    month: '2-digit',
-    year: '2-digit',
-  }).formatToParts(d)
+function partsToDisplayDate(parts) {
   const day = parts.find((p) => p.type === 'day')?.value
   const month = parts.find((p) => p.type === 'month')?.value
   const year = parts.find((p) => p.type === 'year')?.value
   return day && month && year ? `${day}-${month}-${year}` : null
+}
+
+/** DD-MM-YYYY in IST for full datetime ISO strings. */
+export function formatDateIN(iso) {
+  const d = parseApiDatetime(iso)
+  if (!d) return null
+  return partsToDisplayDate(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: APP_TIMEZONE,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).formatToParts(d),
+  )
 }
 
 /** 12-hour clock with IST suffix (e.g. 9:30 AM IST). */
@@ -41,7 +47,7 @@ export function formatTimeIN12(iso, { suffix = ' IST' } = {}) {
   return `${time}${suffix}`
 }
 
-/** Combined Indian display: DD-MM-YY, 9:30 AM IST */
+/** Combined Indian display: DD-MM-YYYY, 9:30 AM IST */
 export function formatDateTimeIN(iso) {
   const datePart = formatDateIN(iso)
   const timePart = formatTimeIN12(iso, { suffix: '' })
@@ -75,7 +81,7 @@ export function formatSessionActualRange(session, { suffix = ' IST' } = {}) {
   return start && end ? `${start} – ${end}${suffix}` : null
 }
 
-/** Today's calendar date in IST (YYYY-MM-DD). */
+/** Today's calendar date in IST (YYYY-MM-DD) — for API inputs and comparisons only. */
 export function todayIsoIST() {
   return new Date().toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE })
 }
@@ -98,10 +104,60 @@ export function isStartedLateOnSchedule(actualStartIso, scheduledDate, scheduled
   return (actual.getTime() - sched.getTime()) / 60000 > thresholdMins
 }
 
-/** Format YYYY-MM-DD API date as DD-MM-YY without timezone shift. */
+/**
+ * Format YYYY-MM-DD API date as DD-MM-YYYY without timezone shift.
+ * Use for scheduled_date, slot_date, and other date-only API fields.
+ */
 export function formatApiDateIN(dateStr) {
   if (!dateStr) return null
-  const [y, m, d] = String(dateStr).slice(0, 10).split('-')
-  if (!y || !m || !d) return null
-  return `${d}-${m}-${y.slice(-2)}`
+  const match = String(dateStr).trim().match(ISO_DATE_ONLY)
+  if (!match) return null
+  const [, y, m, d] = match
+  return `${d}-${m}-${y}`
+}
+
+/** User-facing date with fallback (default em dash). */
+export function formatDisplayDate(dateStr, fallback = '—') {
+  return formatApiDateIN(dateStr) || fallback
+}
+
+/** DD-MM-YYYY · HH:MM for API date + wall-clock time. */
+export function formatDisplayDateTime(dateStr, timeStr) {
+  const date = formatApiDateIN(dateStr)
+  if (!date) return null
+  const time = timeStr ? String(timeStr).slice(0, 5) : null
+  return time ? `${date} · ${time}` : date
+}
+
+/** DD-MM-YYYY · HH:MM–HH:MM */
+export function formatDisplayDateTimeRange(dateStr, startTime, endTime) {
+  const date = formatApiDateIN(dateStr)
+  if (!date) return null
+  const start = startTime ? String(startTime).slice(0, 5) : null
+  const end = endTime ? String(endTime).slice(0, 5) : null
+  if (start && end) return `${date} · ${start}–${end}`
+  if (start) return `${date} · ${start}`
+  return date
+}
+
+/** Friendly label: Wed, 28-05-2026 */
+export function formatDisplayDateLabel(dateStr) {
+  const formatted = formatApiDateIN(dateStr)
+  if (!formatted) return ''
+  const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return formatted
+  const weekday = d.toLocaleDateString('en-IN', { weekday: 'short' })
+  return `${weekday}, ${formatted}`
+}
+
+/** Date portion of a timestamp in DD-MM-YYYY (IST). */
+export function formatTimestampDateIN(iso) {
+  return formatDateIN(iso)
+}
+
+/** Inclusive API date range for filters and chips. */
+export function formatDisplayDateRange(from, to) {
+  if (!from && !to) return null
+  if (from && to) return `${formatDisplayDate(from)} – ${formatDisplayDate(to)}`
+  return formatDisplayDate(from || to)
 }

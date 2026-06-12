@@ -77,8 +77,8 @@ export function AdminReportsTable({
                     aria-label="Select all"
                   />
                 </th>
-                <th>Type</th>
-                <th>Case / child</th>
+                <th>Case ID</th>
+                <th>Child</th>
                 <th>Label</th>
                 <th>Category</th>
                 <th>Status</th>
@@ -100,23 +100,20 @@ export function AdminReportsTable({
                         aria-label={`Select ${r.label}`}
                       />
                     </td>
-                    <td>{r.report_type === 'observation' ? 'Observation' : 'Monthly'}</td>
                     <td>
                       {r.case_id ? (
                         <Link
                           to={`/admin/cases/${r.case_id}?tab=reports`}
-                          style={{ color: 'inherit', textDecoration: 'none' }}
+                          className="admin-table__primary"
+                          style={{ textDecoration: 'none' }}
                         >
-                          <div>{r.case_code}</div>
-                          <div style={{ fontSize: '0.8rem', color: '#6366f1' }}>{r.child_name}</div>
+                          {r.case_code || '—'}
                         </Link>
                       ) : (
-                        <>
-                          <div>{r.case_code}</div>
-                          <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{r.child_name}</div>
-                        </>
+                        r.case_code || '—'
                       )}
                     </td>
+                    <td>{r.child_name || '—'}</td>
                     <td>{r.label}</td>
                     <td style={{ fontSize: '0.8rem', color: '#64748b' }}>
                       {r.category ? categoryLabel(r.category) : '—'}
@@ -154,7 +151,7 @@ export function AdminReportsTable({
           <li key={key}>
             <AdminTaskCard
               title={r.label}
-              meta={`${r.report_type === 'observation' ? 'Observation' : 'Monthly'} · ${r.case_code || ''} ${r.child_name || ''}`.trim()}
+              meta={[r.case_code, r.child_name].filter(Boolean).join(' · ') || '—'}
               badges={
                 <>
                   <span className={statusPillClass(r.status)}>{r.status}</span>

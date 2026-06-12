@@ -27,7 +27,7 @@ class AdminIepRow(BaseModel):
     visibility_status: Optional[str] = None
     uploaded_at: Optional[str] = None
     uploaded_by_name: Optional[str] = None
-    parent_contacts: list[str] = []
+    therapist_name: Optional[str] = None
 
 
 class AdminIepDashboard(BaseModel):

@@ -8,6 +8,7 @@ import {
   todayIsoIST,
   validateSessionLogForm,
 } from '../../lib/sessionLogUtils.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { SessionBrief } from './SessionBrief.jsx'
 
 const ATTENDANCE = [
@@ -257,7 +258,7 @@ export function SubmitSessionLogForm({
           </h2>
           <p className="ic-session-log-panel__meta">
             <strong>{displayName}</strong>
-            {session?.scheduled_date ? <> · {session.scheduled_date}</> : null}
+            {session?.scheduled_date ? <> · {formatDisplayDate(session.scheduled_date)}</> : null}
             {timeRange ? <> · {timeRange}</> : null}
           </p>
         </div>
@@ -356,7 +357,7 @@ export function SubmitSessionLogForm({
               <span className="ic-session-log-field__req">Required</span>
             </span>
             <span className="ic-session-log-field__hint">
-              Scheduled {session?.scheduled_date} — explain why the log is late (required to save).
+              Scheduled {formatDisplayDate(session?.scheduled_date)} — explain why the log is late (required to save).
             </span>
             <textarea
               required

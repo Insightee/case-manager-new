@@ -1,5 +1,6 @@
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import {
   formatClockRange,
   formatEditedRange,
@@ -47,7 +48,7 @@ export function SessionLogReadOnly({
             <h3>{displayName}</h3>
             {log?.scheduled_date ? (
               <p className={isAdmin ? 'admin-session-log-detail__meta' : 'ic-session-log-readonly__meta'}>
-                {log.scheduled_date}
+                {formatDisplayDate(log.scheduled_date)}
                 {timeRange ? ` · ${timeRange}` : ''}
               </p>
             ) : null}

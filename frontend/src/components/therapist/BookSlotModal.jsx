@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
+import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
+import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 
 export function BookSlotModal({ open, slot, therapistId, onClose, onBooked }) {
   const [tab, setTab] = useState('existing')
@@ -10,10 +13,12 @@ export function BookSlotModal({ open, slot, therapistId, onClose, onBooked }) {
   const [clientEmail, setClientEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [successState, setSuccessState] = useState(null)
 
   useEffect(() => {
     if (!open) return
     setError('')
+    setSuccessState(null)
     setTab('existing')
     setCaseId('')
     setSelectedCase(null)
@@ -25,7 +30,24 @@ export function BookSlotModal({ open, slot, therapistId, onClose, onBooked }) {
       .catch(() => setCases([]))
   }, [open, therapistId])
 
+  function finishSuccess() {
+    setSuccessState(null)
+    onClose()
+  }
+
   if (!open || !slot) return null
+
+  if (successState) {
+    return (
+      <BookingSuccessSheet
+        open
+        title="Session booked"
+        event={successState.event}
+        detailLines={successState.detailLines}
+        onClose={finishSuccess}
+      />
+    )
+  }
 
   async function handleBookExisting(e) {
     e.preventDefault()
@@ -37,8 +59,20 @@ export function BookSlotModal({ open, slot, therapistId, onClose, onBooked }) {
         method: 'POST',
         body: JSON.stringify({ case_id: Number(caseId) }),
       })
+      const event = mapSlotToCalendarEvent(
+        {
+          ...slot,
+          child_name: selectedCase?.child_name,
+          case_code: selectedCase?.case_code,
+        },
+        { deepLinkPath: '/therapist/slots' },
+      )
+      const detailLines = [
+        selectedCase?.child_name ? `Client: ${selectedCase.child_name}` : null,
+        selectedCase?.case_code ? `Case: ${selectedCase.case_code}` : null,
+      ].filter(Boolean)
+      setSuccessState({ event, detailLines })
       onBooked?.()
-      onClose()
     } catch (err) {
       setError(err.message || 'Booking failed')
     } finally {
@@ -75,7 +109,7 @@ export function BookSlotModal({ open, slot, therapistId, onClose, onBooked }) {
       >
         <h2 className="text-lg font-semibold text-slate-900">Book slot</h2>
         <p className="mt-1 text-sm text-slate-500">
-          {slot.slot_date} · {slot.start_time}–{slot.end_time}
+          {formatDisplayDateTimeRange(slot.slot_date || slot.date, slot.start_time, slot.end_time)}
         </p>
 
         <div className="mt-4 flex rounded-lg border border-slate-200 p-0.5">

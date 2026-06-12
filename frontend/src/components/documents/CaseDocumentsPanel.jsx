@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { apiDownload, apiFetch } from '../../lib/apiClient.js'
+import { apiDownload, apiFetch, apiFetchBlob } from '../../lib/apiClient.js'
 import {
   categoryLabel,
   statusLabel,
@@ -11,6 +11,7 @@ import {
 } from '../../lib/caseDocumentCategories.js'
 import { GOOGLE_LINK_WARNING } from '../../lib/googleLinkValidation.js'
 import { patchCaseDocumentDetail } from '../../lib/caseDocumentCache.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import {
   useCaseDocumentDetail,
   useCaseDocumentMutations,
@@ -23,6 +24,13 @@ import './case-documents.css'
 function StatusChip({ status }) {
   const tone = statusTone(status)
   return <span className={`case-docs__chip case-docs__chip--${tone}`}>{statusLabel(status)}</span>
+}
+
+function formatReportMonth(reportMonth) {
+  if (!reportMonth) return ''
+  const match = String(reportMonth).match(/^(\d{4})-(\d{2})/)
+  if (match) return `${match[2]}-${match[1]}`
+  return formatDisplayDate(reportMonth) || reportMonth
 }
 
 const WORKFLOW_UI = ['submit', 'approve', 'request_changes', 'publish_client', 'archive']
@@ -40,7 +48,11 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
   const [workflowComment, setWorkflowComment] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [commentLoadWarning, setCommentLoadWarning] = useState('')
   const [acting, setActing] = useState(false)
+  const [drawerExpanded, setDrawerExpanded] = useState(false)
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null)
+  const [previewError, setPreviewError] = useState('')
 
   const filters = useMemo(
     () => ({
@@ -61,11 +73,15 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
   const loadDetail = useCallback(async (documentId) => {
     setDetailLoading(true)
     setError('')
+    setCommentLoadWarning('')
     try {
-      const [doc, comments] = await Promise.all([
-        apiFetch(`/api/v1/documents/${documentId}`),
-        apiFetch(`/api/v1/documents/${documentId}/comments`).catch(() => []),
-      ])
+      const doc = await apiFetch(`/api/v1/documents/${documentId}`)
+      let comments = []
+      try {
+        comments = await apiFetch(`/api/v1/documents/${documentId}/comments`)
+      } catch (commentErr) {
+        setCommentLoadWarning(commentErr.message || 'Could not load comments')
+      }
       setDetail({ ...doc, comments })
       patchCaseDocumentDetail(doc)
     } catch (err) {
@@ -87,10 +103,42 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
     }
   }, [queryDetail, selectedId])
 
+  useEffect(() => {
+    let objectUrl = null
+    setPreviewError('')
+    if (!detail?.id || detail.current_version?.source_type === 'EXTERNAL_LINK') {
+      setPdfPreviewUrl(null)
+      return undefined
+    }
+    const mime = detail.current_version?.mime_type || ''
+    const name = detail.current_version?.file_name || ''
+    const isPdf = mime.includes('pdf') || name.toLowerCase().endsWith('.pdf')
+    if (!isPdf) {
+      setPdfPreviewUrl(null)
+      return undefined
+    }
+    let cancelled = false
+    apiFetchBlob(`/api/v1/documents/${detail.id}/download`)
+      .then((blob) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        setPdfPreviewUrl(objectUrl)
+      })
+      .catch((err) => {
+        if (!cancelled) setPreviewError(err.message || 'Preview unavailable')
+      })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [detail?.id, detail?.current_version?.mime_type, detail?.current_version?.file_name, detail?.current_version?.source_type])
+
   function closeDrawer() {
     setSelectedId(null)
     setDetail(null)
     setWorkflowComment('')
+    setDrawerExpanded(false)
+    setPdfPreviewUrl(null)
   }
 
   async function handleCreate(payload) {
@@ -98,6 +146,7 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
     setMessage('Document added.')
     patchCaseDocumentDetail(doc)
     void refetch()
+    setSelectedId(doc.id)
     return doc
   }
 
@@ -133,16 +182,30 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
 
   async function handleDownload() {
     if (!detail?.id) return
-    const info = await apiFetch(`/api/v1/documents/${detail.id}/download`)
-    if (info?.type === 'external_link' && info?.url) {
-      window.open(info.url, '_blank', 'noopener,noreferrer')
-      return
+    setError('')
+    try {
+      if (detail.current_version?.source_type === 'EXTERNAL_LINK') {
+        const url = detail.current_version?.external_url
+        if (!url) throw new Error('No link available')
+        window.open(url, '_blank', 'noopener,noreferrer')
+        return
+      }
+      const name = detail.current_version?.file_name || `document_${detail.id}`
+      await apiDownload(`/api/v1/documents/${detail.id}/download`, name)
+    } catch (err) {
+      setError(err.message || 'Download failed')
     }
-    const name = detail.current_version?.file_name || `document_${detail.id}`
-    await apiDownload(`/api/v1/documents/${detail.id}/download`, name)
   }
 
-  const workflowActions = (detail?.allowed_actions || []).filter((a) => WORKFLOW_UI.includes(a))
+  const workflowActions = (detail?.allowed_actions || []).filter((a) => {
+    if (!WORKFLOW_UI.includes(a)) return false
+    if (variant === 'therapist' && a === 'submit') return false
+    return true
+  })
+
+  const isWordDoc =
+    detail?.current_version?.mime_type?.includes('word') ||
+    /\.docx?$/i.test(detail?.current_version?.file_name || '')
 
   return (
     <div className={`case-docs case-docs--${variant}`}>
@@ -201,7 +264,7 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
                     <p className="case-docs__card-title">{doc.title}</p>
                     <p className="case-docs__card-meta">
                       {categoryLabel(doc.category)}
-                      {doc.report_month ? ` · ${doc.report_month}` : ''}
+                      {doc.report_month ? ` · ${formatReportMonth(doc.report_month)}` : ''}
                       {doc.current_version?.source_type === 'EXTERNAL_LINK' ? ' · Google link' : ' · Upload'}
                     </p>
                   </div>
@@ -216,7 +279,12 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
         </ul>
       )}
 
-      <CaseDocumentModal open={modalOpen} onClose={() => setModalOpen(false)} onSave={handleCreate} />
+      <CaseDocumentModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSave={handleCreate}
+        showShareOptions={variant === 'therapist'}
+      />
       <CaseDocumentModal
         open={!!editDoc}
         onClose={() => setEditDoc(null)}
@@ -227,7 +295,7 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
 
       {selectedId ? (
         <div className="case-docs__drawer-backdrop" role="dialog" aria-modal="true">
-          <div className="case-docs__drawer">
+          <div className={`case-docs__drawer${drawerExpanded ? ' case-docs__drawer--expanded' : ''}`}>
             <div className="case-docs__drawer-head">
               <div>
                 <h2 style={{ margin: 0, fontSize: 18 }}>{detail?.title || 'Document'}</h2>
@@ -236,9 +304,21 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
                   {detail ? ` · ${statusLabel(detail.status)}` : ''}
                 </p>
               </div>
-              <button type="button" onClick={closeDrawer} aria-label="Close">
-                ✕
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {pdfPreviewUrl ? (
+                  <button
+                    type="button"
+                    className={btnGhost}
+                    onClick={() => setDrawerExpanded((v) => !v)}
+                    aria-label={drawerExpanded ? 'Exit fullscreen preview' : 'Expand preview'}
+                  >
+                    {drawerExpanded ? 'Exit expand' : 'Expand'}
+                  </button>
+                ) : null}
+                <button type="button" onClick={closeDrawer} aria-label="Close">
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="case-docs__drawer-body">
               {detailLoading ? (
@@ -248,6 +328,19 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
                   {detail.current_version?.source_type === 'EXTERNAL_LINK' ? (
                     <p className="case-docs__banner">{GOOGLE_LINK_WARNING}</p>
                   ) : null}
+
+                  {pdfPreviewUrl ? (
+                    <iframe
+                      title={detail.current_version?.file_name || 'Document preview'}
+                      src={pdfPreviewUrl}
+                      className="case-docs__preview-frame"
+                    />
+                  ) : isWordDoc ? (
+                    <p className="case-docs__preview-hint">Word documents can be downloaded but not previewed here.</p>
+                  ) : previewError ? (
+                    <p className="case-docs__preview-hint">{previewError}</p>
+                  ) : null}
+
                   <dl style={{ fontSize: 14, margin: '0 0 16px' }}>
                     <div style={{ marginBottom: 8 }}>
                       <dt style={{ color: '#6b7280', fontSize: 12 }}>Visibility</dt>
@@ -281,6 +374,12 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
                         style={{ width: '100%', marginTop: 4, padding: 8 }}
                       />
                     </label>
+                  ) : null}
+
+                  {commentLoadWarning ? (
+                    <p role="status" style={{ color: '#b45309', fontSize: 13 }}>
+                      {commentLoadWarning}
+                    </p>
                   ) : null}
 
                   <CaseDocumentComments

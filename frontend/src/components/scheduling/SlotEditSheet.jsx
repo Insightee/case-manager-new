@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
+import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import { ScheduleWeekdayPicker } from './ScheduleWeekdayPicker.jsx'
 import { ONGOING_MATERIALIZE_WEEKS } from './scheduleTemplateUtils.js'
 import { dateStr, weekEndContaining } from './slotCalendarUtils.js'
@@ -66,6 +68,7 @@ export function SlotEditSheet({
   const [cases, setCases] = useState([])
   const [caseId, setCaseId] = useState('')
   const [selectedCase, setSelectedCase] = useState(null)
+  const [bookingSuccess, setBookingSuccess] = useState(null)
 
   // New client invite
   const [clientName, setClientName] = useState('')
@@ -204,12 +207,21 @@ export function SlotEditSheet({
       const newSlotId = savedSlot?.id || slot?.id
 
       // ------- Book client (if toggle on) -------
+      let bookedForCalendar = null
       if (bookClient && newSlotId) {
         if (bookTab === 'existing' && caseId) {
           await apiFetch(`/api/v1/scheduling/slots/${newSlotId}/book`, {
             method: 'POST',
             body: JSON.stringify({ case_id: Number(caseId) }),
           })
+          bookedForCalendar = {
+            id: newSlotId,
+            slot_date: slotDate,
+            start_time: startTime,
+            end_time: endTime,
+            child_name: selectedCase?.child_name,
+            case_code: selectedCase?.case_code,
+          }
         } else if (bookTab === 'new' && clientName && clientEmail) {
           await apiFetch(`/api/v1/scheduling/slots/${newSlotId}/invite-client`, {
             method: 'POST',
@@ -239,6 +251,18 @@ export function SlotEditSheet({
         }).catch(() => {}) // best-effort
       }
 
+      if (bookedForCalendar) {
+        setBookingSuccess({
+          event: mapSlotToCalendarEvent(bookedForCalendar, { deepLinkPath: '/therapist/slots' }),
+          detailLines: [
+            selectedCase?.child_name ? `Client: ${selectedCase.child_name}` : null,
+            selectedCase?.case_code ? `Case: ${selectedCase.case_code}` : null,
+          ].filter(Boolean),
+        })
+        onSaved?.()
+        return
+      }
+
       onSaved?.()
       onClose()
     } catch (err) {
@@ -249,6 +273,7 @@ export function SlotEditSheet({
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
       <div className="w-full max-w-md rounded-t-2xl bg-white shadow-xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
         {/* Header */}
@@ -554,5 +579,16 @@ export function SlotEditSheet({
         </form>
       </div>
     </div>
+    <BookingSuccessSheet
+      open={!!bookingSuccess}
+      title="Session booked"
+      event={bookingSuccess?.event}
+      detailLines={bookingSuccess?.detailLines}
+      onClose={() => {
+        setBookingSuccess(null)
+        onClose()
+      }}
+    />
+    </>
   )
 }

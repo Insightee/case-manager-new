@@ -17,6 +17,7 @@ import {
   FilterSelect,
   StatusBadge,
 } from './ui/index.js'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import './admin-reports.css'
 
 const RECORD_TYPE_OPTIONS = [
@@ -48,11 +49,7 @@ function statusLabel(value) {
 
 function formatDate(iso) {
   if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-  } catch {
-    return iso
-  }
+  return formatTimestampDateIN(iso) || iso
 }
 
 function historyRowActions(row) {

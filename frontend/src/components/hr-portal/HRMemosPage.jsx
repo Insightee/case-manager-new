@@ -35,17 +35,30 @@ export function HRMemosPage() {
 
   const filteredRecipients = useMemo(() => recipients, [recipients])
 
+  function emailFlagForRecipients(userIds) {
+    return userIds.some((uid) => recipients.find((r) => r.id === uid)?.kind === 'client')
+  }
+
   function toggleRecipient(id) {
-    setForm((prev) => ({
-      ...prev,
-      to_user_ids: prev.to_user_ids.includes(id)
+    setForm((prev) => {
+      const nextIds = prev.to_user_ids.includes(id)
         ? prev.to_user_ids.filter((x) => x !== id)
-        : [...prev.to_user_ids, id],
-    }))
+        : [...prev.to_user_ids, id]
+      return {
+        ...prev,
+        to_user_ids: nextIds,
+        send_as_email: emailFlagForRecipients(nextIds),
+      }
+    })
   }
 
   function selectAllVisible() {
-    setForm((prev) => ({ ...prev, to_user_ids: filteredRecipients.map((r) => r.id) }))
+    const nextIds = filteredRecipients.map((r) => r.id)
+    setForm((prev) => ({
+      ...prev,
+      to_user_ids: nextIds,
+      send_as_email: emailFlagForRecipients(nextIds),
+    }))
   }
 
   async function sendMemo(e) {
@@ -90,7 +103,7 @@ export function HRMemosPage() {
         <div>
           <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>HR</p>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Memos</h1>
-          <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>Send communications to therapists and staff.</p>
+          <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 4 }}>Send communications to therapists, staff, and client families.</p>
         </div>
         <button
           type="button"
@@ -121,7 +134,7 @@ export function HRMemosPage() {
               </div>
               <input
                 type="search"
-                placeholder="Search staff or therapists…"
+                placeholder="Search staff, therapists, or clients…"
                 value={recipientSearch}
                 onChange={(e) => setRecipientSearch(e.target.value)}
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', marginBottom: 8, fontSize: '0.875rem' }}
@@ -177,7 +190,7 @@ export function HRMemosPage() {
       ) : memos.length === 0 ? (
         <div style={{ padding: 48, textAlign: 'center', background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', color: '#6b7280' }}>
           <p style={{ fontWeight: 600, marginBottom: 6 }}>No memos sent yet</p>
-          <p style={{ fontSize: '0.875rem' }}>Use New memo to reach therapists and staff.</p>
+          <p style={{ fontSize: '0.875rem' }}>Use New memo to reach therapists, staff, or client families.</p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

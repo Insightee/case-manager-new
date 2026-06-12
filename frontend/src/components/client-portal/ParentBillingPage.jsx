@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import './parent-payments.css'
 import './parent-portal-filters.css'
+import { formatApiDateIN, formatTimestampDateIN } from '../../lib/datetime.js'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 
 const DISPUTE_STATUS_LABELS = {
@@ -43,10 +44,13 @@ function formatMonth(key) {
   return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
 }
 
+function formatBillingDate(value) {
+  if (!value) return null
+  return formatApiDateIN(String(value).slice(0, 10)) || formatTimestampDateIN(value)
+}
+
 function formatSessionLineLabel(line) {
-  const date = line.sessionDate
-    ? new Date(line.sessionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-    : 'Session'
+  const date = formatBillingDate(line.sessionDate) || 'Session'
   const status = line.sessionStatus || '—'
   const amount = formatInr(line.amountInr)
   return `${date} · ${status} · ${amount}`
@@ -73,7 +77,7 @@ function InvoiceMobileCard({ inv, onOpen }) {
         <span>Balance {formatInr(inv.balanceInr)}</span>
         {inv.dueDate ? (
           <span>
-            Due {new Date(inv.dueDate).toLocaleDateString('en-IN')}
+            Due {formatBillingDate(inv.dueDate) || '—'}
             {inv.isOverdue && inv.balanceInr > 0 ? (
               <span className="parent-pay__badge parent-pay__badge--overdue" style={{ marginLeft: 6 }}>
                 Overdue
@@ -100,7 +104,7 @@ function PackageMobileCard({ pkg }) {
         <span>Total {pkg.totalSessions}</span>
         <span>Used {pkg.usedSessions}</span>
         <span>
-          Expires {pkg.validityEnd ? new Date(pkg.validityEnd).toLocaleDateString('en-IN') : '—'}
+          Expires {pkg.validityEnd ? formatBillingDate(pkg.validityEnd) : '—'}
         </span>
       </div>
     </article>
@@ -378,7 +382,7 @@ export function ParentBillingPage() {
                   ) : null}
                 </div>
                 {inv.dueDate ? (
-                  <p className="parent-pay__due-meta">Due {new Date(inv.dueDate).toLocaleDateString('en-IN')}</p>
+                  <p className="parent-pay__due-meta">Due {formatBillingDate(inv.dueDate) || '—'}</p>
                 ) : null}
                 <div className="parent-pay__due-balance">{formatInr(inv.balanceInr)} due</div>
                 <div className="parent-pay__due-actions">
@@ -424,7 +428,7 @@ export function ParentBillingPage() {
                     <td>
                       <strong>{p.remainingSessions}</strong>
                     </td>
-                    <td>{p.validityEnd ? new Date(p.validityEnd).toLocaleDateString('en-IN') : '—'}</td>
+                    <td>{p.validityEnd ? formatBillingDate(p.validityEnd) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -521,7 +525,7 @@ export function ParentBillingPage() {
                     <td>{formatInr(inv.totalInr)}</td>
                     <td>{formatInr(inv.balanceInr)}</td>
                     <td>
-                      {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('en-IN') : '—'}
+                      {inv.dueDate ? formatBillingDate(inv.dueDate) : '—'}
                       {inv.isOverdue && inv.balanceInr > 0 ? (
                         <span className="parent-pay__badge parent-pay__badge--overdue" style={{ marginLeft: 6 }}>
                           Overdue
@@ -578,7 +582,7 @@ export function ParentBillingPage() {
                   <strong>{selected.invoiceType}</strong>
                   {selected.dueDate ? (
                     <span>
-                      Due {new Date(selected.dueDate).toLocaleDateString('en-IN')}
+                      Due {formatBillingDate(selected.dueDate) || '—'}
                       {selected.isOverdue && selected.balanceInr > 0 ? (
                         <span className="parent-pay__badge parent-pay__badge--overdue" style={{ marginLeft: 6 }}>
                           Overdue
@@ -612,7 +616,7 @@ export function ParentBillingPage() {
                   <tbody>
                     {(selected.lines || []).map((line) => (
                       <tr key={line.id}>
-                        <td>{new Date(line.sessionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
+                        <td>{formatBillingDate(line.sessionDate) || '—'}</td>
                         <td>{line.therapistName}</td>
                         <td>{line.serviceLabel}</td>
                         <td>

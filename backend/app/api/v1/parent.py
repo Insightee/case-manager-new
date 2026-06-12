@@ -33,6 +33,7 @@ from app.schemas.notification import NotificationRead
 from app.schemas.parent_reports import ParentMonthlyFeedback, ParentReportCommentCreate
 from app.core.config import settings
 from app.schemas.parent_home import ParentHomeResponse
+from app.schemas.session_absence import SessionAbsenceListResponse
 from app.schemas.iep_plan import IepPlanSuggestionCreate
 from app.services import (
     address_service,
@@ -143,6 +144,14 @@ def parent_profile_update(
 def parent_home(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_parent(user)
     return parent_home_service.build_parent_home(db, user)
+
+
+@router.get("/absence-requests", response_model=SessionAbsenceListResponse)
+def parent_absence_requests(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_parent(user)
+    from app.services import session_absence_service as absence_svc
+
+    return {"items": absence_svc.list_pending_for_parent(db, user)}
 
 
 @router.post("/assignments/{assignment_id}/accept", response_model=dict)

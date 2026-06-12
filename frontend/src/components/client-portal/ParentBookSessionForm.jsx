@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { mapParentBookedSlotToCalendarEvent } from '../../lib/googleCalendar.js'
+import { formatDisplayDateLabel, todayIsoIST } from '../../lib/datetime.js'
+import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 
 function todayIso() {
-  const d = new Date()
-  return d.toISOString().slice(0, 10)
-}
-
-function fmtDateLabel(iso) {
-  if (!iso) return ''
-  return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  })
+  return todayIsoIST()
 }
 
 function childSelectLabel(c) {
@@ -44,6 +37,7 @@ export function ParentBookSessionForm({
   const [slots, setSlots] = useState([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlotId, setSelectedSlotId] = useState('')
+  const [bookingSuccess, setBookingSuccess] = useState(null)
 
   const numericCaseId = useMemo(() => {
     const c = cases.find((x) => String(x.id) === caseId || String(x.caseId) === caseId)
@@ -96,7 +90,7 @@ export function ParentBookSessionForm({
       setSelectedSlotId('')
     } catch (err) {
       setSlots([])
-      setError(err.message || 'Could not load open slots')
+      setError(err.message || 'Could not load available times')
     } finally {
       setSlotsLoading(false)
     }
@@ -120,9 +114,20 @@ export function ParentBookSessionForm({
         setMessage('Reschedule request sent — your therapist will confirm.')
         onRescheduleSuccess?.()
       } else {
+        const bookedSlot = slots.find((s) => String(s.id) === String(selectedSlotId))
+        const caseRow = cases.find((c) => String(c.id ?? c.caseId) === String(caseId))
+        const therapistName = therapists.find((t) => String(t.therapist_user_id) === therapistId)?.full_name
         await apiFetch('/api/v1/booking/appointments', {
           method: 'POST',
           body: JSON.stringify({ slot_id: Number(selectedSlotId), case_id: numericCaseId }),
+        })
+        const event = mapParentBookedSlotToCalendarEvent({ slot: bookedSlot, caseRow, therapistName })
+        setBookingSuccess({
+          event,
+          detailLines: [
+            caseRow?.childName ? `Child: ${caseRow.childName}` : null,
+            therapistName ? `Therapist: ${therapistName}` : null,
+          ].filter(Boolean),
         })
         setMessage('Appointment booked. Your therapist has been notified.')
         onBookSuccess?.()
@@ -142,7 +147,7 @@ export function ParentBookSessionForm({
       {isReschedule ? (
         <div className="parent-book-form__banner">
           <span>
-            Rescheduling {fmtDateLabel(rescheduleFrom.slotDate)} · {rescheduleFrom.startTime}
+            Rescheduling {formatDisplayDateLabel(rescheduleFrom.slotDate)} · {rescheduleFrom.startTime}
             {rescheduleFrom.endTime ? `–${rescheduleFrom.endTime}` : ''}
             {rescheduleFrom.therapistName ? ` · ${rescheduleFrom.therapistName}` : ''}
           </span>
@@ -213,7 +218,7 @@ export function ParentBookSessionForm({
         </label>
 
         <label className="parent-book-form__field">
-          Open slot
+          Available time
           <select
             value={selectedSlotId}
             onChange={(e) => setSelectedSlotId(e.target.value)}
@@ -223,7 +228,7 @@ export function ParentBookSessionForm({
               {slotsLoading
                 ? 'Loading slots…'
                 : slots.length === 0
-                  ? 'No open slots this day'
+                  ? 'No times available this day'
                   : 'Choose a time'}
             </option>
             {slots.map((s) => (
@@ -252,6 +257,14 @@ export function ParentBookSessionForm({
       <p className="parent-book-form__footer">
         <Link to="/parent/session-logs">View past session notes and feedback →</Link>
       </p>
+
+      <BookingSuccessSheet
+        open={!!bookingSuccess && !isReschedule}
+        title="Session booked"
+        event={bookingSuccess?.event}
+        detailLines={bookingSuccess?.detailLines}
+        onClose={() => setBookingSuccess(null)}
+      />
     </div>
   )
 }

@@ -11,7 +11,6 @@ from app.services.admin_scope_service import apply_case_scope
 from app.models.case import Case, CaseStatus
 from app.models.session import Session as TherapySession
 from app.models.child import Child
-from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
 
@@ -25,27 +24,6 @@ def _derive_iep_status(att: Attachment | None) -> str:
     if vis == VisibilityStatus.APPROVED_FOR_PARENT:
         return "AWAITING_ACK"
     return "INTERNAL_ONLY"
-
-
-def _parent_contacts_by_child_ids(db: Session, child_ids: list[int]) -> dict[int, list[str]]:
-    if not child_ids:
-        return {}
-    rows = db.execute(
-        select(parent_child_link.c.child_id, User.full_name, User.email)
-        .select_from(parent_child_link)
-        .join(ParentGuardian, parent_child_link.c.parent_guardian_id == ParentGuardian.id)
-        .join(User, ParentGuardian.user_id == User.id)
-        .where(parent_child_link.c.child_id.in_(child_ids))
-    ).all()
-    out: dict[int, list[str]] = {}
-    for child_id, name, email in rows:
-        label = f"{name} · {email}" if name and email else (email or name or "")
-        if not label:
-            continue
-        bucket = out.setdefault(child_id, [])
-        if label not in bucket:
-            bucket.append(label)
-    return out
 
 
 def _iep_status_from_visibility(vis: VisibilityStatus | None) -> str:
@@ -207,8 +185,10 @@ def build_iep_dashboard(
         for u in db.scalars(select(User).where(User.id.in_(uploader_ids))).all():
             uploaders[u.id] = u.full_name
 
-    child_ids = [c.child_id for c in cases if c.child_id]
-    parents_by_child = _parent_contacts_by_child_ids(db, child_ids)
+    from app.services.parent_service import _batch_active_therapist_names
+
+    case_ids = [c.id for c in cases]
+    therapists_by_case = _batch_active_therapist_names(db, case_ids)
 
     rows = []
     counts = {"MISSING": 0, "INTERNAL_ONLY": 0, "AWAITING_ACK": 0, "ACKNOWLEDGED": 0}
@@ -233,7 +213,7 @@ def build_iep_dashboard(
                 "visibility_status": att.visibility_status.value if att else None,
                 "uploaded_at": att.created_at.isoformat() if att and att.created_at else None,
                 "uploaded_by_name": uploaders.get(att.uploaded_by_user_id) if att else None,
-                "parent_contacts": parents_by_child.get(case.child_id, []) if case.child_id else [],
+                "therapist_name": therapists_by_case.get(case.id),
             }
         )
 

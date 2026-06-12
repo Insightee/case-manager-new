@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { AdminDataList, AdminEmptyState, AdminPanel, AdminTaskCard, StatusBadge } from './ui/index.js'
 
 export function AdminDisputesTab() {
@@ -52,7 +53,7 @@ export function AdminDisputesTab() {
                       <td>
                         <StatusBadge tone={d.status === 'OPEN' ? 'amber' : 'green'}>{d.status}</StatusBadge>
                       </td>
-                      <td>{d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
+                      <td>{d.createdAt ? formatTimestampDateIN(d.createdAt) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -65,7 +66,7 @@ export function AdminDisputesTab() {
                 <li key={d.id}>
                   <AdminTaskCard
                     title={`Invoice #${d.clientInvoiceId}`}
-                    meta={d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}
+                    meta={d.createdAt ? formatTimestampDateIN(d.createdAt) : '—'}
                     badges={<StatusBadge tone={d.status === 'OPEN' ? 'amber' : 'green'}>{d.status}</StatusBadge>}
                   >
                     <p>

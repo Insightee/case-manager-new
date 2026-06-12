@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
 import { AdminObservationChecklistsPanel } from './AdminObservationChecklistsPanel.jsx'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import './admin-reports.css'
 
 const SECTION_META = {
@@ -41,7 +42,7 @@ function WorkbenchSection({ id, section }) {
                     {item.child_name || ''}
                     {item.status ? ` · ${item.status}` : ''}
                     {item.iep_status ? ` · ${item.iep_status}` : ''}
-                    {item.scheduled_date ? ` · ${item.scheduled_date}` : ''}
+                    {item.scheduled_date ? ` · ${formatDisplayDate(item.scheduled_date)}` : ''}
                   </p>
                 </div>
                 <Link to={item.href} className="admin-btn admin-btn--ghost admin-btn--sm">

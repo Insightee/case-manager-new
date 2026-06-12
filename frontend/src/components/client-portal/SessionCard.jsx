@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { formatDisplayDate, formatDisplayDateLabel } from '../../lib/datetime.js'
 import { formatParentLogClockFootnote, formatParentLogSessionTime } from '../../lib/parentSessionLogDisplay.js'
 import { SessionLogParentBody } from './SessionLogParentBody.jsx'
 
@@ -72,14 +73,7 @@ export function SessionCard({ log, onSaved, onDispute }) {
     }
   }
 
-  const dateLabel = localLog.scheduled_date
-    ? new Date(localLog.scheduled_date).toLocaleDateString(undefined, {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
-    : ''
+  const dateLabel = localLog.scheduled_date ? formatDisplayDateLabel(localLog.scheduled_date) : ''
   const timeLabel = formatParentLogSessionTime(localLog)
   const clockFootnote = formatParentLogClockFootnote(localLog)
   const submittedAt = localLog.parent_feedback_at ? formatSubmittedAt(localLog.parent_feedback_at) : ''
@@ -170,9 +164,7 @@ export function SessionCard({ log, onSaved, onDispute }) {
 }
 
 export function buildSessionDisputeState(log) {
-  const dateLabel = log.scheduled_date
-    ? new Date(log.scheduled_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-    : 'session'
+  const dateLabel = log.scheduled_date ? formatDisplayDate(log.scheduled_date) : 'session'
   return {
     topic: 'THERAPIST',
     case_id: log.case_id,
@@ -181,7 +173,7 @@ export function buildSessionDisputeState(log) {
       'I would like to dispute or raise a concern about the following session.',
       '',
       `Session log ID: ${log.id}`,
-      `Date: ${log.scheduled_date || '—'}`,
+      `Date: ${formatDisplayDate(log.scheduled_date)}`,
       `Therapist: ${log.therapist_name || '—'}`,
       `Attendance: ${log.attendance_status || '—'}`,
       '',

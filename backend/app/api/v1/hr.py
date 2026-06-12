@@ -78,7 +78,7 @@ def list_memo_recipients(
     stmt = (
         select(User)
         .join(User.roles)
-        .where(Role.name.in_(("THERAPIST", "CASE_MANAGER", "MODULE_ADMIN", "HR", "FINANCE", "ADMIN")))
+        .where(Role.name.in_(("THERAPIST", "CASE_MANAGER", "MODULE_ADMIN", "HR", "FINANCE", "ADMIN", "PARENT")))
         .options(selectinload(User.roles))
         .order_by(User.full_name)
     )
@@ -97,7 +97,13 @@ def list_memo_recipients(
                 "full_name": u.full_name,
                 "email": u.email,
                 "roles": u.role_names,
-                "kind": "therapist" if "THERAPIST" in u.role_names else "staff",
+                "kind": (
+                    "therapist"
+                    if "THERAPIST" in u.role_names
+                    else "client"
+                    if "PARENT" in u.role_names
+                    else "staff"
+                ),
             }
         )
     return out

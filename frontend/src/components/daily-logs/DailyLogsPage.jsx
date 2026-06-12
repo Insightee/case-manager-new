@@ -16,6 +16,8 @@ import { useTherapistSessionsWorkspace } from '../../hooks/useTherapistHome.js'
 import { QueryState } from '../shared/QueryState.jsx'
 import {
   actualDurationMinsIST,
+  formatDisplayDate,
+  formatDisplayDateTimeRange,
   formatSessionActualRange,
   formatTimeIST,
   isStartedLateOnSchedule,
@@ -321,7 +323,7 @@ export function DailyLogsPage() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="ic-session-log-recent__title">
             {l.child_name || l.case_code}
-            {l.scheduled_date ? <> · {l.scheduled_date}</> : null}
+            {l.scheduled_date ? <> · {formatDisplayDate(l.scheduled_date)}</> : null}
           </p>
           {clockRange ? <p className="ic-session-log-recent__times">Clock: {clockRange}</p> : null}
           {editedRange ? (
@@ -614,7 +616,7 @@ export function DailyLogsPage() {
         <section className="ic-case-active" style={{ marginBottom: 24 }}>
           <p className="ic-case-active__title">Session in progress</p>
           <p style={{ margin: '0 0 4px', fontSize: '0.875rem' }}>
-            {active.child_name || active.case_code} · {active.scheduled_date}
+            {active.child_name || active.case_code} · {formatDisplayDate(active.scheduled_date)}
             {active.auto_end_label ? (
               <span style={{ display: 'block', marginTop: 4, fontSize: '0.8125rem', fontWeight: 600, color: '#b45309' }}>
                 {active.auto_end_label}
@@ -747,7 +749,7 @@ export function DailyLogsPage() {
                 onClick={() => openSessionFromDeepLink(s)}
               >
                 <span>
-                  <strong>{s.child_name || s.case_code}</strong> · {s.scheduled_date}
+                  <strong>{s.child_name || s.case_code}</strong> · {formatDisplayDate(s.scheduled_date)}
                   {draftIds.has(s.id) ? (
                     <span className="ic-session-log-needs__draft"> · Draft saved</span>
                   ) : null}
@@ -793,7 +795,7 @@ export function DailyLogsPage() {
                       <strong>{s.child_name || s.case_code}</strong>
                       {/* Scheduled reference */}
                       <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#9ca3af' }}>
-                        Scheduled: {s.scheduled_date} · {formatTime(s.start_time)}–{formatTime(s.end_time)} · {s.mode}
+                        Scheduled: {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)} · {s.mode}
                         {s.case_id ? (
                           <>
                             {' · '}
@@ -919,7 +921,7 @@ export function DailyLogsPage() {
                   <div key={s.id} className="ic-session-log-recent__row">
                     <div style={{ flex: 1 }}>
                       <p className="ic-session-log-recent__title">
-                        {s.child_name || s.case_code} · {s.scheduled_date}
+                        {s.child_name || s.case_code} · {formatDisplayDate(s.scheduled_date)}
                       </p>
                       <span className="ic-session-log-recent__meta">
                         Completed — log required

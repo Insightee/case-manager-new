@@ -1,5 +1,7 @@
 /** Build therapist My Cases board from API aggregates. */
 
+import { formatDisplayDate } from './datetime.js'
+
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
 /** Safe text for search/filter matching. */
@@ -170,7 +172,7 @@ export function buildCaseWorkbench({ cases = [], sessions = [], logs: _logs = []
     let nextDue = '—'
     if (needsLog.length) nextDue = `${needsLog.length} log${needsLog.length > 1 ? 's' : ''} due`
     else if (draftReport) nextDue = `Report: ${draftReport.month}`
-    else if (nextBooking) nextDue = `Booking ${nextBooking.slot_date}`
+    else if (nextBooking) nextDue = `Booking ${formatDisplayDate(nextBooking.slot_date)}`
 
     const badge = stageBadge(c, needsLog.length, !!draftReport)
     const critical = needsLog.length > 0 || draftReport?.status === 'UNDER_REVIEW'
