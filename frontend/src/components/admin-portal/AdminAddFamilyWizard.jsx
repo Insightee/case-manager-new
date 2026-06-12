@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AddressFormFields, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
@@ -27,15 +27,25 @@ const EMPTY_BILLING = {
 const EMPTY_CHILD = { first_name: '', last_name: '', date_of_birth: '' }
 const EMPTY_PARENT = { email: '', full_name: '', phone: '', send_invite: true }
 
+function isCompleteEmail(value) {
+  const email = value.trim()
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
 export function AdminAddFamilyWizard({ onComplete, onCancel }) {
   const [mode, setMode] = useState('new')
   const [step, setStep] = useState(1)
   const [createCase, setCreateCase] = useState(false)
   const [child, setChild] = useState(EMPTY_CHILD)
   const [parent, setParent] = useState(EMPTY_PARENT)
-  const [linkChildId, setLinkChildId] = useState('')
-  const [linkEmail, setLinkEmail] = useState('')
-  const [orphanChildren, setOrphanChildren] = useState([])
+  const [parentSearch, setParentSearch] = useState('')
+  const [parentMatches, setParentMatches] = useState([])
+  const [existingParentId, setExistingParentId] = useState('')
+  const [parentSelectionLocked, setParentSelectionLocked] = useState(false)
+  const [lockedParentSnapshot, setLockedParentSnapshot] = useState(null)
+  const [duplicateParentMatch, setDuplicateParentMatch] = useState(null)
+  const [emailRoleError, setEmailRoleError] = useState('')
+  const [checkingEmail, setCheckingEmail] = useState(false)
   const [productModule, setProductModule] = useState('homecare')
   const [caseCode, setCaseCode] = useState('')
   const [serviceType, setServiceType] = useState('Homecare')
@@ -46,18 +56,61 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
   const [error, setError] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
 
-  const loadOrphans = useCallback(() => {
-    apiFetch('/api/v1/admin/families')
-      .then((rows) => {
-        const list = Array.isArray(rows) ? rows : []
-        setOrphanChildren(list.filter((f) => !f.hasParent && !f.pendingInvite))
-      })
-      .catch(() => setOrphanChildren([]))
+  const totalSteps = createCase ? 4 : 1
+
+  const selectedParent = useMemo(() => {
+    if (lockedParentSnapshot && String(lockedParentSnapshot.userId) === existingParentId) {
+      return lockedParentSnapshot
+    }
+    return parentMatches.find((p) => String(p.userId) === existingParentId) || null
+  }, [existingParentId, lockedParentSnapshot, parentMatches])
+
+  const checkParentEmail = useCallback(async (rawEmail) => {
+    const email = rawEmail.trim().toLowerCase()
+    if (!isCompleteEmail(email)) {
+      setDuplicateParentMatch(null)
+      setEmailRoleError('')
+      return
+    }
+    setCheckingEmail(true)
+    setEmailRoleError('')
+    setDuplicateParentMatch(null)
+    try {
+      const parents = await apiFetch(`/api/v1/admin/parents/lookup?search=${encodeURIComponent(email)}`)
+      const list = Array.isArray(parents) ? parents : []
+      const parentMatch = list.find((p) => (p.email || '').trim().toLowerCase() === email)
+      if (parentMatch) {
+        setDuplicateParentMatch(parentMatch)
+        return
+      }
+      const users = await apiFetch(
+        `/api/v1/admin/users/directory?search=${encodeURIComponent(email)}&limit=50`,
+      )
+      const userRows = Array.isArray(users) ? users : []
+      const userMatch = userRows.find((u) => (u.email || '').trim().toLowerCase() === email)
+      const roles = userMatch?.roles || []
+      const isParent = roles.includes('PARENT')
+      const isTherapist = roles.includes('THERAPIST')
+      if (userMatch && isTherapist && !isParent) {
+        setEmailRoleError('This email is a Therapist account. Use a different email.')
+      }
+    } catch {
+      // Non-blocking — submit will still validate server-side.
+    } finally {
+      setCheckingEmail(false)
+    }
   }, [])
 
   useEffect(() => {
-    if (mode === 'link') loadOrphans()
-  }, [mode, loadOrphans])
+    if (mode !== 'existing' || parentSelectionLocked) return
+    const t = setTimeout(() => {
+      const qs = parentSearch.trim() ? `?search=${encodeURIComponent(parentSearch.trim())}` : ''
+      apiFetch(`/api/v1/admin/parents/lookup${qs}`)
+        .then((rows) => setParentMatches(Array.isArray(rows) ? rows : []))
+        .catch(() => setParentMatches([]))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [mode, parentSearch, parentSelectionLocked])
 
   useEffect(() => {
     if (!createCase || step < 2) return
@@ -81,7 +134,38 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
     })
   }
 
-  const totalSteps = mode === 'link' ? 1 : createCase ? 4 : 1
+  function switchMode(nextMode) {
+    setMode(nextMode)
+    setStep(1)
+    setError('')
+    if (nextMode === 'new') {
+      setParentSelectionLocked(false)
+      setLockedParentSnapshot(null)
+    }
+  }
+
+  function goToExistingParent(prefill) {
+    setMode('existing')
+    setStep(1)
+    setError('')
+    setEmailRoleError('')
+    setDuplicateParentMatch(null)
+    if (prefill) {
+      setExistingParentId(String(prefill.userId))
+      setParentSearch(prefill.email || '')
+      setLockedParentSnapshot(prefill)
+      setParentSelectionLocked(true)
+      setParentMatches([prefill])
+    }
+  }
+
+  function unlockParentSelection() {
+    setParentSelectionLocked(false)
+    setLockedParentSnapshot(null)
+    if (selectedParent?.email) {
+      setParentSearch(selectedParent.email)
+    }
+  }
 
   async function submitFamily() {
     const fam = await apiFetch('/api/v1/admin/families', {
@@ -102,12 +186,17 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
     return fam.childId
   }
 
-  async function submitLink() {
-    await apiFetch(
-      `/api/v1/admin/families/link-by-email?child_id=${encodeURIComponent(linkChildId)}&parent_email=${encodeURIComponent(linkEmail.trim())}`,
-      { method: 'POST' },
-    )
-    onComplete?.({ mode: 'link' })
+  async function submitChildToExistingParent() {
+    const res = await apiFetch('/api/v1/admin/children', {
+      method: 'POST',
+      body: JSON.stringify({
+        parent_user_id: Number(existingParentId),
+        first_name: child.first_name.trim(),
+        last_name: child.last_name.trim(),
+        date_of_birth: child.date_of_birth || null,
+      }),
+    })
+    return res.id
   }
 
   async function submitAllot(childId) {
@@ -146,13 +235,32 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
     setSaving(true)
     setError('')
     try {
-      if (mode === 'link') {
-        if (!linkChildId || !linkEmail.trim()) throw new Error('Select child and parent email')
-        await submitLink()
+      if (!child.first_name.trim() || !child.last_name.trim()) {
+        throw new Error('Child first and last name are required')
+      }
+
+      if (mode === 'existing') {
+        if (!existingParentId) throw new Error('Select a parent account')
+        const childId = await submitChildToExistingParent()
+        if (createCase) {
+          if (!therapistId) throw new Error('Select a therapist')
+          const result = await submitAllot(childId)
+          onComplete?.({ mode: 'existing', childId, case: result.case })
+        } else {
+          onComplete?.({ mode: 'existing', childId })
+        }
         return
       }
-      if (!child.first_name.trim() || !child.last_name.trim()) throw new Error('Child name required')
-      if (!parent.email.trim() || !parent.full_name.trim()) throw new Error('Parent name and email required')
+
+      if (!parent.email.trim() || !parent.full_name.trim()) {
+        throw new Error('Parent name and email are required')
+      }
+      if (emailRoleError) throw new Error(emailRoleError)
+      if (duplicateParentMatch) {
+        throw new Error(
+          'This parent email is already registered. Use “Add child to existing parent” or choose a different email.',
+        )
+      }
 
       const childId = await submitFamily()
       if (createCase) {
@@ -170,10 +278,6 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
   }
 
   function handleNext() {
-    if (mode === 'link') {
-      handleFinish()
-      return
-    }
     if (step === 1 && !createCase) {
       handleFinish()
       return
@@ -182,15 +286,33 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
     else handleFinish()
   }
 
+  const stepSubtitle =
+    mode === 'existing'
+      ? step === 1
+        ? 'Add a child to an existing parent account'
+        : `Step ${step} of ${totalSteps}`
+      : `Step ${step} of ${totalSteps}`
+
+  const primaryLabel =
+    saving
+      ? 'Saving…'
+      : step < totalSteps
+        ? 'Next'
+        : mode === 'existing'
+          ? createCase
+            ? 'Add child & case'
+            : 'Add child'
+          : createCase
+            ? 'Create family & case'
+            : 'Create family'
+
   return (
     <section className="admin-panel" style={{ marginBottom: 20, padding: 16, border: '1px solid #e2e8f0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div>
           <p className="admin-drawer__subtitle">Add family</p>
           <p className="admin-muted" style={{ fontSize: '0.85rem', margin: 0 }}>
-            {mode === 'link'
-              ? 'Link an existing child to a parent account by email'
-              : `Step ${step} of ${totalSteps}`}
+            {stepSubtitle}
           </p>
         </div>
         {onCancel ? (
@@ -203,17 +325,13 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
       <div className="admin-btn-group" style={{ marginBottom: 16 }}>
         {[
           { id: 'new', label: 'New family' },
-          { id: 'link', label: 'Link existing' },
+          { id: 'existing', label: 'Add child to existing parent' },
         ].map((m) => (
           <button
             key={m.id}
             type="button"
             className={`admin-btn admin-btn--sm ${mode === m.id ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => {
-              setMode(m.id)
-              setStep(1)
-              setError('')
-            }}
+            onClick={() => switchMode(m.id)}
           >
             {m.label}
           </button>
@@ -221,34 +339,138 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
       </div>
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
+      {emailRoleError ? <p className="admin-alert admin-alert--error">{emailRoleError}</p> : null}
       {inviteUrl ? (
         <p className="admin-alert admin-alert--success" style={{ wordBreak: 'break-all', fontSize: '0.85rem' }}>
           Parent invite link: {inviteUrl}
         </p>
       ) : null}
 
-      {mode === 'link' ? (
-        <div className="admin-form-grid" style={{ maxWidth: 480 }}>
-          <label style={{ gridColumn: '1 / -1' }}>
-            Child without parent
-            <select className="admin-input" value={linkChildId} onChange={(e) => setLinkChildId(e.target.value)}>
-              <option value="">Select…</option>
-              {orphanChildren.map((f) => (
-                <option key={f.childId} value={f.childId}>
-                  {f.childName} (#{f.childId})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={{ gridColumn: '1 / -1' }}>
-            Parent email (existing account)
+      {mode === 'new' && duplicateParentMatch ? (
+        <div
+          className="admin-alert"
+          style={{
+            marginBottom: 16,
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            color: '#1e3a8a',
+          }}
+        >
+          <p style={{ margin: '0 0 8px', fontSize: '0.875rem' }}>
+            <strong>{duplicateParentMatch.fullName}</strong> ({duplicateParentMatch.email}) is already registered as a
+            parent. Add another child to this account?
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="admin-btn admin-btn--primary admin-btn--sm"
+              onClick={() => goToExistingParent(duplicateParentMatch)}
+            >
+              Add child to existing parent
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              onClick={() => {
+                setDuplicateParentMatch(null)
+                setParent((p) => ({ ...p, email: '' }))
+              }}
+            >
+              Use a different email
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {mode === 'existing' && step === 1 ? (
+        <div className="admin-form-grid" style={{ maxWidth: 520 }}>
+          <label>
+            Child first name
             <input
-              type="email"
               className="admin-input"
-              value={linkEmail}
-              onChange={(e) => setLinkEmail(e.target.value)}
-              placeholder="parent@example.com"
+              value={child.first_name}
+              onChange={(e) => setChild((c) => ({ ...c, first_name: e.target.value }))}
+              required
             />
+          </label>
+          <label>
+            Child last name
+            <input
+              className="admin-input"
+              value={child.last_name}
+              onChange={(e) => setChild((c) => ({ ...c, last_name: e.target.value }))}
+              required
+            />
+          </label>
+          <label>
+            Date of birth (optional)
+            <input
+              type="date"
+              className="admin-input"
+              value={child.date_of_birth}
+              onChange={(e) => setChild((c) => ({ ...c, date_of_birth: e.target.value }))}
+            />
+          </label>
+
+          {parentSelectionLocked && selectedParent ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <p className="admin-drawer__subtitle" style={{ marginBottom: 6 }}>
+                Parent account
+              </p>
+              <p className="admin-muted" style={{ margin: '0 0 8px', fontSize: '0.875rem' }}>
+                {selectedParent.fullName} · {selectedParent.email}
+                {selectedParent.children?.length
+                  ? ` · ${selectedParent.children.length} child${selectedParent.children.length === 1 ? '' : 'ren'} on file`
+                  : ''}
+              </p>
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                onClick={unlockParentSelection}
+              >
+                Change parent
+              </button>
+            </div>
+          ) : (
+            <>
+              <label style={{ gridColumn: '1 / -1' }}>
+                Search parent email or name
+                <input
+                  className="admin-input"
+                  value={parentSearch}
+                  onChange={(e) => setParentSearch(e.target.value)}
+                  placeholder="parent@example.com"
+                />
+              </label>
+              <label style={{ gridColumn: '1 / -1' }}>
+                Parent account
+                <select
+                  className="admin-input"
+                  value={existingParentId}
+                  onChange={(e) => setExistingParentId(e.target.value)}
+                >
+                  <option value="">Select parent…</option>
+                  {parentMatches.map((p) => (
+                    <option key={p.userId} value={p.userId}>
+                      {p.fullName} · {p.email}
+                      {p.children?.length ? ` (${p.children.length} children)` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+
+          <label style={{ gridColumn: '1 / -1' }}>
+            <input
+              type="checkbox"
+              checked={createCase}
+              onChange={(e) => {
+                setCreateCase(e.target.checked)
+                setStep(1)
+              }}
+            />{' '}
+            Create case and assign therapist now
           </label>
         </div>
       ) : null}
@@ -296,8 +518,18 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
               type="email"
               className="admin-input"
               value={parent.email}
-              onChange={(e) => setParent((p) => ({ ...p, email: e.target.value }))}
+              onChange={(e) => {
+                setParent((p) => ({ ...p, email: e.target.value }))
+                if (duplicateParentMatch) setDuplicateParentMatch(null)
+                if (emailRoleError) setEmailRoleError('')
+              }}
+              onBlur={() => checkParentEmail(parent.email)}
             />
+            {checkingEmail ? (
+              <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                Checking email…
+              </span>
+            ) : null}
           </label>
           <label>
             Parent phone
@@ -329,7 +561,7 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
         </div>
       ) : null}
 
-      {mode === 'new' && createCase && step === 2 ? (
+      {createCase && step === 2 ? (
         <div className="admin-form-grid" style={{ maxWidth: 520 }}>
           <label>
             Module
@@ -368,7 +600,7 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
         </div>
       ) : null}
 
-      {mode === 'new' && createCase && step === 3 ? (
+      {createCase && step === 3 ? (
         <div className="admin-form-grid" style={{ maxWidth: 520 }}>
           <label>
             Client billing
@@ -438,14 +670,14 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
         </div>
       ) : null}
 
-      {mode === 'new' && createCase && step === 4 ? (
+      {createCase && step === 4 ? (
         <div style={{ maxWidth: 480 }}>
           <AdminTherapistPicker mode="allotment" productModule={productModule} value={therapistId} onChange={setTherapistId} />
         </div>
       ) : null}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {step > 1 && mode === 'new' ? (
+        {step > 1 ? (
           <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => setStep((s) => s - 1)}>
             Back
           </button>
@@ -453,18 +685,10 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
         <button
           type="button"
           className="admin-btn admin-btn--primary admin-btn--sm"
-          disabled={saving}
+          disabled={saving || (mode === 'new' && !!emailRoleError)}
           onClick={handleNext}
         >
-          {saving
-            ? 'Saving…'
-            : mode === 'link'
-              ? 'Link parent'
-              : step < totalSteps
-                ? 'Next'
-                : createCase
-                  ? 'Create family & case'
-                  : 'Create family'}
+          {primaryLabel}
         </button>
       </div>
     </section>
