@@ -32,6 +32,7 @@ export function InvitePage() {
     apiFetch(`/api/v1/auth/invite/${token}/preview`)
       .then((data) => {
         setPreview(data)
+        if (data.fullName) setFullName(data.fullName)
         if (data.role === 'PARENT') setRoleHint('PARENT')
         else if (data.role) setRoleHint(data.role)
       })

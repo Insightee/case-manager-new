@@ -606,6 +606,87 @@ def test_admin_create_family_rejects_duplicate_child_for_existing_parent():
     assert "already has a child profile" in dup.json()["detail"]
 
 
+def test_admin_create_family_invite_provisions_parent_before_accept():
+    import uuid
+
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    suffix = uuid.uuid4().hex[:8]
+    email = f"invite-parent-{suffix}@demo.com"
+    fam = client.post(
+        "/api/v1/admin/families",
+        headers=headers,
+        json={
+            "parent_email": email,
+            "parent_full_name": "Invite Parent",
+            "parent_phone": "9999999999",
+            "child": {"first_name": "Invited", "last_name": suffix},
+            "send_invite": True,
+        },
+    )
+    assert fam.status_code == 201, fam.text
+    body = fam.json()
+    assert body.get("parentUserId")
+    assert body.get("inviteUrl")
+    child_id = body["childId"]
+
+    families = client.get("/api/v1/admin/families", headers=headers)
+    assert families.status_code == 200, families.text
+    row = next(r for r in families.json() if r["childId"] == child_id)
+    assert row["hasParent"] is True
+    assert row["parents"][0]["parentEmail"] == email
+    assert row["parents"][0]["parentLoginReady"] is False
+    assert row["pendingInvite"]["pendingEmail"] == email
+
+    invite_token = body["inviteUrl"].rstrip("/").split("/")[-1]
+    accept = client.post(
+        "/api/v1/auth/accept-invite",
+        json={"token": invite_token, "password": "demo12345", "full_name": "Invite Parent Updated"},
+    )
+    assert accept.status_code == 200, accept.text
+    assert accept.json()["user"]["full_name"] == "Invite Parent Updated"
+
+    parent_headers = {"Authorization": f"Bearer {accept.json()['access_token']}"}
+    cases = client.get("/api/v1/parent/cases", headers=parent_headers)
+    assert cases.status_code == 200, cases.text
+
+
+def test_admin_set_password_clears_pending_parent_invite():
+    import uuid
+
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    suffix = uuid.uuid4().hex[:8]
+    email = f"setpw-parent-{suffix}@demo.com"
+    fam = client.post(
+        "/api/v1/admin/families",
+        headers=headers,
+        json={
+            "parent_email": email,
+            "parent_full_name": "Set Password Parent",
+            "child": {"first_name": "Child", "last_name": suffix},
+            "send_invite": True,
+        },
+    )
+    assert fam.status_code == 201, fam.text
+    parent_user_id = fam.json()["parentUserId"]
+
+    set_pw = client.post(
+        f"/api/v1/admin/users/{parent_user_id}/set-password",
+        headers=headers,
+        json={"password": "directpass1"},
+    )
+    assert set_pw.status_code == 200, set_pw.text
+
+    login = client.post("/api/v1/auth/login", json={"email": email, "password": "directpass1", "portal": "parent"})
+    assert login.status_code == 200, login.text
+
+    families = client.get("/api/v1/admin/families", headers=headers)
+    row = next(r for r in families.json() if r["childId"] == fam.json()["childId"])
+    assert row["parents"][0]["parentLoginReady"] is True
+    assert row.get("pendingInvite") is None
+
+
 def test_admin_create_child_rejects_duplicate_for_parent():
     import uuid
 

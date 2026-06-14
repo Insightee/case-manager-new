@@ -42,8 +42,8 @@ export function accountStatusTone(status) {
 export function clientAccountStatus(family) {
   if (!family) return 'Deactivated'
   if (family.allCasesClosed) return 'Deactivated'
-  if (family.pendingInvite) return 'Invited'
   const primary = family.parents?.[0]
+  if (family.pendingInvite && !family.pendingInvite.isExpired) return 'Invited'
   if (!primary) return 'Invited'
   if (primary.parentIsActive === false) return 'Deactivated'
   if (primary.parentLoginReady) return 'Active'

@@ -240,7 +240,11 @@ export function AdminPeoplePage() {
       full_name: primary.parentName,
       is_active: primary.parentIsActive,
       login_ready: primary.parentLoginReady,
-      invite_status: f.pendingInvite ? 'pending' : undefined,
+      invite_status: f.pendingInvite
+        ? f.pendingInvite.isExpired
+          ? 'expired'
+          : 'pending'
+        : undefined,
       pending_invite_url: f.pendingInvite?.inviteUrl,
       _reactivateCaseId:
         f.allCasesClosed && primary.parentIsActive !== false ? f.primaryCaseId : null,
@@ -251,10 +255,12 @@ export function AdminPeoplePage() {
     if (f.pendingInvite?.inviteId) {
       setError('')
       try {
-        await apiFetch(`/api/v1/admin/invites/${f.pendingInvite.inviteId}/resend-email`, {
+        const force = f.pendingInvite.isExpired ? '?force_resend=true' : ''
+        await apiFetch(`/api/v1/admin/invites/${f.pendingInvite.inviteId}/resend-email${force}`, {
           method: 'POST',
         })
         setSuccess(`Invite resent to ${f.pendingInvite.pendingEmail}.`)
+        load()
       } catch (err) {
         setError(err.message || 'Could not resend invite')
       }

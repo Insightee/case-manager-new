@@ -175,34 +175,50 @@ def invite_preview(token: str, db: Session = Depends(get_db)):
 
 @router.post("/accept-invite", response_model=TokenResponse)
 def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = Depends(get_db)):
+    from app.core.permissions import RoleName
+    from app.core.security import hash_password
+    from app.services.user_provision_service import login_ready
+
     invite = db.scalars(select(InviteToken).where(InviteToken.token == payload.token)).first()
     if not invite or invite.used_at:
         raise HTTPException(status_code=400, detail="Invalid or used invite")
     if invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Invite expired")
+    invite_meta = invite.invite_metadata or {}
     existing = db.scalars(select(User).where(User.email == invite.email)).first()
     if existing:
-        raise HTTPException(status_code=400, detail="User already exists")
-    invite_meta = invite.invite_metadata or {}
-    user = auth_service.create_user(
-        db,
-        email=invite.email,
-        password=payload.password,
-        full_name=payload.full_name,
-        role_names=[invite.role_name],
-        module_assignments=invite.module_assignments or [],
-        is_view_only=bool(invite_meta.get("view_only", False)),
-    )
-    from app.core.rbac_access import sync_user_access_fields
+        if invite.role_name != RoleName.PARENT.value:
+            raise HTTPException(status_code=400, detail="User already exists")
+        if RoleName.PARENT.value not in existing.role_names:
+            raise HTTPException(status_code=400, detail="User already exists")
+        if login_ready(existing, db):
+            raise HTTPException(status_code=400, detail="User already exists. Please sign in.")
+        user = existing
+        user.password_hash = hash_password(payload.password)
+        user.full_name = payload.full_name.strip() or user.full_name
+        user.is_active = True
+        if invite_meta.get("phone") and not user.phone:
+            user.phone = invite_meta.get("phone")
+    else:
+        user = auth_service.create_user(
+            db,
+            email=invite.email,
+            password=payload.password,
+            full_name=payload.full_name,
+            role_names=[invite.role_name],
+            module_assignments=invite.module_assignments or [],
+            is_view_only=bool(invite_meta.get("view_only", False)),
+        )
+        from app.core.rbac_access import sync_user_access_fields
 
-    sync_user_access_fields(
-        user,
-        role_names=[invite.role_name],
-        module_assignments=invite.module_assignments or [],
-        module_access_grants=invite_meta.get("module_access_grants"),
-        feature_overrides=invite_meta.get("feature_overrides"),
-        view_only=bool(invite_meta.get("view_only", False)),
-    )
+        sync_user_access_fields(
+            user,
+            role_names=[invite.role_name],
+            module_assignments=invite.module_assignments or [],
+            module_access_grants=invite_meta.get("module_access_grants"),
+            feature_overrides=invite_meta.get("feature_overrides"),
+            view_only=bool(invite_meta.get("view_only", False)),
+        )
     if invite.role_name == "PARENT":
         from app.models.child import Child
         from app.models.parent import ParentGuardian

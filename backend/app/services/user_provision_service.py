@@ -19,8 +19,13 @@ from app.services.email.service import (
 from app.services import password_reset_service
 
 
-def login_ready(user: User) -> bool:
-    return bool(user.is_active and user.password_hash)
+def login_ready(user: User, db: Session | None = None) -> bool:
+    """User can sign in with their chosen password (not a provisional invite-only account)."""
+    if not user.is_active or not user.password_hash:
+        return False
+    if db is not None and _pending_invite(db, user.email) is not None:
+        return False
+    return True
 
 
 def _primary_role(user: User) -> str | None:
@@ -89,7 +94,7 @@ def login_metadata_for_user(db: Session, user: User) -> dict:
         invite_url = f"{settings.frontend_url.rstrip('/')}/invite/{pending.token}"
     meta = delivery_metadata_for_email(db, user.email, user)
     return {
-        "login_ready": login_ready(user),
+        "login_ready": login_ready(user, db),
         "invite_status": status,
         "last_invite_sent_at": last_at.isoformat() if last_at else None,
         "pending_invite_url": invite_url,
@@ -142,7 +147,7 @@ def _build_result(
         "user_active": bool(user.is_active),
         "invite_sent": invite_sent,
         "invite_error": invite_error,
-        "login_ready": login_ready(user),
+        "login_ready": login_ready(user, db),
         "invite_url": invite_url or meta.get("pending_invite_url"),
         "invite_status": meta["invite_status"],
         "last_invite_sent_at": meta["last_invite_sent_at"],

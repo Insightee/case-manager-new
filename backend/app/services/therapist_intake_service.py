@@ -18,6 +18,7 @@ from app.services import (
     family_admin_service,
     session_service,
 )
+from app.services.user_provision_service import login_ready
 
 
 def _split_child_name(child_name: str) -> tuple[str, str]:
@@ -41,18 +42,27 @@ def _create_intake_case(
     intake_source: str,
     start_date: date,
     notes_suffix: str,
-) -> tuple[Case, InviteToken, str, object]:
+) -> tuple[Case, InviteToken | None, str | None, object]:
     from app.services.invite_policy_service import assert_can_create_invite
 
     email = client_email.lower().strip()
-    assert_can_create_invite(db, email, RoleName.PARENT.value)
     existing = db.scalars(select(User).where(User.email == email)).first()
-    if existing:
+    if existing and RoleName.PARENT.value not in existing.role_names:
         raise ValueError("User already exists. Use Invite to login instead of sending a new invite.")
 
     child_label = (child_name or client_name).strip()
     child_first, child_last = _split_child_name(child_label)
     child = family_admin_service.create_child(db, child_first, child_last or "—")
+
+    parent_user, _pg = family_admin_service.provision_parent_for_child(
+        db,
+        email=email,
+        full_name=client_name.strip(),
+        phone=client_phone,
+        child=child,
+        password=None,
+    )
+    is_new_parent = existing is None
 
     case_code = case_code_service.generate_case_code(db, product_module)
     service_label = product_module.replace("_", " ").title()
@@ -76,28 +86,37 @@ def _create_intake_case(
         reason_for_change="Provisional assignment — intake pending admin allotment",
     )
 
-    token = secrets.token_urlsafe(32)
-    invite = InviteToken(
-        email=email,
-        role_name=RoleName.PARENT.value,
-        module_assignments=[],
-        token=token,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
-        created_by_user_id=therapist_user_id,
-        linked_child_id=child.id,
-        invite_metadata={
-            "pending_case_id": case.id,
-            "therapist_user_id": therapist_user_id,
-            "intake_source": intake_source,
-            "client_name": client_name.strip(),
-            "child_name": child_label,
-            "client_phone": client_phone.strip() if client_phone else None,
-            "invite_sent_at": None,
-        },
-    )
-    db.add(invite)
-    db.flush()
-    return case, invite, f"{settings.frontend_url}/invite/{token}", child
+    invite: InviteToken | None = None
+    invite_url: str | None = None
+    if is_new_parent or not login_ready(parent_user, db):
+        assert_can_create_invite(db, email, RoleName.PARENT.value)
+        token = secrets.token_urlsafe(32)
+        invite = InviteToken(
+            email=email,
+            role_name=RoleName.PARENT.value,
+            module_assignments=[],
+            token=token,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+            created_by_user_id=therapist_user_id,
+            linked_child_id=child.id,
+            invite_metadata=family_admin_service._parent_invite_metadata(
+                full_name=client_name.strip(),
+                phone=client_phone,
+                extra={
+                    "pending_case_id": case.id,
+                    "therapist_user_id": therapist_user_id,
+                    "intake_source": intake_source,
+                    "client_name": client_name.strip(),
+                    "child_name": child_label,
+                    "invite_sent_at": None,
+                },
+            ),
+        )
+        db.add(invite)
+        db.flush()
+        invite_url = f"{settings.frontend_url}/invite/{token}"
+
+    return case, invite, invite_url, child
 
 
 def create_client_intake(
@@ -128,7 +147,7 @@ def create_client_intake(
         "case": case,
         "invite_url": invite_url,
         "invite_sent": False,
-        "parent_email": invite.email,
+        "parent_email": invite.email if invite else client_email.lower().strip(),
     }
 
 
@@ -160,25 +179,28 @@ def create_walk_in_manual_session(
         start_date=scheduled_date,
         notes_suffix="Walk-in via forgotten session log.",
     )
-    family_admin_service._send_parent_invite_email(
-        email,
-        invite_url,
-        client_name.strip(),
-        child.full_name,
-    )
-    meta = dict(invite.invite_metadata or {})
-    meta["invite_sent_at"] = datetime.now(timezone.utc).isoformat()
-    invite.invite_metadata = meta
-    db.flush()
+    invite_sent = False
+    if invite and invite_url:
+        family_admin_service._send_parent_invite_email(
+            email,
+            invite_url,
+            client_name.strip(),
+            child.full_name,
+        )
+        meta = dict(invite.invite_metadata or {})
+        meta["invite_sent_at"] = datetime.now(timezone.utc).isoformat()
+        invite.invite_metadata = meta
+        db.flush()
+        invite_sent = True
 
-    when_label = f"forgotten session log · {scheduled_date.isoformat()}"
-    appt_notify.notify_admins_walk_in_invite(
-        db,
-        therapist_name=therapist_name,
-        client_name=child_name or client_name,
-        client_email=email,
-        slot_when=when_label,
-    )
+        when_label = f"forgotten session log · {scheduled_date.isoformat()}"
+        appt_notify.notify_admins_walk_in_invite(
+            db,
+            therapist_name=therapist_name,
+            client_name=child_name or client_name,
+            client_email=email,
+            slot_when=when_label,
+        )
 
     session = session_service.create_manual_session(
         db,
@@ -194,5 +216,5 @@ def create_walk_in_manual_session(
         "case": case,
         "session": session,
         "invite_url": invite_url,
-        "invite_sent": True,
+        "invite_sent": invite_sent,
     }

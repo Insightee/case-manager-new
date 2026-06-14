@@ -1799,6 +1799,10 @@ def admin_set_user_password(
         raise HTTPException(status_code=404, detail="User not found")
     target.password_hash = hash_password(payload.password)
     target.is_active = True
+    from app.services.family_admin_service import consume_pending_parent_invites
+
+    if "PARENT" in (target.role_names or []):
+        consume_pending_parent_invites(db, target.email, reason="admin_set_password")
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -3845,6 +3849,10 @@ def resend_invite_email(
         )
     if ensure_utc_aware(invite.expires_at) <= now and not force_resend:
         raise HTTPException(status_code=400, detail="Invite has expired")
+    if force_resend and ensure_utc_aware(invite.expires_at) <= now:
+        invite.expires_at = now + timedelta(days=7)
+        invite.expired_due_to_delivery_failure = False
+        db.flush()
     from app.services.email.service import enqueue_portal_invite_email, invite_email_delivery_status
 
     url = f"{settings.frontend_url.rstrip('/')}/invite/{invite.token}"

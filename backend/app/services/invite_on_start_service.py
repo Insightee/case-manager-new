@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.timezone import ensure_utc_aware
 from app.models.case import Case
 from app.models.child import Child
 from app.models.user import InviteToken, User
 from app.services import appointment_notification_service as appt_notify, family_admin_service, parent_service
+from app.services.user_provision_service import login_ready
 
 
 def _pending_intake_invite(db: Session, case: Case) -> InviteToken | None:
@@ -19,16 +21,21 @@ def _pending_intake_invite(db: Session, case: Case) -> InviteToken | None:
         select(InviteToken).where(
             InviteToken.linked_child_id == case.child_id,
             InviteToken.used_at.is_(None),
+            InviteToken.role_name == "PARENT",
         )
     ).all()
-    now = datetime.now(timezone.utc)
     for inv in rows:
-        if inv.expires_at.replace(tzinfo=timezone.utc) <= now:
-            continue
         meta = inv.invite_metadata or {}
         if meta.get("pending_case_id") == case.id:
             return inv
     return None
+
+
+def _refresh_invite_expiry(invite: InviteToken) -> None:
+    now = datetime.now(timezone.utc)
+    if ensure_utc_aware(invite.expires_at) <= now:
+        invite.expires_at = now + timedelta(days=7)
+        invite.expired_due_to_delivery_failure = False
 
 
 def send_pending_parent_invite(
@@ -42,17 +49,16 @@ def send_pending_parent_invite(
     case = db.get(Case, case_id)
     if not case:
         return False, None
-    if parent_service.primary_parent_user_id_for_child(db, case.child_id):
-        return False, None
     invite = _pending_intake_invite(db, case)
     if not invite:
         return False, None
     meta = dict(invite.invite_metadata or {})
     if meta.get("invite_sent_at"):
         return False, invite.email
+    _refresh_invite_expiry(invite)
     child = db.get(Child, case.child_id) if case.child_id else None
     child_name = child.full_name if child else meta.get("child_name", "your child")
-    client_name = meta.get("client_name") or invite.email
+    client_name = meta.get("client_name") or meta.get("full_name") or invite.email
     invite_url = f"{settings.frontend_url}/invite/{invite.token}"
     family_admin_service._send_parent_invite_email(
         invite.email,
@@ -95,6 +101,8 @@ def ensure_parent_portal_invite_for_case(
         return False, None
     user = db.get(User, parent_user_id)
     if not user or not user.email:
+        return False, None
+    if login_ready(user, db):
         return False, None
     now = datetime.now(timezone.utc)
     existing = db.scalars(

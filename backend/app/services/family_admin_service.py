@@ -12,6 +12,127 @@ from app.models.child import Child
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import InviteToken, User
 from app.services import auth_service, email_service
+from app.services.user_provision_service import login_ready
+
+
+def _parent_invite_metadata(*, full_name: str, phone: str | None, extra: dict | None = None) -> dict:
+    meta = {
+        "full_name": full_name.strip(),
+        "phone": (phone or "").strip() or None,
+    }
+    if extra:
+        meta.update(extra)
+    return meta
+
+
+def provision_parent_for_child(
+    db: Session,
+    *,
+    email: str,
+    full_name: str,
+    phone: str | None,
+    child: Child,
+    password: str | None = None,
+) -> tuple[User, ParentGuardian]:
+    """Ensure a PARENT user exists and is linked to the child."""
+    from app.core.permissions import RoleName
+
+    email_l = email.lower().strip()
+    user = db.scalars(select(User).where(User.email == email_l)).first()
+    if user:
+        if RoleName.PARENT.value not in user.role_names:
+            primary = user.role_names[0].replace("_", " ").title() if user.role_names else "another role"
+            raise ValueError(f"User already present as {primary}.")
+        pg = db.scalars(
+            select(ParentGuardian)
+            .where(ParentGuardian.user_id == user.id)
+            .options(selectinload(ParentGuardian.children))
+        ).first()
+        if not pg:
+            pg = ParentGuardian(user_id=user.id)
+            db.add(pg)
+            db.flush()
+        assert_no_duplicate_child_for_parent(
+            pg,
+            first_name=child.first_name,
+            last_name=child.last_name,
+            date_of_birth=child.date_of_birth,
+        )
+        if child not in pg.children:
+            pg.children.append(child)
+        if full_name.strip() and not (user.full_name or "").strip():
+            user.full_name = full_name.strip()
+        if phone and not user.phone:
+            user.phone = phone.strip()
+        db.flush()
+        return user, pg
+
+    pwd = password or secrets.token_urlsafe(24)
+    user = auth_service.create_user(
+        db,
+        email=email_l,
+        password=pwd,
+        full_name=full_name.strip(),
+        role_names=[RoleName.PARENT.value],
+    )
+    if phone:
+        user.phone = phone.strip()
+    pg = ParentGuardian(user_id=user.id)
+    db.add(pg)
+    db.flush()
+    pg.children.append(child)
+    db.flush()
+    return user, pg
+
+
+def consume_pending_parent_invites(db: Session, email: str, *, reason: str = "activated") -> None:
+    """Mark unused parent portal invites consumed (e.g. after admin set-password)."""
+    from app.core.timezone import ensure_utc_aware
+
+    now = datetime.now(timezone.utc)
+    email_l = email.lower().strip()
+    rows = db.scalars(
+        select(InviteToken).where(
+            InviteToken.email == email_l,
+            InviteToken.used_at.is_(None),
+            InviteToken.role_name == "PARENT",
+        )
+    ).all()
+    for inv in rows:
+        inv.used_at = now
+        meta = dict(inv.invite_metadata or {})
+        meta["consumed_reason"] = reason
+        inv.invite_metadata = meta
+    db.flush()
+
+
+def backfill_parent_from_invite(db: Session, invite: InviteToken) -> User | None:
+    """Create parent user + child link for legacy invites that predate upfront provisioning."""
+    from app.core.permissions import RoleName
+
+    if not invite.linked_child_id or invite.used_at is not None:
+        return None
+    email_l = invite.email.lower().strip()
+    existing = db.scalars(select(User).where(User.email == email_l)).first()
+    if existing:
+        return existing
+    child = db.get(Child, invite.linked_child_id)
+    if not child:
+        return None
+    meta = invite.invite_metadata or {}
+    full_name = (meta.get("full_name") or meta.get("client_name") or email_l.split("@")[0]).strip()
+    phone = meta.get("phone") or meta.get("client_phone")
+    user, _pg = provision_parent_for_child(
+        db,
+        email=email_l,
+        full_name=full_name,
+        phone=phone,
+        child=child,
+        password=secrets.token_urlsafe(24),
+    )
+    if RoleName.PARENT.value not in user.role_names:
+        return user
+    return user
 
 
 def list_families(db: Session, search: str | None = None) -> list[dict]:
@@ -32,7 +153,7 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
             "parentEmail": u.email,
             "parentPhone": u.phone,
             "parentIsActive": bool(u.is_active),
-            "parentLoginReady": bool(u.is_active and u.password_hash),
+            "parentLoginReady": login_ready(u, db),
         }
         seen_child: set[int] = set()
         for c in pg.children:
@@ -58,18 +179,24 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
     now = datetime.now(timezone.utc)
     pending_by_child: dict[int, dict] = {}
     for inv in db.scalars(
-        select(InviteToken).where(
+        select(InviteToken)
+        .where(
             InviteToken.used_at.is_(None),
-            InviteToken.expires_at > now,
             InviteToken.linked_child_id.isnot(None),
+            InviteToken.role_name == "PARENT",
         )
+        .order_by(InviteToken.id.desc())
     ).all():
         if inv.linked_child_id and inv.linked_child_id not in pending_by_child:
+            from app.core.timezone import ensure_utc_aware
+
+            expired = ensure_utc_aware(inv.expires_at) <= now
             pending_by_child[inv.linked_child_id] = {
                 "pendingEmail": inv.email,
                 "inviteId": inv.id,
                 "inviteUrl": f"{settings.frontend_url.rstrip('/')}/invite/{inv.token}",
                 "inviteExpiresAt": inv.expires_at.isoformat() if inv.expires_at else None,
+                "isExpired": expired,
             }
 
     result = []
@@ -211,9 +338,16 @@ def create_family(
 
     child = create_child(db, child_first, child_last, child_dob)
 
-    invite_url = None
     if send_invite:
         assert_can_create_invite(db, email, RoleName.PARENT.value)
+        user, _pg = provision_parent_for_child(
+            db,
+            email=email,
+            full_name=parent_full_name,
+            phone=parent_phone,
+            child=child,
+            password=None,
+        )
         token = secrets.token_urlsafe(32)
         invite = InviteToken(
             email=email,
@@ -223,34 +357,36 @@ def create_family(
             expires_at=datetime.now(timezone.utc) + timedelta(days=7),
             created_by_user_id=created_by_user_id,
             linked_child_id=child.id,
+            invite_metadata=_parent_invite_metadata(
+                full_name=parent_full_name,
+                phone=parent_phone,
+            ),
         )
         db.add(invite)
         db.flush()
         invite_url = f"{settings.frontend_url}/invite/{token}"
         _send_parent_invite_email(email, invite_url, parent_full_name.strip(), child.full_name)
-    else:
-        pwd = password or secrets.token_urlsafe(12)
-        user = auth_service.create_user(
-            db,
-            email=email,
-            password=pwd,
-            full_name=parent_full_name.strip(),
-            role_names=[RoleName.PARENT.value],
-        )
-        if parent_phone:
-            user.phone = parent_phone
-        pg = ParentGuardian(user_id=user.id)
-        db.add(pg)
-        db.flush()
-        pg.children.append(child)
-        db.flush()
         return {
             "childId": child.id,
             "parentUserId": user.id,
-            "inviteUrl": None,
+            "inviteUrl": invite_url,
+            "pendingEmail": email,
         }
 
-    return {"childId": child.id, "parentUserId": None, "inviteUrl": invite_url, "pendingEmail": email}
+    pwd = password or secrets.token_urlsafe(12)
+    user, _pg = provision_parent_for_child(
+        db,
+        email=email,
+        full_name=parent_full_name,
+        phone=parent_phone,
+        child=child,
+        password=pwd,
+    )
+    return {
+        "childId": child.id,
+        "parentUserId": user.id,
+        "inviteUrl": None,
+    }
 
 
 def _send_parent_invite_email(to: str, invite_url: str, parent_name: str, child_name: str) -> None:
@@ -322,6 +458,10 @@ def issue_parent_invite(
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
         created_by_user_id=created_by_user_id,
         linked_child_id=linked_child_id,
+        invite_metadata=_parent_invite_metadata(
+            full_name=user.full_name or user.email,
+            phone=user.phone,
+        ),
     )
     db.add(invite)
     db.flush()
