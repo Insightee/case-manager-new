@@ -9,7 +9,8 @@ import { formatDisplayDate, formatDisplayDateTimeRange, todayIsoIST } from '../.
 import { unwrapList } from '../../lib/listApi.js'
 import { isToday, todayIso } from '../../lib/therapistSchedule.js'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
-import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
+// TODO: re-enable when therapist self-onboarding is allowed again
+// import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
 import { SessionAbsenceSheet } from './SessionAbsenceSheet.jsx'
 
 const MODES = [
@@ -287,6 +288,7 @@ export function TherapistSessionComposer({
 
       {localError ? <p className="ic-session-composer__error">{localError}</p> : null}
 
+      {/* TODO: re-enable when therapist self-onboarding is allowed again
       {mode === 'newClient' ? (
         <NewClientIntakeForm
           disabled={busy}
@@ -309,6 +311,7 @@ export function TherapistSessionComposer({
           }}
         />
       ) : null}
+      */}
 
       {mode === 'past' ? (
         <ForgotSessionForm
@@ -394,6 +397,7 @@ export function TherapistSessionComposer({
                   ))}
                 </select>
               </label>
+              {/* TODO: re-enable when therapist self-onboarding is allowed again
               <button
                 type="button"
                 className="ic-session-composer__add-client"
@@ -401,6 +405,7 @@ export function TherapistSessionComposer({
               >
                 + Add new client
               </button>
+              */}
             </div>
           )}
 

@@ -223,6 +223,8 @@ export function SlotEditSheet({
             case_code: selectedCase?.case_code,
           }
         } else if (bookTab === 'new' && clientName && clientEmail) {
+          // TODO: re-enable when therapist self-onboarding is allowed again
+          /*
           await apiFetch(`/api/v1/scheduling/slots/${newSlotId}/invite-client`, {
             method: 'POST',
             body: JSON.stringify({
@@ -232,6 +234,7 @@ export function SlotEditSheet({
               client_phone: clientPhone.trim() || null,
             }),
           })
+          */
         }
       }
 
@@ -375,27 +378,11 @@ export function SlotEditSheet({
 
             {bookClient && (
               <div className="mt-4">
-                {/* Tab row */}
-                <div className="flex rounded-lg border border-slate-200 p-0.5 mb-4">
-                  {[
-                    { id: 'existing', label: 'Existing case' },
-                    { id: 'new', label: 'New client' },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setBookTab(t.id)}
-                      className={`flex-1 rounded-md py-1.5 text-xs font-semibold ${
-                        bookTab === t.id ? 'bg-indigo-600 text-white' : 'text-slate-600'
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
+                {/* TODO: re-enable when therapist self-onboarding is allowed again — tab row included "New client"
+                <div className="flex rounded-lg border border-slate-200 p-0.5 mb-4">...</div>
+                */}
 
-                {bookTab === 'existing' ? (
-                  <div className="space-y-3">
+                <div className="space-y-3">
                     <label className="block text-sm font-medium text-slate-700">
                       Case
                       <select
@@ -433,54 +420,12 @@ export function SlotEditSheet({
                         ) : null}
                       </div>
                     ) : null}
-                  </div>
+                </div>
+                {/* TODO: re-enable when therapist self-onboarding is allowed again — new client invite fields
                 ) : (
-                  <div className="space-y-3">
-                    <p className="text-xs text-slate-500">
-                      We&apos;ll hold this slot and email the parent a portal invite. Admin will finalize onboarding.
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="block text-sm font-medium text-slate-700">
-                        Parent name
-                        <input
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                          value={clientName}
-                          onChange={(e) => setClientName(e.target.value)}
-                          placeholder="e.g. Alex Smith"
-                        />
-                      </label>
-                      <label className="block text-sm font-medium text-slate-700">
-                        Child name
-                        <input
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                          value={childName}
-                          onChange={(e) => setChildName(e.target.value)}
-                          placeholder="Child's name"
-                        />
-                      </label>
-                    </div>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Email
-                      <input
-                        type="email"
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                        value={clientEmail}
-                        onChange={(e) => setClientEmail(e.target.value)}
-                        placeholder="parent@email.com"
-                      />
-                    </label>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Phone (optional)
-                      <input
-                        type="tel"
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                        value={clientPhone}
-                        onChange={(e) => setClientPhone(e.target.value)}
-                        placeholder="+91 98765 43210"
-                      />
-                    </label>
-                  </div>
+                  <div className="space-y-3">...</div>
                 )}
+                */}
               </div>
             )}
           </div>

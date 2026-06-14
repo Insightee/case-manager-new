@@ -96,12 +96,15 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
     ...defaultForgotSession(),
     case_id: initialCaseId ? String(initialCaseId) : '',
   }))
+  // TODO: re-enable when therapist self-onboarding is allowed again
+  /*
   const [newClient, setNewClient] = useState({
     client_name: '',
     child_name: '',
     client_email: '',
     client_phone: '',
   })
+  */
   const [cases, setCases] = useState([])
   const [localError, setLocalError] = useState('')
   const [selectedPresetMinutes, setSelectedPresetMinutes] = useState(null)
@@ -172,25 +175,7 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
       return
     }
 
-    if (clientTab === 'new') {
-      if (!newClient.client_name.trim() || !newClient.client_email.trim() || !newClient.child_name.trim()) {
-        setLocalError('Parent name, child name, and email are required for a new client.')
-        return
-      }
-      onSubmit({
-        walkIn: true,
-        client_name: newClient.client_name.trim(),
-        child_name: newClient.child_name.trim(),
-        client_email: newClient.client_email.trim(),
-        client_phone: newClient.client_phone.trim() || undefined,
-        scheduled_date: form.session_date,
-        actual_start_at: start.toISOString(),
-        actual_end_at: end.toISOString(),
-        mode: form.mode,
-        isPastDay,
-      })
-      return
-    }
+    // TODO: re-enable when therapist self-onboarding is allowed again (new client branch in handleSubmit)
 
     if (!form.case_id) {
       setLocalError('Select a client.')
@@ -254,9 +239,11 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
               <button type="button" style={tabBtnStyle(clientTab === 'existing')} onClick={() => setClientTab('existing')}>
                 Existing client
               </button>
+              {/* TODO: re-enable when therapist self-onboarding is allowed again
               <button type="button" style={tabBtnStyle(clientTab === 'new')} onClick={() => setClientTab('new')}>
                 New client
               </button>
+              */}
             </div>
             {clientTab === 'existing' ? (
               <label style={labelStyle}>
@@ -276,66 +263,14 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
                   ))}
                 </select>
               </label>
+            ) : null}
+            {/* TODO: re-enable when therapist self-onboarding is allowed again — new client fields
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <p
-                  style={{
-                    margin: 0,
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    background: '#f0f9ff',
-                    border: '1px solid #bae6fd',
-                    color: '#0369a1',
-                    fontSize: '0.8125rem',
-                  }}
-                >
-                  Admin will allot billing and finalize the case. The parent gets a portal invite and can log in after
-                  registering.
-                </p>
-                <label style={labelStyle}>
-                  Parent / guardian name
-                  <input
-                    type="text"
-                    required
-                    value={newClient.client_name}
-                    onChange={(e) => setNewClient({ ...newClient, client_name: e.target.value })}
-                    style={fieldStyle}
-                    placeholder="e.g. Priya Sharma"
-                  />
-                </label>
-                <label style={labelStyle}>
-                  Child name
-                  <input
-                    type="text"
-                    required
-                    value={newClient.child_name}
-                    onChange={(e) => setNewClient({ ...newClient, child_name: e.target.value })}
-                    style={fieldStyle}
-                    placeholder="e.g. Aarav Sharma"
-                  />
-                </label>
-                <label style={labelStyle}>
-                  Parent email (portal invite)
-                  <input
-                    type="email"
-                    required
-                    value={newClient.client_email}
-                    onChange={(e) => setNewClient({ ...newClient, client_email: e.target.value })}
-                    style={fieldStyle}
-                    placeholder="parent@example.com"
-                  />
-                </label>
-                <label style={labelStyle}>
-                  Phone (optional)
-                  <input
-                    type="tel"
-                    value={newClient.client_phone}
-                    onChange={(e) => setNewClient({ ...newClient, client_phone: e.target.value })}
-                    style={fieldStyle}
-                  />
-                </label>
+                ...
               </div>
             )}
+            */}
           </div>
         ) : (
           <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, color: '#374151' }}>
@@ -492,7 +427,7 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
               opacity: submitting ? 0.7 : 1,
             }}
           >
-            {submitting ? 'Adding…' : clientTab === 'new' ? 'Add client & write log' : 'Add session & write log'}
+            {submitting ? 'Adding…' : 'Add session & write log'}
           </button>
           <button
             type="button"
