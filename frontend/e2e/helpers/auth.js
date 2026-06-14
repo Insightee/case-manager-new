@@ -62,7 +62,7 @@ export async function loginParent(page) {
 
 /** @param {import('@playwright/test').Page} page */
 export async function loginAdmin(page) {
-  await page.goto('/stafflogin')
+  await page.goto('/adminlogin')
   await page.getByRole('textbox', { name: 'Email' }).fill('superadmin@demo.com')
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
@@ -72,7 +72,7 @@ export async function loginAdmin(page) {
 
 /** @param {import('@playwright/test').Page} page */
 export async function loginCaseManager(page) {
-  await page.goto('/stafflogin')
+  await page.goto('/adminlogin')
   await page.getByRole('textbox', { name: 'Email' }).fill('casemanager@demo.com')
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
@@ -82,7 +82,7 @@ export async function loginCaseManager(page) {
 
 /** @param {import('@playwright/test').Page} page */
 export async function loginFinance(page) {
-  await login(page, { email: 'finance@demo.com', path: '/stafflogin' })
+  await login(page, { email: 'finance@demo.com', path: '/adminlogin' })
   await page.waitForURL(/\/admin/)
   await portalNav(page).waitFor()
 }

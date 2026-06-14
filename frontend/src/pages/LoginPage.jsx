@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import { usePageMeta } from '../hooks/usePageMeta.js'
-import { formatLoginErrorMessage } from '../lib/portalLogin.js'
+import { formatLoginErrorMessage, SIGN_IN_PATH } from '../lib/portalLogin.js'
 
 const DEMO_PASSWORD = 'demo123'
 
@@ -219,7 +219,12 @@ export function LoginPage({ portalType }) {
               width: '100%'
             }}>
               {PORTALS.map((p) => {
-                const route = p.id === 'parent' ? '/clientlogin' : p.id === 'therapist' ? '/therapistlogin' : '/stafflogin'
+                const route =
+                  p.id === 'parent'
+                    ? SIGN_IN_PATH.parent
+                    : p.id === 'therapist'
+                      ? SIGN_IN_PATH.therapist
+                      : SIGN_IN_PATH.admin
                 return (
                   <Link
                     key={p.id}

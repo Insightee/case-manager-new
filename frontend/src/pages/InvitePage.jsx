@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiFetch, setTokens } from '../lib/apiClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
-import { loginPathFromRoleName } from '../lib/portalLogin.js'
+import { loginPathFromRoleName, portalHomePath, resolveAuthPortal } from '../lib/portalLogin.js'
 
 const ROLE_LABELS = {
   PARENT: { sub: 'Set your password to activate your family account.', cta: 'Activate account' },
@@ -15,7 +15,7 @@ const ROLE_LABELS = {
 export function InvitePage() {
   const { token } = useParams()
   const navigate = useNavigate()
-  const { reload } = useAuth()
+  const { reload, updateLoginPortal } = useAuth()
 
   const [fullName, setFullName] = useState('')
   const [password, setPassword] = useState('')
@@ -60,8 +60,11 @@ export function InvitePage() {
       })
       // Store tokens and reload auth — then navigate to the right portal
       setTokens(body.access_token, body.refresh_token)
+      const signedInUser = body.user
+      const portal = signedInUser ? resolveAuthPortal(signedInUser, null) : null
+      if (portal) updateLoginPortal(portal)
       await reload()
-      navigate('/', { replace: true })
+      navigate(signedInUser ? portalHomePath(signedInUser) : '/', { replace: true })
     } catch (err) {
       if ((err.message || '').toLowerCase().includes('already exists')) {
         setError('An account with this email already exists. Please sign in instead.')

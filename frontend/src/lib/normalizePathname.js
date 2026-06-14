@@ -8,6 +8,7 @@ const PORTAL_PATH_ALIASES = new Map([
   ['/therapist-login', SIGN_IN_PATH.therapist],
   ['/client-login', SIGN_IN_PATH.parent],
   ['/staff-login', SIGN_IN_PATH.admin],
+  ['/stafflogin', SIGN_IN_PATH.admin],
   ['/clinetlogin', SIGN_IN_PATH.parent],
 ])
 

@@ -9,7 +9,7 @@
 
 - Therapist login: https://www.insighte.org/therapistlogin
 - Parent login: https://www.insighte.org/clientlogin
-- Staff login: https://www.insighte.org/stafflogin
+- Admin login: https://www.insighte.org/adminlogin
 
 `https://insighte.org` works too — it redirects to `www` automatically.
 

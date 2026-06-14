@@ -21,11 +21,11 @@ export const STAFF_LOGIN_ROLES = [
 export const SIGN_IN_PATH = {
   parent: '/clientlogin',
   therapist: '/therapistlogin',
-  admin: '/stafflogin',
+  admin: '/adminlogin',
 }
 
-/** Default when role is unknown — admin portal (most internal users). */
-export const DEFAULT_SIGN_IN_PATH = SIGN_IN_PATH.admin
+/** Default sign-in when portal is unknown — client portal. */
+export const DEFAULT_SIGN_IN_PATH = SIGN_IN_PATH.parent
 
 /** @param {'parent' | 'therapist' | 'admin' | null | undefined} portal */
 export function portalLoginPath(portal) {
@@ -60,12 +60,19 @@ export function resolveAuthPortal(user, selectedPortal) {
   if (selectedPortal === 'therapist' && user.roles.includes('THERAPIST')) return 'therapist'
   if (selectedPortal === 'admin' && user.roles.some((r) => STAFF_LOGIN_ROLES.includes(r))) return 'admin'
 
-  if (selectedPortal) return null
-
   if (user.roles.includes('PARENT')) return 'parent'
   if (user.roles.some((r) => STAFF_LOGIN_ROLES.includes(r))) return 'admin'
   if (user.roles.includes('THERAPIST')) return 'therapist'
   return 'admin'
+}
+
+/** Post-auth home route for a user (ignores stale sign-in page selection). */
+export function portalHomePath(user) {
+  const resolved = resolveAuthPortal(user, null)
+  if (resolved === 'parent') return '/parent'
+  if (resolved === 'therapist') return '/therapist'
+  if (resolved === 'admin') return '/admin'
+  return SIGN_IN_PATH.parent
 }
 
 /** @param {'parent' | 'therapist' | 'admin'} portal */

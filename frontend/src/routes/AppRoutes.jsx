@@ -7,6 +7,7 @@ import {
   portalLoginPath,
   portalMismatchMessage,
   preferredLoginPathForUser,
+  SIGN_IN_PATH,
 } from '../lib/portalLogin.js'
 import { apiFetch } from '../lib/apiClient.js'
 import { PortalShell } from '../layouts/PortalShell.jsx'
@@ -190,7 +191,7 @@ function PortalRedirect() {
   if (portal === 'admin') return <Navigate to={adminLanding} replace />
   if (portal === 'parent') return <Navigate to="/parent" replace />
   if (portal === 'therapist') return <Navigate to="/therapist" replace />
-  return <LoginPage />
+  return <Navigate to={SIGN_IN_PATH.parent} replace />
 }
 
 function Protected({ portal, children }) {
@@ -199,7 +200,7 @@ function Protected({ portal, children }) {
   if (!user) {
     if (portal === 'parent') return <Navigate to="/clientlogin" replace />
     if (portal === 'therapist') return <Navigate to="/therapistlogin" replace />
-    if (portal === 'admin') return <Navigate to="/stafflogin" replace />
+    if (portal === 'admin') return <Navigate to={portalLoginPath('admin')} replace />
     return <Navigate to={DEFAULT_SIGN_IN_PATH} replace />
   }
   if (current !== portal) {
@@ -211,11 +212,12 @@ function Protected({ portal, children }) {
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/login" element={<LoginPage key="portal-select" />} />
       <Route path="/clientlogin" element={<LoginPage key="client" portalType="parent" />} />
       <Route path="/clinetlogin" element={<LoginPage key="client" portalType="parent" />} />
       <Route path="/therapistlogin" element={<LoginPage key="therapist" portalType="therapist" />} />
-      <Route path="/stafflogin" element={<LoginPage key="staff" portalType="admin" />} />
+      <Route path="/adminlogin" element={<LoginPage key="admin" portalType="admin" />} />
+      <Route path="/stafflogin" element={<Navigate to="/adminlogin" replace />} />
       <Route path="/devlogin" element={<LoginPage key="dev" portalType="dev" />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
@@ -572,7 +574,7 @@ export function AppRoutes() {
       <Route path="/hr/tickets" element={<Navigate to="/admin/support?tab=tickets" replace />} />
       <Route path="/hr/*" element={<Navigate to="/admin/people" replace />} />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to={SIGN_IN_PATH.parent} replace />} />
     </Routes>
   )
 }
