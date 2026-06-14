@@ -134,13 +134,20 @@ def create_access_token(subject: str, claims: dict[str, Any] | None = None) -> s
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=ALGORITHM)
 
 
-def create_refresh_token(subject: str) -> str:
+def create_refresh_token(subject: str, *, remember_me: bool = False) -> str:
     jti = str(uuid4())
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_token_expire_days)
-    payload = {"sub": subject, "exp": expire, "type": "refresh", "jti": jti}
+    days = settings.jwt_refresh_remember_days if remember_me else settings.jwt_refresh_token_expire_days
+    expire = datetime.now(timezone.utc) + timedelta(days=days)
+    payload = {
+        "sub": subject,
+        "exp": expire,
+        "type": "refresh",
+        "jti": jti,
+        "remember": remember_me,
+    }
     token = jwt.encode(payload, settings.jwt_refresh_secret_key, algorithm=ALGORITHM)
     r = get_redis()
-    ttl = settings.jwt_refresh_token_expire_days * 86400
+    ttl = days * 86400
     if r:
         r.setex(f"{REFRESH_PREFIX}{jti}", ttl, subject)
     else:

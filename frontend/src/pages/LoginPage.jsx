@@ -1,9 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
+import { RouteLoading } from '../components/shared/RouteLoading.jsx'
 import { usePageMeta } from '../hooks/usePageMeta.js'
-import { formatLoginErrorMessage, SIGN_IN_PATH } from '../lib/portalLogin.js'
+import { getTokens } from '../lib/apiClient.js'
+import {
+  formatLoginErrorMessage,
+  portalHomePath,
+  sessionMatchesLoginPage,
+  SIGN_IN_PATH,
+} from '../lib/portalLogin.js'
 
 const DEMO_PASSWORD = 'demo123'
 
@@ -81,9 +88,15 @@ function formatLoginError(err) {
 }
 
 export function LoginPage({ portalType }) {
-  const { login, updateLoginPortal } = useAuth()
+  const { login, logout, updateLoginPortal, user, loading, selectedPortal, reload } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const gateRunRef = useRef(0)
+
+  const [portalGateReady, setPortalGateReady] = useState(false)
+  const [rememberMe, setRememberMe] = useState(
+    () => portalType === 'parent' || portalType === 'therapist',
+  )
 
   const queryParams = useMemo(() => {
     return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
@@ -114,6 +127,53 @@ export function LoginPage({ portalType }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [selectedDemoEmail, setSelectedDemoEmail] = useState('')
+
+  useEffect(() => {
+    const runId = ++gateRunRef.current
+    if (loading) {
+      setPortalGateReady(false)
+      return undefined
+    }
+
+    let cancelled = false
+
+    async function runPortalGate() {
+      const tokens = getTokens()
+      const hasSession = Boolean(tokens.access || tokens.refresh)
+
+      if (!portalType) {
+        if (hasSession || user) logout()
+        if (!cancelled && runId === gateRunRef.current) setPortalGateReady(true)
+        return
+      }
+
+      if (portalType === 'dev') {
+        if (!cancelled && runId === gateRunRef.current) setPortalGateReady(true)
+        return
+      }
+
+      if (hasSession && !user) {
+        await reload()
+        return
+      }
+
+      if (user && sessionMatchesLoginPage(user, selectedPortal, portalType)) {
+        navigate(portalHomePath(user), { replace: true })
+        return
+      }
+
+      if (hasSession || user) logout()
+
+      if (!cancelled && runId === gateRunRef.current) setPortalGateReady(true)
+    }
+
+    setPortalGateReady(false)
+    void runPortalGate()
+
+    return () => {
+      cancelled = true
+    }
+  }, [loading, user, selectedPortal, portalType, logout, reload, navigate])
 
   // Sync login portal with context, without updating local component state
   useEffect(() => {
@@ -165,7 +225,12 @@ export function LoginPage({ portalType }) {
       } else {
         updateLoginPortal(portal)
       }
-      await login(demoEmail.trim().toLowerCase(), DEMO_PASSWORD, portalType === 'dev' ? null : currentPortalId)
+      await login(
+        demoEmail.trim().toLowerCase(),
+        DEMO_PASSWORD,
+        portalType === 'dev' ? null : currentPortalId,
+        rememberMe,
+      )
       navigate('/')
     } catch (err) {
       setError(formatLoginError(err))
@@ -184,7 +249,12 @@ export function LoginPage({ portalType }) {
       } else {
         updateLoginPortal(portal)
       }
-      await login(email.trim().toLowerCase(), password, portalType === 'dev' ? null : currentPortalId)
+      await login(
+        email.trim().toLowerCase(),
+        password,
+        portalType === 'dev' ? null : currentPortalId,
+        rememberMe,
+      )
       navigate('/')
     } catch (err) {
       setError(formatLoginError(err))
@@ -197,6 +267,14 @@ export function LoginPage({ portalType }) {
 
   function demoButtonClass(demoEmail) {
     return `login-demo-btn${selectedDemoEmail === demoEmail ? ' is-selected' : ''}`
+  }
+
+  if (loading || !portalGateReady) {
+    return (
+      <div className="login-page">
+        <RouteLoading />
+      </div>
+    )
   }
 
   // 1. Selector Gateway Page (no portalType specified)
@@ -370,6 +448,19 @@ export function LoginPage({ portalType }) {
                   </button>
                 </div>
               </label>
+              {portalType && portalType !== 'dev' ? (
+                <label
+                  className="login-remember"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                  />
+                  Keep me signed in
+                </label>
+              ) : null}
               <p className="login-sub" style={{ marginTop: '-0.5rem', textAlign: 'right' }}>
                 <Link
                   to={

@@ -96,6 +96,33 @@ def test_login_portal_admin_alias_maps_to_staff():
     assert r.status_code == 200
 
 
+def test_login_remember_me_extends_refresh_token():
+    from datetime import datetime, timezone
+
+    from app.core.security import decode_refresh_token
+
+    short = client.post(
+        "/api/v1/auth/login",
+        json={"email": "parent@demo.com", "password": "demo123", "remember_me": False},
+    )
+    long = client.post(
+        "/api/v1/auth/login",
+        json={"email": "parent@demo.com", "password": "demo123", "remember_me": True},
+    )
+    assert short.status_code == 200
+    assert long.status_code == 200
+    short_exp = decode_refresh_token(short.json()["refresh_token"])["exp"]
+    long_exp = decode_refresh_token(long.json()["refresh_token"])["exp"]
+    if isinstance(short_exp, datetime):
+        short_ts = short_exp.timestamp()
+        long_ts = long_exp.timestamp()
+    else:
+        short_ts = float(short_exp)
+        long_ts = float(long_exp)
+    assert long_ts > short_ts
+    assert decode_refresh_token(long.json()["refresh_token"]).get("remember") is True
+
+
 def test_parent_cannot_see_internal_reports():
     r = client.post("/api/v1/auth/login", json={"email": "parent@demo.com", "password": "demo123"})
     token = r.json()["access_token"]

@@ -61,7 +61,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             status_code=status.HTTP_403_FORBIDDEN,
             detail=portal_login_rejection_message(login_portal, user),
         )
-    access, refresh = auth_service.issue_tokens(user)
+    access, refresh = auth_service.issue_tokens(user, remember_me=payload.remember_me)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="login", entity_type="user", entity_id=user.id, **meta)
     db.commit()
@@ -91,7 +91,8 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     ).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    access, new_refresh = auth_service.issue_tokens(user)
+    remember_me = bool(data.get("remember"))
+    access, new_refresh = auth_service.issue_tokens(user, remember_me=remember_me)
     revoke_refresh_token(data["jti"])
     db.commit()
     return TokenResponse(
@@ -253,7 +254,8 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
         .where(User.id == user.id)
         .options(selectinload(User.roles).selectinload(Role.permissions))
     ).first()
-    access, refresh = auth_service.issue_tokens(user)
+    remember_invite = invite.role_name in ("PARENT", "THERAPIST")
+    access, refresh = auth_service.issue_tokens(user, remember_me=remember_invite)
     return TokenResponse(
         access_token=access,
         refresh_token=refresh,

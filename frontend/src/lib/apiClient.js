@@ -113,6 +113,33 @@ async function refreshAccess() {
   return data.access_token
 }
 
+/** True when the session should be cleared (auth failure, not network noise). */
+export function isAuthSessionError(err) {
+  if (err?.status === 401) return true
+  const msg = String(err?.message || '')
+  return (
+    /session expired/i.test(msg) ||
+    /invalid refresh/i.test(msg) ||
+    /refresh token revoked/i.test(msg) ||
+    /invalid refresh token/i.test(msg)
+  )
+}
+
+/** Refresh access token when missing; returns current or new access token, or null. */
+export async function ensureAccessToken() {
+  const { access, refresh } = getTokens()
+  if (access) return access
+  if (!refresh) return null
+  return refreshAccess()
+}
+
+/** Silently rotate access token when a refresh token exists (e.g. tab refocus). */
+export async function tryRefreshSession() {
+  const { refresh } = getTokens()
+  if (!refresh) return null
+  return refreshAccess()
+}
+
 export async function apiFetch(path, options = {}) {
   const { params, timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options
   let url = path

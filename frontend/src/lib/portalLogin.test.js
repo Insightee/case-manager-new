@@ -4,6 +4,7 @@ import {
   loginPathFromRoleName,
   portalHomePath,
   resolveAuthPortal,
+  sessionMatchesLoginPage,
   SIGN_IN_PATH,
 } from './portalLogin.js'
 
@@ -26,5 +27,12 @@ describe('portalLogin', () => {
     const parent = { roles: ['PARENT'] }
     assert.equal(resolveAuthPortal(parent, 'admin'), 'parent')
     assert.equal(portalHomePath(parent), '/parent')
+  })
+
+  it('matches portal-bound sessions to the login page that created them', () => {
+    const parent = { roles: ['PARENT'] }
+    assert.equal(sessionMatchesLoginPage(parent, 'parent', 'parent'), true)
+    assert.equal(sessionMatchesLoginPage(parent, 'admin', 'parent'), false)
+    assert.equal(sessionMatchesLoginPage(parent, 'parent', 'admin'), false)
   })
 })

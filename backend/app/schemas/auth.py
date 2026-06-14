@@ -11,6 +11,7 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     portal: Optional[Literal["parent", "therapist", "staff", "admin"]] = None
+    remember_me: bool = False
 
     @field_validator("portal", mode="before")
     @classmethod

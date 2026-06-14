@@ -20,10 +20,10 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     return user
 
 
-def issue_tokens(user: User) -> tuple[str, str]:
+def issue_tokens(user: User, *, remember_me: bool = False) -> tuple[str, str]:
     claims = {"roles": user.role_names, "permissions": list(user.permission_names)}
     access = create_access_token(str(user.id), claims)
-    refresh = create_refresh_token(str(user.id))
+    refresh = create_refresh_token(str(user.id), remember_me=remember_me)
     return access, refresh
 
 

@@ -1,5 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { apiFetch, clearTokens, getTokens, setTokens } from '../lib/apiClient.js'
+import {
+  apiFetch,
+  clearTokens,
+  ensureAccessToken,
+  getTokens,
+  isAuthSessionError,
+  setTokens,
+  tryRefreshSession,
+} from '../lib/apiClient.js'
 import {
   canWriteFeature,
   canWriteModule,
@@ -18,8 +26,6 @@ import {
 
 const AuthContext = createContext(null)
 
-const ADMIN_ROLES = STAFF_LOGIN_ROLES
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -37,7 +43,8 @@ export function AuthProvider({ children }) {
   }, [])
 
   const loadMe = useCallback(async () => {
-    const { access } = getTokens()
+    setLoading(true)
+    const access = await ensureAccessToken()
     if (!access) {
       setUser(null)
       setLoading(false)
@@ -46,9 +53,11 @@ export function AuthProvider({ children }) {
     try {
       const me = await apiFetch('/api/v1/auth/me')
       setUser(me)
-    } catch {
-      clearTokens()
-      setUser(null)
+    } catch (err) {
+      if (isAuthSessionError(err)) {
+        clearTokens()
+        setUser(null)
+      }
     } finally {
       setLoading(false)
     }
@@ -58,16 +67,26 @@ export function AuthProvider({ children }) {
     loadMe()
   }, [loadMe])
 
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!getTokens().refresh) return
+      void tryRefreshSession()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   const clearSessionForPortalRetry = useCallback(() => {
     clearTokens()
     setUser(null)
     setLoading(false)
   }, [])
 
-  const login = useCallback(async (email, password, portal = null) => {
+  const login = useCallback(async (email, password, portal = null, rememberMe = false) => {
     clearTokens()
     setUser(null)
-    const body = { email, password }
+    const body = { email, password, remember_me: rememberMe }
     if (portal) {
       body.portal = portal === 'admin' ? 'staff' : portal
     }
@@ -94,13 +113,13 @@ export function AuthProvider({ children }) {
       setLoading(false)
       throw err
     }
-  }, [loadMe])
+  }, [])
 
-  const logout = () => {
+  const logout = useCallback(() => {
     clearTokens()
     setUser(null)
     updateLoginPortal(null)
-  }
+  }, [updateLoginPortal])
 
   const portal = useMemo(() => resolveAuthPortal(user, selectedPortal), [user, selectedPortal])
 
@@ -176,6 +195,7 @@ export function AuthProvider({ children }) {
       user,
       loading,
       login,
+      logout,
       portal,
       selectedPortal,
       clearSessionForPortalRetry,

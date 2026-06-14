@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     jwt_refresh_secret_key: str = "dev-refresh-secret-change-in-production"
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
+    jwt_refresh_remember_days: int = 90
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     # Optional regex for extra browser origins (Vercel preview URLs). In production, a safe
     # default for insightes-projects frontend previews is applied when this is unset.

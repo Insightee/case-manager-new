@@ -75,6 +75,12 @@ export function portalHomePath(user) {
   return SIGN_IN_PATH.parent
 }
 
+/** True when an active session matches this portal login page. */
+export function sessionMatchesLoginPage(user, selectedPortal, portalType) {
+  if (!user || !portalType || portalType === 'dev') return false
+  return selectedPortal === portalType && userMatchesLoginPortal(user, portalType)
+}
+
 /** @param {'parent' | 'therapist' | 'admin'} portal */
 export function userMatchesLoginPortal(user, portal) {
   if (!user?.roles?.length || !portal) return false
