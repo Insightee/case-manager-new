@@ -2395,7 +2395,35 @@ class ClientBulkImportRequest(BaseModel):
     rows: list[ClientBulkRow] = Field(min_length=1, max_length=200)
 
 
-@router.post("/clients/bulk-import")
+class ClientBulkImportRowResult(BaseModel):
+    parent_email: str
+    child_first: str
+    child_last: str = ""
+    success: bool
+    outcome: str
+    error: Optional[str] = None
+    child_id: Optional[int] = None
+    parent_user_id: Optional[int] = None
+    email: str
+
+
+class ClientBulkImportResponse(BaseModel):
+    total: int
+    success_count: int
+    invited_count: int
+    linked_existing_parent_count: int
+    failed_count: int
+    results: list[ClientBulkImportRowResult]
+
+
+def _bulk_client_row_error(exc: Exception) -> str:
+    msg = str(exc)
+    if isinstance(exc, ValueError) and "User already present as" in msg:
+        return "Email already in use"
+    return msg or "Could not import row"
+
+
+@router.post("/clients/bulk-import", response_model=ClientBulkImportResponse)
 def admin_bulk_import_clients(
     payload: ClientBulkImportRequest,
     request: Request,
@@ -2404,25 +2432,70 @@ def admin_bulk_import_clients(
 ):
     from app.services import family_admin_service
 
-    results = []
+    results: list[dict] = []
     for row in payload.rows:
+        parent_email = row.parent_email.strip().lower()
+        child_first = row.child_first.strip()
+        child_last = (row.child_last or "").strip()
+        result_base = {
+            "parent_email": parent_email,
+            "child_first": child_first,
+            "child_last": child_last,
+            "email": parent_email,
+        }
         try:
-            family_admin_service.create_family(
-                db,
-                parent_email=row.parent_email.strip().lower(),
-                parent_full_name=(row.parent_full_name or row.parent_email).strip(),
-                parent_phone=row.parent_phone,
-                child_first=row.child_first.strip(),
-                child_last=(row.child_last or "").strip(),
+            with db.begin_nested():
+                created = family_admin_service.create_family(
+                    db,
+                    parent_email=parent_email,
+                    parent_full_name=(row.parent_full_name or row.parent_email).strip(),
+                    parent_phone=row.parent_phone,
+                    child_first=child_first,
+                    child_last=child_last,
+                    send_invite=True,
+                    password=None,
+                    created_by_user_id=user.id,
+                )
+            if created.get("linkedExistingParent"):
+                outcome = "linked_existing_parent"
+            else:
+                outcome = "invited"
+            results.append(
+                {
+                    **result_base,
+                    "success": True,
+                    "outcome": outcome,
+                    "error": None,
+                    "child_id": created.get("childId"),
+                    "parent_user_id": created.get("parentUserId"),
+                }
             )
-            results.append({"email": row.parent_email, "success": True, "error": None})
         except Exception as exc:
-            results.append({"email": row.parent_email, "success": False, "error": str(exc)})
+            results.append(
+                {
+                    **result_base,
+                    "success": False,
+                    "outcome": "failed",
+                    "error": _bulk_client_row_error(exc),
+                    "child_id": None,
+                    "parent_user_id": None,
+                }
+            )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="bulk_import_clients", entity_type="child", entity_id=None, **meta)
     db.commit()
-    ok = sum(1 for r in results if r["success"])
-    return {"total": len(results), "success_count": ok, "results": results}
+    invited_count = sum(1 for r in results if r["outcome"] == "invited")
+    linked_existing_parent_count = sum(1 for r in results if r["outcome"] == "linked_existing_parent")
+    failed_count = sum(1 for r in results if r["outcome"] == "failed")
+    ok = invited_count + linked_existing_parent_count
+    return {
+        "total": len(results),
+        "success_count": ok,
+        "invited_count": invited_count,
+        "linked_existing_parent_count": linked_existing_parent_count,
+        "failed_count": failed_count,
+        "results": results,
+    }
 
 
 @router.get("/parents/lookup")

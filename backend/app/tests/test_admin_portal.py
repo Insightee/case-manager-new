@@ -651,6 +651,86 @@ def test_admin_create_family_invite_provisions_parent_before_accept():
     assert cases.status_code == 200, cases.text
 
 
+def test_admin_bulk_import_clients_invite_link_and_duplicate_handling():
+    import uuid
+
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    suffix = uuid.uuid4().hex[:8]
+    new_email = f"bulk-new-{suffix}@demo.com"
+    existing_email = f"bulk-existing-{suffix}@demo.com"
+    child_last = f"Bulk{suffix}"
+
+    existing = client.post(
+        "/api/v1/admin/families",
+        headers=headers,
+        json={
+            "parent_email": existing_email,
+            "parent_full_name": "Existing Parent",
+            "child": {"first_name": "First", "last_name": child_last},
+            "send_invite": False,
+        },
+    )
+    assert existing.status_code == 201, existing.text
+
+    res = client.post(
+        "/api/v1/admin/clients/bulk-import",
+        headers=headers,
+        json={
+            "rows": [
+                {
+                    "child_first": "New",
+                    "child_last": child_last,
+                    "parent_email": new_email,
+                    "parent_full_name": "New Parent",
+                    "parent_phone": "+91 9999999999",
+                },
+                {
+                    "child_first": "Second",
+                    "child_last": child_last,
+                    "parent_email": existing_email,
+                    "parent_full_name": "Existing Parent",
+                },
+                {
+                    "child_first": "First",
+                    "child_last": child_last,
+                    "parent_email": existing_email,
+                    "parent_full_name": "Existing Parent",
+                },
+                {
+                    "child_first": "Blocked",
+                    "child_last": child_last,
+                    "parent_email": "therapist@demo.com",
+                    "parent_full_name": "Therapist Parent",
+                },
+            ]
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["total"] == 4
+    assert body["success_count"] == 2
+    assert body["invited_count"] == 1
+    assert body["linked_existing_parent_count"] == 1
+    assert body["failed_count"] == 2
+
+    by_email = {r["parent_email"]: r for r in body["results"]}
+    assert by_email[new_email]["success"] is True
+    assert by_email[new_email]["outcome"] == "invited"
+    assert by_email[new_email]["child_id"]
+
+    linked_rows = [r for r in body["results"] if r["parent_email"] == existing_email]
+    assert len(linked_rows) == 2
+    assert sum(1 for r in linked_rows if r["outcome"] == "linked_existing_parent") == 1
+    failed_existing = next(r for r in linked_rows if r["outcome"] == "failed")
+    assert "already has a child profile" in (failed_existing["error"] or "")
+
+    blocked = by_email["therapist@demo.com"]
+    assert blocked["success"] is False
+    assert blocked["outcome"] == "failed"
+    assert blocked["error"] == "Email already in use"
+
+
 def test_admin_set_password_clears_pending_parent_invite():
     import uuid
 
