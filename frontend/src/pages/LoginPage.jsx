@@ -27,7 +27,7 @@ const PORTALS = [
   },
   {
     id: 'admin',
-    label: 'Staff',
+    label: 'Admin',
     subtitle: 'Case managers, module admins, finance, and HR.',
     placeholder: 'moduleadmin@demo.com',
     demoGroups: [
@@ -456,7 +456,7 @@ export function LoginPage({ portalType }) {
               </ul>
               {isStaffPortal ? (
                 <p className="login-aside__note">
-                  Finance, HR, and case managers all use the staff portal with role-based navigation.
+                  Finance, HR, and case managers all use the admin portal with role-based navigation.
                 </p>
               ) : null}
             </aside>

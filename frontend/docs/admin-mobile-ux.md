@@ -1,6 +1,6 @@
 # Admin portal — mobile UX (≤900px)
 
-Staff portal pages share one mobile layout system. Desktop (≥901px) keeps existing tables and full tab bars.
+Admin portal pages share one mobile layout system. Desktop (≥901px) keeps existing tables and full tab bars.
 
 ## Breakpoint
 

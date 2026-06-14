@@ -93,7 +93,7 @@ function adminNav(clinicalModuleIds) {
 
 const PORTAL_LABELS = {
   parent: 'Client Portal',
-  admin: 'Staff Portal',
+  admin: 'Admin Portal',
   therapist: 'Therapist Portal',
 }
 

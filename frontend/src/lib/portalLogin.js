@@ -24,7 +24,7 @@ export const SIGN_IN_PATH = {
   admin: '/stafflogin',
 }
 
-/** Default when role is unknown — staff portal (most internal users). */
+/** Default when role is unknown — admin portal (most internal users). */
 export const DEFAULT_SIGN_IN_PATH = SIGN_IN_PATH.admin
 
 /** @param {'parent' | 'therapist' | 'admin' | null | undefined} portal */

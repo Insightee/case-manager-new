@@ -10,7 +10,7 @@ Password for all demo accounts: `demo123`
 | **Therapist** | `THERAPIST` | Therapist |
 | **Staff** | `SUPER_ADMIN`, `MODULE_ADMIN`, `CASE_MANAGER`, `FINANCE`, `HR` | Staff |
 
-Legacy `/hr/*` URLs redirect into the staff portal (`/admin/*`).
+Legacy `/hr/*` URLs redirect into the admin portal (`/admin/*`).
 
 | Email | Role(s) | Landing route | Module assignments | Primary review flows |
 |-------|---------|---------------|--------------------|----------------------|
@@ -28,7 +28,7 @@ Legacy `/hr/*` URLs redirect into the staff portal (`/admin/*`).
 
 **Not assignable for new staff:** `ADMIN`, `SUPERVISOR`, `VIEWER` — use `MODULE_ADMIN` or `CASE_MANAGER` with per-module view/write grants.
 
-## Case Manager scope (staff portal)
+## Case Manager scope (admin portal)
 
 Case managers use the **same staff shell** as other admins but typically land on **My caseload** (`/admin/cm`) with a shorter nav.
 

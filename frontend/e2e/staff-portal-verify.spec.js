@@ -2,14 +2,14 @@ import { test, expect } from '@playwright/test'
 
 async function loginStaff(page, email) {
   await page.goto('/login')
-  await page.getByRole('tab', { name: 'Staff' }).click()
+  await page.getByRole('tab', { name: 'Admin' }).click()
   await page.getByRole('textbox', { name: 'Email' }).fill(email)
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
   await page.waitForURL(/\/admin/)
 }
 
-test.describe('Staff portal regression', () => {
+test.describe('Admin portal regression', () => {
   test('CM cases filter defaults to self; HR and Finance land correctly', async ({ page }) => {
     await loginStaff(page, 'casemanager@demo.com')
     await page.goto('/admin/cases')
