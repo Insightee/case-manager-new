@@ -46,6 +46,24 @@ def test_per_session_amount():
     assert billing.compute_session_line_amount(case, SessionLineType.PER_SESSION) == 600.0
 
 
+def test_per_session_fixed_amount():
+    case = _case_per_session()
+    case.compensation_mode = CompensationMode.FIXED_LUMP
+    case.therapist_fixed_pay_inr = 750
+    case.pay_share_pct = None
+    assert billing.compute_session_line_amount(case, SessionLineType.PER_SESSION) == 750.0
+
+
+def test_validate_per_session_fixed_lump():
+    from app.core.billing_validation import validate_case_billing
+
+    case = _case_per_session()
+    case.compensation_mode = CompensationMode.FIXED_LUMP
+    case.therapist_fixed_pay_inr = 500
+    case.pay_share_pct = None
+    validate_case_billing(case)
+
+
 def test_package_included_and_additional_percentage():
     case = _case_package_pct()
   # per session therapist share: (25000/20)*0.6 = 750

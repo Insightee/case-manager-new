@@ -94,6 +94,9 @@ export function lineTypeLabel(type) {
 export function billingSummary(b) {
   if (!b?.billing_type) return 'Billing not configured'
   if (b.billing_type === 'PER_SESSION') {
+    if (b.compensation_mode === 'FIXED_LUMP') {
+      return `₹${b.client_rate_per_session_inr}/session client · ₹${b.therapist_fixed_pay_inr} therapist per session`
+    }
     return `₹${b.client_rate_per_session_inr}/session · ${b.pay_share_pct}% therapist share`
   }
   if (b.compensation_mode === 'FIXED_LUMP') {

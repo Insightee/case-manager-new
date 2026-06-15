@@ -11,10 +11,16 @@ def validate_case_billing(case: Case) -> None:
     if case.billing_type == BillingType.PER_SESSION:
         if not case.client_rate_per_session_inr or case.client_rate_per_session_inr <= 0:
             raise HTTPException(status_code=400, detail="client_rate_per_session_inr required for PER_SESSION billing")
-        if case.compensation_mode != CompensationMode.PERCENTAGE:
-            raise HTTPException(status_code=400, detail="PER_SESSION billing requires PERCENTAGE compensation")
-        if not case.pay_share_pct or case.pay_share_pct < 50 or case.pay_share_pct > 100:
-            raise HTTPException(status_code=400, detail="pay_share_pct must be between 50 and 100")
+        if not case.compensation_mode:
+            case.compensation_mode = CompensationMode.PERCENTAGE
+        if case.compensation_mode == CompensationMode.PERCENTAGE:
+            if not case.pay_share_pct or case.pay_share_pct < 50 or case.pay_share_pct > 100:
+                raise HTTPException(status_code=400, detail="pay_share_pct must be between 50 and 100")
+        elif case.compensation_mode == CompensationMode.FIXED_LUMP:
+            if not case.therapist_fixed_pay_inr or case.therapist_fixed_pay_inr <= 0:
+                raise HTTPException(status_code=400, detail="therapist_fixed_pay_inr required for FIXED_LUMP compensation")
+        else:
+            raise HTTPException(status_code=400, detail="compensation_mode must be PERCENTAGE or FIXED_LUMP for PER_SESSION billing")
     elif case.billing_type == BillingType.PACKAGE:
         if not case.package_session_count or case.package_session_count <= 0:
             raise HTTPException(status_code=400, detail="package_session_count required for PACKAGE billing")

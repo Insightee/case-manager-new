@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { billingSummary } from '../invoices/invoiceUtils.js'
+import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 
 const EMPTY = {
   product_billing_rule_id: '',
@@ -37,7 +38,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
       client_rate_per_session_inr: caseItem.client_rate_per_session_inr ?? '',
       package_session_count: caseItem.package_session_count ?? '',
       package_amount_inr: caseItem.package_amount_inr ?? '',
-      compensation_mode: caseItem.compensation_mode || '',
+      compensation_mode: caseItem.compensation_mode || (caseItem.billing_type ? 'PERCENTAGE' : ''),
       pay_share_pct: caseItem.pay_share_pct ?? '',
       therapist_fixed_pay_inr: caseItem.therapist_fixed_pay_inr ?? '',
       billing_notes: caseItem.billing_notes || '',
@@ -51,6 +52,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
       const next = { ...f, [key]: value }
       if (key === 'billing_type') {
         next.client_billing_mode = value === 'PACKAGE' ? 'PREPAID' : 'POSTPAID'
+        if (!next.compensation_mode) next.compensation_mode = 'PERCENTAGE'
       }
       return next
     })
@@ -70,9 +72,11 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
         client_rate_per_session_inr: form.client_rate_per_session_inr ? Number(form.client_rate_per_session_inr) : null,
         package_session_count: form.package_session_count ? Number(form.package_session_count) : null,
         package_amount_inr: form.package_amount_inr ? Number(form.package_amount_inr) : null,
-        compensation_mode: form.compensation_mode || null,
-        pay_share_pct: form.pay_share_pct ? Number(form.pay_share_pct) : null,
-        therapist_fixed_pay_inr: form.therapist_fixed_pay_inr ? Number(form.therapist_fixed_pay_inr) : null,
+        ...buildTherapistCompensationPayload(
+          form.compensation_mode,
+          form.pay_share_pct,
+          form.therapist_fixed_pay_inr,
+        ),
         billing_notes: form.billing_notes || null,
       }
       await onSave(payload)
@@ -151,10 +155,15 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
             Client rate per session (INR)
             <input type="number" min="0" value={form.client_rate_per_session_inr} onChange={(e) => setField('client_rate_per_session_inr', e.target.value)} />
           </label>
-          <label>
-            Therapist share % (50–100)
-            <input type="number" min="50" max="100" step="0.01" inputMode="decimal" value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
-          </label>
+          <TherapistCompensationFields
+            compensationMode={form.compensation_mode}
+            paySharePct={form.pay_share_pct}
+            therapistFixedPayInr={form.therapist_fixed_pay_inr}
+            onCompensationModeChange={(value) => setField('compensation_mode', value)}
+            onPaySharePctChange={(value) => setField('pay_share_pct', value)}
+            onTherapistFixedPayChange={(value) => setField('therapist_fixed_pay_inr', value)}
+            fixedAmountLabel="Therapist pay per session (INR)"
+          />
         </>
       ) : null}
 
@@ -168,26 +177,15 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
             Package amount (INR, client)
             <input type="number" min="0" value={form.package_amount_inr} onChange={(e) => setField('package_amount_inr', e.target.value)} />
           </label>
-          <label>
-            Compensation mode
-            <select value={form.compensation_mode} onChange={(e) => setField('compensation_mode', e.target.value)}>
-              <option value="">Select…</option>
-              <option value="PERCENTAGE">Percentage of package</option>
-              <option value="FIXED_LUMP">Fixed lump to therapist</option>
-            </select>
-          </label>
-          {form.compensation_mode === 'PERCENTAGE' ? (
-            <label>
-              Therapist share % (50–100)
-              <input type="number" min="50" max="100" step="0.01" inputMode="decimal" value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
-            </label>
-          ) : null}
-          {form.compensation_mode === 'FIXED_LUMP' ? (
-            <label>
-              Therapist fixed pay (INR)
-              <input type="number" min="0" value={form.therapist_fixed_pay_inr} onChange={(e) => setField('therapist_fixed_pay_inr', e.target.value)} />
-            </label>
-          ) : null}
+          <TherapistCompensationFields
+            compensationMode={form.compensation_mode}
+            paySharePct={form.pay_share_pct}
+            therapistFixedPayInr={form.therapist_fixed_pay_inr}
+            onCompensationModeChange={(value) => setField('compensation_mode', value)}
+            onPaySharePctChange={(value) => setField('pay_share_pct', value)}
+            onTherapistFixedPayChange={(value) => setField('therapist_fixed_pay_inr', value)}
+            fixedAmountLabel="Therapist fixed pay for package (INR)"
+          />
         </>
       ) : null}
 

@@ -10,6 +10,8 @@ import { CaseSchedulingHub } from './CaseSchedulingHub.jsx'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { filterServiceCategoriesForModule } from '../../lib/accountStatus.js'
+import { billingSummary } from '../invoices/invoiceUtils.js'
+import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 import './admin-allotment-wizard.css'
 
 const TOTAL_STEPS = 5
@@ -245,9 +247,12 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         case_code: caseCode || undefined,
         billing_type: billing.billing_type,
         client_billing_mode: billing.client_billing_mode,
-        compensation_mode: billing.compensation_mode,
-        pay_share_pct: Number(billing.pay_share_pct),
         therapist_user_id: Number(therapistId),
+        ...buildTherapistCompensationPayload(
+          billing.compensation_mode,
+          billing.pay_share_pct,
+          billing.therapist_fixed_pay_inr,
+        ),
       }
       if (billing.product_billing_rule_id) {
         payload.product_billing_rule_id = Number(billing.product_billing_rule_id)
@@ -257,9 +262,6 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       } else {
         payload.package_session_count = Number(billing.package_session_count)
         payload.package_amount_inr = Number(billing.package_amount_inr)
-        if (billing.compensation_mode === 'FIXED_LUMP') {
-          payload.therapist_fixed_pay_inr = Number(billing.therapist_fixed_pay_inr)
-        }
       }
       if (serviceLocationType !== 'online' && serviceAddr.address_line1) {
         const base = addressToPayload(serviceAddr)
@@ -666,23 +668,16 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                       disabled={!therapistId}
                     />
                   </label>
-                  <label>
-                    Therapist pay share %
-                    <input
-                      type="number"
-                      min="50"
-                      max="100"
-                      step="0.01"
-                      inputMode="decimal"
-                      className="admin-input"
-                      value={billing.pay_share_pct}
-                      onChange={(e) => setBill('pay_share_pct', e.target.value)}
-                      disabled={!therapistId}
-                    />
-                    <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Share of client session fee paid to the assigned therapist (50–100%, decimals OK).
-                    </span>
-                  </label>
+                  <TherapistCompensationFields
+                    compensationMode={billing.compensation_mode}
+                    paySharePct={billing.pay_share_pct}
+                    therapistFixedPayInr={billing.therapist_fixed_pay_inr}
+                    onCompensationModeChange={(value) => setBill('compensation_mode', value)}
+                    onPaySharePctChange={(value) => setBill('pay_share_pct', value)}
+                    onTherapistFixedPayChange={(value) => setBill('therapist_fixed_pay_inr', value)}
+                    fixedAmountLabel="Therapist pay per session (INR)"
+                    disabled={!therapistId}
+                  />
                 </>
               ) : (
                 <>
@@ -706,23 +701,16 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                       disabled={!therapistId}
                     />
                   </label>
-                  <label>
-                    Therapist pay share %
-                    <input
-                      type="number"
-                      min="50"
-                      max="100"
-                      step="0.01"
-                      inputMode="decimal"
-                      className="admin-input"
-                      value={billing.pay_share_pct}
-                      onChange={(e) => setBill('pay_share_pct', e.target.value)}
-                      disabled={!therapistId}
-                    />
-                    <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Percentage of package value for therapist payout (50–100%, decimals OK).
-                    </span>
-                  </label>
+                  <TherapistCompensationFields
+                    compensationMode={billing.compensation_mode}
+                    paySharePct={billing.pay_share_pct}
+                    therapistFixedPayInr={billing.therapist_fixed_pay_inr}
+                    onCompensationModeChange={(value) => setBill('compensation_mode', value)}
+                    onPaySharePctChange={(value) => setBill('pay_share_pct', value)}
+                    onTherapistFixedPayChange={(value) => setBill('therapist_fixed_pay_inr', value)}
+                    fixedAmountLabel="Therapist fixed pay for package (INR)"
+                    disabled={!therapistId}
+                  />
                 </>
               )}
             </div>
@@ -755,11 +743,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             </div>
             <div>
               <dt>Therapist billing</dt>
-              <dd>
-                {billing.billing_type === 'PER_SESSION'
-                  ? `Per session · ₹${billing.client_rate_per_session_inr}/session · ${billing.pay_share_pct}% pay share`
-                  : `Package · ${billing.package_session_count} sessions · ₹${billing.package_amount_inr} · ${billing.pay_share_pct}% pay share`}
-              </dd>
+              <dd>{billingSummary(billing)}</dd>
             </div>
           </dl>
           {!therapistId ? (
@@ -808,11 +792,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             {previewData?.billing_summary ? (
               <div>
                 <dt>Billing</dt>
-                <dd>
-                  {previewData.billing_summary.billing_type === 'PER_SESSION'
-                    ? `Per session · ₹${previewData.billing_summary.client_rate_per_session_inr} · ${previewData.billing_summary.pay_share_pct}% pay share`
-                    : `Package · ${previewData.billing_summary.package_session_count} sessions · ₹${previewData.billing_summary.package_amount_inr}`}
-                </dd>
+                <dd>{billingSummary(previewData.billing_summary)}</dd>
               </div>
             ) : null}
           </dl>

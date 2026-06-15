@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AddressFormFields, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
+import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 
 const EMPTY = {
   case_code: '',
@@ -58,17 +59,13 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
         service_type: form.service_type.trim(),
         product_module: form.product_module,
         billing_type: form.billing_type,
-        compensation_mode: form.compensation_mode,
-        pay_share_pct: Number(form.pay_share_pct),
+        ...buildTherapistCompensationPayload(form.compensation_mode, form.pay_share_pct, form.therapist_fixed_pay_inr),
       }
       if (form.billing_type === 'PER_SESSION') {
         payload.client_rate_per_session_inr = Number(form.client_rate_per_session_inr)
       } else {
         payload.package_session_count = Number(form.package_session_count)
         payload.package_amount_inr = Number(form.package_amount_inr)
-        if (form.compensation_mode === 'FIXED_LUMP') {
-          payload.therapist_fixed_pay_inr = Number(form.therapist_fixed_pay_inr)
-        }
       }
       if (form.product_module === 'homecare' && serviceAddr.address_line1) {
         Object.assign(payload, servicePayload(serviceAddr))
@@ -132,10 +129,17 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
             Rate / session (INR)
             <input type="number" required value={form.client_rate_per_session_inr} onChange={(e) => setField('client_rate_per_session_inr', e.target.value)} />
           </label>
-          <label>
-            Therapist share %
-            <input type="number" min="50" max="100" step="0.01" inputMode="decimal" required value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
-          </label>
+          <TherapistCompensationFields
+            compensationMode={form.compensation_mode}
+            paySharePct={form.pay_share_pct}
+            therapistFixedPayInr={form.therapist_fixed_pay_inr}
+            onCompensationModeChange={(value) => setField('compensation_mode', value)}
+            onPaySharePctChange={(value) => setField('pay_share_pct', value)}
+            onTherapistFixedPayChange={(value) => setField('therapist_fixed_pay_inr', value)}
+            fixedAmountLabel="Therapist pay per session (INR)"
+            percentageRequired={form.compensation_mode !== 'FIXED_LUMP'}
+            fixedRequired={form.compensation_mode === 'FIXED_LUMP'}
+          />
         </>
       ) : (
         <>
@@ -147,24 +151,17 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
             Package amount (INR)
             <input type="number" required value={form.package_amount_inr} onChange={(e) => setField('package_amount_inr', e.target.value)} />
           </label>
-          <label>
-            Compensation
-            <select value={form.compensation_mode} onChange={(e) => setField('compensation_mode', e.target.value)}>
-              <option value="PERCENTAGE">Percentage</option>
-              <option value="FIXED_LUMP">Fixed lump</option>
-            </select>
-          </label>
-          {form.compensation_mode === 'PERCENTAGE' ? (
-            <label>
-              Therapist share %
-              <input type="number" min="50" max="100" step="0.01" inputMode="decimal" value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
-            </label>
-          ) : (
-            <label>
-              Therapist fixed pay (INR)
-              <input type="number" value={form.therapist_fixed_pay_inr} onChange={(e) => setField('therapist_fixed_pay_inr', e.target.value)} />
-            </label>
-          )}
+          <TherapistCompensationFields
+            compensationMode={form.compensation_mode}
+            paySharePct={form.pay_share_pct}
+            therapistFixedPayInr={form.therapist_fixed_pay_inr}
+            onCompensationModeChange={(value) => setField('compensation_mode', value)}
+            onPaySharePctChange={(value) => setField('pay_share_pct', value)}
+            onTherapistFixedPayChange={(value) => setField('therapist_fixed_pay_inr', value)}
+            fixedAmountLabel="Therapist fixed pay for package (INR)"
+            percentageRequired={form.compensation_mode !== 'FIXED_LUMP'}
+            fixedRequired={form.compensation_mode === 'FIXED_LUMP'}
+          />
         </>
       )}
       <div style={{ display: 'flex', gap: 8, gridColumn: '1 / -1' }}>
