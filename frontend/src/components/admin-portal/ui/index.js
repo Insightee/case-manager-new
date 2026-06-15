@@ -29,3 +29,4 @@ export {
   PeoplePendingInvitesPanel,
   filterPendingInvites,
 } from './PeoplePendingInvitesSection.jsx'
+export { PeopleListPagination } from './PeopleListPagination.jsx'

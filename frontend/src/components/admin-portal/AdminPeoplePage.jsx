@@ -2,6 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList, fetchAllPages } from '../../lib/listApi.js'
+import {
+  paginateList,
+  sortTherapists,
+  sortClientsAlphabetical,
+  THERAPIST_SORT_OPTIONS,
+} from '../../lib/peopleDirectoryList.js'
 import { AdminStaffDirectoryReadOnly } from './AdminStaffDirectoryReadOnly.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
@@ -25,7 +31,9 @@ import {
   PeopleSelectCheckbox,
   ClientCaseAccessModal,
   TherapistIdCell,
+  PeopleListPagination,
 } from './ui/index.js'
+import { FilterSelect } from './ui/FilterSelect.jsx'
 import { accountStatusLabel, accountStatusTone, clientAccountStatus, clientStatusHint } from '../../lib/accountStatus.js'
 
 export function AdminPeoplePage() {
@@ -59,6 +67,9 @@ export function AdminPeoplePage() {
   const [usersTotal, setUsersTotal] = useState(0)
   const [userSearchDebounced, setUserSearchDebounced] = useState('')
   const [pendingInvitesView, setPendingInvitesView] = useState(false)
+  const [therapistSort, setTherapistSort] = useState('id_asc')
+  const [therapistPage, setTherapistPage] = useState(1)
+  const [clientPage, setClientPage] = useState(1)
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -67,7 +78,17 @@ export function AdminPeoplePage() {
 
   useEffect(() => {
     setPendingInvitesView(false)
+    setTherapistPage(1)
+    setClientPage(1)
   }, [tab])
+
+  useEffect(() => {
+    if (tab === 'therapists') setTherapistPage(1)
+  }, [search, therapistSort, tab, userSearchDebounced])
+
+  useEffect(() => {
+    if (tab === 'clients') setClientPage(1)
+  }, [search, familySearchDebounced, tab])
 
   useEffect(() => {
     if (tab !== 'clients') return
@@ -202,6 +223,21 @@ export function AdminPeoplePage() {
   const staffPendingInvites = useMemo(
     () => invites.filter((i) => !['THERAPIST', 'PARENT'].includes(i.role_name)),
     [invites],
+  )
+
+  const sortedTherapists = useMemo(
+    () => sortTherapists(filteredTherapists, therapistSort),
+    [filteredTherapists, therapistSort],
+  )
+  const paginatedTherapists = useMemo(
+    () => paginateList(sortedTherapists, therapistPage),
+    [sortedTherapists, therapistPage],
+  )
+
+  const sortedClients = useMemo(() => sortClientsAlphabetical(filteredClients), [filteredClients])
+  const paginatedClients = useMemo(
+    () => paginateList(sortedClients, clientPage),
+    [sortedClients, clientPage],
   )
 
   async function inviteParent(userId, childId, parentEmail) {
@@ -549,6 +585,14 @@ export function AdminPeoplePage() {
                   <AdminEmptyState title="No therapists yet" description="Use Add therapist or Bulk upload above." />
                 ) : (
                   <>
+                    <div className="admin-people-directory-toolbar">
+                      <FilterSelect
+                        label="Sort"
+                        value={therapistSort}
+                        onChange={(e) => setTherapistSort(e.target.value)}
+                        options={THERAPIST_SORT_OPTIONS}
+                      />
+                    </div>
                     {canManageUsers ? (
                       <PeopleBulkToolbar
                         selectedUserIds={[...selectedTherapistIds]}
@@ -579,7 +623,7 @@ export function AdminPeoplePage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredTherapists.map((u) => {
+                            {paginatedTherapists.items.map((u) => {
                               const prof = profileByUser.get(u.id)
                               return (
                                 <tr key={u.id}>
@@ -649,7 +693,7 @@ export function AdminPeoplePage() {
                     }
                     mobile={
                       <ul className="admin-data-list__cards">
-                        {filteredTherapists.map((u) => {
+                        {paginatedTherapists.items.map((u) => {
                           const prof = profileByUser.get(u.id)
                           const profileHref = `/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : prof?.status ? `&status=${prof.status}` : ''}`
                           return (
@@ -723,6 +767,14 @@ export function AdminPeoplePage() {
                       </ul>
                     }
                   />
+                    <PeopleListPagination
+                      page={paginatedTherapists.page}
+                      totalPages={paginatedTherapists.totalPages}
+                      total={paginatedTherapists.total}
+                      rangeStart={paginatedTherapists.rangeStart}
+                      rangeEnd={paginatedTherapists.rangeEnd}
+                      onPageChange={setTherapistPage}
+                    />
                   </>
                 )}
               </AdminPanel>
@@ -791,7 +843,7 @@ export function AdminPeoplePage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredClients.map((f) => {
+                            {paginatedClients.items.map((f) => {
                               const primary = f.parents?.[0]
                               const clientUser = clientUserFromFamily(f)
                               const firstCase = clientCases(f)[0]
@@ -848,7 +900,7 @@ export function AdminPeoplePage() {
                     }
                     mobile={
                       <ul className="admin-data-list__cards">
-                        {filteredClients.map((f) => {
+                        {paginatedClients.items.map((f) => {
                         const primary = f.parents?.[0]
                         const firstCase = clientCases(f)[0]
                         const childHref = firstCase?.caseId
@@ -889,6 +941,14 @@ export function AdminPeoplePage() {
                       </ul>
                     }
                   />
+                    <PeopleListPagination
+                      page={paginatedClients.page}
+                      totalPages={paginatedClients.totalPages}
+                      total={paginatedClients.total}
+                      rangeStart={paginatedClients.rangeStart}
+                      rangeEnd={paginatedClients.rangeEnd}
+                      onPageChange={setClientPage}
+                    />
                   </>
                 )}
               </AdminPanel>

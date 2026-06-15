@@ -1,5 +1,6 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { paginateList, sortStaffAlphabetical } from '../../lib/peopleDirectoryList.js'
 import {
   AdminDataList,
   AdminEmptyState,
@@ -14,6 +15,7 @@ import {
   PeopleSelectCheckbox,
   PeoplePendingInvitesToggle,
   PeoplePendingInvitesPanel,
+  PeopleListPagination,
 } from './ui/index.js'
 import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
@@ -63,6 +65,7 @@ export function AdminStaffManageSection({
   const [selectedStaffIds, setSelectedStaffIds] = useState(() => new Set())
   const [invitesViewOpen, setInvitesViewOpen] = useState(false)
   const [addStaffViewOpen, setAddStaffViewOpen] = useState(false)
+  const [staffPage, setStaffPage] = useState(1)
 
   const deprecatedSet = useMemo(
     () => new Set((deprecatedRoles || []).map((r) => String(r).toUpperCase())),
@@ -81,6 +84,16 @@ export function AdminStaffManageSection({
         u.roles?.some((r) => r.toLowerCase().includes(q)),
     )
   }, [staff, search])
+
+  const sortedStaff = useMemo(() => sortStaffAlphabetical(filtered), [filtered])
+  const paginatedStaff = useMemo(
+    () => paginateList(sortedStaff, staffPage),
+    [sortedStaff, staffPage],
+  )
+
+  useEffect(() => {
+    setStaffPage(1)
+  }, [search])
 
   function setRoles(roles) {
     const finalRoles = roles.length ? roles : form.role_names
@@ -391,7 +404,7 @@ export function AdminStaffManageSection({
         <div className="admin-panel__body">
           <div className="admin-desktop-only">
             <AdminToolbar>
-              <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff…" />
+              <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff by name or email…" />
             </AdminToolbar>
           </div>
           {filtered.length === 0 ? (
@@ -423,7 +436,7 @@ export function AdminStaffManageSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((u) => (
+                  {paginatedStaff.items.map((u) => (
                     <Fragment key={u.id}>
                       <tr>
                         <td>
@@ -565,7 +578,7 @@ export function AdminStaffManageSection({
               }
               mobile={
                 <ul className="admin-data-list__cards">
-                  {filtered.map((u) => (
+                  {paginatedStaff.items.map((u) => (
                     <li key={u.id}>
                       <AdminTaskCard
                         title={u.full_name}
@@ -682,6 +695,14 @@ export function AdminStaffManageSection({
                   ))}
                 </ul>
               }
+            />
+            <PeopleListPagination
+              page={paginatedStaff.page}
+              totalPages={paginatedStaff.totalPages}
+              total={paginatedStaff.total}
+              rangeStart={paginatedStaff.rangeStart}
+              rangeEnd={paginatedStaff.rangeEnd}
+              onPageChange={setStaffPage}
             />
             </>
           )}
