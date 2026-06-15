@@ -58,11 +58,16 @@ export function AdminPeoplePage() {
   const [clientAccessFamily, setClientAccessFamily] = useState(null)
   const [usersTotal, setUsersTotal] = useState(0)
   const [userSearchDebounced, setUserSearchDebounced] = useState('')
+  const [pendingInvitesView, setPendingInvitesView] = useState(false)
 
   useEffect(() => {
     const t = searchParams.get('tab')
     if (t && ['staff', 'therapists', 'clients'].includes(t)) setTab(t)
   }, [searchParams])
+
+  useEffect(() => {
+    setPendingInvitesView(false)
+  }, [tab])
 
   useEffect(() => {
     if (tab !== 'clients') return
@@ -187,12 +192,12 @@ export function AdminPeoplePage() {
     filterText(`${f.childName} ${f.parents?.map((p) => p.parentEmail).join(' ')} ${(f.caseCodes || []).join(' ')}`),
   )
   const parentPendingInvites = useMemo(
-    () => invites.filter((i) => i.role_name === 'PARENT' && filterText(i.email)),
-    [invites, search],
+    () => invites.filter((i) => i.role_name === 'PARENT'),
+    [invites],
   )
   const therapistPendingInvites = useMemo(
-    () => invites.filter((i) => i.role_name === 'THERAPIST' && filterText(i.email)),
-    [invites, search],
+    () => invites.filter((i) => i.role_name === 'THERAPIST'),
+    [invites],
   )
   const staffPendingInvites = useMemo(
     () => invites.filter((i) => !['THERAPIST', 'PARENT'].includes(i.role_name)),
@@ -410,6 +415,7 @@ export function AdminPeoplePage() {
   function changeTab(id) {
     setTab(id)
     setSearch('')
+    setPendingInvitesView(false)
     setSearchParams({ tab: id }, { replace: true })
   }
 
@@ -510,6 +516,8 @@ export function AdminPeoplePage() {
                 <AdminTherapistOnboardPanel
                   roleDefaults={roleDefaults}
                   pendingInvites={therapistPendingInvites}
+                  invitesViewOpen={pendingInvitesView}
+                  onInvitesViewChange={setPendingInvitesView}
                   onSuccess={setSuccess}
                   onError={setError}
                   onReload={load}
@@ -522,6 +530,7 @@ export function AdminPeoplePage() {
                   />
                 </AdminPanel>
               )}
+              {!pendingInvitesView ? (
               <AdminPanel
                 title={`Therapists (${filteredTherapists.length})`}
                 actions={
@@ -717,6 +726,7 @@ export function AdminPeoplePage() {
                   </>
                 )}
               </AdminPanel>
+              ) : null}
             </>
           )}
 
@@ -727,11 +737,14 @@ export function AdminPeoplePage() {
                 canManageUsers={canManageUsers}
                 isHrPortal={isHrPortal}
                 pendingInvites={parentPendingInvites}
+                invitesViewOpen={pendingInvitesView}
+                onInvitesViewChange={setPendingInvitesView}
                 onAddFamily={() => setShowFamilyWizard(true)}
                 onSuccess={setSuccess}
                 onError={setError}
                 onReload={load}
               />
+              {!pendingInvitesView ? (
               <AdminPanel
                 title={`Clients (${filteredClients.length})`}
                 actions={
@@ -879,6 +892,7 @@ export function AdminPeoplePage() {
                   </>
                 )}
               </AdminPanel>
+              ) : null}
             </>
           )}
 

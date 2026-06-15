@@ -24,3 +24,8 @@ export {
 } from './PeopleRowActions.jsx'
 export { ClientCaseAccessModal } from './ClientCaseAccessModal.jsx'
 export { TherapistIdCell } from './TherapistIdCell.jsx'
+export {
+  PeoplePendingInvitesToggle,
+  PeoplePendingInvitesPanel,
+  filterPendingInvites,
+} from './PeoplePendingInvitesSection.jsx'

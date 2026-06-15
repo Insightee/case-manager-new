@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
-import { AdminPanel, CopyLinkButton, AdminInviteRowActions, PeopleBulkToolbar, PeopleSelectCheckbox } from './ui/index.js'
+import { AdminPanel, CopyLinkButton, PeoplePendingInvitesToggle, PeoplePendingInvitesPanel } from './ui/index.js'
 
 const THERAPIST_DEFAULT_SERVICES = ['homecare', 'shadow_support']
 
@@ -74,6 +74,8 @@ function parseCsvFile(text) {
 export function AdminTherapistOnboardPanel({
   roleDefaults,
   pendingInvites,
+  invitesViewOpen,
+  onInvitesViewChange,
   onSuccess,
   onError,
   onReload,
@@ -91,7 +93,6 @@ export function AdminTherapistOnboardPanel({
   const [bulkPhase, setBulkPhase] = useState('edit')
   const [lastResult, setLastResult] = useState(null)
   const [submitting, setSubmitting] = useState(false)
-  const [selectedInviteIds, setSelectedInviteIds] = useState(() => new Set())
   const [showCreatePassword, setShowCreatePassword] = useState(false)
 
   useEffect(() => {
@@ -232,21 +233,31 @@ export function AdminTherapistOnboardPanel({
   return (
     <>
       <div className="admin-btn-group" style={{ marginBottom: 12 }}>
-        <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => { resetForm(); setShowAdd(true) }}>
-          Add therapist
-        </button>
-        <button
-          type="button"
-          className="admin-btn admin-btn--secondary admin-btn--sm"
-          onClick={() => {
-            setBulkResults(null)
-            setBulkPreview(null)
-            setBulkPhase('edit')
-            setShowBulk(true)
-          }}
-        >
-          Bulk upload
-        </button>
+        {!invitesViewOpen ? (
+          <>
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => { resetForm(); setShowAdd(true) }}>
+              Add therapist
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn--secondary admin-btn--sm"
+              onClick={() => {
+                setBulkResults(null)
+                setBulkPreview(null)
+                setBulkPhase('edit')
+                setShowBulk(true)
+              }}
+            >
+              Bulk upload
+            </button>
+          </>
+        ) : null}
+        <PeoplePendingInvitesToggle
+          label="Pending therapist invites"
+          count={pendingInvites.length}
+          active={invitesViewOpen}
+          onClick={() => onInvitesViewChange?.(!invitesViewOpen)}
+        />
       </div>
 
       {lastResult?.invite_url || lastResult?.temporary_password ? (
@@ -262,59 +273,15 @@ export function AdminTherapistOnboardPanel({
         </p>
       ) : null}
 
-      {pendingInvites.length > 0 ? (
-        <AdminPanel title={`Pending therapist invites (${pendingInvites.length})`} subtitle="Links expire after 7 days">
-          <PeopleBulkToolbar
-            selectedInviteIds={[...selectedInviteIds]}
-            onReload={() => {
-              setSelectedInviteIds(new Set())
-              onReload?.()
-            }}
-            onSuccess={onSuccess}
-            onError={onError}
-          />
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th style={{ width: 36 }} aria-label="Select" />
-                <th>Email</th>
-                <th>Expires</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {pendingInvites.map((inv) => (
-                <tr key={inv.id}>
-                  <td>
-                    <PeopleSelectCheckbox
-                      checked={selectedInviteIds.has(inv.id)}
-                      onChange={() =>
-                        setSelectedInviteIds((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(inv.id)) next.delete(inv.id)
-                          else next.add(inv.id)
-                          return next
-                        })
-                      }
-                      ariaLabel={`Select invite ${inv.email}`}
-                    />
-                  </td>
-                  <td>{inv.email}</td>
-                  <td>{new Date(inv.expires_at).toLocaleDateString()}</td>
-                  <td>
-                    <AdminInviteRowActions
-                      invite={inv}
-                      onSuccess={onSuccess}
-                      onError={onError}
-                      onReload={onReload}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </AdminPanel>
-      ) : null}
+      <PeoplePendingInvitesPanel
+        label="Pending therapist invites"
+        pendingInvites={pendingInvites}
+        open={invitesViewOpen}
+        onOpenChange={onInvitesViewChange}
+        onSuccess={onSuccess}
+        onError={onError}
+        onReload={onReload}
+      />
 
       {showAdd ? (
         <div className="admin-drawer-backdrop" role="presentation" onClick={() => setShowAdd(false)}>

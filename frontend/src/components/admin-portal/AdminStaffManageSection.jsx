@@ -9,10 +9,11 @@ import {
   AdminToolbar,
   StatusBadge,
   CopyLinkButton,
-  AdminInviteRowActions,
   PeopleRowActions,
   PeopleBulkToolbar,
   PeopleSelectCheckbox,
+  PeoplePendingInvitesToggle,
+  PeoplePendingInvitesPanel,
 } from './ui/index.js'
 import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
@@ -60,7 +61,7 @@ export function AdminStaffManageSection({
   const [rowBusy, setRowBusy] = useState(null)
   const [lastProvision, setLastProvision] = useState(null)
   const [selectedStaffIds, setSelectedStaffIds] = useState(() => new Set())
-  const [selectedInviteIds, setSelectedInviteIds] = useState(() => new Set())
+  const [invitesViewOpen, setInvitesViewOpen] = useState(false)
 
   const deprecatedSet = useMemo(
     () => new Set((deprecatedRoles || []).map((r) => String(r).toUpperCase())),
@@ -79,12 +80,6 @@ export function AdminStaffManageSection({
         u.roles?.some((r) => r.toLowerCase().includes(q)),
     )
   }, [staff, search])
-
-  const filteredInvites = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return pendingInvites
-    return pendingInvites.filter((i) => i.email?.toLowerCase().includes(q))
-  }, [pendingInvites, search])
 
   function setRoles(roles) {
     const finalRoles = roles.length ? roles : form.role_names
@@ -165,15 +160,6 @@ export function AdminStaffManageSection({
     })
   }
 
-  function toggleInviteSelect(id) {
-    setSelectedInviteIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
   async function saveEditAccess(userId) {
     onError?.('')
     try {
@@ -200,6 +186,28 @@ export function AdminStaffManageSection({
 
   return (
     <>
+      <div className="admin-btn-group" style={{ marginBottom: 12 }}>
+        <PeoplePendingInvitesToggle
+          label="Pending staff invitations"
+          count={pendingInvites.length}
+          active={invitesViewOpen}
+          onClick={() => setInvitesViewOpen((open) => !open)}
+        />
+      </div>
+
+      {invitesViewOpen ? (
+        <PeoplePendingInvitesPanel
+          label="Pending staff invitations"
+          pendingInvites={pendingInvites}
+          layout="queue"
+          open={invitesViewOpen}
+          onOpenChange={setInvitesViewOpen}
+          onSuccess={onSuccess}
+          onError={onError}
+          onReload={onReload}
+        />
+      ) : (
+        <>
       <AdminPanel
         title="Add staff user"
         subtitle="Role sets permissions; programme modules set which areas appear and whether each is view or edit."
@@ -331,43 +339,6 @@ export function AdminStaffManageSection({
           </div>
         ) : null}
       </AdminPanel>
-
-      {filteredInvites.length > 0 ? (
-        <AdminPanel title={`Pending staff invitations (${filteredInvites.length})`} subtitle="Links expire after 7 days">
-          <PeopleBulkToolbar
-            selectedInviteIds={[...selectedInviteIds]}
-            onReload={() => {
-              setSelectedInviteIds(new Set())
-              onReload?.()
-            }}
-            onSuccess={onSuccess}
-            onError={onError}
-          />
-          <ul className="admin-queue">
-            {filteredInvites.map((inv) => (
-              <li key={inv.id} className="admin-queue__item">
-                <PeopleSelectCheckbox
-                  checked={selectedInviteIds.has(inv.id)}
-                  onChange={() => toggleInviteSelect(inv.id)}
-                  ariaLabel={`Select invite ${inv.email}`}
-                />
-                <div>
-                  <p className="admin-queue__title">{inv.email}</p>
-                  <p className="admin-queue__meta">
-                    {inv.role_name?.replace(/_/g, ' ')} · Expires {new Date(inv.expires_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <AdminInviteRowActions
-                  invite={inv}
-                  onSuccess={onSuccess}
-                  onError={onError}
-                  onReload={onReload}
-                />
-              </li>
-            ))}
-          </ul>
-        </AdminPanel>
-      ) : null}
 
       <AdminPanel title={`Staff directory (${filtered.length})`} padded={false}>
         <div className="admin-panel__body">
@@ -669,6 +640,8 @@ export function AdminStaffManageSection({
           )}
         </div>
       </AdminPanel>
+        </>
+      )}
     </>
   )
 }
