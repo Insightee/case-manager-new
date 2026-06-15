@@ -62,6 +62,7 @@ export function AdminStaffManageSection({
   const [lastProvision, setLastProvision] = useState(null)
   const [selectedStaffIds, setSelectedStaffIds] = useState(() => new Set())
   const [invitesViewOpen, setInvitesViewOpen] = useState(false)
+  const [addStaffViewOpen, setAddStaffViewOpen] = useState(false)
 
   const deprecatedSet = useMemo(
     () => new Set((deprecatedRoles || []).map((r) => String(r).toUpperCase())),
@@ -84,6 +85,32 @@ export function AdminStaffManageSection({
   function setRoles(roles) {
     const finalRoles = roles.length ? roles : form.role_names
     setForm((prev) => ({ ...prev, role_names: finalRoles }))
+  }
+
+  function closeAddStaff() {
+    setAddStaffViewOpen(false)
+    setInviteUrl('')
+    setForm(EMPTY_FORM)
+    setMode('invite')
+    setShowCreatePassword(false)
+  }
+
+  function toggleAddStaff() {
+    if (addStaffViewOpen) {
+      closeAddStaff()
+      return
+    }
+    setInvitesViewOpen(false)
+    setAddStaffViewOpen(true)
+  }
+
+  function toggleInvitesView() {
+    if (invitesViewOpen) {
+      setInvitesViewOpen(false)
+      return
+    }
+    closeAddStaff()
+    setInvitesViewOpen(true)
   }
 
   async function handleSubmit(e) {
@@ -137,6 +164,7 @@ export function AdminStaffManageSection({
           }),
         })
         setForm(EMPTY_FORM)
+        setAddStaffViewOpen(false)
         onSuccess?.('Staff user created.')
         onReload?.()
       }
@@ -187,11 +215,21 @@ export function AdminStaffManageSection({
   return (
     <>
       <div className="admin-btn-group" style={{ marginBottom: 12 }}>
+        {!invitesViewOpen ? (
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            onClick={toggleAddStaff}
+            aria-pressed={addStaffViewOpen}
+          >
+            Add staff
+          </button>
+        ) : null}
         <PeoplePendingInvitesToggle
           label="Pending staff invitations"
           count={pendingInvites.length}
           active={invitesViewOpen}
-          onClick={() => setInvitesViewOpen((open) => !open)}
+          onClick={toggleInvitesView}
         />
       </div>
 
@@ -206,141 +244,150 @@ export function AdminStaffManageSection({
           onError={onError}
           onReload={onReload}
         />
-      ) : (
-        <>
-      <AdminPanel
-        title="Add staff user"
-        subtitle="Role sets permissions; programme modules set which areas appear and whether each is view or edit."
-      >
-        <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            className={`admin-btn admin-btn--sm ${mode === 'invite' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => { setMode('invite'); setInviteUrl('') }}
-          >
-            Send invite
-          </button>
-          <button
-            type="button"
-            className={`admin-btn admin-btn--sm ${mode === 'direct' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => { setMode('direct'); setInviteUrl('') }}
-          >
-            Create directly
-          </button>
-        </div>
+      ) : addStaffViewOpen ? (
+        <AdminPanel
+          title="Add staff user"
+          subtitle="Role sets permissions; programme modules set which areas appear and whether each is view or edit."
+          actions={
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={closeAddStaff}>
+              ← Back
+            </button>
+          }
+        >
+          <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className={`admin-btn admin-btn--sm ${mode === 'invite' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+              onClick={() => { setMode('invite'); setInviteUrl('') }}
+            >
+              Send invite
+            </button>
+            <button
+              type="button"
+              className={`admin-btn admin-btn--sm ${mode === 'direct' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+              onClick={() => { setMode('direct'); setInviteUrl('') }}
+            >
+              Create directly
+            </button>
+          </div>
 
-        <form onSubmit={handleSubmit} className="admin-form-grid">
-          <label>
-            Email
-            <input
-              className="admin-input"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              required
-            />
-          </label>
-          <label>
-            Full name
-            <input
-              className="admin-input"
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-              required={mode === 'direct'}
-              placeholder={mode === 'invite' ? 'Shown on invite (optional)' : ''}
-            />
-          </label>
-          {mode === 'direct' ? (
-            <>
-              <label>
-                Password
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <form onSubmit={handleSubmit} className="admin-form-grid">
+            <label>
+              Email
+              <input
+                className="admin-input"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Full name
+              <input
+                className="admin-input"
+                value={form.full_name}
+                onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                required={mode === 'direct'}
+                placeholder={mode === 'invite' ? 'Shown on invite (optional)' : ''}
+              />
+            </label>
+            {mode === 'direct' ? (
+              <>
+                <label>
+                  Password
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      className="admin-input"
+                      type={showCreatePassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      minLength={6}
+                      required
+                      style={{ width: '100%', paddingRight: '50px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatePassword(!showCreatePassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: '#4f46e5',
+                        padding: '4px 8px',
+                      }}
+                    >
+                      {showCreatePassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </label>
+                <label>
+                  Region (optional)
                   <input
                     className="admin-input"
-                    type={showCreatePassword ? 'text' : 'password'}
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    minLength={6}
-                    required
-                    style={{ width: '100%', paddingRight: '50px' }}
+                    value={form.region}
+                    onChange={(e) => setForm({ ...form, region: e.target.value })}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowCreatePassword(!showCreatePassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '10px',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      color: '#4f46e5',
-                      padding: '4px 8px',
-                    }}
-                  >
-                    {showCreatePassword ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-              </label>
-              <label>
-                Region (optional)
-                <input
-                  className="admin-input"
-                  value={form.region}
-                  onChange={(e) => setForm({ ...form, region: e.target.value })}
-                />
-              </label>
-            </>
+                </label>
+              </>
+            ) : null}
+
+            <RbacEditor
+              catalog={catalog}
+              assignableRoles={assignableRoles}
+              roleDefaults={roleDefaults}
+              selectedRoles={form.role_names}
+              onRoleChange={setRoles}
+              allowMultiRole={mode === 'direct'}
+              disabled={submitting}
+              grants={form.module_access_grants}
+              onGrantsChange={(module_access_grants) =>
+                setForm((prev) => ({
+                  ...prev,
+                  module_access_grants,
+                  module_assignments: Object.entries(module_access_grants)
+                    .filter(([, g]) => g?.enabled)
+                    .map(([id]) => id),
+                }))
+              }
+              featureOverrides={form.feature_overrides}
+              onOverridesChange={(feature_overrides) =>
+                setForm((prev) => ({ ...prev, feature_overrides }))
+              }
+              viewOnly={form.view_only}
+              onViewOnlyChange={(view_only) => setForm((prev) => ({ ...prev, view_only }))}
+            />
+
+            {landingHint ? (
+              <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: -8 }}>
+                Selected role ({form.role_names.map((r) => r.replace(/_/g, ' ')).join(', ')}) — {landingHint}
+              </p>
+            ) : null}
+
+            <div className="admin-btn-group" style={{ gridColumn: '1 / -1' }}>
+              <button type="submit" className="admin-btn admin-btn--primary" disabled={submitting}>
+                {submitting ? 'Working…' : mode === 'invite' ? 'Send invite' : 'Create user'}
+              </button>
+              <button type="button" className="admin-btn admin-btn--ghost" onClick={closeAddStaff}>
+                Cancel
+              </button>
+            </div>
+          </form>
+
+          {inviteUrl ? (
+            <div className="admin-alert" style={{ marginTop: 12, wordBreak: 'break-all', fontSize: '0.875rem' }}>
+              <strong>Invite link:</strong>{' '}
+              <CopyLinkButton url={inviteUrl} label="Copy" copiedLabel="Copied" />{' '}
+              {inviteUrl}
+            </div>
           ) : null}
-
-          <RbacEditor
-            catalog={catalog}
-            assignableRoles={assignableRoles}
-            roleDefaults={roleDefaults}
-            selectedRoles={form.role_names}
-            onRoleChange={setRoles}
-            allowMultiRole={mode === 'direct'}
-            disabled={submitting}
-            grants={form.module_access_grants}
-            onGrantsChange={(module_access_grants) =>
-              setForm((prev) => ({
-                ...prev,
-                module_access_grants,
-                module_assignments: Object.entries(module_access_grants)
-                  .filter(([, g]) => g?.enabled)
-                  .map(([id]) => id),
-              }))
-            }
-            featureOverrides={form.feature_overrides}
-            onOverridesChange={(feature_overrides) =>
-              setForm((prev) => ({ ...prev, feature_overrides }))
-            }
-            viewOnly={form.view_only}
-            onViewOnlyChange={(view_only) => setForm((prev) => ({ ...prev, view_only }))}
-          />
-
-          {landingHint ? (
-            <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: -8 }}>
-              Selected role ({form.role_names.map((r) => r.replace(/_/g, ' ')).join(', ')}) — {landingHint}
-            </p>
-          ) : null}
-
-          <button type="submit" className="admin-btn admin-btn--primary" disabled={submitting}>
-            {submitting ? 'Working…' : mode === 'invite' ? 'Send invite' : 'Create user'}
-          </button>
-        </form>
-
-        {inviteUrl ? (
-          <div className="admin-alert" style={{ marginTop: 12, wordBreak: 'break-all', fontSize: '0.875rem' }}>
-            <strong>Invite link:</strong>{' '}
-            <CopyLinkButton url={inviteUrl} label="Copy" copiedLabel="Copied" />{' '}
-            {inviteUrl}
-          </div>
-        ) : null}
-      </AdminPanel>
-
-      <AdminPanel title={`Staff directory (${filtered.length})`} padded={false}>
+        </AdminPanel>
+      ) : (
+        <AdminPanel title={`Staff directory (${filtered.length})`} padded={false}>
         <div className="admin-panel__body">
           <div className="admin-desktop-only">
             <AdminToolbar>
@@ -348,7 +395,7 @@ export function AdminStaffManageSection({
             </AdminToolbar>
           </div>
           {filtered.length === 0 ? (
-            <AdminEmptyState title="No staff users" description="Add a user above or adjust search." />
+            <AdminEmptyState title="No staff users" description="Use Add staff or adjust search." />
           ) : (
             <>
             <PeopleBulkToolbar
@@ -640,7 +687,6 @@ export function AdminStaffManageSection({
           )}
         </div>
       </AdminPanel>
-        </>
       )}
     </>
   )
