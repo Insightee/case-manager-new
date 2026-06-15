@@ -45,3 +45,5 @@ frontend/.playwright-browsers/
 backend/uploads/
 uploads/
 .vercel
+worktree-phased/
+
