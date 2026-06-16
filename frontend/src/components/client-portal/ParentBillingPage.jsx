@@ -6,6 +6,8 @@ import './parent-payments.css'
 import './parent-portal-filters.css'
 import { formatApiDateIN, formatTimestampDateIN } from '../../lib/datetime.js'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
+import { ParentComingSoon } from './ParentComingSoon.jsx'
+import { PARENT_BILLING_COMING_SOON } from '../../lib/parentPortalFeatureFlags.js'
 
 const DISPUTE_STATUS_LABELS = {
   open: 'Submitted — finance will review',
@@ -111,7 +113,7 @@ function PackageMobileCard({ pkg }) {
   )
 }
 
-export function ParentBillingPage() {
+function ParentBillingPageFull() {
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -985,4 +987,16 @@ export function ParentBillingPage() {
         : null}
     </div>
   )
+}
+
+export function ParentBillingPage() {
+  if (PARENT_BILLING_COMING_SOON) {
+    return (
+      <ParentComingSoon
+        title="Billing"
+        subtitle="Invoices, payments, and package balances for your care plans."
+      />
+    )
+  }
+  return <ParentBillingPageFull />
 }
