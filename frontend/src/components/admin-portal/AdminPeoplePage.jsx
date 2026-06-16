@@ -963,11 +963,6 @@ export function AdminPeoplePage() {
         family={clientAccessFamily}
         open={!!clientAccessFamily}
         onClose={() => setClientAccessFamily(null)}
-        onSuccess={(msg) => {
-          setSuccess(msg)
-          load()
-        }}
-        onError={setError}
       />
 
       {showFamilyWizard ? (
