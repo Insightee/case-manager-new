@@ -62,6 +62,49 @@ export function sortClientsAlphabetical(list) {
   )
 }
 
+function directoryQuery(search) {
+  return search.trim().toLowerCase()
+}
+
+export function filterStaffDirectory(users, search) {
+  const q = directoryQuery(search)
+  if (!q) return users
+  return users.filter(
+    (u) =>
+      u.email?.toLowerCase().includes(q) ||
+      u.full_name?.toLowerCase().includes(q) ||
+      u.roles?.some((r) => r.toLowerCase().includes(q)),
+  )
+}
+
+export function filterTherapistDirectory(users, search) {
+  const q = directoryQuery(search)
+  if (!q) return users
+  return users.filter(
+    (u) =>
+      u.email?.toLowerCase().includes(q) ||
+      u.full_name?.toLowerCase().includes(q) ||
+      String(u.external_employee_id || '').toLowerCase().includes(q) ||
+      u.phone?.toLowerCase().includes(q),
+  )
+}
+
+export function filterClientDirectory(families, search) {
+  const q = directoryQuery(search)
+  if (!q) return families
+  return families.filter((f) => {
+    const hay = [
+      f.childName,
+      ...(f.parents || []).flatMap((p) => [p.parentName, p.parentEmail, p.parentPhone]),
+      ...(f.caseCodes || []),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return hay.includes(q)
+  })
+}
+
 export function paginateList(list, page, pageSize = PEOPLE_PAGE_SIZE) {
   const total = list.length
   if (total === 0) {

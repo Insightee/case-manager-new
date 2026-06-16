@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList, fetchAllPages } from '../../lib/listApi.js'
+import { fetchAllPages } from '../../lib/listApi.js'
 import {
   paginateList,
   sortTherapists,
   sortClientsAlphabetical,
+  filterTherapistDirectory,
+  filterClientDirectory,
   THERAPIST_SORT_OPTIONS,
 } from '../../lib/peopleDirectoryList.js'
 import { AdminStaffDirectoryReadOnly } from './AdminStaffDirectoryReadOnly.jsx'
@@ -15,7 +17,6 @@ import { AdminClientOnboardPanel } from './AdminClientOnboardPanel.jsx'
 import { AdminTherapistOnboardPanel } from './AdminTherapistOnboardPanel.jsx'
 import { AdminStaffManageSection } from './AdminStaffManageSection.jsx'
 import {
-  AdminCollapsibleFilters,
   AdminDataList,
   AdminEmptyState,
   AdminMobilePillTabs,
@@ -52,22 +53,21 @@ export function AdminPeoplePage() {
   const [roleDefaults, setRoleDefaults] = useState({})
   const [assignableRoles, setAssignableRoles] = useState([])
   const [deprecatedRoles, setDeprecatedRoles] = useState([])
-  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
   const [showFamilyWizard, setShowFamilyWizard] = useState(false)
-  const [familySearchDebounced, setFamilySearchDebounced] = useState('')
   const [rowBusy, setRowBusy] = useState(null)
   const [lastProvision, setLastProvision] = useState(null)
   const [selectedTherapistIds, setSelectedTherapistIds] = useState(() => new Set())
   const [selectedClientUserIds, setSelectedClientUserIds] = useState(() => new Set())
   const [clientAccessFamily, setClientAccessFamily] = useState(null)
   const [usersTotal, setUsersTotal] = useState(0)
-  const [userSearchDebounced, setUserSearchDebounced] = useState('')
   const [pendingInvitesView, setPendingInvitesView] = useState(false)
   const [therapistSort, setTherapistSort] = useState('id_asc')
+  const [therapistSearch, setTherapistSearch] = useState('')
+  const [clientSearch, setClientSearch] = useState('')
   const [therapistPage, setTherapistPage] = useState(1)
   const [clientPage, setClientPage] = useState(1)
 
@@ -80,37 +80,22 @@ export function AdminPeoplePage() {
     setPendingInvitesView(false)
     setTherapistPage(1)
     setClientPage(1)
+    setTherapistSearch('')
+    setClientSearch('')
   }, [tab])
 
   useEffect(() => {
     if (tab === 'therapists') setTherapistPage(1)
-  }, [search, therapistSort, tab, userSearchDebounced])
+  }, [therapistSearch, therapistSort, tab])
 
   useEffect(() => {
     if (tab === 'clients') setClientPage(1)
-  }, [search, familySearchDebounced, tab])
-
-  useEffect(() => {
-    if (tab !== 'clients') return
-    const t = setTimeout(() => setFamilySearchDebounced(search.trim()), 300)
-    return () => clearTimeout(t)
-  }, [search, tab])
-
-  useEffect(() => {
-    if (tab === 'clients') return
-    const t = setTimeout(() => setUserSearchDebounced(search.trim()), 300)
-    return () => clearTimeout(t)
-  }, [search, tab])
+  }, [clientSearch, tab])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const familyQs =
-        tab === 'clients' && familySearchDebounced
-          ? `?search=${encodeURIComponent(familySearchDebounced)}`
-          : ''
-
       async function loadDirectoryUsers() {
         const buildQs = (page, pageSize) => {
           const p = new URLSearchParams({
@@ -118,13 +103,7 @@ export function AdminPeoplePage() {
             page_size: String(pageSize),
             sort: 'created_at_desc',
           })
-          if (userSearchDebounced) p.set('search', userSearchDebounced)
           return p.toString()
-        }
-        if (userSearchDebounced) {
-          const data = await apiFetch(`/api/v1/admin/users?${buildQs(1, 100)}`)
-          const items = unwrapList(data)
-          return { items, total: data.total ?? items.length }
         }
         return fetchAllPages((page, pageSize) =>
           apiFetch(`/api/v1/admin/users?${buildQs(page, pageSize)}`),
@@ -145,7 +124,7 @@ export function AdminPeoplePage() {
         modulesFetch,
         rbacFetch,
         canReadTherapists ? apiFetch('/api/v1/admin/therapist-profiles') : Promise.resolve([]),
-        apiFetch(`/api/v1/admin/families${familyQs}`),
+        apiFetch('/api/v1/admin/families'),
         canManageUsers ? apiFetch('/api/v1/admin/invites').catch(() => []) : Promise.resolve([]),
       ])
       const normalizedUsers = canReadStaffDirectory
@@ -180,7 +159,7 @@ export function AdminPeoplePage() {
     } finally {
       setLoading(false)
     }
-  }, [tab, familySearchDebounced, userSearchDebounced, canManageUsers, canReadStaffDirectory, canReadTherapists])
+  }, [canManageUsers, canReadStaffDirectory, canReadTherapists])
 
   useEffect(() => {
     load()
@@ -199,18 +178,15 @@ export function AdminPeoplePage() {
 
   const therapists = useMemo(() => users.filter((u) => u.roles?.includes('THERAPIST')), [users])
 
-  const q = search.trim().toLowerCase()
-  const filterText = (hay) =>
-    !q || hay.toLowerCase().includes(q) || (canReadStaffDirectory && userSearchDebounced)
-
   const usersTruncated = canReadStaffDirectory && users.length < usersTotal
 
-  const filteredStaff = staff.filter(
-    (u) => filterText(`${u.full_name} ${u.email} ${(u.roles || []).join(' ')}`),
+  const filteredTherapists = useMemo(
+    () => filterTherapistDirectory(therapists, therapistSearch),
+    [therapists, therapistSearch],
   )
-  const filteredTherapists = therapists.filter((u) => filterText(`${u.full_name} ${u.email}`))
-  const filteredClients = tab === 'clients' ? clients : clients.filter((f) =>
-    filterText(`${f.childName} ${f.parents?.map((p) => p.parentEmail).join(' ')} ${(f.caseCodes || []).join(' ')}`),
+  const filteredClients = useMemo(
+    () => filterClientDirectory(clients, clientSearch),
+    [clients, clientSearch],
   )
   const parentPendingInvites = useMemo(
     () => invites.filter((i) => i.role_name === 'PARENT'),
@@ -450,7 +426,6 @@ export function AdminPeoplePage() {
 
   function changeTab(id) {
     setTab(id)
-    setSearch('')
     setPendingInvitesView(false)
     setSearchParams({ tab: id }, { replace: true })
   }
@@ -467,8 +442,7 @@ export function AdminPeoplePage() {
       {success ? <p className="admin-alert admin-alert--success">{success}</p> : null}
       {usersTruncated ? (
         <p className="admin-alert admin-alert--warn">
-          Showing {users.length} of {usersTotal} users. Search by email or name to find someone, or contact
-          Super Admin if the directory looks incomplete.
+          Showing {users.length} of {usersTotal} users. Contact Super Admin if the directory looks incomplete.
         </p>
       ) : null}
       {inviteUrl ? (
@@ -499,22 +473,6 @@ export function AdminPeoplePage() {
         ))}
       </nav>
 
-      <div className="admin-people-search admin-mobile-only">
-        <AdminSearchInput value={search} onChange={setSearch} placeholder="Search people…" />
-      </div>
-
-      <div className="admin-desktop-only">
-        <AdminCollapsibleFilters
-          quickSearch={<AdminSearchInput value={search} onChange={setSearch} placeholder="Search…" />}
-          activeChips={search.trim() ? [search.trim()] : []}
-          activeCount={search.trim() ? 1 : 0}
-        >
-          <AdminToolbar className="admin-toolbar--mobile-compact">
-            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search…" />
-          </AdminToolbar>
-        </AdminCollapsibleFilters>
-      </div>
-
       {loading ? (
         <p className="admin-muted">Loading…</p>
       ) : (
@@ -525,7 +483,7 @@ export function AdminPeoplePage() {
               roleDefaults={roleDefaults}
               assignableRoles={assignableRoles}
               deprecatedRoles={deprecatedRoles}
-              staff={filteredStaff}
+              staff={staff}
               pendingInvites={staffPendingInvites}
               onReload={load}
               onSuccess={setSuccess}
@@ -534,7 +492,7 @@ export function AdminPeoplePage() {
           ) : null}
 
           {tab === 'staff' && canReadStaffDirectory && !canManageUsers ? (
-            <AdminStaffDirectoryReadOnly staff={filteredStaff} />
+            <AdminStaffDirectoryReadOnly staff={staff} />
           ) : null}
 
           {tab === 'staff' && !canReadStaffDirectory ? (
@@ -569,6 +527,7 @@ export function AdminPeoplePage() {
               {!pendingInvitesView ? (
               <AdminPanel
                 title={`Therapists (${filteredTherapists.length})`}
+                padded={false}
                 actions={
                   canManageUsers ? (
                     <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
@@ -581,10 +540,28 @@ export function AdminPeoplePage() {
                   )
                 }
               >
-                {filteredTherapists.length === 0 ? (
+                {therapists.length === 0 ? (
                   <AdminEmptyState title="No therapists yet" description="Use Add therapist or Bulk upload above." />
+                ) : filteredTherapists.length === 0 ? (
+                  <div className="admin-panel__body">
+                    <AdminToolbar>
+                      <AdminSearchInput
+                        value={therapistSearch}
+                        onChange={setTherapistSearch}
+                        placeholder="Search therapists by name or email…"
+                      />
+                    </AdminToolbar>
+                    <AdminEmptyState title="No therapists match" description="Try adjusting search." />
+                  </div>
                 ) : (
-                  <>
+                  <div className="admin-panel__body">
+                    <AdminToolbar>
+                      <AdminSearchInput
+                        value={therapistSearch}
+                        onChange={setTherapistSearch}
+                        placeholder="Search therapists by name or email…"
+                      />
+                    </AdminToolbar>
                     <div className="admin-people-directory-toolbar">
                       <FilterSelect
                         label="Sort"
@@ -775,7 +752,7 @@ export function AdminPeoplePage() {
                       rangeEnd={paginatedTherapists.rangeEnd}
                       onPageChange={setTherapistPage}
                     />
-                  </>
+                  </div>
                 )}
               </AdminPanel>
               ) : null}
@@ -799,6 +776,7 @@ export function AdminPeoplePage() {
               {!pendingInvitesView ? (
               <AdminPanel
                 title={`Clients (${filteredClients.length})`}
+                padded={false}
                 actions={
                   canCreateCase ? (
                     <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
@@ -807,13 +785,31 @@ export function AdminPeoplePage() {
                   ) : null
                 }
               >
-                {filteredClients.length === 0 ? (
+                {clients.length === 0 ? (
                   <AdminEmptyState
                     title="No clients yet"
                     description="Use Add client & case, Add family, or Bulk import above."
                   />
+                ) : filteredClients.length === 0 ? (
+                  <div className="admin-panel__body">
+                    <AdminToolbar>
+                      <AdminSearchInput
+                        value={clientSearch}
+                        onChange={setClientSearch}
+                        placeholder="Search clients by child, parent, email, or case…"
+                      />
+                    </AdminToolbar>
+                    <AdminEmptyState title="No clients match" description="Try adjusting search." />
+                  </div>
                 ) : (
-                  <>
+                  <div className="admin-panel__body">
+                    <AdminToolbar>
+                      <AdminSearchInput
+                        value={clientSearch}
+                        onChange={setClientSearch}
+                        placeholder="Search clients by child, parent, email, or case…"
+                      />
+                    </AdminToolbar>
                     {canManageUsers ? (
                       <PeopleBulkToolbar
                         selectedUserIds={[...selectedClientUserIds]}
@@ -949,7 +945,7 @@ export function AdminPeoplePage() {
                       rangeEnd={paginatedClients.rangeEnd}
                       onPageChange={setClientPage}
                     />
-                  </>
+                  </div>
                 )}
               </AdminPanel>
               ) : null}

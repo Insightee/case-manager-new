@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { paginateList, sortStaffAlphabetical } from '../../lib/peopleDirectoryList.js'
+import { filterStaffDirectory, paginateList, sortStaffAlphabetical } from '../../lib/peopleDirectoryList.js'
 import {
   AdminDataList,
   AdminEmptyState,
@@ -74,16 +74,7 @@ export function AdminStaffManageSection({
 
   const landingHint = useMemo(() => primaryLandingHint(form.role_names), [form.role_names])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return staff
-    return staff.filter(
-      (u) =>
-        u.email?.toLowerCase().includes(q) ||
-        u.full_name?.toLowerCase().includes(q) ||
-        u.roles?.some((r) => r.toLowerCase().includes(q)),
-    )
-  }, [staff, search])
+  const filtered = useMemo(() => filterStaffDirectory(staff, search), [staff, search])
 
   const sortedStaff = useMemo(() => sortStaffAlphabetical(filtered), [filtered])
   const paginatedStaff = useMemo(
@@ -402,11 +393,9 @@ export function AdminStaffManageSection({
       ) : (
         <AdminPanel title={`Staff directory (${filtered.length})`} padded={false}>
         <div className="admin-panel__body">
-          <div className="admin-desktop-only">
-            <AdminToolbar>
-              <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff by name or email…" />
-            </AdminToolbar>
-          </div>
+          <AdminToolbar>
+            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff by name or email…" />
+          </AdminToolbar>
           {filtered.length === 0 ? (
             <AdminEmptyState title="No staff users" description="Use Add staff or adjust search." />
           ) : (
