@@ -14,6 +14,7 @@ from app.models.report import MonthlyReport, ReportStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.support_ticket import SupportTicket, TicketStatus
+from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.services.assignment_service import (
@@ -106,6 +107,18 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
         return empty, False
 
     case_ids = [c.id for c in cases]
+    child_ids = {c.child_id for c in cases}
+    parent_names_by_child: dict[int, str] = {}
+    if child_ids:
+        for child_id, full_name in db.execute(
+            select(parent_child_link.c.child_id, User.full_name)
+            .join(ParentGuardian, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
+            .join(User, User.id == ParentGuardian.user_id)
+            .where(parent_child_link.c.child_id.in_(child_ids))
+            .order_by(parent_child_link.c.child_id, ParentGuardian.id)
+        ).all():
+            if child_id not in parent_names_by_child:
+                parent_names_by_child[child_id] = full_name or ""
 
     active_assignments = db.execute(
         select(
@@ -230,6 +243,7 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
             "case_code": case.case_code,
             "child_id": case.child_id,
             "child_name": case.child.full_name if case.child else None,
+            "parent_name": parent_names_by_child.get(case.child_id),
             "service_type": case.service_type,
             "product_module": case.product_module,
             "status": case.status.value,

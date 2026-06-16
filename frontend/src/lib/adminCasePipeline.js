@@ -276,6 +276,7 @@ export function filterPipelineRows(rows, filters = {}) {
     list = list.filter((r) => {
       const hay = [
         r.case_code,
+        r.parent_name,
         r.child_name,
         r.service_type,
         r.therapist_name,

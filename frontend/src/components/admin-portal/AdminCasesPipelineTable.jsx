@@ -469,7 +469,8 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
               <tr>
                 {canAssign && bulkEligible ? <th style={{ width: 36 }} aria-label="Select" /> : null}
                 <th>Case</th>
-                <th>Client</th>
+                <th>Parent</th>
+                <th>Child</th>
                 <th>Programme</th>
                 <th>Case manager</th>
                 <th>Stage</th>
@@ -508,6 +509,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                       <span className="admin-table__primary">{row.case_code}</span>
                       <span className="admin-table__meta">{row.status?.replaceAll('_', ' ')}</span>
                     </td>
+                    <td>{row.parent_name || '—'}</td>
                     <td>{row.child_name || '—'}</td>
                     <td>
                       <span className="admin-chip">{moduleLabel(row.product_module) || '—'}</span>
@@ -597,7 +599,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                   <li key={row.id}>
                     <AdminTaskCard
                       title={row.case_code}
-                      meta={`${row.child_name || '—'} · ${row.next_action || row.pipeline_label}`}
+                      meta={`${[row.parent_name, row.child_name].filter(Boolean).join(' · ') || '—'} · ${row.next_action || row.pipeline_label}`}
                       badges={
                         <span className={`admin-badge admin-badge--${pipelineStatusBadgeVariant(row.pipeline_tone)}`}>
                           {row.pipeline_label}
