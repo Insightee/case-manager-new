@@ -65,6 +65,17 @@ class CaseRead(CaseBillingFields):
     billing_updated_at: Optional[datetime] = None
     service_address: Optional[AddressRead] = None
     maps_url: Optional[str] = None
+    service_location_type: Optional[str] = None
+    billing_address_same_as_service: Optional[bool] = True
+    billing_address_line1: Optional[str] = None
+    billing_address_line2: Optional[str] = None
+    billing_address_city: Optional[str] = None
+    billing_address_state: Optional[str] = None
+    billing_address_pincode: Optional[str] = None
+    billing_address_landmark: Optional[str] = None
+    status_effective_date: Optional[date] = None
+    status_reason: Optional[str] = None
+    status_changed_by_user_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

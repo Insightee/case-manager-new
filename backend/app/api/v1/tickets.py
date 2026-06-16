@@ -191,13 +191,18 @@ def update_ticket(
     ticket_id: int,
     payload: TicketUpdate,
     request: Request,
-    user: User = Depends(require_mutation_permission("ticket.manage")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    _guard_ticket_staff_write(user, ticket, db)
+    is_staff = user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override")
+    is_therapist = "THERAPIST" in user.role_names
+    if not (is_staff or (is_therapist and ticket_detail_service._can_view_ticket(db, user, ticket))):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    if is_staff:
+        _guard_ticket_staff_write(user, ticket, db)
     if payload.status:
         try:
             ticket_flow.set_ticket_status(db, user, ticket, payload.status)
@@ -205,6 +210,8 @@ def update_ticket(
             raise HTTPException(status_code=400, detail=str(e))
     prev_assignee = ticket.assigned_to_user_id
     if payload.assigned_to_user_id is not None:
+        if not is_staff:
+            raise HTTPException(status_code=403, detail="Not authorized to assign tickets")
         ticket.assigned_to_user_id = payload.assigned_to_user_id
         if ticket.assigned_to_user_id and ticket.assigned_to_user_id != prev_assignee:
             from app.services import ticket_notify_service as ticket_notify
@@ -226,13 +233,18 @@ def resolve_ticket_endpoint(
     ticket_id: int,
     payload: TicketFlowNote,
     request: Request,
-    user: User = Depends(require_mutation_permission("ticket.manage")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     ticket = db.get(SupportTicket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    _guard_ticket_staff_write(user, ticket, db)
+    is_staff = user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override")
+    is_therapist = "THERAPIST" in user.role_names
+    if not (is_staff or (is_therapist and ticket_detail_service._can_view_ticket(db, user, ticket))):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    if is_staff:
+        _guard_ticket_staff_write(user, ticket, db)
     try:
         ticket_flow.resolve_ticket(db, user, ticket, note=payload.note)
     except ValueError as e:

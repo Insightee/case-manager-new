@@ -386,9 +386,8 @@ async def upload_incident_attachments(
 
 
 @router.post("/{incident_id}/messages", status_code=status.HTTP_201_CREATED)
-def add_incident_message(
+async def add_incident_message(
     incident_id: int,
-    payload: IncidentMessageCreate,
     request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -404,7 +403,20 @@ def add_incident_message(
     if is_owner:
         _guard_incident_write(user, incident, db)
 
-    body = payload.body.strip()
+    content_type = request.headers.get("content-type", "")
+    files = []
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        body = str(form.get("body") or "").strip()
+        files = att_svc.files_from_form(form)
+    else:
+        try:
+            data = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        payload = IncidentMessageCreate(**data)
+        body = payload.body.strip()
+
     if not body:
         raise HTTPException(status_code=400, detail="Message body is required")
 
@@ -414,6 +426,7 @@ def add_incident_message(
         body=body,
     )
     db.add(msg)
+    db.flush()
 
     if is_reporter and incident.status in (IncidentStatus.ACTION_TAKEN, IncidentStatus.CLOSED):
         incident.status = IncidentStatus.IN_REVIEW
@@ -421,6 +434,11 @@ def add_incident_message(
         incident.last_owner_activity_at = datetime.now(timezone.utc)
         if incident.status == IncidentStatus.REPORTED:
             incident.status = IncidentStatus.IN_REVIEW
+
+    try:
+        await att_svc.save_attachments(db, incident, user, files, message_id=msg.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="message", entity_type="incident", entity_id=incident_id, **meta)
@@ -435,21 +453,25 @@ def update_incident(
     incident_id: int,
     payload: IncidentUpdate,
     request: Request,
-    user: User = Depends(require_mutation_permission("incident.read_sensitive")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not user_has_feature(user, "incidents", db):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Incidents module access required")
     incident = inc_svc.get_incident_detail(db, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+    is_staff = user_has_feature(user, "incidents", db) and user_has_permission(user, "incident.read_sensitive")
+    is_therapist = "THERAPIST" in user.role_names
+    if not (is_staff or (is_therapist and _can_access(incident, user, db))):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
     if incident.case_id:
         case = case_service.get_case(db, incident.case_id)
         if case and not case_scope_check(db, user, case):
             raise HTTPException(status_code=403, detail="Case access denied")
-    _guard_incident_write(user, incident, db)
-
-    is_owner = incident.assigned_to_user_id == user.id or user_has_permission(user, "admin.override")
+    if is_staff:
+        _guard_incident_write(user, incident, db)
+    if payload.assigned_to_user_id is not None and not is_staff:
+        raise HTTPException(status_code=403, detail="Not authorized to assign incident owners")
+    is_owner = incident.assigned_to_user_id == user.id or user_has_permission(user, "admin.override") or is_therapist
     from app.services import incident_notify_service as inc_notify
 
     before_tagged = inc_notify.collect_tagged_user_ids(db, incident)

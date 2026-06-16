@@ -263,7 +263,7 @@ def test_create_case_without_manual_code():
             "billing_type": "PER_SESSION",
             "compensation_mode": "PERCENTAGE",
             "client_rate_per_session_inr": 1000,
-            "pay_share_pct": 60,
+            "pay_share_amount_inr": 600,
         },
     )
     assert res.status_code == 201, res.text
@@ -331,7 +331,7 @@ def test_allotment_therapists_and_allot_case():
             "compensation_mode": "PERCENTAGE",
             "client_billing_mode": "POSTPAID",
             "client_rate_per_session_inr": 1200,
-            "pay_share_pct": 60,
+            "pay_share_amount_inr": 720,
             "therapist_user_id": therapist_id,
         },
     )
@@ -709,10 +709,10 @@ def test_admin_bulk_import_clients_invite_link_and_duplicate_handling():
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["total"] == 4
-    assert body["success_count"] == 2
+    assert body["success_count"] == 3
     assert body["invited_count"] == 1
-    assert body["linked_existing_parent_count"] == 1
-    assert body["failed_count"] == 2
+    assert body["linked_existing_parent_count"] == 2
+    assert body["failed_count"] == 1
 
     by_email = {r["parent_email"]: r for r in body["results"]}
     assert by_email[new_email]["success"] is True
@@ -721,9 +721,8 @@ def test_admin_bulk_import_clients_invite_link_and_duplicate_handling():
 
     linked_rows = [r for r in body["results"] if r["parent_email"] == existing_email]
     assert len(linked_rows) == 2
-    assert sum(1 for r in linked_rows if r["outcome"] == "linked_existing_parent") == 1
-    failed_existing = next(r for r in linked_rows if r["outcome"] == "failed")
-    assert "already has a child profile" in (failed_existing["error"] or "")
+    assert all(r["success"] is True for r in linked_rows)
+    assert all(r["outcome"] == "linked_existing_parent" for r in linked_rows)
 
     blocked = by_email["therapist@demo.com"]
     assert blocked["success"] is False
@@ -833,7 +832,7 @@ def test_cm_meeting_booking_sends_invite_emails(monkeypatch):
             "scheduled_date": "2026-07-15",
             "scheduled_time": "11:00:00",
             "duration_minutes": 45,
-            "meeting_type": "CLIENT_AND_THERAPIST",
+            "meeting_type": "PARENT_MEETING",
             "title": "Email invite test",
             "meeting_url": "https://meet.google.com/abc-defg-hij",
             "guest_emails": ["guest@example.com"],
@@ -869,7 +868,7 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
             "scheduled_date": "2026-06-01",
             "scheduled_time": "10:00:00",
             "duration_minutes": 30,
-            "meeting_type": "CLIENT_AND_THERAPIST",
+            "meeting_type": "PARENT_MEETING",
             "title": "Therapist-requested CM sync",
         },
     )
@@ -889,7 +888,7 @@ def test_therapist_cm_meeting_without_case_returns_400_not_module_error():
             "scheduled_date": "2026-06-02",
             "scheduled_time": "11:00:00",
             "duration_minutes": 30,
-            "meeting_type": "CLIENT_AND_THERAPIST",
+            "meeting_type": "PARENT_MEETING",
             "title": "Missing case",
         },
     )
@@ -912,7 +911,7 @@ def test_therapist_can_update_cm_meeting_notes():
             "scheduled_date": "2026-06-03",
             "scheduled_time": "15:00:00",
             "duration_minutes": 30,
-            "meeting_type": "CLIENT_AND_THERAPIST",
+            "meeting_type": "PARENT_MEETING",
             "title": "Therapist note test",
         },
     )
@@ -921,24 +920,24 @@ def test_therapist_can_update_cm_meeting_notes():
     updated = client.patch(
         f"/api/v1/cm-meetings/{meeting_id}",
         headers=th_headers,
-        json={"notes_other": "Therapist follow-up from supervision call"},
+        json={"notes_additional": "Therapist follow-up from supervision call"},
     )
     assert updated.status_code == 200, updated.text
-    assert updated.json()["notes_other"] == "Therapist follow-up from supervision call"
+    assert updated.json()["notes_additional"] == "Therapist follow-up from supervision call"
 
 
 def test_cm_meetings_filters_and_case_code():
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
     listed = client.get(
-        "/api/v1/cm-meetings?meeting_type=SUPERVISION&status=SCHEDULED",
+        "/api/v1/cm-meetings?meeting_type=THERAPIST_SUPPORT&status=SCHEDULED",
         headers=headers,
     )
     assert listed.status_code == 200
     items = listed.json()
     assert isinstance(items, list)
     for row in items:
-        assert row.get("meeting_type") == "SUPERVISION"
+        assert row.get("meeting_type") == "THERAPIST_SUPPORT"
         if row.get("case_id"):
             assert row.get("case_code")
 

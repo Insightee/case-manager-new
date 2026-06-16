@@ -15,6 +15,15 @@ from app.models.user import User
 from app.services import case_service
 from app.storage.object_io import put_stored_bytes, stored_file_response
 
+
+def files_from_form(form) -> list[UploadFile]:
+    out: list[UploadFile] = []
+    for _key, value in form.multi_items():
+        if hasattr(value, "read") and getattr(value, "filename", None):
+            out.append(value)
+    return out
+
+
 ALLOWED_MIME_TYPES = frozenset(
     {
         "image/jpeg",

@@ -13,8 +13,8 @@ def validate_case_billing(case: Case) -> None:
             raise HTTPException(status_code=400, detail="client_rate_per_session_inr required for PER_SESSION billing")
         if case.compensation_mode != CompensationMode.PERCENTAGE:
             raise HTTPException(status_code=400, detail="PER_SESSION billing requires PERCENTAGE compensation")
-        if not case.pay_share_pct or case.pay_share_pct < 50 or case.pay_share_pct > 100:
-            raise HTTPException(status_code=400, detail="pay_share_pct must be between 50 and 100")
+        if not case.pay_share_amount_inr or case.pay_share_amount_inr < round(float(case.client_rate_per_session_inr) * 0.5, 2) or case.pay_share_amount_inr > float(case.client_rate_per_session_inr):
+            raise HTTPException(status_code=400, detail="pay_share_amount_inr must be between 50% and 100% of the client rate")
     elif case.billing_type == BillingType.PACKAGE:
         if not case.package_session_count or case.package_session_count <= 0:
             raise HTTPException(status_code=400, detail="package_session_count required for PACKAGE billing")
@@ -23,8 +23,8 @@ def validate_case_billing(case: Case) -> None:
         if not case.compensation_mode:
             raise HTTPException(status_code=400, detail="compensation_mode required for PACKAGE billing")
         if case.compensation_mode == CompensationMode.PERCENTAGE:
-            if not case.pay_share_pct or case.pay_share_pct < 50 or case.pay_share_pct > 100:
-                raise HTTPException(status_code=400, detail="pay_share_pct must be between 50 and 100")
+            if not case.pay_share_amount_inr or case.pay_share_amount_inr < round(float(case.package_amount_inr) * 0.5, 2) or case.pay_share_amount_inr > float(case.package_amount_inr):
+                raise HTTPException(status_code=400, detail="pay_share_amount_inr must be between 50% and 100% of the package amount")
         elif case.compensation_mode == CompensationMode.FIXED_LUMP:
             if not case.therapist_fixed_pay_inr or case.therapist_fixed_pay_inr <= 0:
                 raise HTTPException(status_code=400, detail="therapist_fixed_pay_inr required for FIXED_LUMP compensation")
@@ -41,7 +41,7 @@ def apply_billing_payload(case: Case, data: dict, user_id: int | None = None) ->
         "package_session_count",
         "package_amount_inr",
         "compensation_mode",
-        "pay_share_pct",
+        "pay_share_amount_inr",
         "therapist_fixed_pay_inr",
         "billing_notes",
     }
@@ -72,7 +72,7 @@ def case_billing_dict(case: Case) -> dict:
         "package_session_count": case.package_session_count,
         "package_amount_inr": float(case.package_amount_inr) if case.package_amount_inr else None,
         "compensation_mode": case.compensation_mode.value if case.compensation_mode else None,
-        "pay_share_pct": float(case.pay_share_pct) if case.pay_share_pct else None,
+        "pay_share_amount_inr": float(case.pay_share_amount_inr) if case.pay_share_amount_inr else None,
         "therapist_fixed_pay_inr": float(case.therapist_fixed_pay_inr) if case.therapist_fixed_pay_inr else None,
         "billing_notes": case.billing_notes,
         "client_billing_mode": case.client_billing_mode.value if case.client_billing_mode else None,

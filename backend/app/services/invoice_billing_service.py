@@ -60,9 +60,7 @@ def session_duration_minutes(session: TherapySession, log: DailyLog | None = Non
 
 
 def _per_session_amount(case: Case) -> float:
-    rate = float(case.client_rate_per_session_inr or 0)
-    pct = float(case.pay_share_pct or 0) / 100.0
-    return rate * pct
+    return float(case.pay_share_amount_inr or 0)
 
 
 def _package_per_session_rate(case: Case, use_therapist_fixed: bool) -> float:
@@ -70,7 +68,7 @@ def _package_per_session_rate(case: Case, use_therapist_fixed: bool) -> float:
     if use_therapist_fixed:
         base = float(case.therapist_fixed_pay_inr or 0)
     else:
-        base = float(case.package_amount_inr or 0) * (float(case.pay_share_pct or 0) / 100.0)
+        base = float(case.pay_share_amount_inr or 0)
     return base / pkg_count
 
 
@@ -104,9 +102,7 @@ def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int
         total = round(included_amt + additional_amt, 2)
         return included, additional, total
 
-    pct = float(case.pay_share_pct or 0) / 100.0
-    pkg_amt = float(case.package_amount_inr or 0)
-    per_sess = (pkg_amt / pkg_count) * pct
+    per_sess = float(case.pay_share_amount_inr or 0) / pkg_count
     included_amt = included * per_sess
     additional_amt = additional * per_sess
     total = round(included_amt + additional_amt, 2)
@@ -564,7 +560,7 @@ def db_case_from_preview(case_group: dict) -> Case:
     case.client_rate_per_session_inr = b.get("client_rate_per_session_inr")
     case.package_session_count = b.get("package_session_count")
     case.package_amount_inr = b.get("package_amount_inr")
-    case.pay_share_pct = b.get("pay_share_pct")
+    case.pay_share_amount_inr = b.get("pay_share_amount_inr")
     case.therapist_fixed_pay_inr = b.get("therapist_fixed_pay_inr")
     return case
 

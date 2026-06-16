@@ -8,7 +8,7 @@ const EMPTY = {
   product_module: 'homecare',
   billing_type: 'PER_SESSION',
   client_rate_per_session_inr: '1000',
-  pay_share_pct: '60',
+  pay_share_amount_inr: '600',
   package_session_count: '',
   package_amount_inr: '',
   compensation_mode: 'PERCENTAGE',
@@ -59,7 +59,7 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
         product_module: form.product_module,
         billing_type: form.billing_type,
         compensation_mode: form.compensation_mode,
-        pay_share_pct: Number(form.pay_share_pct),
+        pay_share_amount_inr: Number(form.pay_share_amount_inr),
       }
       if (form.billing_type === 'PER_SESSION') {
         payload.client_rate_per_session_inr = Number(form.client_rate_per_session_inr)
@@ -133,8 +133,8 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
             <input type="number" required value={form.client_rate_per_session_inr} onChange={(e) => setField('client_rate_per_session_inr', e.target.value)} />
           </label>
           <label>
-            Therapist share %
-            <input type="number" min="50" max="100" step="0.01" inputMode="decimal" required value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
+            Therapist share (INR)
+            <input type="number" min="0" step="0.01" inputMode="decimal" required value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
           </label>
         </>
       ) : (
@@ -156,8 +156,8 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
           </label>
           {form.compensation_mode === 'PERCENTAGE' ? (
             <label>
-              Therapist share %
-              <input type="number" min="50" max="100" step="0.01" inputMode="decimal" value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
+              Therapist share (INR)
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
             </label>
           ) : (
             <label>

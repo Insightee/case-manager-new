@@ -14,7 +14,7 @@ def _case_per_session():
     c.billing_type = BillingType.PER_SESSION
     c.client_rate_per_session_inr = 1000
     c.compensation_mode = CompensationMode.PERCENTAGE
-    c.pay_share_pct = 60
+    c.pay_share_amount_inr = 600
     return c
 
 
@@ -30,7 +30,7 @@ def _case_package_pct():
     c.package_session_count = 20
     c.package_amount_inr = 25000
     c.compensation_mode = CompensationMode.PERCENTAGE
-    c.pay_share_pct = 60
+    c.pay_share_amount_inr = 15000
     return c
 
 

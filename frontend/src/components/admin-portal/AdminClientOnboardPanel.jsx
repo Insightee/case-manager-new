@@ -32,10 +32,7 @@ export function AdminClientOnboardPanel({
             Add client & case
           </button>
         ) : null}
-        <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={onAddFamily}>
-          Add family
-        </button>
-        <Link to="/admin/client-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
+        <Link to="/admin/client-profiles" className="admin-btn admin-btn--secondary admin-btn--sm">
           Bulk import
         </Link>
       </div>

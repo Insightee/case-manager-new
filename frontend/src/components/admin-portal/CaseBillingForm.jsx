@@ -10,7 +10,7 @@ const EMPTY = {
   package_session_count: '',
   package_amount_inr: '',
   compensation_mode: '',
-  pay_share_pct: '',
+  pay_share_amount_inr: '',
   therapist_fixed_pay_inr: '',
   billing_notes: '',
 }
@@ -38,7 +38,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
       package_session_count: caseItem.package_session_count ?? '',
       package_amount_inr: caseItem.package_amount_inr ?? '',
       compensation_mode: caseItem.compensation_mode || '',
-      pay_share_pct: caseItem.pay_share_pct ?? '',
+      pay_share_amount_inr: caseItem.pay_share_amount_inr ?? '',
       therapist_fixed_pay_inr: caseItem.therapist_fixed_pay_inr ?? '',
       billing_notes: caseItem.billing_notes || '',
     })
@@ -71,7 +71,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
         package_session_count: form.package_session_count ? Number(form.package_session_count) : null,
         package_amount_inr: form.package_amount_inr ? Number(form.package_amount_inr) : null,
         compensation_mode: form.compensation_mode || null,
-        pay_share_pct: form.pay_share_pct ? Number(form.pay_share_pct) : null,
+        pay_share_amount_inr: form.pay_share_amount_inr ? Number(form.pay_share_amount_inr) : null,
         therapist_fixed_pay_inr: form.therapist_fixed_pay_inr ? Number(form.therapist_fixed_pay_inr) : null,
         billing_notes: form.billing_notes || null,
       }
@@ -91,7 +91,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
     package_session_count: form.package_session_count,
     package_amount_inr: form.package_amount_inr,
     compensation_mode: form.compensation_mode,
-    pay_share_pct: form.pay_share_pct,
+    pay_share_amount_inr: form.pay_share_amount_inr,
     therapist_fixed_pay_inr: form.therapist_fixed_pay_inr,
   })
 
@@ -152,8 +152,8 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
             <input type="number" min="0" value={form.client_rate_per_session_inr} onChange={(e) => setField('client_rate_per_session_inr', e.target.value)} />
           </label>
           <label>
-            Therapist share % (50–100)
-            <input type="number" min="50" max="100" step="0.01" inputMode="decimal" value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
+            Therapist share (INR)
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
           </label>
         </>
       ) : null}
@@ -178,8 +178,8 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
           </label>
           {form.compensation_mode === 'PERCENTAGE' ? (
             <label>
-              Therapist share % (50–100)
-              <input type="number" min="50" max="100" step="0.01" inputMode="decimal" value={form.pay_share_pct} onChange={(e) => setField('pay_share_pct', e.target.value)} />
+              Therapist share (INR)
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
             </label>
           ) : null}
           {form.compensation_mode === 'FIXED_LUMP' ? (

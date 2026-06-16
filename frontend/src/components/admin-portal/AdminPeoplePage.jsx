@@ -4,7 +4,6 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList, fetchAllPages } from '../../lib/listApi.js'
 import { AdminStaffDirectoryReadOnly } from './AdminStaffDirectoryReadOnly.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
 import { AdminClientOnboardPanel } from './AdminClientOnboardPanel.jsx'
 import { AdminTherapistOnboardPanel } from './AdminTherapistOnboardPanel.jsx'
 import { AdminStaffManageSection } from './AdminStaffManageSection.jsx'
@@ -49,7 +48,6 @@ export function AdminPeoplePage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
-  const [showFamilyWizard, setShowFamilyWizard] = useState(false)
   const [familySearchDebounced, setFamilySearchDebounced] = useState('')
   const [rowBusy, setRowBusy] = useState(null)
   const [lastProvision, setLastProvision] = useState(null)
@@ -305,6 +303,14 @@ export function AdminPeoplePage() {
           >
             Edit access
           </button>
+          {f.hasOpenCase && f.primaryCaseId ? (
+            <Link
+              to={`/admin/cases/${f.primaryCaseId}?tab=overview`}
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+            >
+              Client status →
+            </Link>
+          ) : null}
           <PeopleRowActions
             user={clientUser}
             rowBusy={rowBusy}
@@ -315,6 +321,7 @@ export function AdminPeoplePage() {
             lastProvision={lastProvision}
             setLastProvision={setLastProvision}
             extraActions={secondary}
+            showDeactivate={!f.hasOpenCase}
           />
         </div>
       )
@@ -745,7 +752,7 @@ export function AdminPeoplePage() {
                 {filteredClients.length === 0 ? (
                   <AdminEmptyState
                     title="No clients yet"
-                    description="Use Add client & case, Add family, or Bulk import above."
+                    description="Use Add client & case or Bulk import above."
                   />
                 ) : (
                   <>
@@ -896,43 +903,6 @@ export function AdminPeoplePage() {
         onError={setError}
       />
 
-      {showFamilyWizard ? (
-        <div
-          className="admin-drawer-backdrop"
-          role="presentation"
-          onClick={() => setShowFamilyWizard(false)}
-        >
-          <div
-            className="admin-drawer admin-drawer--wide"
-            role="dialog"
-            aria-labelledby="add-family-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="admin-drawer__header">
-              <h2 id="add-family-title" className="admin-drawer__title">
-                Add family
-              </h2>
-              <button
-                type="button"
-                className="admin-btn admin-btn--ghost admin-btn--sm"
-                onClick={() => setShowFamilyWizard(false)}
-              >
-                Close
-              </button>
-            </header>
-            <div className="admin-drawer__body">
-              <AdminAddFamilyWizard
-                onComplete={() => {
-                  setShowFamilyWizard(false)
-                  setSuccess('Family saved.')
-                  load()
-                }}
-                onCancel={() => setShowFamilyWizard(false)}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }

@@ -4,6 +4,9 @@ import { unwrapList } from '../../lib/listApi.js'
 import { INCIDENT_STATUS_META, PRIORITY_META } from '../../lib/incidentCatalog.js'
 import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { TicketFlowDialog } from './TicketFlowDialog.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { TicketFileInput } from './TicketFileInput.jsx'
+import { TicketAttachmentList } from './TicketAttachmentList.jsx'
 
 const FLOW_API = '/api/v1/incidents'
 
@@ -129,7 +132,10 @@ export function IncidentDetailPanel({
   apiBase = '/api/v1/incidents',
   canManage = false,
 }) {
+  const { user } = useAuth()
+  const isStaff = user?.roles?.some((r) => STAFF_ROLES.has(r))
   const [reply, setReply] = useState('')
+  const [replyFiles, setReplyFiles] = useState([])
   const [actionNote, setActionNote] = useState(incident?.action_taken_note || '')
   const [taggedUserIds, setTaggedUserIds] = useState(incident?.tagged_user_ids || [])
   const [staffUsers, setStaffUsers] = useState([])
@@ -139,8 +145,10 @@ export function IncidentDetailPanel({
   const [dialog, setDialog] = useState(null)
   const [tagRole, setTagRole] = useState(null)
   const [tagBanner, setTagBanner] = useState(null)
-  const [assignBanner, setAssignBanner] = useState(null)
-  const [pendingOwnerId, setPendingOwnerId] = useState(null)
+
+  const incidentLevelAttachments = useMemo(() => {
+    return (incident.attachments || []).filter((a) => !a.message_id)
+  }, [incident.attachments])
 
   useEffect(() => {
     setActionNote(incident?.action_taken_note || '')
@@ -148,7 +156,7 @@ export function IncidentDetailPanel({
   }, [incident?.id, incident?.status, incident?.tagged_user_ids])
 
   useEffect(() => {
-    if (!canManage) return
+    if (!canManage || !isStaff) return
     apiFetch('/api/v1/admin/users?page_size=100')
       .then((users) => {
         const list = unwrapList(users)
@@ -157,7 +165,7 @@ export function IncidentDetailPanel({
         )
       })
       .catch(() => setStaffUsers([]))
-  }, [canManage])
+  }, [canManage, isStaff])
 
   const taggedUsersDisplay = useMemo(() => {
     const fromApi = incident?.tagged_users || []
@@ -205,11 +213,20 @@ export function IncidentDetailPanel({
     setBusy(true)
     setError('')
     try {
-      const updated = await apiFetch(`${apiBase}/${incident.id}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ body: reply.trim() }),
-      })
+      let updated
+      if (replyFiles.length > 0) {
+        const fd = new FormData()
+        fd.append('body', reply.trim())
+        replyFiles.forEach((f) => fd.append('files', f))
+        updated = await apiUpload(`${apiBase}/${incident.id}/messages`, fd)
+      } else {
+        updated = await apiFetch(`${apiBase}/${incident.id}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ body: reply.trim() }),
+        })
+      }
       setReply('')
+      setReplyFiles([])
       onUpdated?.(updated)
     } catch (err) {
       setError(err.message || 'Could not send reply')
@@ -289,24 +306,6 @@ export function IncidentDetailPanel({
     applyTaggedUserIds([...taggedUserIds, user.id], user.full_name)
   }
 
-  async function assignOwner(userId) {
-    setBusy(true)
-    setError('')
-    try {
-      await apiFetch(`${patchBase}/${incident.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ assigned_to_user_id: userId }),
-      })
-      await refresh()
-      const name = staffUsers.find((u) => u.id === userId)?.full_name || 'team member'
-      setAssignBanner(userId ? `Assigned to ${name}` : 'Incident unassigned')
-      setPendingOwnerId(null)
-    } catch (err) {
-      setError(err.message || 'Could not assign owner')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   function handleStatusPick(statusKey) {
     if (statusKey === 'CLOSED') {
@@ -436,33 +435,12 @@ export function IncidentDetailPanel({
         </div>
       ) : null}
 
-      {assignBanner ? (
-        <div
-          style={{
-            background: '#eef2ff',
-            border: '1px solid #c7d2fe',
-            borderRadius: 10,
-            padding: '8px 12px',
-            fontSize: '0.8rem',
-            color: '#3730a3',
-            marginBottom: 12,
-            display: 'flex',
-            justifyContent: 'space-between',
-            gap: 8,
-          }}
-        >
-          <span>{assignBanner}</span>
-          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setAssignBanner(null)}>
-            Dismiss
-          </button>
-        </div>
-      ) : null}
 
-      {(incident.attachments || []).length > 0 ? (
+      {incidentLevelAttachments.length > 0 ? (
         <div style={{ marginBottom: 12 }}>
           <p style={{ fontSize: '0.75rem', fontWeight: 600, margin: '0 0 6px' }}>Attachments</p>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.8rem' }}>
-            {incident.attachments.map((a) => (
+            {incidentLevelAttachments.map((a) => (
               <li key={a.id}>
                 <button
                   type="button"
@@ -478,29 +456,32 @@ export function IncidentDetailPanel({
         </div>
       ) : null}
 
-      {!isClosed && !canManage ? (
-        <div style={{ marginBottom: 12 }}>
-          <input type="file" multiple onChange={(e) => setUploadFiles(Array.from(e.target.files || []))} />
-          {uploadFiles.length > 0 ? (
-            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={busy} onClick={uploadAttachments} style={{ marginTop: 6 }}>
-              Upload {uploadFiles.length} file(s)
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className="ticket-thread">
-        {(incident.messages || []).map((m) => (
-          <div
-            key={m.id}
-            className={`ticket-bubble ${m.is_reporter ? 'ticket-bubble--raiser' : 'ticket-bubble--staff'}`}
-          >
-            <div className="ticket-bubble__meta">
-              {m.author_name} · {fmtTime(m.created_at)}
+        {(incident.messages || []).map((m) => {
+          const isOwn = m.author_user_id === user?.id
+          const bubbleClass = isOwn ? 'ticket-bubble--own' : 'ticket-bubble--other'
+          return (
+            <div
+              key={m.id}
+              className={`ticket-bubble ${bubbleClass}`}
+            >
+              {!isOwn && (
+                <span className="ticket-bubble__author">
+                  {m.author_name}
+                </span>
+              )}
+              <div className="ticket-bubble__body">
+                {m.body}
+                <span className="ticket-bubble__time">{fmtTime(m.created_at)}</span>
+              </div>
+              {m.attachments?.length > 0 ? (
+                <div style={{ marginTop: 6, clear: 'both' }}>
+                  <TicketAttachmentList attachments={m.attachments} downloadPrefix="/api/v1/incidents" />
+                </div>
+              ) : null}
             </div>
-            <div className="ticket-bubble__body">{m.body}</div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {incident.status === 'ACTION_TAKEN' && !canManage ? (
@@ -542,16 +523,7 @@ export function IncidentDetailPanel({
               />
             </label>
           ) : null}
-          {canManage && !isClosed ? (
-            <div style={{ marginTop: 8 }}>
-              <input type="file" multiple onChange={(e) => setUploadFiles(Array.from(e.target.files || []))} />
-              {uploadFiles.length > 0 ? (
-                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={busy} onClick={uploadAttachments} style={{ marginTop: 6 }}>
-                  Upload {uploadFiles.length} file(s)
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+          <TicketFileInput files={replyFiles} onChange={setReplyFiles} disabled={busy} />
           {error ? <p style={{ color: '#b91c1c', fontSize: '0.78rem', marginTop: 8 }} role="alert">{error}</p> : null}
 
           {canManage && tagRole ? (
@@ -592,16 +564,6 @@ export function IncidentDetailPanel({
             </div>
           ) : null}
 
-          {canManage && pendingOwnerId != null && !tagRole ? (
-            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={busy} onClick={() => assignOwner(pendingOwnerId)}>
-                Confirm assign owner
-              </button>
-              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setPendingOwnerId(null)}>
-                Cancel
-              </button>
-            </div>
-          ) : null}
 
           <div className="ticket-compose__actions" style={{ flexWrap: 'wrap', marginTop: 12, gap: 8, alignItems: 'center' }}>
             {canManage ? (
@@ -612,38 +574,39 @@ export function IncidentDetailPanel({
                   items={statusMenuItems}
                   disabled={busy}
                 />
-                <ActionMenu
-                  label="Tag / notify"
-                  items={TAG_GROUPS.map((g) => ({
-                    key: g.role,
-                    label: g.label,
-                    disabled: !staffUsers.some((u) => userInTagGroup(u, g)),
-                    onClick: () => {
-                      setPendingOwnerId(null)
-                      setTagRole(g.role)
-                    },
-                  }))}
-                  disabled={busy}
-                />
-                <ActionMenu
-                  label="Assign owner"
-                  items={[
-                    {
-                      key: 'unassigned',
-                      label: 'Unassigned',
-                      onClick: () => assignOwner(null),
-                    },
-                    ...staffUsers.map((u) => ({
-                      key: String(u.id),
-                      label: `${u.full_name} (${u.email})`,
+                {isStaff && (
+                  <ActionMenu
+                    label="Tag / notify"
+                    items={TAG_GROUPS.map((g) => ({
+                      key: g.role,
+                      label: g.label,
+                      disabled: !staffUsers.some((u) => userInTagGroup(u, g)),
                       onClick: () => {
-                        setTagRole(null)
-                        setPendingOwnerId(u.id)
+                        setTagRole(g.role)
                       },
-                    })),
-                  ]}
-                  disabled={busy}
-                />
+                    }))}
+                    disabled={busy}
+                  />
+                )}
+                {incident.can_escalate && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="admin-btn admin-btn--secondary admin-btn--sm"
+                    onClick={() =>
+                      setDialog({
+                        action: 'escalate',
+                        title: 'Escalate incident',
+                        description: 'Not satisfied with the team response? Escalate for senior review.',
+                        confirmLabel: 'Escalate',
+                        requireNote: false,
+                        noteLabel: 'What was missing? (optional)',
+                      })
+                    }
+                  >
+                    Escalate…
+                  </button>
+                )}
                 <button type="button" className="ticket-compose__send" disabled={busy || !replyOk} onClick={sendReply}>
                   Send reply
                 </button>

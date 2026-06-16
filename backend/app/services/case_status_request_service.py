@@ -85,6 +85,12 @@ def get_pending_for_case(db: Session, case_id: int) -> CaseStatusRequest | None:
 
 
 def assert_case_allows_new_session(db: Session, case_id: int) -> None:
+    case = db.get(Case, case_id)
+    if case is not None:
+        current = case.status.value if hasattr(case.status, "value") else str(case.status)
+        if current == CaseStatus.DEACTIVATED.value:
+            raise ValueError("Case is deactivated — no new sessions can be created")
+
     pending = get_pending_for_case(db, case_id)
     if not pending:
         return

@@ -18,7 +18,7 @@ const EMPTY_BILLING = {
   billing_type: 'PER_SESSION',
   client_billing_mode: 'POSTPAID',
   client_rate_per_session_inr: '1000',
-  pay_share_pct: '60',
+  pay_share_amount_inr: '600',
   package_session_count: '12',
   package_amount_inr: '12000',
   compensation_mode: 'PERCENTAGE',
@@ -246,7 +246,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         billing_type: billing.billing_type,
         client_billing_mode: billing.client_billing_mode,
         compensation_mode: billing.compensation_mode,
-        pay_share_pct: Number(billing.pay_share_pct),
+        pay_share_amount_inr: Number(billing.pay_share_amount_inr),
         therapist_user_id: Number(therapistId),
       }
       if (billing.product_billing_rule_id) {
@@ -667,20 +667,19 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     />
                   </label>
                   <label>
-                    Therapist pay share %
+                    Therapist pay share (INR)
                     <input
                       type="number"
-                      min="50"
-                      max="100"
+                      min="0"
                       step="0.01"
                       inputMode="decimal"
                       className="admin-input"
-                      value={billing.pay_share_pct}
-                      onChange={(e) => setBill('pay_share_pct', e.target.value)}
+                      value={billing.pay_share_amount_inr}
+                      onChange={(e) => setBill('pay_share_amount_inr', e.target.value)}
                       disabled={!therapistId}
                     />
                     <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Share of client session fee paid to the assigned therapist (50–100%, decimals OK).
+                      Share of client session fee paid to the assigned therapist in INR.
                     </span>
                   </label>
                 </>
@@ -707,20 +706,19 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     />
                   </label>
                   <label>
-                    Therapist pay share %
+                    Therapist pay share (INR)
                     <input
                       type="number"
-                      min="50"
-                      max="100"
+                      min="0"
                       step="0.01"
                       inputMode="decimal"
                       className="admin-input"
-                      value={billing.pay_share_pct}
-                      onChange={(e) => setBill('pay_share_pct', e.target.value)}
+                      value={billing.pay_share_amount_inr}
+                      onChange={(e) => setBill('pay_share_amount_inr', e.target.value)}
                       disabled={!therapistId}
                     />
                     <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                      Percentage of package value for therapist payout (50–100%, decimals OK).
+                      Share of client package value paid to the assigned therapist in INR.
                     </span>
                   </label>
                 </>
@@ -757,8 +755,8 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
               <dt>Therapist billing</dt>
               <dd>
                 {billing.billing_type === 'PER_SESSION'
-                  ? `Per session · ₹${billing.client_rate_per_session_inr}/session · ${billing.pay_share_pct}% pay share`
-                  : `Package · ${billing.package_session_count} sessions · ₹${billing.package_amount_inr} · ${billing.pay_share_pct}% pay share`}
+                  ? `Per session · ₹${billing.client_rate_per_session_inr}/session · ₹${billing.pay_share_amount_inr || 0} therapist share`
+                  : `Package · ${billing.package_session_count} sessions · ₹${billing.package_amount_inr} · ₹${billing.pay_share_amount_inr || 0} therapist share`}
               </dd>
             </div>
           </dl>
@@ -810,8 +808,8 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                 <dt>Billing</dt>
                 <dd>
                   {previewData.billing_summary.billing_type === 'PER_SESSION'
-                    ? `Per session · ₹${previewData.billing_summary.client_rate_per_session_inr} · ${previewData.billing_summary.pay_share_pct}% pay share`
-                    : `Package · ${previewData.billing_summary.package_session_count} sessions · ₹${previewData.billing_summary.package_amount_inr}`}
+                    ? `Per session · ₹${previewData.billing_summary.client_rate_per_session_inr} · ₹${previewData.billing_summary.pay_share_amount_inr || 0} therapist share`
+                    : `Package · ${previewData.billing_summary.package_session_count} sessions · ₹${previewData.billing_summary.package_amount_inr} · ₹${previewData.billing_summary.pay_share_amount_inr || 0} therapist share`}
                 </dd>
               </div>
             ) : null}

@@ -20,6 +20,7 @@ import {
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminReportDetailDrawer } from './AdminReportDetailDrawer.jsx'
 import { AdminReportsTable } from './AdminReportsTable.jsx'
+import { AdminClientStatusReportSection } from './AdminClientStatusReportSection.jsx'
 import './admin-reports.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -60,6 +61,7 @@ const VIEW_TAB_OPTIONS = [
   { value: 'all', label: 'All reports' },
   { value: 'missing', label: 'Missing monthly' },
   { value: 'iep', label: 'Pending IEP' },
+  { value: 'client-status', label: 'Client status lifecycle' },
 ]
 
 function viewTabLabel(tab) {
@@ -293,6 +295,7 @@ export function AdminReportsPage() {
   useEffect(() => {
     if (tab === 'missing') loadMissing()
     else if (tab === 'iep') loadIepPending()
+    else if (tab === 'client-status') return
     else loadList()
   }, [tab, loadList, loadMissing, loadIepPending])
 
@@ -568,7 +571,7 @@ export function AdminReportsPage() {
         {seesAllCases ? 'Showing all cases' : 'Showing your assigned caseload only'}
       </p>
 
-      {summary ? (
+      {summary && tab !== 'client-status' ? (
         <div className="admin-reports__kpis" role="group" aria-label="Report summary filters">
           {KPI_FILTERS.map((kpi) => (
             <button
@@ -923,6 +926,8 @@ export function AdminReportsPage() {
             </div>
           )}
         </div>
+      ) : tab === 'client-status' ? (
+        <AdminClientStatusReportSection />
       ) : tab === 'missing' ? (
         <div style={{ marginBottom: 16 }}>
           <div className="admin-reports__missing-actions admin-desktop-only" style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
@@ -987,7 +992,7 @@ export function AdminReportsPage() {
         />
       )}
 
-      {tab !== 'missing' && tab !== 'iep' ? (
+      {tab !== 'missing' && tab !== 'iep' && tab !== 'client-status' ? (
       <div className="admin-reports__pagination">
         <button
           type="button"

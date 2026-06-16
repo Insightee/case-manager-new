@@ -13,7 +13,7 @@ from app.api.v1 import (
     auth,
     notifications,
     cases,
-    cm_meetings,
+    meetings,
     daily_logs,
     hr,
     incidents,
@@ -36,12 +36,14 @@ from app.api.v1 import (
     case_documents,
     case_services,
     session_absence,
+    memos,
 )
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
 api_router.include_router(notifications.router)
-api_router.include_router(cm_meetings.router)
+api_router.include_router(meetings.router)
+api_router.include_router(meetings.compat_router)
 api_router.include_router(cases.router)
 api_router.include_router(case_services.router)
 api_router.include_router(assignments.router)
@@ -74,3 +76,4 @@ api_router.include_router(geocode.router)
 api_router.include_router(files.router)
 api_router.include_router(case_documents.router)
 api_router.include_router(case_documents.documents_router)
+api_router.include_router(memos.router)

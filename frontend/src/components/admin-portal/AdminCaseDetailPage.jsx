@@ -20,6 +20,7 @@ import { CaseActivityPanel } from './CaseActivityPanel.jsx'
 import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { IepBuilderPanel } from './IepBuilderPanel.jsx'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
+import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
 import './admin-case-detail-mobile.css'
 
 const TABS = [
@@ -209,6 +210,14 @@ export function AdminCaseDetailPage() {
 
       {tab === 'overview' && (
         <section className="admin-layout admin-layout--stack">
+          {caseRow ? (
+            <CaseClientStatusCard
+              caseId={caseRow.id}
+              caseRow={caseRow}
+              canEdit={canEditCase}
+              onStatusChanged={(updatedCase) => setCaseRow(updatedCase)}
+            />
+          ) : null}
           {addr ? (
             <div className="admin-panel" style={{ padding: 16 }}>
               <h3 style={{ marginTop: 0 }}>Service address</h3>

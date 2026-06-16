@@ -102,6 +102,46 @@ export function TherapistLeaveBalancePanel({
         Balances refresh each January. Use backfill for leave taken before the new system or when auto totals are wrong.
       </p>
 
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, fontSize: '0.85rem', color: '#4b5563', flexWrap: 'wrap' }}>
+        <div>
+          <span style={{ fontWeight: 600 }}>Start date:</span>{' '}
+          {balance.employment_start_date ? (
+            <span style={{ color: '#111827', fontWeight: 500 }}>
+              {new Date(balance.employment_start_date).toLocaleDateString('en-IN', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </span>
+          ) : (
+            <span style={{ color: '#ef4444', fontWeight: 600 }}>Not set</span>
+          )}
+          {balance.employment_start_date && balance.profile_status && balance.profile_status !== 'APPROVED' ? (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                padding: '2px 6px',
+                borderRadius: 4,
+                background: balance.profile_status === 'PENDING' ? '#fef3c7' : '#f4f4f5',
+                color: balance.profile_status === 'PENDING' ? '#b45309' : '#52525b',
+              }}
+            >
+              {balance.profile_status === 'PENDING' ? 'Pending approval' : 'Draft'}
+            </span>
+          ) : null}
+        </div>
+        {balance.employment_start_date ? (
+          <div>
+            <span style={{ fontWeight: 600 }}>Policy tier:</span>{' '}
+            <span style={{ color: '#111827', fontWeight: 500, textTransform: 'capitalize' }}>
+              {balance.policy_tier ? balance.policy_tier.replace(/_/g, ' ') : '—'}
+            </span>
+          </div>
+        ) : null}
+      </div>
+
       {!updated ? (
         <p className="therapist-leave-panel__banner">
           Add consultant start date below to calculate paid entitlement and remaining days for {year}.

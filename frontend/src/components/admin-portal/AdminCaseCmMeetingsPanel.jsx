@@ -31,7 +31,7 @@ function participantLine(m) {
 }
 
 function meetingHref(caseId) {
-  return `/admin/cm-meetings?case_id=${caseId}`
+  return `/admin/meetings?case_id=${caseId}`
 }
 
 export function AdminCaseCmMeetingsPanel({ caseId }) {
@@ -41,7 +41,7 @@ export function AdminCaseCmMeetingsPanel({ caseId }) {
   useEffect(() => {
     if (!caseId) return
     setLoading(true)
-    apiFetch(`/api/v1/cm-meetings?case_id=${caseId}`)
+    apiFetch(`/api/v1/meetings?case_id=${caseId}`)
       .then(setMeetings)
       .catch(() => setMeetings([]))
       .finally(() => setLoading(false))

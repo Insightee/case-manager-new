@@ -592,7 +592,7 @@ def build_workbench_summary(db: Session, user: User) -> dict:
                     title=m.title or m.meeting_type.value,
                     scheduled_date=m.scheduled_date.isoformat(),
                     meeting_type=m.meeting_type.value,
-                    href=f"/admin/cm-meetings?case_id={case.id}" if case else "/admin/cm-meetings",
+                    href=f"/admin/meetings?case_id={case.id}" if case else "/admin/meetings",
                 )
                 for m, case, child in meet_rows
             ],

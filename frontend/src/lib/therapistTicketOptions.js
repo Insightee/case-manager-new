@@ -3,7 +3,7 @@ export const THERAPIST_REQUEST_TYPES = [
   { value: 'CASE_MANAGER', label: 'Case manager', topic: 'CASE_MANAGER', category: 'SERVICE' },
   { value: 'FINANCE', label: 'Finance / billing', topic: 'BILLING_PAYMENT', category: 'FINANCE' },
   { value: 'HR', label: 'HR', topic: 'OTHER', category: 'HR' },
-  { value: 'SERVICE', label: 'Service delivery', topic: 'OTHER', category: 'SERVICE' },
+  { value: 'SERVICE', label: 'Client related', topic: 'OTHER', category: 'SERVICE' },
   { value: 'POSH', label: 'POSH', topic: 'OTHER', category: 'POSH' },
   { value: 'CPP', label: 'CPP', topic: 'OTHER', category: 'CPP' },
   { value: 'OTHER', label: 'General / other', topic: 'OTHER', category: 'OTHER' },

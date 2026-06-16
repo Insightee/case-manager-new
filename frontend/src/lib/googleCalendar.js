@@ -146,7 +146,7 @@ const CM_TYPE_LABELS = {
   IEP_MEETING: 'IEP discussion',
 }
 
-export function mapCmMeetingToCalendarEvent(meeting, { deepLinkPath = '/admin/cm-meetings' } = {}) {
+export function mapCmMeetingToCalendarEvent(meeting, { deepLinkPath = '/admin/meetings' } = {}) {
   if (!meeting?.scheduled_date) return null
   const typeLabel =
     CM_TYPE_LABELS[meeting.meeting_type]

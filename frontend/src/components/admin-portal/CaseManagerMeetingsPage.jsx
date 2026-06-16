@@ -11,9 +11,21 @@ import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import './admin-reports.css'
 
 const MEETING_TYPES = [
-  { value: 'CLIENT_ONLY', label: 'Progress review' },
-  { value: 'CLIENT_AND_THERAPIST', label: 'Care coordination' },
-  { value: 'IEP_MEETING', label: 'IEP discussion' },
+  { value: 'OBSERVATION_REVIEW', label: 'Observation review' },
+  { value: 'OBSERVATION_CHECKLIST_REVIEW', label: 'Observation checklist review' },
+  { value: 'IEP_MEETING', label: 'IEP meeting' },
+  { value: 'MONTHLY_REPORT_REVIEW', label: 'Monthly report review' },
+  { value: 'PROGRESS_REVIEW', label: 'Progress review' },
+  { value: 'PARENT_MEETING', label: 'Parent meeting' },
+  { value: 'SCHOOL_MEETING', label: 'School meeting' },
+  { value: 'THERAPIST_SUPPORT', label: 'Therapist support' },
+  { value: 'MENTOR_REVIEW', label: 'Mentor review' },
+  { value: 'INCIDENT_REVIEW', label: 'Incident review' },
+  { value: 'SUPPORT_TICKET_REVIEW', label: 'Support ticket review' },
+  { value: 'ADMINISTRATIVE_MEETING', label: 'Administrative meeting' },
+  { value: 'TRANSITION_PLANNING', label: 'Transition planning' },
+  { value: 'CASE_CLOSURE_MEETING', label: 'Case closure meeting' },
+  { value: 'OTHER', label: 'Other (specify below)' },
 ]
 
 const STATUS_FILTER_OPTIONS = [
@@ -62,7 +74,7 @@ const STATUS_LABELS = {
 function StatusBadge({ status }) {
   const s = STATUS_LABELS[status] || { label: status, bg: '#f1f5f9', color: '#475569' }
   return (
-    <span style={{ fontSize: '0.72rem', fontWeight: 700, borderRadius: 99, padding: '2px 9px', background: s.bg, color: s.color, border: `1px solid ${s.color}22` }}>
+    <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px', borderRadius: 6, background: s.bg, color: s.color }}>
       {s.label}
     </span>
   )
@@ -75,7 +87,7 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
     scheduled_date: today,
     scheduled_time: '10:00',
     duration_minutes: 30,
-    meeting_type: 'CLIENT_ONLY',
+    meeting_type: 'OBSERVATION_REVIEW',
     title: '',
     meeting_url: '',
   })
@@ -93,6 +105,8 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
   const [caseDetail, setCaseDetail] = useState(null)
   const [therapists, setTherapists] = useState([])
   const [adminUsers, setAdminUsers] = useState([])
+  const [slots, setSlots] = useState(null)
+  const [slotsLoading, setSlotsLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [createdMeeting, setCreatedMeeting] = useState(null)
@@ -106,20 +120,7 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
     setForm((f) => ({ ...f, case_id: String(cases[0].id) }))
   }, [isTherapistBooking, cases, form.case_id])
 
-  const filteredCases = useMemo(() => {
-    const q = caseSearch.trim().toLowerCase()
-    if (!q) return cases
-    return cases.filter(
-      (c) =>
-        String(c.childName || '').toLowerCase().includes(q)
-        || String(c.caseCode || c.caseId || c.id).toLowerCase().includes(q)
-    )
-  }, [cases, caseSearch])
-
-  const selectedCase = cases.find((c) => String(c.id) === String(form.case_id))
-
   useEffect(() => {
-    if (!canPickAdmin) return
     apiFetch('/api/v1/admin/users?page_size=200')
       .then((rows) => {
         const list = Array.isArray(rows) ? rows : rows?.items || []
@@ -127,15 +128,13 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
           list.filter((u) => {
             const roles = u.roles || []
             return (
-              roles.includes('MODULE_ADMIN')
-              || roles.includes('SUPER_ADMIN')
-              || roles.includes('ADMIN')
+              roles.includes('MODULE_ADMIN') || roles.includes('SUPER_ADMIN') || roles.includes('ADMIN')
             ) && !roles.includes('SUPERVISOR')
           }),
         )
       })
       .catch(() => setAdminUsers([]))
-  }, [canPickAdmin])
+  }, [])
 
   useEffect(() => {
     if (!form.case_id) {
@@ -155,20 +154,24 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
       .catch(() => setCaseDetail(null))
   }, [form.case_id])
 
+  useEffect(() => {
+    if (!isTherapistBooking || !form.case_id) { setSlots(null); return }
+    setSlotsLoading(true)
+    apiFetch(`/api/v1/booking/slots?case_id=${form.case_id}&date=${form.scheduled_date}`)
+      .then(setSlots)
+      .catch(() => setSlots(null))
+      .finally(() => setSlotsLoading(false))
+  }, [isTherapistBooking, form.case_id, form.scheduled_date])
+
   function addGuestEmail() {
     const email = guestInput.trim()
-    if (!email || !email.includes('@')) {
-      setError('Enter a valid guest email')
-      return
-    }
+    if (!email || !email.includes('@')) { setError('Enter a valid guest email'); return }
     if (!guestEmails.includes(email)) setGuestEmails((g) => [...g, email])
     setGuestInput('')
     setError('')
   }
 
-  function set(k, v) {
-    setForm((f) => ({ ...f, [k]: v }))
-  }
+  function set(k, v) { setForm((f) => ({ ...f, [k]: v })) }
 
   function toggleAttendee(key) {
     setAttendees((a) => {
@@ -181,23 +184,9 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
 
   async function submit(e) {
     e.preventDefault()
+    if (!form.meeting_url) { setError('Meeting link is required'); return }
     if (!form.scheduled_date) { setError('Date is required'); return }
-    if (isTherapistBooking && !form.case_id) {
-      setError('Select a case — meetings are booked with your case manager for that client.')
-      return
-    }
-    if (!attendees.client && !attendees.therapist && !attendees.caseManager && !attendees.admin) {
-      setError('Select at least one attendee')
-      return
-    }
-    if (attendees.therapist && form.case_id && therapists.length > 0 && !therapistUserId) {
-      setError('Choose a therapist to invite')
-      return
-    }
-    if (attendees.admin && canPickAdmin && !adminUserId) {
-      setError('Choose an admin to invite')
-      return
-    }
+    if (isTherapistBooking && !form.case_id) { setError('Select a case'); return }
     setSaving(true)
     setError('')
     try {
@@ -207,7 +196,7 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
         duration_minutes: Number(form.duration_minutes) || 30,
         meeting_type: form.meeting_type,
         title: form.title || null,
-        meeting_url: form.meeting_url?.trim() || null,
+        meeting_url: form.meeting_url.trim(),
         guest_emails: guestEmails,
         invite_client: attendees.client,
         invite_therapist: attendees.therapist,
@@ -216,105 +205,124 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
       }
       if (form.case_id) body.case_id = Number(form.case_id)
       if (attendees.therapist && therapistUserId) body.therapist_user_id = Number(therapistUserId)
-      const result = await apiFetch('/api/v1/cm-meetings', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
+      const result = await apiFetch('/api/v1/meetings', { method: 'POST', body: JSON.stringify(body) })
       setCreatedMeeting(result)
-    } catch (err) {
-      setError(err.message || 'Could not create meeting')
-    } finally {
-      setSaving(false)
-    }
+    } catch (err) { setError(err.message || 'Could not create meeting') } finally { setSaving(false) }
   }
 
   const inputStyle = { display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4, boxSizing: 'border-box' }
   const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
-  const createdEvent = createdMeeting ? mapCmMeetingToCalendarEvent(createdMeeting) : null
+  const filteredCases = cases.filter((c) => {
+    const q = caseSearch.trim().toLowerCase()
+    return !q || String(c.childName || '').toLowerCase().includes(q) || String(c.caseCode || c.caseId || c.id).toLowerCase().includes(q)
+  })
+  const selectedCase = cases.find((c) => String(c.id) === String(form.case_id))
 
   if (createdMeeting) {
-    const typeLabel =
-      MEETING_TYPES.find((t) => t.value === createdMeeting.meeting_type)?.label || createdMeeting.meeting_type
-    const detailLines = [
-      createdMeeting.child_name ? `Client: ${createdMeeting.child_name}` : null,
-      createdMeeting.case_code ? `Case: ${createdMeeting.case_code}` : null,
-      typeLabel ? `Type: ${typeLabel}` : null,
-      createdMeeting.duration_minutes ? `Duration: ${createdMeeting.duration_minutes} min` : null,
-    ].filter(Boolean)
-    return (
-      <BookingSuccessSheet
-        open
-        title="Meeting booked"
-        event={createdEvent}
-        detailLines={detailLines}
-        onClose={() => {
-          onCreated(createdMeeting)
-          setCreatedMeeting(null)
-        }}
-      />
-    )
+    return <BookingSuccessSheet open title="Meeting booked" event={mapCmMeetingToCalendarEvent(createdMeeting)} onClose={() => { onCreated(createdMeeting); setCreatedMeeting(null) }} />
   }
+
+  // Auto-generate title from meeting type + client + CM name
+  const typeLabel = MEETING_TYPES.find((t) => t.value === form.meeting_type)?.label || ''
+  const clientName = caseDetail?.child_name || selectedCase?.childName || ''
+  const cmName = caseDetail?.case_manager_name || ''
+  const autoTitle = [
+    typeLabel,
+    clientName ? `for ${clientName}` : '',
+    cmName ? `— case of ${cmName}` : '',
+  ].filter(Boolean).join(' ')
+
+  const availableSlots = Array.isArray(slots?.slots) ? slots.slots.filter((s) => s.available) : []
+  const allBusy = slots && availableSlots.length === 0
+  const altSuggestions = slots?.alternate_suggestions || []
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 20px' }}>Book a case manager meeting</h2>
+      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 20px' }}>Book a meeting</h2>
         {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
         <form onSubmit={submit}>
+
+          {/* Case search + select */}
+          {!isTherapistBooking ? (
+            <label style={labelStyle}>
+              Search case
+              <input type="search" style={inputStyle} placeholder="Child name or case code" value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} />
+            </label>
+          ) : null}
           <label style={labelStyle}>
-            Search case
-            <input
-              type="search"
-              style={inputStyle}
-              placeholder="Child name or case code"
-              value={caseSearch}
-              onChange={(e) => setCaseSearch(e.target.value)}
-            />
-          </label>
-          <label style={labelStyle}>
-            {isTherapistBooking ? 'Case' : 'Case (optional)'}
-            <select
-              style={inputStyle}
-              value={form.case_id}
-              required={isTherapistBooking}
-              onChange={(e) => set('case_id', e.target.value)}
-            >
+            {isTherapistBooking ? 'Case *' : 'Case (optional)'}
+            <select style={inputStyle} value={form.case_id} required={isTherapistBooking} onChange={(e) => set('case_id', e.target.value)}>
               {!isTherapistBooking ? <option value="">— No specific case —</option> : null}
-              {!isTherapistBooking && cases.length === 0 ? null : !form.case_id && isTherapistBooking ? (
-                <option value="">Choose client…</option>
-              ) : null}
+              {!form.case_id && isTherapistBooking ? <option value="">Choose client…</option> : null}
               {filteredCases.map((c) => (
-                <option key={c.id} value={c.id}>{c.childName} ({c.caseCode || c.caseId || c.id})</option>
+                <option key={c.id} value={c.id}>{c.childName} ({c.caseCode || c.id})</option>
               ))}
             </select>
           </label>
 
-          {selectedCase || caseDetail ? (
+          {/* Case info chip */}
+          {(selectedCase || caseDetail) ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div style={{ background: '#f8fafc', borderRadius: 10, padding: 10, fontSize: '0.8rem' }}>
-                <strong>Client</strong>
-                <p style={{ margin: '4px 0 0' }}>{caseDetail?.child_name || selectedCase?.childName}</p>
+              <div style={{ background: '#f0f9ff', borderRadius: 10, padding: 10, fontSize: '0.8rem' }}>
+                <strong style={{ color: '#0369a1' }}>Client</strong>
+                <p style={{ margin: '4px 0 0', fontWeight: 600 }}>{caseDetail?.child_name || selectedCase?.childName}</p>
                 <p style={{ margin: 0, color: '#64748b' }}>{caseDetail?.case_code || selectedCase?.caseCode}</p>
               </div>
-              <div style={{ background: '#f8fafc', borderRadius: 10, padding: 10, fontSize: '0.8rem' }}>
-                <strong>Assigned team</strong>
-                <p style={{ margin: '4px 0 0' }}>{caseDetail?.active_therapist_name || '—'}</p>
-                <p style={{ margin: 0, color: '#64748b' }}>{caseDetail?.case_manager_name || '—'}</p>
+              <div style={{ background: '#f0fdf4', borderRadius: 10, padding: 10, fontSize: '0.8rem' }}>
+                <strong style={{ color: '#15803d' }}>Team</strong>
+                <p style={{ margin: '4px 0 0', fontWeight: 600 }}>{caseDetail?.case_manager_name || '—'}</p>
+                <p style={{ margin: 0, color: '#64748b' }}>{caseDetail?.active_therapist_name || ''}</p>
               </div>
             </div>
           ) : null}
 
+          {/* Meeting link — MANDATORY */}
           <label style={labelStyle}>
-            Meeting link (optional)
+            Meeting link *
             <input
               type="url"
-              style={inputStyle}
+              style={{ ...inputStyle, borderColor: !form.meeting_url ? '#fca5a5' : '#e2e8f0' }}
               placeholder="https://meet.google.com/..."
               value={form.meeting_url}
+              required
               onChange={(e) => set('meeting_url', e.target.value)}
             />
+            {!form.meeting_url ? <span style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: 2, display: 'block' }}>Required — paste your meeting link before booking</span> : null}
           </label>
 
+          {/* Meeting type */}
+          <label style={labelStyle}>
+            Meeting type *
+            <select style={inputStyle} value={form.meeting_type} required onChange={(e) => set('meeting_type', e.target.value)}>
+              {MEETING_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </label>
+
+          {/* Meeting title — auto-filled from type + client + CM, editable */}
+          <label style={labelStyle}>
+            Meeting title
+            <input
+              type="text"
+              style={{ ...inputStyle, fontStyle: form.title ? 'normal' : 'italic', color: form.title ? '#1e293b' : '#64748b' }}
+              placeholder={autoTitle || 'e.g. Progress review for Aarav M.'}
+              value={form.title}
+              onChange={(e) => set('title', e.target.value)}
+            />
+            {!form.title && autoTitle ? (
+              <button
+                type="button"
+                style={{ marginTop: 4, fontSize: '0.72rem', color: '#4f46e5', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                onClick={() => set('title', autoTitle)}
+              >
+                Use: "{autoTitle}"
+              </button>
+            ) : null}
+          </label>
+
+          {/* Guest emails */}
           <label style={labelStyle}>
             Guest emails
             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -324,16 +332,9 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
                 placeholder="coordinator@school.edu"
                 value={guestInput}
                 onChange={(e) => setGuestInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addGuestEmail()
-                  }
-                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGuestEmail() } }}
               />
-              <button type="button" style={{ border: '1px solid #c7d2fe', background: '#eef2ff', borderRadius: 10, padding: '8px 12px', fontWeight: 600, cursor: 'pointer' }} onClick={addGuestEmail}>
-                Add
-              </button>
+              <button type="button" style={{ border: '1px solid #c7d2fe', background: '#eef2ff', borderRadius: 10, padding: '8px 12px', fontWeight: 600, cursor: 'pointer' }} onClick={addGuestEmail}>Add</button>
             </div>
             {guestEmails.length > 0 ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -347,113 +348,142 @@ function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = tr
             ) : null}
           </label>
 
-          <label style={labelStyle}>
-            Meeting type
-            <select style={inputStyle} value={form.meeting_type} onChange={(e) => set('meeting_type', e.target.value)}>
-              {MEETING_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </label>
-
-          <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', marginBottom: 12 }}>
-            <legend style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569', padding: '0 6px' }}>
-              Invite attendees
-            </legend>
+          {/* Attendees */}
+          <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+            <legend style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569', padding: '0 6px' }}>Invite attendees</legend>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input
-                type="checkbox"
-                checked={attendees.client}
-                disabled={!form.case_id}
-                onChange={() => toggleAttendee('client')}
-              />
+              <input type="checkbox" checked={attendees.client} disabled={!form.case_id} onChange={() => toggleAttendee('client')} />
               {ATTENDEE_ROLE_LABELS.client}
-              {!form.case_id ? <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>(select a case)</span> : null}
+              {!form.case_id ? <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>(select a case first)</span> : null}
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input
-                type="checkbox"
-                checked={attendees.therapist}
-                disabled={!form.case_id}
-                onChange={() => toggleAttendee('therapist')}
-              />
+              <input type="checkbox" checked={attendees.therapist} disabled={!form.case_id} onChange={() => toggleAttendee('therapist')} />
               {ATTENDEE_ROLE_LABELS.therapist}
             </label>
             {attendees.therapist && form.case_id && therapists.length > 0 ? (
-              <select
-                style={{ ...inputStyle, marginBottom: 10, marginLeft: 24 }}
-                value={therapistUserId}
-                onChange={(e) => setTherapistUserId(e.target.value)}
-              >
+              <select style={{ ...inputStyle, marginBottom: 10, marginLeft: 24 }} value={therapistUserId} onChange={(e) => setTherapistUserId(e.target.value)}>
                 <option value="">Select therapist…</option>
-                {therapists.map((t) => (
-                  <option key={t.therapist_user_id} value={t.therapist_user_id}>{t.full_name}</option>
-                ))}
+                {therapists.map((t) => <option key={t.therapist_user_id} value={t.therapist_user_id}>{t.full_name}</option>)}
               </select>
             ) : null}
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input
-                type="checkbox"
-                checked={attendees.caseManager}
-                onChange={() => toggleAttendee('caseManager')}
-              />
+              <input type="checkbox" checked={attendees.caseManager} onChange={() => toggleAttendee('caseManager')} />
               {ATTENDEE_ROLE_LABELS.case_manager}
-              {caseDetail?.case_manager_name ? (
-                <span style={{ color: '#64748b', fontSize: '0.75rem' }}>({caseDetail.case_manager_name})</span>
-              ) : null}
+              {caseDetail?.case_manager_name ? <span style={{ color: '#64748b', fontSize: '0.75rem' }}>({caseDetail.case_manager_name})</span> : null}
             </label>
-            {canPickAdmin ? (
+            {/* Admin — visible for non-therapist bookings */}
+            {!isTherapistBooking ? (
               <>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={attendees.admin}
-                    onChange={() => toggleAttendee('admin')}
-                  />
+                  <input type="checkbox" checked={attendees.admin} onChange={() => toggleAttendee('admin')} />
                   {ATTENDEE_ROLE_LABELS.admin}
                 </label>
                 {attendees.admin ? (
-                  <select
-                    style={{ ...inputStyle, marginLeft: 24 }}
-                    value={adminUserId}
-                    onChange={(e) => setAdminUserId(e.target.value)}
-                  >
+                  <select style={{ ...inputStyle, marginLeft: 24, marginBottom: 6 }} value={adminUserId} onChange={(e) => setAdminUserId(e.target.value)}>
                     <option value="">Select admin…</option>
-                    {adminUsers.map((u) => (
-                      <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
-                    ))}
+                    {adminUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
                   </select>
                 ) : null}
               </>
             ) : null}
           </fieldset>
 
-          <div className="book-meeting-modal__datetime-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {/* Date + Duration row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
             <label style={labelStyle}>
-              Date
-              <input type="date" style={inputStyle} value={form.scheduled_date} required onChange={(e) => set('scheduled_date', e.target.value)} />
+              Date *
+              <input type="date" style={inputStyle} value={form.scheduled_date} required min={new Date().toISOString().slice(0, 10)} onChange={(e) => set('scheduled_date', e.target.value)} />
             </label>
             <label style={labelStyle}>
-              Time
-              <input type="time" style={inputStyle} value={form.scheduled_time} onChange={(e) => set('scheduled_time', e.target.value)} />
+              Duration
+              <select style={inputStyle} value={form.duration_minutes} onChange={(e) => set('duration_minutes', e.target.value)}>
+                {[30, 45, 60, 90].map((d) => <option key={d} value={d}>{d} min</option>)}
+              </select>
             </label>
           </div>
 
-          <label style={labelStyle}>
-            Duration (minutes)
-            <input type="number" style={inputStyle} min={15} max={180} step={15} value={form.duration_minutes} onChange={(e) => set('duration_minutes', e.target.value)} />
-          </label>
+          {/* Therapist booking: slot grid from availability API */}
+          {isTherapistBooking && form.case_id && caseDetail?.case_manager_user_id ? (
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>
+                Available slots — {caseDetail.case_manager_name || 'Case manager'}
+              </p>
+              {slotsLoading ? (
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Checking availability…</p>
+              ) : slots ? (
+                <>
+                  {allBusy ? (
+                    <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', fontSize: '0.8rem', color: '#92400e', marginBottom: 8 }}>
+                      <strong>No slots available on {new Date(form.scheduled_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}.</strong>
+                      {altSuggestions.length > 0 ? (
+                        <>
+                          <p style={{ margin: '6px 0 6px', fontWeight: 600 }}>Try one of these dates instead:</p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {altSuggestions.map((alt) => (
+                              <button
+                                key={alt.date}
+                                type="button"
+                                style={{ border: '1px solid #fcd34d', background: '#fffbeb', borderRadius: 8, padding: '5px 12px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', color: '#78350f' }}
+                                onClick={() => { set('scheduled_date', alt.date); set('scheduled_time', alt.slots[0]) }}
+                              >
+                                {new Date(alt.date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · {alt.slots[0]}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <p style={{ margin: '6px 0 0' }}>No availability in the next 7 days. Please contact the case manager directly.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                        {slots.slots.map((s) => (
+                          <button
+                            key={s.time}
+                            type="button"
+                            title={s.available ? undefined : s.reason}
+                            disabled={!s.available}
+                            style={{
+                              border: `2px solid ${form.scheduled_time === s.time ? '#4f46e5' : s.available ? '#c7d2fe' : '#e2e8f0'}`,
+                              background: form.scheduled_time === s.time ? '#4f46e5' : s.available ? '#eef2ff' : '#f8fafc',
+                              color: form.scheduled_time === s.time ? '#fff' : s.available ? '#3730a3' : '#94a3b8',
+                              borderRadius: 8, padding: '6px 14px', fontSize: '0.82rem', fontWeight: 700,
+                              cursor: s.available ? 'pointer' : 'not-allowed',
+                              textDecoration: !s.available ? 'line-through' : 'none',
+                            }}
+                            onClick={() => set('scheduled_time', s.time)}
+                          >
+                            {s.time}
+                          </button>
+                        ))}
+                      </div>
+                      {!form.scheduled_time ? <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>↑ Tap a slot to select it</p> : null}
+                    </>
+                  )}
+                </>
+              ) : (
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Select a case and date to see available slots.</p>
+              )}
+            </div>
+          ) : !isTherapistBooking ? (
+            /* Non-therapist: manual time input */
+            <label style={labelStyle}>
+              Time *
+              <input type="time" style={inputStyle} value={form.scheduled_time} required onChange={(e) => set('scheduled_time', e.target.value)} />
+            </label>
+          ) : null}
 
-          <label style={labelStyle}>
-            Meeting title / agenda (optional)
-            <input type="text" style={inputStyle} placeholder="e.g. Progress review, IEP discussion" value={form.title} onChange={(e) => set('title', e.target.value)} />
-          </label>
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-            <button type="submit" disabled={saving} style={{ flex: 1, background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
-              {saving ? 'Booking…' : 'Book meeting'}
+          {/* Submit */}
+          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            <button
+              type="submit"
+              disabled={saving}
+              style={{ flex: 1, background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 0', fontWeight: 700, fontSize: '0.9rem', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+            >
+              {saving ? 'Booking…' : '✓ Confirm & book meeting'}
             </button>
-            <button type="button" style={{ background: '#f1f5f9', border: 'none', borderRadius: 12, padding: '11px 16px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }} onClick={onClose}>
+            <button type="button" style={{ background: '#f1f5f9', border: 'none', borderRadius: 12, padding: '12px 16px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }} onClick={onClose}>
               Cancel
             </button>
           </div>
@@ -481,7 +511,7 @@ function NotesModal({ meeting, onClose, onUpdated }) {
     setSaving(true)
     setError('')
     try {
-      const result = await apiFetch(`/api/v1/cm-meetings/${meeting.id}`, {
+      const result = await apiFetch(`/api/v1/meetings/${meeting.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
           status: form.status,
@@ -707,7 +737,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const load = useCallback(() => {
     setLoading(true)
     setError('')
-    apiFetch(`/api/v1/cm-meetings${buildQuery()}`)
+    apiFetch(`/api/v1/meetings${buildQuery()}`)
       .then((rows) => setMeetings(Array.isArray(rows) ? rows : []))
       .catch((e) => setError(e.message || 'Could not load meetings'))
       .finally(() => setLoading(false))
@@ -725,7 +755,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
     const params = new URLSearchParams()
     if (isAdmin && cmFilter) params.set('case_manager_user_id', cmFilter)
     const qs = params.toString() ? `?${params}` : ''
-    return apiFetch(`/api/v1/cm-meetings/bookable-cases${qs}`)
+    return apiFetch(`/api/v1/meetings/bookable-cases${qs}`)
       .then((data) => {
         const arr = Array.isArray(data) ? data : unwrapList(data)
         setCases(
@@ -778,7 +808,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   async function handleCancel(meeting) {
     if (!window.confirm('Cancel this meeting?')) return
     try {
-      await apiFetch(`/api/v1/cm-meetings/${meeting.id}`, { method: 'DELETE' })
+      await apiFetch(`/api/v1/meetings/${meeting.id}`, { method: 'DELETE' })
       setMeetings((prev) => prev.map((x) => x.id === meeting.id ? { ...x, status: 'CANCELLED' } : x))
     } catch (e) {
       setError(e.message || 'Could not cancel')
