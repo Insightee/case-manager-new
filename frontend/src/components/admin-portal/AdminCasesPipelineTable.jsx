@@ -19,6 +19,7 @@ import {
 } from '../../lib/adminCasePipeline.js'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
 import { moduleLabel } from '../../lib/moduleLabels.js'
+import { paginateList } from '../../lib/peopleDirectoryList.js'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -28,6 +29,7 @@ import {
   AdminToolbar,
   FilterDateRange,
   FilterSelect,
+  PeopleListPagination,
 } from './ui/index.js'
 
 import { AdminCaseAssignDrawer } from './AdminCaseAssignDrawer.jsx'
@@ -65,6 +67,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [toast, setToast] = useState('')
   const [actingId, setActingId] = useState(null)
+  const [casePage, setCasePage] = useState(1)
 
   const canAssign = can('case.assign') && !isViewOnly
   const canUpdate = can('case.update') && !isViewOnly
@@ -115,6 +118,12 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
     return sortPipelineRows(filtered, sort)
   }, [allRows, filters, sort])
 
+  const paginatedRows = useMemo(() => paginateList(rows, casePage), [rows, casePage])
+
+  useEffect(() => {
+    setCasePage(1)
+  }, [sort, filters])
+
   const selectedCards = useMemo(
     () => rows.filter((r) => selectedIds.has(r.id)),
     [rows, selectedIds],
@@ -133,6 +142,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   function patchFilters(patch) {
     setFilters((prev) => ({ ...prev, ...patch }))
     setSelectedIds(new Set())
+    setCasePage(1)
   }
 
   function clearExtraFilters() {
@@ -143,6 +153,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
       }),
     )
     setSelectedIds(new Set())
+    setCasePage(1)
   }
 
   function toggleSelect(id) {
@@ -461,6 +472,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
           description="Try another queue tab, clear filters, or switch to All cases for active caseload with no pending work."
         />
       ) : (
+        <>
         <AdminDataList
           desktop={
         <div className="admin-table-wrap admin-cases-pipeline__table-wrap">
@@ -480,7 +492,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {paginatedRows.items.map((row) => {
                 const rowCanWrite = canWriteProduct(row.product_module)
                 const actions = buildPipelineActions(row, {
                   canAssign,
@@ -586,7 +598,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
           </table>
         </div>
           }
-          mobile={rows.map((row) => {
+          mobile={paginatedRows.items.map((row) => {
                 const rowCanWrite = canWriteProduct(row.product_module)
                 const actions = buildPipelineActions(row, {
                   canAssign,
@@ -646,6 +658,15 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                 )
               })}
         />
+        <PeopleListPagination
+          page={paginatedRows.page}
+          totalPages={paginatedRows.totalPages}
+          total={paginatedRows.total}
+          rangeStart={paginatedRows.rangeStart}
+          rangeEnd={paginatedRows.rangeEnd}
+          onPageChange={setCasePage}
+        />
+        </>
       )}
 
       <AdminCaseAssignDrawer
