@@ -1195,9 +1195,9 @@
 }
 
 .ic-session-composer__walkin {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--ic-border);
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--ic-border);
 }
 
 .ic-session-composer__submit {

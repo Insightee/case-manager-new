@@ -411,6 +411,49 @@ export function TherapistSessionComposer({
 
           {selectedCaseId ? (
             <>
+              <form className="ic-session-composer__walkin" onSubmit={handleWalkIn}>
+                <p className="ic-session-composer__group-label">Walk-in today (no slot configured)</p>
+                <div className="ic-session-composer__grid">
+                  <label className="ic-session-composer__field">
+                    <span>Start</span>
+                    <input
+                      type="time"
+                      required
+                      value={walkInStart}
+                      onChange={(e) => setWalkInStart(e.target.value)}
+                      className="ic-session-composer__input"
+                    />
+                  </label>
+                  <label className="ic-session-composer__field">
+                    <span>End</span>
+                    <input
+                      type="time"
+                      required
+                      value={walkInEnd}
+                      onChange={(e) => setWalkInEnd(e.target.value)}
+                      className="ic-session-composer__input"
+                    />
+                  </label>
+                  <label className="ic-session-composer__field">
+                    <span>Location</span>
+                    <select
+                      value={walkInMode}
+                      onChange={(e) => setWalkInMode(e.target.value)}
+                      className="ic-session-composer__input"
+                    >
+                      {MODES.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <button type="submit" className="ic-btn ic-btn--primary ic-session-composer__submit" disabled={busy}>
+                  {busy ? 'Starting…' : 'Start session'}
+                </button>
+              </form>
+
               {scheduledForCase.length > 0 ? (
                 <div className="ic-session-composer__group">
                   <p className="ic-session-composer__group-label">Scheduled sessions</p>
@@ -465,7 +508,7 @@ export function TherapistSessionComposer({
                           </div>
                           <span className="ic-session-option__hint">
                             {isToday(sl.slot_date)
-                              ? 'Use walk-in below if no scheduled session row'
+                              ? 'Use walk-in above if no scheduled session row'
                               : 'Opens on the day'}
                           </span>
                         </div>
@@ -474,49 +517,6 @@ export function TherapistSessionComposer({
                   </ul>
                 </div>
               ) : null}
-
-              <form className="ic-session-composer__walkin" onSubmit={handleWalkIn}>
-                <p className="ic-session-composer__group-label">Walk-in today (no slot configured)</p>
-                <div className="ic-session-composer__grid">
-                  <label className="ic-session-composer__field">
-                    <span>Start</span>
-                    <input
-                      type="time"
-                      required
-                      value={walkInStart}
-                      onChange={(e) => setWalkInStart(e.target.value)}
-                      className="ic-session-composer__input"
-                    />
-                  </label>
-                  <label className="ic-session-composer__field">
-                    <span>End</span>
-                    <input
-                      type="time"
-                      required
-                      value={walkInEnd}
-                      onChange={(e) => setWalkInEnd(e.target.value)}
-                      className="ic-session-composer__input"
-                    />
-                  </label>
-                  <label className="ic-session-composer__field">
-                    <span>Location</span>
-                    <select
-                      value={walkInMode}
-                      onChange={(e) => setWalkInMode(e.target.value)}
-                      className="ic-session-composer__input"
-                    >
-                      {MODES.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <button type="submit" className="ic-btn ic-btn--primary ic-session-composer__submit" disabled={busy}>
-                  {busy ? 'Starting…' : 'Start session'}
-                </button>
-              </form>
             </>
           ) : (
             <p className="ic-session-composer__hint">Select a client to see scheduled visits or start a walk-in.</p>
