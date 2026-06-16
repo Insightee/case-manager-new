@@ -377,6 +377,9 @@ def test_admin_cases_pipeline_board():
     col_ids = {c["id"] for c in body["columns"]}
     assert "pending_allotment" in col_ids
     assert "reports_logs" in col_ids
+    all_cards = [card for col in body["columns"] for card in col["cases"]]
+    if all_cards:
+        assert "parent_name" in all_cards[0]
 
 
 def test_admin_list_invites():

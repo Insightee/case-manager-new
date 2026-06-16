@@ -1592,3 +1592,40 @@ button.admin-stat--link {
 .app-sidebar__nav-item-wrap {
   display: block;
 }
+
+.admin-people-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, #e2e8f0);
+}
+
+.admin-people-pagination__summary {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.admin-people-pagination__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-people-pagination__ellipsis {
+  padding: 0 4px;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.admin-people-directory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+}

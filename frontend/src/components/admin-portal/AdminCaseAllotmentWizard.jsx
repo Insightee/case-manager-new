@@ -10,6 +10,8 @@ import { CaseSchedulingHub } from './CaseSchedulingHub.jsx'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { filterServiceCategoriesForModule } from '../../lib/accountStatus.js'
+import { billingSummary } from '../invoices/invoiceUtils.js'
+import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 import './admin-allotment-wizard.css'
 
 const TOTAL_STEPS = 5
@@ -257,9 +259,6 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       } else {
         payload.package_session_count = Number(billing.package_session_count)
         payload.package_amount_inr = Number(billing.package_amount_inr)
-        if (billing.compensation_mode === 'FIXED_LUMP') {
-          payload.therapist_fixed_pay_inr = Number(billing.therapist_fixed_pay_inr)
-        }
       }
       if (serviceLocationType !== 'online' && serviceAddr.address_line1) {
         const base = addressToPayload(serviceAddr)

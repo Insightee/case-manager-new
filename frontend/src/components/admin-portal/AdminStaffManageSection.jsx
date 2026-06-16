@@ -1,5 +1,6 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { filterStaffDirectory, paginateList, sortStaffAlphabetical } from '../../lib/peopleDirectoryList.js'
 import {
   AdminDataList,
   AdminEmptyState,
@@ -9,10 +10,12 @@ import {
   AdminToolbar,
   StatusBadge,
   CopyLinkButton,
-  AdminInviteRowActions,
   PeopleRowActions,
   PeopleBulkToolbar,
   PeopleSelectCheckbox,
+  PeoplePendingInvitesToggle,
+  PeoplePendingInvitesPanel,
+  PeopleListPagination,
 } from './ui/index.js'
 import { RbacEditor, buildRbacPayload, grantsFromAssignments, mergeGrants } from './ui/RbacEditor.jsx'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
@@ -60,7 +63,9 @@ export function AdminStaffManageSection({
   const [rowBusy, setRowBusy] = useState(null)
   const [lastProvision, setLastProvision] = useState(null)
   const [selectedStaffIds, setSelectedStaffIds] = useState(() => new Set())
-  const [selectedInviteIds, setSelectedInviteIds] = useState(() => new Set())
+  const [invitesViewOpen, setInvitesViewOpen] = useState(false)
+  const [addStaffViewOpen, setAddStaffViewOpen] = useState(false)
+  const [staffPage, setStaffPage] = useState(1)
 
   const deprecatedSet = useMemo(
     () => new Set((deprecatedRoles || []).map((r) => String(r).toUpperCase())),
@@ -69,26 +74,47 @@ export function AdminStaffManageSection({
 
   const landingHint = useMemo(() => primaryLandingHint(form.role_names), [form.role_names])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return staff
-    return staff.filter(
-      (u) =>
-        u.email?.toLowerCase().includes(q) ||
-        u.full_name?.toLowerCase().includes(q) ||
-        u.roles?.some((r) => r.toLowerCase().includes(q)),
-    )
-  }, [staff, search])
+  const filtered = useMemo(() => filterStaffDirectory(staff, search), [staff, search])
 
-  const filteredInvites = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return pendingInvites
-    return pendingInvites.filter((i) => i.email?.toLowerCase().includes(q))
-  }, [pendingInvites, search])
+  const sortedStaff = useMemo(() => sortStaffAlphabetical(filtered), [filtered])
+  const paginatedStaff = useMemo(
+    () => paginateList(sortedStaff, staffPage),
+    [sortedStaff, staffPage],
+  )
+
+  useEffect(() => {
+    setStaffPage(1)
+  }, [search])
 
   function setRoles(roles) {
     const finalRoles = roles.length ? roles : form.role_names
     setForm((prev) => ({ ...prev, role_names: finalRoles }))
+  }
+
+  function closeAddStaff() {
+    setAddStaffViewOpen(false)
+    setInviteUrl('')
+    setForm(EMPTY_FORM)
+    setMode('invite')
+    setShowCreatePassword(false)
+  }
+
+  function toggleAddStaff() {
+    if (addStaffViewOpen) {
+      closeAddStaff()
+      return
+    }
+    setInvitesViewOpen(false)
+    setAddStaffViewOpen(true)
+  }
+
+  function toggleInvitesView() {
+    if (invitesViewOpen) {
+      setInvitesViewOpen(false)
+      return
+    }
+    closeAddStaff()
+    setInvitesViewOpen(true)
   }
 
   async function handleSubmit(e) {
@@ -142,6 +168,7 @@ export function AdminStaffManageSection({
           }),
         })
         setForm(EMPTY_FORM)
+        setAddStaffViewOpen(false)
         onSuccess?.('Staff user created.')
         onReload?.()
       }
@@ -158,15 +185,6 @@ export function AdminStaffManageSection({
 
   function toggleStaffSelect(id) {
     setSelectedStaffIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function toggleInviteSelect(id) {
-    setSelectedInviteIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -200,184 +218,186 @@ export function AdminStaffManageSection({
 
   return (
     <>
-      <AdminPanel
-        title="Add staff user"
-        subtitle="Role sets permissions; programme modules set which areas appear and whether each is view or edit."
-      >
-        <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+      <div className="admin-btn-group" style={{ marginBottom: 12 }}>
+        {!invitesViewOpen ? (
           <button
             type="button"
-            className={`admin-btn admin-btn--sm ${mode === 'invite' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => { setMode('invite'); setInviteUrl('') }}
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            onClick={toggleAddStaff}
+            aria-pressed={addStaffViewOpen}
           >
-            Send invite
+            Add staff
           </button>
-          <button
-            type="button"
-            className={`admin-btn admin-btn--sm ${mode === 'direct' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-            onClick={() => { setMode('direct'); setInviteUrl('') }}
-          >
-            Create directly
-          </button>
-        </div>
+        ) : null}
+        <PeoplePendingInvitesToggle
+          label="Pending staff invitations"
+          count={pendingInvites.length}
+          active={invitesViewOpen}
+          onClick={toggleInvitesView}
+        />
+      </div>
 
-        <form onSubmit={handleSubmit} className="admin-form-grid">
-          <label>
-            Email
-            <input
-              className="admin-input"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              required
-            />
-          </label>
-          <label>
-            Full name
-            <input
-              className="admin-input"
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-              required={mode === 'direct'}
-              placeholder={mode === 'invite' ? 'Shown on invite (optional)' : ''}
-            />
-          </label>
-          {mode === 'direct' ? (
-            <>
-              <label>
-                Password
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      {invitesViewOpen ? (
+        <PeoplePendingInvitesPanel
+          label="Pending staff invitations"
+          pendingInvites={pendingInvites}
+          layout="queue"
+          open={invitesViewOpen}
+          onOpenChange={setInvitesViewOpen}
+          onSuccess={onSuccess}
+          onError={onError}
+          onReload={onReload}
+        />
+      ) : addStaffViewOpen ? (
+        <AdminPanel
+          title="Add staff user"
+          subtitle="Role sets permissions; programme modules set which areas appear and whether each is view or edit."
+          actions={
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={closeAddStaff}>
+              ← Back
+            </button>
+          }
+        >
+          <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className={`admin-btn admin-btn--sm ${mode === 'invite' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+              onClick={() => { setMode('invite'); setInviteUrl('') }}
+            >
+              Send invite
+            </button>
+            <button
+              type="button"
+              className={`admin-btn admin-btn--sm ${mode === 'direct' ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+              onClick={() => { setMode('direct'); setInviteUrl('') }}
+            >
+              Create directly
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="admin-form-grid">
+            <label>
+              Email
+              <input
+                className="admin-input"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Full name
+              <input
+                className="admin-input"
+                value={form.full_name}
+                onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                required={mode === 'direct'}
+                placeholder={mode === 'invite' ? 'Shown on invite (optional)' : ''}
+              />
+            </label>
+            {mode === 'direct' ? (
+              <>
+                <label>
+                  Password
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      className="admin-input"
+                      type={showCreatePassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      minLength={6}
+                      required
+                      style={{ width: '100%', paddingRight: '50px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatePassword(!showCreatePassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: '#4f46e5',
+                        padding: '4px 8px',
+                      }}
+                    >
+                      {showCreatePassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </label>
+                <label>
+                  Region (optional)
                   <input
                     className="admin-input"
-                    type={showCreatePassword ? 'text' : 'password'}
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    minLength={6}
-                    required
-                    style={{ width: '100%', paddingRight: '50px' }}
+                    value={form.region}
+                    onChange={(e) => setForm({ ...form, region: e.target.value })}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowCreatePassword(!showCreatePassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '10px',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      color: '#4f46e5',
-                      padding: '4px 8px',
-                    }}
-                  >
-                    {showCreatePassword ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-              </label>
-              <label>
-                Region (optional)
-                <input
-                  className="admin-input"
-                  value={form.region}
-                  onChange={(e) => setForm({ ...form, region: e.target.value })}
-                />
-              </label>
-            </>
+                </label>
+              </>
+            ) : null}
+
+            <RbacEditor
+              catalog={catalog}
+              assignableRoles={assignableRoles}
+              roleDefaults={roleDefaults}
+              selectedRoles={form.role_names}
+              onRoleChange={setRoles}
+              allowMultiRole={mode === 'direct'}
+              disabled={submitting}
+              grants={form.module_access_grants}
+              onGrantsChange={(module_access_grants) =>
+                setForm((prev) => ({
+                  ...prev,
+                  module_access_grants,
+                  module_assignments: Object.entries(module_access_grants)
+                    .filter(([, g]) => g?.enabled)
+                    .map(([id]) => id),
+                }))
+              }
+              featureOverrides={form.feature_overrides}
+              onOverridesChange={(feature_overrides) =>
+                setForm((prev) => ({ ...prev, feature_overrides }))
+              }
+              viewOnly={form.view_only}
+              onViewOnlyChange={(view_only) => setForm((prev) => ({ ...prev, view_only }))}
+            />
+
+            {landingHint ? (
+              <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: -8 }}>
+                Selected role ({form.role_names.map((r) => r.replace(/_/g, ' ')).join(', ')}) — {landingHint}
+              </p>
+            ) : null}
+
+            <div className="admin-btn-group" style={{ gridColumn: '1 / -1' }}>
+              <button type="submit" className="admin-btn admin-btn--primary" disabled={submitting}>
+                {submitting ? 'Working…' : mode === 'invite' ? 'Send invite' : 'Create user'}
+              </button>
+              <button type="button" className="admin-btn admin-btn--ghost" onClick={closeAddStaff}>
+                Cancel
+              </button>
+            </div>
+          </form>
+
+          {inviteUrl ? (
+            <div className="admin-alert" style={{ marginTop: 12, wordBreak: 'break-all', fontSize: '0.875rem' }}>
+              <strong>Invite link:</strong>{' '}
+              <CopyLinkButton url={inviteUrl} label="Copy" copiedLabel="Copied" />{' '}
+              {inviteUrl}
+            </div>
           ) : null}
-
-          <RbacEditor
-            catalog={catalog}
-            assignableRoles={assignableRoles}
-            roleDefaults={roleDefaults}
-            selectedRoles={form.role_names}
-            onRoleChange={setRoles}
-            allowMultiRole={mode === 'direct'}
-            disabled={submitting}
-            grants={form.module_access_grants}
-            onGrantsChange={(module_access_grants) =>
-              setForm((prev) => ({
-                ...prev,
-                module_access_grants,
-                module_assignments: Object.entries(module_access_grants)
-                  .filter(([, g]) => g?.enabled)
-                  .map(([id]) => id),
-              }))
-            }
-            featureOverrides={form.feature_overrides}
-            onOverridesChange={(feature_overrides) =>
-              setForm((prev) => ({ ...prev, feature_overrides }))
-            }
-            viewOnly={form.view_only}
-            onViewOnlyChange={(view_only) => setForm((prev) => ({ ...prev, view_only }))}
-          />
-
-          {landingHint ? (
-            <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: -8 }}>
-              Selected role ({form.role_names.map((r) => r.replace(/_/g, ' ')).join(', ')}) — {landingHint}
-            </p>
-          ) : null}
-
-          <button type="submit" className="admin-btn admin-btn--primary" disabled={submitting}>
-            {submitting ? 'Working…' : mode === 'invite' ? 'Send invite' : 'Create user'}
-          </button>
-        </form>
-
-        {inviteUrl ? (
-          <div className="admin-alert" style={{ marginTop: 12, wordBreak: 'break-all', fontSize: '0.875rem' }}>
-            <strong>Invite link:</strong>{' '}
-            <CopyLinkButton url={inviteUrl} label="Copy" copiedLabel="Copied" />{' '}
-            {inviteUrl}
-          </div>
-        ) : null}
-      </AdminPanel>
-
-      {filteredInvites.length > 0 ? (
-        <AdminPanel title={`Pending staff invitations (${filteredInvites.length})`} subtitle="Links expire after 7 days">
-          <PeopleBulkToolbar
-            selectedInviteIds={[...selectedInviteIds]}
-            onReload={() => {
-              setSelectedInviteIds(new Set())
-              onReload?.()
-            }}
-            onSuccess={onSuccess}
-            onError={onError}
-          />
-          <ul className="admin-queue">
-            {filteredInvites.map((inv) => (
-              <li key={inv.id} className="admin-queue__item">
-                <PeopleSelectCheckbox
-                  checked={selectedInviteIds.has(inv.id)}
-                  onChange={() => toggleInviteSelect(inv.id)}
-                  ariaLabel={`Select invite ${inv.email}`}
-                />
-                <div>
-                  <p className="admin-queue__title">{inv.email}</p>
-                  <p className="admin-queue__meta">
-                    {inv.role_name?.replace(/_/g, ' ')} · Expires {new Date(inv.expires_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <AdminInviteRowActions
-                  invite={inv}
-                  onSuccess={onSuccess}
-                  onError={onError}
-                  onReload={onReload}
-                />
-              </li>
-            ))}
-          </ul>
         </AdminPanel>
-      ) : null}
-
-      <AdminPanel title={`Staff directory (${filtered.length})`} padded={false}>
+      ) : (
+        <AdminPanel title={`Staff directory (${filtered.length})`} padded={false}>
         <div className="admin-panel__body">
-          <div className="admin-desktop-only">
-            <AdminToolbar>
-              <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff…" />
-            </AdminToolbar>
-          </div>
+          <AdminToolbar>
+            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff by name or email…" />
+          </AdminToolbar>
           {filtered.length === 0 ? (
-            <AdminEmptyState title="No staff users" description="Add a user above or adjust search." />
+            <AdminEmptyState title="No staff users" description="Use Add staff or adjust search." />
           ) : (
             <>
             <PeopleBulkToolbar
@@ -405,7 +425,7 @@ export function AdminStaffManageSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((u) => (
+                  {paginatedStaff.items.map((u) => (
                     <Fragment key={u.id}>
                       <tr>
                         <td>
@@ -547,7 +567,7 @@ export function AdminStaffManageSection({
               }
               mobile={
                 <ul className="admin-data-list__cards">
-                  {filtered.map((u) => (
+                  {paginatedStaff.items.map((u) => (
                     <li key={u.id}>
                       <AdminTaskCard
                         title={u.full_name}
@@ -665,10 +685,19 @@ export function AdminStaffManageSection({
                 </ul>
               }
             />
+            <PeopleListPagination
+              page={paginatedStaff.page}
+              totalPages={paginatedStaff.totalPages}
+              total={paginatedStaff.total}
+              rangeStart={paginatedStaff.rangeStart}
+              rangeEnd={paginatedStaff.rangeEnd}
+              onPageChange={setStaffPage}
+            />
             </>
           )}
         </div>
       </AdminPanel>
+      )}
     </>
   )
 }

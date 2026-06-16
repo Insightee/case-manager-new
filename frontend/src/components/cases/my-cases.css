@@ -1217,9 +1217,29 @@
 }
 
 .ic-session-composer__walkin {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--ic-border);
+  margin-top: 4px;
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px dashed var(--ic-border);
+}
+
+.ic-session-composer__walkin-head {
+  margin-bottom: 14px;
+}
+
+.ic-session-composer__walkin-head .ic-session-composer__group-label {
+  margin-bottom: 6px;
+}
+
+.ic-session-composer__walkin-sub {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ic-muted);
+}
+
+.ic-session-composer__walkin .ic-session-composer__grid {
+  margin-top: 0;
 }
 
 .ic-session-composer__submit {

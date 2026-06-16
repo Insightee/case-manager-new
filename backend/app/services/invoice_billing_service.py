@@ -60,6 +60,8 @@ def session_duration_minutes(session: TherapySession, log: DailyLog | None = Non
 
 
 def _per_session_amount(case: Case) -> float:
+    if case.compensation_mode == CompensationMode.FIXED_LUMP:
+        return float(case.therapist_fixed_pay_inr or 0)
     return float(case.pay_share_amount_inr or 0)
 
 

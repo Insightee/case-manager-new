@@ -17,6 +17,8 @@ import './parent-portal-filters.css'
 import './parent-reports.css'
 import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect, ParentPortalTabs } from './ParentFilterBar.jsx'
+import { ParentComingSoon } from './ParentComingSoon.jsx'
+import { PARENT_REPORTS_COMING_SOON } from '../../lib/parentPortalFeatureFlags.js'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -98,7 +100,7 @@ async function fetchBlobUrl(downloadPath) {
   return URL.createObjectURL(blob)
 }
 
-export function ParentReportsPage() {
+function ParentReportsPageFull() {
   const [searchParams, setSearchParams] = useSearchParams()
   const typeParam = searchParams.get('type')
   const initialTab = typeParam === 'iep' ? 'iep' : typeParam === 'documents' ? 'documents' : 'monthly'
@@ -805,4 +807,16 @@ export function ParentReportsPage() {
     </div>
     </ClientPortalLayout>
   )
+}
+
+export function ParentReportsPage() {
+  if (PARENT_REPORTS_COMING_SOON) {
+    return (
+      <ParentComingSoon
+        title="Reports"
+        subtitle="Monthly reports, IEP plans, and documents shared by your care team."
+      />
+    )
+  }
+  return <ParentReportsPageFull />
 }

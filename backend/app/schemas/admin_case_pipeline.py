@@ -10,6 +10,7 @@ class AdminCasePipelineCard(BaseModel):
     case_code: str
     child_id: Optional[int] = None
     child_name: Optional[str] = None
+    parent_name: Optional[str] = None
     service_type: str
     product_module: str
     status: str

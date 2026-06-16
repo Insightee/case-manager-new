@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { billingSummary } from '../invoices/invoiceUtils.js'
+import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 
 const EMPTY = {
   product_billing_rule_id: '',
@@ -51,6 +52,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
       const next = { ...f, [key]: value }
       if (key === 'billing_type') {
         next.client_billing_mode = value === 'PACKAGE' ? 'PREPAID' : 'POSTPAID'
+        if (!next.compensation_mode) next.compensation_mode = 'PERCENTAGE'
       }
       return next
     })

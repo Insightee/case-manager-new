@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AddressFormFields, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
+import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 
 const EMPTY = {
   case_code: '',
@@ -66,9 +67,6 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
       } else {
         payload.package_session_count = Number(form.package_session_count)
         payload.package_amount_inr = Number(form.package_amount_inr)
-        if (form.compensation_mode === 'FIXED_LUMP') {
-          payload.therapist_fixed_pay_inr = Number(form.therapist_fixed_pay_inr)
-        }
       }
       if (form.product_module === 'homecare' && serviceAddr.address_line1) {
         Object.assign(payload, servicePayload(serviceAddr))
