@@ -42,6 +42,7 @@ const QUEUE_TABS = [
   { id: 'assignment', label: 'Assignment' },
   { id: 'review', label: 'Review' },
   { id: 'compliance', label: 'Compliance' },
+  { id: 'closed', label: 'Closed cases' },
   { id: 'all', label: 'All cases' },
 ]
 
@@ -463,7 +464,15 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
       {toast ? <p className="admin-alert admin-alert--warning admin-cases-pipeline__toast">{toast}</p> : null}
 
       <p className="admin-muted admin-cases-pipeline__hint admin-portal-lead">
-        <strong>Needs action</strong> shows cases waiting on allotment, assignment, reviews, IEP, or compliance. Use filters to narrow by case manager, therapist, or client; row actions let you work without opening the full case file first.
+        {filters.queue === 'closed' ? (
+          <>
+            <strong>Closed cases</strong> shows every case with status closed. Open a row for history, billing, and documents.
+          </>
+        ) : (
+          <>
+            <strong>Needs action</strong> shows cases waiting on allotment, assignment, reviews, IEP, or compliance. Use filters to narrow by case manager, therapist, or client; row actions let you work without opening the full case file first.
+          </>
+        )}
       </p>
 
       {rows.length === 0 ? (

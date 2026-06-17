@@ -305,7 +305,7 @@ export function filterPipelineRows(rows, filters = {}) {
   } else if (f.queue === 'active') {
     list = list.filter((r) => r.pipeline_column === 'active')
   } else if (f.queue === 'closed') {
-    list = list.filter((r) => r.pipeline_column === 'closed')
+    list = list.filter((r) => r.pipeline_column === 'closed' || r.status === 'CLOSED')
   }
 
   return list
@@ -333,6 +333,7 @@ export function pipelineQueueCounts(rows) {
     assignment: 0,
     review: 0,
     compliance: 0,
+    closed: 0,
     all: rows.length,
   }
   for (const r of rows) {
@@ -341,6 +342,7 @@ export function pipelineQueueCounts(rows) {
     if (['needs_therapist', 'reassignment'].includes(r.pipeline_column)) counts.assignment += 1
     if (['reports_logs', 'iep'].includes(r.pipeline_column)) counts.review += 1
     if (r.pipeline_column === 'compliance') counts.compliance += 1
+    if (r.pipeline_column === 'closed' || r.status === 'CLOSED') counts.closed += 1
   }
   return counts
 }
