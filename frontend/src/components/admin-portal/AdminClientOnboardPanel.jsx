@@ -46,6 +46,9 @@ export function AdminClientOnboardPanel({
             onClick={() => onInvitesViewChange?.(!invitesViewOpen)}
           />
         ) : null}
+        <Link to="/admin/client-profiles" className="admin-btn admin-btn--secondary admin-btn--sm">
+          Bulk import
+        </Link>
       </div>
 
       {!canManageUsers ? (

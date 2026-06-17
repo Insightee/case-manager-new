@@ -148,6 +148,7 @@ def get_leave_balance(
         "employment_start_date": profile.employment_start_date.isoformat()
         if profile and profile.employment_start_date
         else None,
+        "profile_status": profile.status.value if profile else None,
         "backfill_note": backfill_note,
         "policy_tier": "staff_20" if is_staff_leave_user(user) else ("annual_12" if profile and profile.employment_start_date and (date.today() - profile.employment_start_date).days >= 365 else "monthly_pro_rata"),
         "requires_employment_start_date": not is_staff_leave_user(user)

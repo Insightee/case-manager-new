@@ -1,9 +1,8 @@
-"""Therapist pay share validation — no 70% cap; decimals allowed."""
+"""Therapist pay share validation — flat pay share amount in INR."""
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from app.core.billing_validation import validate_case_billing
 from app.main import app
@@ -19,7 +18,7 @@ def setup_db():
     seed_run()
 
 
-def _package_case(pay_share_pct: float) -> Case:
+def _package_case(pay_share_amount_inr: float) -> Case:
     case = Case(
         id=99,
         case_code="T-SHARE",
@@ -29,25 +28,33 @@ def _package_case(pay_share_pct: float) -> Case:
     )
     case.billing_type = BillingType.PACKAGE
     case.package_session_count = 30
-    case.package_amount_inr = 30000
+    case.package_amount_inr = 30000.0
     case.compensation_mode = CompensationMode.PERCENTAGE
-    case.pay_share_pct = pay_share_pct
+    case.pay_share_amount_inr = pay_share_amount_inr
     return case
 
 
-def test_case_update_schema_accepts_share_above_70_and_decimals():
-    CaseUpdate(pay_share_pct=83)
-    CaseUpdate(pay_share_pct=83.5)
+def test_case_update_schema_accepts_flat_share():
+    CaseUpdate(pay_share_amount_inr=25000.0)
+    CaseUpdate(pay_share_amount_inr=25050.5)
 
 
-def test_case_update_schema_rejects_share_above_100():
-    with pytest.raises(ValidationError):
-        CaseUpdate(pay_share_pct=100.1)
+def test_validate_case_billing_limits():
+    # Valid: 25000 is between 15000 (50%) and 30000 (100%)
+    validate_case_billing(_package_case(25000.0))
+    
+    # Invalid: 10000 is less than 15000 (50%)
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as excinfo:
+        validate_case_billing(_package_case(10000.0))
+    assert excinfo.value.status_code == 400
+    assert "pay_share_amount_inr must be between 50% and 100%" in excinfo.value.detail
 
-
-def test_validate_case_billing_accepts_share_above_70_and_decimals():
-    validate_case_billing(_package_case(83))
-    validate_case_billing(_package_case(83.5))
+    # Invalid: 30001 is greater than 30000 (100%)
+    with pytest.raises(HTTPException) as excinfo:
+        validate_case_billing(_package_case(30001.0))
+    assert excinfo.value.status_code == 400
+    assert "pay_share_amount_inr must be between 50% and 100%" in excinfo.value.detail
 
 
 def _headers(email: str) -> dict:
@@ -56,7 +63,7 @@ def _headers(email: str) -> dict:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-def test_patch_case_billing_accepts_high_decimal_share():
+def test_patch_case_billing_accepts_flat_share():
     headers = _headers("superadmin@demo.com")
     cases = client.get("/api/v1/cases", headers=headers)
     assert cases.status_code == 200
@@ -69,10 +76,10 @@ def test_patch_case_billing_accepts_high_decimal_share():
         json={
             "billing_type": "PACKAGE",
             "package_session_count": 30,
-            "package_amount_inr": 30000,
+            "package_amount_inr": 30000.0,
             "compensation_mode": "PERCENTAGE",
-            "pay_share_pct": 83.5,
+            "pay_share_amount_inr": 25000.0,
         },
     )
     assert patch.status_code == 200, patch.text
-    assert patch.json()["pay_share_pct"] == 83.5
+    assert patch.json()["pay_share_amount_inr"] == 25000.0

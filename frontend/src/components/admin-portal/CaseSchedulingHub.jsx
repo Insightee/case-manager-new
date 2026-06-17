@@ -8,6 +8,7 @@ import { SlotDetailSheet } from '../scheduling/SlotDetailSheet.jsx'
 import { ScheduleWeekdayPicker } from '../scheduling/ScheduleWeekdayPicker.jsx'
 import { ONGOING_MATERIALIZE_WEEKS } from '../scheduling/scheduleTemplateUtils.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
+import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { billingSummary } from '../invoices/invoiceUtils.js'
 import { filterUpcomingSessions, formatSessionWhen } from '../../lib/sessionDisplay.js'
 import { formatDisplayDateTime } from '../../lib/datetime.js'
@@ -21,18 +22,280 @@ function addDaysIso(iso, days) {
   return d.toISOString().slice(0, 10)
 }
 
-export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsChange, canBook = true }) {
-  const { isViewOnly } = useAuth()
-  const readOnly = !canBook || isViewOnly
+// ─── Section 1: Therapist Assignment ─────────────────────────────────────────
+
+function TherapistAssignSection({
+  caseItem,
+  assignments,
+  canAssign,
+  readOnly,
+  onAssigned,
+}) {
   const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || assignments?.[0]
   const assignedTherapistId = activeAssignment ? String(activeAssignment.therapist_user_id) : ''
 
-  const [therapistId, setTherapistId] = useState('')
-  const [pendingReassign, setPendingReassign] = useState(null)
-  const [reassignReason, setReassignReason] = useState('Reassigned from scheduling')
-  const [reassignBusy, setReassignBusy] = useState(false)
-  const [showOneOff, setShowOneOff] = useState(false)
+  const [selectedId, setSelectedId] = useState(assignedTherapistId)
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [reason, setReason] = useState('Assigned from case hub')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
+  // Sync if assignments prop changes (e.g. after parent reload)
+  useEffect(() => {
+    if (assignedTherapistId) setSelectedId(assignedTherapistId)
+  }, [assignedTherapistId])
+
+  const isChanging = selectedId && selectedId !== assignedTherapistId
+  const isNew = !activeAssignment && selectedId
+
+  async function handleSave() {
+    if (!selectedId || !caseItem?.id) return
+    setBusy(true)
+    setError('')
+    setSuccess('')
+    try {
+      await apiFetch(`/api/v1/cases/${caseItem.id}/assignments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          therapist_user_id: Number(selectedId),
+          start_date: startDate,
+          reason_for_change: reason.trim() || 'Assigned from case hub',
+        }),
+      })
+      setSuccess(isNew ? 'Therapist assigned.' : 'Therapist reassigned.')
+      onAssigned?.()
+    } catch (err) {
+      setError(err.message || 'Could not save assignment')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <article className="admin-scheduling-hub__therapist card">
+      <h3>Therapist assignment</h3>
+
+      {activeAssignment ? (
+        <p className="admin-scheduling-hub__assigned">
+          Currently assigned:{' '}
+          <strong>{activeAssignment.therapist_name || `Therapist #${activeAssignment.therapist_user_id}`}</strong>
+          {activeAssignment.start_date ? ` · since ${activeAssignment.start_date}` : ''}
+        </p>
+      ) : (
+        <p className="admin-scheduling-hub__billing-note">
+          No active therapist assignment. Select a therapist below to assign.
+        </p>
+      )}
+
+      {!canAssign ? (
+        <p className="admin-muted" style={{ fontSize: '0.85rem' }}>
+          You don't have permission to change therapist assignments.
+        </p>
+      ) : (
+        <div className="admin-form-grid" style={{ maxWidth: 480, marginTop: 12 }}>
+          <label className="admin-label" style={{ gridColumn: '1 / -1' }}>
+            {activeAssignment ? 'Change therapist' : 'Assign therapist'}
+            <AdminTherapistPicker
+              mode="allotment"
+              productModule={caseItem.product_module}
+              caseId={caseItem.id}
+              value={selectedId}
+              onChange={setSelectedId}
+              disabled={readOnly}
+            />
+          </label>
+
+          {(isChanging || isNew) && (
+            <>
+              <label className="admin-label">
+                Start date for new assignment
+                <input
+                  type="date"
+                  className="admin-input"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  disabled={readOnly}
+                />
+              </label>
+              <label className="admin-label" style={{ gridColumn: '1 / -1' }}>
+                Reason for change
+                <input
+                  type="text"
+                  className="admin-input"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="e.g. Caseload rebalance"
+                  disabled={readOnly}
+                />
+              </label>
+            </>
+          )}
+
+          {error ? <p className="admin-alert admin-alert--error" style={{ gridColumn: '1 / -1' }}>{error}</p> : null}
+          {success ? <p className="admin-alert admin-alert--success" style={{ gridColumn: '1 / -1' }}>{success}</p> : null}
+
+          {(isChanging || isNew) && !readOnly ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn--primary"
+                onClick={handleSave}
+                disabled={busy || !selectedId}
+              >
+                {busy ? 'Saving…' : activeAssignment ? 'Confirm reassignment' : 'Assign therapist'}
+              </button>
+              {isChanging ? (
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--ghost"
+                  style={{ marginLeft: 8 }}
+                  onClick={() => setSelectedId(assignedTherapistId)}
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Assignment history */}
+      {assignments?.length > 0 ? (
+        <details style={{ marginTop: 16 }}>
+          <summary className="admin-muted" style={{ cursor: 'pointer', fontSize: '0.825rem' }}>
+            Assignment history ({assignments.length})
+          </summary>
+          <ul className="admin-queue" style={{ marginTop: 8 }}>
+            {assignments.map((a) => (
+              <li key={a.id} className="admin-queue__item">
+                <div>
+                  <p className="admin-queue__title">{a.therapist_name || `Therapist #${a.therapist_user_id}`}</p>
+                  <p className="admin-queue__meta">
+                    {a.start_date}{a.end_date ? ` → ${a.end_date}` : ''}
+                  </p>
+                </div>
+                <span className={`admin-status-pill admin-status-pill--${String(a.status).toLowerCase()}`}>
+                  {a.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </article>
+  )
+}
+
+// ─── Section 2: Inline Billing Review ────────────────────────────────────────
+
+function BillingReviewSection({ caseItem, canEdit, onSaved }) {
+  const [expanded, setExpanded] = useState(false)
+  const [localCase, setLocalCase] = useState(caseItem)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setLocalCase(caseItem)
+  }, [caseItem])
+
+  const hint = useMemo(
+    () =>
+      billingSummary({
+        billing_type: localCase?.billing_type,
+        client_rate_per_session_inr: localCase?.client_rate_per_session_inr,
+        package_session_count: localCase?.package_session_count,
+        package_amount_inr: localCase?.package_amount_inr,
+        compensation_mode: localCase?.compensation_mode,
+        pay_share_amount_inr: localCase?.pay_share_amount_inr,
+        therapist_fixed_pay_inr: localCase?.therapist_fixed_pay_inr,
+      }),
+    [localCase],
+  )
+
+  async function handleSave(payload) {
+    const updated = await apiFetch(`/api/v1/cases/${caseItem.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+    setLocalCase(updated)
+    setSaved(true)
+    setExpanded(false)
+    onSaved?.(updated)
+    setTimeout(() => setSaved(false), 3000)
+  }
+
+  return (
+    <article className="admin-scheduling-hub__billing card">
+      <div className="admin-scheduling-hub__billing-head">
+        <div>
+          <h3>Billing</h3>
+          <p className="admin-muted">
+            {localCase?.service_type || 'Service'} · {localCase?.product_module?.replace(/_/g, ' ') || '—'}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {canEdit ? (
+            <button
+              type="button"
+              className="admin-btn admin-btn--secondary admin-btn--sm"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? 'Close' : 'Edit billing'}
+            </button>
+          ) : null}
+          <Link
+            to={`/admin/cases/${caseItem?.id}?tab=billing`}
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+          >
+            Full billing tab →
+          </Link>
+        </div>
+      </div>
+
+      {hint ? (
+        <p className="admin-scheduling-hub__billing-summary">{hint}</p>
+      ) : (
+        <p className="admin-scheduling-hub__billing-note">
+          No billing configured. Use "Edit billing" or go to the Billing tab to set rates.
+        </p>
+      )}
+
+      {saved ? <p className="admin-alert admin-alert--success" style={{ marginTop: 8 }}>Billing saved.</p> : null}
+
+      {expanded && canEdit ? (
+        <div style={{ marginTop: 16, borderTop: '1px solid var(--border, #e2e8f0)', paddingTop: 16 }}>
+          <CaseBillingForm
+            caseItem={localCase}
+            onSave={handleSave}
+            readOnly={false}
+          />
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export function CaseSchedulingHub({
+  caseItem,
+  assignments,
+  onDone,
+  onSessionsChange,
+  onCaseUpdated,
+  canBook = true,
+  canAssign = false,
+  canEditBilling = false,
+}) {
+  const { isViewOnly } = useAuth()
+  const readOnly = !canBook || isViewOnly
+
+  const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || assignments?.[0]
+  const assignedTherapistId = activeAssignment ? String(activeAssignment.therapist_user_id) : ''
+
+  // Schedule state
+  const [therapistId, setTherapistId] = useState('')
+  const [showOneOff, setShowOneOff] = useState(false)
   const [upcoming, setUpcoming] = useState([])
   const [loadingUpcoming, setLoadingUpcoming] = useState(true)
   const [detailSlot, setDetailSlot] = useState(null)
@@ -55,21 +318,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
   const [rangeMode, setRangeMode] = useState('weeks')
   const [rangeWeeks, setRangeWeeks] = useState(8)
   const [recurStart, setRecurStart] = useState('')
-  const [recurEnd, setRecurEnd] = useState('')
   const [recurPreview, setRecurPreview] = useState(null)
-
-  const billingHint = useMemo(() => {
-    if (!caseItem) return ''
-    return billingSummary({
-      billing_type: caseItem.billing_type,
-      client_rate_per_session_inr: caseItem.client_rate_per_session_inr,
-      package_session_count: caseItem.package_session_count,
-      package_amount_inr: caseItem.package_amount_inr,
-      compensation_mode: caseItem.compensation_mode,
-      pay_share_pct: caseItem.pay_share_pct,
-      therapist_fixed_pay_inr: caseItem.therapist_fixed_pay_inr,
-    })
-  }, [caseItem])
 
   const selectedRule = useMemo(() => {
     if (!caseItem?.product_billing_rule_id) return null
@@ -109,7 +358,6 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
     if (assignedTherapistId) setTherapistId(assignedTherapistId)
     const today = new Date().toISOString().slice(0, 10)
     setRecurStart(today)
-    setRecurEnd(addDaysIso(today, 56))
   }, [assignedTherapistId, activeAssignment?.id])
 
   useEffect(() => {
@@ -129,48 +377,6 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
       .catch(() => setAvailSlots([]))
   }, [therapistId, fromDate, toDate, showOneOff])
 
-  function handleTherapistChange(nextId) {
-    if (
-      assignedTherapistId &&
-      nextId &&
-      nextId !== assignedTherapistId
-    ) {
-      setPendingReassign(nextId)
-      return
-    }
-    setTherapistId(nextId)
-    setPendingReassign(null)
-  }
-
-  async function confirmReassign() {
-    if (!pendingReassign || !caseItem?.id) return
-    setReassignBusy(true)
-    setError('')
-    try {
-      await apiFetch(`/api/v1/cases/${caseItem.id}/assignments`, {
-        method: 'POST',
-        body: JSON.stringify({
-          therapist_user_id: Number(pendingReassign),
-          start_date: new Date().toISOString().slice(0, 10),
-          reason_for_change: reassignReason.trim() || 'Reassigned from scheduling',
-        }),
-      })
-      setTherapistId(pendingReassign)
-      setPendingReassign(null)
-      setSuccess('Therapist reassigned for this case.')
-      onDone?.()
-    } catch (err) {
-      setError(err.message || 'Could not reassign therapist')
-    } finally {
-      setReassignBusy(false)
-    }
-  }
-
-  function cancelReassign() {
-    setPendingReassign(null)
-    setTherapistId(assignedTherapistId)
-  }
-
   async function bookSingleSlot(slot) {
     if (readOnly) return
     setBooking(true)
@@ -189,11 +395,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
       })
       setBookingSuccess({
         event: mapSlotToCalendarEvent(
-          {
-            ...slot,
-            child_name: caseItem.child_name,
-            case_code: caseItem.case_code,
-          },
+          { ...slot, child_name: caseItem.child_name, case_code: caseItem.case_code },
           { deepLinkPath: `/admin/cases/${caseItem.id}?tab=scheduling` },
         ),
         detailLines: [
@@ -216,7 +418,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
     setError('')
     setRecurPreview(null)
     if (!therapistId) {
-      setError('Select or confirm a therapist first.')
+      setError('Assign or confirm a therapist above first.')
       return
     }
     try {
@@ -268,89 +470,31 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
   }
 
   const tid = therapistId ? Number(therapistId) : null
-  const moduleLabel = caseItem.product_module?.replace(/_/g, ' ') || '—'
 
   return (
     <section className="admin-layout admin-layout--stack admin-scheduling-hub">
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
       {success ? <p className="admin-alert admin-alert--success">{success}</p> : null}
 
-      <article className="admin-scheduling-hub__billing card">
-        <div className="admin-scheduling-hub__billing-head">
-          <div>
-            <h3>Billing criteria</h3>
-            <p className="admin-muted">
-              {caseItem.service_type || 'Service'} · {moduleLabel}
-            </p>
-          </div>
-          <Link to={`/admin/cases/${caseItem.id}?tab=billing`} className="admin-btn admin-btn--secondary admin-btn--sm">
-            Edit billing
-          </Link>
-        </div>
-        {billingHint ? <p className="admin-scheduling-hub__billing-summary">{billingHint}</p> : null}
-        {selectedRule ? (
-          <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: 8 }}>
-            Ledger rule: {selectedRule.productName} ({selectedRule.billingModel})
-          </p>
-        ) : (
-          <p className="admin-scheduling-hub__billing-note">
-            Product billing rules are filtered by this case&apos;s module ({moduleLabel}). To use homecare or
-            another line, set the case service category / product module on the Billing tab, then pick a matching
-            rule. Configure global rules under Finance → Product billing rules.
-          </p>
-        )}
-      </article>
+      {/* ── Section 1: Therapist Assignment ── */}
+      <TherapistAssignSection
+        caseItem={caseItem}
+        assignments={assignments}
+        canAssign={canAssign}
+        readOnly={isViewOnly}
+        onAssigned={() => {
+          onDone?.()
+        }}
+      />
 
-      <article className="admin-scheduling-hub__therapist card">
-        <h3>Therapist</h3>
-        {activeAssignment ? (
-          <p className="admin-scheduling-hub__assigned">
-            Assigned: <strong>{activeAssignment.therapist_name || `Therapist #${activeAssignment.therapist_user_id}`}</strong>
-            {activeAssignment.start_date ? ` · since ${activeAssignment.start_date}` : ''}
-          </p>
-        ) : (
-          <p className="admin-scheduling-hub__billing-note">No active assignment — choose a therapist to book sessions.</p>
-        )}
+      {/* ── Section 2: Billing Review ── */}
+      <BillingReviewSection
+        caseItem={caseItem}
+        canEdit={canEditBilling}
+        onSaved={(updated) => onCaseUpdated?.(updated)}
+      />
 
-        {pendingReassign ? (
-          <div className="admin-scheduling-hub__reassign">
-            <p>
-              <strong>Reassign case?</strong> Selecting a different therapist will end the current assignment and
-              start a new one before you can book.
-            </p>
-            <label className="admin-label">
-              Reason
-              <input
-                className="admin-input"
-                value={reassignReason}
-                onChange={(e) => setReassignReason(e.target.value)}
-                placeholder="e.g. Caseload rebalance"
-              />
-            </label>
-            <div className="admin-btn-group">
-              <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={reassignBusy} onClick={confirmReassign}>
-                {reassignBusy ? 'Reassigning…' : 'Confirm reassign'}
-              </button>
-              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={cancelReassign}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <label className="admin-label">
-            {activeAssignment ? 'Change therapist' : 'Assign therapist'}
-            <AdminTherapistPicker
-              mode="allotment"
-              productModule={caseItem.product_module}
-              caseId={caseItem.id}
-              value={therapistId}
-              onChange={handleTherapistChange}
-              disabled={readOnly}
-            />
-          </label>
-        )}
-      </article>
-
+      {/* ── Section 3: Book sessions (recurring) ── */}
       <article className="admin-scheduling-hub__book card">
         <h3>Book sessions</h3>
         <p className="admin-muted" style={{ marginBottom: 16 }}>
@@ -358,7 +502,9 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
         </p>
 
         {!therapistId ? (
-          <p className="admin-scheduling-hub__billing-note">Assign or confirm a therapist above to continue.</p>
+          <p className="admin-scheduling-hub__billing-note">
+            Assign or confirm a therapist above to continue scheduling.
+          </p>
         ) : (
           <>
             <div className="admin-scheduling-hub__recurring">
@@ -422,6 +568,12 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
                 </p>
               </div>
 
+              {selectedRule ? (
+                <p className="admin-muted" style={{ fontSize: '0.8rem', marginTop: 8 }}>
+                  Ledger rule: {selectedRule.productName} ({selectedRule.billingModel})
+                </p>
+              ) : null}
+
               {!readOnly ? (
                 <div className="admin-btn-group" style={{ marginTop: 12 }}>
                   <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={previewRecurring}>
@@ -451,6 +603,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
               ) : null}
             </div>
 
+            {/* ── One-off booking ── */}
             <div className="admin-scheduling-hub__oneoff">
               <button
                 type="button"
@@ -539,6 +692,7 @@ export function CaseSchedulingHub({ caseItem, assignments, onDone, onSessionsCha
         )}
       </article>
 
+      {/* ── Section 4: Upcoming sessions ── */}
       <article className="admin-scheduling-hub__upcoming card">
         <h3>Upcoming sessions</h3>
         {loadingUpcoming ? (

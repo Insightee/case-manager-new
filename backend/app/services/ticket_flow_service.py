@@ -12,8 +12,13 @@ from app.services import case_service, ticket_escalation_service as ticket_esc
 from app.services.ticket_participant_service import primary_portal_label, role_label
 
 
-def _is_staff(user: User) -> bool:
-    return user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override")
+def _is_staff(user: User, ticket: SupportTicket) -> bool:
+    if "THERAPIST" in user.role_names:
+        return ticket.raised_by_user_id != user.id
+    return (
+        user_has_permission(user, "ticket.manage")
+        or user_has_permission(user, "admin.override")
+    )
 
 
 def _has_non_raiser_reply(db: Session, ticket: SupportTicket) -> bool:
@@ -34,7 +39,7 @@ def ticket_flow_flags(db: Session, user: User, ticket: SupportTicket) -> dict:
     level = ticket.escalation_level or 0
     max_level = len(roles) - 1
     is_raiser = ticket.raised_by_user_id == user.id
-    staff = _is_staff(user)
+    staff = _is_staff(user, ticket)
     has_staff_reply = _has_non_raiser_reply(db, ticket)
     closed = ticket.status == TicketStatus.CLOSED
 
@@ -94,7 +99,7 @@ def resolve_ticket(
     *,
     note: str | None = None,
 ) -> None:
-    if not _is_staff(user):
+    if not _is_staff(user, ticket):
         raise ValueError("Only staff can resolve tickets")
     if ticket.status == TicketStatus.CLOSED:
         raise ValueError("Ticket is already closed")
@@ -118,7 +123,7 @@ def close_ticket(
         raise ValueError("Ticket is already closed")
 
     is_raiser = ticket.raised_by_user_id == user.id
-    staff = _is_staff(user)
+    staff = _is_staff(user, ticket)
 
     if is_raiser:
         if accept_resolution and ticket.status != TicketStatus.RESOLVED:
@@ -161,7 +166,7 @@ def set_ticket_status(
     *,
     note: str | None = None,
 ) -> None:
-    if not _is_staff(user):
+    if not _is_staff(user, ticket):
         raise ValueError("Only staff can change ticket status")
     if ticket.status == TicketStatus.CLOSED and status != TicketStatus.CLOSED:
         raise ValueError("Reopen closed tickets with a new message or escalate")
@@ -192,7 +197,7 @@ def escalate_ticket_for_user(
     assign_to_user_id: int | None = None,
 ) -> dict:
     flags = ticket_flow_flags(db, user, ticket)
-    staff = _is_staff(user)
+    staff = _is_staff(user, ticket)
     if not flags["can_escalate"] and not flags.get("can_escalate_staff"):
         raise ValueError("Cannot escalate this ticket")
 
@@ -233,7 +238,7 @@ def escalate_ticket_for_user(
     roles = ticket_esc.escalation_roles(ticket.topic)
     level = ticket.escalation_level or 0
     role_label = roles[level] if level < len(roles) else "support"
-    who = "Staff" if _is_staff(user) and user.id != ticket.raised_by_user_id else "Requester"
+    who = "Staff" if _is_staff(user, ticket) and user.id != ticket.raised_by_user_id else "Requester"
     extra = f" Reason: {reason.strip()}" if reason and reason.strip() else ""
     _add_system_message(
         db,
@@ -282,6 +287,6 @@ def on_ticket_message(
                 "[Reopened] Requester replied after resolution — ticket is open again.",
             )
         return
-    if _is_staff(user) or user.id != ticket.raised_by_user_id:
+    if _is_staff(user, ticket) or user.id != ticket.raised_by_user_id:
         if ticket.status == TicketStatus.OPEN:
             ticket.status = TicketStatus.IN_PROGRESS

@@ -92,3 +92,42 @@ def test_invalid_service_category_rejected():
         json={"display_name": "X", "services_offered": ["invalid_service"]},
     )
     assert r.status_code == 400
+
+
+def test_therapist_edit_start_date_approval_flow():
+    therapist = _login("therapist@demo.com")
+    th = _headers(therapist)
+
+    # 1. Therapist updates employment_start_date
+    r = client.put(
+        "/api/v1/therapist/profile",
+        headers=th,
+        json={
+            "display_name": "Neha K.",
+            "services_offered": ["homecare"],
+            "employment_start_date": "2021-06-15",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["employment_start_date"] == "2021-06-15"
+    assert r.json()["status"] == "DRAFT"
+
+    # 2. Therapist submits profile
+    r = client.post("/api/v1/therapist/profile/submit", headers=th)
+    assert r.status_code == 200
+    assert r.json()["status"] == "PENDING"
+
+    # 3. Admin approves
+    admin = _login("superadmin@demo.com")
+    ah = _headers(admin)
+    pending = client.get("/api/v1/admin/therapist-profiles?status=PENDING", headers=ah).json()
+    profile = next(p for p in pending if p["display_name"] == "Neha K.")
+    
+    r = client.post(
+        f"/api/v1/admin/therapist-profiles/{profile['id']}/approve",
+        headers=ah,
+        json={"admin_note": "Approved start date"},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "APPROVED"
+    assert r.json()["employment_start_date"] == "2021-06-15"

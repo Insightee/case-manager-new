@@ -81,7 +81,7 @@ def test_parent_cases_hide_closed_and_suspended():
             "compensation_mode": "PERCENTAGE",
             "client_billing_mode": "POSTPAID",
             "client_rate_per_session_inr": 1200,
-            "pay_share_pct": 60,
+            "pay_share_amount_inr": 720,
             "therapist_user_id": therapist_id,
         },
     )

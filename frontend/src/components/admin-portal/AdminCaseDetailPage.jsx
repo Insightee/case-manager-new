@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
-import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
+
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseBillingActionsCard } from './CaseBillingActionsCard.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
@@ -20,20 +20,20 @@ import { CaseActivityPanel } from './CaseActivityPanel.jsx'
 import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { IepBuilderPanel } from './IepBuilderPanel.jsx'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
+import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
 import './admin-case-detail-mobile.css'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'activity', label: 'Activity' },
-  { id: 'assignments', label: 'Assignments' },
   { id: 'logs', label: 'Session logs' },
   { id: 'reports', label: 'Reports' },
   { id: 'incidents', label: 'Incidents', perm: 'incident.read_sensitive' },
   { id: 'iep', label: 'IEP builder', perm: 'iep.read' },
   { id: 'documents', label: 'Documents' },
-  { id: 'cm-meetings', label: 'CM meetings' },
+  { id: 'cm-meetings', label: 'Meetings' },
   { id: 'billing', label: 'Billing', perm: 'case.update' },
-  { id: 'scheduling', label: 'Scheduling', perm: 'slot.book_any' },
+  { id: 'scheduling', label: 'Assign & Schedule', perm: 'slot.book_any' },
 ]
 
 export function AdminCaseDetailPage() {
@@ -46,11 +46,6 @@ export function AdminCaseDetailPage() {
   const { canReviewLogs } = useModuleWrite()
   const [caseRow, setCaseRow] = useState(null)
   const [assignments, setAssignments] = useState([])
-  const [therapistId, setTherapistId] = useState('')
-  const [assignStartDate, setAssignStartDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [assignReason, setAssignReason] = useState('Assigned from case hub')
-  const [assignBusy, setAssignBusy] = useState(false)
-  const [assignSuccess, setAssignSuccess] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [parentContact, setParentContact] = useState(null)
@@ -121,19 +116,7 @@ export function AdminCaseDetailPage() {
     setSearchParams(next, { replace: true })
   }
 
-  async function handleAssign() {
-    if (!therapistId || !caseRow) return
-    await apiFetch(`/api/v1/cases/${caseRow.id}/assignments`, {
-      method: 'POST',
-      body: JSON.stringify({
-        therapist_user_id: Number(therapistId),
-        start_date: new Date().toISOString().slice(0, 10),
-        reason_for_change: 'Assigned from case hub',
-      }),
-    })
-    setTherapistId('')
-    await load()
-  }
+
 
   const [billingMsg, setBillingMsg] = useState('')
   const [billingErr, setBillingErr] = useState('')
@@ -227,6 +210,14 @@ export function AdminCaseDetailPage() {
 
       {tab === 'overview' && (
         <section className="admin-layout admin-layout--stack">
+          {caseRow ? (
+            <CaseClientStatusCard
+              caseId={caseRow.id}
+              caseRow={caseRow}
+              canEdit={canEditCase}
+              onStatusChanged={(updatedCase) => setCaseRow(updatedCase)}
+            />
+          ) : null}
           {addr ? (
             <div className="admin-panel" style={{ padding: 16 }}>
               <h3 style={{ marginTop: 0 }}>Service address</h3>
@@ -256,76 +247,7 @@ export function AdminCaseDetailPage() {
         </section>
       )}
 
-      {tab === 'assignments' && (
-        <section>
-          {canAssignCase ? (
-            <div className="admin-form-grid" style={{ maxWidth: 480, marginBottom: 16 }}>
-              {activeAssignment ? (
-                <p className="admin-muted" style={{ gridColumn: '1 / -1', fontSize: '0.875rem' }}>
-                  Active: {activeAssignment.therapist_name || `#${activeAssignment.therapist_user_id}`} since{' '}
-                  {activeAssignment.start_date}. Selecting another therapist will end this assignment.
-                </p>
-              ) : null}
-              <label>
-                Assign therapist
-                <AdminTherapistPicker
-                  mode="allotment"
-                  productModule={caseRow.product_module}
-                  caseId={caseRow.id}
-                  value={therapistId}
-                  onChange={setTherapistId}
-                />
-              </label>
-              <label>
-                Start date
-                <input
-                  type="date"
-                  className="admin-input"
-                  value={assignStartDate}
-                  onChange={(e) => setAssignStartDate(e.target.value)}
-                />
-              </label>
-              <label style={{ gridColumn: '1 / -1' }}>
-                Reason for change
-                <input
-                  type="text"
-                  className="admin-input"
-                  value={assignReason}
-                  onChange={(e) => setAssignReason(e.target.value)}
-                  placeholder="e.g. Caseload rebalance"
-                />
-              </label>
-              {assignSuccess ? <p className="admin-alert admin-alert--success" style={{ gridColumn: '1 / -1' }}>{assignSuccess}</p> : null}
-              <button
-                type="button"
-                className="admin-btn admin-btn--primary"
-                onClick={handleAssign}
-                disabled={!therapistId || assignBusy}
-              >
-                {assignBusy ? 'Saving…' : activeAssignment ? 'Reassign therapist' : 'Assign therapist'}
-              </button>
-            </div>
-          ) : null}
-          <ul className="admin-queue">
-            {assignments.length === 0 ? (
-              <li className="admin-queue__item">No assignments yet.</li>
-            ) : (
-              assignments.map((a) => (
-                <li key={a.id} className="admin-queue__item">
-                  <div>
-                    <p className="admin-queue__title">{a.therapist_name || `Therapist #${a.therapist_user_id}`}</p>
-                    <p className="admin-queue__meta">
-                      {a.start_date}
-                      {a.end_date ? ` → ${a.end_date}` : ''}
-                    </p>
-                  </div>
-                  <StatusBadge status={a.status} />
-                </li>
-              ))
-            )}
-          </ul>
-        </section>
-      )}
+
 
       {tab === 'logs' && (
         <section>
@@ -383,7 +305,14 @@ export function AdminCaseDetailPage() {
       )}
 
       {tab === 'scheduling' && can('slot.book_any') && (
-        <AdminCaseSchedulingPanel caseItem={caseRow} assignments={assignments} onDone={load} />
+        <AdminCaseSchedulingPanel
+          caseItem={caseRow}
+          assignments={assignments}
+          onDone={load}
+          onCaseUpdated={(updated) => setCaseRow(updated)}
+          canAssign={canAssignCase}
+          canEditBilling={canEditCase}
+        />
       )}
 
       <AdminCaseDetailFab

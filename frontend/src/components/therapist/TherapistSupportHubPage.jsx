@@ -1,11 +1,13 @@
 import { useSearchParams } from 'react-router-dom'
 import { TherapistTicketsPage } from './TherapistTicketsPage.jsx'
 import { TherapistIncidentsPage } from './TherapistIncidentsPage.jsx'
+import { TherapistMemosPage } from './TherapistMemosPage.jsx'
 import '../client-portal/parent-support.css'
 
 const TABS = [
   { id: 'tickets', label: 'Support Tickets' },
   { id: 'incidents', label: 'Incident Reports' },
+  { id: 'memos', label: 'Memos Received' },
 ]
 
 export function TherapistSupportHubPage() {
@@ -36,6 +38,9 @@ export function TherapistSupportHubPage() {
       </div>
       <div className="parent-support-hub__panel" hidden={tab !== 'incidents'}>
         <TherapistIncidentsPage />
+      </div>
+      <div className="parent-support-hub__panel" hidden={tab !== 'memos'}>
+        <TherapistMemosPage />
       </div>
     </div>
   )

@@ -9,10 +9,12 @@ from app.models.case import BillingType, Case, CompensationMode
 from app.models.case_service import CaseService, CaseServiceStatus
 from app.models.case_billing_preference import CaseBillingPreference
 from app.models.case_status_request import CaseStatusRequest, CaseStatusRequestStatus
+from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.iep_plan import IepPlan, IepPlanStatus
 from app.models.iep_plan_suggestion import IepPlanSuggestion
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
+from app.models.meeting_action import MeetingAction
 from app.models.client_billing import (
     BillingDispute,
     CarePackage,
@@ -48,7 +50,7 @@ from app.models.session import Session as TherapySession
 from app.models.session_absence import SessionAbsenceRequest
 from app.models.session_start_idempotency import SessionStartIdempotency
 from app.models.leave import TherapistLeave
-from app.models.memo import Memo
+from app.models.memo import Memo, MemoMessage, MemoAttachment, MemoAuditLog
 from app.models.schedule_template import TherapistScheduleTemplate
 from app.models.appointment_reschedule import AppointmentReschedule
 from app.models.recurring_schedule import RecurringScheduleAssignment, RecurringScheduleStatus
@@ -83,11 +85,13 @@ __all__ = [
     "BillingLedger",
     "Organisation",
     "Case",
+    "CaseClientStatusAudit",
     "CaseService",
     "CaseServiceStatus",
     "BillingType",
     "CompensationMode",
     "CaseManagerMeeting",
+    "MeetingAction",
     "MeetingType",
     "MeetingStatus",
     "CaseAssignment",
@@ -135,6 +139,9 @@ __all__ = [
     "RecurringScheduleStatus",
     "AppointmentReschedule",
     "Memo",
+    "MemoMessage",
+    "MemoAttachment",
+    "MemoAuditLog",
     "TherapistProfile",
     "TherapistProfileStatus",
 ]

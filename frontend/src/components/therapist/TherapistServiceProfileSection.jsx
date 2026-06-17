@@ -24,6 +24,7 @@ export function TherapistServiceProfileSection() {
     academic_qualifications: '',
     professional_certificates: '',
     services_offered: [],
+    employment_start_date: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -42,6 +43,7 @@ export function TherapistServiceProfileSection() {
       academic_qualifications: prof.academic_qualifications || '',
       professional_certificates: (prof.professional_certificates || []).join('\n'),
       services_offered: prof.services_offered || [],
+      employment_start_date: prof.employment_start_date || '',
     })
   }
 
@@ -65,6 +67,7 @@ export function TherapistServiceProfileSection() {
         academic_qualifications: form.academic_qualifications.trim() || null,
         professional_certificates: certs,
         services_offered: form.services_offered,
+        employment_start_date: form.employment_start_date || null,
       }),
     })
     setProfile(updated)
@@ -151,6 +154,18 @@ export function TherapistServiceProfileSection() {
             <span className="therapist-profile__field-value">{profile?.email || '—'}</span>
           </div>
           <div className="therapist-profile__field">
+            <span className="therapist-profile__field-label">Start date</span>
+            <span className="therapist-profile__field-value">
+              {profile?.employment_start_date
+                ? new Date(profile.employment_start_date).toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : '—'}
+            </span>
+          </div>
+          <div className="therapist-profile__field">
             <span className="therapist-profile__field-label">Display name</span>
             <span className="therapist-profile__field-value">{form.display_name || '—'}</span>
           </div>
@@ -202,6 +217,17 @@ export function TherapistServiceProfileSection() {
             onChange={(e) => setForm({ ...form, display_name: e.target.value })}
             disabled={paused}
             required
+            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+          />
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
+          Start date
+          <input
+            type="date"
+            value={form.employment_start_date || ''}
+            onChange={(e) => setForm({ ...form, employment_start_date: e.target.value || '' })}
+            disabled={paused}
             style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem' }}
           />
         </label>

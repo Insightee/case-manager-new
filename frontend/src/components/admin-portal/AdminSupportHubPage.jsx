@@ -6,6 +6,7 @@ import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { AdminTicketsPage } from './AdminTicketsPage.jsx'
 import { AdminIncidentsPage } from './AdminIncidentsPage.jsx'
 import { AdminSupportReportsPage } from './AdminSupportReportsPage.jsx'
+import { AdminMemosPage } from './AdminMemosPage.jsx'
 import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
 
 function normalizeSupportTab(raw) {
@@ -95,6 +96,11 @@ export function AdminSupportHubPage() {
       {tab === 'incidents' && visibleTabs.some((t) => t.id === 'incidents') ? (
         <div className="admin-hub-embedded">
           <AdminIncidentsPage embedded canManageIncidents={canManageIncidents} />
+        </div>
+      ) : null}
+      {tab === 'memos' && visibleTabs.some((t) => t.id === 'memos') ? (
+        <div className="admin-hub-embedded">
+          <AdminMemosPage />
         </div>
       ) : null}
       {tab === 'reports' && visibleTabs.some((t) => t.id === 'reports') ? (

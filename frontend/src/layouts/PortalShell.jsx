@@ -20,7 +20,7 @@ const THERAPIST_NAV = [
   { to: '/therapist/reports', label: 'Monthly Reports' },
   { to: '/therapist/invoices', label: 'Invoices' },
   { to: '/therapist/support', label: 'Support & Incidents' },
-  { to: '/therapist/cm-meetings', label: 'CM meetings' },
+  { to: '/therapist/meetings', label: 'Meetings' },
   { to: '/therapist/leave', label: 'Leave' },
   { to: '/therapist/slots', label: 'Scheduling' },
 ]
@@ -40,6 +40,7 @@ const PARENT_NAV = [
   { to: '/parent/billing', label: 'Billing' },
   { to: '/parent/profile', label: 'My profile' },
   { to: '/parent/support', label: 'Support & Incidents' },
+  { to: '/parent/meetings', label: 'Meetings' },
 ]
 
 const PARENT_MOBILE_NAV = [
@@ -64,7 +65,7 @@ function caseManagerNav(clinicalModuleIds) {
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid' },
     { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports' },
     { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep' },
-    { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
+    { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail' },
   ]
 }
@@ -78,7 +79,7 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports', section: 'Operations' },
     { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep', section: 'Operations' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail', section: 'Operations' },
-    { to: '/admin/cm-meetings', label: 'CM Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },
+    { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },
     { to: '/admin/invoices', label: 'Invoices & payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices', section: 'Finance' },
     { to: '/admin/therapist-payouts', label: 'Therapist payouts', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'wallet', section: 'Finance' },
     { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },

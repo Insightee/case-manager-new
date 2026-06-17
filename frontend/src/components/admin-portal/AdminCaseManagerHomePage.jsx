@@ -172,7 +172,7 @@ export function AdminCaseManagerHomePage() {
   const caseloadPanelRef = useRef(null)
 
   useEffect(() => {
-    apiFetch('/api/v1/cm-meetings/pending-completion')
+    apiFetch('/api/v1/meetings/pending-completion')
       .then((rows) => setPendingMeetings(Array.isArray(rows) ? rows : []))
       .catch(() => setPendingMeetings([]))
   }, [])
@@ -339,7 +339,7 @@ export function AdminCaseManagerHomePage() {
                           <StatusBadge tone="amber">Overdue</StatusBadge>
                         </p>
                       </div>
-                      <Link to="/admin/cm-meetings" className="admin-btn admin-btn--secondary admin-btn--sm">
+                      <Link to="/admin/meetings" className="admin-btn admin-btn--secondary admin-btn--sm">
                         Mark completed
                       </Link>
                     </div>

@@ -153,7 +153,7 @@ export function TherapistIncidentsPage() {
                 incident={expandedDetail}
                 onUpdated={onDetailUpdated}
                 apiBase="/api/v1/incidents"
-                canManage={false}
+                canManage={true}
               />
             ) : (
               <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 12 }}>Loading…</p>

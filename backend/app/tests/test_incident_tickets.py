@@ -160,3 +160,35 @@ def test_attachment_upload():
 
     detail = client.get(f"/api/v1/incidents/{created['id']}", headers=headers).json()
     assert detail["attachments"][0]["file_name"] == "note.txt"
+
+
+def test_message_with_attachments():
+    token = _login()
+    headers = _headers(token)
+    created = client.post(
+        "/api/v1/incidents",
+        headers=headers,
+        json=_create_payload(
+            primary_category="BEHAVIOUR_EMOTIONAL",
+            subcategory="aggression",
+        ),
+    ).json()
+
+    # Post a message with files using multipart/form-data
+    files = [("files", ("reply.txt", b"reply attachment content", "text/plain"))]
+    msg = client.post(
+        f"/api/v1/incidents/{created['id']}/messages",
+        headers=headers,
+        data={"body": "This is a reply with attachments."},
+        files=files,
+    )
+    assert msg.status_code == 201, msg.text
+    data = msg.json()
+
+    # The new message should be the last one in the detail view and have the attachment
+    assert len(data["messages"]) > 0
+    last_msg = data["messages"][-1]
+    assert last_msg["body"] == "This is a reply with attachments."
+    assert len(last_msg["attachments"]) == 1
+    assert last_msg["attachments"][0]["file_name"] == "reply.txt"
+

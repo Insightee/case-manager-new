@@ -252,7 +252,7 @@ export function AppRoutes() {
         <Route path="leave" element={<TherapistLeavePage />} />
         <Route path="slots" element={<TherapistSlotsPage />} />
         <Route
-          path="cm-meetings"
+          path="meetings"
           element={
             <Lazy>
               <CaseManagerMeetingsPage portal="therapist" />
@@ -348,6 +348,14 @@ export function AppRoutes() {
             }
           />
           <Route path="incidents" element={<Navigate to="/parent/support?tab=incidents" replace />} />
+          <Route
+            path="meetings"
+            element={
+              <Lazy>
+                <CaseManagerMeetingsPage portal="parent" />
+              </Lazy>
+            }
+          />
         </Route>
       </Route>
 
@@ -523,13 +531,14 @@ export function AppRoutes() {
           }
         />
         <Route
-          path="cm-meetings"
+          path="meetings"
           element={
             <Lazy>
-              <CaseManagerMeetingsPage />
+              <CaseManagerMeetingsPage portal="admin" />
             </Lazy>
           }
         />
+        <Route path="cm-meetings" element={<Navigate to="/admin/meetings" replace />} />
         <Route
           path="leave"
           element={
@@ -538,14 +547,7 @@ export function AppRoutes() {
             </Lazy>
           }
         />
-        <Route
-          path="memos"
-          element={
-            <Lazy>
-              <HRMemosPage />
-            </Lazy>
-          }
-        />
+        <Route path="memos" element={<Navigate to="/admin/support?tab=memos" replace />} />
         <Route
           path="hr-cases"
           element={
@@ -570,7 +572,7 @@ export function AppRoutes() {
       <Route path="/hr/therapists" element={<Navigate to="/admin/therapist-profiles" replace />} />
       <Route path="/hr/cases" element={<Navigate to="/admin/hr-cases" replace />} />
       <Route path="/hr/leave" element={<Navigate to="/admin/leave" replace />} />
-      <Route path="/hr/memos" element={<Navigate to="/admin/memos" replace />} />
+      <Route path="/hr/memos" element={<Navigate to="/admin/support?tab=memos" replace />} />
       <Route path="/hr/tickets" element={<Navigate to="/admin/support?tab=tickets" replace />} />
       <Route path="/hr/*" element={<Navigate to="/admin/people" replace />} />
 

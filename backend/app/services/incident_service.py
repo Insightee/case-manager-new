@@ -274,13 +274,23 @@ def incident_to_detail_dict(
                 {
                     "id": m.id,
                     "body": m.body,
+                    "author_user_id": m.author_user_id,
                     "author_name": m.author.full_name if m.author else "Unknown",
                     "is_reporter": m.author_user_id == incident.reported_by_user_id,
                     "created_at": m.created_at.isoformat(),
+                    "attachments": [
+                        att_svc.attachment_to_dict(a)
+                        for a in incident.attachments
+                        if a.message_id == m.id
+                    ],
                 }
                 for m in incident.messages
             ],
-            "attachments": [att_svc.attachment_to_dict(a) for a in incident.attachments],
+            "attachments": [
+                att_svc.attachment_to_dict(a)
+                for a in incident.attachments
+                if a.message_id is None
+            ],
         }
     )
     if user is not None:

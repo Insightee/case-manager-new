@@ -36,7 +36,7 @@ FORBIDDEN_PARENT_KEYS = frozenset({
     "case_manager_user_id",
     "billing_type",
     "client_rate_per_session_inr",
-    "pay_share_pct",
+    "pay_share_amount_inr",
     "compensation_mode",
     "late_reason",
     "editable_until",

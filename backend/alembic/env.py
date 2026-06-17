@@ -51,10 +51,10 @@ def run_migrations_online() -> None:
         insp = inspect(connection)
         empty = not insp.has_table("users")
 
-        if is_sqlite and empty:
+        if empty:
             context.configure(connection=connection, target_metadata=target_metadata)
             with context.begin_transaction():
-                # Greenfield SQLite: create_all matches current models; incremental revisions
+                # Greenfield DB: create_all matches current models; incremental revisions
                 # mostly duplicate columns and fail. Stamp head (same as migrate_production.py).
                 target_metadata.create_all(bind=connection)
                 if not insp.has_table("alembic_version"):
