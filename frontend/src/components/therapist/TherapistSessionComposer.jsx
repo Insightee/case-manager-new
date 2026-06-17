@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
-import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
-import { canStartSessionToday, logsPathForSession } from '../../lib/sessionStartRules.js'
-import { SameDaySessionDialog } from '../daily-logs/SameDaySessionDialog.jsx'
-import { formatDisplayDate, formatDisplayDateTimeRange, todayIsoIST } from '../../lib/datetime.js'
+import { todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
-import { isToday, todayIso } from '../../lib/therapistSchedule.js'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
 // TODO: re-enable when therapist self-onboarding is allowed again
 // import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
@@ -37,20 +32,19 @@ function addMinutesToTime(timeStr, mins) {
 }
 
 /**
- * Top-of-page session actions: start scheduled/booked visits, walk-in today, or log a past session.
+ * Top-of-page session actions: walk-in today, log a past session, or report absence.
  */
 export function TherapistSessionComposer({
   lockCaseId = null,
   lockCaseLabel = '',
   upcomingSessions = [],
-  bookedSlots = [],
   disabled = false,
   onSessionStarted,
   onManualSession,
   onError,
+  onSelectedCaseChange,
 }) {
   const { user } = useAuth()
-  const navigate = useNavigate()
   const [mode, setMode] = useState('live')
   const [cases, setCases] = useState([])
   const [caseId, setCaseId] = useState(lockCaseId ? String(lockCaseId) : '')
@@ -59,8 +53,6 @@ export function TherapistSessionComposer({
   const [walkInMode, setWalkInMode] = useState('HOME')
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState('')
-  const [sameDayConflict, setSameDayConflict] = useState(null)
-  const [sameDayPending, setSameDayPending] = useState(null)
   const [absenceSessionId, setAbsenceSessionId] = useState(null)
 
   useEffect(() => {
@@ -93,21 +85,9 @@ export function TherapistSessionComposer({
 
   const selectedCaseId = caseId ? Number(caseId) : null
 
-  const scheduledForCase = useMemo(() => {
-    if (!selectedCaseId) return []
-    const today = todayIsoIST()
-    return upcomingSessions.filter(
-      (s) => s.case_id === selectedCaseId && s.status === 'SCHEDULED' && s.scheduled_date >= today,
-    )
-  }, [upcomingSessions, selectedCaseId])
-
-  const bookingsForCase = useMemo(() => {
-    if (!selectedCaseId) return []
-    const today = todayIso()
-    return bookedSlots.filter(
-      (sl) => sl.case_id === selectedCaseId && sl.status === 'BOOKED' && sl.slot_date >= today,
-    )
-  }, [bookedSlots, selectedCaseId])
+  useEffect(() => {
+    onSelectedCaseChange?.(selectedCaseId)
+  }, [selectedCaseId, onSelectedCaseChange])
 
   const todaySessionsForCase = useMemo(() => {
     if (!selectedCaseId) return []
@@ -154,55 +134,6 @@ export function TherapistSessionComposer({
     [cases],
   )
 
-  async function startSession(sessionRow, { allowDuplicate = false } = {}) {
-    const sessionId = typeof sessionRow === 'object' ? sessionRow.id : sessionRow
-    const meta = typeof sessionRow === 'object' ? sessionRow : { id: sessionId, scheduled_date: todayIsoIST() }
-    const guard = canStartSessionToday(meta)
-    if (!guard.ok) {
-      setLocalError(guard.message)
-      onError?.(guard.message)
-      return
-    }
-    setBusy(true)
-    setLocalError('')
-    try {
-      const result = await startClinicalSession(
-        sessionId,
-        meta,
-        user?.id,
-        allowDuplicate ? { allow_duplicate: true } : {},
-      )
-      if (!result.ok) {
-        if (result.conflict?.recommendedAction === 'DUPLICATE_SAME_DAY') {
-          setSameDayConflict(result.conflict)
-          setSameDayPending({ sessionRow, sessionId, meta })
-          return
-        }
-        setLocalError(result.message)
-        onError?.(result.message)
-        redirectForSessionConflict(result.conflict, navigate)
-        return
-      }
-      setSameDayConflict(null)
-      setSameDayPending(null)
-      const started = result.session
-      if (started?.invite_sent && started?.invite_email) {
-        onSessionStarted?.({
-          inviteSent: true,
-          message: `Invite sent to ${started.invite_email} — they will join the Client portal.`,
-        })
-      } else {
-        onSessionStarted?.()
-      }
-    } catch (err) {
-      const msg = err.message || 'Could not start session'
-      setLocalError(msg)
-      onError?.(msg)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function handleWalkIn(e) {
     e.preventDefault()
     if (!selectedCaseId) {
@@ -211,7 +142,7 @@ export function TherapistSessionComposer({
     }
     setBusy(true)
     setLocalError('')
-    const today = todayIso()
+    const today = todayIsoIST()
     try {
       const created = await apiFetch('/api/v1/sessions', {
         method: 'POST',
@@ -456,94 +387,14 @@ export function TherapistSessionComposer({
                   {busy ? 'Starting…' : 'Start session'}
                 </button>
               </form>
-
-              {scheduledForCase.length > 0 ? (
-                <div className="ic-session-composer__group">
-                  <p className="ic-session-composer__group-label">Scheduled sessions</p>
-                  <ul className="ic-session-composer__options">
-                    {scheduledForCase.map((s) => {
-                      const canStart = canStartSessionToday(s).ok
-                      const isToday = s.scheduled_date === todayIsoIST()
-                      return (
-                        <li key={s.id}>
-                          <div className="ic-session-option">
-                            <div>
-                              <strong>{formatDisplayDate(s.scheduled_date)}</strong>
-                              <span>
-                                {String(s.start_time).slice(0, 5)}–{String(s.end_time).slice(0, 5)} · {s.mode}
-                              </span>
-                            </div>
-                            {isToday && canStart ? (
-                              <button
-                                type="button"
-                                className="ic-btn ic-btn--primary"
-                                disabled={busy}
-                                onClick={() => startSession(s)}
-                              >
-                                Start session
-                              </button>
-                            ) : (
-                              <span className="ic-session-option__hint">
-                                {s.scheduled_date > todayIsoIST() ? 'Opens on visit day' : 'Use Forgot to log'}
-                              </span>
-                            )}
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              ) : null}
-
-              {bookingsForCase.length > 0 ? (
-                <div className="ic-session-composer__group">
-                  <p className="ic-session-composer__group-label">Calendar bookings</p>
-                  <ul className="ic-session-composer__options">
-                    {bookingsForCase.map((sl) => (
-                      <li key={sl.id}>
-                        <div className="ic-session-option ic-session-option--booking">
-                          <div>
-                            <strong>{formatDisplayDateTimeRange(sl.slot_date, sl.start_time, sl.end_time)}</strong>
-                            <span>
-                              {String(sl.start_time).slice(0, 5)}–{String(sl.end_time).slice(0, 5)}
-                              {sl.booking_source === 'PARENT' ? ' · Parent booked' : ''}
-                            </span>
-                          </div>
-                          <span className="ic-session-option__hint">
-                            {isToday(sl.slot_date)
-                              ? 'Use walk-in above if no scheduled session row'
-                              : 'Opens on the day'}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
             </>
           ) : (
-            <p className="ic-session-composer__hint">Select a client to see scheduled visits or start a walk-in.</p>
+            <p className="ic-session-composer__hint">
+              Select a client for walk-in, or start a scheduled visit in Upcoming sessions below.
+            </p>
           )}
         </div>
       ) : null}
-      <SameDaySessionDialog
-        open={Boolean(sameDayConflict)}
-        conflict={sameDayConflict}
-        busy={busy}
-        onEditExisting={(id) => {
-          setSameDayConflict(null)
-          setSameDayPending(null)
-          navigate(logsPathForSession(id))
-        }}
-        onStartAnother={async () => {
-          if (!sameDayPending) return
-          await startSession(sameDayPending.sessionRow, { allowDuplicate: true })
-        }}
-        onClose={() => {
-          setSameDayConflict(null)
-          setSameDayPending(null)
-        }}
-      />
     </section>
   )
 }

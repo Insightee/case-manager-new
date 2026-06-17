@@ -96,7 +96,6 @@ export function DailyLogsPage() {
   const upcoming = workspace?.upcoming || []
   const active = workspace?.active_session || null
   const needsLog = workspace?.needs_log || []
-  const bookedSlots = workspace?.booked_slots || []
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
   const loading = wsLoading || logsQuery.isLoading
   const logsReady = !wsLoading && !logsQuery.isLoading
@@ -116,6 +115,7 @@ export function DailyLogsPage() {
   const [sameDayConflict, setSameDayConflict] = useState(null)
   const [sameDayPending, setSameDayPending] = useState(null)
   const [editTimesSession, setEditTimesSession] = useState(null)
+  const [composerCaseId, setComposerCaseId] = useState(null)
   const logPanelRef = useRef(null)
   const deepLinkResolvedRef = useRef(null)
 
@@ -141,6 +141,11 @@ export function DailyLogsPage() {
   const filteredApproved = useMemo(() => filterByMonth(approvedLogs), [filterByMonth, approvedLogs])
   const filteredRejected = useMemo(() => filterByMonth(rejectedLogs), [filterByMonth, rejectedLogs])
   const filteredAll = useMemo(() => filterByMonth(logs), [filterByMonth, logs])
+
+  const displayUpcoming = useMemo(() => {
+    if (!composerCaseId) return upcoming
+    return upcoming.filter((s) => s.case_id === composerCaseId)
+  }, [upcoming, composerCaseId])
 
   const logYears = useMemo(() => {
     const years = new Set([now.getFullYear()])
@@ -723,8 +728,8 @@ export function DailyLogsPage() {
       {showComposer ? (
         <TherapistSessionComposer
           upcomingSessions={upcoming}
-          bookedSlots={bookedSlots}
           disabled={!!active}
+          onSelectedCaseChange={setComposerCaseId}
           onSessionStarted={(info) => {
             if (info?.message) setSuccess(info.message)
             void loadAll({ silent: true })
@@ -766,11 +771,15 @@ export function DailyLogsPage() {
           <h3 className="ic-section-head__title" style={{ marginBottom: 12 }}>
             Upcoming sessions
           </h3>
-          {upcoming.length === 0 ? (
-            <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>No scheduled sessions in the next two weeks.</p>
+          {displayUpcoming.length === 0 ? (
+            <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>
+              {composerCaseId
+                ? 'No upcoming sessions for this client.'
+                : 'No scheduled sessions in the next two weeks.'}
+            </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {upcoming.map((s) => {
+              {displayUpcoming.map((s) => {
                 const startedLate = isStartedLateOnSchedule(s.actual_start_at, s.scheduled_date, s.start_time)
                 const actualStart = formatTimeIST(s.actual_start_at)
                 const actualEnd = formatTimeIST(s.actual_end_at)
@@ -792,16 +801,33 @@ export function DailyLogsPage() {
                     }}
                   >
                     <div style={{ flex: 1, minWidth: 160 }}>
-                      <strong>{s.child_name || s.case_code}</strong>
-                      {/* Scheduled reference */}
+                      <strong>
+                        {composerCaseId
+                          ? formatDisplayDate(s.scheduled_date)
+                          : s.child_name || s.case_code}
+                      </strong>
                       <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#9ca3af' }}>
-                        Scheduled: {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)}
-                        {s.case_id ? (
+                        {composerCaseId ? (
                           <>
-                            {' · '}
-                            <Link to={`/therapist/cases/${s.case_id}`}>View case</Link>
+                            {String(s.start_time || '').slice(0, 5)}–{String(s.end_time || '').slice(0, 5)}
+                            {s.case_id ? (
+                              <>
+                                {' · '}
+                                <Link to={`/therapist/cases/${s.case_id}`}>View case</Link>
+                              </>
+                            ) : null}
                           </>
-                        ) : null}
+                        ) : (
+                          <>
+                            Scheduled: {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)}
+                            {s.case_id ? (
+                              <>
+                                {' · '}
+                                <Link to={`/therapist/cases/${s.case_id}`}>View case</Link>
+                              </>
+                            ) : null}
+                          </>
+                        )}
                       </p>
                       {/* Actual times */}
                       {actualStart ? (

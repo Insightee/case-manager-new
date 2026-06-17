@@ -345,15 +345,6 @@ export function CaseDetailPage() {
           childName={caseRow.child_name}
           childLabel={childLabel}
           scheduleItems={scheduleItems}
-          bookedSlots={scheduleItems.filter((i) => i.kind === 'booking').map((i) => ({
-            id: i.slotId,
-            case_id: i.caseId,
-            slot_date: i.date,
-            start_time: i.startTime,
-            end_time: i.endTime,
-            status: 'BOOKED',
-            booking_source: i.bookingSource,
-          }))}
           onScheduleChange={load}
         />
       ) : null}

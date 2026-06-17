@@ -34,7 +34,6 @@ export function CaseSessionsPanel({
   childName,
   childLabel = '',
   scheduleItems = [],
-  bookedSlots = [],
   onScheduleChange,
 }) {
   const { user } = useAuth()
@@ -311,7 +310,6 @@ export function CaseSessionsPanel({
           lockCaseId={caseId}
           lockCaseLabel={childLabel || `${childName} · ${caseCode}`}
           upcomingSessions={upcomingAll}
-          bookedSlots={bookedSlots}
           disabled={!!active}
           onSessionStarted={() => void load({ silent: true })}
           onManualSession={handleManual}
