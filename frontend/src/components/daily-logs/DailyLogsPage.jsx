@@ -795,7 +795,7 @@ export function DailyLogsPage() {
                       <strong>{s.child_name || s.case_code}</strong>
                       {/* Scheduled reference */}
                       <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#9ca3af' }}>
-                        Scheduled: {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)} · {s.mode}
+                        Scheduled: {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)}
                         {s.case_id ? (
                           <>
                             {' · '}
