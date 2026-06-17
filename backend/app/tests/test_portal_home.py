@@ -37,6 +37,41 @@ def test_therapist_home():
     assert isinstance(data["pending_cm_meetings"], list)
 
 
+def test_therapist_home_with_legacy_cm_meeting_type():
+    """Therapist home must not 500 when other cases have legacy meeting_type values."""
+    from datetime import date, timedelta
+
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case
+    from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
+    from app.models.user import User
+
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        other_case = db.scalars(select(Case).where(Case.status != "CLOSED").limit(1)).first()
+        assert therapist and other_case
+        meeting = CaseManagerMeeting(
+            case_manager_user_id=other_case.case_manager_user_id or therapist.id,
+            case_id=other_case.id,
+            scheduled_date=date.today() + timedelta(days=3),
+            meeting_type=MeetingType.CLIENT_ONLY,
+            status=MeetingStatus.SCHEDULED,
+        )
+        db.add(meeting)
+        db.commit()
+    finally:
+        db.close()
+
+    token = _login("therapist@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    r = client.get("/api/v1/therapist/home", headers=headers)
+    assert r.status_code == 200, r.text
+
+
 def test_therapist_sessions_workspace():
     token = _login("therapist@demo.com")
     headers = {"Authorization": f"Bearer {token}"}

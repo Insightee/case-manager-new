@@ -12,6 +12,11 @@ from app.core.database import Base
 
 
 class MeetingType(str, enum.Enum):
+    # Legacy Postgres meetingtype values (must match DB strings exactly).
+    CLIENT_ONLY = "CLIENT_ONLY"
+    CLIENT_AND_THERAPIST = "CLIENT_AND_THERAPIST"
+    SUPERVISION = "SUPERVISION"
+    # Current product values (SQLite / expanded Postgres enum).
     OBSERVATION_REVIEW = "OBSERVATION_REVIEW"
     OBSERVATION_CHECKLIST_REVIEW = "OBSERVATION_CHECKLIST_REVIEW"
     IEP_MEETING = "IEP_MEETING"
@@ -27,11 +32,6 @@ class MeetingType(str, enum.Enum):
     TRANSITION_PLANNING = "TRANSITION_PLANNING"
     CASE_CLOSURE_MEETING = "CASE_CLOSURE_MEETING"
     OTHER = "OTHER"
-
-    # Keep old ones as aliases for backward compatibility/migration mapping
-    CLIENT_ONLY = "PARENT_MEETING"
-    CLIENT_AND_THERAPIST = "PROGRESS_REVIEW"
-    SUPERVISION = "THERAPIST_SUPPORT"
 
 
 class MeetingStatus(str, enum.Enum):

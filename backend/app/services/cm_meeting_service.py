@@ -55,6 +55,19 @@ def user_can_view_meeting(meeting: CaseManagerMeeting, user_id: int) -> bool:
     return user_id in meeting_participant_user_ids(meeting)
 
 
+def _meeting_participant_sql_filter(user_id: int, assigned_case_ids: list[int] | None = None):
+    """SQL filter: meetings where user_id is a direct participant or on an assigned case."""
+    clauses = [
+        CaseManagerMeeting.case_manager_user_id == user_id,
+        CaseManagerMeeting.parent_user_id == user_id,
+        CaseManagerMeeting.therapist_user_id == user_id,
+        CaseManagerMeeting.mentor_user_id == user_id,
+    ]
+    if assigned_case_ids:
+        clauses.append(CaseManagerMeeting.case_id.in_(assigned_case_ids))
+    return or_(*clauses)
+
+
 def parse_guest_emails(raw: str | None) -> list[str]:
     if not raw:
         return []
@@ -78,8 +91,11 @@ def _meeting_type_label(meeting_type: MeetingType | None) -> str:
     labels = {
         MeetingType.CLIENT_ONLY: "Progress review",
         MeetingType.CLIENT_AND_THERAPIST: "Care coordination",
-        MeetingType.IEP_MEETING: "IEP discussion",
         MeetingType.SUPERVISION: "Internal meeting",
+        MeetingType.PARENT_MEETING: "Parent meeting",
+        MeetingType.PROGRESS_REVIEW: "Progress review",
+        MeetingType.THERAPIST_SUPPORT: "Therapist support",
+        MeetingType.IEP_MEETING: "IEP discussion",
     }
     if meeting_type:
         return labels.get(meeting_type, meeting_type.value.replace("_", " ").title())
@@ -144,17 +160,25 @@ def fetch_cm_meetings_for_user(
     to_date: date,
 ) -> list[CaseManagerMeeting]:
     """Scheduled CM meetings in range where the user is a participant."""
+    assigned_case_ids = list(
+        db.scalars(
+            select(CaseAssignment.case_id).where(
+                CaseAssignment.therapist_user_id == user_id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).all()
+    )
     stmt = (
         select(CaseManagerMeeting)
         .where(
             CaseManagerMeeting.scheduled_date >= from_date,
             CaseManagerMeeting.scheduled_date <= to_date,
             CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
+            _meeting_participant_sql_filter(user_id, assigned_case_ids),
         )
         .order_by(CaseManagerMeeting.scheduled_date, CaseManagerMeeting.scheduled_time)
     )
-    rows = db.scalars(stmt).all()
-    return [m for m in rows if user_can_view_meeting(m, user_id)]
+    return list(db.scalars(stmt).all())
 
 
 def fetch_pending_completion_for_therapist(
@@ -167,18 +191,25 @@ def fetch_pending_completion_for_therapist(
     from app.core.timezone import today_ist
 
     today = today_ist()
+    assigned_case_ids = list(
+        db.scalars(
+            select(CaseAssignment.case_id).where(
+                CaseAssignment.therapist_user_id == therapist_user_id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).all()
+    )
     stmt = (
         select(CaseManagerMeeting)
         .where(
             CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
             CaseManagerMeeting.scheduled_date < today,
+            _meeting_participant_sql_filter(therapist_user_id, assigned_case_ids),
         )
         .order_by(CaseManagerMeeting.scheduled_date.asc())
-        .limit(50)
+        .limit(limit)
     )
-    rows = db.scalars(stmt).all()
-    visible = [m for m in rows if user_can_view_meeting(m, therapist_user_id)]
-    return visible[:limit]
+    return list(db.scalars(stmt).all())
 
 
 def meeting_to_pending_dict(meeting: CaseManagerMeeting, db: Session) -> dict[str, Any]:
@@ -189,7 +220,7 @@ def meeting_to_pending_dict(meeting: CaseManagerMeeting, db: Session) -> dict[st
         "case_id": meeting.case_id,
         "case_code": case.case_code if case else None,
         "child_name": child_name,
-        "scheduled_date": meeting.scheduled_date.isoformat() if meeting.scheduled_date else None,
+        "scheduled_date": meeting.scheduled_date.isoformat() if meeting.scheduled_date else "",
         "scheduled_time": meeting.scheduled_time.strftime("%H:%M") if meeting.scheduled_time else None,
         "title": meeting.title or _meeting_type_label(meeting.meeting_type),
         "meeting_type": meeting.meeting_type.value if meeting.meeting_type else None,
@@ -216,11 +247,11 @@ def fetch_cm_meetings_for_therapist_calendar(
         CaseManagerMeeting.scheduled_date >= from_date,
         CaseManagerMeeting.scheduled_date <= to_date,
         CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
+        _meeting_participant_sql_filter(therapist_user_id, assigned_case_ids),
     )
     if case_id is not None:
         stmt = stmt.where(CaseManagerMeeting.case_id == case_id)
-    rows = list(db.scalars(stmt.order_by(CaseManagerMeeting.scheduled_date)).all())
-    return [m for m in rows if user_can_view_meeting(m, therapist_user_id)]
+    return list(db.scalars(stmt.order_by(CaseManagerMeeting.scheduled_date)).all())
 
 
 def resolve_active_therapist_for_case(db: Session, case_id: int) -> int | None:
