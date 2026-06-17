@@ -19,8 +19,16 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _pg_enum_value(enum_name: str, value: str) -> None:
+    conn = op.get_bind()
+    if conn.dialect.name == "postgresql":
+        op.execute(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'")
+
+
 def upgrade() -> None:
     # 1. Add new columns to cases table
+    _pg_enum_value("casestatus", "DEACTIVATED")
+
     with op.batch_alter_table("cases", schema=None) as batch_op:
         if not has_column("cases", "status_effective_date"):
             batch_op.add_column(sa.Column("status_effective_date", sa.Date(), nullable=True))

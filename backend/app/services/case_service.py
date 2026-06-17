@@ -13,7 +13,7 @@ from app.services.address_service import case_service_address_read
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
 from app.models.user import User
-from app.services.case_portal_visibility import PORTAL_HIDDEN_CASE_STATUSES
+from app.services.case_portal_visibility import portal_visible_case_status_filter
 
 
 def _apply_module_filter(stmt, user: User):
@@ -55,7 +55,7 @@ def list_cases_for_user(
                 & (CaseAssignment.therapist_user_id == user.id)
                 & (CaseAssignment.status == CaseAssignmentStatus.ACTIVE),
             )
-            .where(Case.status.notin_(PORTAL_HIDDEN_CASE_STATUSES))
+            .where(portal_visible_case_status_filter(Case.status))
             .distinct()
         )
     elif user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all"):
@@ -75,7 +75,7 @@ def list_cases_for_user(
                 & (CaseAssignment.therapist_user_id == user.id)
                 & (CaseAssignment.status == CaseAssignmentStatus.ACTIVE),
             )
-            .where(Case.status.notin_(PORTAL_HIDDEN_CASE_STATUSES))
+            .where(portal_visible_case_status_filter(Case.status))
             .distinct()
         )
     else:
@@ -87,7 +87,7 @@ def list_cases_for_user(
                 & (CaseAssignment.therapist_user_id == user.id)
                 & (CaseAssignment.status == CaseAssignmentStatus.ACTIVE),
             )
-            .where(Case.status.notin_(PORTAL_HIDDEN_CASE_STATUSES))
+            .where(portal_visible_case_status_filter(Case.status))
             .distinct()
         )
 
