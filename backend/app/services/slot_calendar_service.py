@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.permissions import get_active_assignment
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
+from app.services.case_portal_visibility import PORTAL_HIDDEN_CASE_STATUSES
 from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.schedule_template import TherapistScheduleTemplate, default_template_config
 from app.models.session import Session as TherapySession
@@ -441,6 +442,8 @@ def list_bookable_cases_for_therapist(db: Session, therapist_user_id: int) -> li
 
     result = []
     for a in assignments:
+        if a.case and a.case.status in PORTAL_HIDDEN_CASE_STATUSES:
+            continue
         if a.case:
             svc = case_service_address_read(a.case)
             case_status = a.case.status.value if a.case.status else None

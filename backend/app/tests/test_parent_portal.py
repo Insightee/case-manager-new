@@ -113,7 +113,7 @@ def test_parent_cases_hide_closed_and_suspended():
     assert home["stats"]["case_count"] == len(visible)
 
     detail = client.get(f"/api/v1/parent/cases/{case_id}", headers=parent)
-    assert detail.status_code == 200
+    assert detail.status_code == 404
 
 
 def test_parent_report_detail_and_other_family_denied():

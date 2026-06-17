@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.module_access import case_product_module_allowed
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
+from app.services.case_portal_visibility import is_case_hidden_from_client_portals
 from app.models.user import User
 
 
@@ -235,6 +236,13 @@ def get_active_assignment(
 
 
 def case_scope_check(db: Session, user: User, case: Case) -> bool:
+    if is_case_hidden_from_client_portals(case) and not (
+        user_has_permission(user, "admin.override")
+        or user_has_permission(user, "case.read.all")
+        or user_has_permission(user, "case.read.team")
+        or user_has_permission(user, "case.read.scoped")
+    ):
+        return False
     if user_has_permission(user, "case.read.assigned"):
         if get_active_assignment(db, case.id, user.id):
             return True

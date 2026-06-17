@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.module_access import get_allowed_case_product_modules
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
+from app.services.case_portal_visibility import PORTAL_HIDDEN_CASE_STATUSES
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.report import MonthlyReport, ReportStatus
 from app.models.session import Session as TherapySession
@@ -47,6 +48,7 @@ def assigned_cases(db: Session, user: User) -> list[Case]:
             & (CaseAssignment.therapist_user_id == user.id)
             & (CaseAssignment.status == CaseAssignmentStatus.ACTIVE),
         )
+        .where(Case.status.notin_(PORTAL_HIDDEN_CASE_STATUSES))
         .options(selectinload(Case.child))
         .distinct()
         .order_by(Case.case_code)

@@ -11,6 +11,7 @@ from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.child import Child
 from app.models.attachment import Attachment
 from app.models.case import Case, CaseStatus
+from app.services.case_portal_visibility import is_case_hidden_from_client_portals
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.parent_billing import ParentBillingStatement
 from app.models.report import MonthlyReport, ReportStatus
@@ -372,6 +373,8 @@ def get_parent_case(db: Session, user: User, case_id: int) -> Case | None:
     child_ids = child_ids_for_parent(db, user.id)
     case = db.get(Case, case_id)
     if not case or case.child_id not in child_ids:
+        return None
+    if is_case_hidden_from_client_portals(case):
         return None
     return case
 

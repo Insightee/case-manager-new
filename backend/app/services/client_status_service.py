@@ -35,9 +35,10 @@ AGEING_WARN_DAYS = 7  # configurable threshold for highlighting
 
 
 def _cancel_future_bookings(db: Session, case_id: int) -> None:
-    """Reuse the existing booking cancellation logic."""
-    from app.services.case_status_request_service import _cancel_future_bookings as _cfb
-    _cfb(db, case_id)
+    """Reuse booking cleanup for suspend/deactivate paths."""
+    from app.services.case_close_service import cleanup_future_bookings
+
+    cleanup_future_bookings(db, case_id)
 
 
 def change_client_status(
@@ -77,9 +78,12 @@ def change_client_status(
     if new_status_upper in (
         CaseStatus.SUSPENDED.value,
         CaseStatus.PENDING_REPLACEMENT.value,
-        CaseStatus.DEACTIVATED.value,
     ):
         _cancel_future_bookings(db, case.id)
+    elif new_status_upper == CaseStatus.DEACTIVATED.value:
+        from app.services.case_close_service import apply_case_closed_side_effects
+
+        apply_case_closed_side_effects(db, case)
 
     # Create audit row
     audit = CaseClientStatusAudit(

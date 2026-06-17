@@ -160,6 +160,7 @@ def update_case(
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
     ensure_case_write_access(user, case, db)
+    old_status = case.status
     old = {"status": case.status.value, "case_manager_user_id": case.case_manager_user_id}
     updates = payload.model_dump(exclude_unset=True)
     billing_data = {k: updates.pop(k) for k in list(updates.keys()) if k in (
@@ -174,6 +175,17 @@ def update_case(
         address_service.validate_service_address_payload(service_data, case)
         address_service.apply_service_address_to_case(case, service_data)
     apply_billing_payload(case, billing_data, user.id)
+    if "status" in updates:
+        new_status = case.status.value if hasattr(case.status, "value") else str(case.status)
+        old_status_val = old_status.value if hasattr(old_status, "value") else str(old_status)
+        if new_status == CaseStatus.CLOSED.value and old_status_val != CaseStatus.CLOSED.value:
+            from app.services.case_close_service import (
+                apply_case_closed_side_effects,
+                assert_no_blocking_invoices_for_close,
+            )
+
+            assert_no_blocking_invoices_for_close(db, case.id)
+            apply_case_closed_side_effects(db, case)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="case", entity_id=case.id, old_value=old, new_value=payload.model_dump(exclude_unset=True), **meta)
     db.commit()

@@ -10,15 +10,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import RoleName, user_has_permission
-from app.models.parent import ParentGuardian
+from app.core.permissions import RoleName, user_has_permission, case_scope_check
 from app.models.slot import BookingSource
 from app.models.user import User
-from app.core.permissions import case_scope_check
 from app.services import appointment_booking_service as appt_booking
 from app.services import appointment_notification_service as appt_notify
 from app.services import case_service, slot_calendar_service as cal
-from sqlalchemy import select
 
 router = APIRouter(prefix="/booking", tags=["booking"])
 
@@ -29,16 +26,9 @@ class AppointmentCreate(BaseModel):
 
 
 def _parent_case_ids(db: Session, user: User) -> list[int]:
-    from app.models.case import Case
+    from app.services import parent_service
 
-    pg = db.scalars(select(ParentGuardian).where(ParentGuardian.user_id == user.id)).first()
-    if not pg:
-        return []
-    child_ids = [c.id for c in pg.children]
-    if not child_ids:
-        return []
-    cases = db.scalars(select(Case).where(Case.child_id.in_(child_ids))).all()
-    return [c.id for c in cases]
+    return [row["id"] for row in parent_service.list_parent_cases(db, user)]
 
 
 def _require_parent_booking(user: User) -> None:

@@ -1,40 +1,24 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.case import Case, CaseStatus
 from app.models.case_status_request import CaseStatusRequest, CaseStatusRequestStatus
-from app.models.session import Session as TherapySession
-from app.models.session import SessionStatus
-from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
 from app.services import notification_service
+from app.services.case_close_service import (
+    assert_no_blocking_invoices_for_close,
+    cleanup_future_bookings,
+)
 
 THERAPIST_ALLOWED = {
     (CaseStatus.ACTIVE.value, CaseStatus.SUSPENDED.value),
     (CaseStatus.ACTIVE.value, CaseStatus.CLOSED.value),
     (CaseStatus.SUSPENDED.value, CaseStatus.ACTIVE.value),
 }
-
-
-def _assert_no_blocking_invoices_for_close(db: Session, case_id: int) -> None:
-    from app.models.client_billing import ClientInvoice, ClientInvoiceStatus
-
-    blocking = db.scalars(
-        select(ClientInvoice).where(
-            ClientInvoice.case_id == case_id,
-            ClientInvoice.status.in_(
-                (ClientInvoiceStatus.DRAFT, ClientInvoiceStatus.GENERATED),
-            ),
-        )
-    ).first()
-    if blocking:
-        raise ValueError(
-            "Finalize or void draft client invoices before closing this case"
-        )
 
 
 def create_request(db: Session, user: User, case: Case, to_status: str, reason: str) -> CaseStatusRequest:
@@ -53,7 +37,7 @@ def create_request(db: Session, user: User, case: Case, to_status: str, reason: 
     if pending:
         raise ValueError("A status change request is already pending for this case")
     if to_status == CaseStatus.CLOSED.value:
-        _assert_no_blocking_invoices_for_close(db, case.id)
+        assert_no_blocking_invoices_for_close(db, case.id)
     req = CaseStatusRequest(
         case_id=case.id,
         requested_by_user_id=user.id,
@@ -90,6 +74,8 @@ def assert_case_allows_new_session(db: Session, case_id: int) -> None:
         current = case.status.value if hasattr(case.status, "value") else str(case.status)
         if current == CaseStatus.DEACTIVATED.value:
             raise ValueError("Case is deactivated — no new sessions can be created")
+        if current == CaseStatus.CLOSED.value:
+            raise ValueError("Case is closed — no new sessions can be created")
 
     pending = get_pending_for_case(db, case_id)
     if not pending:
@@ -124,29 +110,6 @@ def list_for_case(db: Session, case_id: int, limit: int = 10) -> list[dict]:
             }
         )
     return out
-
-
-def _cancel_future_bookings(db: Session, case_id: int) -> None:
-    today = date.today()
-    slots = db.scalars(
-        select(TherapistSlot).where(
-            TherapistSlot.case_id == case_id,
-            TherapistSlot.status == SlotStatus.BOOKED,
-            TherapistSlot.slot_date >= today,
-        )
-    ).all()
-    for slot in slots:
-        slot.status = SlotStatus.CANCELLED
-    sessions = db.scalars(
-        select(TherapySession).where(
-            TherapySession.case_id == case_id,
-            TherapySession.status == SessionStatus.SCHEDULED,
-            TherapySession.scheduled_date >= today,
-        )
-    ).all()
-    for session in sessions:
-        session.status = SessionStatus.CANCELLED
-    db.flush()
 
 
 def list_pending(db: Session, limit: int = 50) -> list[dict]:
@@ -187,8 +150,12 @@ def approve_request(db: Session, request_id: int, admin_user: User, note: str | 
     if req.to_status == CaseStatus.CLOSED.value:
         _assert_no_blocking_invoices_for_close(db, case.id)
     case.status = CaseStatus(req.to_status)
-    if req.to_status in (CaseStatus.SUSPENDED.value, CaseStatus.CLOSED.value):
-        _cancel_future_bookings(db, case.id)
+    if req.to_status == CaseStatus.CLOSED.value:
+        from app.services.case_close_service import apply_case_closed_side_effects
+
+        apply_case_closed_side_effects(db, case)
+    elif req.to_status == CaseStatus.SUSPENDED.value:
+        cleanup_future_bookings(db, case.id)
     req.status = CaseStatusRequestStatus.APPROVED
     req.reviewed_by_user_id = admin_user.id
     req.review_note = (note or "").strip() or None
