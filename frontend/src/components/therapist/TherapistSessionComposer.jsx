@@ -412,10 +412,10 @@ export function TherapistSessionComposer({
           {selectedCaseId ? (
             <>
               <form className="ic-session-composer__walkin" onSubmit={handleWalkIn}>
-                <div className="ic-session-composer__walkin-head">
-                  <p className="ic-session-composer__group-label">Walk-in today</p>
-                  <p className="ic-session-composer__walkin-sub">Use if slots not configured</p>
-                </div>
+                <p className="ic-session-composer__walkin-title">
+                  <strong>Walk-in today</strong>
+                  <span className="ic-session-composer__walkin-note"> (Use if slots not configured)</span>
+                </p>
                 <div className="ic-session-composer__grid">
                   <label className="ic-session-composer__field">
                     <span>Start</span>

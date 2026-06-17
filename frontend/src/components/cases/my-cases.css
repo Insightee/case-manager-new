@@ -1217,24 +1217,25 @@
 }
 
 .ic-session-composer__walkin {
-  margin-top: 4px;
+  margin-top: 20px;
   margin-bottom: 20px;
   padding-bottom: 20px;
   border-bottom: 1px dashed var(--ic-border);
 }
 
-.ic-session-composer__walkin-head {
-  margin-bottom: 14px;
-}
-
-.ic-session-composer__walkin-head .ic-session-composer__group-label {
-  margin-bottom: 6px;
-}
-
-.ic-session-composer__walkin-sub {
-  margin: 0;
-  font-size: 0.8125rem;
+.ic-session-composer__walkin-title {
+  margin: 0 0 14px;
+  font-size: 0.875rem;
   line-height: 1.45;
+  color: var(--ic-text, #1e293b);
+}
+
+.ic-session-composer__walkin-title strong {
+  font-weight: 700;
+}
+
+.ic-session-composer__walkin-note {
+  font-weight: 400;
   color: var(--ic-muted);
 }
 
