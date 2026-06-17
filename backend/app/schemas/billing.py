@@ -14,7 +14,7 @@ class CaseBillingFields(BaseModel):
     package_session_count: Optional[int] = None
     package_amount_inr: Optional[float] = None
     compensation_mode: Optional[str] = None
-    pay_share_pct: Optional[float] = Field(None, ge=50, le=100)
+    pay_share_amount_inr: Optional[float] = None
     therapist_fixed_pay_inr: Optional[float] = None
     billing_notes: Optional[str] = None
 

@@ -2389,6 +2389,32 @@ class ClientBulkRow(BaseModel):
     parent_email: str
     parent_full_name: str = ""
     parent_phone: Optional[str] = None
+    case_reference: Optional[str] = None
+    product_module: Optional[str] = None
+    service_type: Optional[str] = None
+    service_address_line1: Optional[str] = None
+    service_address_line2: Optional[str] = None
+    service_city: Optional[str] = None
+    service_state: Optional[str] = None
+    service_pincode: Optional[str] = None
+    service_landmark: Optional[str] = None
+    billing_address_same_as_service: Optional[bool] = True
+    billing_address_line1: Optional[str] = None
+    billing_address_line2: Optional[str] = None
+    billing_address_city: Optional[str] = None
+    billing_address_state: Optional[str] = None
+    billing_address_pincode: Optional[str] = None
+    billing_address_landmark: Optional[str] = None
+    billing_type: Optional[str] = None
+    client_billing_mode: Optional[str] = None
+    client_rate_per_session_inr: Optional[float] = None
+    package_session_count: Optional[int] = None
+    package_amount_inr: Optional[float] = None
+    compensation_mode: Optional[str] = None
+    pay_share_amount_inr: Optional[float] = None
+    therapist_fixed_pay_inr: Optional[float] = None
+    billing_notes: Optional[str] = None
+    therapist_email: Optional[str] = None
 
 
 class ClientBulkImportRequest(BaseModel):
@@ -2405,6 +2431,8 @@ class ClientBulkImportRowResult(BaseModel):
     child_id: Optional[int] = None
     parent_user_id: Optional[int] = None
     email: str
+    case_code: Optional[str] = None
+    therapist_assigned: Optional[str] = None
 
 
 class ClientBulkImportResponse(BaseModel):
@@ -2430,7 +2458,12 @@ def admin_bulk_import_clients(
     user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    from app.services import family_admin_service
+    from app.services import family_admin_service, case_code_service, address_service, assignment_service, case_service
+    from app.models.parent import ParentGuardian
+    from app.models.case import Case, ClientBillingMode
+    from app.core.billing_validation import apply_billing_payload
+    from sqlalchemy.orm import selectinload
+    from app.services.allotment_service import _SERVICE_ADDRESS_KEYS
 
     results: list[dict] = []
     for row in payload.rows:
@@ -2442,32 +2475,209 @@ def admin_bulk_import_clients(
             "child_first": child_first,
             "child_last": child_last,
             "email": parent_email,
+            "case_code": None,
+            "therapist_assigned": None,
         }
         try:
             with db.begin_nested():
-                created = family_admin_service.create_family(
-                    db,
-                    parent_email=parent_email,
-                    parent_full_name=(row.parent_full_name or row.parent_email).strip(),
-                    parent_phone=row.parent_phone,
-                    child_first=child_first,
-                    child_last=child_last,
-                    send_invite=True,
-                    password=None,
-                    created_by_user_id=user.id,
-                )
-            if created.get("linkedExistingParent"):
-                outcome = "linked_existing_parent"
-            else:
+                # 1. Provision parent and child
+                parent_user = db.scalars(select(User).where(User.email == parent_email)).first()
+                child_id = None
+                parent_user_id = None
                 outcome = "invited"
+
+                if parent_user:
+                    from app.core.permissions import RoleName
+                    if RoleName.PARENT.value not in parent_user.role_names:
+                        primary = parent_user.role_names[0].replace("_", " ").title() if parent_user.role_names else "another role"
+                        raise ValueError(f"User already present as {primary}.")
+                    pg = db.scalars(
+                        select(ParentGuardian)
+                        .where(ParentGuardian.user_id == parent_user.id)
+                        .options(selectinload(ParentGuardian.children))
+                    ).first()
+                    if not pg:
+                        pg = ParentGuardian(user_id=parent_user.id)
+                        db.add(pg)
+                        db.flush()
+
+                    child = family_admin_service.find_duplicate_child_for_parent(
+                        pg, first_name=child_first, last_name=child_last
+                    )
+                    if child:
+                        child_id = child.id
+                        parent_user_id = parent_user.id
+                        outcome = "linked_existing_parent"
+                    else:
+                        created = family_admin_service.create_family(
+                            db,
+                            parent_email=parent_email,
+                            parent_full_name=(row.parent_full_name or parent_email).strip(),
+                            parent_phone=row.parent_phone,
+                            child_first=child_first,
+                            child_last=child_last,
+                            send_invite=True,
+                            password=None,
+                            created_by_user_id=user.id,
+                        )
+                        child_id = created.get("childId")
+                        parent_user_id = created.get("parentUserId")
+                        outcome = "linked_existing_parent"
+                else:
+                    created = family_admin_service.create_family(
+                        db,
+                        parent_email=parent_email,
+                        parent_full_name=(row.parent_full_name or parent_email).strip(),
+                        parent_phone=row.parent_phone,
+                        child_first=child_first,
+                        child_last=child_last,
+                        send_invite=True,
+                        password=None,
+                        created_by_user_id=user.id,
+                    )
+                    child_id = created.get("childId")
+                    parent_user_id = created.get("parentUserId")
+                    outcome = "invited"
+
+                # 2. Case Creation / Update if product_module is specified
+                case_code = None
+                if row.product_module:
+                    p_module = row.product_module.strip()
+                    ensure_product_module_write_access(user, p_module, db)
+
+                    # Look up existing case if possible
+                    case = None
+                    if row.case_reference:
+                        case = db.scalars(select(Case).where(Case.case_code == row.case_reference.strip())).first()
+                    if not case and child_id:
+                        case = db.scalars(
+                            select(Case).where(Case.child_id == child_id, Case.product_module == p_module)
+                        ).first()
+
+                    # Extract case data
+                    case_data = {
+                        "child_id": child_id,
+                        "product_module": p_module,
+                    }
+                    if row.service_type:
+                        case_data["service_location_type"] = row.service_type.strip()
+                    
+                    # Extract address fields
+                    for k in [
+                        "service_address_line1",
+                        "service_address_line2",
+                        "service_city",
+                        "service_state",
+                        "service_pincode",
+                        "service_landmark",
+                        "billing_address_same_as_service",
+                        "billing_address_line1",
+                        "billing_address_line2",
+                        "billing_address_city",
+                        "billing_address_state",
+                        "billing_address_pincode",
+                        "billing_address_landmark",
+                    ]:
+                        val = getattr(row, k, None)
+                        if val is not None:
+                            case_data[k] = val
+
+                    # Extract billing fields
+                    billing_data = {}
+                    for k in [
+                        "billing_type",
+                        "client_billing_mode",
+                        "client_rate_per_session_inr",
+                        "package_session_count",
+                        "package_amount_inr",
+                        "compensation_mode",
+                        "pay_share_amount_inr",
+                        "therapist_fixed_pay_inr",
+                        "billing_notes",
+                    ]:
+                        val = getattr(row, k, None)
+                        if val is not None:
+                            billing_data[k] = val
+
+                    service_addr_data = {k: case_data[k] for k in _SERVICE_ADDRESS_KEYS if k in case_data}
+
+                    if case:
+                        # Update existing case
+                        for k, v in case_data.items():
+                            setattr(case, k, v)
+                        if service_addr_data:
+                            address_service.validate_service_address_payload(service_addr_data, case)
+                            address_service.apply_service_address_to_case(case, service_addr_data)
+                        db.flush()
+                        if billing_data:
+                            apply_billing_payload(case, billing_data, user.id)
+                    else:
+                        # Create new case
+                        case_ref = (row.case_reference or "").strip()
+                        if not case_ref:
+                            case_ref = case_code_service.generate_case_code(db, p_module)
+                        else:
+                            case_code_service.ensure_unique_case_code(db, case_ref)
+                        
+                        case_data["case_code"] = case_ref
+                        if not billing_data.get("client_billing_mode") and billing_data.get("billing_type"):
+                            bt = billing_data["billing_type"]
+                            if bt == "PACKAGE":
+                                billing_data["client_billing_mode"] = ClientBillingMode.PREPAID.value
+                            elif bt == "PER_SESSION":
+                                billing_data["client_billing_mode"] = ClientBillingMode.POSTPAID.value
+
+                        case = Case(**case_data)
+                        if service_addr_data:
+                            address_service.validate_service_address_payload(service_addr_data, case)
+                            address_service.apply_service_address_to_case(case, service_addr_data)
+                        db.add(case)
+                        db.flush()
+                        if billing_data:
+                            apply_billing_payload(case, billing_data, user.id)
+
+                    case_code = case.case_code
+
+                    # 3. Therapist Assignment
+                    if row.therapist_email:
+                        therapist_email_clean = row.therapist_email.strip().lower()
+                        therapist_user = db.scalars(select(User).where(User.email == therapist_email_clean)).first()
+                        if not therapist_user:
+                            raise ValueError(f"Therapist user with email {row.therapist_email} not found")
+                        if "therapist" not in therapist_user.role_names:
+                            raise ValueError(f"User {row.therapist_email} is not a therapist")
+
+                        # Check if already assigned
+                        from app.models.assignment import CaseAssignment
+                        existing_assign = db.scalars(
+                            select(CaseAssignment)
+                            .where(
+                                CaseAssignment.case_id == case.id,
+                                CaseAssignment.therapist_user_id == therapist_user.id,
+                                CaseAssignment.is_active == True
+                            )
+                        ).first()
+                        if not existing_assign:
+                            assignment_service.create_assignment(
+                                db,
+                                case_id=case.id,
+                                therapist_user_id=therapist_user.id,
+                                assigned_by_user_id=user.id,
+                                start_date=date.today(),
+                                reason_for_change="Imported via bulk CSV upload",
+                            )
+                            db.flush()
+                        result_base["therapist_assigned"] = therapist_user.email
+
             results.append(
                 {
                     **result_base,
                     "success": True,
                     "outcome": outcome,
                     "error": None,
-                    "child_id": created.get("childId"),
-                    "parent_user_id": created.get("parentUserId"),
+                    "child_id": child_id,
+                    "parent_user_id": parent_user_id,
+                    "case_code": case_code,
                 }
             )
         except Exception as exc:
@@ -2479,6 +2689,7 @@ def admin_bulk_import_clients(
                     "error": _bulk_client_row_error(exc),
                     "child_id": None,
                     "parent_user_id": None,
+                    "case_code": None,
                 }
             )
     meta = get_request_meta(request)
@@ -3196,6 +3407,36 @@ def _parse_report_status(value: Optional[str]) -> ReportStatus | None:
         return ReportStatus(value.upper())
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid status")
+
+
+@router.get("/reports/client-status")
+def get_client_status_report(
+    status: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    case_manager_user_id: Optional[int] = None,
+    service_type: Optional[str] = None,
+    ageing_gt_days: Optional[int] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user: User = Depends(require_permission("case.read.all")),
+    db: Session = Depends(get_db),
+):
+    from datetime import date
+    from app.services import client_status_service
+    parsed_from = date.fromisoformat(from_date) if from_date else None
+    parsed_to = date.fromisoformat(to_date) if to_date else None
+    return client_status_service.get_status_report(
+        db,
+        status=status,
+        from_date=parsed_from,
+        to_date=parsed_to,
+        case_manager_id=case_manager_user_id,
+        service_type=service_type,
+        ageing_gt_days=ageing_gt_days,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/reports/summary", response_model=AdminReportSummary)

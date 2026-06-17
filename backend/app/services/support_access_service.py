@@ -54,15 +54,26 @@ def can_read_incident(db: Session, user: User, incident) -> bool:
     return True
 
 
+def can_manage_memos(user: User, db: Session | None = None) -> bool:
+    if user_has_permission(user, "admin.override"):
+        return True
+    return any(
+        role in user.role_names
+        for role in ("SUPER_ADMIN", "ADMIN", "MODULE_ADMIN", "HR", "FINANCE")
+    )
+
+
 def support_hub_capabilities(user: User, db: Session | None = None) -> dict:
     tickets_tab = can_view_support_tickets(user, db)
     incidents_tab = can_view_support_incidents(user, db)
-    history_tab = tickets_tab or incidents_tab
+    memos_tab = can_manage_memos(user, db)
+    history_tab = tickets_tab or incidents_tab or memos_tab
     return {
         "scope": support_scope(user, db),
         "tabs": {
             "tickets": tickets_tab,
             "incidents": incidents_tab,
+            "memos": memos_tab,
             "history": history_tab,
         },
         "history": {
@@ -71,3 +82,4 @@ def support_hub_capabilities(user: User, db: Session | None = None) -> dict:
         },
         "can_manage_incidents": can_manage_incidents(user, db),
     }
+

@@ -530,7 +530,7 @@ export function TherapistLeavePage() {
           )}
           {balance.requires_employment_start_date ? (
             <p style={{ margin: '8px 0 0', color: '#b45309', fontSize: '0.8rem' }}>
-              Employment start date must be set by HR before you can submit leave.
+              Employment start date must be set in your profile and approved by admin before you can submit leave.
             </p>
           ) : null}
         </div>

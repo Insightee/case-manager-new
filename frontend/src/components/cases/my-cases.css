@@ -1125,12 +1125,34 @@
 
 .ic-session-composer__input {
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--ic-border);
+  padding: 10px 36px 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px;
   font-size: 0.9375rem;
-  min-height: 44px;
+  font-weight: 500;
+  color: #0f172a;
+  min-height: 46px;
   box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.ic-session-composer__input:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.ic-session-composer__input:hover:not(:disabled) {
+  border-color: #94a3b8;
 }
 
 .ic-session-composer__group {
@@ -2155,13 +2177,33 @@
 
 .ic-case-history-filters select {
   min-height: 40px;
-  padding: 8px 32px 8px 12px;
-  border: 1px solid var(--ic-border);
+  padding: 8px 36px 8px 12px;
+  border: 1px solid #cbd5e1;
   border-radius: 10px;
-  background: #fff;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px;
   font-size: 0.8125rem;
   font-weight: 500;
+  color: #0f172a;
   flex-shrink: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.ic-case-history-filters select:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.ic-case-history-filters select:hover {
+  border-color: #94a3b8;
 }
 
 @media (max-width: 900px) {

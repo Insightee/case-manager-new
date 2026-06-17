@@ -251,7 +251,7 @@ def build_cm_home(db: Session, user: User) -> dict:
     quick_actions = [
         {"id": "cases", "label": "My cases", "href": "/admin/cases"},
         {"id": "queues", "label": "Review queues", "href": "/admin/workbench"},
-        {"id": "meetings", "label": "CM meetings", "href": "/admin/cm-meetings"},
+        {"id": "meetings", "label": "Meetings", "href": "/admin/meetings"},
     ]
     if user_has_permission(user, "case.create"):
         quick_actions.insert(0, {"id": "allot", "label": "Allot new case", "href": "/admin/cases?allot=1"})

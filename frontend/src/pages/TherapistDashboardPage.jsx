@@ -41,7 +41,7 @@ export function TherapistDashboardPage() {
     })),
     ...pendingCmMeetings.map((m) => ({
       key: `cm-${m.id}`,
-      to: '/therapist/cm-meetings',
+      to: '/therapist/meetings',
       eyebrow: 'CM meeting notes',
       title: m.child_name || m.case_code || 'Client',
       meta: formatDisplayDateTime(m.scheduled_date, m.scheduled_time) || m.scheduled_date,

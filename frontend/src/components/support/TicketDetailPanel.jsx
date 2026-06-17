@@ -163,7 +163,8 @@ function participantLine(p) {
 export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiBase = '/api/v1/tickets' }) {
   const { user } = useAuth()
   const { canManageTickets } = useModuleWrite()
-  const staffWrite = showResolve && canManageTickets(ticket?.product_module || 'homecare')
+  const isTherapist = user?.roles?.includes('THERAPIST')
+  const staffWrite = showResolve && (canManageTickets(ticket?.product_module || 'homecare') || isTherapist)
   const [reply, setReply] = useState('')
   const [replyFiles, setReplyFiles] = useState([])
   const [internalNote, setInternalNote] = useState(false)
@@ -173,7 +174,6 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
   const [dialog, setDialog] = useState(null)
   const [assignBanner, setAssignBanner] = useState(null)
   const [escalateRole, setEscalateRole] = useState(null)
-  const [pendingAssigneeId, setPendingAssigneeId] = useState(null)
 
   const isRaiser = ticket?.is_raiser ?? ticket?.raised_by_user_id === user?.id
   const isTerminal = ticket?.status === 'CLOSED'
@@ -261,34 +261,6 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
     }
   }
 
-  async function patchAssign(assigneeId) {
-    const updated = await apiFetch(`${apiBase}/${ticket.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ assigned_to_user_id: assigneeId }),
-    })
-    onUpdated?.(updated)
-    const name =
-      updated?.assignee?.full_name ||
-      updated?.assigned_to_name ||
-      staffUsers.find((u) => u.id === assigneeId)?.full_name ||
-      'team member'
-    setAssignBanner(assigneeId ? `Reassigned to ${name}` : 'Ticket unassigned')
-    setPendingAssigneeId(null)
-    setEscalateRole(null)
-  }
-
-  async function confirmAssign() {
-    if (pendingAssigneeId == null) return
-    setBusy(true)
-    setError('')
-    try {
-      await patchAssign(pendingAssigneeId)
-    } catch (err) {
-      setError(err.message || 'Could not reassign ticket')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   async function runFlow(action, note, extra = {}) {
     setBusy(true)
@@ -443,26 +415,39 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
       ) : null}
 
       <div className="ticket-thread">
-        {ticket.messages.map((m) => (
-          <div
-            key={m.id}
-            className={`ticket-bubble ${m.is_raiser || m.is_parent ? 'ticket-bubble--raiser' : 'ticket-bubble--staff'}`}
-            style={m.is_internal ? { borderLeft: '3px solid #f59e0b', background: '#fffbeb' } : undefined}
-          >
-            <div className="ticket-bubble__meta">
-              {m.author_name} · {fmtTime(m.created_at)}
-              {m.is_internal ? (
-                <span style={{ marginLeft: 6, fontSize: '0.65rem', fontWeight: 700, color: '#b45309' }}>INTERNAL</span>
+        {ticket.messages.map((m) => {
+          const isOwn = m.author_user_id === user?.id
+          const bubbleClass = isOwn ? 'ticket-bubble--own' : 'ticket-bubble--other'
+          return (
+            <div
+              key={m.id}
+              className={`ticket-bubble ${bubbleClass} ${m.is_internal ? 'ticket-bubble--internal' : ''}`}
+            >
+              {!isOwn && (
+                <span className="ticket-bubble__author">
+                  {m.author_name}
+                  {m.is_internal ? (
+                    <span style={{ marginLeft: 6, fontSize: '0.65rem', fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '1px 4px', borderRadius: 4 }}>INTERNAL</span>
+                  ) : null}
+                </span>
+              )}
+              {isOwn && m.is_internal && (
+                <span className="ticket-bubble__author" style={{ color: '#b45309' }}>
+                  INTERNAL NOTE
+                </span>
+              )}
+              <div className="ticket-bubble__body">
+                {m.body}
+                <span className="ticket-bubble__time">{fmtTime(m.created_at)}</span>
+              </div>
+              {m.attachments?.length > 0 ? (
+                <div style={{ marginTop: 6, clear: 'both' }}>
+                  <TicketAttachmentList attachments={m.attachments} />
+                </div>
               ) : null}
             </div>
-            <div className="ticket-bubble__body">{m.body}</div>
-            {m.attachments?.length > 0 ? (
-              <div style={{ marginTop: 6 }}>
-                <TicketAttachmentList attachments={m.attachments} />
-              </div>
-            ) : null}
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {ticket.status === 'RESOLVED' && isRaiser ? (
@@ -545,7 +530,7 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
               <TicketAttachmentList attachments={ticketLevelAttachments} />
             </div>
           ) : null}
-          {staffWrite ? (
+          {staffWrite && !isTherapist ? (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#64748b', marginTop: 8 }}>
               <input type="checkbox" checked={internalNote} onChange={(e) => setInternalNote(e.target.checked)} />
               Internal note (staff only)
@@ -602,16 +587,6 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
             </div>
           ) : null}
 
-          {staffWrite && pendingAssigneeId != null && !escalateRole ? (
-            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={busy} onClick={confirmAssign}>
-                Confirm reassign
-              </button>
-              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setPendingAssigneeId(null)}>
-                Cancel
-              </button>
-            </div>
-          ) : null}
 
           <div className="ticket-compose__actions" style={{ flexWrap: 'wrap', marginTop: 12, gap: 8, alignItems: 'center' }}>
             {staffWrite ? (
@@ -629,7 +604,6 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
                         key: t.role,
                         label: t.label,
                         onClick: () => {
-                          setPendingAssigneeId(null)
                           setEscalateRole(t.role)
                         },
                       })),
@@ -650,52 +624,6 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
                     disabled={busy}
                   />
                 ) : null}
-                <ActionMenu
-                  label="Reassign to"
-                  items={[
-                    {
-                      key: 'unassigned',
-                      label: 'Unassigned',
-                      onClick: async () => {
-                        setBusy(true)
-                        try {
-                          await patchAssign(null)
-                        } catch (err) {
-                          setError(err.message || 'Could not update assignment')
-                        } finally {
-                          setBusy(false)
-                        }
-                      },
-                    },
-                    ...staffUsers.map((u) => ({
-                      key: String(u.id),
-                      label: `${u.full_name} (${(u.roles || []).join(', ')})`,
-                      onClick: () => {
-                        setEscalateRole(null)
-                        setPendingAssigneeId(u.id)
-                      },
-                    })),
-                    ...(user?.id && ticket.assigned_to_user_id !== user.id
-                      ? [
-                          {
-                            key: 'me',
-                            label: 'Assign to me',
-                            onClick: async () => {
-                              setBusy(true)
-                              try {
-                                await patchAssign(user.id)
-                              } catch (err) {
-                                setError(err.message || 'Could not assign ticket')
-                              } finally {
-                                setBusy(false)
-                              }
-                            },
-                          },
-                        ]
-                      : []),
-                  ]}
-                  disabled={busy}
-                />
                 <button type="button" className="ticket-compose__send" disabled={busy || !replyOk} onClick={sendReply}>
                   {busy ? 'Sending…' : 'Send reply'}
                 </button>

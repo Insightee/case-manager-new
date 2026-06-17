@@ -51,6 +51,7 @@ class TherapistProfileAdminCreate(TherapistProfileBase):
     status: Optional[str] = "APPROVED"
     supervisor_user_id: Optional[int] = None
     mentor_user_id: Optional[int] = None
+    employment_start_date: Optional[date] = None
 
 
 class TherapistProfileReview(BaseModel):

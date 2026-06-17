@@ -25,6 +25,9 @@ from app.services import address_service, case_code_service, case_service
 from app.services import case_status_request_service as csr_svc
 from app.services import observation_checklist_service as obs_svc
 from app.schemas.clinical import ClinicalProfileUpdate, ObservationChecklistSave
+from datetime import date as date_type
+from app.models.case_client_status_audit import CaseClientStatusAudit
+from app.services import client_status_service
 from app.schemas.iep_plan import IepPlanSuggestionCreate
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -33,6 +36,13 @@ router = APIRouter(prefix="/cases", tags=["cases"])
 class CaseStatusRequestCreate(BaseModel):
     to_status: str = Field(min_length=3, max_length=32)
     reason: str = Field(min_length=5)
+
+
+class ClientStatusUpdate(BaseModel):
+    new_status: str = Field(min_length=2, max_length=32)
+    effective_date: date_type
+    reason: str = Field(min_length=5)
+    internal_notes: Optional[str] = None
 
 _SERVICE_ADDRESS_KEYS = frozenset(
     {
@@ -95,7 +105,7 @@ def create_case(
     data = payload.model_dump()
     billing_data = {k: data.pop(k) for k in list(data.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
-        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_pct",
+        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
@@ -154,7 +164,7 @@ def update_case(
     updates = payload.model_dump(exclude_unset=True)
     billing_data = {k: updates.pop(k) for k in list(updates.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
-        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_pct",
+        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
     service_data = {k: updates.pop(k) for k in list(updates.keys()) if k in _SERVICE_ADDRESS_KEYS}
@@ -222,6 +232,73 @@ def list_case_status_requests(
     history = csr_svc.list_for_case(db, case_id, limit=10)
     pending = next((h for h in history if h["status"] == "PENDING"), None)
     return {"pending": pending, "history": history}
+
+
+@router.post("/{case_id}/client-status", status_code=200)
+def update_client_status(
+    case_id: int,
+    payload: ClientStatusUpdate,
+    request: Request,
+    user: User = Depends(require_mutation_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    """Admin-direct client status change with audit trail."""
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Case access denied")
+    try:
+        audit = client_status_service.change_client_status(
+            db,
+            case=case,
+            user=user,
+            new_status=payload.new_status,
+            effective_date=payload.effective_date,
+            reason=payload.reason,
+            internal_notes=payload.internal_notes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="client_status_change",
+        entity_type="case",
+        entity_id=case.id,
+        new_value={"new_status": payload.new_status, "effective_date": str(payload.effective_date)},
+        **meta,
+    )
+    db.commit()
+    db.refresh(case)
+    return {
+        "case": CaseRead(**case_service.case_to_read(case, db)),
+        "auditId": audit.id,
+        "message": f"Status updated to {payload.new_status}",
+    }
+
+
+@router.get("/{case_id}/client-status/audit")
+def get_client_status_audit(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get client status audit trail for a case."""
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Case access denied")
+    audit = client_status_service.list_audit_for_case(db, case_id)
+    current = case.status.value if hasattr(case.status, "value") else str(case.status)
+    return {
+        "currentStatus": current,
+        "statusEffectiveDate": case.status_effective_date.isoformat() if case.status_effective_date else None,
+        "statusReason": case.status_reason,
+        "audit": audit,
+    }
 
 
 def _case_for_user(db: Session, user: User, case_id: int) -> Case:

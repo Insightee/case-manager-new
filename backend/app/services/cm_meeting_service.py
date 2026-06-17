@@ -45,6 +45,8 @@ def meeting_participant_user_ids(meeting: CaseManagerMeeting) -> set[int]:
         ids.add(meeting.parent_user_id)
     if meeting.therapist_user_id:
         ids.add(meeting.therapist_user_id)
+    if meeting.mentor_user_id:
+        ids.add(meeting.mentor_user_id)
     ids.update(parse_staff_attendee_ids(meeting.staff_attendee_user_ids_json))
     return ids
 
@@ -267,8 +269,8 @@ def _portal_url_for_user(user: User) -> str:
     if role == RoleName.PARENT.value:
         return f"{base}/parent"
     if role == RoleName.THERAPIST.value:
-        return f"{base}/therapist/cm-meetings"
-    return f"{base}/admin/cm-meetings"
+        return f"{base}/therapist/meetings"
+    return f"{base}/admin/meetings"
 
 
 def _meeting_calendar_details(

@@ -16,10 +16,10 @@ const SECONDARY_TABS = [
   { id: 'documents', label: 'Documents' },
   { id: 'iep', label: 'IEP' },
   { id: 'billing', label: 'Billing' },
-  { id: 'scheduling', label: 'Scheduling' },
+  { id: 'scheduling', label: 'Assign & Schedule' },
   { id: 'cm-meetings', label: 'Meetings' },
-  { id: 'assignments', label: 'Assignments' },
 ]
+
 
 export function AdminCaseDetailMobileNav({ activeId, onChange, visibleTabIds }) {
   const visible = new Set(visibleTabIds)

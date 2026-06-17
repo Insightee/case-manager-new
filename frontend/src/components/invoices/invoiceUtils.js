@@ -94,15 +94,12 @@ export function lineTypeLabel(type) {
 export function billingSummary(b) {
   if (!b?.billing_type) return 'Billing not configured'
   if (b.billing_type === 'PER_SESSION') {
-    if (b.compensation_mode === 'FIXED_LUMP') {
-      return `₹${b.client_rate_per_session_inr}/session client · ₹${b.therapist_fixed_pay_inr} therapist per session`
-    }
-    return `₹${b.client_rate_per_session_inr}/session · ${b.pay_share_pct}% therapist share`
+    return `₹${b.client_rate_per_session_inr}/session · ₹${b.pay_share_amount_inr || 0} therapist share`
   }
   if (b.compensation_mode === 'FIXED_LUMP') {
     return `Package ${b.package_session_count} sessions · ₹${b.therapist_fixed_pay_inr} fixed pay`
   }
-  return `Package ${b.package_session_count} sessions · ₹${b.package_amount_inr} · ${b.pay_share_pct}% share`
+  return `Package ${b.package_session_count} sessions · ₹${b.package_amount_inr} · ₹${b.pay_share_amount_inr || 0} therapist share`
 }
 
 export function mapInvoiceForCard(inv) {

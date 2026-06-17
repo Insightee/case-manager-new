@@ -42,6 +42,7 @@ const EMPTY_FORM = {
   services_offered: [],
   supervisor_user_id: '',
   mentor_user_id: '',
+  employment_start_date: '',
 }
 
 export function AdminTherapistProfilesPage() {
@@ -173,6 +174,7 @@ export function AdminTherapistProfilesPage() {
           status: 'APPROVED',
           supervisor_user_id: form.supervisor_user_id ? Number(form.supervisor_user_id) : null,
           mentor_user_id: form.mentor_user_id ? Number(form.mentor_user_id) : null,
+          employment_start_date: form.employment_start_date || null,
         }),
       })
       setForm(EMPTY_FORM)
@@ -203,13 +205,14 @@ export function AdminTherapistProfilesPage() {
         body: JSON.stringify({
           supervisor_user_id: editSupervisor.supervisorId ? Number(editSupervisor.supervisorId) : null,
           mentor_user_id: editSupervisor.mentorId ? Number(editSupervisor.mentorId) : null,
+          employment_start_date: editSupervisor.employmentStartDate || null,
         }),
       })
       setEditingSupervisor(false)
-      setSuccess('Case manager and mentor updated.')
+      setSuccess('Case manager, mentor and start date updated.')
       await load(profileId)
     } catch (err) {
-      setError(err.message || 'Could not update supervisor/mentor')
+      setError(err.message || 'Could not update supervisor/mentor/start date')
     }
   }
 
@@ -247,6 +250,7 @@ export function AdminTherapistProfilesPage() {
     setEditSupervisor({
       supervisorId: p.supervisor_user_id ? String(p.supervisor_user_id) : '',
       mentorId: p.mentor_user_id ? String(p.mentor_user_id) : '',
+      employmentStartDate: p.employment_start_date || '',
     })
     setEditingSupervisor(true)
   }
@@ -565,7 +569,7 @@ export function AdminTherapistProfilesPage() {
 
               <section className="therapist-profile-drawer__section">
                 <div className="therapist-profile-drawer__section-head">
-                  <h3 className="therapist-profile-drawer__section-title">Case manager & mentor</h3>
+                  <h3 className="therapist-profile-drawer__section-title">Case manager, mentor & start date</h3>
                   {canEditProfiles ? (
                     <button
                       type="button"
@@ -596,6 +600,15 @@ export function AdminTherapistProfilesPage() {
                       allowEmpty
                       emptyLabel="No mentor"
                     />
+                    <label className="admin-filter-field" style={{ gridColumn: '1 / -1' }}>
+                      <span className="admin-filter-field__label">Start date</span>
+                      <input
+                        type="date"
+                        className="admin-input"
+                        value={editSupervisor.employmentStartDate || ''}
+                        onChange={(e) => setEditSupervisor((s) => ({ ...s, employmentStartDate: e.target.value }))}
+                      />
+                    </label>
                     <button
                       type="button"
                       className="admin-btn admin-btn--primary admin-btn--sm"
@@ -614,6 +627,18 @@ export function AdminTherapistProfilesPage() {
                     <div>
                       <dt>Mentor</dt>
                       <dd>{selected.mentor_name || 'Not assigned'}</dd>
+                    </div>
+                    <div>
+                      <dt>Start date</dt>
+                      <dd>
+                        {selected.employment_start_date
+                          ? new Date(selected.employment_start_date).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })
+                          : 'Not set'}
+                      </dd>
                     </div>
                   </dl>
                 )}

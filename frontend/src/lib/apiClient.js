@@ -151,7 +151,10 @@ export async function apiFetch(path, options = {}) {
     const q = qs.toString()
     if (q) url = `${path}${path.includes('?') ? '&' : '?'}${q}`
   }
-  const headers = { 'Content-Type': 'application/json', ...(fetchOptions.headers || {}) }
+  const headers = { ...(fetchOptions.headers || {}) }
+  if (!(fetchOptions.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
+  }
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
 

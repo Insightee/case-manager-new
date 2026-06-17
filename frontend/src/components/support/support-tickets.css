@@ -140,46 +140,67 @@
 }
 
 /* ── Message thread ── */
+/* ── Message thread (WhatsApp lookalike) ── */
 .ticket-thread {
+  background-color: #efeae2;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  max-height: 480px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 16px;
 }
 
 .ticket-bubble {
-  max-width: 88%;
-  padding: 10px 14px;
-  border-radius: 12px;
+  max-width: 75%;
+  padding: 8px 12px;
   font-size: 0.875rem;
-  line-height: 1.5;
+  line-height: 1.4;
+  position: relative;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
 }
 
-/* Raiser (client/therapist who opened ticket) — left aligned */
-.ticket-bubble--raiser {
-  background: #f1f5f9;
-  color: #1e293b;
-  border-bottom-left-radius: 4px;
-  align-self: flex-start;
-}
-
-/* Staff / admin / CM reply — right aligned */
-.ticket-bubble--staff {
-  background: #eef2ff;
-  color: #1e293b;
-  border-bottom-right-radius: 4px;
+.ticket-bubble--own {
+  background: #d9fdd3;
+  color: #111b21;
   align-self: flex-end;
+  border-radius: 8px 8px 0 8px;
 }
 
-.ticket-bubble__meta {
-  font-size: 0.68rem;
-  color: #94a3b8;
-  margin-bottom: 4px;
+.ticket-bubble--other {
+  background: #ffffff;
+  color: #111b21;
+  align-self: flex-start;
+  border-radius: 8px 8px 8px 0;
+}
+
+.ticket-bubble--internal {
+  border-left: 3px solid #f59e0b !important;
+  background: #fffbeb !important;
+}
+
+.ticket-bubble__author {
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: #ea580c;
+  margin-bottom: 2px;
+  display: block;
 }
 
 .ticket-bubble__body {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.ticket-bubble__time {
+  font-size: 0.65rem;
+  color: #8696a0;
+  float: right;
+  margin-top: 4px;
+  margin-left: 8px;
 }
 
 /* ── Compose box ── */

@@ -23,6 +23,10 @@ export function TherapistServiceProfileForm({ form, setForm, categories, showThe
         Display name
         <input required value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
       </label>
+      <label>
+        Start date
+        <input type="date" value={form.employment_start_date || ''} onChange={(e) => setForm({ ...form, employment_start_date: e.target.value || null })} />
+      </label>
       <label style={{ gridColumn: '1 / -1' }}>
         Short bio
         <textarea value={form.short_bio} onChange={(e) => setForm({ ...form, short_bio: e.target.value })} rows={2} />

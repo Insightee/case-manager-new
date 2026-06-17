@@ -385,7 +385,7 @@ function TicketRow({ ticket: t, activeTicket, detailLoading, onOpen, onUpdated }
           {detailLoading || (activeTicket?.id === t.id && !activeTicket?.messages) ? (
             <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>Loading thread…</p>
           ) : (
-            <TicketDetailPanel ticket={activeTicket} onUpdated={onUpdated} />
+            <TicketDetailPanel ticket={activeTicket} showResolve onUpdated={onUpdated} />
           )}
         </div>
       ) : null}

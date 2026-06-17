@@ -37,9 +37,9 @@ def _has_non_reporter_reply(incident: Incident) -> bool:
 def _staff_manage(user: User) -> bool:
     from app.core.module_access import user_has_feature
 
-    return user_has_permission(user, "incident.read_sensitive") and user_has_feature(
-        user, "incidents"
-    )
+    is_staff = user_has_permission(user, "incident.read_sensitive") and user_has_feature(user, "incidents")
+    is_therapist = "THERAPIST" in user.role_names
+    return is_staff or is_therapist
 
 
 def incident_flow_flags(user: User, incident: Incident) -> dict:

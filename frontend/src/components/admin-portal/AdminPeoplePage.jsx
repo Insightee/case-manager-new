@@ -12,10 +12,10 @@ import {
 } from '../../lib/peopleDirectoryList.js'
 import { AdminStaffDirectoryReadOnly } from './AdminStaffDirectoryReadOnly.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
 import { AdminClientOnboardPanel } from './AdminClientOnboardPanel.jsx'
 import { AdminTherapistOnboardPanel } from './AdminTherapistOnboardPanel.jsx'
 import { AdminStaffManageSection } from './AdminStaffManageSection.jsx'
+import { AdminAddFamilyWizard } from './AdminAddFamilyWizard.jsx'
 import {
   AdminDataList,
   AdminEmptyState,
@@ -57,6 +57,7 @@ export function AdminPeoplePage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
+  const [familySearchDebounced, setFamilySearchDebounced] = useState('')
   const [showFamilyWizard, setShowFamilyWizard] = useState(false)
   const [rowBusy, setRowBusy] = useState(null)
   const [lastProvision, setLastProvision] = useState(null)
@@ -322,6 +323,14 @@ export function AdminPeoplePage() {
           >
             Edit access
           </button>
+          {f.hasOpenCase && f.primaryCaseId ? (
+            <Link
+              to={`/admin/cases/${f.primaryCaseId}?tab=overview`}
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+            >
+              Client status →
+            </Link>
+          ) : null}
           <PeopleRowActions
             user={clientUser}
             rowBusy={rowBusy}
@@ -332,6 +341,7 @@ export function AdminPeoplePage() {
             lastProvision={lastProvision}
             setLastProvision={setLastProvision}
             extraActions={secondary}
+            showDeactivate={!f.hasOpenCase}
           />
         </div>
       )
@@ -788,7 +798,7 @@ export function AdminPeoplePage() {
                 {clients.length === 0 ? (
                   <AdminEmptyState
                     title="No clients yet"
-                    description="Use Add client & case, Add family, or Bulk import above."
+                    description="Use Add client & case or Bulk import above."
                   />
                 ) : filteredClients.length === 0 ? (
                   <div className="admin-panel__body">

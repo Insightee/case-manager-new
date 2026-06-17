@@ -225,8 +225,8 @@ export function AdminWorkbenchPage() {
 
       <p className="admin-muted" style={{ marginBottom: 16, fontSize: '0.875rem' }}>
         Scheduled CM meetings are on{' '}
-        <Link to="/admin/cm-meetings?status=SCHEDULED" style={{ color: '#4f46e5', fontWeight: 600 }}>
-          CM meetings
+        <Link to="/admin/meetings?status=SCHEDULED" style={{ color: '#4f46e5', fontWeight: 600 }}>
+          Meetings
         </Link>
         — not a separate supervisor request inbox.
       </p>

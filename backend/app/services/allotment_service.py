@@ -90,7 +90,7 @@ def allot_case(
     reason = data.pop("reason_for_change", "Initial allotment")
     billing_data = {k: data.pop(k) for k in list(data.keys()) if k in (
         "product_billing_rule_id", "billing_type", "client_billing_mode", "client_rate_per_session_inr",
-        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_pct",
+        "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}

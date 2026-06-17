@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Optional
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -15,6 +15,8 @@ class CaseStatus(str, enum.Enum):
     PENDING_ALLOTMENT = "PENDING_ALLOTMENT"
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
+    PENDING_REPLACEMENT = "PENDING_REPLACEMENT"
+    DEACTIVATED = "DEACTIVATED"
     CLOSED = "CLOSED"
 
 
@@ -43,6 +45,10 @@ class Case(Base):
     service_type: Mapped[str] = mapped_column(String(128), nullable=False)
     product_module: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[CaseStatus] = mapped_column(Enum(CaseStatus), default=CaseStatus.PENDING_ALLOTMENT, index=True)
+    status_effective_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    status_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status_changed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey('users.id'), nullable=True)
+
     case_manager_user_id: Mapped[Optional[int ]] = mapped_column(ForeignKey("users.id"), index=True)
     region: Mapped[Optional[str ]] = mapped_column(String(64))
     operational_stage: Mapped[Optional[str ]] = mapped_column(String(64))
@@ -52,7 +58,7 @@ class Case(Base):
     package_session_count: Mapped[Optional[int]] = mapped_column(Integer)
     package_amount_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     compensation_mode: Mapped[Optional[CompensationMode]] = mapped_column(Enum(CompensationMode))
-    pay_share_pct: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
+    pay_share_amount_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     therapist_fixed_pay_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     billing_notes: Mapped[Optional[str]] = mapped_column(Text)
     client_billing_mode: Mapped[Optional[ClientBillingMode]] = mapped_column(Enum(ClientBillingMode))
@@ -61,6 +67,7 @@ class Case(Base):
     product_billing_rule_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("product_billing_rules.id"), index=True
     )
+    service_location_type: Mapped[Optional[str]] = mapped_column(String(32))
     service_address_line1: Mapped[Optional[str]] = mapped_column(String(255))
     service_address_line2: Mapped[Optional[str]] = mapped_column(String(255))
     service_city: Mapped[Optional[str]] = mapped_column(String(128))
@@ -69,6 +76,13 @@ class Case(Base):
     service_landmark: Mapped[Optional[str]] = mapped_column(String(255))
     service_latitude: Mapped[Optional[float]] = mapped_column(Float)
     service_longitude: Mapped[Optional[float]] = mapped_column(Float)
+    billing_address_same_as_service: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="1")
+    billing_address_line1: Mapped[Optional[str]] = mapped_column(String(255))
+    billing_address_line2: Mapped[Optional[str]] = mapped_column(String(255))
+    billing_address_city: Mapped[Optional[str]] = mapped_column(String(128))
+    billing_address_state: Mapped[Optional[str]] = mapped_column(String(128))
+    billing_address_pincode: Mapped[Optional[str]] = mapped_column(String(16))
+    billing_address_landmark: Mapped[Optional[str]] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
