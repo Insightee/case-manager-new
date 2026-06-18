@@ -48,3 +48,36 @@ class TherapistOnboardResult(BaseModel):
     email_delivery: Optional[str] = None
     success: bool
     error: Optional[str] = None
+
+
+class TherapistPrimaryCmBulkRow(BaseModel):
+    therapist_id: Optional[str] = Field(None, max_length=64)
+    email: Optional[str] = None
+    primary_cm_name: Optional[str] = Field(None, max_length=255)
+    case_manager_email: str = Field(min_length=3, max_length=255)
+
+
+class TherapistPrimaryCmBulkRequest(BaseModel):
+    rows: list[TherapistPrimaryCmBulkRow] = Field(min_length=1, max_length=500)
+    apply: bool = False
+
+
+class TherapistPrimaryCmBulkRowResult(BaseModel):
+    row_index: int
+    therapist_email: Optional[str] = None
+    therapist_id: Optional[str] = None
+    case_manager_email: str
+    primary_cm_name: Optional[str] = None
+    status: str
+    message: Optional[str] = None
+    warning: Optional[str] = None
+    profile_updated: bool = False
+    cases_updated: int = 0
+    old_cm_email: Optional[str] = None
+    new_cm_email: Optional[str] = None
+
+
+class TherapistPrimaryCmBulkResponse(BaseModel):
+    apply: bool
+    summary: dict
+    results: list[TherapistPrimaryCmBulkRowResult]

@@ -68,6 +68,9 @@ from app.schemas.therapist_onboarding import (
     TherapistBulkOnboardRequest,
     TherapistOnboardCreate,
     TherapistOnboardResult,
+    TherapistPrimaryCmBulkRequest,
+    TherapistPrimaryCmBulkResponse,
+    TherapistPrimaryCmBulkRowResult,
 )
 from app.models.service_category import ServiceCategory
 from app.schemas.therapist_profile import (
@@ -82,6 +85,7 @@ from app.schemas.therapist_profile import (
 from app.services import admin_case_pipeline_service as case_pipeline_svc
 from app.services import admin_iep_service as admin_iep_svc
 from app.services import therapist_onboarding_service as therapist_onboard_svc
+from app.services import therapist_primary_cm_bulk_service as therapist_cm_bulk_svc
 from app.schemas.therapist_review import (
     TherapistReviewSummary,
     TherapistReviewsResponse,
@@ -2082,6 +2086,38 @@ def bulk_onboard_therapists(
     log_audit(db, actor_user_id=user.id, action="bulk_onboard_therapists", entity_type="user", entity_id=None, **meta)
     db.commit()
     return [TherapistOnboardResult(**r) for r in results]
+
+
+@router.post("/therapists/bulk-update-primary-cm", response_model=TherapistPrimaryCmBulkResponse)
+def bulk_update_therapist_primary_cm(
+    payload: TherapistPrimaryCmBulkRequest,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    rows = [row.model_dump() for row in payload.rows]
+    outcome = therapist_cm_bulk_svc.process_bulk_primary_cm_rows(db, rows, apply=payload.apply)
+    if payload.apply and outcome["summary"].get("updated", 0) > 0:
+        meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="bulk_update_primary_cm",
+            entity_type="therapist_profile",
+            entity_id=None,
+            new_value={
+                "updated": outcome["summary"].get("updated", 0),
+                "unchanged": outcome["summary"].get("unchanged", 0),
+                "failed": outcome["summary"].get("failed", 0),
+            },
+            **meta,
+        )
+        db.commit()
+    return TherapistPrimaryCmBulkResponse(
+        apply=payload.apply,
+        summary=outcome["summary"],
+        results=[TherapistPrimaryCmBulkRowResult(**row) for row in outcome["results"]],
+    )
 
 
 @router.get("/therapist-profiles/summary")

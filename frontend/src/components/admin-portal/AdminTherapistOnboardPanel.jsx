@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { inviteEmailMessage } from '../../lib/inviteEmail.js'
+import { AdminTherapistCmBulkUpdatePanel } from './AdminTherapistCmBulkUpdatePanel.jsx'
 import { AdminPanel, CopyLinkButton, PeoplePendingInvitesToggle, PeoplePendingInvitesPanel } from './ui/index.js'
 
 const THERAPIST_DEFAULT_SERVICES = ['homecare', 'shadow_support']
@@ -250,6 +251,7 @@ export function AdminTherapistOnboardPanel({
             >
               Bulk upload
             </button>
+            <AdminTherapistCmBulkUpdatePanel onSuccess={onSuccess} onError={onError} onReload={onReload} />
           </>
         ) : null}
         <PeoplePendingInvitesToggle
