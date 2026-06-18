@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { filterStaffDirectory } from '../../lib/peopleDirectoryList.js'
+import { exportStaffCsv } from '../../lib/peopleDirectoryExport.js'
 import {
   AdminDataList,
   AdminEmptyState,
@@ -24,6 +25,15 @@ export function AdminStaffDirectoryReadOnly({ staff }) {
       title={`Staff directory (${filtered.length})`}
       subtitle="Read-only view. Contact an administrator to change access or deactivate accounts."
       padded={false}
+      actions={
+        <button
+          type="button"
+          className="admin-btn admin-btn--ghost admin-btn--sm"
+          onClick={() => exportStaffCsv(staff, { includeAccess: false })}
+        >
+          Download CSV
+        </button>
+      }
     >
       <div className="admin-panel__body">
         <AdminToolbar>

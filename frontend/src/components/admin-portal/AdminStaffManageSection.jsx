@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { filterStaffDirectory, paginateList, sortStaffAlphabetical } from '../../lib/peopleDirectoryList.js'
+import { exportStaffCsv } from '../../lib/peopleDirectoryExport.js'
 import {
   AdminDataList,
   AdminEmptyState,
@@ -391,7 +392,25 @@ export function AdminStaffManageSection({
           ) : null}
         </AdminPanel>
       ) : (
-        <AdminPanel title={`Staff directory (${filtered.length})`} padded={false}>
+        <AdminPanel
+          title={`Staff directory (${filtered.length})`}
+          padded={false}
+          actions={
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              onClick={() =>
+                exportStaffCsv(staff, {
+                  catalog,
+                  grantsFromAssignments,
+                  includeAccess: true,
+                })
+              }
+            >
+              Download CSV
+            </button>
+          }
+        >
         <div className="admin-panel__body">
           <AdminToolbar>
             <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff by name or email…" />

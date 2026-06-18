@@ -36,6 +36,7 @@ import {
 } from './ui/index.js'
 import { FilterSelect } from './ui/FilterSelect.jsx'
 import { accountStatusLabel, accountStatusTone, clientAccountStatus, clientStatusHint } from '../../lib/accountStatus.js'
+import { exportClientCsv, exportTherapistCsv } from '../../lib/peopleDirectoryExport.js'
 
 export function AdminPeoplePage() {
   const { can, user, isViewOnly } = useAuth()
@@ -539,15 +540,24 @@ export function AdminPeoplePage() {
                 title={`Therapists (${filteredTherapists.length})`}
                 padded={false}
                 actions={
-                  canManageUsers ? (
-                    <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
-                      Profile editor
-                    </Link>
-                  ) : (
-                    <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
-                      View profiles
-                    </Link>
-                  )
+                  <div className="admin-btn-group admin-btn-group--wrap">
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                      onClick={() => exportTherapistCsv(therapists, profileByUser)}
+                    >
+                      Download CSV
+                    </button>
+                    {canManageUsers ? (
+                      <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
+                        Profile editor
+                      </Link>
+                    ) : (
+                      <Link to="/admin/therapist-profiles" className="admin-btn admin-btn--ghost admin-btn--sm">
+                        View profiles
+                      </Link>
+                    )}
+                  </div>
                 }
               >
                 {therapists.length === 0 ? (
@@ -788,11 +798,20 @@ export function AdminPeoplePage() {
                 title={`Clients (${filteredClients.length})`}
                 padded={false}
                 actions={
-                  canCreateCase ? (
-                    <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
-                      Case list
-                    </Link>
-                  ) : null
+                  <div className="admin-btn-group admin-btn-group--wrap">
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                      onClick={() => exportClientCsv(clients)}
+                    >
+                      Download CSV
+                    </button>
+                    {canCreateCase ? (
+                      <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
+                        Case list
+                      </Link>
+                    ) : null}
+                  </div>
                 }
               >
                 {clients.length === 0 ? (
