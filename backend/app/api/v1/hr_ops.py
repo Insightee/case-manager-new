@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.core.permissions import require_permission
+from app.core.permissions import require_any_permission
 from app.models.user import User
 from app.services import hr_reports_service
 
@@ -21,7 +21,7 @@ def hr_report(
     month: Optional[str] = None,
     product_module: Optional[str] = None,
     format: str = Query("json", pattern="^(json|csv)$"),
-    user: User = Depends(require_permission("hr_report.export")),
+    user: User = Depends(require_any_permission("hr_report.export", "user.manage")),
     db: Session = Depends(get_db),
 ):
     try:

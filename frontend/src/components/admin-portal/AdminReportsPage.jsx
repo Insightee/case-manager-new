@@ -62,6 +62,7 @@ const VIEW_TAB_OPTIONS = [
   { value: 'missing', label: 'Missing monthly' },
   { value: 'iep', label: 'Pending IEP' },
   { value: 'client-status', label: 'Client status lifecycle' },
+  { value: 'operations', label: 'Operations exports' },
 ]
 
 function viewTabLabel(tab) {
@@ -177,6 +178,10 @@ export function AdminReportsPage() {
   const [missingRows, setMissingRows] = useState([])
   const [iepRows, setIepRows] = useState([])
   const [iepSummary, setIepSummary] = useState(null)
+  const [operationsMonth, setOperationsMonth] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filters = useMemo(
@@ -295,7 +300,7 @@ export function AdminReportsPage() {
   useEffect(() => {
     if (tab === 'missing') loadMissing()
     else if (tab === 'iep') loadIepPending()
-    else if (tab === 'client-status') return
+    else if (tab === 'client-status' || tab === 'operations') return
     else loadList()
   }, [tab, loadList, loadMissing, loadIepPending])
 
@@ -548,6 +553,14 @@ export function AdminReportsPage() {
     if (filters.caseId) p.set('case_id', filters.caseId)
     const qs = p.toString()
     return `/api/v1/admin/reports/export/${fmt}${qs ? `?${qs}` : ''}`
+  }
+
+  function operationsExportPath(kind) {
+    const p = new URLSearchParams()
+    if (operationsMonth) p.set('month', operationsMonth)
+    if (module) p.set('product_module', module)
+    const qs = p.toString()
+    return `/api/v1/admin/reports/operations/${kind}/export.xlsx${qs ? `?${qs}` : ''}`
   }
 
   const effectiveDrawerType =
@@ -928,6 +941,63 @@ export function AdminReportsPage() {
         </div>
       ) : tab === 'client-status' ? (
         <AdminClientStatusReportSection />
+      ) : tab === 'operations' ? (
+        <div className="admin-reports__operations" style={{ marginBottom: 16 }}>
+          <p className="admin-muted" style={{ marginBottom: 16, fontSize: '0.8125rem', maxWidth: 720 }}>
+            Reference exports for ops review and bulk data planning. Each workbook includes stable IDs
+            (case, therapist, client) plus a column guide sheet. Session and report metrics use the
+            selected month; identity and billing fields are current snapshot.
+          </p>
+          <div
+            className="admin-reports__operations-filters"
+            style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}
+          >
+            <label className="admin-filter-field">
+              <span className="admin-filter-field__label">Month (YYYY-MM)</span>
+              <input
+                type="month"
+                className="admin-input"
+                value={operationsMonth}
+                onChange={(e) => setOperationsMonth(e.target.value)}
+                aria-label="Operations export month"
+              />
+            </label>
+            <label className="admin-filter-field">
+              <span className="admin-filter-field__label">Programme</span>
+              <ServiceFilterSelect value={module} onChange={setModule} />
+            </label>
+          </div>
+          <div className="admin-btn-group" style={{ flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="admin-btn admin-btn--primary"
+              onClick={() =>
+                downloadExport(
+                  operationsExportPath('therapists'),
+                  `therapist-operations-roster-${operationsMonth || 'export'}.xlsx`,
+                ).catch((e) => setMessage(e.message))
+              }
+            >
+              Export therapist roster (Excel)
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn--primary"
+              onClick={() =>
+                downloadExport(
+                  operationsExportPath('cases'),
+                  `case-operations-roster-${operationsMonth || 'export'}.xlsx`,
+                ).catch((e) => setMessage(e.message))
+              }
+            >
+              Export case roster (Excel)
+            </button>
+          </div>
+          <ul className="admin-muted" style={{ marginTop: 16, fontSize: '0.8125rem', paddingLeft: 18 }}>
+            <li>Therapist roster: People fields, caseload, monthly report compliance, session counts.</li>
+            <li>Case roster: Client, billing (prepaid/postpaid), sessions, IEP, meetings, tickets, invoices.</li>
+          </ul>
+        </div>
       ) : tab === 'missing' ? (
         <div style={{ marginBottom: 16 }}>
           <div className="admin-reports__missing-actions admin-desktop-only" style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
@@ -992,7 +1062,7 @@ export function AdminReportsPage() {
         />
       )}
 
-      {tab !== 'missing' && tab !== 'iep' && tab !== 'client-status' ? (
+      {tab !== 'missing' && tab !== 'iep' && tab !== 'client-status' && tab !== 'operations' ? (
       <div className="admin-reports__pagination">
         <button
           type="button"

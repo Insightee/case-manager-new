@@ -208,7 +208,7 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
     return can('ticket.manage') || can('incident.read_sensitive') || can('admin.override')
   }
   if (item.to === '/admin/hr-reports') {
-    return hasFeature('hr_reports') || can('hr_report.export')
+    return hasFeature('hr_reports') || can('hr_report.export') || can('user.manage')
   }
   if (item.perm || item.feature || item.moduleIds?.length) {
     return navVisible(item)

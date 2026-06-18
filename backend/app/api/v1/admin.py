@@ -55,6 +55,7 @@ from app.schemas.admin_reports import (
 )
 from app.schemas.report import MonthlyReportUpdate, ObservationReportUpdate
 from app.services import admin_report_service as admin_report_svc
+from app.services import operations_roster_service as operations_roster_svc
 from app.models.session import Session as TherapySession
 from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
@@ -4091,6 +4092,52 @@ def admin_reports_export_pdf(
         content=data,
         media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="reports-export.pdf"'},
+    )
+
+
+@router.get("/reports/operations/cases/export.xlsx")
+def admin_operations_case_roster_export(
+    month: Optional[str] = Query(None, description="Billing month YYYY-MM"),
+    product_module: Optional[str] = None,
+    user: User = Depends(_reports_reader),
+    db: Session = Depends(get_db),
+):
+    try:
+        data = operations_roster_svc.export_case_roster_xlsx(
+            db, user, month=month, product_module=product_module
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    ym = operations_roster_svc.normalize_billing_month(month or operations_roster_svc.default_export_month())
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="case-operations-roster-{ym}.xlsx"'
+        },
+    )
+
+
+@router.get("/reports/operations/therapists/export.xlsx")
+def admin_operations_therapist_roster_export(
+    month: Optional[str] = Query(None, description="Billing month YYYY-MM"),
+    product_module: Optional[str] = None,
+    user: User = Depends(_reports_reader),
+    db: Session = Depends(get_db),
+):
+    try:
+        data = operations_roster_svc.export_therapist_roster_xlsx(
+            db, user, month=month, product_module=product_module
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    ym = operations_roster_svc.normalize_billing_month(month or operations_roster_svc.default_export_month())
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="therapist-operations-roster-{ym}.xlsx"'
+        },
     )
 
 
