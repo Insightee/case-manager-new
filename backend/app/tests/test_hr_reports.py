@@ -34,6 +34,12 @@ def test_hr_therapist_status_report():
     assert r.json()["count"] >= 0
 
 
+def test_module_admin_with_user_manage_can_export_hr_reports():
+    r = client.get("/api/v1/admin/hr-reports/therapist-status", headers=_auth_headers("admin@demo.com"))
+    assert r.status_code == 200
+    assert "rows" in r.json()
+
+
 def test_hr_home_landing_route():
     r = client.get("/api/v1/admin/home", headers=_auth_headers())
     assert r.status_code == 200

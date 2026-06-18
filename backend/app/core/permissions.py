@@ -88,6 +88,7 @@ _ROLE_MODULE_ADMIN = [
     "iep.manage",
     "case_document.create",
     "case_document.review",
+    "hr_report.export",
 ]
 
 ROLE_PERMISSIONS: dict[str, list[str]] = {

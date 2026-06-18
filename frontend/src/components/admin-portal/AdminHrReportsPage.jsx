@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 import { REPORTS_HUB_CATEGORIES } from '../../lib/reportCategories.js'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
@@ -79,7 +80,10 @@ export function AdminHrReportsPage() {
     if (category && reportType === 'clinical') qs.set('category', category)
     if (month && (reportType === 'clinical' || reportKey === 'session-logs')) qs.set('month', month)
     if (productModule) qs.set('product_module', productModule)
-    await apiDownload(`/api/v1/admin/hr-reports/${reportKey}?${qs.toString()}`, `${reportKey}.csv`)
+    await run(
+      () => apiDownload(`/api/v1/admin/hr-reports/${reportKey}?${qs.toString()}`, `${reportKey}.csv`),
+      { successMsg: 'Download started' },
+    )
   }
 
   return (
@@ -92,6 +96,10 @@ export function AdminHrReportsPage() {
 
       <AdminPanel title="Generate report" padded>
         <BillingActionAlert error={error} successMessage={successMessage} onDismiss={clearMessages} />
+        <p className="admin-muted" style={{ marginBottom: 12, fontSize: '0.8125rem' }}>
+          For full therapist and case Excel rosters (billing, sessions, IEP, meetings), use{' '}
+          <Link to="/admin/reports?tab=operations">Operations → Reports → Operations exports</Link>.
+        </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
           <label className="client-inv__filter-field">
             <span className="client-inv__filter-label">Report type</span>
@@ -150,7 +158,7 @@ export function AdminHrReportsPage() {
           <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={loading} onClick={loadPreview}>
             {loading ? 'Loading…' : 'Preview'}
           </button>
-          <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={downloadCsv}>
+          <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={loading} onClick={downloadCsv}>
             Download CSV
           </button>
         </div>
