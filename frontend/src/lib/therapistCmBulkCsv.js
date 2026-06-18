@@ -1,6 +1,9 @@
-/** Parse therapist primary-CM bulk update CSV uploads. */
+/** Parse therapist primary-CM bulk update CSV / spreadsheet paste uploads. */
 
-function parseCsvLine(line) {
+function parseDelimitedLine(line, delimiter) {
+  if (delimiter === '\t') {
+    return line.split('\t').map((cell) => cell.trim().replace(/^"|"$/g, ''))
+  }
   const row = []
   const pattern = /("([^"]*(?:""[^"]*)*)"|([^",\r\n]*))/gi
   pattern.lastIndex = 0
@@ -14,11 +17,22 @@ function parseCsvLine(line) {
   return row
 }
 
-function parseCsv(text) {
+function detectDelimiter(text) {
+  const firstLine = String(text || '')
+    .split(/\r?\n/)
+    .find((line) => line.trim())
+  if (!firstLine) return ','
+  const tabs = (firstLine.match(/\t/g) || []).length
+  const commas = (firstLine.match(/,/g) || []).length
+  return tabs > commas ? '\t' : ','
+}
+
+function parseDelimited(text) {
+  const delimiter = detectDelimiter(text)
   const lines = []
   for (const line of String(text || '').split(/\r?\n/)) {
     if (!line.trim()) continue
-    lines.push(parseCsvLine(line))
+    lines.push(parseDelimitedLine(line, delimiter))
   }
   return lines
 }
@@ -39,7 +53,7 @@ const HEADER_ALIASES = {
 }
 
 export function parseTherapistCmBulkCsv(text) {
-  const rawRows = parseCsv(text)
+  const rawRows = parseDelimited(text)
   if (!rawRows.length) return []
 
   const headers = rawRows[0].map((cell) => cell.toLowerCase().trim())

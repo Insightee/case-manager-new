@@ -9,18 +9,28 @@ function statusTone(status) {
   return 'error'
 }
 
+const PASTE_PLACEHOLDER = `Therapist ID,Email,Primary CM,Case Manager Email
+T-101,therapist@example.com,Priya Sharma,casemanager@example.com
+T-102,therapist2@example.com,Another CM,another.cm@example.com`
+
 export function AdminTherapistCmBulkUpdatePanel({ onSuccess, onError, onReload }) {
   const [open, setOpen] = useState(false)
   const [phase, setPhase] = useState('upload')
   const [preview, setPreview] = useState(null)
   const [rows, setRows] = useState([])
+  const [pasteText, setPasteText] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  function close() {
-    setOpen(false)
+  function resetUpload() {
     setPhase('upload')
     setPreview(null)
     setRows([])
+    setPasteText('')
+  }
+
+  function close() {
+    setOpen(false)
+    resetUpload()
   }
 
   async function runRequest(uploadRows, apply) {
@@ -30,25 +40,20 @@ export function AdminTherapistCmBulkUpdatePanel({ onSuccess, onError, onReload }
     })
   }
 
-  async function handleFileChange(event) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-
+  async function previewFromText(text) {
+    const parsed = parseTherapistCmBulkCsv(text)
+    if (!parsed.length) {
+      onError?.('No valid rows found. Use columns: Therapist ID, Email, Primary CM, Case Manager Email.')
+      return
+    }
+    const missingCm = parsed.filter((row) => !row.case_manager_email)
+    if (missingCm.length) {
+      onError?.('Every row needs a Case Manager Email.')
+      return
+    }
     onError?.('')
     setSubmitting(true)
     try {
-      const text = await file.text()
-      const parsed = parseTherapistCmBulkCsv(text)
-      if (!parsed.length) {
-        onError?.('No valid rows found. Use columns: Therapist ID, Email, Primary CM, Case Manager Email.')
-        return
-      }
-      const missingCm = parsed.filter((row) => !row.case_manager_email)
-      if (missingCm.length) {
-        onError?.('Every row needs a Case Manager Email.')
-        return
-      }
       const result = await runRequest(parsed, false)
       setRows(parsed)
       setPreview(result)
@@ -58,6 +63,28 @@ export function AdminTherapistCmBulkUpdatePanel({ onSuccess, onError, onReload }
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      setPasteText(text)
+      await previewFromText(text)
+    } catch (err) {
+      onError?.(err.message || 'Could not read CSV file')
+    }
+  }
+
+  async function handlePastePreview() {
+    if (!pasteText.trim()) {
+      onError?.('Paste CSV rows or upload a file first.')
+      return
+    }
+    await previewFromText(pasteText)
   }
 
   async function confirmApply() {
@@ -84,9 +111,7 @@ export function AdminTherapistCmBulkUpdatePanel({ onSuccess, onError, onReload }
         type="button"
         className="admin-btn admin-btn--ghost admin-btn--sm"
         onClick={() => {
-          setPreview(null)
-          setRows([])
-          setPhase('upload')
+          resetUpload()
           setOpen(true)
         }}
       >
@@ -110,22 +135,46 @@ export function AdminTherapistCmBulkUpdatePanel({ onSuccess, onError, onReload }
 
             <div className="admin-drawer__body">
               <p className="admin-muted" style={{ marginTop: 0 }}>
-                Upload a CSV with columns{' '}
+                Upload a CSV or paste spreadsheet rows with columns{' '}
                 <code>Therapist ID, Email, Primary CM, Case Manager Email</code>. Only rows with a different case
                 manager are updated. Active cases for each therapist are updated too.
               </p>
 
               {phase === 'upload' ? (
-                <label className="admin-input" style={{ display: 'block' }}>
-                  <span className="admin-filter-field__label">CSV file</span>
-                  <input
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="admin-input"
-                    disabled={submitting}
-                    onChange={handleFileChange}
-                  />
-                </label>
+                <>
+                  <label className="admin-input" style={{ display: 'block', marginBottom: 16 }}>
+                    <span className="admin-filter-field__label">CSV file</span>
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="admin-input"
+                      disabled={submitting}
+                      onChange={handleFileChange}
+                    />
+                  </label>
+                  <label className="admin-input" style={{ display: 'block' }}>
+                    <span className="admin-filter-field__label">Or paste rows</span>
+                    <textarea
+                      className="admin-input"
+                      rows={10}
+                      placeholder={PASTE_PLACEHOLDER}
+                      value={pasteText}
+                      disabled={submitting}
+                      onChange={(event) => setPasteText(event.target.value)}
+                      style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                    />
+                  </label>
+                  <div className="admin-btn-group" style={{ marginTop: 12 }}>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--primary admin-btn--sm"
+                      disabled={submitting || !pasteText.trim()}
+                      onClick={handlePastePreview}
+                    >
+                      {submitting ? 'Previewing…' : 'Preview rows'}
+                    </button>
+                  </div>
+                </>
               ) : null}
 
               {preview ? (
@@ -199,13 +248,9 @@ export function AdminTherapistCmBulkUpdatePanel({ onSuccess, onError, onReload }
                     type="button"
                     className="admin-btn admin-btn--ghost admin-btn--sm"
                     disabled={submitting}
-                    onClick={() => {
-                      setPhase('upload')
-                      setPreview(null)
-                      setRows([])
-                    }}
+                    onClick={resetUpload}
                   >
-                    Choose another file
+                    Edit data
                   </button>
                 </div>
               ) : null}
