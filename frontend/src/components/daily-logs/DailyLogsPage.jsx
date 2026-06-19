@@ -50,11 +50,11 @@ function logMatchesMonth(log, year, monthIndex) {
 }
 
 const LOG_TABS = [
+  { id: 'all', label: 'All logs' },
   { id: 'needs', label: 'Needs log' },
   { id: 'pending', label: 'Pending review' },
   { id: 'approved', label: 'Approved' },
   { id: 'rejected', label: 'Rejected' },
-  { id: 'all', label: 'All logs' },
 ]
 
 function formatTime(t) {
@@ -110,7 +110,7 @@ export function DailyLogsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [logTab, setLogTab] = useState('needs')
+  const [logTab, setLogTab] = useState('all')
   const [viewingLog, setViewingLog] = useState(null)
   const [sameDayConflict, setSameDayConflict] = useState(null)
   const [sameDayPending, setSameDayPending] = useState(null)
