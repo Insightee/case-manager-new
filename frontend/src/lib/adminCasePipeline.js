@@ -381,7 +381,7 @@ export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, can
         id: 'review_logs',
         label: `Logs (${row.missing_logs})`,
         variant: 'primary',
-        href: '/admin/workbench?section=logs',
+        href: `/admin/cases/${row.id}?tab=logs`,
       })
     }
     if (row.reports_under_review > 0) {
