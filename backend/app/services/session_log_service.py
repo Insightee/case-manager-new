@@ -111,7 +111,7 @@ def create_therapist_session_log(db: Session, user: User, payload: dict) -> Dail
     return log
 
 
-def notify_case_managers_log_submitted(db: Session, log: DailyLog, *, therapist: User) -> int:
+def notify_case_managers_log_submitted(db: Session, log: DailyLog, *, therapist: User, resubmitted: bool = False) -> int:
     """In-app alert to CM/supervisor when a therapist submits a session log (parent sees after CM approve)."""
     session = log.session or db.get(TherapySession, log.session_id)
     if not session:
@@ -120,11 +120,18 @@ def notify_case_managers_log_submitted(db: Session, log: DailyLog, *, therapist:
     if not case:
         return 0
     child_name = case.child.full_name if case.child else "client"
-    title = f"Session log submitted — {case.case_code}"
-    body = (
-        f"{therapist.full_name or 'Therapist'} submitted a log for {child_name} "
-        f"({session.scheduled_date.isoformat()}). Review and approve for parent visibility."
-    )
+    if resubmitted:
+        title = f"Session log resubmitted — {case.case_code}"
+        body = (
+            f"{therapist.full_name or 'Therapist'} resubmitted a log for {child_name} "
+            f"({session.scheduled_date.isoformat()}) after review. Please review again."
+        )
+    else:
+        title = f"Session log submitted — {case.case_code}"
+        body = (
+            f"{therapist.full_name or 'Therapist'} submitted a log for {child_name} "
+            f"({session.scheduled_date.isoformat()}). Review and approve for parent visibility."
+        )
     recipient_ids: set[int] = set()
     if case.case_manager_user_id:
         recipient_ids.add(case.case_manager_user_id)
@@ -142,6 +149,31 @@ def notify_case_managers_log_submitted(db: Session, log: DailyLog, *, therapist:
         )
         count += 1
     return count
+
+
+def notify_therapist_log_rejected(db: Session, log: DailyLog, *, comment: str) -> int:
+    """In-app alert to therapist when admin rejects a session log."""
+    session = log.session or db.get(TherapySession, log.session_id)
+    if not session or not session.therapist_user_id:
+        return 0
+    case = session.case or case_service.get_case(db, session.case_id)
+    child_name = case.child.full_name if case and case.child else "client"
+    case_code = case.case_code if case else "case"
+    note = (comment or "").strip()
+    title = "Session log rejected — review and resubmit"
+    body = (
+        f"Your session log for {child_name} ({session.scheduled_date.isoformat()}, {case_code}) was rejected. "
+        f"{note} Please review the feedback, make corrections, and resubmit for review."
+    )
+    notification_service.create_notification(
+        db,
+        user_id=session.therapist_user_id,
+        title=title,
+        body=body,
+        entity_type="daily_log",
+        entity_id=log.id,
+    )
+    return 1
 
 
 def parent_user_ids_for_case(db: Session, case: Case) -> list[int]:

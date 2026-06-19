@@ -43,6 +43,16 @@ def is_log_editable(log: DailyLog) -> bool:
     return datetime.now(timezone.utc) <= until
 
 
+def is_log_resubmittable(log: DailyLog) -> bool:
+    return log.approval_status == LogApprovalStatus.REJECTED
+
+
+def can_therapist_edit_log(log: DailyLog) -> bool:
+    if is_log_resubmittable(log):
+        return True
+    return is_log_editable(log)
+
+
 def get_log(db: Session, log_id: int) -> DailyLog | None:
     return db.scalars(
         select(DailyLog).where(DailyLog.id == log_id).options(selectinload(DailyLog.session))
@@ -112,16 +122,46 @@ def update_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwarg
     session = log.session or db.get(TherapySession, log.session_id)
     if not session or session.therapist_user_id != therapist_user_id:
         raise ValueError("Access denied")
-    if log.approval_status != LogApprovalStatus.PENDING:
-        raise ValueError("Only pending logs can be edited")
-    if not is_log_editable(log):
+    if is_log_resubmittable(log):
+        pass
+    elif log.approval_status != LogApprovalStatus.PENDING:
+        raise ValueError("Only pending or rejected logs can be edited")
+    elif not is_log_editable(log):
         raise ValueError("Logs can only be edited within 24 hours of submission")
 
+    _apply_log_field_updates(log, kwargs)
+    db.flush()
+    return log
+
+
+def _apply_log_field_updates(log: DailyLog, kwargs: dict) -> None:
     for field in ("session_notes", "activities_done", "goals_addressed", "observations", "follow_ups", "parent_notes", "late_reason"):
         if field in kwargs and kwargs[field] is not None:
             setattr(log, field, kwargs[field])
     if kwargs.get("attendance_status") is not None:
         log.attendance_status = _normalize_attendance(kwargs["attendance_status"])
+
+
+def _validate_log_for_submission(log: DailyLog) -> None:
+    activities = (log.activities_done or "").strip()
+    if len(activities) < 3:
+        raise ValueError("Describe what you did in this session (at least a few words).")
+    if log.late_addition and not (log.late_reason and str(log.late_reason).strip()):
+        raise ValueError("Late reason is required for sessions from past days")
+
+
+def resubmit_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwargs) -> DailyLog:
+    session = log.session or db.get(TherapySession, log.session_id)
+    if not session or session.therapist_user_id != therapist_user_id:
+        raise ValueError("Access denied")
+    if not is_log_resubmittable(log):
+        raise ValueError("Only rejected logs can be resubmitted")
+
+    _apply_log_field_updates(log, kwargs)
+    _validate_log_for_submission(log)
+    log.approval_status = LogApprovalStatus.PENDING
+    log.review_note = None
+    log.submitted_at = datetime.now(timezone.utc)
     db.flush()
     return log
 
@@ -143,7 +183,8 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
         "late_addition": bool(log.late_addition),
         "late_reason": log.late_reason,
         "review_note": log.review_note,
-        "can_edit": is_log_editable(log),
+        "can_edit": can_therapist_edit_log(log),
+        "can_resubmit": is_log_resubmittable(log),
         "editable_until": log_editable_until(log),
     }
     if session:

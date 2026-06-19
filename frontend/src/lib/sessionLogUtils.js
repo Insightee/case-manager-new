@@ -32,6 +32,14 @@ export function isLogEditable(log) {
   return Date.now() < until
 }
 
+export function isLogResubmittable(log) {
+  return log?.approval_status === 'REJECTED' || log?.can_resubmit === true
+}
+
+export function canEditLog(log) {
+  return isLogEditable(log) || isLogResubmittable(log)
+}
+
 export function logToFormState(log) {
   return {
     attendance_status: log.attendance_status || 'PRESENT',

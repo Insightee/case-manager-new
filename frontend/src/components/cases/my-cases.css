@@ -2405,6 +2405,12 @@
   color: #475569;
 }
 
+.ic-session-log-panel__banner--warn {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
 .ic-session-log-panel__error {
   margin: 0 0 12px;
   color: #b91c1c;

@@ -248,7 +248,9 @@ def update_actual_times(
         raise ValueError("Not your session")
     if session.status != SessionStatus.COMPLETED:
         raise ValueError("Only completed sessions can have times edited")
-    if session.actual_end_at:
+    log = session.daily_log
+    rejected_resubmit = log and log.approval_status == LogApprovalStatus.REJECTED
+    if session.actual_end_at and not rejected_resubmit:
         from app.services.log_service import LOG_EDIT_WINDOW
 
         ended = _aware(session.actual_end_at)
@@ -270,8 +272,7 @@ def update_actual_times(
     session.time_confirmation_required = False
     db.flush()
 
-    log = session.daily_log
-    if log:
+    if log and log.approval_status != LogApprovalStatus.REJECTED:
         log.approval_status = LogApprovalStatus.PENDING
         db.flush()
     return session

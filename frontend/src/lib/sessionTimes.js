@@ -12,8 +12,11 @@ function formatWallClock(t) {
   return String(t).slice(0, 5)
 }
 
-/** True within 24h of session clock-out. */
-export function canEditSessionTimes(session) {
+/** True within 24h of session clock-out, or when the linked log was rejected. */
+export function canEditSessionTimes(session, log = null) {
+  if (log?.approval_status === 'REJECTED') {
+    return session?.status === 'COMPLETED'
+  }
   const end = parseApiDatetime(session?.actual_end_at)
   if (!end || session?.status !== 'COMPLETED') return false
   return Date.now() <= end.getTime() + 24 * 60 * 60 * 1000

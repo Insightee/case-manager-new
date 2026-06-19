@@ -23,7 +23,7 @@ import {
   isStartedLateOnSchedule,
   parseApiDatetime,
 } from '../../lib/datetime.js'
-import { isLogEditable } from '../../lib/sessionLogUtils.js'
+import { isLogEditable, isLogResubmittable } from '../../lib/sessionLogUtils.js'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
@@ -319,8 +319,9 @@ export function DailyLogsPage() {
     }
   }
 
-  function renderLogRow(l, { allowEdit = false, allowView = false } = {}) {
+  function renderLogRow(l, { allowEdit = false, allowResubmit = false, allowView = false } = {}) {
     const canEdit = allowEdit && isLogEditable(l)
+    const canResubmit = allowResubmit && isLogResubmittable(l)
     const clockRange = formatClockRange(l)
     const editedRange = l.actual_times_edited ? formatEditedRange(l) : null
     return (
@@ -350,6 +351,11 @@ export function DailyLogsPage() {
               Same-day duplicate
             </span>
           ) : null}
+          {l.review_note && l.approval_status === 'REJECTED' ? (
+            <p className="ic-session-log-recent__meta" style={{ color: '#b91c1c' }}>
+              Rejection: {l.review_note}
+            </p>
+          ) : null}
           {l.status_label ? (
             <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
               {l.status_label}
@@ -363,7 +369,7 @@ export function DailyLogsPage() {
             </span>
           ) : null}
         </div>
-        {canEditSessionTimes({ ...l, id: l.session_id, status: 'COMPLETED' }) ? (
+        {canEditSessionTimes({ ...l, id: l.session_id, status: 'COMPLETED' }, l) && !canResubmit ? (
           <button
             type="button"
             className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
@@ -381,6 +387,31 @@ export function DailyLogsPage() {
             }
           >
             Edit times
+          </button>
+        ) : null}
+        {canResubmit ? (
+          <button
+            type="button"
+            className="ic-btn ic-btn--primary ic-session-log-recent__edit"
+            onClick={() =>
+              openLogForm(
+                {
+                  id: l.session_id,
+                  scheduled_date: l.scheduled_date,
+                  actual_start_at: l.actual_start_at,
+                  actual_end_at: l.actual_end_at,
+                  edited_start_at: l.edited_start_at,
+                  edited_end_at: l.edited_end_at,
+                  actual_times_edited: l.actual_times_edited,
+                  case_code: l.case_code,
+                  child_name: l.child_name,
+                  status: 'COMPLETED',
+                },
+                { log: l },
+              )
+            }
+          >
+            Edit & resubmit
           </button>
         ) : null}
         {canEdit ? (
@@ -404,7 +435,7 @@ export function DailyLogsPage() {
             Edit log (24h)
           </button>
         ) : null}
-        {allowView && !canEdit ? (
+        {allowView && !canEdit && !canResubmit ? (
           <button
             type="button"
             className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
@@ -494,7 +525,11 @@ export function DailyLogsPage() {
     if (updated?.id && logSession?.id === updated.id) {
       setLogSession((prev) => (prev ? { ...prev, ...updated } : updated))
     }
-    setSuccess('Times corrected — log is pending review again.')
+    if (editingLog?.approval_status === 'REJECTED') {
+      setSuccess('Times updated — resubmit the log when you are ready.')
+    } else {
+      setSuccess('Times corrected — log is pending review again.')
+    }
   }
 
   function openEditTimesForSession(session) {
@@ -710,7 +745,14 @@ export function DailyLogsPage() {
             required={logRequired && !editingLog}
             onEditTimes={() => openEditTimesForSession(logSession)}
             onSuccess={(savedLog) => {
-              setSuccess(editingLog ? 'Session log updated.' : 'Session log submitted — pending admin review.')
+              const wasResubmit = editingLog?.approval_status === 'REJECTED' && savedLog?.approval_status === 'PENDING'
+              setSuccess(
+                wasResubmit
+                  ? 'Log resubmitted — pending admin review.'
+                  : editingLog
+                    ? 'Session log updated.'
+                    : 'Session log submitted — pending admin review.',
+              )
               closeLogForm()
               patchCachesAfterLogSave({
                 userId: therapistId,
@@ -994,7 +1036,7 @@ export function DailyLogsPage() {
               <p className="ic-empty-hint">No rejected logs for {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {filteredRejected.map((l) => renderLogRow(l, { allowView: true }))}
+                {filteredRejected.map((l) => renderLogRow(l, { allowResubmit: true, allowView: true }))}
               </div>
             )
           ) : null}
@@ -1007,7 +1049,8 @@ export function DailyLogsPage() {
                 {filteredAll.map((l) =>
                   renderLogRow(l, {
                     allowEdit: l.approval_status === 'PENDING',
-                    allowView: l.approval_status !== 'PENDING' || !isLogEditable(l),
+                    allowResubmit: l.approval_status === 'REJECTED',
+                    allowView: l.approval_status === 'APPROVED' || (l.approval_status === 'PENDING' && !isLogEditable(l)),
                   }),
                 )}
               </div>

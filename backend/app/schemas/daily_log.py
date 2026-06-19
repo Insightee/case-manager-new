@@ -60,6 +60,7 @@ class DailyLogRead(BaseModel):
     late_reason: Optional[str] = None
     review_note: Optional[str] = None
     can_edit: bool = False
+    can_resubmit: bool = False
     editable_until: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

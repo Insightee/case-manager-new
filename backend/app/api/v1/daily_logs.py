@@ -146,6 +146,30 @@ def update_daily_log(
     return DailyLogRead(**log_service.log_to_read(log))
 
 
+@router.post("/{log_id}/resubmit", response_model=DailyLogRead)
+def resubmit_daily_log(
+    log_id: int,
+    payload: DailyLogUpdate,
+    request: Request,
+    user: User = Depends(require_permission("daily_log.create")),
+    db: Session = Depends(get_db),
+):
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    try:
+        log = log_service.resubmit_daily_log(db, log, user.id, **payload.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    from app.services import session_log_service
+
+    session_log_service.notify_case_managers_log_submitted(db, log, therapist=user, resubmitted=True)
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="resubmit", entity_type="daily_log", entity_id=log.id, **meta)
+    db.commit()
+    return DailyLogRead(**log_service.log_to_read(log))
+
+
 @router.post("/{log_id}/approve")
 def approve_log(
     log_id: int,
@@ -201,6 +225,9 @@ def reject_log(
         ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
     log.approval_status = LogApprovalStatus.REJECTED
     log.review_note = comment
+    from app.services import session_log_service
+
+    session_log_service.notify_therapist_log_rejected(db, log, comment=comment)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()

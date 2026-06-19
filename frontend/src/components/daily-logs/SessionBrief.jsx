@@ -26,7 +26,7 @@ export function SessionBrief({ session, childName, caseCode, log = null, onEditT
     session.start_time,
   )
   const logPending = session.status === 'COMPLETED' && !session.has_daily_log
-  const showEdit = canEditSessionTimes(session) && typeof onEditTimes === 'function'
+  const showEdit = canEditSessionTimes(session, log) && typeof onEditTimes === 'function'
   const hasEdit = Boolean(session.actual_times_edited && editedRange)
 
   return (

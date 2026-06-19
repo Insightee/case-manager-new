@@ -1,4 +1,4 @@
-import { isLogEditable } from './sessionLogUtils.js'
+import { isLogEditable, isLogResubmittable } from './sessionLogUtils.js'
 
 /**
  * Decide how to open a session from ?session= deep links or schedule taps.
@@ -19,6 +19,9 @@ export function resolveSessionDeepLink(session, logs = []) {
   const log = logs.find((l) => Number(l.session_id) === Number(session.id))
   if (log) {
     if (log.approval_status === 'PENDING' && isLogEditable(log)) {
+      return { type: 'log', session, log, required: false }
+    }
+    if (isLogResubmittable(log)) {
       return { type: 'log', session, log, required: false }
     }
     return { type: 'readonly', session, log }

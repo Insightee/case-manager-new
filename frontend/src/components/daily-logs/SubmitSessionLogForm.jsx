@@ -3,7 +3,9 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { clearLogDraft, getLogDraft, listPendingDrafts, markDraftSynced, saveLogDraft } from '../../lib/logDraftStore.js'
 import {
   formatSessionTimeRange,
+  canEditLog,
   isLogEditable,
+  isLogResubmittable,
   logToFormState,
   todayIsoIST,
   validateSessionLogForm,
@@ -55,6 +57,7 @@ export function SubmitSessionLogForm({
   onEditTimes,
 }) {
   const isEdit = Boolean(existingLog?.id)
+  const isResubmit = isEdit && isLogResubmittable(existingLog)
   const [form, setForm] = useState(emptyLogForm)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -131,10 +134,11 @@ export function SubmitSessionLogForm({
     return session.scheduled_date < todayIsoIST()
   }, [session])
 
-  const editable = !isEdit || isLogEditable(existingLog)
+  const editable = !isEdit || canEditLog(existingLog)
+  const pendingEdit = isEdit && isLogEditable(existingLog)
 
   useEffect(() => {
-    if (!isEdit || !existingLog?.id || !editable) return undefined
+    if (!isEdit || !existingLog?.id || !pendingEdit) return undefined
     if (!dirtySinceServerSave) return undefined
     if (serverAutosaveTimer.current) clearTimeout(serverAutosaveTimer.current)
     serverAutosaveTimer.current = setTimeout(async () => {
@@ -156,7 +160,57 @@ export function SubmitSessionLogForm({
     return () => {
       if (serverAutosaveTimer.current) clearTimeout(serverAutosaveTimer.current)
     }
-  }, [isEdit, existingLog?.id, editable, dirtySinceServerSave, form])
+  }, [isEdit, existingLog?.id, pendingEdit, dirtySinceServerSave, form])
+
+  async function handleResubmit(e) {
+    e.preventDefault()
+    if (!existingLog?.id) return
+    const validationError = validateSessionLogForm(form, { isLateSession })
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    setSubmitting(true)
+    setError('')
+    try {
+      const body = {
+        ...form,
+        late_reason: form.late_reason || undefined,
+      }
+      const saved = await apiFetch(`/api/v1/daily-logs/${existingLog.id}/resubmit`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      onSuccess?.(saved)
+    } catch (err) {
+      setError(err.message || 'Could not resubmit log')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleSaveProgress(e) {
+    e.preventDefault()
+    if (!existingLog?.id) return
+    setSubmitting(true)
+    setError('')
+    try {
+      await apiFetch(`/api/v1/daily-logs/${existingLog.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...form,
+          late_reason: form.late_reason || undefined,
+        }),
+      })
+      setServerAutosaveState('synced')
+      setDirtySinceServerSave(false)
+      setDraftNote('Progress saved')
+    } catch (err) {
+      setError(err.message || 'Could not save progress')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const timeRange = formatSessionTimeRange(session)
   const displayName = childName || session?.child_name || caseCode || session?.case_code || 'Client'
@@ -251,10 +305,10 @@ export function SubmitSessionLogForm({
       <header className="ic-session-log-panel__head">
         <div>
           <p className="ic-session-log-panel__eyebrow">
-            {isEdit ? 'Edit session log' : required ? 'Required to close session' : 'Session log'}
+            {isResubmit ? 'Rejected session log' : isEdit ? 'Edit session log' : required ? 'Required to close session' : 'Session log'}
           </p>
           <h2 className="ic-session-log-panel__title">
-            {isEdit ? 'Update visit details' : 'Complete session log'}
+            {isResubmit ? 'Review and resubmit' : isEdit ? 'Update visit details' : 'Complete session log'}
           </h2>
           <p className="ic-session-log-panel__meta">
             <strong>{displayName}</strong>
@@ -269,7 +323,7 @@ export function SubmitSessionLogForm({
         ) : null}
       </header>
 
-      {showBrief && !isEdit ? (
+      {(showBrief && !isEdit) || (isResubmit && showBrief) ? (
         <SessionBrief
           session={session}
           childName={childName}
@@ -279,11 +333,21 @@ export function SubmitSessionLogForm({
         />
       ) : null}
 
+      {isResubmit && existingLog?.review_note ? (
+        <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn">
+          <strong>Rejection feedback:</strong> {existingLog.review_note}
+        </div>
+      ) : null}
+
       {required ? (
         <p className="ic-session-log-panel__banner">
           Your timer has stopped. Review the session summary above, then submit this log so the visit is recorded. Use{' '}
           <strong>Save draft</strong> if you need to step away — the visit stays in <strong>Needs log</strong> until you
           submit.
+        </p>
+      ) : isResubmit ? (
+        <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
+          Update the log based on the feedback above. You can edit session times if needed, then resubmit for review.
         </p>
       ) : isEdit ? (
         <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
@@ -297,14 +361,14 @@ export function SubmitSessionLogForm({
 
       {error ? <p className="ic-session-log-panel__error">{error}</p> : null}
 
-      {isLateSession && !isEdit ? (
+      {isLateSession && (!isEdit || isResubmit) ? (
         <p className="ic-session-log-panel__late-banner">
           This visit is from a past day. You must add a <strong>late reason</strong> below before admin can approve
           the log.
         </p>
       ) : null}
 
-      <form className="ic-session-log-form" onSubmit={handleSubmit}>
+      <form className="ic-session-log-form" onSubmit={isResubmit ? handleResubmit : handleSubmit}>
         <fieldset className="ic-session-log-form__attendance">
           <legend>Attendance</legend>
           <div className="ic-session-log-form__attendance-options">
@@ -375,9 +439,25 @@ export function SubmitSessionLogForm({
         {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}
 
         <div className="ic-session-log-form__actions">
-          <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
-            {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Submit log & finish'}
-          </button>
+          {isResubmit ? (
+            <>
+              <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
+                {submitting ? 'Submitting…' : 'Resubmit for review'}
+              </button>
+              <button
+                type="button"
+                className="ic-btn ic-btn--ghost"
+                disabled={submitting}
+                onClick={handleSaveProgress}
+              >
+                Save progress
+              </button>
+            </>
+          ) : (
+            <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
+              {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Submit log & finish'}
+            </button>
+          )}
           {!isEdit && session?.id ? (
             <button type="button" className="ic-btn ic-btn--ghost" disabled={submitting} onClick={handleSaveDraft}>
               Save draft
@@ -395,7 +475,7 @@ export function SubmitSessionLogForm({
             until you submit.
           </p>
         ) : null}
-        {isEdit ? (
+        {isEdit && pendingEdit ? (
           <p className="ic-session-log-form__footnote">
             {serverAutosaveState === 'saving'
               ? 'Saving…'
