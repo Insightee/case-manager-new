@@ -59,6 +59,7 @@ class DailyLogRead(BaseModel):
     late_addition: bool = False
     late_reason: Optional[str] = None
     review_note: Optional[str] = None
+    resubmitted_at: Optional[datetime] = None
     can_edit: bool = False
     can_resubmit: bool = False
     editable_until: Optional[datetime] = None

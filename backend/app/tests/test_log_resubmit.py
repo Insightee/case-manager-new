@@ -148,6 +148,7 @@ def test_rejected_log_can_be_edited_and_resubmitted():
     assert data["approval_status"] == "PENDING"
     assert data["can_resubmit"] is False
     assert data["review_note"] is None
+    assert data["resubmitted_at"] is not None
     assert data["activities_done"] == "Corrected activities after rejection"
 
 

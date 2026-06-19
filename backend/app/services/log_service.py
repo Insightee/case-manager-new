@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 
 LOG_EDIT_WINDOW = timedelta(hours=24)
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.case import Case
@@ -51,6 +51,15 @@ def can_therapist_edit_log(log: DailyLog) -> bool:
     if is_log_resubmittable(log):
         return True
     return is_log_editable(log)
+
+
+def log_queue_sort_at(log: DailyLog) -> datetime | None:
+    return log.resubmitted_at or log.submitted_at
+
+
+def log_queue_order_desc():
+    """SQLAlchemy order clause: most recently submitted/resubmitted first."""
+    return func.coalesce(DailyLog.resubmitted_at, DailyLog.submitted_at).desc().nullslast()
 
 
 def get_log(db: Session, log_id: int) -> DailyLog | None:
@@ -162,6 +171,7 @@ def resubmit_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwa
     log.approval_status = LogApprovalStatus.PENDING
     log.review_note = None
     log.submitted_at = datetime.now(timezone.utc)
+    log.resubmitted_at = datetime.now(timezone.utc)
     db.flush()
     return log
 
@@ -185,6 +195,7 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
         "review_note": log.review_note,
         "can_edit": can_therapist_edit_log(log),
         "can_resubmit": is_log_resubmittable(log),
+        "resubmitted_at": ensure_utc_aware(log.resubmitted_at),
         "editable_until": log_editable_until(log),
     }
     if session:

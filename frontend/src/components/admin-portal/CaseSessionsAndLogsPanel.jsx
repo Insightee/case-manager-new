@@ -25,6 +25,12 @@ function sessionSortKey(session, logsBySessionId) {
   return 3
 }
 
+function sessionRecencyKey(session, logsBySessionId) {
+  const log = logsBySessionId.get(session.id)
+  const ts = log?.resubmitted_at || log?.submitted_at || session.scheduled_date
+  return ts ? new Date(ts).getTime() : 0
+}
+
 function sessionExpandKey(sessionId) {
   return `s:${sessionId}`
 }
@@ -76,6 +82,11 @@ function SessionLogExpandableBody({
       </Link>
       {expanded ? (
         <div style={{ flexBasis: '100%', width: '100%' }}>
+          {log.approval_status === 'PENDING' && log.resubmitted_at ? (
+            <p className="admin-session-log-detail__notice admin-session-log-detail__notice--info" role="status" style={{ marginBottom: 12 }}>
+              Resubmitted after changes — review the therapist&apos;s corrections before approving.
+            </p>
+          ) : null}
           <SessionLogReadOnly log={log} session={session} variant="admin" hideHeader />
           {log.approval_status === 'PENDING' && canReview ? (
             <div style={{ marginTop: 12 }}>
@@ -178,6 +189,9 @@ function SessionLogCard({
           <>
             <StatusBadge status={session.status} />
             {log ? <StatusBadge status={log.approval_status} /> : null}
+            {log?.resubmitted_at ? (
+              <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
+            ) : null}
             {sessionHasTimeEdit(session, log) ? (
               <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
             ) : null}
@@ -219,6 +233,9 @@ function OrphanLogRow({
           </p>
         </div>
         <StatusBadge status={log.approval_status} />
+        {log.resubmitted_at ? (
+          <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
+        ) : null}
       </div>
       <SessionLogExpandableBody
         expandKey={expandKey}
@@ -290,9 +307,11 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
   }, [logs])
 
   const sortedSessions = useMemo(() => {
-    return [...sessions].sort(
-      (a, b) => sessionSortKey(a, logsBySessionId) - sessionSortKey(b, logsBySessionId),
-    )
+    return [...sessions].sort((a, b) => {
+      const priority = sessionSortKey(a, logsBySessionId) - sessionSortKey(b, logsBySessionId)
+      if (priority !== 0) return priority
+      return sessionRecencyKey(b, logsBySessionId) - sessionRecencyKey(a, logsBySessionId)
+    })
   }, [sessions, logsBySessionId])
 
   const orphanLogs = useMemo(

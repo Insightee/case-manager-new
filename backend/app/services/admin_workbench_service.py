@@ -24,6 +24,7 @@ from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
 from app.services import admin_iep_service as iep_svc
+from app.services import log_service
 from app.services.admin_report_service import list_queue_admin
 from app.services.admin_scope_service import apply_case_scope
 
@@ -60,7 +61,7 @@ def widget_section_logs(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIM
         .join(Case, TherapySession.case_id == Case.id)
         .join(Child, Case.child_id == Child.id)
         .where(DailyLog.approval_status == LogApprovalStatus.PENDING)
-        .order_by(DailyLog.created_at.desc())
+        .order_by(log_service.log_queue_order_desc())
         .limit(limit)
     )
     log_stmt = apply_case_scope(log_stmt, user)
@@ -82,6 +83,8 @@ def widget_section_logs(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIM
                 case.id,
                 id=log.id,
                 href=f"/admin/cases/{case.id}?tab=logs&session_id={log.session_id}",
+                resubmitted=bool(log.resubmitted_at),
+                status="Resubmitted" if log.resubmitted_at else "Pending review",
             )
             for log, case, child in log_rows
         ],

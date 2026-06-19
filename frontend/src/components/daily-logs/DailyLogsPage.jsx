@@ -38,6 +38,15 @@ import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
 import '../cases/my-cases.css'
 
+function logRecencyMs(log) {
+  const ts = log?.resubmitted_at || log?.submitted_at
+  return ts ? new Date(ts).getTime() : 0
+}
+
+function sortLogsByRecency(list) {
+  return [...list].sort((a, b) => logRecencyMs(b) - logRecencyMs(a))
+}
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -120,7 +129,7 @@ export function DailyLogsPage() {
   const deepLinkResolvedRef = useRef(null)
 
   const pendingLogs = useMemo(
-    () => logs.filter((l) => l.approval_status === 'PENDING'),
+    () => sortLogsByRecency(logs.filter((l) => l.approval_status === 'PENDING')),
     [logs],
   )
   const approvedLogs = useMemo(
@@ -140,7 +149,10 @@ export function DailyLogsPage() {
   const filteredPending = useMemo(() => filterByMonth(pendingLogs), [filterByMonth, pendingLogs])
   const filteredApproved = useMemo(() => filterByMonth(approvedLogs), [filterByMonth, approvedLogs])
   const filteredRejected = useMemo(() => filterByMonth(rejectedLogs), [filterByMonth, rejectedLogs])
-  const filteredAll = useMemo(() => filterByMonth(logs), [filterByMonth, logs])
+  const filteredAll = useMemo(
+    () => sortLogsByRecency(filterByMonth(logs)),
+    [filterByMonth, logs],
+  )
 
   const displayUpcoming = useMemo(() => {
     if (!composerCaseId) return upcoming

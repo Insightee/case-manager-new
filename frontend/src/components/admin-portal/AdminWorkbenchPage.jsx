@@ -41,6 +41,7 @@ function WorkbenchSection({ id, section }) {
                     {item.case_code ? `${item.case_code} · ` : ''}
                     {item.child_name || ''}
                     {item.status ? ` · ${item.status}` : ''}
+                  {item.resubmitted ? ' · Resubmitted after changes' : ''}
                     {item.iep_status ? ` · ${item.iep_status}` : ''}
                     {item.scheduled_date ? ` · ${formatDisplayDate(item.scheduled_date)}` : ''}
                   </p>

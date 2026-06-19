@@ -347,6 +347,8 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE daily_logs ADD COLUMN review_note TEXT"))
             if "parent_notified_at" not in log_cols:
                 conn.execute(text("ALTER TABLE daily_logs ADD COLUMN parent_notified_at DATETIME"))
+            if "resubmitted_at" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN resubmitted_at DATETIME"))
 
     if insp.has_table("support_tickets"):
         t_cols = {c["name"] for c in insp.get_columns("support_tickets")}

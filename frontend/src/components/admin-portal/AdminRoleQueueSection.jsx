@@ -33,6 +33,7 @@ function itemPrimary(item) {
 }
 
 function itemSecondary(item) {
+  if (item.resubmitted) return 'Resubmitted after changes'
   if (item.child_name && item.case_code) return item.case_code
   if (item.label && item.case_code) return item.case_code
   if (item.status) return String(item.status).replace(/_/g, ' ')

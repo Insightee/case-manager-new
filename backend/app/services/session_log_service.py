@@ -361,7 +361,7 @@ def list_admin_session_logs(
         .options(
             selectinload(DailyLog.session).selectinload(TherapySession.case).selectinload(Case.child),
         )
-        .order_by(DailyLog.submitted_at.desc().nullslast(), TherapySession.scheduled_date.desc())
+        .order_by(log_service.log_queue_order_desc(), TherapySession.scheduled_date.desc())
     )
     if case_ids is not None:
         stmt = stmt.where(TherapySession.case_id.in_(case_ids))

@@ -144,7 +144,8 @@ function QueueSection({ id, section }) {
                 <p className="admin-queue__meta">
                   {item.case_code ? `${item.case_code} · ` : ''}
                   {item.child_name || ''}
-                  {item.status ? ` · ${String(item.status).replace(/_/g, ' ')}` : ''}
+                  {item.resubmitted ? ' · Resubmitted after changes' : ''}
+                  {item.status && !item.resubmitted ? ` · ${String(item.status).replace(/_/g, ' ')}` : ''}
                 </p>
               </div>
               <Link to={item.href || '/admin/workbench'} className="admin-btn admin-btn--ghost admin-btn--sm">

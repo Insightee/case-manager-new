@@ -421,6 +421,10 @@ button.admin-stat--link {
   background: #f1f5f9;
   color: #475569;
 }
+.admin-badge--info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
 
 .admin-table-wrap {
   overflow: auto;

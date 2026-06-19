@@ -75,6 +75,11 @@ export function SessionLogReadOnly({
           {log.review_note ? ` Note: ${log.review_note}` : ' Contact your case manager to discuss next steps.'}
         </p>
       ) : null}
+      {isAdmin && log?.approval_status === 'PENDING' && log?.resubmitted_at ? (
+        <p className="admin-session-log-detail__notice admin-session-log-detail__notice--info" role="status">
+          Resubmitted after changes — therapist updated this log following a rejection. Review the corrections before approving.
+        </p>
+      ) : null}
       {isAdmin && log?.approval_status === 'REJECTED' ? (
         <p className="admin-session-log-detail__notice admin-session-log-detail__notice--warn" role="status">
           Rejected
