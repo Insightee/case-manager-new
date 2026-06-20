@@ -13,6 +13,7 @@ from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, Thera
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
 from app.services import leave_service
+from app.services.leave_bulk_import_service import get_year_snapshot
 
 SHADOW_SERVICE_LINE = "shadow_support"
 
@@ -220,10 +221,23 @@ def get_leave_balance(
         credits_earned = credits_earned_in_year(employment_start, year, as_of=date(year, 12, 31))
     else:
         credits_earned = credits_earned_in_year(employment_start, year, as_of=today)
-    detail = computed_consumption_detail(db, user.id, year)
-    paid_used = detail.paid
-    unpaid_used = detail.unpaid_total
-    credits_remaining = max(credits_earned - paid_used, 0)
+
+    snapshot = get_year_snapshot(profile, year)
+    if snapshot is not None:
+        paid_used = int(snapshot.get("paid_used") or 0)
+        unpaid_homecare = int(snapshot.get("unpaid_homecare") or 0)
+        unpaid_over_limit = int(snapshot.get("unpaid_over_limit") or 0)
+        unpaid_used = unpaid_homecare + unpaid_over_limit
+        credits_remaining = max(credits_earned - paid_used, 0)
+        usage_snapshot_applied = True
+    else:
+        detail = computed_consumption_detail(db, user.id, year)
+        paid_used = detail.paid
+        unpaid_used = detail.unpaid_total
+        unpaid_homecare = detail.unpaid_homecare
+        unpaid_over_limit = detail.unpaid_over_limit
+        credits_remaining = max(credits_earned - paid_used, 0)
+        usage_snapshot_applied = False
 
     return {
         "year": year,
@@ -231,8 +245,9 @@ def get_leave_balance(
         "credits_earned": credits_earned,
         "paid_leaves_taken": paid_used,
         "unpaid_leaves_taken": unpaid_used,
-        "unpaid_homecare": detail.unpaid_homecare,
-        "unpaid_over_limit": detail.unpaid_over_limit,
+        "unpaid_homecare": unpaid_homecare,
+        "unpaid_over_limit": unpaid_over_limit,
+        "usage_snapshot_applied": usage_snapshot_applied,
         "employment_start_date": employment_start.isoformat() if employment_start else None,
         "profile_status": profile.status.value if profile else None,
         "requires_employment_start_date": not employment_start,

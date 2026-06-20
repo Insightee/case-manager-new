@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -39,6 +39,11 @@ class MemoCreate(BaseModel):
     subject: str
     body: str
     send_as_email: bool = False
+
+
+class BulkLeaveImportRequest(BaseModel):
+    csv_text: str = Field(..., min_length=1)
+    year: int = Field(2026, ge=2000, le=2100)
 
 
 def _serialise_user(u: User) -> dict:
@@ -200,6 +205,66 @@ def therapist_assigned_cases(
         raise HTTPException(status_code=404, detail="Therapist not found")
     items = assignment_service.list_active_cases_for_therapist(db, user_id)
     return {"therapist_user_id": user_id, "items": items}
+
+
+@router.get("/leave/bulk/template.csv")
+def bulk_leave_import_template(
+    user: User = Depends(require_permission("leave.manage")),
+):
+    _ = user
+    return Response(
+        content="external_employee_id,start_date,leaves_used\nEMP-101,2025-11-01,7\n",
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="leave_bulk_import_2026_template.csv"'},
+    )
+
+
+@router.post("/leave/bulk/preview")
+def bulk_leave_import_preview(
+    payload: BulkLeaveImportRequest,
+    user: User = Depends(require_permission("leave.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.leave_bulk_import_service import preview_bulk_leave_import
+
+    _ = user
+    try:
+        return preview_bulk_leave_import(db, payload.csv_text, year=payload.year)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/leave/bulk/apply")
+def bulk_leave_import_apply(
+    payload: BulkLeaveImportRequest,
+    request: Request,
+    user: User = Depends(require_permission("leave.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services.leave_bulk_import_service import apply_bulk_leave_import
+
+    try:
+        result = apply_bulk_leave_import(
+            db,
+            payload.csv_text,
+            year=payload.year,
+            actor_user_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="bulk_leave_import",
+        entity_type="leave_year_snapshot",
+        entity_id=payload.year,
+        new_value={"updated": result["updated"], "year": payload.year},
+        **meta,
+    )
+    db.commit()
+    return result
 
 
 @router.patch("/therapists/{user_id}")

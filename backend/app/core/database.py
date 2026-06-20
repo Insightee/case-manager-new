@@ -164,6 +164,8 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_backfill_updated_at DATETIME"))
             if "leave_backfill_updated_by_user_id" not in tp_cols:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_backfill_updated_by_user_id INTEGER"))
+            if "leave_year_snapshots" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_year_snapshots JSON"))
 
     if insp.has_table("therapist_leaves"):
         tl_cols = {c["name"] for c in insp.get_columns("therapist_leaves")}

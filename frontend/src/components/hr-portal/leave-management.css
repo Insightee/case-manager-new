@@ -140,3 +140,30 @@
   flex-direction: column;
   gap: 12px;
 }
+
+.leave-mgmt-bulk {
+  margin-bottom: 16px;
+}
+
+.leave-mgmt-bulk__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.leave-mgmt-bulk__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.leave-mgmt-bulk__errors {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.8125rem;
+  color: #b91c1c;
+}

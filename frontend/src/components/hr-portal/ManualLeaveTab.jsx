@@ -6,6 +6,7 @@ import { caseLabel, caseServiceLine, formatLeaveRecordSplit } from '../../lib/le
 import { TherapistLeaveRequestFields } from '../therapist/TherapistLeaveRequestFields.jsx'
 import { StatusBadge } from '../admin-portal/ui/index.js'
 import { TherapistLeaveBalancePanel } from './TherapistLeaveBalancePanel.jsx'
+import { BulkLeaveUpload } from './BulkLeaveUpload.jsx'
 
 const EMPTY_FORM = {
   case_ids: [],
@@ -151,6 +152,13 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
 
   return (
     <div className="leave-mgmt-manual">
+      <BulkLeaveUpload
+        onApplied={() => {
+          if (therapistId) loadContext()
+          onLeaveRecorded?.()
+        }}
+      />
+
       <div className="leave-mgmt-manual__picker">
         <label className="leave-mgmt-manual__field">
           <span>Therapist</span>
