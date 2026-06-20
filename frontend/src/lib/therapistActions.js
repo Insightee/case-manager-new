@@ -50,7 +50,7 @@ export const THERAPIST_ACTIONS = [
     id: 'leave',
     to: '/therapist/leave?new=1',
     label: 'Request leave',
-    description: 'Apply for annual, sick, or casual leave',
+    description: 'Apply for paid, carry forward, or unpaid leave',
     icon: '📅',
     tone: 'rose',
     defaultWeight: 2,

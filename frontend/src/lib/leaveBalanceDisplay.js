@@ -15,3 +15,14 @@ export function leaveBalancePaidRemainingLabel(balance) {
   if (!balance || !isLeaveBalanceUpdated(balance)) return '—'
   return String(balance.paid_remaining)
 }
+
+/** @param {Record<string, unknown> | null | undefined} balance */
+export function paidLeaveCreditHint(balance) {
+  if (!balance) return null
+  if (!isLeaveBalanceUpdated(balance)) {
+    return 'Paid leave credit will show here once HR confirms your opening balance.'
+  }
+  const remaining = balance.paid_remaining ?? 0
+  const total = balance.entitlement_paid ?? 0
+  return `${remaining} paid leave day${remaining === 1 ? '' : 's'} remaining of ${total} this year.`
+}

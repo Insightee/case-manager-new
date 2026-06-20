@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { LEAVE_CATEGORIES, caseLabel, caseServiceLine } from '../../lib/leaveFormUtils.js'
+import { paidLeaveCreditHint } from '../../lib/leaveBalanceDisplay.js'
+import { LEAVE_CATEGORIES, caseLabel, caseServiceLine, leaveCategoryOptionLabel } from '../../lib/leaveFormUtils.js'
 import './therapist-leave.css'
 
 /**
@@ -20,6 +21,7 @@ export function TherapistLeaveRequestFields({
   reason = '',
   onReasonChange,
   disabled = false,
+  leaveBalance = null,
   casesLoading = false,
   casesError = '',
   onRetryCases,
@@ -162,7 +164,7 @@ export function TherapistLeaveRequestFields({
         >
           {categoryOptions.map((t) => (
             <option key={t.value} value={t.value}>
-              {t.label}
+              {leaveCategoryOptionLabel(t, leaveBalance)}
             </option>
           ))}
         </select>
@@ -170,7 +172,8 @@ export function TherapistLeaveRequestFields({
 
       {hasShadowSelection && billingCategory === 'PAID' ? (
         <p className="therapist-leave-page__hint">
-          Monthly leave uses your paid shadow balance (max 1 paid day per request; extra days go to carry forward).
+          {paidLeaveCreditHint(leaveBalance) ||
+            'Paid leave uses your shadow support credit (max 1 paid day per request; extra days go to carry forward).'}
         </p>
       ) : null}
 

@@ -4,8 +4,8 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { fetchAllPages } from '../../lib/listApi.js'
-import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
-import { LEAVE_CATEGORIES, caseLabel, caseServiceLine, categoryLabel } from '../../lib/leaveFormUtils.js'
+import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel, paidLeaveCreditHint } from '../../lib/leaveBalanceDisplay.js'
+import { LEAVE_CATEGORIES, caseLabel, caseServiceLine, categoryLabel, leaveCategoryOptionLabel } from '../../lib/leaveFormUtils.js'
 import './therapist-leave.css'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -371,7 +371,7 @@ export function TherapistLeavePage() {
           >
             {categoryOptions.map((t) => (
               <option key={t.value} value={t.value}>
-                {t.label}
+                {leaveCategoryOptionLabel(t, balance)}
               </option>
             ))}
           </select>
@@ -379,7 +379,8 @@ export function TherapistLeavePage() {
 
         {hasShadowSelection && form.billing_category === 'PAID' ? (
           <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-            Monthly leave uses your paid shadow balance (max 1 paid day per request; extra days go to carry forward).
+            {paidLeaveCreditHint(balance) ||
+              'Paid leave uses your shadow support credit (max 1 paid day per request; extra days go to carry forward).'}
           </p>
         ) : null}
 
@@ -557,7 +558,7 @@ export function TherapistLeavePage() {
       <div className="therapist-leave-page__info">
         <p style={{ margin: 0, fontWeight: 600 }}>How leave affects your caseload</p>
         <p style={{ margin: '6px 0 0' }}>
-          <strong>Monthly leave (paid)</strong> is adjusted only for shadow support clients after admin approval.
+          <strong>Paid leave</strong> is adjusted only for shadow support clients after admin approval.
           For homecare and other services, approved leave marks you absent — sessions are cancelled like a no-show.
           <strong> Unpaid</strong> leave affects your payout and client billing (prepaid packages adjust in the next cycle).
         </p>

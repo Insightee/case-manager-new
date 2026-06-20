@@ -32,7 +32,7 @@ function addMinutesToTime(timeStr, mins) {
 }
 
 /**
- * Top-of-page session actions: walk-in today, log a past session, or report absence.
+ * Top-of-page session actions: walk-in today, log a past session, or log child absence.
  */
 export function TherapistSessionComposer({
   lockCaseId = null,
@@ -96,43 +96,6 @@ export function TherapistSessionComposer({
       (s) => s.case_id === selectedCaseId && s.scheduled_date === today && s.status === 'SCHEDULED',
     )
   }, [upcomingSessions, selectedCaseId])
-
-  const lockedCaseForAbsence = useMemo(() => {
-    if (!selectedCaseId) return null
-    const row = cases.find((c) => Number(c.id) === selectedCaseId)
-    if (row) {
-      return {
-        id: row.id,
-        child_name: row.child_name,
-        case_code: row.case_code,
-        product_module: row.product_module,
-        service_type: row.service_type,
-        status: row.status,
-      }
-    }
-    const opt = caseOptions.find((c) => c.case_id === selectedCaseId)
-    if (!opt) return null
-    return {
-      id: opt.case_id,
-      child_name: opt.child_name,
-      case_code: opt.case_code,
-      product_module: opt.product_module,
-    }
-  }, [selectedCaseId, cases, caseOptions])
-
-  const assignedCasesForLeave = useMemo(
-    () =>
-      cases
-        .filter((c) => c.status !== 'CLOSED' && c.status !== 'SUSPENDED')
-        .map((c) => ({
-          id: c.id,
-          child_name: c.child_name,
-          case_code: c.case_code,
-          product_module: c.product_module,
-          service_type: c.service_type,
-        })),
-    [cases],
-  )
 
   async function handleWalkIn(e) {
     e.preventDefault()
@@ -212,7 +175,7 @@ export function TherapistSessionComposer({
             className={mode === 'absence' ? 'active' : ''}
             onClick={() => setMode('absence')}
           >
-            Leave / Absence
+            Child absence
           </button>
         </div>
       </div>
@@ -290,8 +253,6 @@ export function TherapistSessionComposer({
             sessions={todaySessionsForCase}
             selectedSessionId={absenceSessionId || todaySessionsForCase[0]?.id}
             onSessionChange={setAbsenceSessionId}
-            lockedCase={lockedCaseForAbsence}
-            assignedCases={assignedCasesForLeave}
             disabled={busy}
             onSuccess={(msg) => {
               setLocalError('')
