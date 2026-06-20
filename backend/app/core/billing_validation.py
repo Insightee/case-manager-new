@@ -14,8 +14,8 @@ def validate_case_billing(case: Case) -> None:
         if not case.compensation_mode:
             case.compensation_mode = CompensationMode.PERCENTAGE
         if case.compensation_mode == CompensationMode.PERCENTAGE:
-            if not case.pay_share_amount_inr or case.pay_share_amount_inr < round(float(case.client_rate_per_session_inr) * 0.5, 2) or case.pay_share_amount_inr > float(case.client_rate_per_session_inr):
-                raise HTTPException(status_code=400, detail="pay_share_amount_inr must be between 50% and 100% of the client rate")
+            if not case.pay_share_amount_inr or case.pay_share_amount_inr <= 0:
+                raise HTTPException(status_code=400, detail="pay_share_amount_inr required for PERCENTAGE compensation")
         elif case.compensation_mode == CompensationMode.FIXED_LUMP:
             if not case.therapist_fixed_pay_inr or case.therapist_fixed_pay_inr <= 0:
                 raise HTTPException(status_code=400, detail="therapist_fixed_pay_inr required for FIXED_LUMP compensation")
@@ -29,8 +29,8 @@ def validate_case_billing(case: Case) -> None:
         if not case.compensation_mode:
             raise HTTPException(status_code=400, detail="compensation_mode required for PACKAGE billing")
         if case.compensation_mode == CompensationMode.PERCENTAGE:
-            if not case.pay_share_amount_inr or case.pay_share_amount_inr < round(float(case.package_amount_inr) * 0.5, 2) or case.pay_share_amount_inr > float(case.package_amount_inr):
-                raise HTTPException(status_code=400, detail="pay_share_amount_inr must be between 50% and 100% of the package amount")
+            if not case.pay_share_amount_inr or case.pay_share_amount_inr <= 0:
+                raise HTTPException(status_code=400, detail="pay_share_amount_inr required for PERCENTAGE compensation")
         elif case.compensation_mode == CompensationMode.FIXED_LUMP:
             if not case.therapist_fixed_pay_inr or case.therapist_fixed_pay_inr <= 0:
                 raise HTTPException(status_code=400, detail="therapist_fixed_pay_inr required for FIXED_LUMP compensation")

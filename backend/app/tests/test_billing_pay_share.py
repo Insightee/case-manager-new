@@ -39,22 +39,19 @@ def test_case_update_schema_accepts_flat_share():
     CaseUpdate(pay_share_amount_inr=25050.5)
 
 
-def test_validate_case_billing_limits():
-    # Valid: 25000 is between 15000 (50%) and 30000 (100%)
+def test_validate_case_billing_accepts_any_positive_share():
     validate_case_billing(_package_case(25000.0))
-    
-    # Invalid: 10000 is less than 15000 (50%)
-    from fastapi import HTTPException
-    with pytest.raises(HTTPException) as excinfo:
-        validate_case_billing(_package_case(10000.0))
-    assert excinfo.value.status_code == 400
-    assert "pay_share_amount_inr must be between 50% and 100%" in excinfo.value.detail
+    validate_case_billing(_package_case(10000.0))
+    validate_case_billing(_package_case(30001.0))
 
-    # Invalid: 30001 is greater than 30000 (100%)
+
+def test_validate_case_billing_rejects_missing_share():
+    from fastapi import HTTPException
+
     with pytest.raises(HTTPException) as excinfo:
-        validate_case_billing(_package_case(30001.0))
+        validate_case_billing(_package_case(0.0))
     assert excinfo.value.status_code == 400
-    assert "pay_share_amount_inr must be between 50% and 100%" in excinfo.value.detail
+    assert "pay_share_amount_inr required" in excinfo.value.detail
 
 
 def _headers(email: str) -> dict:
