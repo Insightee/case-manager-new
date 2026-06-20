@@ -27,9 +27,11 @@ class LeaveCreate(BaseModel):
     service_line: str = Field(default="shadow_support", min_length=2, max_length=64)
     billing_category: Optional[LeaveBillingCategory] = None
     case_id: Optional[int] = None
+    case_ids: Optional[list[int]] = None
     start_date: date
     end_date: date
     reason: Optional[str] = None
+    consulted_with_parents: bool = False
 
 
 class ManualLeaveCreate(LeaveCreate):
@@ -64,7 +66,12 @@ def _serialise(leave: TherapistLeave, db: Session) -> dict:
         "leave_type": leave.leave_type.value,
         "service_line": leave.service_line,
         "case_id": leave.case_id,
+        "case_ids": leave.case_ids or ([] if leave.case_id is None else [leave.case_id]),
         "billing_category": leave.billing_category.value if leave.billing_category else None,
+        "paid_days": leave.paid_days,
+        "unpaid_days": leave.unpaid_days,
+        "includes_shadow_cases": leave.includes_shadow_cases,
+        "consulted_with_parents": leave.consulted_with_parents,
         "start_date": leave.start_date.isoformat(),
         "end_date": leave.end_date.isoformat(),
         "day_count": leave_service.leave_day_count(leave.start_date, leave.end_date),
@@ -76,6 +83,17 @@ def _serialise(leave: TherapistLeave, db: Session) -> dict:
         "reviewed_at": leave.updated_at.isoformat() if leave.reviewed_by_user_id else None,
         "created_at": leave.created_at.isoformat(),
         "updated_at": leave.updated_at.isoformat(),
+    }
+
+
+def _split_response(suggestion: policy.LeaveSplitSuggestion) -> dict:
+    return {
+        "paid_days": suggestion.paid_days,
+        "unpaid_days": suggestion.unpaid_days,
+        "total_days": suggestion.total_days,
+        "has_shadow_cases": suggestion.has_shadow_cases,
+        "message": suggestion.message,
+        "carry_forward_days": 0,
     }
 
 
@@ -126,8 +144,9 @@ def my_leave_balance(
 def suggest_leave(
     start_date: date,
     end_date: date,
-    service_line: str = Query(..., min_length=2),
+    service_line: str = Query(default="shadow_support", min_length=2),
     therapist_id: Optional[int] = None,
+    case_ids: Optional[str] = Query(None, description="Comma-separated case ids"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -140,16 +159,21 @@ def suggest_leave(
         target = db.get(User, therapist_id)
         if not target or RoleName.THERAPIST.value not in target.role_names:
             raise HTTPException(status_code=404, detail="Therapist not found")
+    parsed_case_ids: list[int] | None = None
+    if case_ids:
+        try:
+            parsed_case_ids = [int(x.strip()) for x in case_ids.split(",") if x.strip()]
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Invalid case_ids") from e
     suggestion = policy.suggest_leave_split(
-        db, target, start_date=start_date, end_date=end_date, service_line=service_line.strip().lower()
+        db,
+        target,
+        start_date=start_date,
+        end_date=end_date,
+        service_line=service_line.strip().lower(),
+        case_ids=parsed_case_ids,
     )
-    return {
-        "paid_days": suggestion.paid_days,
-        "carry_forward_days": suggestion.carry_forward_days,
-        "unpaid_days": suggestion.unpaid_days,
-        "total_days": suggestion.total_days,
-        "message": suggestion.message,
-    }
+    return _split_response(suggestion)
 
 
 @router.get("/summary")
@@ -190,8 +214,8 @@ def leave_report(
             t = db.get(User, tid)
             if t:
                 bal = policy.get_leave_balance(db, t, year=year)
-                row["paid_remaining"] = bal["paid_remaining"]
-                row["backfill_paid_used"] = bal["backfill_paid_used"]
+                row["paid_remaining"] = bal["leave_credit_pending"]
+                row["backfill_paid_used"] = bal["paid_leaves_taken"]
     if format == "csv":
         csv_text = leave_service.report_to_csv(rows)
         return Response(
@@ -209,8 +233,7 @@ def create_leave(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not policy.is_staff_leave_user(user):
-        get_or_create_profile(db, user.id)
+    get_or_create_profile(db, user.id)
 
     try:
         leave = leave_service.create_therapist_leave_request(
@@ -221,8 +244,10 @@ def create_leave(
             service_line=payload.service_line,
             billing_category=payload.billing_category,
             case_id=payload.case_id,
+            case_ids=payload.case_ids,
             reason=payload.reason,
             leave_type=payload.leave_type,
+            consulted_with_parents=payload.consulted_with_parents,
             auto_approve=False,
         )
     except ValueError as e:
@@ -233,20 +258,14 @@ def create_leave(
     db.commit()
     db.refresh(leave)
     out = _serialise(leave, db)
-    sug = policy.suggest_leave_split(
+    sug = policy.compute_leave_split(
         db,
         user,
         start_date=payload.start_date,
         end_date=payload.end_date,
-        service_line=(leave.service_line or payload.service_line).strip().lower(),
+        case_ids=leave.case_ids or ([] if leave.case_id is None else [leave.case_id]),
     )
-    out["suggestion"] = {
-        "paid_days": sug.paid_days,
-        "carry_forward_days": sug.carry_forward_days,
-        "unpaid_days": sug.unpaid_days,
-        "total_days": sug.total_days,
-        "message": sug.message,
-    }
+    out["suggestion"] = _split_response(sug)
     return out
 
 
@@ -273,8 +292,10 @@ def create_manual_leave(
             service_line=payload.service_line,
             billing_category=payload.billing_category,
             case_id=payload.case_id,
+            case_ids=payload.case_ids,
             reason=payload.reason,
             leave_type=payload.leave_type,
+            consulted_with_parents=payload.consulted_with_parents,
             auto_approve=True,
             reviewer_user_id=user.id,
         )

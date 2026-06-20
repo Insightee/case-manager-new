@@ -11,6 +11,7 @@ import {
   StatusBadge,
 } from '../admin-portal/ui/index.js'
 import './leave-management.css'
+import { formatLeaveRecordSplit } from '../../lib/leaveFormUtils.js'
 import { ManualLeaveTab } from './ManualLeaveTab.jsx'
 
 const STATUS_COLORS = {
@@ -261,7 +262,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                             {l.therapist_name || `Therapist #${l.therapist_user_id}`}
                           </span>
                           <span className="admin-muted" style={{ marginLeft: 'auto', fontSize: '0.75rem' }}>
-                            {l.day_count} day{l.day_count === 1 ? '' : 's'}
+                            {formatLeaveRecordSplit(l)} · {l.day_count} day{l.day_count === 1 ? '' : 's'}
                           </span>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
@@ -274,6 +275,26 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                             <p style={{ fontWeight: 600, margin: '2px 0 0' }}>{l.end_date}</p>
                           </div>
                         </div>
+                        {l.consulted_with_parents ? (
+                          <p
+                            className="admin-muted"
+                            style={{
+                              fontSize: '0.8rem',
+                              marginBottom: 10,
+                              padding: '6px 10px',
+                              background: '#f0fdf4',
+                              borderRadius: 8,
+                              border: '1px solid #bbf7d0',
+                            }}
+                          >
+                            Consulted with parents
+                          </p>
+                        ) : null}
+                        {Array.isArray(l.case_ids) && l.case_ids.length > 1 ? (
+                          <p className="admin-muted" style={{ fontSize: '0.8rem', marginBottom: 10 }}>
+                            {l.case_ids.length} cases on this request
+                          </p>
+                        ) : null}
                         {l.reason ? (
                           <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>{l.reason}</p>
                         ) : null}

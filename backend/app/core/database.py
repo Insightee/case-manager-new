@@ -174,6 +174,16 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN billing_category VARCHAR(32)"))
             if "case_id" not in tl_cols:
                 conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN case_id INTEGER"))
+            if "case_ids" not in tl_cols:
+                conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN case_ids JSON"))
+            if "paid_days" not in tl_cols:
+                conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN paid_days INTEGER"))
+            if "unpaid_days" not in tl_cols:
+                conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN unpaid_days INTEGER"))
+            if "consulted_with_parents" not in tl_cols:
+                conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN consulted_with_parents BOOLEAN DEFAULT 0"))
+            if "includes_shadow_cases" not in tl_cols:
+                conn.execute(text("ALTER TABLE therapist_leaves ADD COLUMN includes_shadow_cases BOOLEAN DEFAULT 0"))
 
     if insp.has_table("sessions"):
         sess_cols = {c["name"] for c in insp.get_columns("sessions")}

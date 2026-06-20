@@ -9,7 +9,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import RoleName, get_active_assignment, user_has_permission
+from app.core.permissions import RoleName, user_has_permission
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.role import Role
 from app.models.user import User
@@ -204,44 +204,42 @@ def create_therapist_leave_request(
     therapist: User,
     start_date: date,
     end_date: date,
-    service_line: str,
-    billing_category: LeaveBillingCategory | None,
-    case_id: int | None,
-    reason: str | None,
+    case_ids: list[int] | None = None,
+    case_id: int | None = None,
+    service_line: str | None = None,
+    billing_category: LeaveBillingCategory | None = None,
+    reason: str | None = None,
     leave_type: LeaveType | None = None,
+    consulted_with_parents: bool = False,
     auto_approve: bool = False,
     reviewer_user_id: int | None = None,
 ) -> TherapistLeave:
-    """Create a leave row for therapist; optionally auto-approve (manual HR/admin entry)."""
+    """Create one leave row (possibly spanning multiple cases)."""
     if end_date < start_date:
         raise ValueError("end_date must be on or after start_date")
     if RoleName.THERAPIST.value not in therapist.role_names:
         raise ValueError("Target user is not a therapist")
 
-    if not policy.is_staff_leave_user(therapist):
-        get_or_create_profile(db, therapist.id)
+    get_or_create_profile(db, therapist.id)
 
-    line = service_line.strip().lower()
-    if case_id is not None:
-        from app.models.case import Case
+    ids = list(dict.fromkeys(int(x) for x in (case_ids or [])))
+    if case_id is not None and int(case_id) not in ids:
+        ids.insert(0, int(case_id))
 
-        case = db.get(Case, case_id)
-        if not case:
-            raise ValueError("Case not found")
-        if not get_active_assignment(db, case_id, therapist.id):
-            raise ValueError("Therapist is not assigned to this case")
-        case_module = (case.product_module or "homecare").strip().lower()
-        if case_module == "shadow_support":
-            line = "shadow_support"
-        elif case_module == "homecare":
-            line = "homecare"
+    has_shadow = False
+    has_homecare = False
+    if ids:
+        _, has_shadow, has_homecare = policy.resolve_case_context(db, therapist.id, ids)
 
-    billing = policy.resolve_billing_category(
+    line = (service_line or policy.primary_service_line(has_shadow, has_homecare)).strip().lower()
+
+    billing, paid_days, unpaid_days, includes_shadow = policy.resolve_billing_category(
         db,
         therapist,
         start_date=start_date,
         end_date=end_date,
         service_line=line,
+        case_ids=ids or None,
         requested_category=billing_category,
     )
     resolved_type = leave_type or policy.map_leave_type_from_billing(billing)
@@ -251,7 +249,12 @@ def create_therapist_leave_request(
         leave_type=resolved_type,
         service_line=line,
         billing_category=billing,
-        case_id=case_id,
+        case_id=ids[0] if ids else None,
+        case_ids=ids or None,
+        paid_days=paid_days,
+        unpaid_days=unpaid_days,
+        includes_shadow_cases=includes_shadow,
+        consulted_with_parents=bool(consulted_with_parents),
         start_date=start_date,
         end_date=end_date,
         reason=(reason or "").strip() or None,

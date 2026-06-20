@@ -4,8 +4,9 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { fetchAllPages } from '../../lib/listApi.js'
-import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel, paidLeaveCreditHint } from '../../lib/leaveBalanceDisplay.js'
-import { LEAVE_CATEGORIES, caseLabel, caseServiceLine, categoryLabel, leaveCategoryOptionLabel } from '../../lib/leaveFormUtils.js'
+import { isLeaveBalanceUpdated, leaveCreditPendingLabel } from '../../lib/leaveBalanceDisplay.js'
+import { categoryLabel } from '../../lib/leaveFormUtils.js'
+import { TherapistLeaveRequestFields } from './TherapistLeaveRequestFields.jsx'
 import './therapist-leave.css'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -27,6 +28,13 @@ const TYPE_COLORS = {
 }
 
 function leaveRowLabel(l) {
+  if (l.paid_days != null || l.unpaid_days != null) {
+    const paid = l.paid_days ?? 0
+    const unpaid = l.unpaid_days ?? 0
+    if (paid && unpaid) return `${paid} paid + ${unpaid} unpaid`
+    if (paid) return `${paid} paid`
+    if (unpaid) return `${unpaid} unpaid`
+  }
   if (l.billing_category) return categoryLabel(l.billing_category)
   return l.leave_type || '—'
 }
@@ -37,11 +45,11 @@ function leaveRowColor(l) {
 }
 
 const EMPTY_FORM = {
-  billing_category: 'PAID',
   case_ids: [],
   start_date: '',
   end_date: '',
   reason: '',
+  consulted_with_parents: false,
 }
 
 export function TherapistLeavePage() {
@@ -55,7 +63,6 @@ export function TherapistLeavePage() {
   const [leaves, setLeaves] = useState([])
   const [summary, setSummary] = useState(null)
   const [balance, setBalance] = useState(null)
-  const [suggestion, setSuggestion] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -116,30 +123,6 @@ export function TherapistLeavePage() {
     () => assignedCases.filter((c) => form.case_ids.includes(Number(c.id))),
     [assignedCases, form.case_ids],
   )
-  const hasShadowSelection = selectedCases.some((c) => caseServiceLine(c) === 'shadow_support')
-  const hasHomecareSelection = selectedCases.some((c) => caseServiceLine(c) === 'homecare')
-  const allCasesSelected =
-    assignedCases.length > 0 && form.case_ids.length === assignedCases.length
-
-  useEffect(() => {
-    if (!form.start_date || !form.end_date || form.end_date < form.start_date || !hasShadowSelection) {
-      setSuggestion(null)
-      return
-    }
-    const q = new URLSearchParams({
-      start_date: form.start_date,
-      end_date: form.end_date,
-      service_line: 'shadow_support',
-    })
-    apiFetch(`/api/v1/leave/suggest?${q}`)
-      .then((s) => {
-        setSuggestion(s)
-        if (s.paid_days > 0) setForm((f) => ({ ...f, billing_category: 'PAID' }))
-        else if (s.carry_forward_days > 0) setForm((f) => ({ ...f, billing_category: 'CARRY_FORWARD' }))
-        else setForm((f) => ({ ...f, billing_category: 'UNPAID' }))
-      })
-      .catch(() => setSuggestion(null))
-  }, [form.start_date, form.end_date, hasShadowSelection])
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {
@@ -148,28 +131,6 @@ export function TherapistLeavePage() {
       setSearchParams(searchParams, { replace: true })
     }
   }, [searchParams, setSearchParams])
-
-  useEffect(() => {
-    if (!hasShadowSelection && hasHomecareSelection) {
-      setForm((f) => (f.billing_category === 'UNPAID' ? f : { ...f, billing_category: 'UNPAID' }))
-    }
-  }, [hasShadowSelection, hasHomecareSelection])
-
-  function toggleCaseId(caseId) {
-    const id = Number(caseId)
-    setForm((f) => {
-      const ids = f.case_ids.includes(id) ? f.case_ids.filter((x) => x !== id) : [...f.case_ids, id]
-      return { ...f, case_ids: ids }
-    })
-  }
-
-  function selectAllCases() {
-    setForm((f) => ({ ...f, case_ids: assignedCases.map((c) => Number(c.id)) }))
-  }
-
-  function clearAllCases() {
-    setForm((f) => ({ ...f, case_ids: [] }))
-  }
 
   async function submitLeave(e) {
     e.preventDefault()
@@ -190,38 +151,22 @@ export function TherapistLeavePage() {
     setError('')
     setSuccess('')
     try {
-      const targets =
-        form.case_ids.length > 0
-          ? form.case_ids.map((id) => assignedCases.find((c) => Number(c.id) === Number(id))).filter(Boolean)
-          : [null]
-
-      for (const caseRow of targets) {
-        const serviceLine = caseRow ? caseServiceLine(caseRow) : 'shadow_support'
-        let billingCategory = 'UNPAID'
-        if (serviceLine === 'shadow_support') {
-          billingCategory = form.billing_category
-        }
-        await apiFetch('/api/v1/leave', {
-          method: 'POST',
-          body: JSON.stringify({
-            service_line: serviceLine,
-            billing_category: billingCategory,
-            case_id: caseRow ? Number(caseRow.id) : null,
-            start_date: form.start_date,
-            end_date: form.end_date,
-            reason: form.reason || null,
-          }),
-        })
-      }
+      const hasShadow = selectedCases.some((c) => (c.product_module || c.service_type || 'homecare').toLowerCase() === 'shadow_support')
+      await apiFetch('/api/v1/leave', {
+        method: 'POST',
+        body: JSON.stringify({
+          service_line: hasShadow ? 'shadow_support' : 'homecare',
+          case_ids: form.case_ids.map(Number),
+          start_date: form.start_date,
+          end_date: form.end_date,
+          reason: form.reason || null,
+          consulted_with_parents: form.consulted_with_parents,
+        }),
+      })
 
       setForm(EMPTY_FORM)
-      setSuggestion(null)
       setShowForm(false)
-      setSuccess(
-        targets.length > 1
-          ? `${targets.length} leave requests submitted.`
-          : 'Leave request submitted.',
-      )
+      setSuccess('Leave request submitted — HR will review before sessions are cancelled.')
       await loadLeaves()
     } catch (err) {
       setError(err.message || 'Could not submit leave')
@@ -244,8 +189,9 @@ export function TherapistLeavePage() {
 
   const pendingCount = summary?.pending_count ?? leaves.filter((l) => l.status === 'PENDING').length
   const rejectedCount = summary?.rejected_count ?? leaves.filter((l) => l.status === 'REJECTED').length
-  const approvedDaysYtd = summary?.approved_days ?? 0
-  const daysByType = summary?.days_by_type ?? {}
+  const leaveCreditPending = leaveCreditPendingLabel(balance)
+  const paidTaken = balance?.paid_leaves_taken ?? balance?.computed_paid_used ?? 0
+  const unpaidTaken = balance?.unpaid_leaves_taken ?? balance?.computed_unpaid_days ?? 0
 
   const listYearOptions = useMemo(() => {
     const years = new Set([now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1])
@@ -291,159 +237,28 @@ export function TherapistLeavePage() {
     URL.revokeObjectURL(url)
   }
 
-  const categoryOptions = hasShadowSelection
-    ? LEAVE_CATEGORIES
-    : LEAVE_CATEGORIES.filter((c) => c.value === 'UNPAID')
-
   const leaveForm = showForm ? (
     <div className="therapist-leave-page__form-card">
       <p style={{ fontWeight: 600, marginBottom: 8 }}>New leave request</p>
       <form onSubmit={submitLeave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-            <legend style={{ fontSize: '0.875rem', fontWeight: 500, margin: 0 }}>
-              Cases {assignedCases.length ? '(pick one or more)' : '(optional)'}
-            </legend>
-            {assignedCases.length ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  type="button"
-                  className="therapist-leave-page__link-btn"
-                  onClick={selectAllCases}
-                  disabled={allCasesSelected}
-                >
-                  Select all
-                </button>
-                <button
-                  type="button"
-                  className="therapist-leave-page__link-btn"
-                  onClick={clearAllCases}
-                  disabled={!form.case_ids.length}
-                >
-                  Clear
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {casesLoading ? (
-            <p style={{ margin: 0, fontSize: '0.8125rem', color: '#64748b' }}>Loading your cases…</p>
-          ) : casesError ? (
-            <p style={{ margin: 0, fontSize: '0.8125rem', color: '#b91c1c' }}>
-              {casesError}{' '}
-              <button type="button" className="therapist-leave-page__link-btn" onClick={loadAssignedCases}>
-                Retry
-              </button>
-            </p>
-          ) : assignedCases.length ? (
-            <div className="therapist-leave-page__case-list">
-              {assignedCases.map((c) => (
-                <label key={c.id} className="therapist-leave-page__case-option">
-                  <input
-                    type="checkbox"
-                    checked={form.case_ids.includes(Number(c.id))}
-                    onChange={() => toggleCaseId(c.id)}
-                  />
-                  <span>{caseLabel(c)}</span>
-                </label>
-              ))}
-            </div>
-          ) : (
-            <p style={{ margin: 0, fontSize: '0.8125rem', color: '#64748b' }}>
-              No active cases assigned — you can still submit leave for HR tracking.
-            </p>
-          )}
-        </fieldset>
-
-        {hasHomecareSelection ? (
-          <div className="therapist-leave-page__warn" role="alert">
-            <strong>Paid leave applies to shadow clients only.</strong> Homecare and other services on this request
-            will be recorded as therapist absence — sessions are treated like a cancellation, not paid leave.
-          </div>
-        ) : null}
-
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-          Leave category
-          <select
-            value={form.billing_category}
-            onChange={(e) => setForm({ ...form, billing_category: e.target.value })}
-            disabled={!hasShadowSelection && hasHomecareSelection}
-            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', minHeight: 44 }}
-          >
-            {categoryOptions.map((t) => (
-              <option key={t.value} value={t.value}>
-                {leaveCategoryOptionLabel(t, balance)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {hasShadowSelection && form.billing_category === 'PAID' ? (
-          <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-            {paidLeaveCreditHint(balance) ||
-              'Paid leave uses your shadow support credit (max 1 paid day per request; extra days go to carry forward).'}
-          </p>
-        ) : null}
-
-        {hasShadowSelection && form.billing_category === 'UNPAID' ? (
-          <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-            Unpaid leave is reflected in your payout calculation and may affect client billing (prepaid clients are
-            adjusted in the next billing cycle after admin approval).
-          </p>
-        ) : null}
-
-        {hasShadowSelection && form.billing_category === 'CARRY_FORWARD' ? (
-          <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-            Carry forward applies to shadow support paid leave policy only.
-          </p>
-        ) : null}
-
-        {suggestion && hasShadowSelection ? (
-          <p className="therapist-leave-page__suggest">
-            {suggestion.message}
-            {suggestion.paid_days > 0 || suggestion.carry_forward_days > 0
-              ? ` (${suggestion.paid_days} monthly, ${suggestion.carry_forward_days} carry forward, ${suggestion.unpaid_days} unpaid)`
-              : ''}
-          </p>
-        ) : null}
-
-        <div className="therapist-leave-page__form-dates">
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-            From date
-            <input
-              type="date"
-              value={form.start_date}
-              onChange={(e) => {
-                const start = e.target.value
-                const end = form.end_date && form.end_date >= start ? form.end_date : start
-                setForm({ ...form, start_date: start, end_date: end })
-              }}
-              required
-              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', minHeight: 44 }}
-            />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-            To date
-            <input
-              type="date"
-              value={form.end_date}
-              min={form.start_date || undefined}
-              onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-              required
-              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', minHeight: 44 }}
-            />
-          </label>
-        </div>
-
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
-          Reason (optional)
-          <textarea
-            value={form.reason}
-            onChange={(e) => setForm({ ...form, reason: e.target.value })}
-            rows={3}
-            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: '0.875rem', resize: 'vertical' }}
-          />
-        </label>
-
+        <TherapistLeaveRequestFields
+          assignedCases={assignedCases}
+          caseIds={form.case_ids}
+          onCaseIdsChange={(ids) => setForm((f) => ({ ...f, case_ids: ids }))}
+          startDate={form.start_date}
+          endDate={form.end_date}
+          onStartDateChange={(v) => setForm((f) => ({ ...f, start_date: v }))}
+          onEndDateChange={(v) => setForm((f) => ({ ...f, end_date: v }))}
+          reason={form.reason}
+          onReasonChange={(v) => setForm((f) => ({ ...f, reason: v }))}
+          consultedWithParents={form.consulted_with_parents}
+          onConsultedWithParentsChange={(v) => setForm((f) => ({ ...f, consulted_with_parents: v }))}
+          leaveBalance={balance}
+          disabled={submitting}
+          casesLoading={casesLoading}
+          casesError={casesError}
+          onRetryCases={loadAssignedCases}
+        />
         <button
           type="submit"
           disabled={submitting}
@@ -470,27 +285,22 @@ export function TherapistLeavePage() {
 
       <div className="therapist-leave-page__stats">
         <div className="therapist-leave-page__stat-card">
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Approved days ({calYear})</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : approvedDaysYtd}</p>
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Leave credit ({calYear})</p>
+          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#4338ca' }}>{loading ? '…' : leaveCreditPending}</p>
+        </div>
+        <div className="therapist-leave-page__stat-card">
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Paid leaves taken</p>
+          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : paidTaken}</p>
+        </div>
+        <div className="therapist-leave-page__stat-card">
+          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Unpaid leaves taken</p>
+          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#b45309' }}>{loading ? '…' : unpaidTaken}</p>
         </div>
         <div className="therapist-leave-page__stat-card">
           <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending</p>
           <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a16207' }}>{loading ? '…' : pendingCount}</p>
         </div>
-        <div className="therapist-leave-page__stat-card">
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Rejected ({calYear})</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#b91c1c' }}>{loading ? '…' : rejectedCount}</p>
-        </div>
       </div>
-
-      {Object.keys(daysByType).length > 0 ? (
-        <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: '-8px 0 16px' }}>
-          By type:{' '}
-          {Object.entries(daysByType)
-            .map(([t, d]) => `${categoryLabel(t)} ${d}d`)
-            .join(' · ')}
-        </p>
-      ) : null}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -512,29 +322,21 @@ export function TherapistLeavePage() {
       {balance ? (
         <div className="therapist-leave-page__balance" style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem' }}>
           <p style={{ margin: '0 0 6px', fontWeight: 700, color: '#3730a3' }}>
-            Paid leave remaining ({calYear}): {leaveBalanceRemainingLabel(balance)}
+            Leave credit ({calYear}): {leaveCreditPending}
             {!isLeaveBalanceUpdated(balance) ? (
-              <span style={{ marginLeft: 8, fontWeight: 600, color: '#b45309' }}>To be updated</span>
+              <span style={{ marginLeft: 8, fontWeight: 600, color: '#b45309' }}>Employment start date needed</span>
             ) : null}
           </p>
           {isLeaveBalanceUpdated(balance) ? (
             <p style={{ margin: 0, color: '#4f46e5', fontSize: '0.8rem' }}>
-              Used {balance.paid_used_effective} paid days
-              {balance.backfill_paid_used > 0 ? ` (includes ${balance.backfill_paid_used} HR adjustment)` : ''}
-              {' · '}
-              Carry forward {balance.carry_forward_used_display}
+              {balance.credits_earned ?? balance.entitlement_paid ?? 0} earned this year · {paidTaken} paid taken ·{' '}
+              {unpaidTaken} unpaid taken
             </p>
           ) : (
             <p style={{ margin: 0, color: '#64748b', fontSize: '0.8rem' }}>
-              HR will confirm your opening balance for {calYear}. You can still submit leave requests.
+              HR will set your employment start date so monthly credits can accrue.
             </p>
           )}
-          {balance.requires_employment_start_date ? (
-            <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: '0.8rem' }}>
-              Your employment start date is not on file yet — you can still submit leave; HR will confirm your paid
-              balance.
-            </p>
-          ) : null}
         </div>
       ) : null}
 
@@ -558,9 +360,8 @@ export function TherapistLeavePage() {
       <div className="therapist-leave-page__info">
         <p style={{ margin: 0, fontWeight: 600 }}>How leave affects your caseload</p>
         <p style={{ margin: '6px 0 0' }}>
-          <strong>Paid leave</strong> is adjusted only for shadow support clients after admin approval.
-          For homecare and other services, approved leave marks you absent — sessions are cancelled like a no-show.
-          <strong> Unpaid</strong> leave affects your payout and client billing (prepaid packages adjust in the next cycle).
+          <strong>Paid leave</strong> uses monthly leave credits for shadow support only. Homecare sessions cancel without
+          using credits.
         </p>
       </div>
 

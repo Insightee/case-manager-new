@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { paidLeaveCreditHint } from '../../lib/leaveBalanceDisplay.js'
-import { LEAVE_CATEGORIES, caseLabel, caseServiceLine, leaveCategoryOptionLabel } from '../../lib/leaveFormUtils.js'
+import { caseLabel, caseServiceLine, formatLeaveSplitLabel } from '../../lib/leaveFormUtils.js'
 import './therapist-leave.css'
 
 /**
- * Shared leave request fields — same UI as TherapistLeavePage form card.
+ * Shared leave request fields — case selection, dates, split preview, parent consultation.
  */
 export function TherapistLeaveRequestFields({
   assignedCases = [],
@@ -16,10 +16,10 @@ export function TherapistLeaveRequestFields({
   endDate = '',
   onStartDateChange,
   onEndDateChange,
-  billingCategory = 'PAID',
-  onBillingCategoryChange,
   reason = '',
   onReasonChange,
+  consultedWithParents = false,
+  onConsultedWithParentsChange,
   disabled = false,
   leaveBalance = null,
   forTherapistUserId = null,
@@ -29,48 +29,31 @@ export function TherapistLeaveRequestFields({
 }) {
   const [suggestion, setSuggestion] = useState(null)
 
-  const selectedCases = useMemo(
-    () => {
-      if (lockedCase) return [lockedCase]
-      return assignedCases.filter((c) => caseIds.includes(Number(c.id)))
-    },
-    [assignedCases, caseIds, lockedCase],
-  )
+  const selectedCases = useMemo(() => {
+    if (lockedCase) return [lockedCase]
+    return assignedCases.filter((c) => caseIds.includes(Number(c.id)))
+  }, [assignedCases, caseIds, lockedCase])
 
   const hasShadowSelection = selectedCases.some((c) => caseServiceLine(c) === 'shadow_support')
   const hasHomecareSelection = selectedCases.some((c) => caseServiceLine(c) === 'homecare')
   const allCasesSelected = assignedCases.length > 0 && caseIds.length === assignedCases.length
 
-  const categoryOptions = hasShadowSelection
-    ? LEAVE_CATEGORIES
-    : LEAVE_CATEGORIES.filter((c) => c.value === 'UNPAID')
-
   useEffect(() => {
-    if (!hasShadowSelection && hasHomecareSelection && billingCategory !== 'UNPAID') {
-      onBillingCategoryChange?.('UNPAID')
-    }
-  }, [hasShadowSelection, hasHomecareSelection, billingCategory, onBillingCategoryChange])
-
-  useEffect(() => {
-    if (!startDate || !endDate || endDate < startDate || !hasShadowSelection) {
+    if (!startDate || !endDate || endDate < startDate) {
       setSuggestion(null)
       return
     }
     const q = new URLSearchParams({
       start_date: startDate,
       end_date: endDate,
-      service_line: 'shadow_support',
+      service_line: hasShadowSelection ? 'shadow_support' : 'homecare',
     })
     if (forTherapistUserId) q.set('therapist_id', String(forTherapistUserId))
+    if (caseIds.length) q.set('case_ids', caseIds.join(','))
     apiFetch(`/api/v1/leave/suggest?${q}`)
-      .then((s) => {
-        setSuggestion(s)
-        if (s.paid_days > 0) onBillingCategoryChange?.('PAID')
-        else if (s.carry_forward_days > 0) onBillingCategoryChange?.('CARRY_FORWARD')
-        else onBillingCategoryChange?.('UNPAID')
-      })
+      .then((s) => setSuggestion(s))
       .catch(() => setSuggestion(null))
-  }, [startDate, endDate, hasShadowSelection, onBillingCategoryChange, forTherapistUserId])
+  }, [startDate, endDate, hasShadowSelection, caseIds, forTherapistUserId])
 
   function toggleCaseId(caseId) {
     const id = Number(caseId)
@@ -149,54 +132,27 @@ export function TherapistLeaveRequestFields({
         </fieldset>
       ) : null}
 
-      {hasHomecareSelection ? (
+      {hasHomecareSelection && !hasShadowSelection ? (
         <div className="therapist-leave-page__warn" role="alert">
-          <strong>Paid leave applies to shadow clients only.</strong> Homecare and other services on this request will
-          be recorded as therapist absence — sessions are treated like a cancellation, not paid leave.
+          <strong>Homecare only.</strong> Sessions will be cancelled and parents informed — leave credits are not used.
         </div>
       ) : null}
 
-      <label className="therapist-leave-page__field">
-        Leave category
-        <select
-          value={billingCategory}
-          onChange={(e) => onBillingCategoryChange?.(e.target.value)}
-          disabled={disabled || (!hasShadowSelection && hasHomecareSelection)}
-          className="therapist-leave-page__input"
-        >
-          {categoryOptions.map((t) => (
-            <option key={t.value} value={t.value}>
-              {leaveCategoryOptionLabel(t, leaveBalance)}
-            </option>
-          ))}
-        </select>
-      </label>
+      {hasShadowSelection && hasHomecareSelection ? (
+        <div className="therapist-leave-page__warn" role="alert">
+          <strong>Mixed cases.</strong> Leave credits apply to shadow days only; homecare sessions cancel without using credits.
+        </div>
+      ) : null}
 
-      {hasShadowSelection && billingCategory === 'PAID' ? (
+      {hasShadowSelection ? (
         <p className="therapist-leave-page__hint">
           {paidLeaveCreditHint(leaveBalance) ||
-            'Paid leave uses your shadow support credit (max 1 paid day per request; extra days go to carry forward).'}
+            'Available leave credits are used first for shadow support days.'}
         </p>
       ) : null}
 
-      {hasShadowSelection && billingCategory === 'UNPAID' ? (
-        <p className="therapist-leave-page__hint">
-          Unpaid leave is reflected in your payout calculation and may affect client billing (prepaid clients are
-          adjusted in the next billing cycle after admin approval).
-        </p>
-      ) : null}
-
-      {hasShadowSelection && billingCategory === 'CARRY_FORWARD' ? (
-        <p className="therapist-leave-page__hint">Carry forward applies to shadow support paid leave policy only.</p>
-      ) : null}
-
-      {suggestion && hasShadowSelection ? (
-        <p className="therapist-leave-page__suggest">
-          {suggestion.message}
-          {suggestion.paid_days > 0 || suggestion.carry_forward_days > 0
-            ? ` (${suggestion.paid_days} monthly, ${suggestion.carry_forward_days} carry forward, ${suggestion.unpaid_days} unpaid)`
-            : ''}
-        </p>
+      {suggestion ? (
+        <p className="therapist-leave-page__suggest">{formatLeaveSplitLabel(suggestion)}</p>
       ) : null}
 
       <div className="therapist-leave-page__form-dates">
@@ -239,6 +195,16 @@ export function TherapistLeaveRequestFields({
           disabled={disabled}
           className="therapist-leave-page__input therapist-leave-page__textarea"
         />
+      </label>
+
+      <label className="therapist-leave-page__case-option" style={{ marginTop: 4 }}>
+        <input
+          type="checkbox"
+          checked={consultedWithParents}
+          onChange={(e) => onConsultedWithParentsChange?.(e.target.checked)}
+          disabled={disabled}
+        />
+        <span>Consulted with parents</span>
       </label>
     </div>
   )

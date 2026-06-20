@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
-import { leaveBalanceRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
-import { caseLabel, caseServiceLine, categoryLabel } from '../../lib/leaveFormUtils.js'
+import { leaveCreditPendingLabel } from '../../lib/leaveBalanceDisplay.js'
+import { caseLabel, caseServiceLine, formatLeaveRecordSplit } from '../../lib/leaveFormUtils.js'
 import { TherapistLeaveRequestFields } from '../therapist/TherapistLeaveRequestFields.jsx'
 import { StatusBadge } from '../admin-portal/ui/index.js'
 import { TherapistLeaveBalancePanel } from './TherapistLeaveBalancePanel.jsx'
 
 const EMPTY_FORM = {
-  billing_category: 'PAID',
   case_ids: [],
   start_date: '',
   end_date: '',
   reason: '',
+  consulted_with_parents: false,
 }
 
 export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
@@ -113,37 +113,33 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
     setError('')
     setSuccess('')
     try {
-      const targets =
-        form.case_ids.length > 0
-          ? form.case_ids
-              .map((id) => assignedCases.find((c) => Number(c.id) === Number(id)))
-              .filter(Boolean)
-          : [null]
+      const hasShadow = form.case_ids.some((id) => {
+        const row = assignedCases.find((c) => Number(c.id) === Number(id))
+        return row && caseServiceLine(row) === 'shadow_support'
+      })
+      const serviceLine = form.case_ids.length
+        ? hasShadow
+          ? assignedCases.some((c) => caseServiceLine(c) === 'homecare' && form.case_ids.includes(Number(c.id)))
+            ? 'mixed'
+            : 'shadow_support'
+          : 'homecare'
+        : 'shadow_support'
 
-      for (const caseRow of targets) {
-        const serviceLine = caseRow ? caseServiceLine(caseRow) : 'shadow_support'
-        let billingCategory = 'UNPAID'
-        if (serviceLine === 'shadow_support') billingCategory = form.billing_category
-        await apiFetch('/api/v1/leave/manual', {
-          method: 'POST',
-          body: JSON.stringify({
-            therapist_user_id: Number(therapistId),
-            service_line: serviceLine,
-            billing_category: billingCategory,
-            case_id: caseRow ? Number(caseRow.id) : null,
-            start_date: form.start_date,
-            end_date: form.end_date,
-            reason: form.reason || null,
-          }),
-        })
-      }
+      await apiFetch('/api/v1/leave/manual', {
+        method: 'POST',
+        body: JSON.stringify({
+          therapist_user_id: Number(therapistId),
+          service_line: serviceLine,
+          case_ids: form.case_ids.length ? form.case_ids.map(Number) : null,
+          start_date: form.start_date,
+          end_date: form.end_date,
+          reason: form.reason || null,
+          consulted_with_parents: form.consulted_with_parents,
+        }),
+      })
 
       setForm(EMPTY_FORM)
-      setSuccess(
-        targets.length > 1
-          ? `${targets.length} leave entries recorded and approved.`
-          : 'Leave recorded and approved.',
-      )
+      setSuccess('Leave recorded and approved.')
       await loadContext()
       onLeaveRecorded?.()
     } catch (err) {
@@ -194,13 +190,13 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
           {selectedTherapist ? (
             <p className="leave-mgmt-manual__therapist-name">
               {selectedTherapist.full_name}
-              <span className="admin-muted"> · Paid credit {leaveBalanceRemainingLabel(balance)}</span>
+              <span className="admin-muted"> · Leave credit {leaveCreditPendingLabel(balance)}</span>
             </p>
           ) : null}
 
           <div className="leave-mgmt-manual__grid">
             <section className="leave-mgmt-manual__panel">
-              <h3 className="leave-mgmt-manual__panel-title">Leave balance</h3>
+              <h3 className="leave-mgmt-manual__panel-title">Leave credit</h3>
               <TherapistLeaveBalancePanel
                 therapistUserId={Number(therapistId)}
                 year={year}
@@ -236,11 +232,12 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
                 <table className="admin-table admin-table--compact">
                   <thead>
                     <tr>
-                      <th>Category</th>
+                      <th>Split</th>
                       <th>Service</th>
                       <th>From</th>
                       <th>To</th>
                       <th>Days</th>
+                      <th>Parents</th>
                       <th>Status</th>
                       <th>Reason</th>
                     </tr>
@@ -248,11 +245,12 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
                   <tbody>
                     {leaves.map((l) => (
                       <tr key={l.id}>
-                        <td>{categoryLabel(l.billing_category || l.leave_type)}</td>
+                        <td>{formatLeaveRecordSplit(l)}</td>
                         <td>{l.service_line || '—'}</td>
                         <td>{formatDisplayDate(l.start_date)}</td>
                         <td>{formatDisplayDate(l.end_date)}</td>
                         <td>{l.day_count ?? '—'}</td>
+                        <td>{l.consulted_with_parents ? 'Yes' : '—'}</td>
                         <td>
                           <StatusBadge status={l.status} />
                         </td>
@@ -281,10 +279,10 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
                 endDate={form.end_date}
                 onStartDateChange={(v) => setForm((f) => ({ ...f, start_date: v }))}
                 onEndDateChange={(v) => setForm((f) => ({ ...f, end_date: v }))}
-                billingCategory={form.billing_category}
-                onBillingCategoryChange={(v) => setForm((f) => ({ ...f, billing_category: v }))}
                 reason={form.reason}
                 onReasonChange={(v) => setForm((f) => ({ ...f, reason: v }))}
+                consultedWithParents={form.consulted_with_parents}
+                onConsultedWithParentsChange={(v) => setForm((f) => ({ ...f, consulted_with_parents: v }))}
                 leaveBalance={balance}
                 forTherapistUserId={Number(therapistId)}
                 disabled={submitting}

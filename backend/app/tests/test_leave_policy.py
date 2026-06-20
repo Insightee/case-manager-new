@@ -49,12 +49,17 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _ensure_therapist_profile(db, user_id: int) -> TherapistProfile:
+def _ensure_therapist_profile(
+    db,
+    user_id: int,
+    *,
+    employment_start: date = date(2020, 1, 1),
+) -> TherapistProfile:
     profile = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == user_id)).first()
     if not profile:
         profile = TherapistProfile(user_id=user_id)
         db.add(profile)
-    profile.employment_start_date = date(2020, 1, 1)
+    profile.employment_start_date = employment_start
     profile.leave_balance_year = 2026
     profile.leave_paid_days_backfill = 0
     profile.leave_carry_forward_days_backfill = 0
@@ -63,46 +68,50 @@ def _ensure_therapist_profile(db, user_id: int) -> TherapistProfile:
     return profile
 
 
-def test_balance_includes_backfill():
+def test_monthly_credits_and_consumption():
     db = SessionLocal()
     try:
         user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
         assert user
-        profile = _ensure_therapist_profile(db, user.id)
+        _ensure_therapist_profile(db, user.id, employment_start=date(2025, 11, 1))
+        earned = policy.credits_earned_in_year(date(2025, 11, 1), 2026, as_of=date(2026, 6, 18))
+        assert earned == 6
         before = policy.get_leave_balance(db, user, year=2026)
-        profile.leave_paid_days_backfill = 2
-        profile.leave_carry_forward_days_backfill = 0
+
         db.add(
             TherapistLeave(
                 therapist_user_id=user.id,
                 leave_type=LeaveType.ANNUAL,
                 service_line="shadow_support",
                 billing_category=LeaveBillingCategory.PAID,
-                start_date=date(2026, 11, 1),
-                end_date=date(2026, 11, 3),
+                includes_shadow_cases=True,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 7),
                 status=LeaveStatus.APPROVED,
             )
         )
         db.commit()
 
         bal = policy.get_leave_balance(db, user, year=2026)
-        assert bal["computed_paid_used"] == before["computed_paid_used"] + 3
-        assert bal["backfill_paid_used"] == 2
-        assert bal["paid_used_effective"] == bal["computed_paid_used"] + 2
-        assert bal["paid_remaining"] == bal["entitlement_paid"] - bal["paid_used_effective"]
+        assert bal["credits_earned"] == earned
+        assert bal["paid_leaves_taken"] == before["paid_leaves_taken"] + 6
+        assert bal["unpaid_leaves_taken"] == before["unpaid_leaves_taken"] + 1
+        assert bal["leave_credit_pending"] == max(earned - bal["paid_leaves_taken"], 0)
     finally:
         db.close()
 
 
-def test_backfill_ignored_wrong_year():
+def test_credits_zero_without_employment_start():
     db = SessionLocal()
     try:
         user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
         profile = _ensure_therapist_profile(db, user.id)
-        profile.leave_balance_year = 2025
+        profile.employment_start_date = None
         db.commit()
         bal = policy.get_leave_balance(db, user, year=2026)
-        assert bal["backfill_paid_used"] == 0
+        assert bal["credits_earned"] == 0
+        assert bal["leave_credit_pending"] == 0
+        assert bal["balance_updated"] is False
     finally:
         db.close()
 
@@ -137,8 +146,10 @@ def test_leave_balance_api():
     r = client.get("/api/v1/leave/balance?year=2026", headers=_headers(therapist))
     assert r.status_code == 200
     data = r.json()
-    assert "paid_remaining" in data
-    assert "entitlement_paid" in data
+    assert "leave_credit_pending" in data
+    assert "credits_earned" in data
+    assert "paid_leaves_taken" in data
+    assert "unpaid_leaves_taken" in data
     assert data["balance_updated"] is True
 
 
@@ -148,6 +159,7 @@ def test_leave_balance_not_updated_until_hr_save():
     try:
         user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
         profile = _ensure_therapist_profile(db, user.id)
+        profile.employment_start_date = None
         profile.leave_backfill_updated_at = None
         db.commit()
     finally:
@@ -157,7 +169,7 @@ def test_leave_balance_not_updated_until_hr_save():
     assert r.json()["balance_updated"] is False
 
 
-def test_hr_leave_backfill_requires_note():
+def test_hr_leave_backfill_requires_note_for_legacy_paid_backfill():
     hr = _login("hr@demo.com")
     db = SessionLocal()
     try:
@@ -182,17 +194,14 @@ def test_hr_leave_backfill_requires_note():
         headers=_headers(hr),
         json={
             "year": 2026,
-            "leave_paid_days_backfill": 1,
-            "leave_carry_forward_days_backfill": 0,
-            "leave_backfill_note": "Offline leave in March",
             "employment_start_date": "2020-01-01",
         },
     )
     assert r2.status_code == 200
-    assert r2.json()["leave_balance"]["backfill_paid_used"] == 1
+    assert r2.json()["leave_balance"]["employment_start_date"] == "2020-01-01"
 
 
-def test_create_leave_requires_service_line_and_profile():
+def test_create_leave_single_request():
     therapist = _login("therapist@demo.com")
     db = SessionLocal()
     try:
@@ -206,14 +215,17 @@ def test_create_leave_requires_service_line_and_profile():
         headers=_headers(therapist),
         json={
             "service_line": "shadow_support",
-            "billing_category": "UNPAID",
             "start_date": "2026-08-01",
             "end_date": "2026-08-01",
             "reason": "Test",
+            "consulted_with_parents": True,
         },
     )
     assert r.status_code == 201
-    assert r.json()["service_line"] == "shadow_support"
+    data = r.json()
+    assert data["service_line"] == "shadow_support"
+    assert data["consulted_with_parents"] is True
+    assert data["paid_days"] is not None or data["unpaid_days"] is not None
 
 
 def test_manual_leave_auto_approved_for_hr():
@@ -233,10 +245,10 @@ def test_manual_leave_auto_approved_for_hr():
         json={
             "therapist_user_id": therapist_id,
             "service_line": "shadow_support",
-            "billing_category": "UNPAID",
             "start_date": "2026-05-10",
             "end_date": "2026-05-10",
             "reason": "Manual backdated entry",
+            "consulted_with_parents": True,
         },
     )
     assert r.status_code == 201
@@ -244,6 +256,7 @@ def test_manual_leave_auto_approved_for_hr():
     assert data["status"] == "APPROVED"
     assert data["therapist_user_id"] == therapist_id
     assert data["reviewed_by_user_id"] is not None
+    assert data["consulted_with_parents"] is True
 
 
 def test_hr_therapist_cases_endpoint():

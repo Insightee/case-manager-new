@@ -4,7 +4,7 @@ import enum
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -45,6 +45,11 @@ class TherapistLeave(Base):
     reason: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[LeaveStatus] = mapped_column(Enum(LeaveStatus), default=LeaveStatus.PENDING, nullable=False)
     case_id: Mapped[Optional[int]] = mapped_column(ForeignKey("cases.id"), nullable=True, index=True)
+    case_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    paid_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    unpaid_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    consulted_with_parents: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
+    includes_shadow_cases: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
     reviewed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     review_note: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
