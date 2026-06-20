@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import user_has_permission
+from app.core.permissions import RoleName, user_has_permission
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.user import User
 from app.services import leave_notification_service as leave_notify
@@ -30,6 +30,10 @@ class LeaveCreate(BaseModel):
     start_date: date
     end_date: date
     reason: Optional[str] = None
+
+
+class ManualLeaveCreate(LeaveCreate):
+    therapist_user_id: int = Field(..., ge=1)
 
 
 class LeaveReview(BaseModel):
@@ -123,13 +127,21 @@ def suggest_leave(
     start_date: date,
     end_date: date,
     service_line: str = Query(..., min_length=2),
+    therapist_id: Optional[int] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if end_date < start_date:
         raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+    target = user
+    if therapist_id is not None:
+        if not user_has_permission(user, "leave.manage"):
+            raise HTTPException(status_code=403, detail="Access denied")
+        target = db.get(User, therapist_id)
+        if not target or RoleName.THERAPIST.value not in target.role_names:
+            raise HTTPException(status_code=404, detail="Therapist not found")
     suggestion = policy.suggest_leave_split(
-        db, user, start_date=start_date, end_date=end_date, service_line=service_line.strip().lower()
+        db, target, start_date=start_date, end_date=end_date, service_line=service_line.strip().lower()
     )
     return {
         "paid_days": suggestion.paid_days,
@@ -197,63 +209,36 @@ def create_leave(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if payload.end_date < payload.start_date:
-        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
-
     if not policy.is_staff_leave_user(user):
         get_or_create_profile(db, user.id)
 
-    service_line = payload.service_line.strip().lower()
-
-    if payload.case_id is not None:
-        from app.models.case import Case
-        from app.core.permissions import get_active_assignment
-
-        case = db.get(Case, payload.case_id)
-        if not case:
-            raise HTTPException(status_code=400, detail="Case not found")
-        if not get_active_assignment(db, payload.case_id, user.id):
-            raise HTTPException(status_code=400, detail="You are not assigned to this case")
-        case_module = (case.product_module or "homecare").strip().lower()
-        if case_module == "shadow_support":
-            service_line = "shadow_support"
-        elif case_module == "homecare":
-            service_line = "homecare"
-
     try:
-        billing = policy.resolve_billing_category(
+        leave = leave_service.create_therapist_leave_request(
             db,
-            user,
+            therapist=user,
             start_date=payload.start_date,
             end_date=payload.end_date,
-            service_line=service_line,
-            requested_category=payload.billing_category,
+            service_line=payload.service_line,
+            billing_category=payload.billing_category,
+            case_id=payload.case_id,
+            reason=payload.reason,
+            leave_type=payload.leave_type,
+            auto_approve=False,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    leave_type = payload.leave_type or policy.map_leave_type_from_billing(billing)
-
-    leave = TherapistLeave(
-        therapist_user_id=user.id,
-        leave_type=leave_type,
-        service_line=service_line,
-        billing_category=billing,
-        case_id=payload.case_id,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-        reason=payload.reason,
-    )
-    db.add(leave)
-    db.flush()
-    leave_notify.notify_leave_submitted(db, leave, user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="leave", entity_id=leave.id, **meta)
     db.commit()
     db.refresh(leave)
     out = _serialise(leave, db)
     sug = policy.suggest_leave_split(
-        db, user, start_date=payload.start_date, end_date=payload.end_date, service_line=service_line
+        db,
+        user,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        service_line=(leave.service_line or payload.service_line).strip().lower(),
     )
     out["suggestion"] = {
         "paid_days": sug.paid_days,
@@ -263,6 +248,51 @@ def create_leave(
         "message": sug.message,
     }
     return out
+
+
+@router.post("/manual", status_code=status.HTTP_201_CREATED)
+def create_manual_leave(
+    payload: ManualLeaveCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "leave.manage"):
+        raise HTTPException(status_code=403, detail="leave.manage permission required")
+
+    therapist = db.get(User, payload.therapist_user_id)
+    if not therapist or RoleName.THERAPIST.value not in therapist.role_names:
+        raise HTTPException(status_code=404, detail="Therapist not found")
+
+    try:
+        leave = leave_service.create_therapist_leave_request(
+            db,
+            therapist=therapist,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            service_line=payload.service_line,
+            billing_category=payload.billing_category,
+            case_id=payload.case_id,
+            reason=payload.reason,
+            leave_type=payload.leave_type,
+            auto_approve=True,
+            reviewer_user_id=user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="create_manual_leave",
+        entity_type="leave",
+        entity_id=leave.id,
+        **meta,
+    )
+    db.commit()
+    db.refresh(leave)
+    return _serialise(leave, db)
 
 
 @router.patch("/{leave_id}")

@@ -11,6 +11,7 @@ import {
   StatusBadge,
 } from '../admin-portal/ui/index.js'
 import './leave-management.css'
+import { ManualLeaveTab } from './ManualLeaveTab.jsx'
 
 const STATUS_COLORS = {
   PENDING: { bg: '#fefce8', color: '#a16207', border: '#fde047' },
@@ -28,7 +29,8 @@ const REVIEW_TABS = [
 
 export function LeaveManagementPage({ portal = 'hr' }) {
   const [searchParams, setSearchParams] = useSearchParams()
-  const mainTab = searchParams.get('tab') === 'report' ? 'report' : 'approvals'
+  const tabParam = searchParams.get('tab')
+  const mainTab = tabParam === 'report' || tabParam === 'manual' ? tabParam : 'approvals'
   const tab = searchParams.get('status') || 'PENDING'
 
   const [leaves, setLeaves] = useState([])
@@ -38,6 +40,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   const [processing, setProcessing] = useState({})
   const [error, setError] = useState('')
   const [reportYear, setReportYear] = useState(new Date().getFullYear())
+  const [manualYear, setManualYear] = useState(new Date().getFullYear())
   const [reportGranularity, setReportGranularity] = useState('monthly')
   const [reportRows, setReportRows] = useState([])
   const [reportLoading, setReportLoading] = useState(false)
@@ -175,7 +178,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Leave management"
-        subtitle="Review therapist leave requests and export monthly or yearly reports."
+        subtitle="Review therapist leave requests, record leave manually, and export reports."
       />
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
@@ -186,11 +189,33 @@ export function LeaveManagementPage({ portal = 'hr' }) {
         onChange={setMainTab}
         tabs={[
           { id: 'approvals', label: 'Approvals', badge: counts.PENDING || null },
+          { id: 'manual', label: 'Manual' },
           { id: 'report', label: 'Report' },
         ]}
       />
 
-      {mainTab === 'approvals' ? (
+      {mainTab === 'manual' ? (
+        <>
+          <AdminToolbar>
+            <label className="admin-muted" style={{ fontSize: '0.75rem' }}>
+              Balance year
+              <select
+                className="admin-select"
+                style={{ display: 'block', marginTop: 4 }}
+                value={manualYear}
+                onChange={(e) => setManualYear(Number(e.target.value))}
+              >
+                {[manualYear - 1, manualYear, manualYear + 1].map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </AdminToolbar>
+          <ManualLeaveTab year={manualYear} onLeaveRecorded={load} />
+        </>
+      ) : mainTab === 'approvals' ? (
         <>
           <div className="leave-mgmt__status-row" role="group" aria-label="Filter by status">
             {REVIEW_TABS.map(([val, label]) => (

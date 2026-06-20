@@ -214,3 +214,48 @@ def test_create_leave_requires_service_line_and_profile():
     )
     assert r.status_code == 201
     assert r.json()["service_line"] == "shadow_support"
+
+
+def test_manual_leave_auto_approved_for_hr():
+    hr = _login("hr@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        therapist_id = user.id
+        _ensure_therapist_profile(db, user.id)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.post(
+        "/api/v1/leave/manual",
+        headers=_headers(hr),
+        json={
+            "therapist_user_id": therapist_id,
+            "service_line": "shadow_support",
+            "billing_category": "UNPAID",
+            "start_date": "2026-05-10",
+            "end_date": "2026-05-10",
+            "reason": "Manual backdated entry",
+        },
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["status"] == "APPROVED"
+    assert data["therapist_user_id"] == therapist_id
+    assert data["reviewed_by_user_id"] is not None
+
+
+def test_hr_therapist_cases_endpoint():
+    hr = _login("hr@demo.com")
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        therapist_id = user.id
+    finally:
+        db.close()
+
+    r = client.get(f"/api/v1/hr/therapists/{therapist_id}/cases", headers=_headers(hr))
+    assert r.status_code == 200
+    assert r.json()["therapist_user_id"] == therapist_id
+    assert "items" in r.json()

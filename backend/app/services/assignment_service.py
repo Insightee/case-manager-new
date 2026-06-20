@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, time
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.assignment import BookingMode, CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
@@ -41,6 +41,40 @@ def _sync_case_manager_after_assignment(db: Session, case_id: int, therapist_use
 def list_assignments(db: Session, case_id: int) -> list[CaseAssignment]:
     stmt = select(CaseAssignment).where(CaseAssignment.case_id == case_id).order_by(CaseAssignment.start_date.desc())
     return list(db.scalars(stmt).all())
+
+
+def list_active_cases_for_therapist(db: Session, therapist_user_id: int) -> list[dict]:
+    from app.models.case import CaseStatus
+
+    rows = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.therapist_user_id == therapist_user_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .options(selectinload(CaseAssignment.case).selectinload(Case.child))
+    ).all()
+    seen: set[int] = set()
+    items: list[dict] = []
+    for assignment in rows:
+        case = assignment.case
+        if not case or case.id in seen:
+            continue
+        if case.status in (CaseStatus.CLOSED, CaseStatus.SUSPENDED):
+            continue
+        seen.add(case.id)
+        items.append(
+            {
+                "id": case.id,
+                "case_code": case.case_code,
+                "child_name": case.child.full_name if case.child else None,
+                "product_module": case.product_module,
+                "service_type": case.service_type,
+                "status": case.status.value,
+            }
+        )
+    items.sort(key=lambda row: (row.get("child_name") or "", row.get("case_code") or ""))
+    return items
 
 
 def create_assignment(

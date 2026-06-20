@@ -9,10 +9,13 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import user_has_permission
-from app.models.leave import LeaveStatus, LeaveType, TherapistLeave
+from app.core.permissions import RoleName, get_active_assignment, user_has_permission
+from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.role import Role
 from app.models.user import User
+from app.services import leave_notification_service as leave_notify
+from app.services import leave_policy_service as policy
+from app.services.therapist_profile_service import get_or_create_profile
 
 
 def leave_day_count(start: date, end: date) -> int:
@@ -193,3 +196,76 @@ def report_to_csv(rows: list[dict]) -> str:
     for row in rows:
         writer.writerow(row)
     return buf.getvalue()
+
+
+def create_therapist_leave_request(
+    db: Session,
+    *,
+    therapist: User,
+    start_date: date,
+    end_date: date,
+    service_line: str,
+    billing_category: LeaveBillingCategory | None,
+    case_id: int | None,
+    reason: str | None,
+    leave_type: LeaveType | None = None,
+    auto_approve: bool = False,
+    reviewer_user_id: int | None = None,
+) -> TherapistLeave:
+    """Create a leave row for therapist; optionally auto-approve (manual HR/admin entry)."""
+    if end_date < start_date:
+        raise ValueError("end_date must be on or after start_date")
+    if RoleName.THERAPIST.value not in therapist.role_names:
+        raise ValueError("Target user is not a therapist")
+
+    if not policy.is_staff_leave_user(therapist):
+        get_or_create_profile(db, therapist.id)
+
+    line = service_line.strip().lower()
+    if case_id is not None:
+        from app.models.case import Case
+
+        case = db.get(Case, case_id)
+        if not case:
+            raise ValueError("Case not found")
+        if not get_active_assignment(db, case_id, therapist.id):
+            raise ValueError("Therapist is not assigned to this case")
+        case_module = (case.product_module or "homecare").strip().lower()
+        if case_module == "shadow_support":
+            line = "shadow_support"
+        elif case_module == "homecare":
+            line = "homecare"
+
+    billing = policy.resolve_billing_category(
+        db,
+        therapist,
+        start_date=start_date,
+        end_date=end_date,
+        service_line=line,
+        requested_category=billing_category,
+    )
+    resolved_type = leave_type or policy.map_leave_type_from_billing(billing)
+
+    leave = TherapistLeave(
+        therapist_user_id=therapist.id,
+        leave_type=resolved_type,
+        service_line=line,
+        billing_category=billing,
+        case_id=case_id,
+        start_date=start_date,
+        end_date=end_date,
+        reason=(reason or "").strip() or None,
+        status=LeaveStatus.APPROVED if auto_approve else LeaveStatus.PENDING,
+    )
+    if auto_approve and reviewer_user_id:
+        leave.reviewed_by_user_id = reviewer_user_id
+
+    db.add(leave)
+    db.flush()
+
+    if auto_approve:
+        leave_notify.notify_leave_approved(db, leave, therapist)
+    else:
+        leave_notify.notify_leave_submitted(db, leave, therapist)
+
+    return leave

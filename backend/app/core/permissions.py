@@ -117,6 +117,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "case_document.create",
         "case_document.review",
         "user.read",
+        "leave.manage",
     ],
     RoleName.VIEWER: [
         "case.read.scoped",

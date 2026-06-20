@@ -22,6 +22,7 @@ export function TherapistLeaveRequestFields({
   onReasonChange,
   disabled = false,
   leaveBalance = null,
+  forTherapistUserId = null,
   casesLoading = false,
   casesError = '',
   onRetryCases,
@@ -60,6 +61,7 @@ export function TherapistLeaveRequestFields({
       end_date: endDate,
       service_line: 'shadow_support',
     })
+    if (forTherapistUserId) q.set('therapist_id', String(forTherapistUserId))
     apiFetch(`/api/v1/leave/suggest?${q}`)
       .then((s) => {
         setSuggestion(s)
@@ -68,7 +70,7 @@ export function TherapistLeaveRequestFields({
         else onBillingCategoryChange?.('UNPAID')
       })
       .catch(() => setSuggestion(null))
-  }, [startDate, endDate, hasShadowSelection, onBillingCategoryChange])
+  }, [startDate, endDate, hasShadowSelection, onBillingCategoryChange, forTherapistUserId])
 
   function toggleCaseId(caseId) {
     const id = Number(caseId)

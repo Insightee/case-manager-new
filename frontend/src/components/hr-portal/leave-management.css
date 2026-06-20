@@ -52,3 +52,91 @@
 .leave-mgmt__list {
   padding: 0 16px 16px;
 }
+
+.leave-mgmt-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.leave-mgmt-manual__picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+@media (max-width: 720px) {
+  .leave-mgmt-manual__picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+.leave-mgmt-manual__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.leave-mgmt-manual__hint {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.leave-mgmt-manual__therapist-name {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.leave-mgmt-manual__grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 16px;
+}
+
+@media (max-width: 960px) {
+  .leave-mgmt-manual__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.leave-mgmt-manual__panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.leave-mgmt-manual__panel--wide {
+  overflow: hidden;
+}
+
+.leave-mgmt-manual__panel-title {
+  margin: 0 0 12px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.leave-mgmt-manual__case-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.875rem;
+  color: #334155;
+}
+
+.leave-mgmt-manual__case-list li + li {
+  margin-top: 6px;
+}
+
+.leave-mgmt-manual__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

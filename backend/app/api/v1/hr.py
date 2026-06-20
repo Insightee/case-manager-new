@@ -186,6 +186,22 @@ def update_therapist_leave_backfill(
     }
 
 
+@router.get("/therapists/{user_id}/cases")
+def therapist_assigned_cases(
+    user_id: int,
+    user: User = Depends(require_permission("leave.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.models.role import Role
+    from app.services import assignment_service
+
+    target = db.get(User, user_id)
+    if not target or RoleName.THERAPIST.value not in target.role_names:
+        raise HTTPException(status_code=404, detail="Therapist not found")
+    items = assignment_service.list_active_cases_for_therapist(db, user_id)
+    return {"therapist_user_id": user_id, "items": items}
+
+
 @router.patch("/therapists/{user_id}")
 def update_therapist(
     user_id: int,
