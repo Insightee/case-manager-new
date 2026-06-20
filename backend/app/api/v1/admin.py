@@ -2181,6 +2181,8 @@ def admin_create_therapist_profile(
     profile.status = st
     profile.reviewed_by_user_id = user.id
     profile.reviewed_at = datetime.now(timezone.utc)
+    if st == TherapistProfileStatus.APPROVED:
+        profile_svc.capture_approved_snapshot(profile)
     db.add(profile)
     db.flush()
     meta = get_request_meta(request)
@@ -2203,6 +2205,8 @@ def admin_update_therapist_profile(
         raise HTTPException(status_code=404, detail="Profile not found")
     data = payload.model_dump(exclude_unset=True)
     profile_svc.apply_profile_fields(profile, data, db)
+    if profile.status == TherapistProfileStatus.APPROVED:
+        profile_svc.capture_approved_snapshot(profile)
     target = db.get(User, profile.user_id)
     if target and "services_offered" in data:
         from app.services.therapist_onboarding_service import sync_therapist_service_access
@@ -2250,6 +2254,7 @@ def admin_approve_profile(
     profile.reviewed_at = datetime.now(timezone.utc)
     if payload.admin_note:
         profile.admin_note = payload.admin_note
+    profile_svc.capture_approved_snapshot(profile)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve_profile", entity_type="therapist_profile", entity_id=profile_id, **meta)
     db.commit()
@@ -2293,6 +2298,7 @@ def admin_resume_profile(
     profile.status = TherapistProfileStatus.APPROVED
     profile.reviewed_by_user_id = user.id
     profile.reviewed_at = datetime.now(timezone.utc)
+    profile_svc.capture_approved_snapshot(profile)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="resume_profile", entity_type="therapist_profile", entity_id=profile_id, **meta)
     db.commit()

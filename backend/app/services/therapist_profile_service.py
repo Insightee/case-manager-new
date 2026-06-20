@@ -19,6 +19,34 @@ def _normalize_certs(certs: list[str] | None) -> list[str]:
     return [c.strip() for c in certs if c and c.strip()]
 
 
+# Therapist-editable fields that are reviewed/approved. The approved snapshot
+# captures exactly these so the admin review screen can diff pending edits
+# against the last approved version.
+SNAPSHOT_FIELDS = (
+    "display_name",
+    "short_bio",
+    "academic_qualifications",
+    "professional_certificates",
+    "services_offered",
+)
+
+
+def build_profile_snapshot(profile: TherapistProfile) -> dict:
+    """Capture the therapist-editable fields that were just approved."""
+    return {
+        "display_name": profile.display_name,
+        "short_bio": profile.short_bio,
+        "academic_qualifications": profile.academic_qualifications,
+        "professional_certificates": list(profile.professional_certificates or []),
+        "services_offered": list(profile.services_offered or []),
+    }
+
+
+def capture_approved_snapshot(profile: TherapistProfile) -> None:
+    """Store the current editable fields as the new approved baseline."""
+    profile.approved_snapshot = build_profile_snapshot(profile)
+
+
 def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict:
     u = user or profile.user
     supervisor_name = None
@@ -54,6 +82,7 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         "leave_paid_days_backfill": int(profile.leave_paid_days_backfill or 0),
         "leave_carry_forward_days_backfill": int(profile.leave_carry_forward_days_backfill or 0),
         "leave_backfill_note": profile.leave_backfill_note,
+        "approved_snapshot": profile.approved_snapshot,
     }
 
 

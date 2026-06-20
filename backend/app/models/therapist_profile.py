@@ -30,6 +30,10 @@ class TherapistProfile(Base):
     status: Mapped[TherapistProfileStatus] = mapped_column(
         Enum(TherapistProfileStatus), default=TherapistProfileStatus.DRAFT, nullable=False
     )
+    # Snapshot of the therapist-editable fields as of the last admin approval.
+    # Lets the review screen show a before/after diff of pending edits without a
+    # separate change-request table. Null until a profile is first approved.
+    approved_snapshot: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     license_number: Mapped[Optional[str]] = mapped_column(String(128))
     admin_note: Mapped[Optional[str]] = mapped_column(Text)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

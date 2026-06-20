@@ -42,6 +42,7 @@ class TherapistProfileRead(TherapistProfileBase):
     leave_paid_days_backfill: int = 0
     leave_carry_forward_days_backfill: int = 0
     leave_backfill_note: Optional[str] = None
+    approved_snapshot: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 

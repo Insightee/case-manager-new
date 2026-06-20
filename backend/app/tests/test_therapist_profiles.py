@@ -131,3 +131,51 @@ def test_therapist_edit_start_date_approval_flow():
     assert r.status_code == 200
     assert r.json()["status"] == "APPROVED"
     assert r.json()["employment_start_date"] == "2021-06-15"
+
+
+def test_approved_snapshot_enables_review_diff():
+    therapist = _login("therapist@demo.com")
+    th = _headers(therapist)
+
+    # 1. Therapist sets an initial profile and submits for review.
+    client.put(
+        "/api/v1/therapist/profile",
+        headers=th,
+        json={
+            "display_name": "Diff Tester",
+            "short_bio": "Original bio.",
+            "services_offered": ["homecare"],
+        },
+    )
+    client.post("/api/v1/therapist/profile/submit", headers=th)
+
+    # 2. Admin approves — this captures the approved baseline snapshot.
+    admin = _login("superadmin@demo.com")
+    ah = _headers(admin)
+    pending = client.get("/api/v1/admin/therapist-profiles?status=PENDING", headers=ah).json()
+    profile = next(p for p in pending if p["display_name"] == "Diff Tester")
+    approved = client.post(
+        f"/api/v1/admin/therapist-profiles/{profile['id']}/approve",
+        headers=ah,
+        json={},
+    ).json()
+    snap = approved["approved_snapshot"]
+    assert snap is not None
+    assert snap["short_bio"] == "Original bio."
+    assert snap["services_offered"] == ["homecare"]
+
+    # 3. Therapist edits the approved profile — values change, status drops to DRAFT,
+    #    but the snapshot still holds the previously approved values for diffing.
+    edited = client.put(
+        "/api/v1/therapist/profile",
+        headers=th,
+        json={
+            "display_name": "Diff Tester",
+            "short_bio": "Updated bio with new details.",
+            "services_offered": ["homecare", "shadow_support"],
+        },
+    ).json()
+    assert edited["status"] == "DRAFT"
+    assert edited["short_bio"] == "Updated bio with new details."
+    assert edited["approved_snapshot"]["short_bio"] == "Original bio."
+    assert edited["approved_snapshot"]["services_offered"] == ["homecare"]

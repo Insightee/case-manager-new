@@ -31,6 +31,111 @@ function serviceLabels(serviceIds, categories) {
   return (serviceIds || []).map((id) => byId.get(id) || String(id).replace(/_/g, ' '))
 }
 
+// Therapist-editable fields the admin reviews. Mirrors SNAPSHOT_FIELDS on the
+// backend so we can diff a pending profile against its last approved snapshot.
+const DIFF_FIELDS = [
+  { key: 'display_name', label: 'Display name', type: 'text' },
+  { key: 'short_bio', label: 'Short bio', type: 'text' },
+  { key: 'academic_qualifications', label: 'Qualifications', type: 'text' },
+  { key: 'professional_certificates', label: 'Certificates', type: 'list' },
+  { key: 'services_offered', label: 'Services', type: 'services' },
+]
+
+function normalizeForDiff(value, type) {
+  if (type === 'text') return (value ?? '').toString().trim()
+  return [...(value || [])].map((v) => String(v)).filter(Boolean)
+}
+
+function valuesEqual(a, b, type) {
+  if (type === 'text') return a === b
+  const sa = [...a].sort()
+  const sb = [...b].sort()
+  return sa.length === sb.length && sa.every((v, i) => v === sb[i])
+}
+
+// Returns null when there is no approved baseline yet (first submission),
+// otherwise an array of changed fields with old/new values.
+function computeProfileChanges(profile) {
+  const snap = profile?.approved_snapshot
+  if (!snap) return null
+  const changes = []
+  for (const field of DIFF_FIELDS) {
+    const oldVal = normalizeForDiff(snap[field.key], field.type)
+    const newVal = normalizeForDiff(profile[field.key], field.type)
+    if (!valuesEqual(oldVal, newVal, field.type)) {
+      changes.push({ ...field, oldVal, newVal })
+    }
+  }
+  return changes
+}
+
+function formatDiffValue(value, type, categories) {
+  if (type === 'services') {
+    const labels = serviceLabels(value, categories)
+    return labels.length ? labels.join(', ') : '—'
+  }
+  if (type === 'list') {
+    return value.length ? value.join(', ') : '—'
+  }
+  return value || '—'
+}
+
+function ProfileChangesSection({ profile, categories }) {
+  // Only meaningful while edits are awaiting (or being prepared for) review.
+  if (!profile || !['PENDING', 'DRAFT'].includes(profile.status)) return null
+
+  const changes = computeProfileChanges(profile)
+
+  if (changes === null) {
+    return (
+      <section className="therapist-profile-drawer__section therapist-profile-drawer__changes therapist-profile-drawer__changes--new">
+        <h3 className="therapist-profile-drawer__section-title">Changes to review</h3>
+        <p className="therapist-profile-drawer__text">
+          First submission — every detail below is new. Review the profile and approve to publish it.
+        </p>
+      </section>
+    )
+  }
+
+  if (changes.length === 0) {
+    return (
+      <section className="therapist-profile-drawer__section therapist-profile-drawer__changes">
+        <h3 className="therapist-profile-drawer__section-title">Changes to review</h3>
+        <p className="therapist-profile-drawer__text">
+          No changes to the approved details. The therapist may have resubmitted without edits.
+        </p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="therapist-profile-drawer__section therapist-profile-drawer__changes">
+      <h3 className="therapist-profile-drawer__section-title">
+        Changes to review · {changes.length} {changes.length === 1 ? 'field' : 'fields'}
+      </h3>
+      <p className="therapist-profile-drawer__changes-hint">
+        Compared with the last approved version. Review what changed, then approve below.
+      </p>
+      <ul className="therapist-profile-drawer__diff-list">
+        {changes.map((c) => (
+          <li key={c.key} className="therapist-profile-drawer__diff-row">
+            <span className="therapist-profile-drawer__diff-field">{c.label}</span>
+            <div className="therapist-profile-drawer__diff-values">
+              <span className="therapist-profile-drawer__diff-old">
+                {formatDiffValue(c.oldVal, c.type, categories)}
+              </span>
+              <span className="therapist-profile-drawer__diff-arrow" aria-hidden="true">→</span>
+              <span className="therapist-profile-drawer__diff-new">
+                {formatDiffValue(c.newVal, c.type, categories)}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT']
 
 const EMPTY_FORM = {
@@ -499,6 +604,8 @@ export function AdminTherapistProfilesPage() {
             </header>
 
             <div className="therapist-profile-drawer__body">
+              <ProfileChangesSection profile={selected} categories={categories} />
+
               {(selected.short_bio || selected.academic_qualifications || (selected.professional_certificates || []).length) ? (
                 <section className="therapist-profile-drawer__section">
                   <h3 className="therapist-profile-drawer__section-title">Profile</h3>
