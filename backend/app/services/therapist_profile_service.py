@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import RoleName
-from app.core.therapist_services import SERVICE_CATEGORIES, validate_service_ids
+from app.core.therapist_services import get_service_categories, validate_service_ids
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
 
@@ -156,5 +156,5 @@ def list_profiles(db: Session, status: TherapistProfileStatus | None = None) -> 
     return list(db.scalars(stmt).all())
 
 
-def service_categories() -> list[dict[str, str]]:
-    return list(SERVICE_CATEGORIES)
+def service_categories(db: Session) -> list[dict[str, str]]:
+    return get_service_categories(db)

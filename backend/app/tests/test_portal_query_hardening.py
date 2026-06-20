@@ -71,25 +71,88 @@ def test_therapist_reports_pipeline_single_missing_placeholder():
 
 def test_therapist_home_only_assigned_cases():
     from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.services.case_portal_visibility import portal_visible_case_status_filter
 
     headers = _login("therapist@demo.com")
     home = client.get("/api/v1/therapist/home", headers=headers).json()
     db = SessionLocal()
     try:
         user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
-        allowed_case_ids = {
+        visible_assigned_case_ids = {
             row[0]
             for row in db.execute(
-                select(CaseAssignment.case_id).where(
+                select(CaseAssignment.case_id)
+                .join(Case, Case.id == CaseAssignment.case_id)
+                .where(
                     CaseAssignment.therapist_user_id == user.id,
                     CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                    portal_visible_case_status_filter(Case.status),
                 )
             ).all()
         }
         board_ids = {c["id"] for c in home["cases_board"]["allCases"]}
-        assert board_ids.issubset(allowed_case_ids)
+        assert board_ids == visible_assigned_case_ids
         assert len(board_ids) >= 1
     finally:
+        db.close()
+
+
+def test_therapist_home_shows_assigned_case_without_module_grant():
+    """Active assignment must appear even when service_access_grants exclude the product module."""
+    from app.core.rbac_access import sync_user_access_fields
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+
+    db = SessionLocal()
+    user = None
+    original_grants: dict = {}
+    original_org: dict = {}
+    original_modules: list[str] = []
+    role_names: list[str] = []
+    try:
+        user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assert user is not None
+        homecare_case = db.scalars(select(Case).where(Case.case_code == "IC-2026-053")).first()
+        assert homecare_case is not None
+        assert homecare_case.product_module == "homecare"
+        has_assignment = db.scalars(
+            select(CaseAssignment.id).where(
+                CaseAssignment.case_id == homecare_case.id,
+                CaseAssignment.therapist_user_id == user.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).first()
+        assert has_assignment is not None
+
+        original_grants = dict(user.service_access_grants or {})
+        original_org = dict(getattr(user, "org_capability_grants", None) or {})
+        original_modules = list(user.module_assignments or [])
+        role_names = list(user.role_names)
+
+        sync_user_access_fields(
+            user,
+            role_names=role_names,
+            service_access_grants={"shadow_support": {"enabled": True, "access": "write"}},
+            org_capability_grants=original_org,
+            db=db,
+        )
+        db.commit()
+
+        headers = _login("therapist@demo.com")
+        home = client.get("/api/v1/therapist/home", headers=headers)
+        assert home.status_code == 200
+        board_codes = {c["caseId"] for c in home.json()["cases_board"]["allCases"]}
+        assert "IC-2026-053" in board_codes
+    finally:
+        if user is not None:
+            sync_user_access_fields(
+                user,
+                role_names=role_names,
+                service_access_grants=original_grants,
+                org_capability_grants=original_org,
+                module_assignments=original_modules,
+                db=db,
+            )
+            db.commit()
         db.close()
 
 

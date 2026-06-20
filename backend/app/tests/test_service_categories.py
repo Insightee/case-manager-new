@@ -151,6 +151,16 @@ def test_superadmin_me_and_clinical_modules_include_dynamic_modules():
     assert PM_SCHOOL in clinical_ids
 
 
+def test_therapist_service_categories_include_dynamic_services():
+    admin_h = _headers(_login("superadmin@demo.com"))
+    _create_test_ot_service(admin_h)
+
+    res = client.get("/api/v1/therapist/service-categories")
+    assert res.status_code == 200
+    ids = {row["id"] for row in res.json()}
+    assert SERVICE_ID in ids
+
+
 def test_assigned_case_manager_sees_assigned_product_modules_only():
     admin_h = _headers(_login("superadmin@demo.com"))
     _create_test_ot_service(admin_h)

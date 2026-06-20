@@ -7,7 +7,6 @@ from datetime import date, timedelta
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.module_access import get_allowed_case_product_modules
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.services.case_portal_visibility import portal_visible_case_status_filter
@@ -36,10 +35,7 @@ def current_month_label() -> str:
 
 
 def assigned_cases(db: Session, user: User) -> list[Case]:
-    """Active therapist assignments; product-module filter only (no per-case scope N+1)."""
-    allowed = get_allowed_case_product_modules(user)
-    if allowed is not None and not allowed:
-        return []
+    """Active therapist assignments visible in portal (assignment is the scope source of truth)."""
     stmt = (
         select(Case)
         .join(
@@ -53,8 +49,6 @@ def assigned_cases(db: Session, user: User) -> list[Case]:
         .distinct()
         .order_by(Case.case_code)
     )
-    if allowed is not None:
-        stmt = stmt.where(Case.product_module.in_(allowed))
     return list(db.scalars(stmt).all())
 
 

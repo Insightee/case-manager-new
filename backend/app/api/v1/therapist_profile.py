@@ -30,8 +30,8 @@ def _require_therapist(user: User) -> None:
 
 
 @router.get("/service-categories", response_model=list[ServiceCategoryRead])
-def list_service_categories():
-    return [ServiceCategoryRead(**c) for c in svc.service_categories()]
+def list_service_categories(db: Session = Depends(get_db)):
+    return [ServiceCategoryRead(**c) for c in svc.service_categories(db)]
 
 
 @router.get("/profile", response_model=TherapistProfileRead)
