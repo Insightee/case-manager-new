@@ -116,10 +116,26 @@ def _paid_unpaid_for_leave(db: Session, leave: TherapistLeave, year: int) -> tup
     return 0, days
 
 
-def computed_consumption(
+@dataclass
+class ConsumptionDetail:
+    """Paid/unpaid consumption for a therapist within a year, with unpaid cause split."""
+
+    paid: int
+    unpaid_total: int
+    unpaid_homecare: int
+    unpaid_over_limit: int
+
+
+def computed_consumption_detail(
     db: Session, therapist_user_id: int, year: int
-) -> tuple[int, int, int]:
-    """Returns (paid_days, carry_forward_days_legacy, unpaid_days) using credit allocation order."""
+) -> ConsumptionDetail:
+    """Allocate credits chronologically and split unpaid days by cause.
+
+    Unpaid days fall into two buckets:
+    - ``unpaid_homecare``: leave on non-shadow cases, which never uses credits.
+    - ``unpaid_over_limit``: shadow days that could not be covered because the
+      year's leave credits were exhausted.
+    """
     profile = db.scalars(
         select(TherapistProfile).where(TherapistProfile.user_id == therapist_user_id)
     ).first()
@@ -136,22 +152,25 @@ def computed_consumption(
     year_leaves = [lv for lv in leaves if leave_service.leave_overlaps_year(lv, year)]
     year_leaves.sort(key=lambda lv: (lv.start_date, lv.id))
 
-    paid = unpaid = 0
+    paid = unpaid_homecare = unpaid_over_limit = 0
     credits_left = credits_pool
     for lv in year_leaves:
+        includes_shadow = _leave_includes_shadow(db, lv)
         if lv.paid_days is not None and lv.unpaid_days is not None:
             p, u = _paid_unpaid_for_leave(db, lv, year)
             paid += p
-            unpaid += u
+            if includes_shadow:
+                unpaid_over_limit += u
+            else:
+                unpaid_homecare += u
             credits_left = max(credits_left - p, 0)
             continue
 
         days = leave_service.days_in_calendar_year(lv, year)
         if days <= 0:
             continue
-        includes_shadow = _leave_includes_shadow(db, lv)
         if not includes_shadow:
-            unpaid += days
+            unpaid_homecare += days
             continue
         if credits_left > 0:
             p = min(days, credits_left)
@@ -161,9 +180,22 @@ def computed_consumption(
             p = 0
             u = days
         paid += p
-        unpaid += u
+        unpaid_over_limit += u
 
-    return paid, 0, unpaid
+    return ConsumptionDetail(
+        paid=paid,
+        unpaid_total=unpaid_homecare + unpaid_over_limit,
+        unpaid_homecare=unpaid_homecare,
+        unpaid_over_limit=unpaid_over_limit,
+    )
+
+
+def computed_consumption(
+    db: Session, therapist_user_id: int, year: int
+) -> tuple[int, int, int]:
+    """Returns (paid_days, carry_forward_days_legacy, unpaid_days) using credit allocation order."""
+    detail = computed_consumption_detail(db, therapist_user_id, year)
+    return detail.paid, 0, detail.unpaid_total
 
 
 def get_leave_balance(
@@ -188,7 +220,9 @@ def get_leave_balance(
         credits_earned = credits_earned_in_year(employment_start, year, as_of=date(year, 12, 31))
     else:
         credits_earned = credits_earned_in_year(employment_start, year, as_of=today)
-    paid_used, _, unpaid_used = computed_consumption(db, user.id, year)
+    detail = computed_consumption_detail(db, user.id, year)
+    paid_used = detail.paid
+    unpaid_used = detail.unpaid_total
     credits_remaining = max(credits_earned - paid_used, 0)
 
     return {
@@ -197,6 +231,8 @@ def get_leave_balance(
         "credits_earned": credits_earned,
         "paid_leaves_taken": paid_used,
         "unpaid_leaves_taken": unpaid_used,
+        "unpaid_homecare": detail.unpaid_homecare,
+        "unpaid_over_limit": detail.unpaid_over_limit,
         "employment_start_date": employment_start.isoformat() if employment_start else None,
         "profile_status": profile.status.value if profile else None,
         "requires_employment_start_date": not employment_start,

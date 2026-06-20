@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { fetchAllPages } from '../../lib/listApi.js'
-import { isLeaveBalanceUpdated, leaveCreditPendingLabel } from '../../lib/leaveBalanceDisplay.js'
+import { isLeaveBalanceUpdated, leaveCreditPendingLabel, unpaidBreakdownLabel } from '../../lib/leaveBalanceDisplay.js'
 import { categoryLabel } from '../../lib/leaveFormUtils.js'
 import { TherapistLeaveRequestFields } from './TherapistLeaveRequestFields.jsx'
 import './therapist-leave.css'
@@ -192,6 +192,7 @@ export function TherapistLeavePage() {
   const leaveCreditPending = leaveCreditPendingLabel(balance)
   const paidTaken = balance?.paid_leaves_taken ?? balance?.computed_paid_used ?? 0
   const unpaidTaken = balance?.unpaid_leaves_taken ?? balance?.computed_unpaid_days ?? 0
+  const unpaidBreakdown = unpaidBreakdownLabel(balance)
 
   const listYearOptions = useMemo(() => {
     const years = new Set([now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1])
@@ -295,6 +296,9 @@ export function TherapistLeavePage() {
         <div className="therapist-leave-page__stat-card">
           <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Unpaid leaves taken</p>
           <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#b45309' }}>{loading ? '…' : unpaidTaken}</p>
+          {!loading && unpaidBreakdown ? (
+            <p style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#9ca3af', marginTop: 2 }}>{unpaidBreakdown}</p>
+          ) : null}
         </div>
         <div className="therapist-leave-page__stat-card">
           <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending</p>

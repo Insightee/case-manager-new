@@ -300,6 +300,13 @@
   color: #15803d;
 }
 
+.therapist-leave-panel__stat-sub {
+  margin-top: 3px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
 .therapist-leave-panel__form {
   display: flex;
   flex-direction: column;

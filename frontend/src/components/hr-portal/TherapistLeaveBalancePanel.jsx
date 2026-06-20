@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { isLeaveBalanceUpdated, leaveCreditPendingLabel, leaveUsedSummaryLabel } from '../../lib/leaveBalanceDisplay.js'
+import {
+  isLeaveBalanceUpdated,
+  leaveCreditPendingLabel,
+  leaveUsedSummaryLabel,
+  unpaidBreakdownLabel,
+} from '../../lib/leaveBalanceDisplay.js'
 
 export function TherapistLeaveBalancePanel({
   therapistUserId,
@@ -157,6 +162,9 @@ export function TherapistLeaveBalancePanel({
           <div className={`therapist-leave-panel__stat-value ${updated ? '' : 'therapist-leave-panel__stat-value--muted'}`}>
             {updated ? balance.unpaid_leaves_taken ?? balance.computed_unpaid_days ?? 0 : pendingLabel}
           </div>
+          {updated && unpaidBreakdownLabel(balance) ? (
+            <div className="therapist-leave-panel__stat-sub">{unpaidBreakdownLabel(balance)}</div>
+          ) : null}
         </div>
         <div className="therapist-leave-panel__stat">
           <div className="therapist-leave-panel__stat-label">Used summary</div>

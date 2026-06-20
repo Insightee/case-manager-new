@@ -38,3 +38,16 @@ export function leaveUsedSummaryLabel(balance) {
   const unpaid = balance.unpaid_leaves_taken ?? balance.computed_unpaid_days ?? 0
   return `${paid} paid · ${unpaid} unpaid`
 }
+
+/**
+ * Breakdown of unpaid leave by cause: homecare (never uses credits) vs over-limit
+ * (shadow days beyond available credits). Returns null when there is nothing to explain.
+ * @param {Record<string, unknown> | null | undefined} balance
+ */
+export function unpaidBreakdownLabel(balance) {
+  if (!balance) return null
+  const homecare = balance.unpaid_homecare
+  const overLimit = balance.unpaid_over_limit
+  if (homecare == null && overLimit == null) return null
+  return `${homecare ?? 0} homecare · ${overLimit ?? 0} over-limit`
+}
