@@ -3,8 +3,8 @@ import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 
 const BULK_YEAR = 2026
 
-const TEMPLATE_CSV = `external_employee_id,start_date,leaves_used
-EMP-101,2025-11-01,7`
+const TEMPLATE_CSV = `external_employee_id,start_date
+EMP-101,2025-11-01`
 
 export function BulkLeaveUpload({ onApplied }) {
   const [csvText, setCsvText] = useState('')
@@ -47,7 +47,7 @@ export function BulkLeaveUpload({ onApplied }) {
         method: 'POST',
         body: JSON.stringify({ csv_text: csvText, year: BULK_YEAR }),
       })
-      setSuccess(`Updated ${data.updated} therapist${data.updated === 1 ? '' : 's'} for ${BULK_YEAR}.`)
+      setSuccess(`Updated start dates for ${data.updated} therapist${data.updated === 1 ? '' : 's'} (${BULK_YEAR} credits).`)
       setPhase('edit')
       setPreview(null)
       onApplied?.()
@@ -69,10 +69,10 @@ export function BulkLeaveUpload({ onApplied }) {
     <section className="leave-mgmt-manual__panel leave-mgmt-manual__panel--wide leave-mgmt-bulk">
       <div className="leave-mgmt-bulk__header">
         <div>
-          <h3 className="leave-mgmt-manual__panel-title">Bulk leave upload ({BULK_YEAR})</h3>
+          <h3 className="leave-mgmt-manual__panel-title">Bulk start date upload ({BULK_YEAR})</h3>
           <p className="admin-muted leave-mgmt-manual__hint" style={{ margin: '4px 0 0' }}>
-            CSV columns: <code>external_employee_id</code>, <code>start_date</code>, <code>leaves_used</code>.
-            Sets consultant start date and {BULK_YEAR} usage totals. Individual leave history rows are not changed.
+            CSV columns: <code>external_employee_id</code>, <code>start_date</code> (YYYY-MM-DD recommended).
+            Updates consultant start dates and recalculates {BULK_YEAR} leave credits. Leave history rows are not changed.
           </p>
         </div>
         <button
@@ -129,10 +129,8 @@ export function BulkLeaveUpload({ onApplied }) {
                   <th>Employee ID</th>
                   <th>Name</th>
                   <th>Start</th>
-                  <th>Used</th>
                   <th>Credits</th>
-                  <th>Paid</th>
-                  <th>Over-limit</th>
+                  <th>Paid (records)</th>
                   <th>Credit left</th>
                   <th>Status</th>
                 </tr>
@@ -144,10 +142,8 @@ export function BulkLeaveUpload({ onApplied }) {
                     <td>{row.external_employee_id}</td>
                     <td>{row.therapist_name || '—'}</td>
                     <td>{row.start_date || '—'}</td>
-                    <td>{row.leaves_used ?? '—'}</td>
                     <td>{row.credits_earned ?? '—'}</td>
                     <td>{row.paid_used ?? '—'}</td>
-                    <td>{row.unpaid_over_limit ?? '—'}</td>
                     <td>{row.leave_credit_pending ?? '—'}</td>
                     <td>
                       {row.status === 'ok' ? (
@@ -184,7 +180,7 @@ export function BulkLeaveUpload({ onApplied }) {
               disabled={loading || (preview?.error_rows ?? 0) > 0}
               onClick={runApply}
             >
-              {loading ? 'Applying…' : `Apply for ${BULK_YEAR}`}
+              {loading ? 'Applying…' : `Apply start dates for ${BULK_YEAR}`}
             </button>
           </div>
         </>

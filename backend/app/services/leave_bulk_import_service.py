@@ -1,11 +1,11 @@
-"""Bulk leave usage import for 2026 migration (start date + leaves used totals)."""
+"""Bulk consultant start-date import for 2026 leave credit setup."""
 from __future__ import annotations
 
 import csv
 import io
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import Literal, Optional
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,7 +29,6 @@ HEADER_ALIASES = {
         "id",
     ),
     "start_date": ("start_date", "employment_start_date", "start date", "consultant_start_date"),
-    "leaves_used": ("leaves_used", "leave_used", "leaves used", "leave used", "days_used"),
 }
 
 
@@ -38,14 +37,12 @@ class BulkLeaveRow:
     line_number: int
     external_employee_id: str
     start_date: date | None
-    leaves_used: int | None
     status: RowStatus
     error: str | None = None
     therapist_user_id: int | None = None
     therapist_name: str | None = None
     credits_earned: int | None = None
     paid_used: int | None = None
-    unpaid_over_limit: int | None = None
     leave_credit_pending: int | None = None
 
 
@@ -66,7 +63,7 @@ def _map_headers(fieldnames: list[str] | None) -> dict[str, str]:
     missing = [k for k in HEADER_ALIASES if k not in mapped]
     if missing:
         raise ValueError(
-            "CSV headers must include external_employee_id, start_date, and leaves_used "
+            "CSV headers must include external_employee_id and start_date "
             f"(missing: {', '.join(missing)})"
         )
     return mapped
@@ -84,17 +81,26 @@ def _parse_date(value: str) -> date:
     raise ValueError(f"Invalid start_date: {text}")
 
 
-def _parse_leaves_used(value: str) -> int:
-    text = (value or "").strip()
-    if not text:
-        raise ValueError("leaves_used is required")
-    try:
-        n = int(text)
-    except ValueError as e:
-        raise ValueError(f"leaves_used must be a whole number: {text}") from e
-    if n < 0:
-        raise ValueError("leaves_used cannot be negative")
-    return n
+def compute_credits_preview(
+    db: Session,
+    therapist_user_id: int,
+    employment_start: date,
+    *,
+    year: int = BULK_LEAVE_IMPORT_YEAR,
+    as_of: date | None = None,
+) -> dict[str, int]:
+    """Credits from start date; paid usage still comes from existing approved leave rows."""
+    today = date.today()
+    if as_of is None:
+        as_of = date(year, 12, 31) if year < today.year else today
+    credits_earned = policy.credits_earned_in_year(employment_start, year, as_of=as_of)
+    detail = policy.computed_consumption_detail(db, therapist_user_id, year)
+    paid_used = detail.paid
+    return {
+        "credits_earned": credits_earned,
+        "paid_used": paid_used,
+        "leave_credit_pending": max(credits_earned - paid_used, 0),
+    }
 
 
 def compute_usage_from_leaves_used(
@@ -104,7 +110,7 @@ def compute_usage_from_leaves_used(
     year: int = BULK_LEAVE_IMPORT_YEAR,
     as_of: date | None = None,
 ) -> dict[str, int]:
-    """Split leaves_used into paid and over-limit unpaid for a calendar year."""
+    """Split leaves_used into paid and over-limit unpaid — reserved for future bulk usage column."""
     today = date.today()
     if as_of is None:
         as_of = date(year, 12, 31) if year < today.year else today
@@ -148,7 +154,6 @@ def parse_bulk_leave_csv(csv_text: str) -> list[dict[str, str]]:
                 "line_number": str(line_number),
                 "external_employee_id": (raw.get(header_map["external_employee_id"]) or "").strip(),
                 "start_date": (raw.get(header_map["start_date"]) or "").strip(),
-                "leaves_used": (raw.get(header_map["leaves_used"]) or "").strip(),
             }
         )
     if not rows:
@@ -173,26 +178,22 @@ def preview_bulk_leave_import(
             line_number=line_number,
             external_employee_id=raw["external_employee_id"],
             start_date=None,
-            leaves_used=None,
             status="ok",
         )
         try:
             start_date = _parse_date(raw["start_date"])
-            leaves_used = _parse_leaves_used(raw["leaves_used"])
             therapist, err = _resolve_therapist(db, raw["external_employee_id"])
             if err or not therapist:
                 row.status = "error"
                 row.error = err or "Therapist not found"
             else:
-                usage = compute_usage_from_leaves_used(start_date, leaves_used, year=year)
+                preview = compute_credits_preview(db, therapist.id, start_date, year=year)
                 row.start_date = start_date
-                row.leaves_used = leaves_used
                 row.therapist_user_id = therapist.id
                 row.therapist_name = therapist.full_name
-                row.credits_earned = usage["credits_earned"]
-                row.paid_used = usage["paid_used"]
-                row.unpaid_over_limit = usage["unpaid_over_limit"]
-                row.leave_credit_pending = usage["leave_credit_pending"]
+                row.credits_earned = preview["credits_earned"]
+                row.paid_used = preview["paid_used"]
+                row.leave_credit_pending = preview["leave_credit_pending"]
                 ok_count += 1
         except ValueError as exc:
             row.status = "error"
@@ -200,6 +201,7 @@ def preview_bulk_leave_import(
         preview_rows.append(_serialize_row(row))
     return {
         "year": year,
+        "mode": "start_date_only",
         "total_rows": len(preview_rows),
         "ok_rows": ok_count,
         "error_rows": len(preview_rows) - ok_count,
@@ -225,25 +227,17 @@ def apply_bulk_leave_import(
         if not therapist:
             continue
         profile = get_or_create_profile(db, therapist.id)
-        start_date = date.fromisoformat(row["start_date"])
-        leaves_used = int(row["leaves_used"])
-        profile.employment_start_date = start_date
+        profile.employment_start_date = date.fromisoformat(row["start_date"])
         snapshots = dict(profile.leave_year_snapshots or {})
-        snapshots[str(year)] = {
-            "paid_used": row["paid_used"],
-            "unpaid_over_limit": row["unpaid_over_limit"],
-            "unpaid_homecare": 0,
-            "leaves_used": leaves_used,
-            "source": "bulk_import",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        profile.leave_year_snapshots = snapshots
+        snapshots.pop(str(year), None)
+        profile.leave_year_snapshots = snapshots or None
         profile.leave_balance_year = year
         profile.leave_backfill_updated_at = datetime.now(timezone.utc)
         profile.leave_backfill_updated_by_user_id = actor_user_id
         updated += 1
     return {
         "year": year,
+        "mode": "start_date_only",
         "updated": updated,
         "rows": preview["rows"],
     }
@@ -263,13 +257,11 @@ def _serialize_row(row: BulkLeaveRow) -> dict:
         "line_number": row.line_number,
         "external_employee_id": row.external_employee_id,
         "start_date": row.start_date.isoformat() if row.start_date else None,
-        "leaves_used": row.leaves_used,
         "status": row.status,
         "error": row.error,
         "therapist_user_id": row.therapist_user_id,
         "therapist_name": row.therapist_name,
         "credits_earned": row.credits_earned,
         "paid_used": row.paid_used,
-        "unpaid_over_limit": row.unpaid_over_limit,
         "leave_credit_pending": row.leave_credit_pending,
     }

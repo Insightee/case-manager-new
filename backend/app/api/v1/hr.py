@@ -213,7 +213,7 @@ def bulk_leave_import_template(
 ):
     _ = user
     return Response(
-        content="external_employee_id,start_date,leaves_used\nEMP-101,2025-11-01,7\n",
+        content="external_employee_id,start_date\nEMP-101,2025-11-01\n",
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="leave_bulk_import_2026_template.csv"'},
     )
