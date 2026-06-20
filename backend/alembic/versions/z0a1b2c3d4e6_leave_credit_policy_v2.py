@@ -1,14 +1,11 @@
-"""Leave credit policy v2: split days, multi-case, parent consultation flag.
-
-Revises c0d1e2f3a4b6 (not y8z9a0b1c2d3) so the migration graph has a single head.
-"""
+"""Leave credit policy v2: split days, multi-case, parent consultation flag."""
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "z0a1b2c3d4e6"
-down_revision = "c0d1e2f3a4b6"
+down_revision = "y8z9a0b1c2d3"
 branch_labels = None
 depends_on = None
 
