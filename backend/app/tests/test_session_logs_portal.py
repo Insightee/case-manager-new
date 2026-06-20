@@ -69,6 +69,43 @@ def test_therapist_cannot_submit_log_for_unassigned_session():
     assert res.status_code == 400
 
 
+def test_case_manager_session_logs_scoped_to_assigned_cases():
+    db = SessionLocal()
+    try:
+        cm = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        shadow_cm = db.scalars(select(User).where(User.email == "shadowcm@demo.com")).first()
+        assert cm is not None and shadow_cm is not None
+        cm_id, shadow_cm_id = cm.id, shadow_cm.id
+    finally:
+        db.close()
+
+    cm_headers = _login("casemanager@demo.com")
+    shadow_headers = _login("shadowcm@demo.com")
+    cm_res = client.get("/api/v1/admin/session-logs", headers=cm_headers, params={"page_size": 200})
+    shadow_res = client.get("/api/v1/admin/session-logs", headers=shadow_headers, params={"page_size": 200})
+    assert cm_res.status_code == 200
+    assert shadow_res.status_code == 200
+
+    db = SessionLocal()
+    try:
+        for row in cm_res.json()["items"]:
+            case_id = row.get("case_id")
+            if not case_id:
+                continue
+            case = db.get(Case, case_id)
+            assert case is not None
+            assert case.case_manager_user_id == cm_id, f"CM saw log for unassigned case {case.case_code}"
+        for row in shadow_res.json()["items"]:
+            case_id = row.get("case_id")
+            if not case_id:
+                continue
+            case = db.get(Case, case_id)
+            assert case is not None
+            assert case.case_manager_user_id == shadow_cm_id, f"Shadow CM saw log for unassigned case {case.case_code}"
+    finally:
+        db.close()
+
+
 def test_admin_session_logs_pending_filter():
     headers = _login("casemanager@demo.com")
     res = client.get("/api/v1/admin/session-logs", headers=headers, params={"status": "pending", "page_size": 20})

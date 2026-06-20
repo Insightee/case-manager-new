@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.module_access import case_product_module_allowed, get_allowed_case_product_modules
@@ -13,6 +13,7 @@ from app.services.address_service import case_service_address_read
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
 from app.models.user import User
+from app.services.admin_scope_service import team_case_access_clause
 from app.services.case_portal_visibility import portal_visible_case_status_filter
 
 
@@ -61,9 +62,7 @@ def list_cases_for_user(
     elif user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all"):
         stmt = _apply_module_filter(stmt, user)
     elif user_has_permission(user, "case.read.team"):
-        stmt = stmt.where(
-            or_(Case.case_manager_user_id == user.id, Case.region == user.region)
-        )
+        stmt = stmt.where(team_case_access_clause(user))
         stmt = _apply_module_filter(stmt, user)
     elif user_has_permission(user, "case.read.scoped"):
         stmt = _apply_module_filter(stmt, user)

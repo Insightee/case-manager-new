@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.module_access import get_allowed_case_product_modules
 from app.core.permissions import user_has_permission
 from app.models.case import Case
 from app.models.user import User
+
+
+def team_case_access_clause(user: User):
+    """Cases visible to case.read.team users — assigned caseload only."""
+    return Case.case_manager_user_id == user.id
+
+
+def team_case_in_scope(user: User, case: Case) -> bool:
+    return case.case_manager_user_id == user.id
 
 
 def apply_case_scope(stmt, user: User):
@@ -23,9 +32,7 @@ def apply_case_scope(stmt, user: User):
         return stmt
 
     if user_has_permission(user, "case.read.team"):
-        stmt = stmt.where(
-            or_(Case.case_manager_user_id == user.id, Case.region == user.region)
-        )
+        stmt = stmt.where(team_case_access_clause(user))
     elif not user_has_permission(user, "case.read.scoped"):
         stmt = stmt.where(Case.id < 0)
 

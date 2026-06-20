@@ -253,7 +253,7 @@ def case_scope_check(db: Session, user: User, case: Case) -> bool:
     if user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all"):
         return True
     if user_has_permission(user, "case.read.team"):
-        if case.case_manager_user_id == user.id or case.region == user.region:
+        if case.case_manager_user_id == user.id:
             return True
     if user_has_permission(user, "case.read.scoped"):
         return case_product_module_allowed(user, case.product_module)
