@@ -78,6 +78,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 
 | Doc | Purpose |
 |-----|---------|
+| [PARENT_CLIENT_PORTAL_GUIDE.md](./PARENT_CLIENT_PORTAL_GUIDE.md) | **Parent / guardian guide** — client portal navigation and features |
 | [../frontend/docs/admin-mobile-ux.md](../frontend/docs/admin-mobile-ux.md) | Admin portal mobile UX rules |
 
 ## Agent memory

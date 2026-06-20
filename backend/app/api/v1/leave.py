@@ -13,7 +13,6 @@ from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.permissions import user_has_permission
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
-from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
 from app.services import leave_notification_service as leave_notify
 from app.services import leave_policy_service as policy
@@ -129,13 +128,6 @@ def suggest_leave(
 ):
     if end_date < start_date:
         raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
-    if not policy.is_staff_leave_user(user):
-        profile = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == user.id)).first()
-        if not profile or not profile.employment_start_date:
-            raise HTTPException(
-                status_code=400,
-                detail="Employment start date must be set on your profile before requesting leave.",
-            )
     suggestion = policy.suggest_leave_split(
         db, user, start_date=start_date, end_date=end_date, service_line=service_line.strip().lower()
     )
@@ -208,14 +200,8 @@ def create_leave(
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
 
-    profile = None
     if not policy.is_staff_leave_user(user):
-        profile = get_or_create_profile(db, user.id)
-        if not profile.employment_start_date:
-            raise HTTPException(
-                status_code=400,
-                detail="Employment start date must be set before requesting leave. Contact HR.",
-            )
+        get_or_create_profile(db, user.id)
 
     service_line = payload.service_line.strip().lower()
 

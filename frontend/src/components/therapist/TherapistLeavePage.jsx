@@ -445,7 +445,7 @@ export function TherapistLeavePage() {
 
         <button
           type="submit"
-          disabled={submitting || balance?.requires_employment_start_date}
+          disabled={submitting}
           className="therapist-leave-page__request-btn"
           style={{ opacity: submitting ? 0.7 : 1 }}
         >
@@ -529,8 +529,9 @@ export function TherapistLeavePage() {
             </p>
           )}
           {balance.requires_employment_start_date ? (
-            <p style={{ margin: '8px 0 0', color: '#b45309', fontSize: '0.8rem' }}>
-              Employment start date must be set in your profile and approved by admin before you can submit leave.
+            <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: '0.8rem' }}>
+              Your employment start date is not on file yet — you can still submit leave; HR will confirm your paid
+              balance.
             </p>
           ) : null}
         </div>
