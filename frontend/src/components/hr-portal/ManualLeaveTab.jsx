@@ -14,6 +14,7 @@ const EMPTY_FORM = {
   end_date: '',
   reason: '',
   consulted_with_parents: false,
+  billing_category: 'PAID',
 }
 
 export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
@@ -131,6 +132,7 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
         body: JSON.stringify({
           therapist_user_id: Number(therapistId),
           service_line: serviceLine,
+          billing_category: form.billing_category,
           case_ids: form.case_ids.length ? form.case_ids.map(Number) : null,
           start_date: form.start_date,
           end_date: form.end_date,
@@ -291,6 +293,8 @@ export function ManualLeaveTab({ year: yearProp, onLeaveRecorded }) {
                 onReasonChange={(v) => setForm((f) => ({ ...f, reason: v }))}
                 consultedWithParents={form.consulted_with_parents}
                 onConsultedWithParentsChange={(v) => setForm((f) => ({ ...f, consulted_with_parents: v }))}
+                billingCategory={form.billing_category}
+                onBillingCategoryChange={(v) => setForm((f) => ({ ...f, billing_category: v }))}
                 leaveBalance={balance}
                 forTherapistUserId={Number(therapistId)}
                 disabled={submitting}

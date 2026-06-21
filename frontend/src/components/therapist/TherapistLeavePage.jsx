@@ -50,6 +50,7 @@ const EMPTY_FORM = {
   end_date: '',
   reason: '',
   consulted_with_parents: false,
+  billing_category: 'PAID',
 }
 
 export function TherapistLeavePage() {
@@ -156,6 +157,7 @@ export function TherapistLeavePage() {
         method: 'POST',
         body: JSON.stringify({
           service_line: hasShadow ? 'shadow_support' : 'homecare',
+          billing_category: form.billing_category,
           case_ids: form.case_ids.map(Number),
           start_date: form.start_date,
           end_date: form.end_date,
@@ -254,6 +256,8 @@ export function TherapistLeavePage() {
           onReasonChange={(v) => setForm((f) => ({ ...f, reason: v }))}
           consultedWithParents={form.consulted_with_parents}
           onConsultedWithParentsChange={(v) => setForm((f) => ({ ...f, consulted_with_parents: v }))}
+          billingCategory={form.billing_category}
+          onBillingCategoryChange={(v) => setForm((f) => ({ ...f, billing_category: v }))}
           leaveBalance={balance}
           disabled={submitting}
           casesLoading={casesLoading}

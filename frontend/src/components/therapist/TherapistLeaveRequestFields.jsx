@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { paidLeaveCreditHint } from '../../lib/leaveBalanceDisplay.js'
-import { caseLabel, caseServiceLine, formatLeaveSplitLabel } from '../../lib/leaveFormUtils.js'
+import { isLeaveBalanceUpdated, paidLeaveCreditHint } from '../../lib/leaveBalanceDisplay.js'
+import { caseLabel, caseServiceLine, formatLeaveSplitLabel, LEAVE_CATEGORIES } from '../../lib/leaveFormUtils.js'
 import './therapist-leave.css'
 
 /**
@@ -20,6 +20,8 @@ export function TherapistLeaveRequestFields({
   onReasonChange,
   consultedWithParents = false,
   onConsultedWithParentsChange,
+  billingCategory = 'PAID',
+  onBillingCategoryChange,
   disabled = false,
   leaveBalance = null,
   forTherapistUserId = null,
@@ -37,6 +39,27 @@ export function TherapistLeaveRequestFields({
   const hasShadowSelection = selectedCases.some((c) => caseServiceLine(c) === 'shadow_support')
   const hasHomecareSelection = selectedCases.some((c) => caseServiceLine(c) === 'homecare')
   const allCasesSelected = assignedCases.length > 0 && caseIds.length === assignedCases.length
+  const creditPending = leaveBalance?.leave_credit_pending ?? leaveBalance?.paid_remaining ?? 0
+  const creditsAvailable =
+    hasShadowSelection && isLeaveBalanceUpdated(leaveBalance) && Number(creditPending) > 0
+  const showLeaveType = hasShadowSelection
+  const leaveTypeLockedPaid = showLeaveType && creditsAvailable
+  const canChooseUnpaid = showLeaveType && !creditsAvailable
+
+  useEffect(() => {
+    if (!onBillingCategoryChange) return
+    if (!hasShadowSelection) {
+      if (billingCategory !== 'UNPAID') onBillingCategoryChange('UNPAID')
+      return
+    }
+    if (leaveTypeLockedPaid && billingCategory !== 'PAID') {
+      onBillingCategoryChange('PAID')
+      return
+    }
+    if (canChooseUnpaid && billingCategory === 'PAID') {
+      onBillingCategoryChange('UNPAID')
+    }
+  }, [hasShadowSelection, leaveTypeLockedPaid, canChooseUnpaid, billingCategory, onBillingCategoryChange])
 
   useEffect(() => {
     if (!startDate || !endDate || endDate < startDate) {
@@ -153,6 +176,45 @@ export function TherapistLeaveRequestFields({
 
       {suggestion ? (
         <p className="therapist-leave-page__suggest">{formatLeaveSplitLabel(suggestion)}</p>
+      ) : null}
+
+      {showLeaveType ? (
+        <fieldset className="therapist-leave-page__leave-type" style={{ border: 'none', margin: 0, padding: 0 }}>
+          <legend className="therapist-leave-page__field" style={{ marginBottom: 8 }}>
+            Leave type
+          </legend>
+          <div className="therapist-leave-page__leave-type-options">
+            {LEAVE_CATEGORIES.map((cat) => {
+              const isPaid = cat.value === 'PAID'
+              const isSelected = billingCategory === cat.value
+              const isDisabled =
+                disabled || (isPaid && !creditsAvailable) || (cat.value === 'UNPAID' && leaveTypeLockedPaid)
+              return (
+                <label key={cat.value} className="therapist-leave-page__case-option">
+                  <input
+                    type="radio"
+                    name="leave_billing_category"
+                    value={cat.value}
+                    checked={isSelected}
+                    disabled={isDisabled}
+                    onChange={() => onBillingCategoryChange?.(cat.value)}
+                  />
+                  <span>{cat.label}</span>
+                </label>
+              )
+            })}
+          </div>
+          {leaveTypeLockedPaid ? (
+            <p className="therapist-leave-page__hint" style={{ marginTop: 8 }}>
+              Paid leave is selected — your available leave credits will be used for shadow support days.
+            </p>
+          ) : null}
+          {canChooseUnpaid && billingCategory === 'UNPAID' ? (
+            <div className="therapist-leave-page__warn" role="alert" style={{ marginTop: 8 }}>
+              You will not be compensated for this leave.
+            </div>
+          ) : null}
+        </fieldset>
       ) : null}
 
       <div className="therapist-leave-page__form-dates">
