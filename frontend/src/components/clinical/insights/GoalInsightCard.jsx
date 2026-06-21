@@ -138,7 +138,7 @@ export function buildPlaceholderGoalCards(preview) {
       status: goalsCount ? 'variable progress' : 'emerging',
       evidenceStrength: missingLogs ? 'weak' : goalsCount ? 'moderate' : 'insufficient',
       sessionsCount: sessions || null,
-      strategies: goalsCount ? ['Visual countdown', 'First-then'] : [],
+      strategies: [],
       insight: missingLogs
         ? `${missingLogs} log(s) could capture more detail about the child\'s response and the supports in use.`
         : null,

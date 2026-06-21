@@ -15,6 +15,16 @@ import { InsightsGenerationHistory } from './insights/InsightsGenerationHistory.
 
 const RECENT_MONTHS = 6
 
+async function fetchSnapshotById(caseId, snapshotId) {
+  return apiFetch(`/api/v1/cases/${caseId}/insights/snapshots/${snapshotId}`)
+}
+
+function latestSnapshotForMonth(historyItems, month) {
+  return historyItems
+    .filter((item) => item.month === month)
+    .sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0]
+}
+
 export function ClinicalInsightsPanel({ caseId, variant = 'therapist' }) {
   const navigate = useNavigate()
   const [month, setMonth] = useState(currentMonthValue())
@@ -31,39 +41,96 @@ export function ClinicalInsightsPanel({ caseId, variant = 'therapist' }) {
     ? `/admin/cases/${caseId}`
     : `/therapist/cases/${caseId}`
 
-  const loadPreview = useCallback(async () => {
-    setPreviewLoading(true)
-    setPreviewError('')
-    try {
-      const data = await apiFetch(`/api/v1/cases/${caseId}/insights/data-preview?month=${month}`)
-      setPreview(data)
-    } catch {
-      setPreview(null)
-      setPreviewError('Could not load data preview. Try again.')
-    } finally {
-      setPreviewLoading(false)
-    }
-  }, [caseId, month])
-
   const loadRecentHistory = useCallback(async () => {
     try {
       const data = await apiFetch(`/api/v1/cases/${caseId}/insights/snapshots`)
       const allowedMonths = new Set(monthOptions(RECENT_MONTHS).map((o) => o.value))
       const items = (data.items || []).filter((item) => allowedMonths.has(item.month))
       setRecentHistory(items)
+      return items
     } catch {
       setRecentHistory([])
+      return []
+    }
+  }, [caseId])
+
+  const resolveSnapshotForMonth = useCallback(async (targetMonth, previewData, historyItems) => {
+    if (previewData?.existing_snapshot_id) {
+      try {
+        const data = await fetchSnapshotById(caseId, previewData.existing_snapshot_id)
+        setSnapshot(data)
+        return
+      } catch {
+        /* fall through to history lookup */
+      }
+    }
+
+    const match = latestSnapshotForMonth(historyItems, targetMonth)
+    if (!match) {
+      setSnapshot(null)
+      return
+    }
+
+    if (match.ai_output_json || match.ai_output_text) {
+      setSnapshot(match)
+      return
+    }
+
+    try {
+      const data = await fetchSnapshotById(caseId, match.id)
+      setSnapshot(data)
+    } catch {
+      setSnapshot(null)
     }
   }, [caseId])
 
   useEffect(() => {
-    loadPreview()
-    setSnapshot(null)
-  }, [loadPreview])
-
-  useEffect(() => {
     loadRecentHistory()
   }, [loadRecentHistory])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPreviewForMonth() {
+      setPreviewLoading(true)
+      setPreviewError('')
+      setSnapshot(null)
+      setPreview(null)
+
+      try {
+        const data = await apiFetch(`/api/v1/cases/${caseId}/insights/data-preview?month=${month}`)
+        if (cancelled) return
+        setPreview(data)
+      } catch {
+        if (!cancelled) {
+          setPreview(null)
+          setPreviewError('Could not load data preview. Try again.')
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false)
+      }
+    }
+
+    loadPreviewForMonth()
+    return () => {
+      cancelled = true
+    }
+  }, [caseId, month])
+
+  useEffect(() => {
+    if (!preview) return
+    if (snapshot?.month === month) return
+
+    let cancelled = false
+    ;(async () => {
+      await resolveSnapshotForMonth(month, preview, recentHistory)
+      if (cancelled) return
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [preview, month, recentHistory, snapshot?.month, resolveSnapshotForMonth])
 
   const goalCards = useMemo(() => {
     const generated = buildGoalCardsFromSnapshot(snapshot)
@@ -90,31 +157,14 @@ export function ClinicalInsightsPanel({ caseId, variant = 'therapist' }) {
   }
 
   const handleViewPrevious = async () => {
-    if (preview?.existing_snapshot_id) {
-      try {
-        const data = await apiFetch(`/api/v1/cases/${caseId}/insights/snapshots/${preview.existing_snapshot_id}`)
-        setSnapshot(data)
-      } catch {
-        setMessage('Could not load previous snapshot.')
-      }
-    } else {
-      const forMonth = recentHistory.find((item) => item.month === month)
-      if (forMonth) setSnapshot(forMonth)
+    await resolveSnapshotForMonth(month, preview, recentHistory)
+    if (!preview?.existing_snapshot_id && !latestSnapshotForMonth(recentHistory, month)) {
+      setMessage('No saved snapshot for this month yet.')
     }
   }
 
-  const handleOpenHistory = async (item) => {
+  const handleOpenHistory = (item) => {
     setMonth(item.month)
-    if (item.ai_output_json || item.ai_output_text) {
-      setSnapshot(item)
-      return
-    }
-    try {
-      const data = await apiFetch(`/api/v1/cases/${caseId}/insights/snapshots/${item.id}`)
-      setSnapshot(data)
-    } catch {
-      setMessage('Could not load snapshot.')
-    }
   }
 
   const handleSave = async () => {
