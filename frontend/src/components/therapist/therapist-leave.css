@@ -453,3 +453,14 @@
   flex: 1;
   min-width: 140px;
 }
+
+.therapist-leave-page__migration-banner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: #4338ca;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+}

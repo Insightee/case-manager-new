@@ -16,6 +16,7 @@ from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
 from app.services import appointment_booking_service as appt_booking
 from app.services import email_service
+from app.services import leave_migration_service as leave_migration
 from app.services import leave_service
 from app.services import notification_service
 
@@ -79,12 +80,17 @@ def unblock_slots_for_leave(db: Session, leave_id: int) -> int:
 def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) -> int:
     date_range = _format_date_range(leave.start_date, leave.end_date)
     count = 0
+    retro = leave_migration.is_retroactive_leave(leave.start_date, leave.end_date)
+    migration_reentry = leave_migration.is_migration_reentry(leave.start_date, leave.end_date)
 
+    therapist_body = f"Your leave for {date_range} is pending approval."
+    if migration_reentry:
+        therapist_body += " This records leave you already took — sessions will not be changed."
     notification_service.create_notification(
         db,
         user_id=therapist.id,
         title="Leave request submitted",
-        body=f"Your leave for {date_range} is pending approval.",
+        body=therapist_body,
         entity_type="leave",
         entity_id=leave.id,
     )
@@ -96,6 +102,11 @@ def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) 
             f"{therapist.full_name} requested {leave.leave_type.value} leave for {date_range}. "
             "Review and approve or reject in Leave Management."
         )
+        if retro:
+            body += (
+                " Previous leave — approving records it for balance tracking only; "
+                "booked sessions will not be cancelled."
+            )
         notification_service.create_notification(
             db,
             user_id=manager.id,
@@ -113,6 +124,9 @@ def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) 
             db=db,
         )
         count += 1
+
+    if retro:
+        return count
 
     for parent_user_id, cases in _parents_for_therapist_cases(db, leave.therapist_user_id).items():
         case_codes = ", ".join(c.case_code for c in cases[:3])
@@ -142,6 +156,38 @@ def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) 
 
 def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -> int:
     date_range = _format_date_range(leave.start_date, leave.end_date)
+    retro = leave_migration.is_retroactive_leave(leave.start_date, leave.end_date)
+
+    if retro:
+        notification_service.create_notification(
+            db,
+            user_id=therapist.id,
+            title="Leave approved",
+            body=(
+                f"Your leave for {date_range} is approved. "
+                "This was recorded as previous leave — sessions were not changed."
+            ),
+            entity_type="leave",
+            entity_id=leave.id,
+        )
+        email_service.leave_approved_therapist_email(
+            to=therapist.email,
+            therapist_name=therapist.full_name,
+            date_range=date_range,
+            cancelled_count=0,
+            portal_url=f"{settings.frontend_url}/therapist/leave",
+            db=db,
+        )
+        for admin_email in settings.admin_notification_email_list:
+            email_service.leave_admin_summary_email(
+                to=admin_email,
+                therapist_name=therapist.full_name,
+                date_range=date_range,
+                cancelled_count=0,
+                db=db,
+            )
+        return 1
+
     booked_slots = db.scalars(
         select(TherapistSlot)
         .where(

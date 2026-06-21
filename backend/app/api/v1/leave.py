@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.permissions import RoleName, user_has_permission
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.user import User
+from app.services import leave_migration_service as leave_migration
 from app.services import leave_notification_service as leave_notify
 from app.services import leave_policy_service as policy
 from app.services import leave_service
@@ -59,6 +60,7 @@ def _user_name(db: Session, user_id: Optional[int]) -> Optional[str]:
 
 
 def _serialise(leave: TherapistLeave, db: Session) -> dict:
+    retro = leave_migration.is_retroactive_leave(leave.start_date, leave.end_date)
     return {
         "id": leave.id,
         "therapist_user_id": leave.therapist_user_id,
@@ -83,6 +85,8 @@ def _serialise(leave: TherapistLeave, db: Session) -> dict:
         "reviewed_at": leave.updated_at.isoformat() if leave.reviewed_by_user_id else None,
         "created_at": leave.created_at.isoformat(),
         "updated_at": leave.updated_at.isoformat(),
+        "is_retroactive": retro,
+        "is_migration_reentry": leave_migration.is_migration_reentry(leave.start_date, leave.end_date),
     }
 
 
@@ -138,6 +142,11 @@ def my_leave_balance(
     db: Session = Depends(get_db),
 ):
     return policy.get_leave_balance(db, user, year=year)
+
+
+@router.get("/migration-info")
+def leave_migration_info(user: User = Depends(get_current_user)):
+    return leave_migration.migration_info_payload()
 
 
 @router.get("/suggest")

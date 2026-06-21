@@ -5,6 +5,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { fetchAllPages } from '../../lib/listApi.js'
 import { isLeaveBalanceUpdated, leaveCreditPendingLabel, unpaidBreakdownLabel } from '../../lib/leaveBalanceDisplay.js'
+import { migrationBannerMessage } from '../../lib/leaveMigration.js'
 import { categoryLabel } from '../../lib/leaveFormUtils.js'
 import { TherapistLeaveRequestFields } from './TherapistLeaveRequestFields.jsx'
 import './therapist-leave.css'
@@ -64,6 +65,7 @@ export function TherapistLeavePage() {
   const [leaves, setLeaves] = useState([])
   const [summary, setSummary] = useState(null)
   const [balance, setBalance] = useState(null)
+  const [migrationInfo, setMigrationInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -79,14 +81,16 @@ export function TherapistLeavePage() {
     setLoading(true)
     setLoadError('')
     try {
-      const [data, sum, bal] = await Promise.all([
+      const [data, sum, bal, migration] = await Promise.all([
         apiFetch('/api/v1/leave'),
         apiFetch(`/api/v1/leave/summary?year=${calYear}`),
         apiFetch(`/api/v1/leave/balance?year=${calYear}`).catch(() => null),
+        apiFetch('/api/v1/leave/migration-info').catch(() => null),
       ])
       setLeaves(Array.isArray(data) ? data : [])
       setSummary(sum)
       setBalance(bal || sum?.leave_balance || null)
+      setMigrationInfo(migration)
     } catch (err) {
       setLeaves([])
       setSummary(null)
@@ -276,6 +280,8 @@ export function TherapistLeavePage() {
     </div>
   ) : null
 
+  const migrationBanner = migrationBannerMessage(migrationInfo)
+
   return (
     <div className="therapist-leave-page">
       <div className="therapist-leave-page__header">
@@ -287,6 +293,12 @@ export function TherapistLeavePage() {
           Request leave by case and date range. HR reviews before sessions are cancelled.
         </p>
       </div>
+
+      {migrationBanner ? (
+        <div className="therapist-leave-page__migration-banner" role="status">
+          {migrationBanner}
+        </div>
+      ) : null}
 
       <div className="therapist-leave-page__stats">
         <div className="therapist-leave-page__stat-card">

@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     billing_ledger_drafts: bool = True
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
+    # Last day therapists can re-enter past leave for platform migration (ISO date).
+    leave_migration_end_date: str = "2026-06-30"
 
     storage_provider: str = "local"
     storage_prefix: str = "insightcase"
