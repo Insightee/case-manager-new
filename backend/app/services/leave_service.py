@@ -13,6 +13,7 @@ from app.core.permissions import RoleName, user_has_permission
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.role import Role
 from app.models.user import User
+from app.services import leave_migration_service as leave_migration
 from app.services import leave_notification_service as leave_notify
 from app.services import leave_policy_service as policy
 from app.services.therapist_profile_service import get_or_create_profile
@@ -219,6 +220,8 @@ def create_therapist_leave_request(
         raise ValueError("end_date must be on or after start_date")
     if RoleName.THERAPIST.value not in therapist.role_names:
         raise ValueError("Target user is not a therapist")
+    if not auto_approve:
+        leave_migration.validate_therapist_leave_dates(start_date, end_date)
 
     get_or_create_profile(db, therapist.id)
 

@@ -12,6 +12,7 @@ import {
 } from '../admin-portal/ui/index.js'
 import './leave-management.css'
 import { formatLeaveRecordSplit } from '../../lib/leaveFormUtils.js'
+import { leaveRetroactiveHint } from '../../lib/leaveMigration.js'
 import { ManualLeaveTab } from './ManualLeaveTab.jsx'
 
 const STATUS_COLORS = {
@@ -45,14 +46,19 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   const [reportGranularity, setReportGranularity] = useState('monthly')
   const [reportRows, setReportRows] = useState([])
   const [reportLoading, setReportLoading] = useState(false)
+  const [migrationInfo, setMigrationInfo] = useState(null)
 
   const eyebrow = portal === 'admin' ? 'Admin' : 'HR'
 
   async function load() {
     setLoading(true)
     try {
-      const data = await apiFetch('/api/v1/leave')
+      const [data, migration] = await Promise.all([
+        apiFetch('/api/v1/leave'),
+        apiFetch('/api/v1/leave/migration-info').catch(() => null),
+      ])
       setLeaves(Array.isArray(data) ? data : [])
+      setMigrationInfo(migration)
       return true
     } catch (err) {
       setError(err.message || 'Could not load leave requests')
@@ -241,6 +247,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                 <div>
                   {displayed.map((l) => {
                     const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
+                    const retroHint = leaveRetroactiveHint(l, migrationInfo)
                     return (
                       <div key={l.id} className="leave-mgmt__card">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -257,6 +264,9 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                           >
                             {l.status}
                           </span>
+                          {l.is_retroactive ? (
+                            <span className="leave-mgmt__retro-badge">Previous leave</span>
+                          ) : null}
                           <span className="admin-chip admin-chip--sm">{l.leave_type}</span>
                           <span className="admin-table__primary">
                             {l.therapist_name || `Therapist #${l.therapist_user_id}`}
@@ -297,6 +307,11 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                         ) : null}
                         {l.reason ? (
                           <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>{l.reason}</p>
+                        ) : null}
+                        {retroHint && l.status === 'PENDING' ? (
+                          <p className="leave-mgmt__retro-note" role="note">
+                            {retroHint}
+                          </p>
                         ) : null}
                         {l.status === 'REJECTED' && l.review_note ? (
                           <p
