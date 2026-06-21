@@ -12,6 +12,11 @@ import {
 } from '../../lib/sessionLogUtils.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { SessionBrief } from './SessionBrief.jsx'
+import { SessionLogGoalTracker } from '../clinical/SessionLogGoalTracker.jsx'
+import { SessionLogAiAssist } from '../clinical/SessionLogAiAssist.jsx'
+import { STRUCTURED_SESSION_EVIDENCE } from '../../lib/reportsRevampFlags.js'
+import { ClinicalVisibilityBadge } from '../clinical-ui/ClinicalVisibilityBadge.jsx'
+import '../../styles/case-profile-v2.css'
 
 const ATTENDANCE = [
   { value: 'PRESENT', label: 'Present' },
@@ -391,28 +396,42 @@ export function SubmitSessionLogForm({
         </fieldset>
 
         <div className="ic-session-log-form__grid">
-          {FIELDS.map(({ key, label, hint, rows, highlight, required: fieldRequired }) => (
-            <label
-              key={key}
-              className={`ic-session-log-field${highlight ? ' ic-session-log-field--highlight' : ''}`}
-            >
-              <span className="ic-session-log-field__label">
-                {label}
-                {fieldRequired ? <span className="ic-session-log-field__req">Required</span> : null}
-              </span>
-              <span className="ic-session-log-field__hint">{hint}</span>
-              <textarea
-                value={form[key]}
-                onChange={(e) => {
-                  setForm({ ...form, [key]: e.target.value })
-                  setDirtySinceServerSave(true)
-                }}
-                rows={rows}
-                required={fieldRequired}
-              />
-            </label>
-          ))}
+          {FIELDS.map(({ key, label, hint, rows, highlight, required: fieldRequired }) => {
+            const isParentField   = key === 'parent_notes'
+            const isInternalField = key === 'session_notes' || key === 'observations'
+            return (
+              <label
+                key={key}
+                className={`ic-session-log-field${highlight ? ' ic-session-log-field--highlight' : ''}`}
+              >
+                <span className="ic-session-log-field__label" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
+                  {label}
+                  {fieldRequired ? <span className="ic-session-log-field__req">Required</span> : null}
+                  {isParentField   ? <ClinicalVisibilityBadge visibility="parent"   /> : null}
+                  {isInternalField ? <ClinicalVisibilityBadge visibility="internal" /> : null}
+                </span>
+                <span className="ic-session-log-field__hint">{hint}</span>
+                <textarea
+                  value={form[key]}
+                  onChange={(e) => {
+                    setForm({ ...form, [key]: e.target.value })
+                    setDirtySinceServerSave(true)
+                  }}
+                  rows={rows}
+                  required={fieldRequired}
+                />
+              </label>
+            )
+          })}
         </div>
+
+        {isEdit && existingLog?.id ? (
+          <SessionLogAiAssist
+            logId={existingLog.id}
+            note={form.session_notes}
+            onImprovedNote={(text) => setForm((prev) => ({ ...prev, session_notes: text }))}
+          />
+        ) : null}
 
         {isLateSession ? (
           <label className="ic-session-log-field ic-session-log-field--warn">
@@ -438,7 +457,7 @@ export function SubmitSessionLogForm({
 
         {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}
 
-        <div className="ic-session-log-form__actions">
+        <div className="ic-session-log-form__actions cp-builder-sticky-actions">
           {isResubmit ? (
             <>
               <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
@@ -487,6 +506,9 @@ export function SubmitSessionLogForm({
           </p>
         ) : null}
       </form>
+      {STRUCTURED_SESSION_EVIDENCE && existingLog?.id && session?.case_id ? (
+        <SessionLogGoalTracker logId={existingLog.id} caseId={session.case_id} />
+      ) : null}
     </div>
   )
 }

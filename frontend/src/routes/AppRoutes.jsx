@@ -17,7 +17,7 @@ import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.jsx'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage.jsx'
 import { TherapistDashboardPage } from '../pages/TherapistDashboardPage.jsx'
 import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
-import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
+import { CaseDetailRoute } from '../components/cases/CaseDetailRoute.jsx'
 import { DailyLogsPage } from '../components/daily-logs/DailyLogsPage.jsx'
 import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReportsPage.jsx'
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
@@ -83,6 +83,21 @@ const AdminSessionLogsPage = lazy(() =>
 )
 const AdminReportsPage = lazy(() =>
   import('../components/admin-portal/AdminReportsPage.jsx').then((m) => ({ default: m.AdminReportsPage }))
+)
+const AdminClinicalDashboardPage = lazy(() =>
+  import('../components/admin-portal/AdminClinicalDashboardPage.jsx').then((m) => ({
+    default: m.AdminClinicalDashboardPage,
+  }))
+)
+const AdminClinicalReferencesPage = lazy(() =>
+  import('../components/admin-portal/AdminClinicalReferencesPage.jsx').then((m) => ({
+    default: m.AdminClinicalReferencesPage,
+  }))
+)
+const AdminAiSettingsPage = lazy(() =>
+  import('../components/admin-portal/AdminAiSettingsPage.jsx').then((m) => ({
+    default: m.AdminAiSettingsPage,
+  }))
 )
 const AdminReportViewPage = lazy(() =>
   import('../components/admin-portal/AdminReportViewPage.jsx').then((m) => ({ default: m.AdminReportViewPage }))
@@ -234,7 +249,15 @@ export function AppRoutes() {
       >
         <Route index element={<TherapistDashboardPage />} />
         <Route path="cases" element={<MyCasesPage />} />
-        <Route path="cases/:caseId" element={<CaseDetailPage />} />
+        <Route path="cases/:caseId" element={<CaseDetailRoute />} />
+        <Route
+          path="cases/:caseId/reports/monthly/:reportId"
+          element={
+            <Lazy>
+              <ReportEditPage />
+            </Lazy>
+          }
+        />
         <Route path="logs" element={<DailyLogsPage />} />
         <Route path="reports" element={<MonthlyReportsPage />} />
         <Route
@@ -420,6 +443,30 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminReportsPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="clinical-dashboard"
+          element={
+            <Lazy>
+              <AdminClinicalDashboardPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="clinical-references"
+          element={
+            <Lazy>
+              <AdminClinicalReferencesPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="ai-settings"
+          element={
+            <Lazy>
+              <AdminAiSettingsPage />
             </Lazy>
           }
         />

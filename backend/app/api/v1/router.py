@@ -37,6 +37,9 @@ from app.api.v1 import (
     case_services,
     session_absence,
     memos,
+    clinical,
+    ai_routes,
+    insights_routes,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -77,3 +80,6 @@ api_router.include_router(files.router)
 api_router.include_router(case_documents.router)
 api_router.include_router(case_documents.documents_router)
 api_router.include_router(memos.router)
+api_router.include_router(clinical.router)
+api_router.include_router(ai_routes.router)
+api_router.include_router(insights_routes.router)

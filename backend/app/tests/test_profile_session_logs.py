@@ -229,3 +229,41 @@ def test_cannot_start_two_sessions():
     assert body.get("detail", {}).get("recommended_action") == "CONTINUE_SESSION"
     backdate_in_progress_session(s1)
     client.post(f"/api/v1/sessions/{s1}/end", headers=headers)
+
+
+def test_case_session_logs_pdf_export():
+    token = _login("therapist@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    case_id = demo_parent_case_id()
+    r = client.get(
+        f"/api/v1/cases/{case_id}/session-logs/export/pdf?month=2026-01",
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:4] == b"%PDF"
+
+
+def test_case_session_logs_pdf_includes_all_month_sessions():
+    from app.services import case_session_logs_pdf_service as pdf_svc
+    from app.core.database import SessionLocal
+    from app.models.user import User
+
+    token = _login("therapist@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    me = client.get("/api/v1/auth/me", headers=headers).json()
+    case_id = demo_parent_case_id()
+
+    db = SessionLocal()
+    try:
+        user = db.get(User, me["id"])
+        _, sessions, _, _ = pdf_svc.list_case_sessions_for_log_pdf(
+            db, user, case_id=case_id, month="2026-06"
+        )
+        assert len(sessions) >= 1
+        pdf_bytes = pdf_svc.build_case_session_logs_pdf(db, user, case_id=case_id, month="2026-06")
+    finally:
+        db.close()
+
+    assert pdf_bytes[:4] == b"%PDF"
+    assert len(pdf_bytes) > 500

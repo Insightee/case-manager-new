@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
 import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
+import { CLINICAL_QUALITY_DASHBOARD } from '../lib/reportsRevampFlags.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
 import { useNotifications } from '../hooks/useNotifications.js'
 import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
@@ -58,7 +59,7 @@ const ADMIN_CM_MOBILE_NAV = [
 
 /** Nav for users whose only operational role is Case Manager (not module admin / finance / HR). */
 function caseManagerNav(clinicalModuleIds) {
-  return [
+  const items = [
     { to: '/admin/cm', label: 'My caseload', end: true, perm: null, feature: null, icon: 'dashboard' },
     { to: '/admin/cases', label: 'Cases', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases' },
     { to: '/admin/workbench', label: 'Review queues', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench' },
@@ -68,15 +69,38 @@ function caseManagerNav(clinicalModuleIds) {
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail' },
   ]
+  if (CLINICAL_QUALITY_DASHBOARD) {
+    items.splice(3, 0, {
+      to: '/admin/clinical-dashboard',
+      label: 'Clinical dashboard',
+      perm: 'case.read.team',
+      moduleIds: clinicalModuleIds,
+      icon: 'workbench',
+    })
+  }
+  return items
 }
 
 function adminNav(clinicalModuleIds) {
-  return [
+  const ops = [
     { to: '/admin', label: 'Dashboard', end: true, perm: null, feature: null, icon: 'dashboard', section: 'Operations' },
     { to: '/admin/workbench', label: 'Workbench', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench', section: 'Operations' },
     { to: '/admin/cases', label: 'Cases', perm: 'case.read.all', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'Operations' },
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid', section: 'Operations' },
     { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports', section: 'Operations' },
+  ]
+  if (CLINICAL_QUALITY_DASHBOARD) {
+    ops.splice(2, 0, {
+      to: '/admin/clinical-dashboard',
+      label: 'Clinical dashboard',
+      perm: 'case.read.team',
+      moduleIds: clinicalModuleIds,
+      icon: 'workbench',
+      section: 'Operations',
+    })
+  }
+  return [
+    ...ops,
     { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep', section: 'Operations' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail', section: 'Operations' },
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },

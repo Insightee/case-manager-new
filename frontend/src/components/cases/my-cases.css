@@ -1825,16 +1825,18 @@
 
 .ic-case-tabs__btn {
   flex-shrink: 0;
-  padding: 10px 16px;
+  padding: 0.625rem 1rem;
   border: none;
-  border-radius: 10px;
-  background: #f1f5f9;
+  border-radius: 0;
+  background: transparent;
   font-weight: 600;
   font-size: 0.875rem;
-  color: #475569;
+  color: var(--text-muted, #64748b);
   cursor: pointer;
-  min-height: 44px;
+  min-height: 40px;
   white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
 }
 
 .ic-case-tabs__label-short {
@@ -1842,8 +1844,9 @@
 }
 
 .ic-case-tabs__btn.is-active {
-  background: var(--ic-primary);
-  color: #fff;
+  background: transparent;
+  color: var(--ic-primary, var(--primary, #4f46e5));
+  border-bottom-color: var(--ic-primary, var(--primary, #4f46e5));
 }
 
 .ic-case-tabs__support {
@@ -2612,6 +2615,11 @@
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+.ic-log-badge-row--compact {
+  margin-top: 0;
+  gap: 4px;
 }
 
 .ic-log-badge {

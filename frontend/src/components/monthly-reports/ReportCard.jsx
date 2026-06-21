@@ -1,17 +1,17 @@
-import { StatusBadge } from './StatusBadge.jsx'
+import { ClinicalStatusBadge } from '../clinical-ui/ClinicalStatusBadge.jsx'
 
 function ActionBtn({ children, variant = 'neutral', ...props }) {
   const styles = {
-    neutral:
-      'border-[#E2E8F0] bg-white text-slate-700 hover:bg-slate-50',
-    primary: 'border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100',
-    accent: 'border-orange-200 bg-orange-50 text-orange-900 hover:bg-orange-100',
-    danger: 'border-red-200 bg-red-50 text-red-900 hover:bg-red-100',
+    neutral: 'clinical-btn-secondary',
+    primary: 'clinical-btn-primary',
+    accent:  'clinical-btn-primary',
+    danger:  'clinical-btn-secondary',
   }
   return (
     <button
       type="button"
-      className={`min-h-[40px] rounded-lg px-3 py-2 text-sm font-semibold shadow-sm ring-1 transition ${styles[variant]}`}
+      className={`${styles[variant]}`}
+      style={{ fontSize: '0.8125rem', minHeight: '40px', padding: '0.4rem 0.875rem' }}
       {...props}
     >
       {children}
@@ -31,99 +31,106 @@ export function ReportCard({
   onDownload,
 }) {
   const isAttention = variant === 'attention'
-  const isProgress = variant === 'progress'
+  const isProgress  = variant === 'progress'
   const isPublished = variant === 'published'
 
-  const urgency =
-    report.attentionType === 'overdue'
-      ? 'border-red-200 bg-gradient-to-br from-red-50/95 to-white'
-      : report.attentionType === 'rejected'
-        ? 'border-rose-200 bg-gradient-to-br from-rose-50/95 to-white'
-        : 'border-amber-200 bg-gradient-to-br from-amber-50/95 to-white'
-
-  const baseCard =
-    'rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition-transform duration-200 hover:scale-[1.01] hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]'
+  const urgencyExtra =
+    report.attentionType === 'overdue'  ? 'clinical-case-queue-card--overdue'
+    : report.attentionType === 'rejected' ? 'clinical-case-queue-card--rejected'
+    : ''
 
   return (
-    <article className={`${baseCard} ${isAttention ? urgency : ''}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{report.caseId}</p>
-          <p className="mt-1 text-lg font-semibold text-slate-900">{report.child}</p>
-          <p className="mt-0.5 text-sm font-medium text-slate-600">{report.month}</p>
+    <article className={`clinical-case-queue-card ${urgencyExtra}`}
+      style={
+        isAttention && report.attentionType
+          ? {
+              borderLeftColor:
+                report.attentionType === 'overdue' ? 'var(--clinical-red)'
+                : report.attentionType === 'rejected' ? '#f43f5e'
+                : 'var(--clinical-amber)',
+              borderLeftWidth: 3,
+              background:
+                report.attentionType === 'overdue' ? 'var(--clinical-red-soft)'
+                : report.attentionType === 'rejected' ? '#fff1f2'
+                : 'var(--clinical-amber-soft)',
+            }
+          : undefined
+      }
+    >
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+        <div>
+          <p style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--clinical-purple)', margin: '0 0 0.2rem' }}>
+            {report.caseId}
+          </p>
+          <p className="clinical-case-queue-card__name">{report.child}</p>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--clinical-muted)', margin: 0 }}>{report.month}</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.375rem' }}>
           {isAttention && (
-            <StatusBadge
+            <ClinicalStatusBadge
               status={
-                report.attentionType === 'overdue'
-                  ? 'overdue'
-                  : report.attentionType === 'rejected'
-                    ? 'rejected'
-                    : 'not_started'
+                report.attentionType === 'overdue'  ? 'REJECTED'
+                : report.attentionType === 'rejected' ? 'REJECTED'
+                : 'DRAFT'
+              }
+              customLabel={
+                report.attentionType === 'overdue' ? 'Overdue'
+                : report.attentionType === 'rejected' ? 'Revision Needed'
+                : 'Not Started'
               }
             />
           )}
-          {isProgress && <StatusBadge status={report.status} />}
-          {isPublished && <StatusBadge status="published" />}
+          {isProgress  && <ClinicalStatusBadge status={report.status} />}
+          {isPublished && <ClinicalStatusBadge status="PUBLISHED" />}
         </div>
       </div>
 
-      {(isAttention || isProgress) && report.dueInfo && (
-        <p className="mt-3 text-sm font-semibold text-slate-700">{report.dueInfo}</p>
-      )}
-      {isProgress && report.lastUpdated && (
-        <p className="mt-3 text-sm text-slate-500">
-          Last updated <span className="font-medium text-slate-700">{report.lastUpdated}</span>
+      {(isAttention || isProgress) && report.dueInfo ? (
+        <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#334155', margin: '0.5rem 0 0' }}>{report.dueInfo}</p>
+      ) : null}
+      {isProgress && report.lastUpdated ? (
+        <p style={{ fontSize: '0.8125rem', color: 'var(--clinical-muted)', margin: '0.25rem 0 0' }}>
+          Last updated <strong>{report.lastUpdated}</strong>
         </p>
-      )}
+      ) : null}
 
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
         <button
           type="button"
           onClick={() => onGenerateFromLogs?.(report)}
-          className="min-h-[40px] rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+          className="clinical-btn-primary"
+          style={{ fontSize: '0.8125rem', minHeight: '40px', padding: '0.4rem 0.875rem' }}
         >
           Generate Draft from Logs
         </button>
       </div>
 
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.375rem' }}>
         {isAttention && (
           <>
             {report.attentionType === 'not_started' && (
-              <ActionBtn variant="primary" onClick={() => onStart?.(report)}>
-                Start Report
-              </ActionBtn>
+              <ActionBtn variant="primary" onClick={() => onStart?.(report)}>Start Report</ActionBtn>
             )}
             {(report.attentionType === 'overdue' || report.attentionType === 'rejected') && (
-              <ActionBtn variant="accent" onClick={() => onContinue?.(report)}>
-                Continue Editing
-              </ActionBtn>
+              <ActionBtn variant="accent" onClick={() => onContinue?.(report)}>Continue Editing</ActionBtn>
             )}
           </>
         )}
         {isProgress && (
           <>
-            <ActionBtn variant="primary" onClick={() => onContinue?.(report)}>
-              Continue Editing
-            </ActionBtn>
-            <ActionBtn variant="neutral" onClick={() => onPreview?.(report)}>
-              Preview
-            </ActionBtn>
-            <ActionBtn variant="accent" onClick={() => onSubmitReview?.(report)}>
-              Submit for Review
-            </ActionBtn>
+            <ActionBtn variant="primary" onClick={() => onContinue?.(report)}>Continue Editing</ActionBtn>
+            <ActionBtn variant="neutral" onClick={() => onPreview?.(report)}>Preview</ActionBtn>
+            {onSubmitReview ? (
+              <ActionBtn variant="accent" onClick={() => onSubmitReview?.(report)}>Submit for Review</ActionBtn>
+            ) : null}
           </>
         )}
         {isPublished && (
           <>
-            <ActionBtn variant="primary" onClick={() => onView?.(report)}>
-              View
-            </ActionBtn>
-            <ActionBtn variant="neutral" onClick={() => onDownload?.(report)}>
-              Download PDF
-            </ActionBtn>
+            <ActionBtn variant="primary" onClick={() => onView?.(report)}>View</ActionBtn>
+            {onDownload ? (
+              <ActionBtn variant="neutral" onClick={() => onDownload?.(report)}>Download PDF</ActionBtn>
+            ) : null}
           </>
         )}
       </div>

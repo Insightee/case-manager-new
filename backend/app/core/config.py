@@ -37,6 +37,18 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = 7
     jwt_refresh_remember_days: int = 90
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    AI_ENABLED: bool = False
+    AI_PROVIDER: str = "mock"
+    AI_DEFAULT_MODEL: str = "mock-v1"
+    INSIGHTS_MODEL: str = ""
+    SESSION_LOG_MODEL: str = ""
+    REPORT_MODEL: str = ""
+    OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    EMBEDDING_PROVIDER: str = "none"
+    EMBEDDING_MODEL: str = ""
+    AI_MONTHLY_BUDGET_INR: float = 0
+    AI_DAILY_BUDGET_INR: float = 0
     # Optional regex for extra browser origins (Vercel preview URLs). In production, a safe
     # default for insightes-projects frontend previews is applied when this is unset.
     cors_origin_regex: str = ""
@@ -52,6 +64,8 @@ class Settings(BaseSettings):
     billing_ledger_drafts: bool = True
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
+    # Last day therapists can re-enter past leave for platform migration (ISO date).
+    leave_migration_end_date: str = "2026-06-30"
 
     storage_provider: str = "local"
     storage_prefix: str = "insightcase"

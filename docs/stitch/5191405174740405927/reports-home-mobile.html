@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>InsighteCase - Reports Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700&amp;family=Inter:wght@400;500&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind Theme Configuration -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary-fixed-variant": "#294e3f",
+                    "secondary-fixed": "#c3ecd7",
+                    "on-error-container": "#93000a",
+                    "surface": "#f9f9f9",
+                    "on-surface": "#1a1c1c",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-container-high": "#e8e8e8",
+                    "primary-fixed": "#d3e7dd",
+                    "surface-dim": "#dadada",
+                    "on-secondary-container": "#476c5b",
+                    "secondary-fixed-dim": "#a8cfbc",
+                    "on-surface-variant": "#424845",
+                    "tertiary-fixed": "#85f8c4",
+                    "surface-container": "#eeeeee",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary-fixed-variant": "#005137",
+                    "inverse-primary": "#b7cbc1",
+                    "outline-variant": "#c2c8c3",
+                    "on-primary": "#ffffff",
+                    "surface-container-low": "#f3f3f4",
+                    "surface-variant": "#e2e2e2",
+                    "on-primary-fixed-variant": "#394a43",
+                    "secondary-container": "#c3ecd7",
+                    "tertiary-fixed-dim": "#68dba9",
+                    "on-background": "#1a1c1c",
+                    "surface-tint": "#50625a",
+                    "primary": "#000000",
+                    "on-tertiary": "#ffffff",
+                    "primary-fixed-dim": "#b7cbc1",
+                    "surface-container-highest": "#e2e2e2",
+                    "background": "#f9f9f9",
+                    "primary-container": "#0e1f19",
+                    "inverse-surface": "#2f3131",
+                    "tertiary": "#000000",
+                    "on-secondary-fixed": "#002115",
+                    "inverse-on-surface": "#f0f1f1",
+                    "surface-bright": "#f9f9f9",
+                    "tertiary-container": "#002114",
+                    "on-error": "#ffffff",
+                    "outline": "#737875",
+                    "on-tertiary-fixed": "#002114",
+                    "on-tertiary-container": "#069669",
+                    "error": "#ba1a1a",
+                    "error-container": "#ffdad6",
+                    "on-primary-fixed": "#0e1f19",
+                    "on-primary-container": "#75887f",
+                    "secondary": "#416656"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "margin-mobile": "16px",
+                    "margin-desktop": "40px",
+                    "gutter": "24px",
+                    "base": "8px",
+                    "sidebar-width": "280px"
+            },
+            "fontFamily": {
+                    "label-sm": ["JetBrains Mono"],
+                    "headline-lg-mobile": ["Manrope"],
+                    "headline-md": ["Manrope"],
+                    "headline-lg": ["Manrope"],
+                    "body-md": ["Inter"],
+                    "body-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["30px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "headline-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface font-body-md text-on-surface">
+<!-- Navigation Drawer (Hidden by default) -->
+<div class="fixed inset-0 z-[60] hidden" id="nav-drawer">
+<!-- Backdrop -->
+<div class="absolute inset-0 bg-black/50 transition-opacity" onclick="toggleDrawer()"></div>
+<!-- Drawer -->
+<div class="fixed inset-y-0 left-0 w-sidebar-width h-full bg-primary-container z-50 transform -translate-x-full transition-transform duration-300 flex flex-col" id="drawer-content">
+<!-- Header -->
+<div class="p-6 flex flex-col items-start gap-2 border-b border-on-primary-container/20">
+<img class="w-16 h-16 rounded-full border-2 border-secondary-fixed" data-alt="A professional headshot of a clinician in a high-end medical office environment. The image uses a soft, natural lighting style with deep greens and warm whites in the background, matching a premium lush clinical aesthetic. The person looks confident and friendly, wearing professional attire." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCbjiD_8C1K7nU9gp7-9pgp8d-ZxPom40o9LgWKG-bKjo39SQaFQe1qr3N2KobWM6copll2wAyNyA5Zg_W5KQtYNulLnkEhmZYfQu-UB9BLZOYJqISefoMbb1U2ONDwq7qAOruqLDic1jGkO9ljPHxUxJC98gyoYPU3ufeHnR6_PwSbKNBf94KjwQnHjmQ0qq0DfgXb9jR4PcjjlGWkrs9oHlaE5jkCEv2B5dcsUNdKuBwVp0AHoL3Dce3xiSZilH-DDmien_8knI"/>
+<h2 class="font-headline-md text-headline-md text-secondary-fixed mt-2">Clinician Portal</h2>
+<p class="font-body-md text-body-md text-on-primary-container">InsighteCase Admin</p>
+</div>
+<!-- Navigation Links -->
+<nav class="flex-1 overflow-y-auto py-4">
+<a class="flex items-center gap-base px-4 py-3 bg-secondary-container text-on-secondary-container border-l-4 border-on-tertiary-container transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="font-label-sm text-label-sm">Reports Home</span>
+</a>
+<a class="flex items-center gap-base px-4 py-3 text-secondary-fixed-dim hover:bg-secondary-fixed-dim/20 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="event_note">event_note</span>
+<span class="font-label-sm text-label-sm">Session Logs</span>
+</a>
+<a class="flex items-center gap-base px-4 py-3 text-secondary-fixed-dim hover:bg-secondary-fixed-dim/20 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="visibility">visibility</span>
+<span class="font-label-sm text-label-sm">Observations</span>
+</a>
+<a class="flex items-center gap-base px-4 py-3 text-secondary-fixed-dim hover:bg-secondary-fixed-dim/20 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="flag">flag</span>
+<span class="font-label-sm text-label-sm">Goals &amp; Strategies</span>
+</a>
+<a class="flex items-center gap-base px-4 py-3 text-secondary-fixed-dim hover:bg-secondary-fixed-dim/20 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-label-sm text-label-sm">Observation Report</span>
+</a>
+<a class="flex items-center gap-base px-4 py-3 text-secondary-fixed-dim hover:bg-secondary-fixed-dim/20 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="task">task</span>
+<span class="font-label-sm text-label-sm">IEP</span>
+</a>
+<a class="flex items-center gap-base px-4 py-3 text-secondary-fixed-dim hover:bg-secondary-fixed-dim/20 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_month">calendar_month</span>
+<span class="font-label-sm text-label-sm">Monthly Report</span>
+</a>
+<a class="flex items-center gap-base px-4 py-3 text-secondary-fixed-dim hover:bg-secondary-fixed-dim/20 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="trending_up">trending_up</span>
+<span class="font-label-sm text-label-sm">Progress Reports</span>
+</a>
+<a class="flex items-center gap-base px-4 py-3 text-secondary-fixed-dim hover:bg-secondary-fixed-dim/20 transition-colors duration-200 border-t border-on-primary-container/10 mt-2" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+<span class="font-label-sm text-label-sm">Documents</span>
+</a>
+</nav>
+</div>
+</div>
+<!-- Top App Bar -->
+<header class="fixed top-0 w-full z-40 flex justify-between items-center px-margin-mobile h-16 bg-surface border-b border-outline-variant">
+<button class="p-2 -ml-2 text-on-surface hover:bg-surface-container-low transition-all active:scale-95" onclick="toggleDrawer()">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md-mobile font-bold text-primary">Reports Home</h1>
+<button class="p-2 -mr-2 text-on-surface hover:bg-surface-container-low transition-all active:scale-95">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+</header>
+<!-- Main Content Area -->
+<main class="pt-20 pb-24 px-margin-mobile">
+<!-- Metric Row -->
+<section class="flex gap-4 overflow-x-auto pb-4 hide-scrollbar -mx-margin-mobile px-margin-mobile">
+<div class="flex-shrink-0 w-32 p-4 bg-surface border border-outline-variant rounded-xl flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Drafts</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">12</span>
+</div>
+<div class="flex-shrink-0 w-32 p-4 bg-surface border border-outline-variant rounded-xl flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Under Review</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">08</span>
+</div>
+<div class="flex-shrink-0 w-32 p-4 bg-surface border border-outline-variant rounded-xl flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Published</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">45</span>
+</div>
+<div class="flex-shrink-0 w-32 p-4 bg-error-container border border-error/20 rounded-xl flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-error-container">Overdue</span>
+<span class="font-headline-md text-headline-md font-bold text-on-error-container">03</span>
+</div>
+</section>
+<!-- Search & Filter -->
+<section class="mt-4 flex flex-col gap-4">
+<div class="relative">
+<input class="w-full h-12 pl-12 pr-4 bg-white border border-outline-variant rounded-full font-body-md focus:ring-2 focus:ring-on-tertiary-container focus:border-on-tertiary-container outline-none transition-all" placeholder="Search cases or children..." type="text"/>
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant" data-icon="search">search</span>
+</div>
+<button class="flex items-center justify-center gap-2 h-10 px-4 bg-secondary-container text-on-secondary-container rounded-full font-label-sm text-label-sm transition-all active:scale-95">
+<span class="material-symbols-outlined text-[18px]" data-icon="filter_list">filter_list</span>
+                Filters
+            </button>
+</section>
+<!-- Active Clinical Cases -->
+<section class="mt-8">
+<h3 class="font-headline-md text-headline-md-mobile mb-4">Active Clinical Cases</h3>
+<div class="flex flex-col gap-4">
+<!-- Case Card 1 -->
+<article class="bg-white border border-outline-variant rounded-xl p-4 flex flex-col gap-4 shadow-sm">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline-md text-[20px] font-bold text-primary">Aarav M.</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Shadow Support</p>
+</div>
+<span class="px-2 py-1 bg-surface-container-low rounded-lg font-label-sm text-[10px] text-on-surface-variant uppercase tracking-wider">In Progress</span>
+</div>
+<div class="flex flex-col gap-2">
+<div class="flex justify-between items-center font-label-sm text-[11px] text-on-surface-variant">
+<span>Observation / IEP Active</span>
+<span class="font-bold text-on-tertiary-container">65%</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-on-tertiary-container rounded-full" style="width: 65%;"></div>
+</div>
+</div>
+<div class="flex items-center gap-2 p-2 bg-error-container/30 border border-error/10 rounded-lg">
+<span class="material-symbols-outlined text-error text-[18px]" data-icon="warning">warning</span>
+<span class="font-label-sm text-label-sm text-on-error-container">Session log pending</span>
+</div>
+<button class="w-full h-12 bg-primary-container text-white rounded-xl font-body-md font-bold transition-all active:scale-[0.98] hover:bg-opacity-90">
+                        Open Case
+                    </button>
+</article>
+<!-- Case Card 2 -->
+<article class="bg-white border border-outline-variant rounded-xl p-4 flex flex-col gap-4 shadow-sm">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline-md text-[20px] font-bold text-primary">Meera K.</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Speech Therapy</p>
+</div>
+<span class="px-2 py-1 bg-surface-container-low rounded-lg font-label-sm text-[10px] text-on-surface-variant uppercase tracking-wider">Evaluation</span>
+</div>
+<div class="flex flex-col gap-2">
+<div class="flex justify-between items-center font-label-sm text-[11px] text-on-surface-variant">
+<span>Diagnostic Phase</span>
+<span class="font-bold text-on-tertiary-container">30%</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-on-tertiary-container rounded-full" style="width: 30%;"></div>
+</div>
+</div>
+<div class="flex items-center gap-2 p-2 bg-secondary-container/30 border border-secondary/10 rounded-lg">
+<span class="material-symbols-outlined text-on-secondary-container text-[18px]" data-icon="info">info</span>
+<span class="font-label-sm text-label-sm text-on-secondary-container">Monthly report due in 2 days</span>
+</div>
+<button class="w-full h-12 bg-primary-container text-white rounded-xl font-body-md font-bold transition-all active:scale-[0.98] hover:bg-opacity-90">
+                        Open Case
+                    </button>
+</article>
+<!-- Case Card 3 -->
+<article class="bg-white border border-outline-variant rounded-xl p-4 flex flex-col gap-4 shadow-sm">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-headline-md text-[20px] font-bold text-primary">Rohan D.</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Occupational Therapy</p>
+</div>
+<span class="px-2 py-1 bg-surface-container-low rounded-lg font-label-sm text-[10px] text-on-surface-variant uppercase tracking-wider">Active</span>
+</div>
+<div class="flex flex-col gap-2">
+<div class="flex justify-between items-center font-label-sm text-[11px] text-on-surface-variant">
+<span>Milestone Tracking</span>
+<span class="font-bold text-on-tertiary-container">88%</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-on-tertiary-container rounded-full" style="width: 88%;"></div>
+</div>
+</div>
+<div class="flex items-center gap-2 p-2 bg-on-tertiary-container/10 border border-on-tertiary-container/10 rounded-lg">
+<span class="material-symbols-outlined text-on-tertiary-container text-[18px]" data-icon="check_circle">check_circle</span>
+<span class="font-label-sm text-label-sm text-on-tertiary-container">All records up to date</span>
+</div>
+<button class="w-full h-12 bg-primary-container text-white rounded-xl font-body-md font-bold transition-all active:scale-[0.98] hover:bg-opacity-90">
+                        Open Case
+                    </button>
+</article>
+</div>
+</section>
+</main>
+<!-- Bottom Nav Bar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-2 py-3 bg-surface border-t border-outline-variant shadow-sm md:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-transform duration-150 active:scale-90" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-sm text-label-sm mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 transition-transform duration-150 active:scale-90" href="#">
+<span class="material-symbols-outlined" data-icon="assignment">assignment</span>
+<span class="font-label-sm text-label-sm mt-1">My Cases</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-transform duration-150 active:scale-90" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-label-sm text-label-sm mt-1">Analytics</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-transform duration-150 active:scale-90" href="#">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+<span class="font-label-sm text-label-sm mt-1">Profile</span>
+</a>
+</nav>
+<script>
+        function toggleDrawer() {
+            const drawer = document.getElementById('nav-drawer');
+            const content = document.getElementById('drawer-content');
+            
+            if (drawer.classList.contains('hidden')) {
+                drawer.classList.remove('hidden');
+                setTimeout(() => {
+                    content.classList.remove('-translate-x-full');
+                }, 10);
+            } else {
+                content.classList.add('-translate-x-full');
+                setTimeout(() => {
+                    drawer.classList.add('hidden');
+                }, 300);
+            }
+        }
+
+        // Ripple Effect for buttons
+        document.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', function(e) {
+                let ripple = document.createElement('span');
+                ripple.classList.add('ripple');
+                this.appendChild(ripple);
+                let d = Math.max(this.clientWidth, this.clientHeight);
+                ripple.style.width = ripple.style.height = d + 'px';
+                let rect = this.getBoundingClientRect();
+                ripple.style.left = e.clientX - rect.left - d/2 + 'px';
+                ripple.style.top = e.clientY - rect.top - d/2 + 'px';
+                ripple.classList.add('ripple-active');
+                setTimeout(() => ripple.remove(), 600);
+            });
+        });
+    </script>
+<style>
+        .ripple {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: scale(0);
+            pointer-events: none;
+        }
+        .ripple-active {
+            animation: ripple 0.6s linear;
+        }
+        @keyframes ripple {
+            to { transform: scale(4); opacity: 0; }
+        }
+    </style>
+</body></html>

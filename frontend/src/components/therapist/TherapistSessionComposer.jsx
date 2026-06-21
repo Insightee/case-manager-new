@@ -4,6 +4,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
+import { ClinicalSubTabs } from '../clinical-ui/ClinicalSubTabBar.jsx'
 // TODO: re-enable when therapist self-onboarding is allowed again
 // import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
 import { SessionAbsenceSheet } from './SessionAbsenceSheet.jsx'
@@ -39,13 +40,14 @@ export function TherapistSessionComposer({
   lockCaseLabel = '',
   upcomingSessions = [],
   disabled = false,
+  caseProfileMode = false,
   onSessionStarted,
   onManualSession,
   onError,
   onSelectedCaseChange,
 }) {
   const { user } = useAuth()
-  const [mode, setMode] = useState('live')
+  const [mode, setMode] = useState(caseProfileMode ? 'past' : 'live')
   const [cases, setCases] = useState([])
   const [caseId, setCaseId] = useState(lockCaseId ? String(lockCaseId) : '')
   const [walkInStart, setWalkInStart] = useState(nowTimeInput)
@@ -139,45 +141,63 @@ export function TherapistSessionComposer({
 
   if (disabled) {
     return (
-      <div className="ic-session-composer ic-session-composer--muted">
-        <p>End your current session before starting another.</p>
+      <div className={`ic-session-composer ic-session-composer--muted${caseProfileMode ? ' ic-session-composer--case-profile' : ''}`}>
+        <p>End your current session before logging another visit for this case.</p>
       </div>
     )
   }
 
+  const caseProfileTabs = [
+    { id: 'past', label: 'Log past session' },
+    { id: 'absence', label: 'Child absence' },
+  ]
+
   return (
-    <section className="ic-session-composer" aria-label="Add or start session">
+    <section
+      className={`ic-session-composer${caseProfileMode ? ' ic-session-composer--case-profile' : ''}`}
+      aria-label={caseProfileMode ? 'Log session for this case' : 'Add or start session'}
+    >
       <div className="ic-session-composer__head">
-        <h2 className="ic-session-composer__title">Session</h2>
-        <div className="ic-segment ic-segment--primary" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'live'}
-            className={mode === 'live' ? 'active' : ''}
-            onClick={() => setMode('live')}
-          >
-            Start now
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'past'}
-            className={mode === 'past' ? 'active' : ''}
-            onClick={() => setMode('past')}
-          >
-            Forgot to log
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'absence'}
-            className={mode === 'absence' ? 'active' : ''}
-            onClick={() => setMode('absence')}
-          >
-            Child absence
-          </button>
-        </div>
+        {!caseProfileMode ? <h2 className="ic-session-composer__title">Session</h2> : null}
+        {caseProfileMode ? (
+          <ClinicalSubTabs
+            tabs={caseProfileTabs}
+            activeTab={mode}
+            onTabChange={setMode}
+            ariaLabel="Session log type"
+            className="clinical-logs-composer__tabs"
+          />
+        ) : (
+          <div className="ic-segment ic-segment--primary" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'live'}
+              className={mode === 'live' ? 'active' : ''}
+              onClick={() => setMode('live')}
+            >
+              Start now
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'past'}
+              className={mode === 'past' ? 'active' : ''}
+              onClick={() => setMode('past')}
+            >
+              Forgot to log
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'absence'}
+              className={mode === 'absence' ? 'active' : ''}
+              onClick={() => setMode('absence')}
+            >
+              Child absence
+            </button>
+          </div>
+        )}
       </div>
 
       {localError ? <p className="ic-session-composer__error">{localError}</p> : null}
@@ -220,7 +240,7 @@ export function TherapistSessionComposer({
               setBusy(false)
             }
           }}
-          onCancel={() => setMode('live')}
+          onCancel={caseProfileMode ? undefined : () => setMode('live')}
         />
       ) : mode === 'absence' ? (
         <div className="ic-session-composer__body">
@@ -264,7 +284,7 @@ export function TherapistSessionComposer({
             }}
           />
         </div>
-      ) : mode === 'live' ? (
+      ) : !caseProfileMode && mode === 'live' ? (
         <div className="ic-session-composer__body">
           {lockCaseId && lockCaseLabel ? (
             <p className="ic-session-composer__locked-client">

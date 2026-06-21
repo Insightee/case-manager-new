@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>IEP Clinical Suite - Case Overview: Ira K.</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts: Manrope, Inter, JetBrains Mono -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@600;700;800&family=JetBrains+Mono:wght@500&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..900&family=Manrope:wght@100..900&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed": "#002114",
+                      "surface-bright": "#f9f9f9",
+                      "secondary-container": "#c3ecd7",
+                      "surface-container-high": "#e8e8e8",
+                      "primary-container": "#0e1f19",
+                      "on-secondary-fixed-variant": "#294e3f",
+                      "on-secondary-fixed": "#002115",
+                      "inverse-on-surface": "#f0f1f1",
+                      "background": "#f9f9f9",
+                      "error": "#ba1a1a",
+                      "tertiary-container": "#002114",
+                      "on-surface-variant": "#424845",
+                      "on-surface": "#1a1c1c",
+                      "on-secondary": "#ffffff",
+                      "on-tertiary": "#ffffff",
+                      "on-error": "#ffffff",
+                      "surface-dim": "#dadada",
+                      "primary": "#000000",
+                      "secondary-fixed": "#c3ecd7",
+                      "surface-variant": "#e2e2e2",
+                      "tertiary": "#000000",
+                      "primary-fixed-dim": "#b7cbc1",
+                      "on-error-container": "#93000a",
+                      "surface-container-lowest": "#ffffff",
+                      "secondary-fixed-dim": "#a8cfbc",
+                      "on-primary-container": "#75887f",
+                      "on-background": "#1a1c1c",
+                      "surface-container-highest": "#e2e2e2",
+                      "secondary": "#416656",
+                      "primary-fixed": "#d3e7dd",
+                      "inverse-surface": "#2f3131",
+                      "on-tertiary-container": "#069669",
+                      "surface-tint": "#50625a",
+                      "surface-container-low": "#f3f3f4",
+                      "on-secondary-container": "#476c5b",
+                      "outline-variant": "#c2c8c3",
+                      "on-primary-fixed": "#0e1f19",
+                      "tertiary-fixed-dim": "#68dba9",
+                      "outline": "#737875",
+                      "inverse-primary": "#b7cbc1",
+                      "tertiary-fixed": "#85f8c4",
+                      "on-primary-fixed-variant": "#394a43",
+                      "error-container": "#ffdad6",
+                      "on-primary": "#ffffff",
+                      "surface-container": "#eeeeee",
+                      "on-tertiary-fixed-variant": "#005137",
+                      "surface": "#f9f9f9"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "base": "8px",
+                      "sidebar-width": "280px",
+                      "margin-desktop": "40px",
+                      "gutter": "24px",
+                      "margin-mobile": "16px"
+              },
+              "fontFamily": {
+                      "headline-md": ["Manrope"],
+                      "label-sm": ["JetBrains Mono"],
+                      "headline-lg-mobile": ["Manrope"],
+                      "body-md": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "headline-lg": ["Manrope"]
+              },
+              "fontSize": {
+                      "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                      "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                      "headline-lg-mobile": ["30px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                      "headline-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body {
+            background-color: #f9f9f9;
+        }
+        /* Custom scrollbar for clinical feel */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #0e1f19;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="font-body-md text-on-surface">
+<!-- Sidebar Shell (Shared Component Mapping) -->
+<aside class="fixed left-0 top-0 h-full w-[280px] bg-primary-container text-white flex flex-col z-50">
+<div class="p-8 border-b border-on-primary-container/20">
+<span class="text-label-sm font-label-sm uppercase tracking-widest text-secondary-container">IEP Clinical Suite</span>
+<h1 class="text-headline-md font-headline-md mt-2 text-white">Case Manager</h1>
+</div>
+<nav class="flex-1 px-4 py-8 space-y-2">
+<!-- Dashboard (Inactive) -->
+<a class="flex items-center gap-4 text-on-primary-container hover:bg-on-primary-container/10 px-4 py-3 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-medium">Dashboard</span>
+</a>
+<!-- My Cases (Active - Style Mandatory) -->
+<a class="flex items-center gap-4 bg-secondary-container text-primary-container px-4 py-3 rounded-xl shadow-lg transition-transform active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">folder_shared</span>
+<span class="font-bold">My Cases</span>
+</a>
+<!-- Session Logs -->
+<a class="flex items-center gap-4 text-on-primary-container hover:bg-on-primary-container/10 px-4 py-3 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-medium">Session Logs</span>
+</a>
+<!-- Monthly Reports -->
+<a class="flex items-center gap-4 text-on-primary-container hover:bg-on-primary-container/10 px-4 py-3 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="font-medium">Monthly Reports</span>
+</a>
+</nav>
+<div class="mt-auto p-4 space-y-2 border-t border-on-primary-container/20">
+<a class="flex items-center gap-4 text-on-primary-container hover:bg-on-primary-container/10 px-4 py-3 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">support_agent</span>
+<span class="font-medium">Support</span>
+</a>
+<div class="flex items-center gap-3 px-4 py-4 mt-2">
+<div class="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-primary-container font-bold">JD</div>
+<div>
+<p class="text-sm font-bold text-white leading-none">Jane Doe</p>
+<p class="text-xs text-on-primary-container mt-1">Lead Clinician</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-[280px] min-h-screen">
+<!-- TopAppBar (Shared Component Logic) -->
+<header class="sticky top-0 w-full h-16 bg-surface-container-lowest shadow-sm flex items-center justify-between px-10 z-40">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-2 text-primary font-bold">
+<span class="material-symbols-outlined">search</span>
+<span class="text-on-surface-variant font-body-md">Search cases, goals, or patients...</span>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="text-right">
+<span class="block text-xs font-bold uppercase tracking-tighter text-outline">Active Patient</span>
+<span class="block text-body-md font-bold text-primary">Ira K.</span>
+</div>
+<div class="flex gap-2">
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-colors"><span class="material-symbols-outlined">help</span></button>
+</div>
+</div>
+</header>
+<!-- Page Header Section -->
+<section class="px-10 py-8 bg-white border-b border-outline-variant/30">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div class="space-y-4">
+<div class="flex items-center gap-3">
+<h2 class="text-headline-lg font-headline-lg text-primary">Ira K.</h2>
+<span class="bg-secondary-container text-on-secondary-container text-xs font-bold px-3 py-1 rounded-full uppercase">Active Status</span>
+<span class="text-label-sm font-label-sm text-outline border border-outline-variant px-2 py-0.5 rounded">IC-2026-053</span>
+</div>
+<div class="flex items-start gap-3 max-w-2xl bg-surface-container-low p-4 rounded-xl">
+<span class="material-symbols-outlined text-secondary">medical_information</span>
+<div>
+<p class="text-label-sm font-label-sm text-on-secondary-container mb-1">DIAGNOSIS BRIEF</p>
+<p class="text-body-md text-on-surface-variant italic">ASD Level 1 with sensory processing considerations. Emphasis on transition self-regulation and executive function support in academic environments.</p>
+</div>
+</div>
+</div>
+<div class="flex gap-3">
+<button class="flex items-center gap-2 bg-on-tertiary-container text-white px-6 py-3 rounded-xl font-bold shadow-md hover:brightness-110 transition-all">
+<span class="material-symbols-outlined">psychology</span>
+                        Generate Insights
+                    </button>
+<button class="flex items-center gap-2 bg-surface-container-highest text-primary px-6 py-3 rounded-xl font-bold hover:bg-surface-dim transition-all">
+<span class="material-symbols-outlined">edit_note</span>
+                        Edit Case
+                    </button>
+</div>
+</div>
+</section>
+<!-- Metric Cards -->
+<section class="px-10 py-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
+<div class="bg-white border border-outline-variant p-6 rounded-xl flex items-center justify-between shadow-sm">
+<div>
+<p class="text-on-surface-variant text-label-sm font-label-sm uppercase">Total Logs</p>
+<h3 class="text-headline-md font-headline-md mt-1">142</h3>
+</div>
+<div class="w-12 h-12 bg-surface-container flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-outline">history_edu</span>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-6 rounded-xl flex items-center justify-between shadow-sm">
+<div>
+<p class="text-on-surface-variant text-label-sm font-label-sm uppercase">Active Goals</p>
+<h3 class="text-headline-md font-headline-md mt-1">06</h3>
+</div>
+<div class="w-12 h-12 bg-surface-container flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-outline">flag</span>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-6 rounded-xl flex items-center justify-between shadow-sm">
+<div>
+<p class="text-on-surface-variant text-label-sm font-label-sm uppercase">Pending Reports</p>
+<h3 class="text-headline-md font-headline-md mt-1 text-error">02</h3>
+</div>
+<div class="w-12 h-12 bg-error-container flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-on-error-container">pending_actions</span>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-6 rounded-xl flex items-center justify-between shadow-sm">
+<div>
+<p class="text-on-surface-variant text-label-sm font-label-sm uppercase">IEP Health</p>
+<h3 class="text-headline-md font-headline-md mt-1 text-on-tertiary-container">88% Stable</h3>
+</div>
+<div class="w-12 h-12 bg-secondary-container flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-on-secondary-container">verified_user</span>
+</div>
+</div>
+</section>
+<!-- Dashboard Grid -->
+<section class="px-10 pb-12 grid grid-cols-12 gap-gutter items-start">
+<!-- Left Column -->
+<div class="col-span-12 lg:col-span-8 space-y-gutter">
+<!-- Case Summary -->
+<div class="bg-white border border-outline-variant rounded-xl overflow-hidden shadow-sm">
+<div class="p-6 border-b border-outline-variant/30 flex items-center justify-between">
+<h4 class="text-body-lg font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">subject</span>
+                            Case Summary
+                        </h4>
+<span class="text-xs text-outline font-medium">Last updated: 4 hours ago</span>
+</div>
+<div class="p-6">
+<p class="text-body-md leading-relaxed text-on-surface-variant">
+                            Ira has shown significant progress in social initiations within the structured classroom setting. Clinical observations suggest a 15% increase in verbal requests during peer transitions compared to the previous quarter. However, sensory-heavy environments like the gymnasium continue to trigger high-cortisol responses, necessitating continued use of the provided sensory toolkit. Next steps involve fading auditory prompts during group tasks.
+                        </p>
+</div>
+</div>
+<!-- Active Goals -->
+<div class="space-y-4">
+<h4 class="text-body-lg font-bold px-1">Active Goals Progress</h4>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Goal 1 -->
+<div class="bg-white border border-outline-variant p-6 rounded-xl hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<h5 class="font-bold text-primary max-w-[70%]">Transition Participation</h5>
+<span class="text-on-tertiary-container font-label-sm text-sm">75%</span>
+</div>
+<div class="w-full bg-surface-container-high h-2 rounded-full mb-4">
+<div class="bg-on-tertiary-container h-full rounded-full" style="width: 75%"></div>
+</div>
+<p class="text-xs text-on-surface-variant">Consistent with moderate support. Goal target: 85% by June.</p>
+</div>
+<!-- Goal 2 -->
+<div class="bg-white border border-outline-variant p-6 rounded-xl hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<h5 class="font-bold text-primary max-w-[70%]">Sensory Management</h5>
+<span class="text-secondary font-label-sm text-sm">42%</span>
+</div>
+<div class="w-full bg-surface-container-high h-2 rounded-full mb-4">
+<div class="bg-secondary h-full rounded-full" style="width: 42%"></div>
+</div>
+<p class="text-xs text-on-surface-variant">Variable performance in lunchroom settings. Needs revision.</p>
+</div>
+</div>
+</div>
+<!-- Recent Activity Timeline -->
+<div class="bg-white border border-outline-variant rounded-xl shadow-sm">
+<div class="p-6 border-b border-outline-variant/30">
+<h4 class="text-body-lg font-bold">Recent Activity</h4>
+</div>
+<div class="p-6 space-y-6">
+<div class="flex gap-4">
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-xs text-on-secondary-container">edit_document</span>
+</div>
+<div class="w-0.5 h-12 bg-outline-variant/30 mt-2"></div>
+</div>
+<div>
+<p class="text-body-md font-bold">Session Log Submitted</p>
+<p class="text-sm text-on-surface-variant">Clinician: Rahul M. • Duration: 45m</p>
+<p class="text-xs text-outline mt-1">Today, 10:45 AM</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-xs text-outline">star</span>
+</div>
+<div class="w-0.5 h-12 bg-outline-variant/30 mt-2"></div>
+</div>
+<div>
+<p class="text-body-md font-bold">Observation Milestone Reached</p>
+<p class="text-sm text-on-surface-variant">Self-regulation goal: Improved accuracy in mood charting.</p>
+<p class="text-xs text-outline mt-1">Yesterday, 02:15 PM</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-xs text-outline">groups</span>
+</div>
+</div>
+<div>
+<p class="text-body-md font-bold">Stakeholder Briefing Completed</p>
+<p class="text-sm text-on-surface-variant">Update shared with Anita K. (Parent)</p>
+<p class="text-xs text-outline mt-1">Mar 24, 2024</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column -->
+<div class="col-span-12 lg:col-span-4 space-y-gutter">
+<!-- AI Insights Panel -->
+<div class="bg-primary-container text-white rounded-xl p-6 shadow-xl relative overflow-hidden">
+<!-- Subtle pattern overlay -->
+<div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(circle at 2px 2px, #fff 1px, transparent 0); background-size: 24px 24px;"></div>
+<div class="relative z-10">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-secondary-container">auto_awesome</span>
+<h4 class="text-label-sm font-label-sm tracking-widest uppercase">Clinician Intelligence</h4>
+</div>
+<h5 class="text-headline-md font-headline-md mb-3 leading-tight">Neuro-affirmative Summary</h5>
+<p class="text-sm text-primary-fixed-dim leading-relaxed mb-6">
+                            Current data suggests Ira is leveraging visual schedules as an autonomy tool rather than just a compliance measure. Recommend transitioning to digital task-boards to support increased agency.
+                        </p>
+<button class="w-full bg-secondary-container text-primary-container font-bold py-3 rounded-lg hover:brightness-110 transition-all flex items-center justify-center gap-2">
+                            Read Detailed Insight
+                            <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Stakeholders -->
+<div class="bg-white border border-outline-variant rounded-xl shadow-sm">
+<div class="p-6 border-b border-outline-variant/30">
+<h4 class="text-body-lg font-bold">Stakeholders</h4>
+</div>
+<div class="p-6 space-y-4">
+<!-- Parent -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A portrait of a kind-looking woman with glasses in a professional, soft-lit home office setting. The style is warm, modern, and clinical light theme with soft focus background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_kRfuHIRUdhUxeErht-EDXXiro9U7TYm-ZL7HPM8KIUe16gDMuLvgvdNKRmT_wCTw14FqB2k1_a7b04TIg-4eh6VcHvfb1dQQDMmLup8Nn4U-of9FbuG6pOdbRcGi0QVUnAw_9Qafu1Qrl_SozajodAO3WVWZcevIqB0GMo-ng7ZLO9FyNxg8orLOMf49Ayg2zFKW2kN6XQPdp-dwdKaaZGOnCusdhw4bEexzL1OhFJh-Nch8lZO0iR9NM5j8DHkAx1bRZpvKM3g"/>
+</div>
+<div>
+<p class="text-sm font-bold">Anita K.</p>
+<p class="text-xs text-outline">Parent</p>
+</div>
+</div>
+<button class="p-2 text-on-tertiary-container hover:bg-secondary-container/30 rounded-lg transition-colors">
+<span class="material-symbols-outlined">chat_bubble</span>
+</button>
+</div>
+<!-- Behavior Mentor -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A professional male clinician with a friendly expression, wearing a clean sage green shirt. He is in a modern clinic environment with minimalist aesthetics and natural light." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBJ2Naf1ZPr9CeQ7VTfP2gRepj7tWyNleKlzvzR97JRn_5MAdMvuZBQr_ynCp4J1hvyJs6fo5qY0h5yZ3agVEm2dRADF641t1zL_n0OAQK7MzrU4EAbHXC3UyX9EqG2KB1OVUcRw7xeu2IsoYyHChtw3t4ormkSZwCqVc7JZat7RPvGJ4uRUxUVJNWKpa_IQ3ECn8dCSr29niEOahYff-vmbe3qm-2APeufTbP3TsB3kEkeL9H7ocPRXCf3KRGdFyoUsDHmDJXF0RU"/>
+</div>
+<div>
+<p class="text-sm font-bold">Rahul M.</p>
+<p class="text-xs text-outline">Behavior Mentor</p>
+</div>
+</div>
+<button class="p-2 text-on-tertiary-container hover:bg-secondary-container/30 rounded-lg transition-colors">
+<span class="material-symbols-outlined">chat_bubble</span>
+</button>
+</div>
+<!-- OT -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A professional woman with a stethoscope around her neck, smiling warmly. The setting is a clean, bright, and organized occupational therapy studio with wooden accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXY4ow2uOSIuqwbWjV5zk42BRhGLOrt63utLeexemF94OMqIBnTPl3CHNT9d-0t70d3cZg5mYGFCQDfdPfSgnFnAyPUo_f_f4L-I2txBBTMwQOJ9CnVj6aJoylQsrNicFtg_adUHdziPV3yOFYrPmA7NnL-axa4Uk7pSOcjH0T4RRByrRMxv0kN5Cw46aDerAYkh0I2R9sgzCZET0rigt7ag2UWMIWIRM2r1ExcqMf8bEIOZrd6c-h5-ryj9LUGpA5Chf6opsgiVs"/>
+</div>
+<div>
+<p class="text-sm font-bold">Sarah Chen</p>
+<p class="text-xs text-outline">OT Specialist</p>
+</div>
+</div>
+<button class="p-2 text-on-tertiary-container hover:bg-secondary-container/30 rounded-lg transition-colors">
+<span class="material-symbols-outlined">chat_bubble</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Quick Actions -->
+<div class="bg-white border border-outline-variant rounded-xl shadow-sm p-6 space-y-3">
+<h4 class="text-label-sm font-label-sm text-outline uppercase mb-4">Quick Actions</h4>
+<button class="w-full flex items-center gap-3 bg-surface-container-low hover:bg-surface-container-high p-4 rounded-xl transition-all group">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">upload_file</span>
+<span class="text-sm font-bold">Upload Assessment</span>
+</button>
+<button class="w-full flex items-center gap-3 bg-surface-container-low hover:bg-surface-container-high p-4 rounded-xl transition-all group">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">print</span>
+<span class="text-sm font-bold">Print Case Summary</span>
+</button>
+<button class="w-full flex items-center gap-3 bg-surface-container-low hover:bg-surface-container-high p-4 rounded-xl transition-all group">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">share</span>
+<span class="text-sm font-bold">Share Session Log</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+<!-- Simple Interaction Script -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Hover effect for progress cards
+            const cards = document.querySelectorAll('.hover\\:shadow-md');
+            cards.forEach(card => {
+                card.addEventListener('mouseenter', () => {
+                    card.classList.add('translate-y-[-2px]');
+                });
+                card.addEventListener('mouseleave', () => {
+                    card.classList.remove('translate-y-[-2px]');
+                });
+            });
+
+            // Status Badge Pulse (Atmospheric)
+            const statusBadge = document.querySelector('.bg-secondary-container');
+            if (statusBadge) {
+                statusBadge.classList.add('animate-pulse');
+                setTimeout(() => statusBadge.classList.remove('animate-pulse'), 3000);
+            }
+        });
+    </script>
+</body></html>

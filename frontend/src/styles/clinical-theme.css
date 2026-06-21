@@ -1,0 +1,35 @@
+/* Clinical theme — codifies the existing InsighteCase palette as CSS variables.
+   No new colours. Values mirror what case-profile-v2.css already uses so that
+   shared clinical-ui components can reference vars instead of hard-coding hex. */
+
+:root {
+  /* ── Backgrounds ─────────────────────────────────────────── */
+  --clinical-bg:           #f4f3fa;
+  --clinical-sidebar-bg:   #ffffff;
+  --clinical-surface:      #ffffff;
+  --clinical-surface-soft: #f8f7fd;
+
+  /* ── Brand purple (matches --cp-accent: #5b21b6) ─────────── */
+  --clinical-purple:       #5b21b6;
+  --clinical-purple-soft:  #ede9fe;   /* matches --cp-accent-soft */
+  --clinical-lavender:     #eef0fb;
+
+  /* ── Borders & text ──────────────────────────────────────── */
+  --clinical-border:       #e2e8f0;
+  --clinical-text:         #0f172a;
+  --clinical-muted:        #64748b;
+
+  /* ── Semantic colours ────────────────────────────────────── */
+  --clinical-green:        #059669;
+  --clinical-green-soft:   #d1fae5;
+  --clinical-amber:        #b45309;
+  --clinical-amber-soft:   #fef3c7;
+  --clinical-red:          #991b1b;
+  --clinical-red-soft:     #fee2e2;
+
+  /* ── Radius & shadow ─────────────────────────────────────── */
+  --clinical-radius-card:  12px;
+  --clinical-radius-pill:  999px;
+  --clinical-shadow-card:  0 1px 3px rgba(15, 23, 42, 0.08);
+  --clinical-shadow-panel: 0 4px 16px rgba(15, 23, 42, 0.10);
+}

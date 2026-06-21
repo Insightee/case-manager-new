@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -232,3 +232,172 @@ def reject_log(
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()
     return {"status": "rejected"}
+
+
+class SessionGoalEntryIn(BaseModel):
+    goal_card_id: Optional[int] = None
+    goal_label: str
+    domain_key: Optional[str] = None
+    support_level: Optional[str] = None
+    response_note: Optional[str] = None
+    visibility: Optional[str] = "INTERNAL_ONLY"
+
+
+class StrategyUseEventIn(BaseModel):
+    strategy_id: Optional[int] = None
+    strategy_label: str
+    outcome_note: Optional[str] = None
+
+
+class SessionEvidenceSave(BaseModel):
+    goals: list[SessionGoalEntryIn] = Field(default_factory=list)
+    strategies: list[StrategyUseEventIn] = Field(default_factory=list)
+
+
+@router.get("/{log_id}/session-evidence")
+def get_session_evidence(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import clinical_evidence_service as ev_svc
+
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+    return ev_svc.entries_for_log(db, log_id)
+
+
+@router.put("/{log_id}/session-evidence")
+def save_session_evidence(
+    log_id: int,
+    payload: SessionEvidenceSave,
+    user: User = Depends(require_permission("daily_log.create")),
+    db: Session = Depends(get_db),
+):
+    from app.services import clinical_evidence_service as ev_svc
+
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    case_id = log.session.case_id
+    case = case_service.get_case(db, case_id)
+    if case:
+        ensure_case_write_access(user, case, db)
+    result = ev_svc.save_session_evidence(
+        db,
+        daily_log=log,
+        case_id=case_id,
+        goals=[g.model_dump() for g in payload.goals],
+        strategies=[s.model_dump() for s in payload.strategies],
+    )
+    return result
+
+
+class AiNoteRequest(BaseModel):
+    note: str = Field(min_length=1)
+
+
+@router.post("/{log_id}/ai/improve-note")
+def ai_improve_note(
+    log_id: int,
+    payload: AiNoteRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import ai_gateway_service as ai_svc
+
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+    case = log.session.case if log.session else None
+    child_name = case.child_name if case and hasattr(case, "child_name") else "the child"
+    return ai_svc.AIGatewayService.improve_session_log_note(
+        db,
+        user_id=user.id,
+        case_id=case.id if case else None,
+        note=payload.note,
+        child_name=child_name,
+    )
+
+
+@router.post("/{log_id}/ai/check-evidence")
+def ai_check_evidence(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from sqlalchemy import select
+
+    from app.models.clinical_evidence import SessionGoalEntry, StrategyUseEvent
+
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+
+    missing: list[str] = []
+    entries = db.scalars(select(SessionGoalEntry).where(SessionGoalEntry.daily_log_id == log.id)).all()
+    if not (log.goals_addressed or "").strip() and not entries:
+        missing.append("goal link")
+    strategies = db.scalars(select(StrategyUseEvent).where(StrategyUseEvent.daily_log_id == log.id)).all()
+    if not strategies:
+        missing.append("strategy used")
+    if entries and not any((e.response_note or "").strip() for e in entries):
+        missing.append("child response")
+    if entries and not any((e.support_level or "").strip() for e in entries):
+        missing.append("support level")
+    if not (log.activities_done or "").strip():
+        missing.append("activities / environment context")
+    if not (log.follow_ups or "").strip():
+        missing.append("next step")
+    return {"missing": missing, "complete": len(missing) == 0}
+
+
+@router.post("/{log_id}/ai/suggest-capture")
+def ai_suggest_capture(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import clinical_insight_summary_service as summary_svc
+    from datetime import datetime, timezone
+
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+    case_id = log.session.case_id
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    summary = summary_svc.build_monthly_case_summary(db, case_id, month)
+    suggestions = []
+    for g in summary.get("goals", [])[:3]:
+        title = g.get("goal_title") or "Goal"
+        suggestions.append(
+            f"For {title}, capture whether strategies were used, support level, and child response."
+        )
+    if not suggestions:
+        suggestions.append("Link this session to active IEP goals and record child response.")
+    return {"suggestions": suggestions}
+
+
+@router.post("/{log_id}/ai/match-strategy")
+def ai_match_strategy(
+    log_id: int,
+    label: str = Query(..., min_length=2),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import reference_retrieval_service as ref_svc
+
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+    matches = ref_svc.retrieve_strategy_references(db, label, user.id, top_k=3)
+    return {
+        "matches": [{"title": m.get("chunk_title"), "excerpt": m.get("chunk_text", "")[:200]} for m in matches],
+        "options": ["use_existing", "keep_custom", "send_cm_review"],
+    }

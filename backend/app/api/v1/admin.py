@@ -598,6 +598,50 @@ def admin_cm_home(
     return AdminCmHomeResponse.model_validate(admin_cm_home_service.build_cm_home(db, user))
 
 
+@router.get("/clinical-dashboard")
+def admin_clinical_dashboard(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=500),
+):
+    from app.services import clinical_workbench_service as wb_svc
+
+    return wb_svc.build_admin_clinical_dashboard(db, user, limit=limit)
+
+
+@router.get("/clinical-quality-dashboard/summary")
+def admin_clinical_quality_summary(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import clinical_workbench_service as wb_svc
+
+    return wb_svc.build_clinical_quality_dashboard_summary(db, user)
+
+
+@router.get("/clinical-quality-dashboard/cases")
+def admin_clinical_quality_cases(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    risk_level: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500),
+):
+    from app.services import clinical_workbench_service as wb_svc
+
+    return wb_svc.build_clinical_quality_dashboard_cases(db, user, risk_level=risk_level, limit=limit)
+
+
+@router.get("/clinical-quality-dashboard/therapists")
+def admin_clinical_quality_therapists(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=500),
+):
+    from app.services import clinical_workbench_service as wb_svc
+
+    return wb_svc.build_clinical_quality_dashboard_therapists(db, user, limit=limit)
+
+
 @router.get("/audit")
 def admin_audit_list(
     entity_type: Optional[str] = None,
@@ -3282,7 +3326,18 @@ def admin_approve_iep_plan(
     return iep_svc.plan_to_dict(db, plan, user)
 
 
-@router.post("/iep/purge-old-versions")
+@router.post("/goal-repository/{item_id}/approve")
+def admin_approve_goal_repository_item(
+    item_id: int,
+    user: User = Depends(require_mutation_permission("iep.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    item = repo_svc.approve_goal_candidate(db, item_id, user.id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Goal candidate not found")
+    return item
 def admin_purge_old_iep_versions(
     case_id: Optional[int] = Query(None),
     user: User = Depends(require_permission("iep.read")),
@@ -4413,3 +4468,142 @@ def admin_create_invite(
     db: Session = Depends(get_db),
 ):
     return invite_therapist(payload, request, background_tasks, user, db)
+
+
+class ClinicalReferenceCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=256)
+    document_type: str = Field(min_length=2, max_length=64)
+    raw_text: str = Field(min_length=10)
+    description: Optional[str] = None
+    version: str = "1"
+
+
+@router.get("/ai/settings")
+def admin_ai_settings(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime, timezone
+
+    from sqlalchemy import func, select
+
+    from app.core.config import settings
+    from app.models.ai_generation import AiGenerationLog
+
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(AiGenerationLog)
+            .where(AiGenerationLog.created_at >= month_start)
+        )
+        or 0
+    )
+    failed = int(
+        db.scalar(
+            select(func.count())
+            .select_from(AiGenerationLog)
+            .where(AiGenerationLog.created_at >= month_start, AiGenerationLog.token_count == 0)
+        )
+        or 0
+    )
+    return {
+        "ai_enabled": settings.AI_ENABLED,
+        "provider": settings.AI_PROVIDER,
+        "insights_model": settings.INSIGHTS_MODEL or settings.AI_DEFAULT_MODEL,
+        "session_log_model": settings.SESSION_LOG_MODEL or settings.AI_DEFAULT_MODEL,
+        "report_model": settings.REPORT_MODEL or settings.AI_DEFAULT_MODEL,
+        "embedding_provider": settings.EMBEDDING_PROVIDER,
+        "daily_budget_inr": settings.AI_DAILY_BUDGET_INR,
+        "monthly_budget_inr": settings.AI_MONTHLY_BUDGET_INR,
+        "generations_this_month": month_count,
+        "failed_generations": failed,
+        "mock_mode": settings.AI_PROVIDER == "mock" or not settings.AI_ENABLED,
+    }
+
+
+@router.get("/ai/audit")
+def admin_ai_audit(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+):
+    from sqlalchemy import select
+
+    from app.models.ai_generation import AiGenerationLog
+
+    rows = db.scalars(select(AiGenerationLog).order_by(AiGenerationLog.id.desc()).limit(limit)).all()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "user_id": r.user_id,
+                "case_id": r.case_id,
+                "feature": r.action,
+                "provider": r.provider,
+                "model": r.model,
+                "input_tokens": r.token_count,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/clinical-references")
+def list_clinical_references(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    status: Optional[str] = None,
+):
+    from app.services import reference_document_service as ref_doc_svc
+
+    return {"items": ref_doc_svc.list_documents(db, status=status)}
+
+
+@router.post("/clinical-references", status_code=201)
+def create_clinical_reference(
+    payload: ClinicalReferenceCreate,
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import reference_document_service as ref_doc_svc
+
+    doc = ref_doc_svc.create_document(
+        db,
+        title=payload.title,
+        document_type=payload.document_type,
+        raw_text=payload.raw_text,
+        uploaded_by=user.id,
+        description=payload.description,
+        version=payload.version,
+    )
+    return ref_doc_svc.document_to_dict(db, doc)
+
+
+@router.post("/clinical-references/{document_id}/chunk")
+def chunk_clinical_reference(
+    document_id: int,
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.clinical_reference import ClinicalReferenceDocument
+    from app.services import reference_document_service as ref_doc_svc
+
+    ref_doc_svc.chunk_document(db, document_id)
+    doc = db.get(ClinicalReferenceDocument, document_id)
+    return ref_doc_svc.document_to_dict(db, doc)
+
+
+@router.post("/clinical-references/{document_id}/activate")
+def activate_clinical_reference(
+    document_id: int,
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.clinical_reference import ClinicalReferenceDocument
+    from app.services import reference_document_service as ref_doc_svc
+
+    doc = ref_doc_svc.activate_document(db, document_id, user.id)
+    return ref_doc_svc.document_to_dict(db, doc)

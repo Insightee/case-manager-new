@@ -14,3 +14,14 @@ export function moduleLabel(key) {
   if (!key) return null
   return MODULE_LABELS[key] || String(key).replace(/_/g, ' ')
 }
+
+/** One service line for case header — avoids duplicating service_type and product module. */
+export function caseServiceLine(serviceType, productModule) {
+  const svc = (serviceType || '').trim()
+  const mod = (moduleLabel(productModule) || '').trim()
+  if (!svc && !mod) return null
+  if (!svc) return mod
+  if (!mod) return svc
+  if (svc.toLowerCase() === mod.toLowerCase()) return svc
+  return `${svc} · ${mod}`
+}

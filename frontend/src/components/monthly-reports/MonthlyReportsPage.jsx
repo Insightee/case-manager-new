@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-
-const REPORTS_EDIT_BASE = '/therapist/reports/edit'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { generateReportFromLogs } from '../../lib/reportGenerateFromLogs.js'
+import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useTherapistHome, useTherapistReportsPipeline } from '../../hooks/useTherapistHome.js'
 import { QueryState } from '../shared/QueryState.jsx'
@@ -14,6 +13,24 @@ import { CreateDraftModal } from './CreateDraftModal.jsx'
 import { PipelineStats } from './PipelineStats.jsx'
 import { ReportCard } from './ReportCard.jsx'
 import { SectionHeader } from './SectionHeader.jsx'
+import { ClinicalFloatingActionButton } from '../clinical-ui/ClinicalFloatingActionButton.jsx'
+import '../../styles/case-profile-v2.css'
+
+const REPORTS_EDIT_BASE = '/therapist/reports/edit'
+
+function caseMonthlyUrl(caseDbId) {
+  if (isReportsRevampActive('therapist') && caseDbId) {
+    return `/therapist/cases/${caseDbId}?tab=reports&section=monthly`
+  }
+  return `/therapist/reports?case_id=${caseDbId}`
+}
+
+function reportEditUrl(report) {
+  if (isReportsRevampActive('therapist') && report.caseDbId) {
+    return `/therapist/cases/${report.caseDbId}/reports/monthly/${report.id}`
+  }
+  return `${REPORTS_EDIT_BASE}/${report.id}`
+}
 
 const DEFAULT_CHECKLIST = [
   { id: 'c1', label: 'Review all session logs for the month', done: false },
@@ -22,28 +39,33 @@ const DEFAULT_CHECKLIST = [
   { id: 'c4', label: 'Respond to any rejected reports', done: false },
 ]
 
+const FILTER_CHIPS = [
+  { id: 'all',       label: 'All' },
+  { id: 'overdue',   label: 'Pending logs' },
+  { id: 'draft',     label: 'Draft' },
+  { id: 'underReview', label: 'Under review' },
+  { id: 'published', label: 'Published' },
+]
+
 function Toast({ message, visible, onDismiss }) {
   if (!visible) return null
   return (
     <div
       role="status"
-      className="fixed right-4 top-4 z-[100] flex max-w-sm items-start gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.12)]"
+      style={{
+        position: 'fixed', right: '1rem', top: '1rem', zIndex: 100,
+        display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+        maxWidth: '360px', background: '#fff', borderRadius: '14px',
+        border: '1px solid var(--clinical-green-soft)', padding: '0.875rem 1rem',
+        boxShadow: 'var(--clinical-shadow-panel)',
+      }}
     >
-      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-        ✓
-      </span>
-      <div>
-        <p className="font-semibold text-slate-900">Done</p>
-        <p className="text-sm text-slate-600">{message}</p>
+      <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--clinical-green-soft)', color: 'var(--clinical-green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0 }}>✓</span>
+      <div style={{ flex: 1 }}>
+        <p style={{ fontWeight: 700, color: '#0f172a', margin: '0 0 0.15rem', fontSize: '0.875rem' }}>Done</p>
+        <p style={{ fontSize: '0.8125rem', color: 'var(--clinical-muted)', margin: 0 }}>{message}</p>
       </div>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="ml-2 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-        aria-label="Dismiss"
-      >
-        ×
-      </button>
+      <button type="button" onClick={onDismiss} aria-label="Dismiss" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clinical-muted)', fontSize: '1.125rem', padding: 0, lineHeight: 1 }}>×</button>
     </div>
   )
 }
@@ -63,16 +85,20 @@ function matchesCaseFilter(item, caseDbId) {
   return item.caseDbId === Number(caseDbId)
 }
 
-function SectionBlock({ id, title, subtitle, dotClass, children }) {
+function SectionBlock({ id, title, subtitle, urgency = false, children }) {
   return (
     <section aria-labelledby={id}>
-      <div className="mb-3 flex items-center gap-2">
-        <span className={`h-2 w-2 rounded-full ${dotClass}`} aria-hidden />
-        <h3 id={id} className="text-lg font-semibold text-slate-900">
-          {title}
-        </h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.625rem' }}>
+        <span
+          style={{
+            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+            background: urgency ? 'var(--clinical-red)' : 'var(--clinical-amber)',
+          }}
+          aria-hidden
+        />
+        <h3 id={id} style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>{title}</h3>
       </div>
-      {subtitle && <p className="mb-4 text-sm text-slate-500">{subtitle}</p>}
+      {subtitle ? <p style={{ fontSize: '0.8125rem', color: 'var(--clinical-muted)', margin: '0 0 0.875rem' }}>{subtitle}</p> : null}
       {children}
     </section>
   )
@@ -159,7 +185,7 @@ export function MonthlyReportsPage() {
     params.set('case_id', String(caseDbId))
     if (create) params.set('create', '1')
     setSearchParams(params)
-    scrollTop()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handlePipelineClick = useCallback((key) => {
@@ -167,13 +193,10 @@ export function MonthlyReportsPage() {
   }, [])
 
   async function handleSubmitReview(report) {
-    if (report.isPlaceholder) {
-      setDraftOpen(true)
-      return
-    }
+    if (report.isPlaceholder) { setDraftOpen(true); return }
     try {
       await apiFetch(`/api/v1/reports/monthly/${report.id}/submit`, { method: 'POST' })
-      showToast(`Submitted ${report.caseId} (${report.month}) for admin review.`)
+      showToast(`Submitted ${report.caseId} (${report.month}) for review.`)
       await load()
     } catch (err) {
       showToast(err.message || 'Could not submit report')
@@ -188,7 +211,7 @@ export function MonthlyReportsPage() {
     try {
       await generateReportFromLogs(report.id, 'replace')
       showToast(`Draft built from session logs — ${report.child || report.caseId}.`)
-      navigate(`${REPORTS_EDIT_BASE}/${report.id}`)
+      navigate(reportEditUrl(report))
     } catch (err) {
       showToast(err.message || 'Could not generate from session logs')
     }
@@ -214,8 +237,7 @@ export function MonthlyReportsPage() {
   }, [workbench.published, q, caseFilterId])
 
   const showAttentionSection = pipelineFilter === 'all' || pipelineFilter === 'overdue'
-  const showProgressSection =
-    pipelineFilter === 'all' || pipelineFilter === 'draft' || pipelineFilter === 'underReview'
+  const showProgressSection = pipelineFilter === 'all' || pipelineFilter === 'draft' || pipelineFilter === 'underReview'
   const showPublishedSection = pipelineFilter === 'all' || pipelineFilter === 'published'
 
   const totalVisible = useMemo(() => {
@@ -224,33 +246,22 @@ export function MonthlyReportsPage() {
     if (showProgressSection) n += filteredInProgress.length
     if (showPublishedSection) n += filteredPublished.length
     return n
-  }, [
-    showAttentionSection,
-    showProgressSection,
-    showPublishedSection,
-    filteredAttention.length,
-    filteredInProgress.length,
-    filteredPublished.length,
-  ])
-
-  const activePipelineKey = pipelineFilter === 'all' ? null : pipelineFilter
+  }, [showAttentionSection, showProgressSection, showPublishedSection, filteredAttention.length, filteredInProgress.length, filteredPublished.length])
 
   const handleCheckToggle = (id) => {
     setChecklist((prev) => prev.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
   }
 
-  const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
-
   if (loading) {
     return (
-      <div className="relative flex min-h-full flex-col gap-6 rounded-2xl bg-[#F8FAFC] px-1 py-8 sm:px-3">
-        <p className="text-slate-500">Loading monthly reports…</p>
+      <div className="clinical-reports-home__main">
+        <p className="ic-case-panel__loading">Loading monthly reports…</p>
       </div>
     )
   }
 
   return (
-    <div className="relative flex min-h-full flex-col gap-6 rounded-2xl bg-[#F8FAFC] px-1 py-2 pb-28 sm:px-3 sm:py-4 lg:pb-8">
+    <div style={{ background: 'var(--clinical-page-bg)', minHeight: '100%', padding: '0 0 6rem' }}>
       <Toast
         message={toast.message}
         visible={toast.visible}
@@ -277,217 +288,227 @@ export function MonthlyReportsPage() {
 
       <CalendarModal open={calendarOpen} onClose={() => setCalendarOpen(false)} events={[]} />
 
-      {filteredCase ? (
-        <div className="sticky top-0 z-20 flex flex-col gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Client reports</p>
-            <p className="truncate text-base font-semibold text-indigo-950">
-              {filteredCase.child_name}
-              <span className="font-normal text-indigo-700"> · {filteredCase.case_code}</span>
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Link
-              to={`/therapist/cases/${filteredCase.id}`}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[0.99]"
-            >
-              Open case
-            </Link>
-            <button
-              type="button"
-              onClick={clearCaseFilter}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
-            >
-              All clients
-            </button>
-          </div>
+      <div className="clinical-reports-home__main">
+        {/* Page header */}
+        <div className="clinical-reports-home__header">
+          <h1 className="clinical-reports-home__title">
+            {filteredCase ? `Reports · ${filteredCase.child_name}` : 'Reports Home'}
+          </h1>
+          <p className="clinical-reports-home__subtitle">
+            {filteredCase
+              ? 'Draft, submit, and track monthly progress for this client.'
+              : 'Manage and monitor clinical report documentation across your cases.'}
+          </p>
         </div>
-      ) : null}
 
-      <SectionHeader
-        title={filteredCase ? `Reports · ${filteredCase.child_name}` : 'Monthly Reports'}
-        subtitle={
-          filteredCase
-            ? 'Draft, submit, and track monthly progress for this client'
-            : 'Compile, review, and publish month-end reports'
-        }
-        search={search}
-        onSearchChange={setSearch}
-        primaryActionLabel="+ Create Draft"
-        onPrimaryAction={() => setDraftOpen(true)}
-      />
-
-      {filteredCase ? (
-        <CaseReportsPanel
-          caseId={filteredCase.id}
-          caseCode={filteredCase.case_code}
-          childName={filteredCase.child_name}
-          onUpdated={load}
-        />
-      ) : null}
-
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-      {pipelineFilter !== 'all' && (
-        <button
-          type="button"
-          onClick={() => setPipelineFilter('all')}
-          className="self-start rounded-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
-        >
-          Clear pipeline filter
-        </button>
-      )}
-
-      <section aria-label="Pipeline overview">
-        <h3 className="sr-only">Report pipeline overview</h3>
-        <PipelineStats
-          counts={workbench.pipeline}
-          activeFilter={activePipelineKey}
-          onFilter={handlePipelineClick}
-        />
-      </section>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex min-w-0 flex-col gap-8">
-          {caseFilterId ? null : totalVisible === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#E2E8F0] bg-white px-6 py-16 text-center shadow-sm">
-              <p className="text-lg font-semibold text-slate-800">
-                {q || pipelineFilter !== 'all'
-                  ? 'No reports match your search or filters'
-                  : 'No reports yet — create your first draft'}
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                {q || pipelineFilter !== 'all'
-                  ? 'Try clearing the pipeline filter or widening your search.'
-                  : 'Use Create Draft or open a case from My Cases.'}
-              </p>
+        {/* Case filter banner */}
+        {filteredCase ? (
+          <div className="cp-hint cp-hint--warn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+            <p style={{ margin: 0, fontWeight: 600 }}>
+              Showing: <strong>{filteredCase.child_name}</strong> · {filteredCase.case_code}
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <Link
+                to={`/therapist/cases/${filteredCase.id}`}
+                className="clinical-btn-primary"
+                style={{ fontSize: '0.8125rem', minHeight: '36px', padding: '0.375rem 0.875rem' }}
+              >
+                Open case
+              </Link>
               <button
                 type="button"
-                onClick={() => setDraftOpen(true)}
-                className="mt-6 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+                onClick={clearCaseFilter}
+                className="clinical-btn-secondary"
+                style={{ fontSize: '0.8125rem', minHeight: '36px', padding: '0.375rem 0.875rem' }}
               >
-                Create draft
+                All clients
               </button>
             </div>
-          ) : (
-            <>
-              {showAttentionSection && (
-                <SectionBlock
-                  id="attention-heading"
-                  title="Attention required"
-                  subtitle="Missing this month, rejected, or overdue."
-                  dotClass="bg-red-500"
-                >
-                  {filteredAttention.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                      Nothing urgent in this view.
-                    </p>
-                  ) : (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {filteredAttention.map((r) => (
-                        <ReportCard
-                          key={r.id}
-                          variant="attention"
-                          report={r}
-                          onGenerateFromLogs={handleGenerateFromLogs}
-                          onStart={() =>
-                            r.isPlaceholder && r.caseDbId ? goToCaseReports(r.caseDbId, { create: true }) : setDraftOpen(true)
-                          }
-                          onContinue={(rep) => {
-                            if (rep.id && !String(rep.id).startsWith('missing-')) {
-                              navigate(`${REPORTS_EDIT_BASE}/${rep.id}`)
-                            } else if (rep.caseDbId) goToCaseReports(rep.caseDbId)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </SectionBlock>
-              )}
+          </div>
+        ) : null}
 
-              {showProgressSection && (
-                <SectionBlock
-                  id="in-progress-heading"
-                  title="In progress"
-                  subtitle="Drafts and items under review."
-                  dotClass="bg-amber-400"
-                >
-                  {filteredInProgress.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                      No reports in this stage for the current filter.
-                    </p>
-                  ) : (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {filteredInProgress.map((r) => (
-                        <ReportCard
-                          key={r.id}
-                          variant="progress"
-                          report={r}
-                          onGenerateFromLogs={handleGenerateFromLogs}
-                          onContinue={(rep) => navigate(`${REPORTS_EDIT_BASE}/${rep.id}`)}
-                          onSubmitReview={r.status === 'draft' ? handleSubmitReview : undefined}
-                          onPreview={(rep) => navigate(`${REPORTS_EDIT_BASE}/${rep.id}`)}
-                          onDownload={(rep) =>
-                            apiDownload(`/api/v1/reports/monthly/${rep.id}/download`, `report_${rep.month}.pdf`)
-                          }
-                        />
-                      ))}
-                    </div>
-                  )}
-                </SectionBlock>
-              )}
-
-              {showPublishedSection && (
-                <SectionBlock
-                  id="published-heading"
-                  title="Published"
-                  subtitle="Approved and visible to families (when configured)."
-                  dotClass="bg-emerald-500"
-                >
-                  {filteredPublished.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                      No published reports match your search.
-                    </p>
-                  ) : (
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {filteredPublished.map((r) => (
-                        <ReportCard
-                          key={r.id}
-                          variant="published"
-                          report={r}
-                          onView={(rep) => {
-                            if (rep.caseDbId) goToCaseReports(rep.caseDbId)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </SectionBlock>
-              )}
-            </>
-          )}
+        {/* Search + create */}
+        <div className="clinical-reports-home__toolbar">
+          <div className="clinical-search clinical-reports-home__toolbar-search">
+            <span className="clinical-search__icon" aria-hidden="true">🔍</span>
+            <input
+              className="clinical-search__input"
+              type="search"
+              placeholder="Search case, child, or month…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search reports"
+            />
+          </div>
+          <button
+            type="button"
+            className="clinical-btn-primary"
+            onClick={() => setDraftOpen(true)}
+            style={{ flexShrink: 0 }}
+          >
+            + Create Draft
+          </button>
         </div>
 
-        <div className="min-w-0 xl:sticky xl:top-4 xl:self-start">
-          <ChecklistPanel items={checklist} onToggle={handleCheckToggle} />
-          <p className="mt-4 text-xs text-slate-500">
-            Tip: use{' '}
-            <Link to="/therapist/cases" className="font-semibold text-indigo-600">
-              My Cases
-            </Link>{' '}
-            — Reports opens this page filtered to that client.
-          </p>
+        {/* Filter chips */}
+        <div className="clinical-filter-chips">
+          {FILTER_CHIPS.map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              className={`clinical-filter-chip${pipelineFilter === chip.id ? ' is-active' : ''}`}
+              onClick={() => setPipelineFilter(chip.id)}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Pipeline stats */}
+        <section aria-label="Pipeline overview" style={{ marginBottom: '1.25rem' }}>
+          <h3 className="sr-only">Report pipeline overview</h3>
+          <PipelineStats
+            counts={workbench.pipeline}
+            activeFilter={pipelineFilter === 'all' ? null : pipelineFilter}
+            onFilter={handlePipelineClick}
+          />
+        </section>
+
+        {filteredCase ? (
+          <CaseReportsPanel
+            caseId={filteredCase.id}
+            caseCode={filteredCase.case_code}
+            childName={filteredCase.child_name}
+            onUpdated={load}
+          />
+        ) : null}
+
+        {error ? <p className="ic-case-panel__error">{error}</p> : null}
+
+        <div style={{ display: 'grid', gap: '1.5rem', gridTemplateColumns: '1fr', alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: 0 }}>
+            {caseFilterId ? null : totalVisible === 0 ? (
+              <div className="clinical-empty-state cp-card">
+                <p className="clinical-empty-state__title">
+                  {q || pipelineFilter !== 'all'
+                    ? 'No reports match your search or filters'
+                    : 'No reports yet'}
+                </p>
+                <p className="clinical-empty-state__body">
+                  {q || pipelineFilter !== 'all'
+                    ? 'Try clearing the filter or widening your search.'
+                    : 'Create a draft to start your first monthly report, or open a case from My Cases.'}
+                </p>
+                {!q && pipelineFilter === 'all' ? (
+                  <button
+                    type="button"
+                    className="clinical-btn-primary"
+                    onClick={() => setDraftOpen(true)}
+                    style={{ marginTop: '0.75rem' }}
+                  >
+                    Create draft
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                {showAttentionSection && (
+                  <SectionBlock id="attention-heading" title="Attention required" subtitle="Missing this month, rejected, or overdue." urgency>
+                    {filteredAttention.length === 0 ? (
+                      <div className="clinical-empty-state" style={{ background: '#fff', border: '1px dashed var(--clinical-border)', borderRadius: 'var(--clinical-radius-card)', padding: '1.5rem' }}>
+                        <p className="clinical-empty-state__body">Nothing urgent right now — you're on top of it.</p>
+                      </div>
+                    ) : (
+                      <div className="clinical-case-grid">
+                        {filteredAttention.map((r) => (
+                          <ReportCard
+                            key={r.id}
+                            variant="attention"
+                            report={r}
+                            onGenerateFromLogs={handleGenerateFromLogs}
+                            onStart={() =>
+                              r.isPlaceholder && r.caseDbId ? goToCaseReports(r.caseDbId, { create: true }) : setDraftOpen(true)
+                            }
+                            onContinue={(rep) => {
+                              if (rep.id && !String(rep.id).startsWith('missing-')) navigate(reportEditUrl(rep))
+                              else if (rep.caseDbId) goToCaseReports(rep.caseDbId)
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </SectionBlock>
+                )}
+
+                {showProgressSection && (
+                  <SectionBlock id="in-progress-heading" title="In progress" subtitle="Drafts and items under review.">
+                    {filteredInProgress.length === 0 ? (
+                      <div className="clinical-empty-state" style={{ background: '#fff', border: '1px dashed var(--clinical-border)', borderRadius: 'var(--clinical-radius-card)', padding: '1.5rem' }}>
+                        <p className="clinical-empty-state__body">No reports in this stage for the current filter.</p>
+                      </div>
+                    ) : (
+                      <div className="clinical-case-grid">
+                        {filteredInProgress.map((r) => (
+                          <ReportCard
+                            key={r.id}
+                            variant="progress"
+                            report={r}
+                            onGenerateFromLogs={handleGenerateFromLogs}
+                            onContinue={(rep) => navigate(reportEditUrl(rep))}
+                            onSubmitReview={r.status === 'draft' ? handleSubmitReview : undefined}
+                            onPreview={(rep) => navigate(reportEditUrl(rep))}
+                            onDownload={(rep) =>
+                              apiDownload(`/api/v1/reports/monthly/${rep.id}/download`, `report_${rep.month}.pdf`)
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </SectionBlock>
+                )}
+
+                {showPublishedSection && (
+                  <SectionBlock id="published-heading" title="Published" subtitle="Approved and visible to families.">
+                    {filteredPublished.length === 0 ? (
+                      <div className="clinical-empty-state" style={{ background: '#fff', border: '1px dashed var(--clinical-border)', borderRadius: 'var(--clinical-radius-card)', padding: '1.5rem' }}>
+                        <p className="clinical-empty-state__body">No published reports match your search.</p>
+                      </div>
+                    ) : (
+                      <div className="clinical-case-grid">
+                        {filteredPublished.map((r) => (
+                          <ReportCard
+                            key={r.id}
+                            variant="published"
+                            report={r}
+                            onView={(rep) => { if (rep.caseDbId) goToCaseReports(rep.caseDbId) }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </SectionBlock>
+                )}
+              </>
+            )}
+          </div>
+
+          <div style={{ gridColumn: '1', marginTop: '0.5rem' }}>
+            <ChecklistPanel items={checklist} onToggle={handleCheckToggle} />
+            <p style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--clinical-muted)' }}>
+              Tip: open a case from{' '}
+              <Link to="/therapist/cases" style={{ color: 'var(--clinical-purple)', fontWeight: 600 }}>
+                My Cases
+              </Link>{' '}
+              to jump straight to that client's reports.
+            </p>
+          </div>
         </div>
       </div>
 
-      <button
-        type="button"
+      <ClinicalFloatingActionButton
+        label="Create report"
         onClick={() => setDraftOpen(true)}
-        className="portal-mobile-fab fixed bottom-6 right-5 z-50 flex h-14 min-h-[44px] items-center gap-2 rounded-full bg-indigo-600 px-5 text-sm font-bold text-white shadow-[0_8px_30px_rgba(79,70,229,0.45)] transition hover:scale-[1.03] hover:bg-indigo-700 xl:hidden"
-        aria-label="Create report"
-      >
-        + Create Report
-      </button>
+        icon="+"
+      />
     </div>
   )
 }

@@ -13,6 +13,26 @@ from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.iep_plan import IepPlan, IepPlanStatus
 from app.models.iep_plan_suggestion import IepPlanSuggestion
+from app.models.iep_review_suggestion import IepReviewSuggestion
+from app.models.iep_review_suggestion import IepReviewSuggestion
+from app.models.clinical_evidence import (
+    GoalEvidenceEvent,
+    IepGoalCard,
+    IepSupportPriority,
+    MonthlyReportSection,
+    ProgressReportSection,
+    SessionGoalEntry,
+    StrategyUseEvent,
+)
+from app.models.goal_repository import GoalRepositoryItem, StrategyRepositoryItem
+from app.models.ai_generation import AiDraftOutput, AiGenerationLog
+from app.models.clinical_snapshot import ClinicalSnapshot, ClinicalSnapshotFeedback
+from app.models.clinical_reference import (
+    AiRetrievalLog,
+    ClinicalReferenceChunk,
+    ClinicalReferenceDocument,
+    ClinicalReferenceEmbedding,
+)
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.meeting_action import MeetingAction
 from app.models.client_billing import (

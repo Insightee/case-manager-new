@@ -32,49 +32,18 @@ def export_session_logs_csv(
     year: Optional[int] = None,
     month_num: Optional[int] = None,
 ) -> str:
-    case = case_service.get_case(db, case_id)
-    if not case or not case_scope_check(db, user, case):
-        raise ValueError("Case not found")
-    if user_has_permission(user, "case.read.assigned") and not user_has_permission(user, "case.read.all"):
-        from app.models.assignment import CaseAssignment, CaseAssignmentStatus
-        from sqlalchemy import select as sa_select
-
-        active = db.scalars(
-            sa_select(CaseAssignment).where(
-                CaseAssignment.case_id == case_id,
-                CaseAssignment.therapist_user_id == user.id,
-                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
-            )
-        ).first()
-        if not active:
-            raise ValueError("Case not found")
-
-    if month:
-        parsed = parse_report_month(month)
-        if parsed:
-            year, month_num = parsed
-
-    stmt = (
-        select(DailyLog)
-        .join(TherapySession)
-        .where(
-            TherapySession.case_id == case_id,
-            DailyLog.submitted_at.isnot(None),
-            DailyLog.approval_status.in_(
-                (LogApprovalStatus.PENDING, LogApprovalStatus.APPROVED)
-            ),
+    try:
+        _, logs = list_case_session_logs_for_export(
+            db,
+            user,
+            case_id=case_id,
+            month=month,
+            year=year,
+            month_num=month_num,
+            approval_statuses=(LogApprovalStatus.PENDING, LogApprovalStatus.APPROVED),
         )
-        .options(selectinload(DailyLog.session))
-        .order_by(TherapySession.scheduled_date.asc())
-    )
-    if year is not None:
-        stmt = stmt.where(extract("year", TherapySession.scheduled_date) == year)
-    if month_num is not None:
-        stmt = stmt.where(extract("month", TherapySession.scheduled_date) == month_num)
-    if user_has_permission(user, "case.read.assigned") and not user_has_permission(user, "case.read.all"):
-        stmt = stmt.where(TherapySession.therapist_user_id == user.id)
-
-    logs = db.scalars(stmt).all()
+    except ValueError:
+        raise
     import csv
 
     output = io.StringIO()
@@ -103,3 +72,59 @@ def export_session_logs_csv(
             log.session_notes or "",
         ])
     return output.getvalue()
+
+
+def list_case_session_logs_for_export(
+    db: Session,
+    user,
+    *,
+    case_id: int,
+    month: Optional[str] = None,
+    year: Optional[int] = None,
+    month_num: Optional[int] = None,
+    approval_statuses: Optional[tuple] = None,
+) -> tuple[Case, list[DailyLog]]:
+    """Submitted session logs for a case, optionally filtered by calendar month."""
+    case = case_service.get_case(db, case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise ValueError("Case not found")
+    if user_has_permission(user, "case.read.assigned") and not user_has_permission(user, "case.read.all"):
+        from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+        from sqlalchemy import select as sa_select
+
+        active = db.scalars(
+            sa_select(CaseAssignment).where(
+                CaseAssignment.case_id == case_id,
+                CaseAssignment.therapist_user_id == user.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).first()
+        if not active:
+            raise ValueError("Case not found")
+
+    if month:
+        parsed = parse_report_month(month)
+        if parsed:
+            year, month_num = parsed
+
+    stmt = (
+        select(DailyLog)
+        .join(TherapySession)
+        .where(
+            TherapySession.case_id == case_id,
+            DailyLog.submitted_at.isnot(None),
+        )
+        .options(selectinload(DailyLog.session))
+        .order_by(TherapySession.scheduled_date.asc(), TherapySession.start_time.asc())
+    )
+    if approval_statuses:
+        stmt = stmt.where(DailyLog.approval_status.in_(approval_statuses))
+    if year is not None:
+        stmt = stmt.where(extract("year", TherapySession.scheduled_date) == year)
+    if month_num is not None:
+        stmt = stmt.where(extract("month", TherapySession.scheduled_date) == month_num)
+    if user_has_permission(user, "case.read.assigned") and not user_has_permission(user, "case.read.all"):
+        stmt = stmt.where(TherapySession.therapist_user_id == user.id)
+
+    logs = list(db.scalars(stmt).all())
+    return case, logs

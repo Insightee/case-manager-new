@@ -37,6 +37,7 @@ import { SameDaySessionDialog } from './SameDaySessionDialog.jsx'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
 import '../cases/my-cases.css'
+import '../../styles/case-profile-v2.css'
 
 function logRecencyMs(log) {
   const ts = log?.resubmitted_at || log?.submitted_at
@@ -970,22 +971,22 @@ export function DailyLogsPage() {
             </select>
           </label>
         </div>
-        <div className="ic-session-log-tabs" role="tablist" aria-label="Session log lists">
+        <div className="clinical-filter-chips" role="tablist" aria-label="Session log lists">
           {LOG_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               role="tab"
               aria-selected={logTab === t.id}
-              className={`ic-session-log-tabs__btn${logTab === t.id ? ' is-active' : ''}`}
+              className={`clinical-filter-chip${logTab === t.id ? ' is-active' : ''}`}
               onClick={() => setLogTab(t.id)}
             >
               {t.label}
               {t.id === 'needs' && needsLog.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{needsLog.length}</span>
+                <span style={{ marginLeft: '0.375rem', background: 'var(--clinical-red)', color: '#fff', borderRadius: '999px', fontSize: '0.6875rem', fontWeight: 700, padding: '0 5px', lineHeight: '16px', display: 'inline-block' }}>{needsLog.length}</span>
               ) : null}
               {t.id === 'pending' && pendingLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{pendingLogs.length}</span>
+                <span style={{ marginLeft: '0.375rem', background: 'var(--clinical-amber)', color: '#fff', borderRadius: '999px', fontSize: '0.6875rem', fontWeight: 700, padding: '0 5px', lineHeight: '16px', display: 'inline-block' }}>{pendingLogs.length}</span>
               ) : null}
             </button>
           ))}

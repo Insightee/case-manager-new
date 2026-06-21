@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -433,3 +434,346 @@ def case_iep_plan_suggestion(
         raise HTTPException(status_code=400, detail=str(e))
     db.commit()
     return iep_svc.plan_to_dict(db, plan, user)
+
+
+class GoalCandidateCreate(BaseModel):
+    domain_key: str = Field(min_length=2, max_length=64)
+    label: str = Field(min_length=5)
+    rationale: Optional[str] = None
+
+
+class StrategyCandidateCreate(BaseModel):
+    label: str = Field(min_length=3, max_length=255)
+    when_to_use: Optional[str] = None
+    how_to_use: Optional[str] = None
+    avoid: Optional[str] = None
+
+
+@router.get("/{case_id}/reports-workbench")
+def get_reports_workbench(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import clinical_workbench_service as wb_svc
+
+    case = _case_for_user(db, user, case_id)
+    return wb_svc.build_reports_workbench(db, case, user)
+
+
+@router.get("/{case_id}/clinical-quality-summary")
+def get_clinical_quality_summary(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import clinical_workbench_service as wb_svc
+
+    _case_for_user(db, user, case_id)
+    return wb_svc.build_clinical_quality_summary(db, case_id)
+
+
+@router.get("/{case_id}/goal-candidates")
+def list_goal_candidates(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user(db, user, case_id)
+    return {"items": repo_svc.list_goal_candidates(db, case_id)}
+
+
+@router.post("/{case_id}/goal-candidates", status_code=201)
+def create_goal_candidate(
+    case_id: int,
+    payload: GoalCandidateCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user_write(db, user, case_id)
+    item = repo_svc.create_goal_candidate(
+        db,
+        case_id=case_id,
+        user_id=user.id,
+        domain_key=payload.domain_key,
+        label=payload.label,
+        rationale=payload.rationale,
+    )
+    return item
+
+
+@router.get("/{case_id}/strategy-candidates")
+def list_strategy_candidates(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user(db, user, case_id)
+    return {"items": repo_svc.list_strategy_candidates(db, case_id)}
+
+
+@router.post("/{case_id}/strategy-candidates", status_code=201)
+def create_strategy_candidate(
+    case_id: int,
+    payload: StrategyCandidateCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user_write(db, user, case_id)
+    item = repo_svc.create_strategy_candidate(
+        db,
+        case_id=case_id,
+        user_id=user.id,
+        label=payload.label,
+        when_to_use=payload.when_to_use,
+        how_to_use=payload.how_to_use,
+        avoid=payload.avoid,
+    )
+    return item
+
+
+class LinkEvidencePayload(BaseModel):
+    document_id: int
+    linked_report_id: Optional[int] = None
+    linked_goal_id: Optional[int] = None
+    linked_strategy_id: Optional[int] = None
+    domain_key: Optional[str] = None
+
+
+@router.get("/{case_id}/goals/evidence-summary")
+def get_goals_evidence_summary(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_evidence_aggregation_service as ev_agg
+
+    _case_for_user(db, user, case_id)
+    return ev_agg.build_goals_evidence_summary(db, case_id)
+
+
+@router.get("/{case_id}/strategies/evidence-summary")
+def get_strategies_evidence_summary(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_evidence_aggregation_service as ev_agg
+
+    _case_for_user(db, user, case_id)
+    return ev_agg.build_strategies_evidence_summary(db, case_id)
+
+
+@router.get("/{case_id}/iep-review-suggestions")
+def list_iep_review_suggestions(
+    case_id: int,
+    include_resolved: bool = Query(False),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_review_suggestions_service as iep_rev_svc
+
+    _case_for_user(db, user, case_id)
+    return iep_rev_svc.list_suggestions(db, case_id, include_resolved=include_resolved)
+
+
+@router.post("/{case_id}/iep-review-suggestions/{suggestion_id}/accept")
+def accept_iep_review_suggestion(
+    case_id: int,
+    suggestion_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_review_suggestions_service as iep_rev_svc
+
+    _case_for_user_write(db, user, case_id)
+    try:
+        result = iep_rev_svc.accept_suggestion(db, case_id, suggestion_id, user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    db.commit()
+    return result
+
+
+@router.post("/{case_id}/iep-review-suggestions/{suggestion_id}/dismiss")
+def dismiss_iep_review_suggestion(
+    case_id: int,
+    suggestion_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import iep_review_suggestions_service as iep_rev_svc
+
+    _case_for_user_write(db, user, case_id)
+    try:
+        result = iep_rev_svc.dismiss_suggestion(db, case_id, suggestion_id, user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    db.commit()
+    return result
+
+
+@router.get("/{case_id}/session-logs/export/pdf")
+def export_case_session_logs_pdf(
+    case_id: int,
+    month: Optional[str] = Query(None, description="Filter by month (YYYY-MM)"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_session_logs_pdf_service as logs_pdf_svc
+
+    _case_for_user(db, user, case_id)
+    if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.create"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    try:
+        pdf_bytes = logs_pdf_svc.build_case_session_logs_pdf(db, user, case_id=case_id, month=month)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    safe_month = (month or "all").replace("-", "")
+    filename = f"session_logs_{case_id}_{safe_month}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{case_id}/evidence-drive")
+def get_evidence_drive(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import evidence_drive_service as drive_svc
+
+    _case_for_user(db, user, case_id)
+    return drive_svc.build_evidence_drive(db, user, case_id)
+
+
+@router.post("/{case_id}/link-evidence")
+def link_case_evidence(
+    case_id: int,
+    payload: LinkEvidencePayload,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import evidence_drive_service as drive_svc
+
+    _case_for_user_write(db, user, case_id)
+    result = drive_svc.link_evidence(
+        db,
+        user,
+        case_id,
+        document_id=payload.document_id,
+        linked_report_id=payload.linked_report_id,
+        linked_goal_id=payload.linked_goal_id,
+        linked_strategy_id=payload.linked_strategy_id,
+        domain_key=payload.domain_key,
+    )
+    db.commit()
+    return result
+
+
+@router.get("/{case_id}/reports/monthly/{report_id}/parent-preview")
+def case_monthly_parent_preview(
+    case_id: int,
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.report import MonthlyReport
+    from app.services import parent_safe_report_serializer as parent_safe
+
+    case = _case_for_user(db, user, case_id)
+    report = db.get(MonthlyReport, report_id)
+    if not report or report.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return parent_safe.serialize_parent_safe_monthly(
+        db,
+        report,
+        case_code=case.case_code,
+        child_name=getattr(case, "child_name", "") or "",
+    )
+
+
+@router.post("/{case_id}/iep/ai/review-suggestions")
+def generate_iep_ai_review_suggestions(
+    case_id: int,
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime, timezone
+
+    from app.services import ai_gateway_service as ai_svc
+    from app.services import clinical_insight_summary_service as summary_svc
+    from app.services import iep_review_suggestions_service as iep_rev_svc
+
+    _case_for_user_write(db, user, case_id)
+    summary = summary_svc.build_monthly_case_summary(db, case_id, month)
+    gen = ai_svc.AIGatewayService.suggest_iep_goal_supports(
+        db, user_id=user.id, case_id=case_id, summary=summary
+    )
+    suggestions = []
+    for g in gen.get("output", {}).get("goal_recommendations", []):
+        suggestions.append(
+            iep_rev_svc.create_suggestion_from_ai(
+                db,
+                case_id=case_id,
+                user_id=user.id,
+                suggestion_type="continue_goal" if g.get("evidence_strength") != "weak" else "request_evidence",
+                reason=g.get("why") or g.get("suggested_next_step") or "",
+                goal_title=g.get("goal_title"),
+            )
+        )
+    db.commit()
+    return {"items": suggestions, "draft": True, "generated_at": datetime.now(timezone.utc).isoformat()}
+
+
+@router.post("/{case_id}/goals/{goal_card_id}/ai/suggest-wording")
+def suggest_goal_wording(
+    case_id: int,
+    goal_card_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import ai_gateway_service as ai_svc
+
+    _case_for_user_write(db, user, case_id)
+    return ai_svc.AIGatewayService.preview(
+        db,
+        user_id=user.id,
+        case_id=case_id,
+        action="suggest_iep_goal_wording",
+        context={"goal_card_id": goal_card_id},
+        target_type="iep_goal_card",
+        target_id=goal_card_id,
+    )
+
+
+@router.post("/{case_id}/strategies/ai/suggest-adaptations")
+def suggest_strategy_adaptations(
+    case_id: int,
+    strategy_label: str = Query(..., min_length=2),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import ai_gateway_service as ai_svc
+
+    _case_for_user_write(db, user, case_id)
+    return ai_svc.AIGatewayService.preview(
+        db,
+        user_id=user.id,
+        case_id=case_id,
+        action="suggest_strategy_adaptation",
+        context={"strategy_label": strategy_label},
+        target_type="strategy",
+    )
