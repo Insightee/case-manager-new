@@ -154,12 +154,12 @@ def test_cm_review_approve_and_parent_sees_published():
     cm_review_headers = _login("superadmin@demo.com")
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/approve",
-        headers=cm_review_headers,
+        headers=cm_headers,
         json={"visibility": "CLIENT_VISIBLE_AFTER_APPROVAL"},
     )
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/publish_client",
-        headers=cm_review_headers,
+        headers=cm_headers,
         json={},
     )
     parent_headers = _login("parent@demo.com")

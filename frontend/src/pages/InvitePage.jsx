@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, setTokens } from '../lib/apiClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
-import { loginPathFromRoleName, portalHomePath, resolveAuthPortal } from '../lib/portalLogin.js'
+import {
+  loginPathFromApiPortal,
+  loginPathFromRoleName,
+  portalHomePath,
+  portalLoginPath,
+  resolveAuthPortal,
+} from '../lib/portalLogin.js'
 
 const ROLE_LABELS = {
   PARENT: { sub: 'Set your password to activate your family account.', cta: 'Activate account' },
@@ -14,6 +20,7 @@ const ROLE_LABELS = {
 
 export function InvitePage() {
   const { token } = useParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { reload, updateLoginPortal } = useAuth()
 
@@ -40,6 +47,18 @@ export function InvitePage() {
   }, [token])
 
   const copy = ROLE_LABELS[roleHint] || ROLE_LABELS.default
+
+  const signInPath = useMemo(() => {
+    if (preview?.login_portal) return loginPathFromApiPortal(preview.login_portal)
+    const role = preview?.role || roleHint
+    if (role) return loginPathFromRoleName(role)
+    const portalParam = searchParams.get('portal')
+    if (portalParam === 'parent' || portalParam === 'therapist' || portalParam === 'admin') {
+      return portalLoginPath(portalParam)
+    }
+    if (portalParam === 'staff') return loginPathFromApiPortal('staff')
+    return '/login'
+  }, [preview, roleHint, searchParams])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -136,7 +155,7 @@ export function InvitePage() {
 
           <p style={{ marginTop: 16, fontSize: '0.8rem', color: '#94a3b8', textAlign: 'center' }}>
             Already have an account?{' '}
-            <Link to={loginPathFromRoleName(preview?.role || roleHint)} style={{ color: '#6366f1', fontWeight: 600 }}>
+            <Link to={signInPath} style={{ color: '#6366f1', fontWeight: 600 }}>
               Sign in
             </Link>
           </p>

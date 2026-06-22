@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useSearchParams } from 'react-router-dom'
-import { apiFetch, apiDownload, getTokens } from '../../lib/apiClient.js'
+import { apiFetch, apiDownload, getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import {
   categoryLabel,
   statusLabel,
@@ -19,8 +19,6 @@ import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect, ParentPortalTabs } from './ParentFilterBar.jsx'
 import { ParentComingSoon } from './ParentComingSoon.jsx'
 import { PARENT_REPORTS_COMING_SOON } from '../../lib/parentPortalFeatureFlags.js'
-
-const API_URL = import.meta.env.VITE_API_URL || ''
 
 const STATUS_LABELS = {
   pending_review: 'Pending your review',
@@ -93,7 +91,7 @@ function reportListStatus(item, tab) {
 
 async function fetchBlobUrl(downloadPath) {
   const { access } = getTokens()
-  const url = `${API_URL}${downloadPath}`
+  const url = `${getApiBaseUrl()}${downloadPath}`
   const res = await fetch(url, { headers: access ? { Authorization: `Bearer ${access}` } : {} })
   if (!res.ok) throw new Error('Could not load document')
   const blob = await res.blob()

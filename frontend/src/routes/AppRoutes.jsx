@@ -7,7 +7,6 @@ import {
   portalLoginPath,
   portalMismatchMessage,
   preferredLoginPathForUser,
-  SIGN_IN_PATH,
 } from '../lib/portalLogin.js'
 import { apiFetch } from '../lib/apiClient.js'
 import { PortalShell } from '../layouts/PortalShell.jsx'
@@ -191,7 +190,7 @@ function PortalRedirect() {
   if (portal === 'admin') return <Navigate to={adminLanding} replace />
   if (portal === 'parent') return <Navigate to="/parent" replace />
   if (portal === 'therapist') return <Navigate to="/therapist" replace />
-  return <Navigate to={SIGN_IN_PATH.parent} replace />
+  return <Navigate to={DEFAULT_SIGN_IN_PATH} replace />
 }
 
 function Protected({ portal, children }) {
@@ -576,7 +575,7 @@ export function AppRoutes() {
       <Route path="/hr/tickets" element={<Navigate to="/admin/support?tab=tickets" replace />} />
       <Route path="/hr/*" element={<Navigate to="/admin/people" replace />} />
 
-      <Route path="*" element={<Navigate to={SIGN_IN_PATH.parent} replace />} />
+      <Route path="*" element={<Navigate to={DEFAULT_SIGN_IN_PATH} replace />} />
     </Routes>
   )
 }

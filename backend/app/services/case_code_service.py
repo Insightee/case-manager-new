@@ -11,24 +11,32 @@ from app.models.case import Case
 MODULE_TOKENS: dict[str, str] = {
     "homecare": "HC",
     "shadow_support": "SS",
+    "b2b": "B2",
 }
 
-_CODE_PATTERN = re.compile(r"^IC-(\d{4})-([A-Z]{2})-(\d+)$")
+_CODE_PATTERN = re.compile(r"^IC-(\d{4})-([A-Z0-9]{2})-(\d+)$")
+
+
+def normalize_product_module(product_module: str) -> str:
+    return str(product_module or "").strip().lower()
 
 
 def module_token(product_module: str) -> str:
-    return MODULE_TOKENS.get(product_module, product_module[:2].upper())
+    slug = normalize_product_module(product_module)
+    if slug in MODULE_TOKENS:
+        return MODULE_TOKENS[slug]
+    return slug[:2].upper() if slug else "XX"
 
 
 def preview_case_code(product_module: str, year: int | None = None) -> str:
     y = year or datetime.now().year
-    mod = module_token(product_module)
+    mod = module_token(normalize_product_module(product_module))
     return f"IC-{y}-{mod}-###"
 
 
 def generate_case_code(db: Session, product_module: str) -> str:
     year = datetime.now().year
-    mod = module_token(product_module)
+    mod = module_token(normalize_product_module(product_module))
     prefix = f"IC-{year}-{mod}-"
     rows = db.scalars(select(Case.case_code).where(Case.case_code.like(f"{prefix}%"))).all()
     max_seq = 0

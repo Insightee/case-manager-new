@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_items
+from app.tests.conftest import api_items, cm_headers_for_case
 
 client = TestClient(app)
 
@@ -153,12 +153,9 @@ def test_admin_category_filter():
 
 
 def test_cm_review_internal_note_and_correction():
-    cm_token = _login("casemanager@demo.com")
-    cm_headers = {"Authorization": f"Bearer {cm_token}"}
     th_token = _login("therapist@demo.com")
     th_headers = {"Authorization": f"Bearer {th_token}"}
     case_id = _therapist_case_id(th_headers)
-
     from app.core.database import SessionLocal
     from app.models.user import User
     from app.models.case import Case
@@ -173,6 +170,7 @@ def test_cm_review_internal_note_and_correction():
     finally:
         db.close()
 
+    cm_headers = cm_headers_for_case(client, case_id)
     created = client.post(
         "/api/v1/reports/monthly",
         headers=th_headers,

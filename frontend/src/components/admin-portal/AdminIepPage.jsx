@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { apiFetch, apiUpload, getTokens } from '../../lib/apiClient.js'
+import { apiFetch, apiUpload, getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
 import {
@@ -17,8 +17,6 @@ import {
   ServiceFilterSelect,
 } from './ui/index.js'
 import './admin-iep-dashboard.css'
-
-const API_URL = import.meta.env.VITE_API_URL || ''
 
 const STATUS_FILTERS = [
   { id: 'ALL', label: 'All' },
@@ -43,7 +41,7 @@ const STATUS_LABELS = {
 
 async function downloadAttachment(id, fileName) {
   const { access } = getTokens()
-  const res = await fetch(`${API_URL}/api/v1/attachments/${id}/download`, {
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/attachments/${id}/download`, {
     headers: access ? { Authorization: `Bearer ${access}` } : {},
   })
   if (!res.ok) throw new Error('Download failed')

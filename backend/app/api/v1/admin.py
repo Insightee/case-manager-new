@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.config import settings
+from app.core.db_errors import commit_or_http
 from app.core.database import get_db
 from app.core.pagination import paginate_query, paginated_response
 from app.core.security import hash_password
@@ -476,7 +477,7 @@ def delete_service_product(
 class PrimaryCmUpdate(BaseModel):
     primary_case_manager_user_id: int
     mentor_user_id: Optional[int] = None
-    update_active_cases: bool = False
+    update_active_cases: bool = True
 
 
 @router.patch("/therapists/{user_id}/primary-cm")
@@ -504,17 +505,13 @@ def update_therapist_primary_cm(
     profile.supervisor_user_id = payload.primary_case_manager_user_id
     if payload.mentor_user_id is not None:
         profile.mentor_user_id = payload.mentor_user_id
-    if payload.update_active_cases and old_cm:
-        from app.models.case import Case, CaseStatus
+    cases_updated = 0
+    if payload.update_active_cases:
+        from app.services.assignment_service import sync_case_managers_for_therapist
 
-        cases = db.scalars(
-            select(Case).where(
-                Case.status == CaseStatus.ACTIVE,
-                Case.case_manager_user_id == old_cm,
-            )
-        ).all()
-        for case in cases:
-            case.case_manager_user_id = payload.primary_case_manager_user_id
+        cases_updated = sync_case_managers_for_therapist(
+            db, user_id, payload.primary_case_manager_user_id
+        )
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -526,6 +523,7 @@ def update_therapist_primary_cm(
         new_value={
             "primary_cm_user_id": payload.primary_case_manager_user_id,
             "update_active_cases": payload.update_active_cases,
+            "cases_updated": cases_updated,
         },
         **meta,
     )
@@ -2120,6 +2118,35 @@ def bulk_update_therapist_primary_cm(
     )
 
 
+@router.post("/therapists/backfill-case-managers")
+def backfill_therapist_case_managers(
+    request: Request,
+    apply: bool = Query(False, description="When true, persist case CM updates"),
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    """Align case CM with each therapist's primary CM for assigned sync-eligible cases."""
+    from app.services.assignment_service import backfill_case_managers_from_therapist_profiles
+
+    outcome = backfill_case_managers_from_therapist_profiles(db, dry_run=not apply)
+    if apply and outcome["cases_updated"] > 0:
+        meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="backfill_case_managers",
+            entity_type="case",
+            entity_id=None,
+            new_value={
+                "cases_updated": outcome["cases_updated"],
+                "therapists_touched": outcome["therapists_touched"],
+            },
+            **meta,
+        )
+        db.commit()
+    return outcome
+
+
 @router.get("/therapist-profiles/summary")
 def therapist_profiles_summary(
     user: User = Depends(require_permission("user.manage")),
@@ -2214,7 +2241,7 @@ def admin_update_therapist_profile(
         sync_therapist_service_access(db, target, profile.services_offered or [])
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="therapist_profile", entity_id=profile_id, **meta)
-    db.commit()
+    commit_or_http(db)
     db.refresh(profile)
     if not target:
         target = db.get(User, profile.user_id)

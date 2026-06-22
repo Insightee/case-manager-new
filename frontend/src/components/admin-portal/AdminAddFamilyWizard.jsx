@@ -204,7 +204,6 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
       child_id: childId,
       service_type: serviceType.trim(),
       product_module: productModule,
-      case_code: caseCode || undefined,
       billing_type: billing.billing_type,
       client_billing_mode: billing.client_billing_mode,
       compensation_mode: billing.compensation_mode,

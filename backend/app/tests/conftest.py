@@ -54,3 +54,36 @@ def api_items(data):
     if isinstance(data, dict) and "items" in data:
         return data["items"]
     return data
+
+
+def api_first_case_id(client, headers: dict, *, page_size: int = 1) -> int:
+    """First case visible to the authenticated user (team-scoped for CMs)."""
+    res = client.get(f"/api/v1/cases?page_size={page_size}", headers=headers)
+    assert res.status_code == 200, res.text
+    items = api_items(res.json())
+    assert items, "Expected at least one visible case"
+    return int(items[0]["id"])
+
+
+def login_headers(client, email: str, password: str = "demo123") -> dict[str, str]:
+    res = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert res.status_code == 200, res.text
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
+def cm_headers_for_case(client, case_id: int, password: str = "demo123") -> dict[str, str]:
+    """Auth headers for the case manager assigned to ``case_id``."""
+    from app.core.database import SessionLocal
+    from app.models.case import Case
+    from app.models.user import User
+
+    db = SessionLocal()
+    try:
+        case = db.get(Case, case_id)
+        assert case is not None and case.case_manager_user_id is not None
+        cm = db.get(User, case.case_manager_user_id)
+        assert cm is not None
+        email = cm.email
+    finally:
+        db.close()
+    return login_headers(client, email, password=password)

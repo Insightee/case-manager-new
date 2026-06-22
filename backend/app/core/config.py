@@ -122,7 +122,7 @@ class Settings(BaseSettings):
         # Vercel production aliases (frontend-omega-eight-92.vercel.app) and git previews
         # (frontend-git-<branch>-insightes-projects.vercel.app). Explicit production URL
         # should still be listed in CORS_ORIGINS for invite/email link consistency.
-        return r"https://frontend-[a-zA-Z0-9-]+\.vercel\.app"
+        return r"https://((frontend-[a-zA-Z0-9-]+\.vercel\.app)|(www\.)?insighte\.org)"
 
     @property
     def is_development(self) -> bool:
