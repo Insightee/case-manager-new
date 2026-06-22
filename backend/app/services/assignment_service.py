@@ -6,9 +6,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.assignment import BookingMode, CaseAssignment, CaseAssignmentStatus
-from app.models.case import Case
+from app.models.case import Case, CaseStatus
 from app.models.therapist_profile import TherapistProfile
 from app.services import case_service_service
+
+# Cases linked to an active therapist assignment that should mirror therapist primary CM.
+CASE_CM_SYNC_STATUSES = frozenset(
+    {
+        CaseStatus.ACTIVE,
+        CaseStatus.PENDING_ALLOTMENT,
+        CaseStatus.PENDING_REPLACEMENT,
+    }
+)
 
 
 def resolve_primary_case_manager_user_id(db: Session, therapist_user_id: int) -> int | None:
@@ -20,12 +29,88 @@ def resolve_primary_case_manager_user_id(db: Session, therapist_user_id: int) ->
     return profile.supervisor_user_id
 
 
+def assigned_case_ids_for_therapist(db: Session, therapist_user_id: int) -> list[int]:
+    """Case ids with an active assignment for this therapist and a sync-eligible status."""
+    stmt = (
+        select(Case.id)
+        .join(CaseAssignment, CaseAssignment.case_id == Case.id)
+        .where(
+            CaseAssignment.therapist_user_id == therapist_user_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            Case.status.in_(CASE_CM_SYNC_STATUSES),
+        )
+        .distinct()
+        .order_by(Case.id)
+    )
+    return list(db.scalars(stmt).all())
+
+
+def sync_case_managers_for_therapist(db: Session, therapist_user_id: int, cm_user_id: int) -> int:
+    """Set case_manager_user_id on all sync-eligible assigned cases for a therapist."""
+    if not cm_user_id:
+        return 0
+    updated = 0
+    for case_id in assigned_case_ids_for_therapist(db, therapist_user_id):
+        case = db.get(Case, case_id)
+        if case and case.case_manager_user_id != cm_user_id:
+            case.case_manager_user_id = cm_user_id
+            updated += 1
+    if updated:
+        db.flush()
+    return updated
+
+
+def backfill_case_managers_from_therapist_profiles(db: Session, *, dry_run: bool = True) -> dict:
+    """Align case CM with each therapist profile primary CM for assigned sync-eligible cases."""
+    profiles = list(
+        db.scalars(
+            select(TherapistProfile).where(TherapistProfile.supervisor_user_id.is_not(None))
+        ).all()
+    )
+    mismatches: list[dict] = []
+    cases_updated = 0
+    therapists_touched = 0
+
+    for profile in profiles:
+        cm_id = profile.supervisor_user_id
+        if not cm_id:
+            continue
+        therapist_updated = 0
+        for case_id in assigned_case_ids_for_therapist(db, profile.user_id):
+            case = db.get(Case, case_id)
+            if not case or case.case_manager_user_id == cm_id:
+                continue
+            mismatches.append(
+                {
+                    "case_id": case.id,
+                    "case_code": case.case_code,
+                    "therapist_user_id": profile.user_id,
+                    "old_case_manager_user_id": case.case_manager_user_id,
+                    "new_case_manager_user_id": cm_id,
+                }
+            )
+            if not dry_run:
+                case.case_manager_user_id = cm_id
+            therapist_updated += 1
+            cases_updated += 1
+        if therapist_updated:
+            therapists_touched += 1
+
+    if not dry_run and cases_updated:
+        db.flush()
+
+    return {
+        "dry_run": dry_run,
+        "therapists_touched": therapists_touched,
+        "cases_updated": cases_updated,
+        "mismatches": mismatches,
+    }
+
+
 def sync_case_manager_from_therapist(db: Session, case: Case, therapist_user_id: int) -> bool:
-    """Link case.case_manager_user_id from therapist primary CM when the case has none."""
-    if case.case_manager_user_id:
-        return False
+    """Align case.case_manager_user_id with the therapist's primary case manager."""
     cm_id = resolve_primary_case_manager_user_id(db, therapist_user_id)
-    if not cm_id:
+    if not cm_id or case.case_manager_user_id == cm_id:
         return False
     case.case_manager_user_id = cm_id
     db.flush()

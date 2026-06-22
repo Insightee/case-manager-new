@@ -111,7 +111,12 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
     if "supervisor_user_id" in data:
-        profile.supervisor_user_id = data["supervisor_user_id"]
+        new_cm = data["supervisor_user_id"]
+        profile.supervisor_user_id = new_cm
+        if new_cm and db is not None:
+            from app.services.assignment_service import sync_case_managers_for_therapist
+
+            sync_case_managers_for_therapist(db, profile.user_id, new_cm)
     if "mentor_user_id" in data:
         profile.mentor_user_id = data["mentor_user_id"]
     if "employment_start_date" in data:
