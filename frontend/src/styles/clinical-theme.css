@@ -33,3 +33,23 @@
   --clinical-shadow-card:  0 1px 3px rgba(15, 23, 42, 0.08);
   --clinical-shadow-panel: 0 4px 16px rgba(15, 23, 42, 0.10);
 }
+
+/* Forest Light scope — Reports hub + case profile shell */
+.forest-light,
+.cp-shell,
+.cp-reports-hub,
+.reports-home-page {
+  --clinical-bg: #f9f9f9;
+  --clinical-sidebar-bg: #f3f3f4;
+  --clinical-surface: #ffffff;
+  --clinical-surface-soft: #f3f3f4;
+  --clinical-purple: #000000;
+  --clinical-purple-soft: #eeeeee;
+  --clinical-lavender: #f3f3f4;
+  --clinical-border: #c2c8c3;
+  --clinical-text: #1a1c1c;
+  --clinical-muted: #424845;
+  --clinical-green: #416656;
+  --clinical-green-soft: #c3ecd7;
+  --clinical-radius-card: 16px;
+}

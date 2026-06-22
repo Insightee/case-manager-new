@@ -7,6 +7,7 @@ export const CASE_DOCUMENT_CATEGORIES = [
   { value: 'INCIDENT_REPORT', label: 'Incident report' },
   { value: 'TERMINATION_PROGRESS_REPORT', label: 'Termination progress report' },
   { value: 'ANNUAL_PROGRESS_REPORT', label: 'Annual progress report' },
+  { value: 'SESSION_EVIDENCE', label: 'Session evidence' },
   { value: 'OTHER', label: 'Other' },
 ]
 

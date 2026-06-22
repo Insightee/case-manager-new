@@ -12,8 +12,10 @@ import { CasesPageHeader } from './CasesPageHeader.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { StatCard } from './StatCard.jsx'
 import { TherapistCaseCard } from './TherapistCaseCard.jsx'
+import { MyCasesTable } from './MyCasesTable.jsx'
 import { UpcomingSessionsPanel } from './UpcomingSessionsPanel.jsx'
 import './my-cases.css'
+import '../../styles/my-cases-dashboard.css'
 
 function SectionHeader({ title, tone, count }) {
   return (
@@ -27,8 +29,6 @@ function SectionHeader({ title, tone, count }) {
 const DEFAULT_FILTERS = {
   stage: 'all',
   service: 'all',
-  dueSoon: 'all',
-  sort: 'urgency',
 }
 
 const VIEW_STORAGE_KEY = 'ic-my-cases-view'
@@ -63,9 +63,7 @@ export function MyCasesPage() {
     () =>
       Boolean(search.trim()) ||
       filters.stage !== 'all' ||
-      filters.service !== 'all' ||
-      filters.dueSoon !== 'all' ||
-      filters.sort !== 'urgency',
+      filters.service !== 'all',
     [search, filters],
   )
 
@@ -75,8 +73,7 @@ export function MyCasesPage() {
         search,
         stage: filters.stage,
         service: filters.service,
-        dueSoon: filters.dueSoon,
-        sort: filters.sort,
+        sort: 'urgency',
       }),
     [workbench.allCases, search, filters],
   )
@@ -107,7 +104,7 @@ export function MyCasesPage() {
   const viewClass = view === 'table' ? 'ic-view-table' : 'ic-view-grid'
 
   return (
-    <div className="ic-my-cases">
+    <div className="ic-my-cases forest-light">
       <QueryState
         isLoading={isLoading}
         isError={isError}
@@ -139,10 +136,6 @@ export function MyCasesPage() {
         service={filters.service}
         onServiceChange={(service) => setFilters((f) => ({ ...f, service }))}
         serviceOptions={serviceOptions}
-        dueSoon={filters.dueSoon}
-        onDueSoonChange={(dueSoon) => setFilters((f) => ({ ...f, dueSoon }))}
-        sort={filters.sort}
-        onSortChange={(sort) => setFilters((f) => ({ ...f, sort }))}
         hasActiveFilters={hasActiveFilters}
         onClearFilters={clearFilters}
       />

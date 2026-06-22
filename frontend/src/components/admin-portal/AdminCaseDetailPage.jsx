@@ -26,9 +26,9 @@ import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 import { CaseProfileShell } from '../case-profile/CaseProfileShell.jsx'
 import { CaseReportsHub } from '../case-profile/CaseReportsHub.jsx'
 import { ADMIN_CASE_TABS_REVAMP } from '../case-profile/caseProfileTabs.js'
+import { resolveLegacyReportsSection } from '../case-profile/reportsHubSections.js'
 import { CaseManagerSupervisionPanel } from '../clinical/cm/CaseManagerSupervisionPanel.jsx'
-import { CaseGoalsPanel } from '../case-profile/sections/CaseGoalsPanel.jsx'
-import { CaseStrategiesPanel } from '../case-profile/sections/CaseStrategiesPanel.jsx'
+import { GoalStrategyEnginePage } from '../clinical/goals-strategy/GoalStrategyEnginePage.jsx'
 import { EvidenceDrivePanel } from '../case-profile/sections/EvidenceDrivePanel.jsx'
 import './admin-case-detail-mobile.css'
 
@@ -159,6 +159,12 @@ export function AdminCaseDetailPage() {
   const revampTabs = ADMIN_CASE_TABS_REVAMP.filter((t) => !t.perm || can(t.perm))
   const tabsForShell = revampActive ? revampTabs : visibleTabs
   const visibleTabIds = tabsForShell.map((t) => t.id)
+
+  useEffect(() => {
+    if (!revampActive) return
+    const legacy = resolveLegacyReportsSection(searchParams)
+    if (legacy) setSearchParams(legacy, { replace: true })
+  }, [searchParams, setSearchParams, revampActive])
 
   function openScheduleTab() {
     if (visibleTabIds.includes('scheduling')) setTab('scheduling')
@@ -293,12 +299,12 @@ export function AdminCaseDetailPage() {
         />
       ) : null}
 
-      {tab === 'goals' && revampActive ? (
-        <CaseGoalsPanel caseId={caseRow?.id || caseId} variant="admin" canModerate={can('iep.manage')} />
-      ) : null}
-
-      {tab === 'strategies' && revampActive ? (
-        <CaseStrategiesPanel caseId={caseRow?.id || caseId} variant="admin" />
+      {(tab === 'goals' || tab === 'strategies') && revampActive ? (
+        <GoalStrategyEnginePage
+          caseId={caseRow?.id || caseId}
+          variant="admin"
+          canModerate={can('iep.manage')}
+        />
       ) : null}
 
       {tab === 'insights' && revampActive ? (

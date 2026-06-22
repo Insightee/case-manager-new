@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.clinical_evidence import MonthlyReportSection, SessionGoalEntry, StrategyUseEvent
 from app.models.report import MonthlyReport, ReportStatus
 from app.services import report_compile_service
+from app.services.clinical_evidence_service import entry_schema_version_from_row
 from app.services.report_log_query import submitted_logs_for_report_month
 
 SECTION_KEYS = (
@@ -42,7 +43,18 @@ def compile_evidence_v2(db: Session, user, report: MonthlyReport) -> dict:
             select(SessionGoalEntry).where(SessionGoalEntry.daily_log_id == log.id)
         ).all()
         for e in entries:
-            goal_lines.append(f"<li>{_esc(e.goal_label)} — {_esc(e.response_note or 'Noted in session')}</li>")
+            if entry_schema_version_from_row(e) == 2:
+                parts = [
+                    f"P{e.participation_score if e.participation_score is not None else '—'}",
+                    f"I{e.independence_score if e.independence_score is not None else '—'}",
+                    f"G{e.goal_achievement_score if e.goal_achievement_score is not None else '—'}",
+                ]
+                note = e.measurement_note or e.response_note or e.activity_used or 'Scored in session'
+                goal_lines.append(
+                    f"<li><strong>{_esc(e.goal_label)}</strong> ({'/'.join(parts)}) — {_esc(note)}</li>"
+                )
+            else:
+                goal_lines.append(f"<li>{_esc(e.goal_label)} — {_esc(e.response_note or 'Noted in session')}</li>")
     goal_html = f"<ul>{''.join(goal_lines)}</ul>" if goal_lines else "<p><em>No structured goal entries.</em></p>"
 
     strat_lines = []
@@ -50,7 +62,10 @@ def compile_evidence_v2(db: Session, user, report: MonthlyReport) -> dict:
         for s in db.scalars(
             select(StrategyUseEvent).where(StrategyUseEvent.daily_log_id == log.id)
         ).all():
-            strat_lines.append(f"<li>{_esc(s.strategy_label)} — {_esc(s.outcome_note or '')}</li>")
+            feedback = f" ({s.strategy_feedback})" if s.strategy_feedback else ""
+            strat_lines.append(
+                f"<li>{_esc(s.strategy_label)}{feedback} — {_esc(s.short_note or s.outcome_note or '')}</li>"
+            )
     strat_html = f"<ul>{''.join(strat_lines)}</ul>" if strat_lines else "<p><em>No strategy use recorded.</em></p>"
 
     sections_data = {

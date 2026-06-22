@@ -780,10 +780,54 @@
 
 .clinical-case-header__toolbar {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.625rem;
   flex-shrink: 0;
+  margin-left: auto;
+}
+
+.clinical-case-header__toolbar-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.clinical-case-header__change-case {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 44px;
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--clinical-border);
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.clinical-case-header__change-case .material-symbols-outlined {
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+.clinical-case-header__change-case:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.clinical-case-header__change-case:focus-visible {
+  outline: 2px solid var(--clinical-purple, #7c3aed);
+  outline-offset: 2px;
 }
 
 .clinical-case-header__status-btn {
@@ -840,7 +884,14 @@
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: flex-end;
-    max-width: 38%;
+    align-items: flex-start;
+    max-width: min(100%, 220px);
+    margin-left: auto;
+  }
+
+  .clinical-case-header__change-case {
+    width: 100%;
+    justify-content: center;
   }
 
   .clinical-case-header__service {
@@ -2641,6 +2692,45 @@ button.clinical-logs-stat--active {
   line-height: 1.65;
   color: var(--clinical-text);
   font-size: 0.9375rem;
+}
+
+.insights-goal-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.875rem;
+}
+
+.insights-goal-section__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.insights-goal-section__copy-btn {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--clinical-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--clinical-purple);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.insights-goal-section__copy-btn:hover {
+  background: var(--clinical-purple-soft);
+  border-color: #c4b5fd;
+}
+
+.insights-goal-section__copy-btn:focus-visible {
+  outline: 2px solid var(--clinical-purple);
+  outline-offset: 2px;
 }
 
 .insights-goal-grid {

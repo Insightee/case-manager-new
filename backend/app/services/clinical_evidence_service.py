@@ -1,42 +1,154 @@
 from __future__ import annotations
 
+import json
+from typing import Any, Optional
+
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clinical_scoring import validate_score, validate_strategy_feedback
+from app.models.case import Case
 from app.models.clinical_evidence import (
     GoalEvidenceEvent,
     SessionGoalEntry,
     StrategyUseEvent,
 )
-from app.models.daily_log import DailyLog
+from app.models.daily_log import DailyLog, LogApprovalStatus
+from app.models.session import Session as TherapySession
+
+
+def entry_schema_version_from_row(entry: SessionGoalEntry) -> int:
+    """Legacy rows keep schema_version 1; scored rows are version 2."""
+    if (
+        entry.participation_score is not None
+        or entry.independence_score is not None
+        or entry.goal_achievement_score is not None
+    ):
+        return 2
+    return 1
+
+
+def strategy_schema_version_from_row(event: StrategyUseEvent) -> int:
+    if event.strategy_feedback or event.participation_score is not None:
+        return 2
+    return 1
+
+
+def _json_list(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw if x]
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(x) for x in parsed if x]
+        except json.JSONDecodeError:
+            pass
+    return []
+
+
+def _dump_json_list(values: Any) -> Optional[str]:
+    items = _json_list(values)
+    return json.dumps(items) if items else None
+
+
+def _goal_to_dict(g: SessionGoalEntry) -> dict[str, Any]:
+    return {
+        "id": g.id,
+        "schema_version": entry_schema_version_from_row(g),
+        "goal_card_id": g.goal_card_id,
+        "goal_label": g.goal_label,
+        "domain_key": g.domain_key,
+        "core_domains": _json_list(getattr(g, "core_domains_json", None)),
+        "core_environments": _json_list(getattr(g, "core_environments_json", None)),
+        "support_level": g.support_level,
+        "response_note": g.response_note,
+        "measurement_note": g.measurement_note,
+        "visibility": g.visibility,
+        "participation_score": g.participation_score,
+        "independence_score": g.independence_score,
+        "goal_achievement_score": g.goal_achievement_score,
+        "activity_used": g.activity_used,
+        "goal_repository_item_id": g.goal_repository_item_id,
+        "evidence_count": g.evidence_count or 0,
+        "strategies": [],
+    }
+
+
+def _strategy_to_dict(s: StrategyUseEvent) -> dict[str, Any]:
+    return {
+        "id": s.id,
+        "schema_version": strategy_schema_version_from_row(s),
+        "strategy_id": s.strategy_id,
+        "strategy_label": s.strategy_label,
+        "outcome_note": s.outcome_note,
+        "short_note": s.short_note,
+        "goal_card_id": s.goal_card_id,
+        "goal_entry_id": s.goal_entry_id,
+        "environment": s.environment,
+        "activity_used": s.activity_used,
+        "participation_score": s.participation_score,
+        "independence_score": s.independence_score,
+        "goal_achievement_score": s.goal_achievement_score,
+        "strategy_feedback": s.strategy_feedback,
+        "custom_strategy_id": s.custom_strategy_id,
+    }
 
 
 def entries_for_log(db: Session, daily_log_id: int) -> dict:
     goals = db.scalars(select(SessionGoalEntry).where(SessionGoalEntry.daily_log_id == daily_log_id)).all()
     strategies = db.scalars(select(StrategyUseEvent).where(StrategyUseEvent.daily_log_id == daily_log_id)).all()
+    goal_dicts = [_goal_to_dict(g) for g in goals]
+    strat_by_goal: dict[int, list[dict]] = {}
+    loose_strats: list[dict] = []
+    for s in strategies:
+        sd = _strategy_to_dict(s)
+        if s.goal_entry_id:
+            strat_by_goal.setdefault(s.goal_entry_id, []).append(sd)
+        else:
+            loose_strats.append(sd)
+    for gd in goal_dicts:
+        gd["strategies"] = strat_by_goal.get(gd["id"], [])
+    all_strat_dicts = loose_strats + [s for gd in goal_dicts for s in gd["strategies"]]
+    has_v2 = any(g["schema_version"] == 2 for g in goal_dicts) or any(
+        s["schema_version"] == 2 for s in all_strat_dicts
+    )
     return {
-        "goals": [
-            {
-                "id": g.id,
-                "goal_card_id": g.goal_card_id,
-                "goal_label": g.goal_label,
-                "domain_key": g.domain_key,
-                "support_level": g.support_level,
-                "response_note": g.response_note,
-                "visibility": g.visibility,
-            }
-            for g in goals
-        ],
-        "strategies": [
-            {
-                "id": s.id,
-                "strategy_id": s.strategy_id,
-                "strategy_label": s.strategy_label,
-                "outcome_note": s.outcome_note,
-            }
-            for s in strategies
-        ],
+        "schema_version": 2 if has_v2 else 1,
+        "goals": goal_dicts,
+        "strategies": loose_strats,
     }
+
+
+def _payload_is_v2(goals: list[dict], strategies: list[dict]) -> bool:
+    for item in goals:
+        if item.get("schema_version") == 2:
+            return True
+        if any(item.get(k) is not None for k in ("participation_score", "independence_score", "goal_achievement_score")):
+            return True
+    for item in strategies:
+        if item.get("schema_version") == 2:
+            return True
+        if item.get("strategy_feedback"):
+            return True
+    return False
+
+
+def _resolve_context(db: Session, daily_log: DailyLog, case_id: int) -> tuple[TherapySession, Case, int | None]:
+    session = daily_log.session or db.get(TherapySession, daily_log.session_id)
+    if not session:
+        raise HTTPException(status_code=400, detail="Session not found for log")
+    case = db.get(Case, case_id)
+    child_id = case.child_id if case else None
+    return session, case, child_id
+
+
+def assert_log_evidence_editable(log: DailyLog) -> None:
+    if log.approval_status == LogApprovalStatus.APPROVED:
+        raise HTTPException(status_code=403, detail="Approved logs cannot change structured evidence")
 
 
 def save_session_evidence(
@@ -46,7 +158,17 @@ def save_session_evidence(
     case_id: int,
     goals: list[dict],
     strategies: list[dict],
+    created_by_user_id: Optional[int] = None,
+    commit: bool = True,
 ) -> dict:
+    """Persist session evidence. Supports legacy (v1) and scored (v2) payloads.
+
+    Existing logs without scores remain valid on read. New v2 saves write 0–4 scores.
+    """
+    assert_log_evidence_editable(daily_log)
+    session, _case, child_id = _resolve_context(db, daily_log, case_id)
+    use_v2 = _payload_is_v2(goals, strategies)
+
     existing_goals = db.scalars(
         select(SessionGoalEntry).where(SessionGoalEntry.daily_log_id == daily_log.id)
     ).all()
@@ -57,44 +179,102 @@ def save_session_evidence(
     ).all()
     for s in existing_strats:
         db.delete(s)
+    db.flush()
 
     goal_labels: list[str] = []
-    for item in goals:
+    goal_entry_ids: dict[int, int] = {}
+    nested_strategies: list[dict] = []
+
+    for idx, item in enumerate(goals):
         label = (item.get("goal_label") or "").strip()
         if not label:
             continue
         goal_labels.append(label)
+
+        participation = validate_score(item.get("participation_score"), field="participation_score")
+        independence = validate_score(item.get("independence_score"), field="independence_score")
+        achievement = validate_score(item.get("goal_achievement_score"), field="goal_achievement_score")
+
         entry = SessionGoalEntry(
             daily_log_id=daily_log.id,
             goal_card_id=item.get("goal_card_id"),
             goal_label=label,
             domain_key=item.get("domain_key"),
-            support_level=item.get("support_level"),
-            response_note=item.get("response_note"),
+            support_level=item.get("support_level") if not use_v2 else None,
+            response_note=item.get("response_note") or item.get("measurement_note"),
+            measurement_note=item.get("measurement_note") or item.get("response_note"),
             visibility=item.get("visibility") or "INTERNAL_ONLY",
+            session_id=session.id,
+            case_id=case_id,
+            child_id=child_id,
+            created_by_user_id=created_by_user_id,
+            participation_score=participation,
+            independence_score=independence,
+            goal_achievement_score=achievement,
+            activity_used=item.get("activity_used"),
+            core_domains_json=_dump_json_list(item.get("core_domains")),
+            core_environments_json=_dump_json_list(item.get("core_environments")),
+            goal_repository_item_id=item.get("goal_repository_item_id"),
+            evidence_count=int(item.get("evidence_count") or 0),
         )
         db.add(entry)
+        db.flush()
+        goal_entry_ids[idx] = entry.id
+
+        summary = label
+        if use_v2 and participation is not None:
+            summary += f" (P{participation}/I{independence or '—'}/G{achievement or '—'})"
+        elif item.get("response_note"):
+            summary += f" — {item.get('response_note')}"
+
         db.add(
             GoalEvidenceEvent(
                 case_id=case_id,
                 domain_key=item.get("domain_key"),
                 source_type="daily_log",
                 source_id=daily_log.id,
-                summary=label + (f" — {item.get('response_note')}" if item.get("response_note") else ""),
+                summary=summary,
                 visibility=item.get("visibility") or "INTERNAL_ONLY",
             )
         )
 
-    for item in strategies:
+        for strat in item.get("strategies") or []:
+            nested_strategies.append({**strat, "goal_entry_index": idx, "goal_card_id": item.get("goal_card_id")})
+
+    all_strategies = list(strategies) + nested_strategies
+    for item in all_strategies:
         label = (item.get("strategy_label") or "").strip()
         if not label:
             continue
+        goal_entry_id = None
+        if item.get("goal_entry_id"):
+            goal_entry_id = item.get("goal_entry_id")
+        elif item.get("goal_entry_index") is not None:
+            goal_entry_id = goal_entry_ids.get(item["goal_entry_index"])
+
+        feedback = validate_strategy_feedback(item.get("strategy_feedback"))
         db.add(
             StrategyUseEvent(
                 daily_log_id=daily_log.id,
                 strategy_id=item.get("strategy_id"),
                 strategy_label=label,
-                outcome_note=item.get("outcome_note"),
+                outcome_note=item.get("outcome_note") or item.get("short_note"),
+                short_note=item.get("short_note") or item.get("outcome_note"),
+                session_id=session.id,
+                case_id=case_id,
+                child_id=child_id,
+                goal_card_id=item.get("goal_card_id"),
+                goal_entry_id=goal_entry_id,
+                created_by_user_id=created_by_user_id,
+                environment=item.get("environment") or getattr(session, "mode", None),
+                activity_used=item.get("activity_used"),
+                participation_score=validate_score(item.get("participation_score"), field="participation_score"),
+                independence_score=validate_score(item.get("independence_score"), field="independence_score"),
+                goal_achievement_score=validate_score(
+                    item.get("goal_achievement_score"), field="goal_achievement_score"
+                ),
+                strategy_feedback=feedback,
+                custom_strategy_id=item.get("custom_strategy_id"),
             )
         )
 
@@ -104,5 +284,8 @@ def save_session_evidence(
         append = "; ".join(goal_labels)
         daily_log.goals_addressed = f"{merged}\n{append}".strip() if merged else append
 
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return entries_for_log(db, daily_log.id)

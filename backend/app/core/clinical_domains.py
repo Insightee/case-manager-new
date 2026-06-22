@@ -25,3 +25,25 @@ OBSERVATION_KEY_TO_DOMAIN = {
     "motor_play": "independence",
     "summary_recommendations": "therapist_notes",
 }
+
+CORE_DOMAINS = [
+    {"id": "communication", "label": "Communication"},
+    {"id": "social_participation", "label": "Social Participation"},
+    {"id": "emotional_regulation", "label": "Emotional Regulation"},
+    {"id": "sensory_regulation", "label": "Sensory Regulation"},
+    {"id": "independence_daily_living", "label": "Independence / Daily Living"},
+    {"id": "learning_readiness", "label": "Learning Readiness"},
+    {"id": "play_engagement", "label": "Play and Engagement"},
+    {"id": "motor_movement_participation", "label": "Motor / Movement Participation"},
+]
+
+CORE_ENVIRONMENTS = [
+    {"id": "home", "label": "Home", "short": "Home"},
+    {"id": "school_classroom", "label": "School / Classroom", "short": "School"},
+    {"id": "playground", "label": "Playground", "short": "Playground"},
+    {"id": "peer_interaction", "label": "Peer Interaction", "short": "Peers"},
+    {"id": "community_outing", "label": "Community Outing", "short": "Community"},
+    {"id": "transitions", "label": "Transitions", "short": "Transitions"},
+    {"id": "interests", "label": "Interests", "short": "Interests"},
+    {"id": "meal_self_care_routine", "label": "Meal / Self-care Routine", "short": "Self care"},
+]

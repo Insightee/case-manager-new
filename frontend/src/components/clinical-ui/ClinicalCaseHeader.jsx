@@ -13,6 +13,8 @@ export function ClinicalCaseHeader({
   status,
   avatarUrl,
   onStatusClick,
+  onChangeCase,
+  changeCaseLabel = 'Change case',
   supportHref,
   supportLabel = 'Support',
   headerActions,
@@ -33,25 +35,38 @@ export function ClinicalCaseHeader({
           {serviceType ? <p className="clinical-case-header__service">{serviceType}</p> : null}
         </div>
         <div className="clinical-case-header__toolbar">
-          {status && onStatusClick ? (
+          <div className="clinical-case-header__toolbar-group">
+            {status && onStatusClick ? (
+              <button
+                type="button"
+                className="clinical-case-header__status-btn"
+                onClick={onStatusClick}
+                title="Request status change"
+                aria-label={`Case status ${status}. Request change`}
+              >
+                <ClinicalStatusBadge status={status} />
+              </button>
+            ) : status ? (
+              <ClinicalStatusBadge status={status} />
+            ) : null}
+            {supportHref ? (
+              <Link to={supportHref} className="clinical-case-header__support-link">
+                {supportLabel}
+              </Link>
+            ) : null}
+            {headerActions ? <div className="clinical-case-header__extra">{headerActions}</div> : null}
+          </div>
+          {onChangeCase ? (
             <button
               type="button"
-              className="clinical-case-header__status-btn"
-              onClick={onStatusClick}
-              title="Request status change"
-              aria-label={`Case status ${status}. Request change`}
+              className="clinical-case-header__change-case"
+              onClick={onChangeCase}
+              aria-haspopup="dialog"
             >
-              <ClinicalStatusBadge status={status} />
+              <span className="material-symbols-outlined" aria-hidden="true">swap_horiz</span>
+              {changeCaseLabel}
             </button>
-          ) : status ? (
-            <ClinicalStatusBadge status={status} />
           ) : null}
-          {supportHref ? (
-            <Link to={supportHref} className="clinical-case-header__support-link">
-              {supportLabel}
-            </Link>
-          ) : null}
-          {headerActions ? <div className="clinical-case-header__extra">{headerActions}</div> : null}
         </div>
       </div>
     </header>

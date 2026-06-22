@@ -1,35 +1,25 @@
+import { ReportsMetricCard, ReportsMetricGrid } from '../reports-hub/ReportsMetricGrid.jsx'
+
 const CARDS = [
-  { key: 'draft', label: 'Draft', tone: 'warning', icon: '🟡' },
-  { key: 'underReview', label: 'Under Review', tone: 'info', icon: '🔵' },
-  { key: 'published', label: 'Published', tone: 'success', icon: '🟢' },
-  { key: 'overdue', label: 'Overdue', tone: 'danger', icon: '🔴' },
+  { key: 'draft', label: 'Draft', tone: 'draft' },
+  { key: 'underReview', label: 'Under Review', tone: 'underReview' },
+  { key: 'published', label: 'Published', tone: 'published' },
+  { key: 'overdue', label: 'Overdue', tone: 'overdue' },
 ]
 
 export function PipelineStats({ counts, activeFilter, onFilter }) {
   return (
-    <div className="clinical-metric-grid" role="group" aria-label="Report pipeline overview">
-      {CARDS.map((c) => {
-        const value = counts[c.key] ?? 0
-        const isActive = activeFilter === c.key
-        return (
-          <button
-            key={c.key}
-            type="button"
-            onClick={() => onFilter(c.key)}
-            className={`clinical-metric-card clinical-metric-card--${c.tone}`}
-            style={{
-              cursor: 'pointer',
-              textAlign: 'left',
-              outline: isActive ? '2px solid var(--clinical-primary-border)' : 'none',
-              outlineOffset: 2,
-            }}
-          >
-            {c.icon ? <span className="clinical-metric-card__icon" aria-hidden="true">{c.icon}</span> : null}
-            <span className="clinical-metric-card__count">{String(value).padStart(2, '0')}</span>
-            <span className="clinical-metric-card__label">{c.label}</span>
-          </button>
-        )
-      })}
-    </div>
+    <ReportsMetricGrid aria-label="Report pipeline overview">
+      {CARDS.map((c) => (
+        <ReportsMetricCard
+          key={c.key}
+          label={c.label}
+          value={counts[c.key] ?? 0}
+          tone={c.tone}
+          active={activeFilter === c.key}
+          onClick={() => onFilter(c.key)}
+        />
+      ))}
+    </ReportsMetricGrid>
   )
 }

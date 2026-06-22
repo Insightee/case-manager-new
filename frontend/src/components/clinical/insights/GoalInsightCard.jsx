@@ -23,6 +23,25 @@ const CARD_ACTIONS = [
   { label: 'Suggest to IEP', action: 'suggest_iep', variant: 'secondary' },
 ]
 
+const ALERT_EVIDENCE_LABELS = {
+  insufficient: 'Insufficient evidence',
+  weak: 'Weak evidence',
+  moderate: 'Moderate evidence',
+  strong_operational: 'Strong evidence',
+  mixed: 'Mixed evidence',
+}
+
+function shortAlertLabel(card) {
+  if (card.alertLabel) return card.alertLabel
+  if (card.alertEvidence && ALERT_EVIDENCE_LABELS[card.alertEvidence]) {
+    return ALERT_EVIDENCE_LABELS[card.alertEvidence]
+  }
+  if (card.evidenceStrength && ALERT_EVIDENCE_LABELS[card.evidenceStrength]) {
+    return ALERT_EVIDENCE_LABELS[card.evidenceStrength]
+  }
+  return null
+}
+
 function formatStatusLabel(status) {
   if (!status) return ''
   return String(status).replace(/_/g, ' ')
@@ -37,6 +56,31 @@ function weakestStrength(items) {
     if (idx >= 0 && idx < wIdx) weakest = item
   }
   return weakest
+}
+
+export function formatGoalCardsForCopy(cards, { month } = {}) {
+  const lines = []
+  if (month) {
+    lines.push(`Insighte insights — ${month}`, '')
+  }
+  for (const card of cards) {
+    if (card.categoryLabel) lines.push(card.categoryLabel.toUpperCase())
+    if (card.status) lines.push(`Status: ${formatStatusLabel(card.status)}`)
+    if (card.title) lines.push(card.title)
+    if (card.brief) lines.push(card.brief)
+    if (card.evidenceStrength) {
+      lines.push(`Evidence: ${EVIDENCE_LABELS[card.evidenceStrength] || card.evidenceStrength}`)
+    }
+    if (card.strategies?.length) {
+      lines.push(`${card.strategiesLabel || 'Strategies'}:`)
+      card.strategies.forEach((s) => lines.push(`• ${s}`))
+    }
+    if (card.observation) lines.push(`Observation: "${card.observation}"`)
+    const alertLabel = shortAlertLabel(card)
+    if (alertLabel) lines.push(alertLabel)
+    lines.push('')
+  }
+  return lines.join('\n').trim()
 }
 
 export function GoalInsightCard({ card, onAction }) {
@@ -97,10 +141,9 @@ export function GoalInsightCard({ card, onAction }) {
         <blockquote className="insights-goal-card__observation">&ldquo;{card.observation}&rdquo;</blockquote>
       ) : null}
 
-      {card.insight ? (
+      {shortAlertLabel(card) ? (
         <div className={`insights-goal-card__alert${card.alert ? '' : ' insights-goal-card__alert--muted'}`}>
-          {card.alert ? <strong>Important: </strong> : null}
-          {card.insight}
+          {shortAlertLabel(card)}
         </div>
       ) : null}
 
@@ -139,9 +182,7 @@ export function buildPlaceholderGoalCards(preview) {
       evidenceStrength: missingLogs ? 'weak' : goalsCount ? 'moderate' : 'insufficient',
       sessionsCount: sessions || null,
       strategies: [],
-      insight: missingLogs
-        ? `${missingLogs} log(s) could capture more detail about the child\'s response and the supports in use.`
-        : null,
+      alertEvidence: missingLogs ? 'weak' : null,
       alert: Boolean(missingLogs),
       placeholder: true,
     },
@@ -175,9 +216,7 @@ export function buildPlaceholderGoalCards(preview) {
       evidenceStrength: missingLogs || !sessions ? 'weak' : 'moderate',
       sessionsCount: sessions || null,
       alert: Boolean(missingLogs),
-      insight: missingLogs
-        ? 'Recent sessions may lack structured communication or goal evidence — intentional elicitation in the next logs will help.'
-        : null,
+      alertEvidence: missingLogs ? 'weak' : sessions ? 'mixed' : null,
       placeholder: true,
     },
   ]
@@ -248,10 +287,8 @@ export function buildGoalCardsFromSnapshot(snapshot) {
       strategies: goals.slice(0, 3).map((g) => g.goal_title).filter(Boolean),
       strategiesLabel: 'Related goals',
       observation: goals[0]?.suggested_next_step || null,
-      insight: goals.some((g) => g.evidence_strength === 'weak')
-        ? 'Some goals still need stronger structured evidence — capture mode, context, and support level in upcoming logs.'
-        : null,
       alert: goals.some((g) => g.evidence_strength === 'weak'),
+      alertEvidence: goalStrengths.length ? weakestStrength(goalStrengths) : 'weak',
     },
     {
       categoryLabel: 'Strategy insight',
@@ -261,10 +298,8 @@ export function buildGoalCardsFromSnapshot(snapshot) {
       evidenceStrength: strategies.some((s) => s.signal === 'mixed') ? 'moderate' : 'moderate',
       strategies: strategies.slice(0, 4).map((s) => s.strategy).filter(Boolean),
       strategiesLabel: 'Active strategies',
-      insight: strategies.some((s) => s.signal === 'mixed')
-        ? 'One or more strategies showed mixed response — review preparation and environment before intensity.'
-        : null,
       alert: strategies.some((s) => s.signal === 'mixed'),
+      alertEvidence: strategies.some((s) => s.signal === 'mixed') ? 'mixed' : 'moderate',
     },
     {
       categoryLabel: 'Review insight',
@@ -273,9 +308,7 @@ export function buildGoalCardsFromSnapshot(snapshot) {
       status: 'review',
       evidenceStrength: notWorking.length ? 'weak' : 'moderate',
       alert: notWorking.length > 0,
-      insight: notWorking.length > 1
-        ? notWorking.slice(1).map((n) => n.observation).filter(Boolean).join(' ')
-        : null,
+      alertEvidence: notWorking.length ? 'weak' : 'moderate',
     },
   ]
 }

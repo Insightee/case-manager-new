@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { ClinicalMetricCard } from '../clinical-ui/ClinicalMetricCard.jsx'
 import { CaseReportTypeCard } from './CaseReportTypeCard.jsx'
+import { ReportsSectionHeader, ReportsMetricCard, ReportsMetricGrid } from '../reports-hub/index.js'
 
 function normStatus(value) {
   return String(value || '').toLowerCase().replace(/\s+/g, '_')
@@ -31,6 +31,11 @@ function formatStatusLabel(status) {
 
 function currentMonthLabel() {
   return new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+}
+
+function sectionForCard(cardId) {
+  if (cardId === 'drive') return 'documents'
+  return cardId
 }
 
 export function CaseReportsTabHome({ caseId, childName, onOpenSection }) {
@@ -158,42 +163,46 @@ export function CaseReportsTabHome({ caseId, childName, onOpenSection }) {
 
   return (
     <div className="cp-reports-tab-home">
-      <header className="cp-reports-tab-home__header">
-        <h2 className="clinical-section-heading">Reports</h2>
-        <p className="clinical-section-subtitle">
-          Draft, submit, and track clinical documentation for <strong>{childName}</strong>.
-        </p>
-      </header>
+      <ReportsSectionHeader
+        title="Reports Dashboard"
+        subtitle={`Monitor and manage clinical documentation for ${childName}.`}
+        action={(
+          <button
+            type="button"
+            className="reports-hub-btn reports-hub-btn--primary"
+            onClick={() => onOpenSection('monthly')}
+          >
+            + Create New Draft
+          </button>
+        )}
+      />
 
-      <section className="cp-reports-tab-home__metrics" aria-label="Report pipeline metrics">
-        <ClinicalMetricCard
-          label="Drafts"
+      <ReportsMetricGrid className="cp-reports-tab-home__metrics">
+        <ReportsMetricCard
+          label="Active Drafts"
           value={pipeline.draft}
-          icon="reports"
-          valueTone={pipeline.draft ? 'attention' : 'default'}
+          tone="draft"
           onClick={() => onOpenSection('monthly')}
         />
-        <ClinicalMetricCard
-          label="Under review"
+        <ReportsMetricCard
+          label="Pending Review"
           value={pipeline.underReview}
-          icon="documentation"
+          tone="underReview"
           onClick={() => onOpenSection('monthly')}
         />
-        <ClinicalMetricCard
-          label="Published"
+        <ReportsMetricCard
+          label="Approved"
           value={pipeline.published}
-          icon="evidence"
-          valueTone={pipeline.published ? 'success' : 'default'}
+          tone="published"
           onClick={() => onOpenSection('monthly')}
         />
-        <ClinicalMetricCard
-          label="Needs attention"
+        <ReportsMetricCard
+          label="Needs Attention"
           value={pipeline.overdue}
-          icon="goals"
-          valueTone={pipeline.overdue ? 'attention' : 'default'}
+          tone="overdue"
           onClick={() => onOpenSection('monthly')}
         />
-      </section>
+      </ReportsMetricGrid>
 
       {summary?.recommended_next_actions?.length ? (
         <div className="cp-reports-tab-home__actions" role="status">
@@ -207,13 +216,13 @@ export function CaseReportsTabHome({ caseId, childName, onOpenSection }) {
       ) : null}
 
       <section className="cp-reports-tab-home__pipeline" aria-label="Report types">
-        <h3 className="cp-reports-tab-home__pipeline-title">Report pipeline</h3>
+        <h3 className="cp-reports-tab-home__pipeline-title">Active reports</h3>
         <div className="cp-reports-tab-home__pipeline-grid">
           {reportCards.map((card) => (
             <CaseReportTypeCard
               key={card.id}
               {...card}
-              onOpen={() => onOpenSection(card.id)}
+              onOpen={() => onOpenSection(sectionForCard(card.id))}
             />
           ))}
         </div>

@@ -361,8 +361,115 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE daily_logs ADD COLUMN parent_notified_at DATETIME"))
             if "resubmitted_at" not in log_cols:
                 conn.execute(text("ALTER TABLE daily_logs ADD COLUMN resubmitted_at DATETIME"))
+            if "parent_voice_attachment_id" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN parent_voice_attachment_id INTEGER"))
 
-    if insp.has_table("support_tickets"):
+    if insp.has_table("session_goal_entries"):
+        sge_cols = {c["name"] for c in insp.get_columns("session_goal_entries")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("session_id", "INTEGER"),
+                ("case_id", "INTEGER"),
+                ("child_id", "INTEGER"),
+                ("created_by_user_id", "INTEGER"),
+                ("participation_score", "INTEGER"),
+                ("independence_score", "INTEGER"),
+                ("goal_achievement_score", "INTEGER"),
+                ("activity_used", "TEXT"),
+                ("measurement_note", "TEXT"),
+                ("core_domains_json", "TEXT"),
+                ("core_environments_json", "TEXT"),
+                ("goal_repository_item_id", "INTEGER"),
+                ("evidence_count", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if col not in sge_cols:
+                    conn.execute(text(f"ALTER TABLE session_goal_entries ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("strategy_use_events"):
+        sue_cols = {c["name"] for c in insp.get_columns("strategy_use_events")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("session_id", "INTEGER"),
+                ("case_id", "INTEGER"),
+                ("child_id", "INTEGER"),
+                ("goal_card_id", "INTEGER"),
+                ("goal_entry_id", "INTEGER"),
+                ("created_by_user_id", "INTEGER"),
+                ("environment", "VARCHAR(32)"),
+                ("activity_used", "TEXT"),
+                ("participation_score", "INTEGER"),
+                ("independence_score", "INTEGER"),
+                ("goal_achievement_score", "INTEGER"),
+                ("strategy_feedback", "VARCHAR(32)"),
+                ("short_note", "TEXT"),
+                ("custom_strategy_id", "INTEGER"),
+            ):
+                if col not in sue_cols:
+                    conn.execute(text(f"ALTER TABLE strategy_use_events ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("goal_repository_items"):
+        gri_cols = {c["name"] for c in insp.get_columns("goal_repository_items")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("source_daily_log_id", "INTEGER"),
+                ("source_session_id", "INTEGER"),
+                ("review_note", "TEXT"),
+                ("core_domains_json", "TEXT"),
+                ("core_environments_json", "TEXT"),
+                ("baseline_state", "TEXT"),
+                ("desired_state", "TEXT"),
+                ("goal_statement", "TEXT"),
+                ("lifecycle_status", "VARCHAR(32)"),
+                ("source", "VARCHAR(32)"),
+                ("scope", "VARCHAR(32)"),
+            ):
+                if col not in gri_cols:
+                    conn.execute(text(f"ALTER TABLE goal_repository_items ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("strategy_repository_items"):
+        sri_cols = {c["name"] for c in insp.get_columns("strategy_repository_items")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("domain_key", "VARCHAR(64)"),
+                ("environment_context", "VARCHAR(32)"),
+                ("linked_goal_card_id", "INTEGER"),
+                ("source_daily_log_id", "INTEGER"),
+                ("review_note", "TEXT"),
+                ("core_domains_json", "TEXT"),
+                ("core_environments_json", "TEXT"),
+                ("strategy_steps_json", "TEXT"),
+                ("expected_outcome", "TEXT"),
+                ("source", "VARCHAR(32)"),
+                ("scope", "VARCHAR(32)"),
+            ):
+                if col not in sri_cols:
+                    conn.execute(text(f"ALTER TABLE strategy_repository_items ADD COLUMN {col} {ddl}"))
+
+    if not insp.has_table("repository_review_events"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE repository_review_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        item_type VARCHAR(16) NOT NULL,
+                        item_id INTEGER NOT NULL,
+                        action VARCHAR(32) NOT NULL,
+                        actor_user_id INTEGER NOT NULL REFERENCES users(id),
+                        note TEXT,
+                        merged_into_id INTEGER,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_repository_review_events_item "
+                    "ON repository_review_events (item_type, item_id)"
+                )
+            )
+
         t_cols = {c["name"] for c in insp.get_columns("support_tickets")}
         with engine.begin() as conn:
             if "topic" not in t_cols:

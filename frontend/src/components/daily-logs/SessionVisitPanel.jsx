@@ -103,7 +103,7 @@ export function SessionVisitPanel({
           </>
         ) : null}
         {session.case_id ? (
-          <Link to={`/therapist/cases/${session.case_id}?tab=sessions`} className="ic-btn ic-btn--ghost">
+          <Link to="/therapist/logs" className="ic-btn ic-btn--ghost">
             Open case sessions
           </Link>
         ) : null}

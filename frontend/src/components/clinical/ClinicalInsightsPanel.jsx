@@ -9,6 +9,7 @@ import {
   GoalInsightCard,
   buildGoalCardsFromSnapshot,
   buildPlaceholderGoalCards,
+  formatGoalCardsForCopy,
 } from './insights/GoalInsightCard.jsx'
 import { AskInsighteAiPanel } from './insights/AskInsighteAiPanel.jsx'
 import { InsightsGenerationHistory } from './insights/InsightsGenerationHistory.jsx'
@@ -36,6 +37,7 @@ export function ClinicalInsightsPanel({ caseId, variant = 'therapist' }) {
   const [generating, setGenerating] = useState(false)
   const [asking, setAsking] = useState(false)
   const [message, setMessage] = useState('')
+  const [copyState, setCopyState] = useState('idle')
 
   const basePath = variant === 'admin'
     ? `/admin/cases/${caseId}`
@@ -211,10 +213,30 @@ export function ClinicalInsightsPanel({ caseId, variant = 'therapist' }) {
     if (action.action === 'add_goals') navigate(`${basePath}?tab=goals`)
     else if (action.action === 'add_report') navigate(`${basePath}?tab=reports&section=monthly`)
     else if (action.action === 'suggest_iep') navigate(`${basePath}?tab=reports&section=iep`)
-    else if (action.action === 'view_evidence') navigate(`${basePath}?tab=logs`)
+    else if (action.action === 'view_evidence') {
+      if (variant === 'therapist') navigate('/therapist/logs')
+      else navigate(`${basePath}?tab=logs`)
+    }
     else if (action.action === 'discuss_cm') navigate(`${basePath}?tab=reports`)
     else if (action.action === 'add_support' || action.action === 'add_iep') navigate(`${basePath}?tab=reports&section=iep`)
   }
+
+  const handleCopyInsights = async () => {
+    const text = formatGoalCardsForCopy(goalCards, { month })
+    if (!text) return
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(text)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 2000)
+    } catch {
+      setCopyState('error')
+      window.setTimeout(() => setCopyState('idle'), 2500)
+    }
+  }
+
+  const copyButtonLabel =
+    copyState === 'copied' ? 'Copied' : copyState === 'error' ? 'Copy failed' : 'Copy insights'
 
   return (
     <div className="insights-tab">
@@ -245,6 +267,17 @@ export function ClinicalInsightsPanel({ caseId, variant = 'therapist' }) {
         />
 
         <section className="insights-goal-section" aria-label="Goal and strategy insights">
+          <div className="insights-goal-section__head">
+            <h3 className="insights-goal-section__title">Goals &amp; strategy insights</h3>
+            <button
+              type="button"
+              className="insights-goal-section__copy-btn"
+              onClick={handleCopyInsights}
+              aria-label={copyButtonLabel}
+            >
+              {copyButtonLabel}
+            </button>
+          </div>
           <div className="insights-goal-grid insights-goal-grid--three">
             {goalCards.map((card) => (
               <GoalInsightCard key={card.title} card={card} onAction={handleCardAction} />

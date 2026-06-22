@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = ""
     AI_MONTHLY_BUDGET_INR: float = 0
     AI_DAILY_BUDGET_INR: float = 0
+    GOALS_STRATEGIES_ENGINE_V2: bool = True
+    MONTHLY_EVIDENCE_V2: bool = False
     # Optional regex for extra browser origins (Vercel preview URLs). In production, a safe
     # default for insightes-projects frontend previews is applied when this is unset.
     cors_origin_regex: str = ""

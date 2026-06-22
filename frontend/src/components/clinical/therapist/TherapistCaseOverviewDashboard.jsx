@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ClinicalCard } from '../../clinical-ui/ClinicalCard.jsx'
 import { ClinicalMetricCard } from '../../clinical-ui/ClinicalMetricCard.jsx'
 import { ClinicalProgressBar } from '../../clinical-ui/ClinicalProgressBar.jsx'
@@ -120,6 +120,7 @@ export function TherapistCaseOverviewDashboard({
   onOpenTab,
   onClinicalProfileUpdated,
 }) {
+  const navigate = useNavigate()
   const basePath = `/therapist/cases/${caseId}`
   const goals = qualitySummary?.goal_coverage || []
   const evidenceCount = qualitySummary?.evidence_summary?.total_evidence_events ?? 0
@@ -253,7 +254,11 @@ export function TherapistCaseOverviewDashboard({
 
           <ClinicalCard title="Quick actions">
             <div className="clinical-overview-quick-actions">
-              <button type="button" className="clinical-overview-quick-action" onClick={() => onOpenTab('logs')}>
+              <button
+                type="button"
+                className="clinical-overview-quick-action"
+                onClick={() => navigate('/therapist/logs')}
+              >
                 <span className="clinical-overview-quick-action__icon clinical-overview-quick-action__icon--logs" aria-hidden="true" />
                 <span>Open session logs</span>
               </button>

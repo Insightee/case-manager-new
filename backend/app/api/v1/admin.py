@@ -609,6 +609,17 @@ def admin_clinical_dashboard(
     return wb_svc.build_admin_clinical_dashboard(db, user, limit=limit)
 
 
+@router.get("/goal-strategy-repository")
+def admin_goal_strategy_repository(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=500),
+):
+    from app.services import goals_engine_service as engine_svc
+
+    return engine_svc.list_admin_goal_strategy_repository(db, limit=limit)
+
+
 @router.get("/clinical-quality-dashboard/summary")
 def admin_clinical_quality_summary(
     user: User = Depends(_admin_dashboard_user),

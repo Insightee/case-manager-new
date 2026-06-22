@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { mergeUpcomingSchedule } from '../../lib/therapistSchedule.js'
 import { therapistTicketsUrl } from '../../lib/therapistTicketOptions.js'
 import { caseServiceLine } from '../../lib/moduleLabels.js'
+import { useTherapistActiveCase } from '../../context/TherapistActiveCaseContext.jsx'
 import { CaseProfileShell } from '../case-profile/CaseProfileShell.jsx'
 import { CaseReportsHub } from '../case-profile/CaseReportsHub.jsx'
 import { THERAPIST_CASE_TABS } from '../case-profile/caseProfileTabs.js'
-import { CaseSessionsPanel } from './CaseSessionsPanel.jsx'
+import { resolveLegacyReportsSection } from '../case-profile/reportsHubSections.js'
 import { ClinicalInsightsPanel } from '../clinical/ClinicalInsightsPanel.jsx'
-import { CaseGoalsPanel } from '../case-profile/sections/CaseGoalsPanel.jsx'
-import { CaseStrategiesPanel } from '../case-profile/sections/CaseStrategiesPanel.jsx'
+import { GoalStrategyEnginePage } from '../clinical/goals-strategy/GoalStrategyEnginePage.jsx'
 import { EvidenceDrivePanel } from '../case-profile/sections/EvidenceDrivePanel.jsx'
 import { TherapistCaseOverviewDashboard } from '../clinical/therapist/TherapistCaseOverviewDashboard.jsx'
 import './my-cases.css'
+import '../../styles/case-profile-v2.css'
 
 function StatusChangeModal({ open, onClose, statusTo, setStatusTo, statusReason, setStatusReason, statusBusy, statusMsg, onSubmit }) {
   if (!open) return null
@@ -52,8 +53,10 @@ function StatusChangeModal({ open, onClose, statusTo, setStatusTo, statusReason,
 
 export function CaseDetailRevamp() {
   const { caseId } = useParams()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
+  const { setActiveCase, touchRecentCase } = useTherapistActiveCase()
   const [caseRow, setCaseRow] = useState(null)
   const [scheduleItems, setScheduleItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -108,10 +111,48 @@ export function CaseDetailRevamp() {
     load()
   }, [load])
 
+  useEffect(() => {
+    if (!caseRow?.id) return
+    setActiveCase({
+      id: caseRow.id,
+      case_code: caseRow.case_code,
+      child_name: caseRow.child_name,
+    })
+    touchRecentCase(caseRow.id)
+  }, [caseRow, setActiveCase, touchRecentCase])
+
+  useEffect(() => {
+    const legacy = resolveLegacyReportsSection(searchParams)
+    if (legacy) {
+      setSearchParams(legacy, { replace: true })
+      return
+    }
+    if (searchParams.get('tab') === 'sessions') {
+      const next = new URLSearchParams(searchParams)
+      next.set('tab', 'logs')
+      setSearchParams(next, { replace: true })
+      return
+    }
+    if (searchParams.get('tab') === 'logs') {
+      const sessionId = searchParams.get('session_id') || searchParams.get('session')
+      const target = sessionId ? `/therapist/logs?session=${sessionId}` : '/therapist/logs'
+      navigate(target, { replace: true })
+    }
+  }, [searchParams, setSearchParams, navigate])
+
   function setTab(id) {
+    if (id === 'logs') {
+      navigate('/therapist/logs')
+      return
+    }
     const next = new URLSearchParams(searchParams)
     next.set('tab', id)
-    if (id !== 'reports') next.delete('section')
+    if (id === 'reports') {
+      if (!next.get('section')) next.set('section', 'dashboard')
+    } else {
+      next.delete('section')
+      next.delete('sub')
+    }
     setSearchParams(next, { replace: true })
   }
 
@@ -144,13 +185,14 @@ export function CaseDetailRevamp() {
     )
   }
 
-  const addr = caseRow.service_address?.formatted
   const childLabel = `${caseRow.child_name} (${caseRow.case_code})`
   const focusLine = caseServiceLine(caseRow.service_type, caseRow.product_module)
 
   return (
     <>
       <CaseProfileShell
+        caseId={caseId}
+        enableChangeCase
         caseCode={caseRow.case_code}
         childName={caseRow.child_name}
         status={caseRow.status}
@@ -189,18 +231,8 @@ export function CaseDetailRevamp() {
           />
         ) : null}
 
-        {tab === 'goals' ? <CaseGoalsPanel caseId={caseId} variant="therapist" /> : null}
-        {tab === 'strategies' ? <CaseStrategiesPanel caseId={caseId} variant="therapist" /> : null}
-
-        {tab === 'logs' ? (
-          <CaseSessionsPanel
-            caseId={Number(caseId)}
-            caseCode={caseRow.case_code}
-            childName={caseRow.child_name}
-            childLabel={childLabel}
-            scheduleItems={scheduleItems}
-            onScheduleChange={load}
-          />
+        {tab === 'goals' || tab === 'strategies' ? (
+          <GoalStrategyEnginePage caseId={caseId} variant="therapist" />
         ) : null}
 
         {tab === 'insights' ? (

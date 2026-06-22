@@ -68,7 +68,7 @@ export function TherapistSlotsPage({ therapistId: therapistIdProp } = {}) {
         onScheduleContext={({ weekStart }) => setScheduleWeekStart(weekStart)}
         onSlotClick={(s) => {
           if (s.event_type === 'session' && s.case_id) {
-            navigate(`/therapist/cases/${s.case_id}?tab=sessions`)
+            navigate('/therapist/logs')
             return
           }
           setDetailSlot(s)

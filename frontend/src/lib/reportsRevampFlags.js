@@ -1,9 +1,11 @@
 /**
  * Feature flags for Reports & Clinical Documentation revamp.
- * Default OFF — set VITE_REPORTS_REVAMP=true in frontend/.env.local to test the new case profile locally.
+ * Default ON for local/WIP — set VITE_REPORTS_REVAMP=false to compare legacy case profile.
  */
 
-const revampOptIn = import.meta.env.VITE_REPORTS_REVAMP === 'true'
+const revampEnv = import.meta.env.VITE_REPORTS_REVAMP
+const revampOptOut = revampEnv === 'false'
+const revampOptIn = revampEnv === 'true' || !revampOptOut
 
 export const REPORTS_REVAMP_ENABLED = revampOptIn
 
@@ -28,23 +30,13 @@ export const CLINICAL_QUALITY_DASHBOARD = false
 
 export const MONTHLY_EVIDENCE_V2 = false
 
+export const GOALS_STRATEGIES_ENGINE_V2 = revampOptIn
+
 export const IEP_REVIEW_SUGGESTIONS = false
 
-export const EVIDENCE_DRIVE_V2 = false
+export const EVIDENCE_DRIVE_V2 = revampOptIn
 
 export const AI_GATEWAY_HARDENED = false
-
-/**
- * Rollout order:
- * 1. CLINICAL_QUALITY_DASHBOARD (internal admin)
- * 2. Therapist overview + insights (Phase 1 flags)
- * 3. CM supervision + /admin/clinical-dashboard
- * 4. MONTHLY_EVIDENCE_V2 pilot cases
- * 5. Parent preview CM-only (REPORTS_REVAMP_PARENT stays false)
- * 6. Parent revamp + real AI — out of Phase 2 scope
- *
- * Local dev: add to frontend/.env.local → VITE_REPORTS_REVAMP=true
- */
 
 export function isReportsRevampActive(portal = 'therapist') {
   if (!REPORTS_REVAMP_ENABLED) return false

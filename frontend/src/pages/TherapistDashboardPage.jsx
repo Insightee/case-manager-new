@@ -6,8 +6,21 @@ import { useTherapistFrequentActions } from '../hooks/useTherapistFrequentAction
 import { useTherapistHome } from '../hooks/useTherapistHome.js'
 import { QueryState } from '../components/shared/QueryState.jsx'
 import { TherapistTodaySchedule } from '../components/therapist/TherapistTodaySchedule.jsx'
+import { TherapistDashboardIcon } from '../components/therapist/TherapistDashboardIcon.jsx'
 import { formatDisplayDate, formatDisplayDateTime } from '../lib/datetime.js'
 import { THERAPIST_ACTIONS } from '../lib/therapistActions.js'
+import '../styles/therapist-dashboard.css'
+
+const STAT_CARDS = [
+  { key: 'case_count', to: '/therapist/cases', label: 'Assigned cases', icon: 'groups', tone: 'forest' },
+  { key: 'needs_log', to: '/therapist/logs', label: 'Sessions need log', icon: 'edit_note', tone: 'amber' },
+  { key: 'pending_logs', to: '/therapist/logs', label: 'Logs pending approval', icon: 'pending_actions', tone: 'dark' },
+  { key: 'draft_reports', to: '/therapist/reports', label: 'Report drafts', icon: 'description', tone: 'mint' },
+]
+
+function tileTone(tone) {
+  return tone === 'primary' ? 'forest' : tone
+}
 
 export function TherapistDashboardPage() {
   const { user } = useAuth()
@@ -37,24 +50,27 @@ export function TherapistDashboardPage() {
       title: s.child_name || s.case_code || 'Client',
       meta: s.scheduled_date ? `Visit · ${formatDisplayDate(s.scheduled_date)}` : 'Completed visit',
       tone: 'primary',
-      icon: 'log',
+      icon: 'edit_note',
     })),
     ...pendingCmMeetings.map((m) => ({
       key: `cm-${m.id}`,
-      to: '/therapist/meetings',
-      eyebrow: 'CM meeting notes',
-      title: m.child_name || m.case_code || 'Client',
-      meta: formatDisplayDateTime(m.scheduled_date, m.scheduled_time) || m.scheduled_date,
-      tone: 'amber',
-      icon: 'meeting',
+      to: m.case_id ? `/therapist/meetings?case_id=${m.case_id}` : '/therapist/meetings',
+      eyebrow: 'Submit meeting notes',
+      title: m.child_name || m.case_code || m.title || 'Case manager meeting',
+      meta: [formatDisplayDateTime(m.scheduled_date, m.scheduled_time), m.title]
+        .filter(Boolean)
+        .join(' · '),
+      tone: 'forest',
+      icon: 'event_note',
+      badge: 'Notes due',
     })),
   ]
   const [acceptBusy, setAcceptBusy] = useState(null)
   const [acceptErr, setAcceptErr] = useState('')
 
   return (
-    <>
-      <header className="topbar therapist-dashboard__header">
+    <div className="therapist-dashboard-page forest-light">
+      <header className="therapist-dashboard__header">
         <div className="therapist-dashboard__intro">
           <p className="therapist-dashboard__eyebrow">{greeting}</p>
           <h2>
@@ -77,9 +93,9 @@ export function TherapistDashboardPage() {
         onRetry={() => refetch()}
       >
         {pendingAssignments.length > 0 ? (
-          <section className="card" style={{ marginBottom: 16, padding: 16, borderColor: '#c7d2fe' }}>
-            <h3 style={{ margin: '0 0 8px', fontSize: '1rem' }}>New case assignment</h3>
-            <p className="admin-muted" style={{ margin: '0 0 12px' }}>
+          <section className="therapist-assignment-card">
+            <h3>New case assignment</h3>
+            <p className="admin-muted" style={{ margin: '0 0 12px', fontSize: '0.875rem', color: '#64748b' }}>
               You can start sessions and logs for this case now. Please review the care plan when you can — marking
               reviewed is optional.
             </p>
@@ -121,33 +137,21 @@ export function TherapistDashboardPage() {
             </ul>
           </section>
         ) : null}
+
         {stats ? (
           <section className="therapist-dashboard-stats" aria-label="Work summary">
             <ul className="therapist-dashboard-stats__grid">
-              <li>
-                <Link to="/therapist/cases">
-                  <strong>{stats.case_count}</strong>
-                  <span>Assigned cases</span>
-                </Link>
-              </li>
-              <li>
-                <Link to="/therapist/logs">
-                  <strong>{stats.needs_log}</strong>
-                  <span>Sessions need log</span>
-                </Link>
-              </li>
-              <li>
-                <Link to="/therapist/logs">
-                  <strong>{stats.pending_logs}</strong>
-                  <span>Logs pending approval</span>
-                </Link>
-              </li>
-              <li>
-                <Link to="/therapist/reports">
-                  <strong>{stats.draft_reports}</strong>
-                  <span>Report drafts</span>
-                </Link>
-              </li>
+              {STAT_CARDS.map((card) => (
+                <li key={card.key}>
+                  <Link to={card.to} className="therapist-dashboard-stats__card">
+                    <TherapistDashboardIcon name={card.icon} tone={card.tone} />
+                    <div>
+                      <p className="therapist-dashboard-stats__value">{stats[card.key] ?? 0}</p>
+                      <p className="therapist-dashboard-stats__label">{card.label}</p>
+                    </div>
+                  </Link>
+                </li>
+              ))}
             </ul>
           </section>
         ) : null}
@@ -162,18 +166,22 @@ export function TherapistDashboardPage() {
                     to={item.to}
                     className={`therapist-pending-action therapist-pending-action--${item.tone}`}
                   >
-                    <span
-                      className={`therapist-pending-action__icon therapist-pending-action__icon--${item.icon}`}
-                      aria-hidden
+                    <TherapistDashboardIcon
+                      name={item.icon}
+                      tone={item.tone === 'primary' ? 'forest' : item.tone === 'forest' ? 'amber' : tileTone(item.tone)}
                     />
                     <span className="therapist-pending-action__body">
                       <span className="therapist-pending-action__eyebrow">{item.eyebrow}</span>
                       <strong className="therapist-pending-action__title">{item.title}</strong>
                       <span className="therapist-pending-action__meta">{item.meta}</span>
                     </span>
-                    <span className="therapist-pending-action__chevron" aria-hidden>
-                      →
-                    </span>
+                    {item.badge ? (
+                      <span className="therapist-pending-action__badge">{item.badge}</span>
+                    ) : (
+                      <span className="therapist-pending-action__chevron" aria-hidden>
+                        →
+                      </span>
+                    )}
                   </Link>
                 </li>
               ))}
@@ -216,47 +224,22 @@ export function TherapistDashboardPage() {
 
       <section className="therapist-quick-actions" aria-labelledby="therapist-shortcuts-title">
         <div className="therapist-quick-actions__head">
-          <h3 id="therapist-shortcuts-title">More actions</h3>
+          <h3 id="therapist-shortcuts-title">Shortcuts</h3>
           <p>
-            {pendingActions.length > 0
-              ? `${pendingActions.length} pending item${pendingActions.length === 1 ? '' : 's'} need your attention`
-              : personalized
-                ? 'Shortcuts ranked by what you use most often'
-                : 'Popular shortcuts'}
+            {personalized
+              ? 'Ranked by what you use most often'
+              : 'Popular ways to get work done'}
           </p>
         </div>
-        {pendingActions.length > 0 ? (
-          <ul className="therapist-quick-actions__grid" style={{ marginBottom: 12 }}>
-            {pendingActions.slice(0, 4).map((item) => (
-              <li key={`pending-${item.key}`}>
-                <Link
-                  to={item.to}
-                  className={`therapist-quick-actions__tile therapist-quick-actions__tile--${item.tone}`}
-                >
-                  <span className="therapist-quick-actions__icon" aria-hidden>
-                    {item.icon}
-                  </span>
-                  <span className="therapist-quick-actions__tile-body">
-                    <strong>{item.eyebrow}</strong>
-                    <span>{item.title} · {item.meta}</span>
-                  </span>
-                  <span className="therapist-quick-actions__badge">Pending</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : null}
         <ul className="therapist-quick-actions__grid">
           {secondary.map((action) => (
             <li key={action.id}>
               <Link
                 to={action.to}
-                className={`therapist-quick-actions__tile therapist-quick-actions__tile--${action.tone}`}
+                className={`therapist-quick-actions__tile therapist-quick-actions__tile--${tileTone(action.tone)}`}
                 onClick={() => trackClick(action.id)}
               >
-                <span className="therapist-quick-actions__icon" aria-hidden>
-                  {action.icon}
-                </span>
+                <TherapistDashboardIcon name={action.icon} tone={tileTone(action.tone)} />
                 <span className="therapist-quick-actions__tile-body">
                   <strong>{action.label}</strong>
                   <span>{action.description}</span>
@@ -271,7 +254,9 @@ export function TherapistDashboardPage() {
             {THERAPIST_ACTIONS.map((action) => (
               <li key={action.id}>
                 <Link to={action.to} onClick={() => trackClick(action.id)}>
-                  <span aria-hidden>{action.icon}</span>
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    {action.icon}
+                  </span>
                   {action.label}
                 </Link>
               </li>
@@ -279,6 +264,6 @@ export function TherapistDashboardPage() {
           </ul>
         </details>
       </section>
-    </>
+    </div>
   )
 }

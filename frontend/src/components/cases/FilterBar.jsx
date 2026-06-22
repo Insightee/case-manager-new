@@ -1,22 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 
-const STAGE_OPTIONS = [
-  { value: 'all', label: 'All stages' },
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All statuses' },
   { value: 'attention', label: 'Needs attention' },
   { value: 'log_due', label: 'Log due' },
   { value: 'in_progress', label: 'In progress' },
   { value: 'closed', label: 'Closed' },
-]
-
-const DUE_OPTIONS = [
-  { value: 'all', label: 'All deadlines' },
-  { value: 'yes', label: 'Due soon' },
-]
-
-const SORT_OPTIONS = [
-  { value: 'urgency', label: 'Sort by urgency' },
-  { value: 'child', label: 'Sort by child' },
-  { value: 'case_id', label: 'Sort by case ID' },
 ]
 
 const MQ = '(max-width: 900px)'
@@ -46,10 +35,6 @@ function FilterFields({
   service,
   onServiceChange,
   serviceOptions,
-  dueSoon,
-  onDueSoonChange,
-  sort,
-  onSortChange,
   hasActiveFilters,
   onClearFilters,
   stacked = false,
@@ -57,14 +42,14 @@ function FilterFields({
   return (
     <div className={`ic-filter-bar__filters${stacked ? ' ic-filter-bar__filters--stacked' : ''}`}>
       <label className="ic-filter-field">
-        <span className="sr-only">Stage</span>
+        <span className="ic-filter-field__label">Client status</span>
         <select
           className="ic-filter-select"
           value={stage}
           onChange={(e) => onStageChange(e.target.value)}
-          aria-label="Filter by stage"
+          aria-label="Filter by client status"
         >
-          {STAGE_OPTIONS.map((o) => (
+          {STATUS_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
@@ -73,7 +58,7 @@ function FilterFields({
       </label>
 
       <label className="ic-filter-field">
-        <span className="sr-only">Service</span>
+        <span className="ic-filter-field__label">Service</span>
         <select
           className="ic-filter-select"
           value={service}
@@ -84,38 +69,6 @@ function FilterFields({
           {serviceOptions.map((s) => (
             <option key={s} value={s}>
               {s}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="ic-filter-field">
-        <span className="sr-only">Due soon</span>
-        <select
-          className="ic-filter-select"
-          value={dueSoon}
-          onChange={(e) => onDueSoonChange(e.target.value)}
-          aria-label="Filter by deadline"
-        >
-          {DUE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.value === 'all' ? 'Due soon' : o.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="ic-filter-field">
-        <span className="sr-only">Sort</span>
-        <select
-          className="ic-filter-select"
-          value={sort}
-          onChange={(e) => onSortChange(e.target.value)}
-          aria-label="Sort cases"
-        >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
             </option>
           ))}
         </select>
@@ -138,10 +91,6 @@ export function FilterBar({
   service,
   onServiceChange,
   serviceOptions = [],
-  dueSoon,
-  onDueSoonChange,
-  sort,
-  onSortChange,
   hasActiveFilters,
   onClearFilters,
 }) {
@@ -151,10 +100,8 @@ export function FilterBar({
     let n = 0
     if (stage !== 'all') n += 1
     if (service !== 'all') n += 1
-    if (dueSoon !== 'all') n += 1
-    if (sort !== 'urgency') n += 1
     return n
-  }, [stage, service, dueSoon, sort])
+  }, [stage, service])
 
   const fieldProps = {
     stage,
@@ -162,10 +109,6 @@ export function FilterBar({
     service,
     onServiceChange,
     serviceOptions,
-    dueSoon,
-    onDueSoonChange,
-    sort,
-    onSortChange,
     hasActiveFilters,
     onClearFilters,
   }

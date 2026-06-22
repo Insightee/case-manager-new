@@ -1,117 +1,192 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../../../context/AuthContext.jsx'
+import { formatDisplayDate } from '../../../lib/datetime.js'
+import { isReportsRevampActive } from '../../../lib/reportsRevampFlags.js'
+import { useCaseDocumentsList } from '../../../hooks/useCaseDocuments.js'
 import { CaseDocumentsPanel } from '../../documents/CaseDocumentsPanel.jsx'
-import { EVIDENCE_DRIVE_V2 } from '../../../lib/reportsRevampFlags.js'
-import { apiFetch } from '../../../lib/apiClient.js'
 import { ClinicalDocumentCard } from '../../clinical-ui/ClinicalDocumentCard.jsx'
 import { ClinicalEmptyState } from '../../clinical-ui/ClinicalEmptyState.jsx'
+import { ClinicalPrimaryButton } from '../../clinical-ui/ClinicalPrimaryButton.jsx'
 
-const FILTER_CHIPS = [
-  { id: 'all',            label: 'All' },
-  { id: 'parent_visible', label: 'Parent Visible' },
-  { id: 'internal_only',  label: 'Internal Only' },
-  { id: 'goal_linked',    label: 'Goal Linked' },
-  { id: 'report_linked',  label: 'Report Linked' },
-  { id: 'strategy_linked', label: 'Strategy Linked' },
+const TYPE_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'pdf', label: 'PDFs' },
+  { id: 'image', label: 'Images' },
+  { id: 'assessment', label: 'Assessments' },
 ]
 
-function visibilityFor(item) {
-  if (item.visibility === 'parent') return 'parent'
-  if (item.visibility === 'internal' || item.group_key?.includes('internal')) return 'internal'
-  return 'internal'
+function fileTypeForDoc(doc) {
+  const mime = doc.current_version?.mime_type || ''
+  const name = (doc.current_version?.file_name || doc.title || '').toLowerCase()
+  const category = (doc.category || '').toUpperCase()
+
+  if (mime.includes('pdf') || name.endsWith('.pdf')) return 'PDF'
+  if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic)$/i.test(name)) return 'IMG'
+  if (category.includes('OBSERVATION') || category.includes('ASSESSMENT')) return 'ASSESSMENT'
+  if (doc.current_version?.source_type === 'EXTERNAL_LINK') return 'LINK'
+  return 'FILE'
 }
 
-/** Evidence Drive — case documents grouped for clinical context. */
-export function EvidenceDrivePanel({ caseId, variant = 'therapist' }) {
-  const [groups, setGroups] = useState([])
-  const [filter, setFilter] = useState('all')
+function matchesTypeFilter(doc, filterId) {
+  if (filterId === 'all') return true
+  const type = fileTypeForDoc(doc)
+  if (filterId === 'pdf') return type === 'PDF'
+  if (filterId === 'image') return type === 'IMG'
+  if (filterId === 'assessment') return type === 'ASSESSMENT'
+  return true
+}
 
-  const load = useCallback(async () => {
-    if (!EVIDENCE_DRIVE_V2) return
-    try {
-      const data = await apiFetch(`/api/v1/cases/${caseId}/evidence-drive`)
-      setGroups(data.groups || [])
-    } catch {
-      setGroups([])
-    }
-  }, [caseId])
+function DocumentDriveView({ caseId, variant, monthlyReportsPath }) {
+  const { can } = useAuth()
+  const canCreate = can('case_document.create')
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [selectedId, setSelectedId] = useState(null)
 
-  useEffect(() => { load() }, [load])
+  const { data: list = [], isLoading } = useCaseDocumentsList(caseId, {})
 
-  const filteredGroups = groups.filter((g) => {
-    if (filter === 'all') return true
-    if (filter === 'parent_visible') return g.items?.some((i) => i.visibility === 'parent')
-    if (filter === 'internal_only') return g.items?.some((i) => i.visibility !== 'parent')
-    return g.group_key === filter || g.group_key.startsWith(filter)
-  })
-
-  /* Flatten all items for the clinical card list */
-  const allItems = filteredGroups.flatMap((g) =>
-    (g.items || [{ id: g.group_key, title: g.group_key.replace(/_/g, ' '), count: g.items?.length }]).map((item) => ({
-      ...item,
-      groupKey: g.group_key,
-      visibility: item.visibility || (g.group_key.includes('parent') ? 'parent' : 'internal'),
-    }))
-  )
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return list.filter((doc) => {
+      if (!matchesTypeFilter(doc, typeFilter)) return false
+      if (!q) return true
+      const hay = [
+        doc.title,
+        doc.current_version?.file_name,
+        doc.category,
+        doc.uploaded_by_name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return hay.includes(q)
+    })
+  }, [list, search, typeFilter])
 
   return (
-    <div>
-      <div style={{ marginBottom: '0.875rem' }}>
-        <h2 className="clinical-section-heading">Evidence Drive</h2>
-        <p className="clinical-section-subtitle">
-          Reference files, observation exports, monthly PDFs, and uploads linked to this case.
-        </p>
-      </div>
+    <div className="cp-document-drive">
+      <header className="cp-document-drive__header">
+        <div>
+          <h2 className="clinical-section-heading">Document Drive</h2>
+          <p className="clinical-section-subtitle">
+            Reference files, assessments, session photos, and uploads linked to this case.
+          </p>
+        </div>
+      </header>
 
-      {/* Filter chips */}
-      <div className="clinical-filter-chips" role="group" aria-label="Filter evidence">
-        {FILTER_CHIPS.map((chip) => (
-          <button
-            key={chip.id}
-            type="button"
-            className={`clinical-filter-chip${filter === chip.id ? ' is-active' : ''}`}
-            onClick={() => setFilter(chip.id)}
-          >
-            {chip.label}
-          </button>
-        ))}
-      </div>
+      <div className="cp-document-drive__toolbar">
+        <label className="cp-document-drive__search">
+          <span className="cp-document-drive__search-icon" aria-hidden="true">
+            🔍
+          </span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search documents…"
+            aria-label="Search documents"
+          />
+        </label>
 
-      {/* Clinical document cards grid from evidence-drive API */}
-      {EVIDENCE_DRIVE_V2 && allItems.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-          {allItems.map((item, idx) => (
-            <ClinicalDocumentCard
-              key={item.id || idx}
-              doc={{
-                title:        item.title || item.name || item.group_key?.replace(/_/g, ' ') || 'Document',
-                fileType:     item.file_type || item.fileType || 'PDF',
-                uploadedDate: item.uploaded_at?.slice(0, 10),
-                uploadedBy:   item.uploaded_by,
-                visibility:   visibilityFor(item),
-                linkedEntity: item.linked_entity,
-              }}
-            />
+        <div className="clinical-filter-chips cp-document-drive__filters" role="group" aria-label="Filter by type">
+          {TYPE_FILTERS.map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              className={`clinical-filter-chip${typeFilter === chip.id ? ' is-active' : ''}`}
+              onClick={() => setTypeFilter(chip.id)}
+            >
+              {chip.label}
+            </button>
           ))}
         </div>
-      ) : EVIDENCE_DRIVE_V2 ? (
+
+        {canCreate ? (
+          <ClinicalPrimaryButton
+            type="button"
+            className="cp-document-drive__upload"
+            onClick={() => setSelectedId('__create__')}
+          >
+            Upload
+          </ClinicalPrimaryButton>
+        ) : null}
+      </div>
+
+      {monthlyReportsPath ? (
+        <p className="cp-document-drive__hint">
+          In-app monthly report (rich text):{' '}
+          <Link to={monthlyReportsPath}>Open Monthly Reports →</Link>
+        </p>
+      ) : null}
+
+      {isLoading ? (
+        <p className="ic-case-detail__loading">Loading documents…</p>
+      ) : filtered.length === 0 ? (
         <ClinicalEmptyState
           variant="upload"
           icon="📁"
           title="No documents yet"
-          body="Upload a file or add a Google link."
+          body="Upload a file or add a Google link to build this case’s evidence drive."
         />
-      ) : null}
+      ) : (
+        <div className="cp-document-drive__grid">
+          {filtered.map((doc) => (
+            <button
+              key={doc.id}
+              type="button"
+              className="cp-document-drive__card-btn"
+              onClick={() => setSelectedId(doc.id)}
+            >
+              <ClinicalDocumentCard
+                doc={{
+                  title: doc.title,
+                  fileType: fileTypeForDoc(doc),
+                  uploadedDate: doc.created_at ? formatDisplayDate(doc.created_at) : '',
+                  uploadedBy: doc.uploaded_by_name || doc.created_by_name || '',
+                  visibility: doc.visibility === 'parent' ? 'parent' : 'internal',
+                }}
+              />
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Existing document upload panel stays intact */}
       <CaseDocumentsPanel
         caseId={caseId}
         variant={variant}
-        monthlyReportsPath={
-          variant === 'admin'
-            ? `/admin/reports?case_id=${caseId}`
-            : `/therapist/reports?case_id=${caseId}`
-        }
+        monthlyReportsPath={monthlyReportsPath}
+        presentation="embedded"
+        externalSelectedId={selectedId === '__create__' ? null : selectedId}
+        externalCreateOpen={selectedId === '__create__'}
+        onExternalClose={() => setSelectedId(null)}
       />
     </div>
+  )
+}
+
+/** Evidence Drive — case documents grouped for clinical context. */
+export function EvidenceDrivePanel({ caseId, variant = 'therapist' }) {
+  const monthlyReportsPath =
+    variant === 'admin'
+      ? `/admin/reports?case_id=${caseId}`
+      : `/therapist/reports?case_id=${caseId}`
+
+  if (isReportsRevampActive(variant === 'admin' ? 'admin' : 'therapist')) {
+    return (
+      <DocumentDriveView
+        caseId={caseId}
+        variant={variant}
+        monthlyReportsPath={monthlyReportsPath}
+      />
+    )
+  }
+
+  return (
+    <CaseDocumentsPanel
+      caseId={caseId}
+      variant={variant}
+      monthlyReportsPath={monthlyReportsPath}
+    />
   )
 }

@@ -321,7 +321,7 @@ export function ObservationChecklistPanel({ caseId }) {
                 <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 700 }}>Session History Log</h3>
               </div>
               <Link
-                to={`/therapist/cases/${caseId}?tab=logs`}
+                to="/therapist/logs"
                 className="clinical-btn-ghost"
                 style={{ fontSize: '0.8125rem' }}
               >
@@ -366,7 +366,7 @@ export function ObservationChecklistPanel({ caseId }) {
           </p>
 
           <Link
-            to={`/therapist/cases/${caseId}?tab=reports&section=drive`}
+            to={`/therapist/cases/${caseId}?tab=documents`}
             className="clinical-btn-secondary"
             style={{ width: '100%', marginTop: '0.5rem', textAlign: 'center', display: 'block' }}
           >

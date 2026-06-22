@@ -35,7 +35,16 @@ function formatReportMonth(reportMonth) {
 
 const WORKFLOW_UI = ['submit', 'approve', 'request_changes', 'publish_client', 'archive']
 
-export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyReportsPath }) {
+export function CaseDocumentsPanel({
+  caseId,
+  variant = 'therapist',
+  monthlyReportsPath,
+  presentation = 'classic',
+  externalSelectedId = null,
+  externalCreateOpen = false,
+  onExternalClose,
+}) {
+  const embedded = presentation === 'embedded'
   const { can } = useAuth()
   const canCreate = can('case_document.create')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -65,6 +74,15 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
   const { data: list = [], isLoading, refetch } = useCaseDocumentsList(caseId, filters)
   const { data: queryDetail } = useCaseDocumentDetail(selectedId, { enabled: !!selectedId })
   const { create, patch, workflow } = useCaseDocumentMutations(caseId)
+
+  useEffect(() => {
+    if (!embedded) return
+    if (externalCreateOpen) {
+      setModalOpen(true)
+      return
+    }
+    setSelectedId(externalSelectedId || null)
+  }, [embedded, externalCreateOpen, externalSelectedId])
 
   const btnPrimary = variant === 'admin' ? 'admin-btn admin-btn--primary' : 'ic-btn ic-btn--primary'
   const btnGhost = variant === 'admin' ? 'admin-btn admin-btn--ghost' : 'ic-btn ic-btn--ghost'
@@ -139,6 +157,12 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
     setWorkflowComment('')
     setDrawerExpanded(false)
     setPdfPreviewUrl(null)
+    onExternalClose?.()
+  }
+
+  function closeCreateModal() {
+    setModalOpen(false)
+    onExternalClose?.()
   }
 
   async function handleCreate(payload) {
@@ -147,6 +171,8 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
     patchCaseDocumentDetail(doc)
     void refetch()
     setSelectedId(doc.id)
+    setModalOpen(false)
+    onExternalClose?.()
     return doc
   }
 
@@ -208,16 +234,18 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
     /\.docx?$/i.test(detail?.current_version?.file_name || '')
 
   return (
-    <div className={`case-docs case-docs--${variant}`}>
-      {error ? (
+    <div className={`case-docs case-docs--${variant}${embedded ? ' case-docs--embedded' : ''}`}>
+      {!embedded && error ? (
         <p role="alert" style={{ color: '#b91c1c' }}>
           {error}
         </p>
       ) : null}
-      {message ? (
+      {!embedded && message ? (
         <p style={{ padding: '8px 12px', background: '#ecfdf5', borderRadius: 8, color: '#047857' }}>{message}</p>
       ) : null}
 
+      {!embedded ? (
+        <>
       <div className="case-docs__toolbar">
         <div className="case-docs__filters">
           <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} aria-label="Category">
@@ -278,10 +306,12 @@ export function CaseDocumentsPanel({ caseId, variant = 'therapist', monthlyRepor
           ))}
         </ul>
       )}
+        </>
+      ) : null}
 
       <CaseDocumentModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={closeCreateModal}
         onSave={handleCreate}
         showShareOptions={variant === 'therapist'}
       />

@@ -3,8 +3,7 @@
 export const THERAPIST_CASE_TABS = [
   { id: 'overview', label: 'Overview', shortLabel: 'Overview' },
   { id: 'reports', label: 'Reports', shortLabel: 'Reports' },
-  { id: 'goals', label: 'Goals', shortLabel: 'Goals' },
-  { id: 'strategies', label: 'Strategies', shortLabel: 'Strat.' },
+  { id: 'goals', label: 'Goals & Strategies', shortLabel: 'Goals' },
   { id: 'logs', label: 'Logs', shortLabel: 'Logs' },
   { id: 'insights', label: 'Insights', shortLabel: 'Insights' },
   { id: 'documents', label: 'Documents', shortLabel: 'Docs' },
@@ -13,8 +12,7 @@ export const THERAPIST_CASE_TABS = [
 export const ADMIN_CASE_TABS_REVAMP = [
   { id: 'overview', label: 'Overview' },
   { id: 'reports', label: 'Reports' },
-  { id: 'goals', label: 'Goals' },
-  { id: 'strategies', label: 'Strategies' },
+  { id: 'goals', label: 'Goals & Strategies' },
   { id: 'logs', label: 'Logs' },
   { id: 'insights', label: 'Insights' },
   { id: 'documents', label: 'Documents' },
@@ -24,11 +22,17 @@ export const ADMIN_CASE_TABS_REVAMP = [
   { id: 'scheduling', label: 'Assign & Schedule', perm: 'slot.book_any' },
 ]
 
+/** @deprecated Use REPORTS_HUB_SECTIONS */
 export const REPORTS_SUB_TABS = [
-  { id: 'home', label: 'Overview' },
-  { id: 'observation', label: 'Observation' },
-  { id: 'iep', label: 'IEP' },
-  { id: 'monthly', label: 'Monthly' },
-  { id: 'progress', label: 'Progress' },
-  { id: 'drive', label: 'Document Drive' },
+  { id: 'observation', label: 'Observation Report' },
+  { id: 'iep', label: 'IEP Report' },
+  { id: 'monthly', label: 'Monthly Report' },
+  { id: 'progress', label: 'Progress Report' },
+  { id: 'history', label: 'Report History' },
 ]
+
+/** Build a case profile URL for a Reports hub section. */
+export function caseReportsSectionUrl(basePath, section) {
+  const params = new URLSearchParams({ tab: 'reports', section })
+  return `${basePath}?${params.toString()}`
+}

@@ -11,8 +11,21 @@ export function CaseManagerSupervisionPanel({ caseId, caseCode }) {
 
   const load = useCallback(async () => {
     try {
-      const data = await apiFetch(`/api/v1/cases/${caseId}/clinical-quality-summary`)
-      setSummary(data)
+      const [data, queue] = await Promise.all([
+        apiFetch(`/api/v1/cases/${caseId}/clinical-quality-summary`),
+        apiFetch(`/api/v1/cases/${caseId}/repository-review-queue`).catch(() => null),
+      ])
+      if (queue?.goals?.length || queue?.strategies?.length) {
+        setSummary({
+          ...data,
+          custom_items_pending_review: {
+            goals: queue.goals || data?.custom_items_pending_review?.goals || [],
+            strategies: queue.strategies || data?.custom_items_pending_review?.strategies || [],
+          },
+        })
+      } else {
+        setSummary(data)
+      }
     } catch {
       setSummary(null)
     }

@@ -437,9 +437,17 @@ def case_iep_plan_suggestion(
 
 
 class GoalCandidateCreate(BaseModel):
-    domain_key: str = Field(min_length=2, max_length=64)
+    domain_key: Optional[str] = Field(default=None, max_length=64)
     label: str = Field(min_length=5)
     rationale: Optional[str] = None
+    core_domains: Optional[list[str]] = None
+    core_environments: Optional[list[str]] = None
+    baseline_state: Optional[str] = None
+    desired_state: Optional[str] = None
+    goal_statement: Optional[str] = None
+    source: Optional[str] = None
+    source_daily_log_id: Optional[int] = None
+    source_session_id: Optional[int] = None
 
 
 class StrategyCandidateCreate(BaseModel):
@@ -447,6 +455,21 @@ class StrategyCandidateCreate(BaseModel):
     when_to_use: Optional[str] = None
     how_to_use: Optional[str] = None
     avoid: Optional[str] = None
+    domain_key: Optional[str] = None
+    environment_context: Optional[str] = None
+    core_domains: Optional[list[str]] = None
+    core_environments: Optional[list[str]] = None
+    strategy_steps: Optional[list[str]] = None
+    expected_outcome: Optional[str] = None
+    source: Optional[str] = None
+    linked_goal_card_id: Optional[int] = None
+    source_daily_log_id: Optional[int] = None
+
+
+class RepositoryReviewAction(BaseModel):
+    action: str = Field(pattern="^(approve_case|approve_pool|request_edits|merge|reject)$")
+    note: Optional[str] = None
+    merged_into_id: Optional[int] = None
 
 
 @router.get("/{case_id}/reports-workbench")
@@ -485,6 +508,18 @@ def list_goal_candidates(
     return {"items": repo_svc.list_goal_candidates(db, case_id)}
 
 
+@router.get("/{case_id}/goals-engine")
+def get_goals_engine(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goals_engine_service as engine_svc
+
+    _case_for_user(db, user, case_id)
+    return engine_svc.build_goals_engine_payload(db, case_id)
+
+
 @router.post("/{case_id}/goal-candidates", status_code=201)
 def create_goal_candidate(
     case_id: int,
@@ -495,13 +530,22 @@ def create_goal_candidate(
     from app.services import goal_repository_service as repo_svc
 
     _case_for_user_write(db, user, case_id)
+    domain_key = payload.domain_key or ((payload.core_domains or [None])[0]) or "communication"
     item = repo_svc.create_goal_candidate(
         db,
         case_id=case_id,
         user_id=user.id,
-        domain_key=payload.domain_key,
+        domain_key=domain_key,
         label=payload.label,
         rationale=payload.rationale,
+        source_daily_log_id=payload.source_daily_log_id,
+        source_session_id=payload.source_session_id,
+        core_domains=payload.core_domains,
+        core_environments=payload.core_environments,
+        baseline_state=payload.baseline_state,
+        desired_state=payload.desired_state,
+        goal_statement=payload.goal_statement,
+        source=payload.source,
     )
     return item
 
@@ -528,6 +572,8 @@ def create_strategy_candidate(
     from app.services import goal_repository_service as repo_svc
 
     _case_for_user_write(db, user, case_id)
+    domain_key = payload.domain_key or ((payload.core_domains or [None])[0])
+    environment_context = payload.environment_context or ((payload.core_environments or [None])[0])
     item = repo_svc.create_strategy_candidate(
         db,
         case_id=case_id,
@@ -536,7 +582,113 @@ def create_strategy_candidate(
         when_to_use=payload.when_to_use,
         how_to_use=payload.how_to_use,
         avoid=payload.avoid,
+        domain_key=domain_key,
+        environment_context=environment_context,
+        linked_goal_card_id=payload.linked_goal_card_id,
+        source_daily_log_id=payload.source_daily_log_id,
+        core_domains=payload.core_domains,
+        core_environments=payload.core_environments,
+        strategy_steps=payload.strategy_steps,
+        expected_outcome=payload.expected_outcome,
+        source=payload.source,
     )
+    return item
+
+
+@router.get("/{case_id}/repository-review-queue")
+def get_repository_review_queue(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user(db, user, case_id)
+    return repo_svc.list_pending_for_case(db, case_id)
+
+
+@router.get("/{case_id}/goals/{goal_card_id}/strategy-suggestions")
+def get_strategy_suggestions(
+    case_id: int,
+    goal_card_id: int,
+    environment: Optional[str] = Query(None),
+    exclude: Optional[str] = Query(None, description="Comma-separated strategy ids to exclude"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import strategy_suggestion_service as sug_svc
+
+    _case_for_user(db, user, case_id)
+    exclude_ids = [int(x) for x in (exclude or "").split(",") if x.strip().isdigit()]
+    domain_key = None
+    from app.models.clinical_evidence import IepGoalCard
+
+    card = db.get(IepGoalCard, goal_card_id)
+    if card and card.case_id == case_id:
+        domain_key = card.domain_key
+    return {
+        "items": sug_svc.suggest_alternative_strategies(
+            db,
+            case_id=case_id,
+            goal_card_id=goal_card_id,
+            domain_key=domain_key,
+            environment=environment,
+            exclude_strategy_ids=exclude_ids,
+        )
+    }
+
+
+@router.post("/{case_id}/goal-repository/{item_id}/review")
+def review_goal_repository_item(
+    case_id: int,
+    item_id: int,
+    payload: RepositoryReviewAction,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user_write(db, user, case_id)
+    try:
+        item = repo_svc.review_goal_item(
+            db,
+            item_id,
+            action=payload.action,
+            actor_user_id=user.id,
+            note=payload.note,
+            merged_into_id=payload.merged_into_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not item:
+        raise HTTPException(status_code=404, detail="Goal candidate not found")
+    return item
+
+
+@router.post("/{case_id}/strategy-repository/{item_id}/review")
+def review_strategy_repository_item(
+    case_id: int,
+    item_id: int,
+    payload: RepositoryReviewAction,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user_write(db, user, case_id)
+    try:
+        item = repo_svc.review_strategy_item(
+            db,
+            item_id,
+            action=payload.action,
+            actor_user_id=user.id,
+            note=payload.note,
+            merged_into_id=payload.merged_into_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not item:
+        raise HTTPException(status_code=404, detail="Strategy candidate not found")
     return item
 
 

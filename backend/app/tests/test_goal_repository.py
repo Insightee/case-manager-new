@@ -32,3 +32,24 @@ def test_goal_repository_local_and_approve():
         approved = repo_svc.approve_goal_candidate(db, item["id"], admin.id)
         assert approved["status"] == "approved"
         assert approved["case_id"] is None
+
+
+def test_goal_repository_review_actions():
+    with SessionLocal() as db:
+        case = db.scalars(select(Case).limit(1)).first()
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assert case and therapist
+        item = repo_svc.create_goal_candidate(
+            db,
+            case_id=case.id,
+            user_id=therapist.id,
+            domain_key="peer_social",
+            label="Child will initiate peer play with visual support",
+        )
+        reviewed = repo_svc.review_goal_item(
+            db,
+            item["id"],
+            action="approve_case",
+            actor_user_id=therapist.id,
+        )
+        assert reviewed["status"] == "active"

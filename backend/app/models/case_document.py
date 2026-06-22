@@ -28,6 +28,7 @@ class CaseDocumentCategory(str, enum.Enum):
     INCIDENT_REPORT = "INCIDENT_REPORT"
     TERMINATION_PROGRESS_REPORT = "TERMINATION_PROGRESS_REPORT"
     ANNUAL_PROGRESS_REPORT = "ANNUAL_PROGRESS_REPORT"
+    SESSION_EVIDENCE = "SESSION_EVIDENCE"
     OTHER = "OTHER"
 
 
@@ -95,6 +96,7 @@ CLINICAL_CATEGORIES = frozenset(
         CaseDocumentCategory.INCIDENT_REPORT.value,
         CaseDocumentCategory.TERMINATION_PROGRESS_REPORT.value,
         CaseDocumentCategory.ANNUAL_PROGRESS_REPORT.value,
+        CaseDocumentCategory.SESSION_EVIDENCE.value,
         CaseDocumentCategory.OTHER.value,
     }
 )

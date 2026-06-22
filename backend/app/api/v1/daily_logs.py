@@ -111,8 +111,16 @@ def create_daily_log(
     user: User = Depends(require_permission("daily_log.create")),
     db: Session = Depends(get_db),
 ):
+    evidence = payload.session_evidence
+    body = payload.model_dump(exclude={"session_evidence"})
     try:
-        log = log_service.create_daily_log(db, **payload.model_dump())
+        log = log_service.create_daily_log(db, **body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        _apply_session_evidence(db, log, user, evidence)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     from app.services import session_log_service
@@ -120,7 +128,7 @@ def create_daily_log(
     session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
     session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
     meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="create", entity_type="daily_log", entity_id=log.id, new_value=payload.model_dump(), **meta)
+    log_audit(db, actor_user_id=user.id, action="create", entity_type="daily_log", entity_id=log.id, new_value=body, **meta)
     db.commit()
     return DailyLogRead(**log_service.log_to_read(log))
 
@@ -136,8 +144,16 @@ def update_daily_log(
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
+    evidence = payload.session_evidence
+    body = payload.model_dump(exclude={"session_evidence"}, exclude_unset=True)
     try:
-        log = log_service.update_daily_log(db, log, user.id, **payload.model_dump(exclude_unset=True))
+        log = log_service.update_daily_log(db, log, user.id, **body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        _apply_session_evidence(db, log, user, evidence)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
@@ -157,8 +173,16 @@ def resubmit_daily_log(
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
+    evidence = payload.session_evidence
+    body = payload.model_dump(exclude={"session_evidence"}, exclude_unset=True)
     try:
-        log = log_service.resubmit_daily_log(db, log, user.id, **payload.model_dump(exclude_unset=True))
+        log = log_service.resubmit_daily_log(db, log, user.id, **body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        _apply_session_evidence(db, log, user, evidence)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     from app.services import session_log_service
@@ -240,18 +264,61 @@ class SessionGoalEntryIn(BaseModel):
     domain_key: Optional[str] = None
     support_level: Optional[str] = None
     response_note: Optional[str] = None
+    measurement_note: Optional[str] = None
     visibility: Optional[str] = "INTERNAL_ONLY"
+    schema_version: Optional[int] = None
+    participation_score: Optional[int] = None
+    independence_score: Optional[int] = None
+    goal_achievement_score: Optional[int] = None
+    activity_used: Optional[str] = None
+    goal_repository_item_id: Optional[int] = None
+    evidence_count: Optional[int] = None
+    strategies: list["StrategyUseEventIn"] = Field(default_factory=list)
 
 
 class StrategyUseEventIn(BaseModel):
     strategy_id: Optional[int] = None
     strategy_label: str
     outcome_note: Optional[str] = None
+    short_note: Optional[str] = None
+    goal_card_id: Optional[int] = None
+    goal_entry_id: Optional[int] = None
+    schema_version: Optional[int] = None
+    environment: Optional[str] = None
+    activity_used: Optional[str] = None
+    participation_score: Optional[int] = None
+    independence_score: Optional[int] = None
+    goal_achievement_score: Optional[int] = None
+    strategy_feedback: Optional[str] = None
+    custom_strategy_id: Optional[int] = None
 
 
 class SessionEvidenceSave(BaseModel):
     goals: list[SessionGoalEntryIn] = Field(default_factory=list)
     strategies: list[StrategyUseEventIn] = Field(default_factory=list)
+
+
+def _apply_session_evidence(db, log, user, evidence: SessionEvidenceSave | dict | None) -> None:
+    if not evidence:
+        return
+    from app.services import clinical_evidence_service as ev_svc
+
+    if isinstance(evidence, dict):
+        payload = SessionEvidenceSave(**evidence)
+    else:
+        payload = evidence
+    if not payload.goals and not payload.strategies:
+        return
+    case_id = log.session.case_id
+    ev_svc.save_session_evidence(
+        db,
+        daily_log=log,
+        case_id=case_id,
+        goals=[g.model_dump() for g in payload.goals],
+        strategies=[s.model_dump() for s in payload.strategies],
+        created_by_user_id=user.id,
+        commit=False,
+    )
 
 
 @router.get("/{log_id}/session-evidence")
@@ -291,6 +358,8 @@ def save_session_evidence(
         case_id=case_id,
         goals=[g.model_dump() for g in payload.goals],
         strategies=[s.model_dump() for s in payload.strategies],
+        created_by_user_id=user.id,
+        commit=True,
     )
     return result
 

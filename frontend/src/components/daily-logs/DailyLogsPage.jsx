@@ -23,11 +23,10 @@ import {
   isStartedLateOnSchedule,
   parseApiDatetime,
 } from '../../lib/datetime.js'
-import { isLogEditable, isLogResubmittable } from '../../lib/sessionLogUtils.js'
-import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
+import { isLogEditable } from '../../lib/sessionLogUtils.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
-import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
+import { SessionLogRecentRow } from './SessionLogRecentRow.jsx'
 import { SessionVisitPanel } from './SessionVisitPanel.jsx'
 import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
@@ -35,9 +34,9 @@ import { todayIsoIST } from '../../lib/datetime.js'
 import { canStartSessionToday, logsPathForSession } from '../../lib/sessionStartRules.js'
 import { SameDaySessionDialog } from './SameDaySessionDialog.jsx'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
-import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
 import '../cases/my-cases.css'
-import '../../styles/case-profile-v2.css'
+import '../../styles/goals-strategies-engine.css'
+import '../../styles/session-logs-dashboard.css'
 
 function logRecencyMs(log) {
   const ts = log?.resubmitted_at || log?.submitted_at
@@ -107,6 +106,21 @@ export function DailyLogsPage() {
   const active = workspace?.active_session || null
   const needsLog = workspace?.needs_log || []
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
+  const caseFilterId = searchParams.get('case_id')
+  const scopedToCase = Boolean(caseFilterId)
+
+  const displayLogs = useMemo(() => {
+    if (!caseFilterId) return logs
+    const id = Number(caseFilterId)
+    return logs.filter((l) => l.case_id === id)
+  }, [logs, caseFilterId])
+
+  const displayNeedsLog = useMemo(() => {
+    if (!caseFilterId) return needsLog
+    const id = Number(caseFilterId)
+    return needsLog.filter((s) => s.case_id === id)
+  }, [needsLog, caseFilterId])
+
   const loading = wsLoading || logsQuery.isLoading
   const logsReady = !wsLoading && !logsQuery.isLoading
   const [tick, setTick] = useState(Date.now())
@@ -121,7 +135,7 @@ export function DailyLogsPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [logTab, setLogTab] = useState('all')
-  const [viewingLog, setViewingLog] = useState(null)
+  const [expandedLogId, setExpandedLogId] = useState(null)
   const [sameDayConflict, setSameDayConflict] = useState(null)
   const [sameDayPending, setSameDayPending] = useState(null)
   const [editTimesSession, setEditTimesSession] = useState(null)
@@ -130,16 +144,16 @@ export function DailyLogsPage() {
   const deepLinkResolvedRef = useRef(null)
 
   const pendingLogs = useMemo(
-    () => sortLogsByRecency(logs.filter((l) => l.approval_status === 'PENDING')),
-    [logs],
+    () => sortLogsByRecency(displayLogs.filter((l) => l.approval_status === 'PENDING')),
+    [displayLogs],
   )
   const approvedLogs = useMemo(
-    () => logs.filter((l) => l.approval_status === 'APPROVED'),
-    [logs],
+    () => displayLogs.filter((l) => l.approval_status === 'APPROVED'),
+    [displayLogs],
   )
   const rejectedLogs = useMemo(
-    () => logs.filter((l) => l.approval_status === 'REJECTED'),
-    [logs],
+    () => displayLogs.filter((l) => l.approval_status === 'REJECTED'),
+    [displayLogs],
   )
 
   const filterByMonth = useCallback(
@@ -151,22 +165,45 @@ export function DailyLogsPage() {
   const filteredApproved = useMemo(() => filterByMonth(approvedLogs), [filterByMonth, approvedLogs])
   const filteredRejected = useMemo(() => filterByMonth(rejectedLogs), [filterByMonth, rejectedLogs])
   const filteredAll = useMemo(
-    () => sortLogsByRecency(filterByMonth(logs)),
-    [filterByMonth, logs],
+    () => sortLogsByRecency(filterByMonth(displayLogs)),
+    [filterByMonth, displayLogs],
   )
 
   const displayUpcoming = useMemo(() => {
-    if (!composerCaseId) return upcoming
-    return upcoming.filter((s) => s.case_id === composerCaseId)
-  }, [upcoming, composerCaseId])
+    const caseId = composerCaseId || (caseFilterId ? Number(caseFilterId) : null)
+    if (!caseId) return upcoming
+    return upcoming.filter((s) => s.case_id === caseId)
+  }, [upcoming, composerCaseId, caseFilterId])
+
+  const scopedCaseLabel = useMemo(() => {
+    if (!caseFilterId) return ''
+    const id = Number(caseFilterId)
+    const fromLog = logs.find((l) => l.case_id === id)
+    if (fromLog?.child_name || fromLog?.case_code) {
+      return fromLog.child_name || fromLog.case_code
+    }
+    const fromNeed = needsLog.find((s) => s.case_id === id)
+    if (fromNeed?.child_name || fromNeed?.case_code) {
+      return fromNeed.child_name || fromNeed.case_code
+    }
+    const fromUpcoming = upcoming.find((s) => s.case_id === id)
+    if (fromUpcoming?.child_name || fromUpcoming?.case_code) {
+      return fromUpcoming.child_name || fromUpcoming.case_code
+    }
+    return `Case #${caseFilterId}`
+  }, [caseFilterId, logs, needsLog, upcoming])
 
   const logYears = useMemo(() => {
     const years = new Set([now.getFullYear()])
-    logs.forEach((l) => {
+    displayLogs.forEach((l) => {
       if (l.scheduled_date) years.add(Number(l.scheduled_date.slice(0, 4)))
     })
     return [...years].filter(Number.isFinite).sort((a, b) => b - a)
-  }, [logs, now])
+  }, [displayLogs, now])
+
+  useEffect(() => {
+    if (caseFilterId) setComposerCaseId(Number(caseFilterId))
+  }, [caseFilterId])
 
   const syncDraftIds = useCallback(async () => {
     const ids = await refreshTherapistLogDraftIds()
@@ -233,22 +270,81 @@ export function DailyLogsPage() {
     setLogSession(null)
     setEditingLog(null)
     setLogRequired(false)
-    setViewingLog(null)
+    setExpandedLogId(null)
     setVisitSession(action.session)
+  }
+
+  function openViewLog(log) {
+    setVisitSession(null)
+    setLogSession(null)
+    setEditingLog(null)
+    setLogRequired(false)
+    setError('')
+    setSuccess('')
+    setExpandedLogId(log.id)
+  }
+
+  function logSessionPayload(log) {
+    return {
+      id: log.session_id,
+      scheduled_date: log.scheduled_date,
+      actual_start_at: log.actual_start_at,
+      actual_end_at: log.actual_end_at,
+      edited_start_at: log.edited_start_at,
+      edited_end_at: log.edited_end_at,
+      actual_times_edited: log.actual_times_edited,
+      case_code: log.case_code,
+      child_name: log.child_name,
+      status: 'COMPLETED',
+    }
+  }
+
+  function openResubmitFromRow(log) {
+    setExpandedLogId(null)
+    openLogForm(logSessionPayload(log), { log })
+  }
+
+  function openEditLogFromRow(log) {
+    setExpandedLogId(null)
+    openLogForm(logSessionPayload(log), { log })
+  }
+
+  function openEditTimesFromRow(log) {
+    setEditTimesSession({
+      id: log.session_id,
+      actual_start_at: log.actual_start_at,
+      actual_end_at: log.actual_end_at,
+      edited_start_at: log.edited_start_at,
+      edited_end_at: log.edited_end_at,
+      child_name: log.child_name,
+      case_code: log.case_code,
+      status: 'COMPLETED',
+    })
+  }
+
+  function renderLogRow(l, options = {}) {
+    return (
+      <SessionLogRecentRow
+        key={l.id}
+        log={l}
+        expanded={expandedLogId === l.id}
+        onToggleExpand={(id) => setExpandedLogId(id)}
+        onEditLog={openEditLogFromRow}
+        onResubmitLog={openResubmitFromRow}
+        onEditTimes={openEditTimesFromRow}
+        {...options}
+      />
+    )
   }
 
   function openLogForm(session, { required = false, log = null, readOnly = false } = {}) {
     setVisitSession(null)
     setError('')
-    setViewingLog(null)
     if (readOnly && log) {
-      setLogSession(null)
-      setEditingLog(null)
-      setLogRequired(false)
-      setViewingLog({ log, session })
-      setSuccess('')
+      openViewLog(log)
       return
     }
+    setExpandedLogId(null)
     setLogSession(session)
     setEditingLog(log)
     setLogRequired(required)
@@ -302,7 +398,7 @@ export function DailyLogsPage() {
     setLogSession(null)
     setEditingLog(null)
     setLogRequired(false)
-    setViewingLog(null)
+    setExpandedLogId(null)
     clearSessionQueryParam()
   }
 
@@ -330,147 +426,6 @@ export function DailyLogsPage() {
     } finally {
       setVisitBusy(false)
     }
-  }
-
-  function renderLogRow(l, { allowEdit = false, allowResubmit = false, allowView = false } = {}) {
-    const canEdit = allowEdit && isLogEditable(l)
-    const canResubmit = allowResubmit && isLogResubmittable(l)
-    const clockRange = formatClockRange(l)
-    const editedRange = l.actual_times_edited ? formatEditedRange(l) : null
-    return (
-      <div key={l.id} className="ic-session-log-recent__row">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="ic-session-log-recent__title">
-            {l.child_name || l.case_code}
-            {l.scheduled_date ? <> · {formatDisplayDate(l.scheduled_date)}</> : null}
-          </p>
-          {clockRange ? <p className="ic-session-log-recent__times">Clock: {clockRange}</p> : null}
-          {editedRange ? (
-            <p className="ic-session-log-recent__times" style={{ color: '#6d28d9' }}>
-              Corrected: {editedRange}
-            </p>
-          ) : null}
-          <SessionLogStatusBadge
-            approvalStatus={l.approval_status}
-            attendanceStatus={l.attendance_status}
-          />
-          {l.actual_times_edited ? (
-            <span className="ic-session-log-recent__meta" style={{ color: '#7c3aed', fontWeight: 600 }}>
-              Times edited
-            </span>
-          ) : null}
-          {l.duplicate_day_session ? (
-            <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
-              Same-day duplicate
-            </span>
-          ) : null}
-          {l.review_note && l.approval_status === 'REJECTED' ? (
-            <p className="ic-session-log-recent__meta" style={{ color: '#b91c1c' }}>
-              Rejection: {l.review_note}
-            </p>
-          ) : null}
-          {l.status_label ? (
-            <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
-              {l.status_label}
-            </span>
-          ) : l.late_addition ? (
-            <span className="ic-session-log-recent__meta">Late submission</span>
-          ) : null}
-          {l.case_id ? (
-            <span className="ic-session-log-recent__meta">
-              <Link to={`/therapist/cases/${l.case_id}`}>Open case</Link>
-            </span>
-          ) : null}
-        </div>
-        {canEditSessionTimes({ ...l, id: l.session_id, status: 'COMPLETED' }, l) && !canResubmit ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
-            onClick={() =>
-              setEditTimesSession({
-                id: l.session_id,
-                actual_start_at: l.actual_start_at,
-                actual_end_at: l.actual_end_at,
-                edited_start_at: l.edited_start_at,
-                edited_end_at: l.edited_end_at,
-                child_name: l.child_name,
-                case_code: l.case_code,
-                status: 'COMPLETED',
-              })
-            }
-          >
-            Edit times
-          </button>
-        ) : null}
-        {canResubmit ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--primary ic-session-log-recent__edit"
-            onClick={() =>
-              openLogForm(
-                {
-                  id: l.session_id,
-                  scheduled_date: l.scheduled_date,
-                  actual_start_at: l.actual_start_at,
-                  actual_end_at: l.actual_end_at,
-                  edited_start_at: l.edited_start_at,
-                  edited_end_at: l.edited_end_at,
-                  actual_times_edited: l.actual_times_edited,
-                  case_code: l.case_code,
-                  child_name: l.child_name,
-                  status: 'COMPLETED',
-                },
-                { log: l },
-              )
-            }
-          >
-            Edit & resubmit
-          </button>
-        ) : null}
-        {canEdit ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
-            onClick={() =>
-              openLogForm(
-                {
-                  id: l.session_id,
-                  scheduled_date: l.scheduled_date,
-                  actual_start_at: l.actual_start_at,
-                  actual_end_at: l.actual_end_at,
-                  case_code: l.case_code,
-                  child_name: l.child_name,
-                },
-                { log: l },
-              )
-            }
-          >
-            Edit log (24h)
-          </button>
-        ) : null}
-        {allowView && !canEdit && !canResubmit ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
-            onClick={() =>
-              openLogForm(
-                {
-                  id: l.session_id,
-                  scheduled_date: l.scheduled_date,
-                  actual_start_at: l.actual_start_at,
-                  actual_end_at: l.actual_end_at,
-                  case_code: l.case_code,
-                  child_name: l.child_name,
-                },
-                { log: l, readOnly: true },
-              )
-            }
-          >
-            View log
-          </button>
-        ) : null}
-      </div>
-    )
   }
 
   async function handleStart(sessionId, sessionMeta = null, { allowDuplicate = false } = {}) {
@@ -641,22 +596,37 @@ export function DailyLogsPage() {
     }
   }
 
-  const showComposer = !logSession && !viewingLog && !visitSession && !active
+  const showComposer = !logSession && !visitSession && !active
 
-  if (loading && !logSession) {
+  if (loading && !logSession && !visitSession) {
     return <p style={{ padding: 24, color: '#6b7280' }}>Loading session logs…</p>
   }
 
   return (
-    <div className="daily-logs-page ic-my-cases">
-      <header className="ic-page-head">
+    <div className="daily-logs-page session-logs-page forest-light ic-my-cases">
+      <header className="session-logs-header">
         <div>
-          <h1 className="ic-page-head__title">Session Logs</h1>
-          <p className="ic-page-head__sub">
+          <h1 className="session-logs-header__title">Session Logs</h1>
+          <p className="session-logs-header__subtitle">
             End each visit with a log so admin can review and families get timely updates. Edit pending logs for 24 hours.
           </p>
         </div>
       </header>
+
+      {scopedToCase ? (
+        <div className="session-logs-scope-banner">
+          <p style={{ margin: 0 }}>
+            Showing logs for <strong>{scopedCaseLabel}</strong>
+          </p>
+          <button
+            type="button"
+            className="reports-hub-btn reports-hub-btn--secondary"
+            onClick={() => setSearchParams({}, { replace: true })}
+          >
+            All clients
+          </button>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="ic-alert ic-alert--error">{error}</div>
@@ -666,8 +636,8 @@ export function DailyLogsPage() {
       ) : null}
 
       {active ? (
-        <section className="ic-case-active" style={{ marginBottom: 24 }}>
-          <p className="ic-case-active__title">Session in progress</p>
+        <section className="session-logs-active-card">
+          <p className="session-logs-active-card__title">Session in progress</p>
           <p style={{ margin: '0 0 4px', fontSize: '0.875rem' }}>
             {active.child_name || active.case_code} · {formatDisplayDate(active.scheduled_date)}
             {active.auto_end_label ? (
@@ -736,18 +706,6 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
-      {viewingLog ? (
-        <section ref={logPanelRef} style={{ marginBottom: 24 }}>
-          <SessionLogReadOnly
-            log={viewingLog.log}
-            session={viewingLog.session}
-            childName={viewingLog.log.child_name}
-            caseCode={viewingLog.log.case_code}
-            onClose={closeLogForm}
-          />
-        </section>
-      ) : null}
-
       {logSession ? (
         <section ref={logPanelRef} style={{ marginBottom: 24 }}>
           <SubmitSessionLogForm
@@ -782,6 +740,9 @@ export function DailyLogsPage() {
 
       {showComposer ? (
         <TherapistSessionComposer
+          lockCaseId={caseFilterId ? Number(caseFilterId) : null}
+          lockCaseLabel={scopedCaseLabel}
+          caseProfileMode={false}
           upcomingSessions={upcoming}
           disabled={!!active}
           onSelectedCaseChange={setComposerCaseId}
@@ -794,18 +755,18 @@ export function DailyLogsPage() {
         />
       ) : null}
 
-      {!active && needsLog.length > 0 && !logSession ? (
-        <section className="ic-session-log-needs" style={{ marginBottom: 24 }}>
-          <h3 className="ic-section-head__title">Needs log</h3>
-          <p className="ic-session-log-needs__sub">
+      {!active && displayNeedsLog.length > 0 && !logSession ? (
+        <section className="session-logs-needs">
+          <h3 className="session-logs-needs__title">Needs log</h3>
+          <p className="session-logs-needs__sub">
             These visits ended without a log. Submit now so billing and family updates are not delayed.
           </p>
-          <div className="ic-session-log-needs__list">
-            {needsLog.map((s) => (
+          <div className="session-logs-needs__list">
+            {displayNeedsLog.map((s) => (
               <button
                 key={s.id}
                 type="button"
-                className="ic-session-log-needs__item"
+                className="session-logs-needs__item"
                 onClick={() => openSessionFromDeepLink(s)}
               >
                 <span>
@@ -814,7 +775,7 @@ export function DailyLogsPage() {
                     <span className="ic-session-log-needs__draft"> · Draft saved</span>
                   ) : null}
                 </span>
-                <span className="ic-session-log-needs__cta">{draftIds.has(s.id) ? 'Continue log' : 'Complete log'}</span>
+                <span className="session-logs-needs__cta">{draftIds.has(s.id) ? 'Continue log' : 'Complete log'}</span>
               </button>
             ))}
           </div>
@@ -822,18 +783,16 @@ export function DailyLogsPage() {
       ) : null}
 
       {!logSession ? (
-        <section style={{ marginBottom: 24 }}>
-          <h3 className="ic-section-head__title" style={{ marginBottom: 12 }}>
-            Upcoming sessions
-          </h3>
+        <section className="session-logs-upcoming">
+          <h3 className="session-logs-upcoming__title">Upcoming sessions</h3>
           {displayUpcoming.length === 0 ? (
-            <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>
-              {composerCaseId
+            <p className="session-logs-upcoming__empty">
+              {caseFilterId || composerCaseId
                 ? 'No upcoming sessions for this client.'
                 : 'No scheduled sessions in the next two weeks.'}
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="session-logs-upcoming__list">
               {displayUpcoming.map((s) => {
                 const startedLate = isStartedLateOnSchedule(s.actual_start_at, s.scheduled_date, s.start_time)
                 const actualStart = formatTimeIST(s.actual_start_at)
@@ -844,16 +803,7 @@ export function DailyLogsPage() {
                 return (
                   <article
                     key={s.id}
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'flex-start',
-                      gap: 12,
-                      padding: 14,
-                      background: isInProgress ? '#fffbeb' : '#fff',
-                      border: `1px solid ${isInProgress ? '#fcd34d' : '#e5e7eb'}`,
-                      borderRadius: 12,
-                    }}
+                    className={`session-logs-upcoming__card${isInProgress ? ' session-logs-upcoming__card--live' : ''}`}
                   >
                     <div style={{ flex: 1, minWidth: 160 }}>
                       <strong>
@@ -938,8 +888,8 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
-      <section className="ic-session-log-tabs-section">
-        <div className="ic-case-history-filters" style={{ marginBottom: 12 }}>
+      <section className="session-logs-history">
+        <div className="session-logs-history__filters">
           <label>
             <span className="sr-only">Month</span>
             <select
@@ -971,22 +921,22 @@ export function DailyLogsPage() {
             </select>
           </label>
         </div>
-        <div className="clinical-filter-chips" role="tablist" aria-label="Session log lists">
+        <div className="session-logs-tabs" role="tablist" aria-label="Session log lists">
           {LOG_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               role="tab"
               aria-selected={logTab === t.id}
-              className={`clinical-filter-chip${logTab === t.id ? ' is-active' : ''}`}
+              className={`session-logs-tabs__btn${logTab === t.id ? ' is-active' : ''}`}
               onClick={() => setLogTab(t.id)}
             >
               {t.label}
-              {t.id === 'needs' && needsLog.length > 0 ? (
-                <span style={{ marginLeft: '0.375rem', background: 'var(--clinical-red)', color: '#fff', borderRadius: '999px', fontSize: '0.6875rem', fontWeight: 700, padding: '0 5px', lineHeight: '16px', display: 'inline-block' }}>{needsLog.length}</span>
+              {t.id === 'needs' && displayNeedsLog.length > 0 ? (
+                <span className="session-logs-tabs__count">{displayNeedsLog.length}</span>
               ) : null}
               {t.id === 'pending' && pendingLogs.length > 0 ? (
-                <span style={{ marginLeft: '0.375rem', background: 'var(--clinical-amber)', color: '#fff', borderRadius: '999px', fontSize: '0.6875rem', fontWeight: 700, padding: '0 5px', lineHeight: '16px', display: 'inline-block' }}>{pendingLogs.length}</span>
+                <span className="session-logs-tabs__count session-logs-tabs__count--amber">{pendingLogs.length}</span>
               ) : null}
             </button>
           ))}
@@ -994,11 +944,11 @@ export function DailyLogsPage() {
 
         <div className="ic-session-log-tab-panel" role="tabpanel">
           {logTab === 'needs' ? (
-            needsLog.length === 0 ? (
+            displayNeedsLog.length === 0 ? (
               <p className="ic-empty-hint">No sessions waiting for a log.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {needsLog.map((s) => (
+                {displayNeedsLog.map((s) => (
                   <div key={s.id} className="ic-session-log-recent__row">
                     <div style={{ flex: 1 }}>
                       <p className="ic-session-log-recent__title">
@@ -1029,7 +979,12 @@ export function DailyLogsPage() {
               <p className="ic-empty-hint">No logs pending admin review for {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {filteredPending.map((l) => renderLogRow(l, { allowEdit: true }))}
+                {filteredPending.map((l) =>
+                  renderLogRow(l, {
+                    allowEdit: isLogEditable(l),
+                    allowView: !isLogEditable(l),
+                  }),
+                )}
               </div>
             )
           ) : null}

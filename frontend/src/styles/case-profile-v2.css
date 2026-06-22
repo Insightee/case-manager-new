@@ -12,6 +12,11 @@
   min-width: 0;
 }
 
+.cp-shell.forest-light {
+  --cp-accent: #000000;
+  --cp-accent-soft: #eeeeee;
+}
+
 .cp-shell__body {
   min-width: 0;
 }
@@ -1272,6 +1277,159 @@
 .clinical-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
 .clinical-btn-primary--full   { width: 100%; }
 
+/* Report History (Reports tab) */
+.cp-report-history__header {
+  margin-bottom: 1rem;
+}
+
+.cp-report-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.cp-report-history__card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.cp-report-history__type {
+  margin: 0 0 0.15rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--clinical-muted);
+}
+
+.cp-report-history__title {
+  display: block;
+  font-size: 0.9375rem;
+  color: #0f172a;
+}
+
+.cp-report-history__meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.cp-report-history__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.cp-report-history__empty {
+  background: #fff;
+  border: 1px dashed var(--clinical-border);
+  border-radius: var(--clinical-radius-card);
+  padding: 1.25rem;
+}
+
+/* Document Drive (case Documents tab) */
+.cp-document-drive__header {
+  margin-bottom: 1rem;
+}
+
+.cp-document-drive__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.cp-document-drive__search {
+  flex: 1 1 220px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 0.875rem;
+  border: 1px solid var(--clinical-border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.cp-document-drive__search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  min-height: 42px;
+  background: transparent;
+}
+
+.cp-document-drive__search-icon {
+  opacity: 0.55;
+  font-size: 0.875rem;
+}
+
+.cp-document-drive__filters {
+  flex: 2 1 280px;
+  margin: 0;
+}
+
+.cp-document-drive__upload {
+  flex-shrink: 0;
+}
+
+.cp-document-drive__hint {
+  font-size: 0.8125rem;
+  color: var(--clinical-muted);
+  margin: 0 0 1rem;
+}
+
+.cp-document-drive__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 0.75rem;
+}
+
+.cp-document-drive__card-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--clinical-radius-card);
+}
+
+.cp-document-drive__card-btn .clinical-document-card {
+  height: 100%;
+  width: 100%;
+}
+
+.cp-document-drive__card-btn:focus-visible {
+  outline: 2px solid var(--clinical-purple);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .cp-document-drive__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cp-document-drive__upload {
+    width: 100%;
+  }
+
+  .cp-document-drive__upload.clinical-btn-primary {
+    width: 100%;
+  }
+}
+
 .clinical-btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -1957,6 +2115,179 @@
   .clinical-case-queue-card {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* ── Forest Light Reports Hub (content only; nav in portal sidebar) ── */
+
+.cp-reports-hub {
+  min-width: 0;
+}
+
+.cp-reports-hub__section-intro {
+  margin-bottom: 1rem;
+}
+
+/* Reports dashboard (per-case) */
+.cp-reports-tab-home__metrics {
+  margin: 1.25rem 0;
+}
+
+.cp-reports-tab-home__pipeline-title {
+  font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  color: var(--clinical-text);
+}
+
+.cp-reports-tab-home__pipeline-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.cp-reports-tab-home__actions {
+  background: var(--clinical-surface);
+  border: 1px solid var(--clinical-border);
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.cp-reports-tab-home__actions-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--clinical-muted);
+  margin: 0 0 0.5rem;
+}
+
+/* Shared reports-hub primitives */
+.reports-hub-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.reports-hub-header__title {
+  font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--clinical-text);
+}
+
+.reports-hub-header__subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  color: var(--clinical-muted);
+  max-width: 42rem;
+}
+
+.reports-hub-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 44px;
+  padding: 0.625rem 1.25rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.reports-hub-btn--primary {
+  background: #000000;
+  color: #ffffff;
+}
+
+.reports-hub-btn--primary:hover {
+  background: #1a1c1c;
+}
+
+.reports-hub-btn--secondary {
+  background: #ffffff;
+  color: #1a1c1c;
+  border: 1px solid #c2c8c3;
+}
+
+.reports-hub-btn--secondary:hover {
+  background: #f3f3f4;
+}
+
+.reports-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.reports-metric-card {
+  background: #ffffff;
+  border: 1px solid #c2c8c3;
+  border-radius: 1rem;
+  padding: 1.25rem 1rem;
+  text-align: left;
+  cursor: default;
+}
+
+button.reports-metric-card {
+  cursor: pointer;
+}
+
+button.reports-metric-card:hover {
+  border-color: #737875;
+}
+
+.reports-metric-card.is-active {
+  outline: 2px solid #000000;
+  outline-offset: 2px;
+}
+
+.reports-metric-card__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-bottom: 0.75rem;
+}
+
+.reports-metric-card__value {
+  display: block;
+  font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--clinical-text);
+}
+
+.reports-metric-card__label {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--clinical-muted);
+}
+
+.forest-light .clinical-filter-chip.is-active {
+  background: #eeeeee;
+  color: #000000;
+  border-color: #000000;
+}
+
+@media (max-width: 640px) {
+  .reports-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

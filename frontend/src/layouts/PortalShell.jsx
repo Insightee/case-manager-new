@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
 import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
-import { CLINICAL_QUALITY_DASHBOARD } from '../lib/reportsRevampFlags.js'
+import { CLINICAL_QUALITY_DASHBOARD, isReportsRevampActive } from '../lib/reportsRevampFlags.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
 import { useNotifications } from '../hooks/useNotifications.js'
 import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
@@ -12,13 +12,20 @@ import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
+import { CaseProfileSidebarNav } from '../components/case-profile/CaseProfileSidebarNav.jsx'
+import { CaseReportsSidebarNav } from '../components/case-profile/CaseReportsSidebarNav.jsx'
+import { normalizeReportsSection } from '../components/case-profile/reportsHubSections.js'
+import { TherapistActiveCaseProvider, useTherapistActiveCase } from '../context/TherapistActiveCaseContext.jsx'
 import '../components/shared/notification-bell.css'
+
+const THERAPIST_MY_CASES_PATH = '/therapist/cases'
+const THERAPIST_REPORTS_PATH = '/therapist/reports'
 
 const THERAPIST_NAV = [
   { to: '/therapist', label: 'Dashboard', end: true },
   { to: '/therapist/cases', label: 'My Cases' },
   { to: '/therapist/logs', label: 'Session Logs' },
-  { to: '/therapist/reports', label: 'Monthly Reports' },
+  { to: '/therapist/reports', label: 'Reports' },
   { to: '/therapist/invoices', label: 'Invoices' },
   { to: '/therapist/support', label: 'Support & Incidents' },
   { to: '/therapist/meetings', label: 'Meetings' },
@@ -122,7 +129,16 @@ const PORTAL_LABELS = {
   therapist: 'Therapist Portal',
 }
 
-function NavLinks({ items, className, linkClassName, onNavigate, showIcons }) {
+function NavLinks({
+  items,
+  className,
+  linkClassName,
+  onNavigate,
+  showIcons,
+  caseSubNav,
+  reportsSubNav,
+  therapistExpandable,
+}) {
   let lastSection = null
   return (
     <nav className={className} aria-label="Portal navigation">
@@ -137,20 +153,82 @@ function NavLinks({ items, className, linkClassName, onNavigate, showIcons }) {
             </p>
           ) : null
         if (item.section) lastSection = item.section
+
+        const isMyCases = therapistExpandable && item.to === THERAPIST_MY_CASES_PATH
+        const isReports = therapistExpandable && item.to === THERAPIST_REPORTS_PATH
+        const showCaseSubNav = isMyCases && therapistExpandable.casesExpanded && caseSubNav
+        const showReportsSubNav = isReports && therapistExpandable.reportsExpanded && reportsSubNav
+        const parentActive =
+          (isMyCases && caseSubNav?.isContextActive) || (isReports && reportsSubNav?.isContextActive)
+
         return (
           <span key={item.to} className="app-sidebar__nav-item-wrap">
             {sectionHeader}
-            <NavLink
-              to={item.to}
-              end={item.end}
-              onClick={onNavigate}
-              className={({ isActive }) =>
-                `${linkClassName}${isActive ? ' is-active' : ''}`
-              }
-            >
-              {showIcons && item.icon ? <NavIcon name={item.icon} /> : null}
-              <span>{item.label}</span>
-            </NavLink>
+            <div className="app-sidebar__nav-row">
+              <NavLink
+                to={item.to}
+                end={item.end}
+                onClick={onNavigate}
+                className={({ isActive }) =>
+                  `${linkClassName}${isActive || parentActive ? ' is-active' : ''}`
+                }
+              >
+                {showIcons && item.icon ? <NavIcon name={item.icon} /> : null}
+                <span>{item.label}</span>
+              </NavLink>
+              {isMyCases ? (
+                <button
+                  type="button"
+                  className={`app-sidebar__nav-expand${therapistExpandable.casesExpanded ? ' is-expanded' : ''}`}
+                  aria-expanded={therapistExpandable.casesExpanded}
+                  aria-label={
+                    therapistExpandable.casesExpanded
+                      ? 'Collapse My Cases sections'
+                      : 'Expand My Cases sections'
+                  }
+                  onClick={(e) => {
+                    e.preventDefault()
+                    therapistExpandable.toggleCases()
+                  }}
+                >
+                  {therapistExpandable.casesExpanded ? '−' : '+'}
+                </button>
+              ) : null}
+              {isReports ? (
+                <button
+                  type="button"
+                  className={`app-sidebar__nav-expand${therapistExpandable.reportsExpanded ? ' is-expanded' : ''}`}
+                  aria-expanded={therapistExpandable.reportsExpanded}
+                  aria-label={
+                    therapistExpandable.reportsExpanded
+                      ? 'Collapse Reports sections'
+                      : 'Expand Reports sections'
+                  }
+                  onClick={(e) => {
+                    e.preventDefault()
+                    therapistExpandable.toggleReports()
+                  }}
+                >
+                  {therapistExpandable.reportsExpanded ? '−' : '+'}
+                </button>
+              ) : null}
+            </div>
+            {showCaseSubNav ? (
+              <CaseProfileSidebarNav
+                caseId={caseSubNav.caseId}
+                activeTab={caseSubNav.activeTab}
+                onNavigate={onNavigate}
+                nested
+              />
+            ) : null}
+            {showReportsSubNav ? (
+              <CaseReportsSidebarNav
+                caseId={reportsSubNav.caseId}
+                activeSection={reportsSubNav.activeSection}
+                onNavigate={onNavigate}
+                nested
+              />
+            ) : null}
           </span>
         )
       })}
@@ -241,6 +319,17 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
 }
 
 export function PortalShell({ portal }) {
+  if (portal === 'therapist' && isReportsRevampActive('therapist')) {
+    return (
+      <TherapistActiveCaseProvider>
+        <PortalShellInner portal={portal} />
+      </TherapistActiveCaseProvider>
+    )
+  }
+  return <PortalShellInner portal={portal} />
+}
+
+function PortalShellInner({ portal }) {
   const { user, logout, can, hasFeature, isViewOnly, navVisible } = useAuth()
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
@@ -306,6 +395,66 @@ export function PortalShell({ portal }) {
     () => buildMobileTabs(nav, portal, { cmFocused }),
     [nav, portal, cmFocused],
   )
+
+  const therapistRevamp = portal === 'therapist' && isReportsRevampActive('therapist')
+  const therapistCaseMatch = therapistRevamp
+    ? location.pathname.match(/^\/therapist\/cases\/([^/]+)$/)
+    : null
+  const therapistCaseId = therapistCaseMatch?.[1] ?? null
+  const therapistCaseTab = new URLSearchParams(location.search).get('tab') || 'overview'
+  const therapistReportsSection = new URLSearchParams(location.search).get('section') || 'dashboard'
+  const onCasesList = location.pathname === THERAPIST_MY_CASES_PATH
+  const reportsCaseId =
+    therapistCaseId && therapistCaseTab === 'reports' ? therapistCaseId : null
+
+  const [casesNavExpanded, setCasesNavExpanded] = useState(false)
+  const [reportsNavExpanded, setReportsNavExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!therapistRevamp) return
+    if (therapistCaseMatch || onCasesList) setCasesNavExpanded(true)
+    if (therapistCaseTab === 'reports' || location.pathname === THERAPIST_REPORTS_PATH) {
+      setReportsNavExpanded(true)
+    }
+  }, [therapistRevamp, therapistCaseMatch, therapistCaseTab, location.pathname, onCasesList])
+
+  const therapistCaseSubNav =
+    therapistRevamp && casesNavExpanded
+      ? {
+          caseId: therapistCaseId,
+          activeTab: therapistCaseId ? therapistCaseTab : onCasesList ? 'overview' : null,
+          myCasesPath: THERAPIST_MY_CASES_PATH,
+          isContextActive: Boolean(therapistCaseMatch) || onCasesList,
+        }
+      : null
+
+  const reportsSectionFromUrl = normalizeReportsSection(
+    new URLSearchParams(location.search).get('section'),
+  )
+  const therapistReportsSubNav =
+    therapistRevamp && reportsNavExpanded
+      ? {
+          caseId: reportsCaseId,
+          activeSection:
+            reportsCaseId
+              ? normalizeReportsSection(therapistReportsSection)
+              : location.pathname === THERAPIST_REPORTS_PATH
+                ? reportsSectionFromUrl
+                : 'dashboard',
+          reportsPath: THERAPIST_REPORTS_PATH,
+          isContextActive:
+            Boolean(reportsCaseId) || location.pathname === THERAPIST_REPORTS_PATH,
+        }
+      : null
+
+  const therapistExpandable = therapistRevamp
+    ? {
+        casesExpanded: casesNavExpanded,
+        reportsExpanded: reportsNavExpanded,
+        toggleCases: () => setCasesNavExpanded((open) => !open),
+        toggleReports: () => setReportsNavExpanded((open) => !open),
+      }
+    : null
 
   /** Full sidebar in drawer: therapist + parent always; admin when nav is large or CM shortcuts. */
   const showMobileDrawer =
@@ -472,6 +621,9 @@ export function PortalShell({ portal }) {
               linkClassName="app-sidebar__link"
               showIcons={showNavIcons}
               onNavigate={() => setMobileNavOpen(false)}
+              caseSubNav={therapistCaseSubNav}
+              reportsSubNav={therapistReportsSubNav}
+              therapistExpandable={therapistExpandable}
             />
             <div className="app-sidebar__footer app-sidebar__footer--drawer">
               <NavLink
@@ -526,6 +678,9 @@ export function PortalShell({ portal }) {
           className="app-sidebar__nav"
           linkClassName="app-sidebar__link"
           showIcons={showNavIcons}
+          caseSubNav={therapistCaseSubNav}
+          reportsSubNav={therapistReportsSubNav}
+          therapistExpandable={therapistExpandable}
         />
         <div className="app-sidebar__footer">
           {portal === 'admin' ? (

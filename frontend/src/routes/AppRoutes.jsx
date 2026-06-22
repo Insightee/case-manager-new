@@ -89,6 +89,11 @@ const AdminClinicalDashboardPage = lazy(() =>
     default: m.AdminClinicalDashboardPage,
   }))
 )
+const AdminGoalStrategyRepositoryPage = lazy(() =>
+  import('../components/admin-portal/AdminGoalStrategyRepositoryPage.jsx').then((m) => ({
+    default: m.AdminGoalStrategyRepositoryPage,
+  })),
+)
 const AdminClinicalReferencesPage = lazy(() =>
   import('../components/admin-portal/AdminClinicalReferencesPage.jsx').then((m) => ({
     default: m.AdminClinicalReferencesPage,
@@ -451,6 +456,14 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminClinicalDashboardPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="goal-strategy-repository"
+          element={
+            <Lazy>
+              <AdminGoalStrategyRepositoryPage />
             </Lazy>
           }
         />
