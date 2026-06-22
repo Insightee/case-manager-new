@@ -11,12 +11,14 @@ export function AdminCasesPage() {
   const navigate = useNavigate()
   const { can, isViewOnly } = useAuth()
   const [showCreate, setShowCreate] = useState(false)
+  const [wizardKey, setWizardKey] = useState(0)
   const [initialFilters, setInitialFilters] = useState(() => defaultPipelineFilters())
 
   const canCreateCase = can('case.create') && !isViewOnly
 
   useEffect(() => {
     if (searchParams.get('allot') === '1' && canCreateCase) {
+      setWizardKey((k) => k + 1)
       setShowCreate(true)
     }
     const status = searchParams.get('status')
@@ -35,7 +37,18 @@ export function AdminCasesPage() {
         subtitle="Action queue first — filter by status, case manager, therapist, client, and dates. Use row actions to allot, assign, review, or open the case file."
         actions={
           canCreateCase ? (
-            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => setShowCreate((v) => !v)}>
+            <button
+              type="button"
+              className="admin-btn admin-btn--primary admin-btn--sm"
+              onClick={() => {
+                if (showCreate) {
+                  setShowCreate(false)
+                  return
+                }
+                setWizardKey((k) => k + 1)
+                setShowCreate(true)
+              }}
+            >
               {showCreate ? 'Close form' : '+ New case'}
             </button>
           ) : null
@@ -44,6 +57,7 @@ export function AdminCasesPage() {
 
       {showCreate && canCreateCase ? (
         <AdminCaseAllotmentWizard
+          key={wizardKey}
           onComplete={async (created) => {
             setShowCreate(false)
             if (created?.id) navigate(`/admin/cases/${created.id}`)
