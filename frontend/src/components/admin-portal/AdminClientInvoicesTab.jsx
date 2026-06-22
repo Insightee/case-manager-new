@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { apiFetch, getTokens } from '../../lib/apiClient.js'
+import { apiFetch, getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
   buildClientInvoiceQuery,
@@ -22,8 +22,6 @@ import { InvoiceLineItemEditor } from './InvoiceLineItemEditor.jsx'
 import { ClientInvoiceOverviewPanel } from './ClientInvoiceOverviewPanel.jsx'
 import './admin-client-invoices.css'
 import './admin-client-invoices-composer.css'
-
-const API_URL = import.meta.env.VITE_API_URL || ''
 
 const STATUS_PILL = {
   DRAFT: 'draft',
@@ -48,7 +46,7 @@ function displayStatus(inv) {
 
 async function downloadExport(path, filename) {
   const { access } = getTokens()
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
     headers: access ? { Authorization: `Bearer ${access}` } : {},
   })
   if (!res.ok) throw new Error('Export failed')
@@ -263,7 +261,7 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
                       </p>
                       {p.hasProof ? (
                         <a
-                          href={`${import.meta.env.VITE_API_URL || ''}/api/v1/admin/client-billing/payments/${p.id}/proof`}
+                          href={`${getApiBaseUrl()}/api/v1/admin/client-billing/payments/${p.id}/proof`}
                           target="_blank"
                           rel="noreferrer"
                           style={{ fontSize: '0.8rem' }}

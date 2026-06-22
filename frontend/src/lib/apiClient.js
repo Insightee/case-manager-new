@@ -1,4 +1,20 @@
-const API_URL = import.meta.env.VITE_API_URL || ''
+/** Production UI hosts that proxy /api on the same origin (see vercel.json rewrites). */
+const SAME_ORIGIN_API_HOSTS = /^((www\.)?insighte\.org|[a-z0-9-]+\.vercel\.app)$/i
+
+function resolveApiBaseUrl() {
+  const configured = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+  if (typeof window === 'undefined') return configured
+  const host = window.location.hostname
+  if (SAME_ORIGIN_API_HOSTS.test(host)) {
+    // Avoid cross-origin calls from insighte.org / Vercel → api.insighte.org (CORS/network).
+    return ''
+  }
+  return configured
+}
+
+function apiBase() {
+  return resolveApiBaseUrl()
+}
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const requestMetrics = {
@@ -39,7 +55,7 @@ function debugBillingApiLog(location, message, data, hypothesisId = 'E') {
 // #endregion
 
 export function getApiBaseUrl() {
-  return API_URL
+  return resolveApiBaseUrl()
 }
 
 export function getApiMetricsSnapshot() {
@@ -71,7 +87,7 @@ export function clearTokens() {
 function timeoutErrorMessage(timeoutMs = DEFAULT_TIMEOUT_MS) {
   const secs = Math.round(timeoutMs / 1000)
   if (import.meta.env.DEV) {
-    const base = API_URL || 'http://localhost:8000 (via Vite proxy)'
+    const base = apiBase() || 'http://localhost:8000 (via Vite proxy)'
     return `Request timed out after ${secs}s. The API may be down or an operation is stuck — check GET /health and start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 (${base}).`
   }
   return `This is taking longer than expected (${secs}s). Check your connection and try again.`
@@ -102,7 +118,7 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TI
 async function refreshAccess() {
   const { refresh } = getTokens()
   if (!refresh) return null
-  const res = await fetchWithTimeout(`${API_URL}/api/v1/auth/refresh`, {
+  const res = await fetchWithTimeout(`${apiBase()}/api/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refresh }),
@@ -161,7 +177,7 @@ export async function apiFetch(path, options = {}) {
   let res
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
   try {
-    res = await fetchWithTimeout(`${API_URL}${url}`, { ...fetchOptions, headers }, timeoutMs)
+    res = await fetchWithTimeout(`${getApiBaseUrl()}${url}`, { ...fetchOptions, headers }, timeoutMs)
   } catch (err) {
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
     recordApiMetric(path, elapsed, false)
@@ -175,21 +191,22 @@ export async function apiFetch(path, options = {}) {
     if (err?.message?.startsWith('Request timed out')) throw err
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
     const onVercel = /\.vercel\.app$/i.test(hostname)
+    const onInsighte = SAME_ORIGIN_API_HOSTS.test(hostname)
     const localDev = hostname === 'localhost' || hostname === '127.0.0.1'
     let hint
-    if (!API_URL) {
+    if (!getApiBaseUrl() && localDev) {
       hint =
         'Cannot reach the API. Start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 — then refresh this page.'
-    } else if (onVercel) {
+    } else if (onInsighte || onVercel) {
       const origin =
         typeof window !== 'undefined' && window.location?.origin ? window.location.origin : hostname
       hint =
-        `Cannot reach the API at ${API_URL}. The API may be down, or this site origin (${origin}) may not be allowed by Railway CORS. ` +
-        `Add ${origin} to Railway CORS_ORIGINS and FRONTEND_URL, redeploy the API, and confirm VITE_API_URL on Vercel (${API_URL}).`
+        `Cannot reach the API through ${origin}. Redeploy the frontend (vercel.json /api proxy) or check GET /health on the Railway API.`
     } else if (localDev) {
-      hint = `Cannot reach the API at ${API_URL}. Start the backend (cd backend && python3 -m uvicorn app.main:app --reload --port 8000), or clear VITE_API_URL in frontend/.env.local and restart npm run dev to use the Vite proxy.`
+      hint = `Cannot reach the API at ${import.meta.env.VITE_API_URL || '(vite proxy)'}. Start the backend (cd backend && python3 -m uvicorn app.main:app --reload --port 8000), or clear VITE_API_URL in frontend/.env.local and restart npm run dev.`
     } else {
-      hint = `Cannot reach the API at ${API_URL}. Check that the server is running and CORS allows this site.`
+      const configured = import.meta.env.VITE_API_URL || getApiBaseUrl() || '(not set)'
+      hint = `Cannot reach the API at ${configured}. Check that the server is running and CORS allows this site.`
     }
     throw new Error(hint)
   }
@@ -198,7 +215,7 @@ export async function apiFetch(path, options = {}) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetchWithTimeout(`${API_URL}${url}`, { ...fetchOptions, headers }, timeoutMs)
+      res = await fetchWithTimeout(`${getApiBaseUrl()}${url}`, { ...fetchOptions, headers }, timeoutMs)
     }
     if (res.status === 401) {
       clearTokens()
@@ -258,7 +275,7 @@ export function apiPostKeepalive(path, payload) {
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
-  return fetch(`${API_URL}${path}`, {
+  return fetch(`${apiBase()}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -282,12 +299,12 @@ export async function apiFetchBlob(path, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
 
-  let res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
+  let res = await fetchWithTimeout(`${apiBase()}${path}`, { headers }, timeoutMs)
   if (res.status === 401 && access) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
+      res = await fetchWithTimeout(`${apiBase()}${path}`, { headers }, timeoutMs)
     }
   }
   if (!res.ok) {
@@ -312,7 +329,7 @@ export async function apiUpload(path, formData, { timeoutMs = 60000 } = {}) {
     }, timeoutMs)
   let res
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    res = await fetch(`${apiBase()}${path}`, {
       method: 'POST',
       headers,
       body: formData,
@@ -330,7 +347,7 @@ export async function apiUpload(path, formData, { timeoutMs = 60000 } = {}) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetch(`${API_URL}${path}`, {
+      res = await fetch(`${apiBase()}${path}`, {
         method: 'POST',
         headers,
         body: formData,
@@ -357,12 +374,12 @@ export async function apiDownload(path, filename, { timeoutMs = DEFAULT_TIMEOUT_
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
 
-  let res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
+  let res = await fetchWithTimeout(`${apiBase()}${path}`, { headers }, timeoutMs)
   if (res.status === 401 && access) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
+      res = await fetchWithTimeout(`${apiBase()}${path}`, { headers }, timeoutMs)
     }
   }
   if (!res.ok) {
