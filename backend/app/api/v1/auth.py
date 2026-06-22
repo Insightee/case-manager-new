@@ -168,6 +168,7 @@ def invite_preview(token: str, db: Session = Depends(get_db)):
         "email": invite.email,
         "role": invite.role_name,
         "roleLabel": role_label,
+        "login_portal": default_login_portal_for_roles([invite.role_name]),
         "fullName": meta.get("full_name"),
         "childName": child_name,
         "clientName": meta.get("client_name"),
