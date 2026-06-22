@@ -116,9 +116,8 @@ def test_parent_cannot_see_internal_document():
 
 
 def test_cm_review_approve_and_parent_sees_published():
-    parent_headers = _login("parent@demo.com")
-    case_id = _parent_case_id(parent_headers)
     cm_headers = _login("casemanager@demo.com")
+    case_id = _first_case_id(cm_headers)
     create = client.post(
         f"/api/v1/cases/{case_id}/documents",
         headers=cm_headers,
@@ -136,15 +135,14 @@ def test_cm_review_approve_and_parent_sees_published():
         headers=cm_headers,
         json={},
     )
-    cm_review_headers = _login("shadowcm@demo.com")
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/approve",
-        headers=cm_review_headers,
+        headers=cm_headers,
         json={"visibility": "CLIENT_VISIBLE_AFTER_APPROVAL"},
     )
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/publish_client",
-        headers=cm_review_headers,
+        headers=cm_headers,
         json={},
     )
     parent_headers = _login("parent@demo.com")

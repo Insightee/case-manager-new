@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_items
+from app.tests.conftest import api_first_case_id, api_items, login_headers
 
 client = TestClient(app)
 
@@ -1024,9 +1024,8 @@ def test_workbench_summary_scoped():
 def test_viewer_cannot_patch_case():
     token = _login("viewonly@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
-    cases = client.get("/api/v1/cases", headers=headers)
-    assert cases.status_code == 200
-    case_id = api_items(cases.json())[0]["id"]
+    # View-only CMs see no caseload until assigned; use any case id for write-denial check.
+    case_id = api_first_case_id(client, login_headers(client, "superadmin@demo.com"))
     patch = client.patch(
         f"/api/v1/cases/{case_id}",
         headers=headers,

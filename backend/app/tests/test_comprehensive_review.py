@@ -15,7 +15,7 @@ from app.core.database import SessionLocal
 from app.main import app
 from app.models.slot import SlotStatus, TherapistSlot
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_items
+from app.tests.conftest import api_first_case_id, api_items, login_headers
 
 client = TestClient(app)
 
@@ -237,9 +237,7 @@ def test_staff_ticket_escalate():
 
 def test_viewer_cannot_create_assignment():
     viewer_h = _headers("viewonly@demo.com")
-    cases = client.get("/api/v1/cases", headers=viewer_h)
-    assert cases.status_code == 200
-    case_id = api_items(cases.json())[0]["id"]
+    case_id = api_first_case_id(client, login_headers(client, "superadmin@demo.com"))
 
     assign = client.post(
         f"/api/v1/cases/{case_id}/assignments",

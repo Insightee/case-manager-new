@@ -17,6 +17,7 @@ from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.seed.demo_seed import run as seed_run
 from app.core.database import SessionLocal
+from app.tests.conftest import cm_headers_for_case
 
 client = TestClient(app)
 
@@ -185,12 +186,17 @@ def test_approve_log_notifies_parent():
         ).first()
         assert log is not None
         log_id = log.id
+        case = db.get(Case, log.session.case_id)
+        assert case is not None and case.case_manager_user_id is not None
+        cm = db.get(User, case.case_manager_user_id)
+        assert cm is not None
+        cm_email = cm.email
         before = db.scalars(select(Notification)).all()
         before_count = len(before)
     finally:
         db.close()
 
-    headers = _login("casemanager@demo.com")
+    headers = _login(cm_email)
     res = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=headers)
     assert res.status_code == 200
 
@@ -257,7 +263,13 @@ def test_daily_log_submission_emails_parent(monkeypatch):
     assert submitted[0].get("to")
 
     log_id = created.json()["id"]
-    cm_headers = _login("casemanager@demo.com")
-    approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=cm_headers)
+    db = SessionLocal()
+    try:
+        session = db.get(TherapySession, sid)
+        assert session is not None
+        approve_headers = cm_headers_for_case(client, session.case_id)
+    finally:
+        db.close()
+    approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=approve_headers)
     assert approved.status_code == 200
     assert published, "Expected parent email on session log approval"
