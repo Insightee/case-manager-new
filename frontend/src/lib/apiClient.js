@@ -1,12 +1,29 @@
 /** Production UI hosts that proxy /api on the same origin (see vercel.json rewrites). */
 const SAME_ORIGIN_API_HOSTS = /^((www\.)?insighte\.org|[a-z0-9-]+\.vercel\.app)$/i
 
+function parseApiErrorDetail(detail, statusText = '') {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const joined = detail.map((d) => d?.msg || d?.message || JSON.stringify(d)).filter(Boolean).join(', ')
+    if (joined) return joined
+  }
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) return detail.message
+    if (typeof detail.detail === 'string' && detail.detail.trim()) return detail.detail
+  }
+  return statusText || ''
+}
+
 function resolveApiBaseUrl() {
   const configured = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
   if (typeof window === 'undefined') return configured
   const host = window.location.hostname
+  // Apex insighte.org 308-redirects to www before /api rewrites; use www explicitly to avoid
+  // redirect stripping PATCH bodies / Authorization on cross-host hops.
+  if (host === 'insighte.org') {
+    return 'https://www.insighte.org'
+  }
   if (SAME_ORIGIN_API_HOSTS.test(host)) {
-    // Avoid cross-origin calls from insighte.org / Vercel → api.insighte.org (CORS/network).
     return ''
   }
   return configured
@@ -235,13 +252,9 @@ export async function apiFetch(path, options = {}) {
     // #endregion
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
-    let message = res.statusText
-    if (typeof detail === 'string') {
-      message = detail
-    } else if (Array.isArray(detail)) {
-      message = detail.map((d) => d.msg).join(', ')
-    } else if (detail && typeof detail === 'object' && detail.message) {
-      message = detail.message
+    let message = parseApiErrorDetail(detail, res.statusText)
+    if (!message && typeof err === 'object' && err !== null) {
+      message = parseApiErrorDetail(err.message, res.statusText)
     }
     if (res.status === 502 || res.status === 503) {
       if (message && message !== res.statusText && message !== 'Bad Gateway' && message !== 'Service Unavailable') {
@@ -256,7 +269,7 @@ export async function apiFetch(path, options = {}) {
           : 'API is not responding. Check that the backend service is running and VITE_API_URL points to it.',
       )
     }
-    const apiError = new Error(message || 'Request failed')
+    const apiError = new Error(message || `Request failed (${res.status})`)
     apiError.status = res.status
     apiError.detail = detail
     throw apiError
@@ -310,9 +323,8 @@ export async function apiFetchBlob(path, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
-    const message =
-      typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join(', ') : res.statusText
-    throw new Error(message || 'Request failed')
+    const message = parseApiErrorDetail(detail, res.statusText)
+    throw new Error(message || `Request failed (${res.status})`)
   }
   return res.blob()
 }

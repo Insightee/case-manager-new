@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.config import settings
+from app.core.db_errors import commit_or_http
 from app.core.database import get_db
 from app.core.pagination import paginate_query, paginated_response
 from app.core.security import hash_password
@@ -2240,7 +2241,7 @@ def admin_update_therapist_profile(
         sync_therapist_service_access(db, target, profile.services_offered or [])
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="therapist_profile", entity_id=profile_id, **meta)
-    db.commit()
+    commit_or_http(db)
     db.refresh(profile)
     if not target:
         target = db.get(User, profile.user_id)

@@ -4,14 +4,14 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import ensure_sqlite_schema_patches
-from app.core.db_errors import raise_db_write_http_error
+from app.core.db_errors import raise_db_write_http_error, raise_db_api_http_error, raise_db_integrity_http_error
 from app.core.production_checks import validate_production_settings
 from app.core.request_middleware import RequestIdMiddleware
 from app.core.security import ping_redis_for_health, verify_redis_at_startup, warm_redis_connection
@@ -20,10 +20,36 @@ from app.db.bootstrap import bootstrap_schema
 app = FastAPI(title="InsighteCase API", version="0.1.0")
 
 
+@app.exception_handler(DBAPIError)
+async def db_api_error_handler(_request: Request, exc: DBAPIError):
+    if isinstance(exc, IntegrityError):
+        try:
+            raise_db_integrity_http_error(exc)
+        except HTTPException as http_exc:
+            return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
+    if isinstance(exc, OperationalError):
+        try:
+            raise_db_write_http_error(exc)
+        except HTTPException as http_exc:
+            return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
+    try:
+        raise_db_api_http_error(exc)
+    except HTTPException as http_exc:
+        return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
+
+
 @app.exception_handler(OperationalError)
 async def operational_error_handler(_request: Request, exc: OperationalError):
     try:
         raise_db_write_http_error(exc)
+    except HTTPException as http_exc:
+        return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(_request: Request, exc: IntegrityError):
+    try:
+        raise_db_integrity_http_error(exc)
     except HTTPException as http_exc:
         return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
 

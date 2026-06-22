@@ -96,6 +96,14 @@ def get_or_create_profile(db: Session, user_id: int) -> TherapistProfile:
     return profile
 
 
+def _validate_staff_user_id(db: Session, user_id: int | None, *, field_label: str) -> None:
+    if user_id is None:
+        return
+    user = db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=400, detail=f"Selected {field_label} is not available. Refresh and try again.")
+
+
 def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | None = None) -> None:
     if "display_name" in data:
         profile.display_name = data["display_name"]
@@ -112,12 +120,16 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
             raise HTTPException(status_code=400, detail=str(e)) from e
     if "supervisor_user_id" in data:
         new_cm = data["supervisor_user_id"]
+        if db is not None:
+            _validate_staff_user_id(db, new_cm, field_label="case manager")
         profile.supervisor_user_id = new_cm
         if new_cm and db is not None:
             from app.services.assignment_service import sync_case_managers_for_therapist
 
             sync_case_managers_for_therapist(db, profile.user_id, new_cm)
     if "mentor_user_id" in data:
+        if db is not None:
+            _validate_staff_user_id(db, data["mentor_user_id"], field_label="mentor")
         profile.mentor_user_id = data["mentor_user_id"]
     if "employment_start_date" in data:
         profile.employment_start_date = data["employment_start_date"]
