@@ -185,6 +185,15 @@ def test_approve_log_notifies_parent():
         ).first()
         assert log is not None
         log_id = log.id
+
+        from app.models.user import User
+        from app.models.case import Case
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        session = db.get(TherapySession, log.session_id)
+        case = db.get(Case, session.case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+
         before = db.scalars(select(Notification)).all()
         before_count = len(before)
     finally:
@@ -257,6 +266,20 @@ def test_daily_log_submission_emails_parent(monkeypatch):
     assert submitted[0].get("to")
 
     log_id = created.json()["id"]
+
+    db = SessionLocal()
+    try:
+        from app.models.user import User
+        from app.models.case import Case
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        log = db.get(DailyLog, log_id)
+        session = db.get(TherapySession, log.session_id)
+        case = db.get(Case, session.case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+    finally:
+        db.close()
+
     cm_headers = _login("casemanager@demo.com")
     approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=cm_headers)
     assert approved.status_code == 200

@@ -236,6 +236,20 @@ def test_staff_ticket_escalate():
 
 
 def test_viewer_cannot_create_assignment():
+    from app.core.database import SessionLocal
+    from app.models.user import User
+    from app.models.case import Case, CaseStatus
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "viewonly@demo.com")).first()
+        case = db.scalars(select(Case).where(Case.status == CaseStatus.ACTIVE)).first()
+        case.case_manager_user_id = user.id
+        db.commit()
+    finally:
+        db.close()
+
     viewer_h = _headers("viewonly@demo.com")
     cases = client.get("/api/v1/cases", headers=viewer_h)
     assert cases.status_code == 200

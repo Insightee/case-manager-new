@@ -13,6 +13,7 @@ class DocumentEntityType(str, enum.Enum):
     IEP = "iep"
     MONTHLY_REPORT = "monthly_report"
     CASE_DOCUMENT = "case_document"
+    DAILY_LOG = "daily_log"
 
 
 class CommentType(str, enum.Enum):

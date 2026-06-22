@@ -118,6 +118,21 @@ def test_parent_cannot_see_internal_document():
 def test_cm_review_approve_and_parent_sees_published():
     parent_headers = _login("parent@demo.com")
     case_id = _parent_case_id(parent_headers)
+
+    from app.core.database import SessionLocal
+    from app.models.user import User
+    from app.models.case import Case
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        case = db.get(Case, case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+    finally:
+        db.close()
+
     cm_headers = _login("casemanager@demo.com")
     create = client.post(
         f"/api/v1/cases/{case_id}/documents",
@@ -136,7 +151,7 @@ def test_cm_review_approve_and_parent_sees_published():
         headers=cm_headers,
         json={},
     )
-    cm_review_headers = _login("shadowcm@demo.com")
+    cm_review_headers = _login("superadmin@demo.com")
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/approve",
         headers=cm_review_headers,
@@ -199,6 +214,21 @@ def test_submit_sets_cm_review_status():
 def test_cm_request_changes():
     headers = _login("therapist@demo.com")
     case_id = _first_case_id(headers)
+
+    from app.core.database import SessionLocal
+    from app.models.user import User
+    from app.models.case import Case
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "shadowcm@demo.com")).first()
+        case = db.get(Case, case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+    finally:
+        db.close()
+
     create = client.post(
         f"/api/v1/cases/{case_id}/documents",
         headers=headers,

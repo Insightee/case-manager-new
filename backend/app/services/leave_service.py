@@ -220,6 +220,18 @@ def create_therapist_leave_request(
         raise ValueError("end_date must be on or after start_date")
     if RoleName.THERAPIST.value not in therapist.role_names:
         raise ValueError("Target user is not a therapist")
+    
+    # Gating duplicate leaves on overlapping date ranges
+    overlap_stmt = select(TherapistLeave).where(
+        TherapistLeave.therapist_user_id == therapist.id,
+        TherapistLeave.status.in_([LeaveStatus.PENDING, LeaveStatus.APPROVED]),
+        TherapistLeave.start_date <= end_date,
+        TherapistLeave.end_date >= start_date
+    )
+    overlapping_leaves = db.scalars(overlap_stmt).all()
+    if overlapping_leaves:
+        raise ValueError("Leave is already marked for this date. View existing leave.")
+
     if not auto_approve:
         leave_migration.validate_therapist_leave_dates(start_date, end_date)
 

@@ -270,6 +270,7 @@ def get_monthly_detail(db: Session, user: User, report_id: int) -> dict:
         "status": _parent_status_label(report),
         "parentReviewStatus": report.parent_review_status,
         "parentFeedback": report.parent_feedback,
+        "parentMonthlyRating": getattr(report, "parent_monthly_rating", None),
         "createdAt": report.created_at.isoformat() if report.created_at else None,
         "comments": _comment_rows(db, DocumentEntityType.MONTHLY_REPORT.value, report.id),
     }
@@ -386,7 +387,7 @@ def _notify_case_team(
         )
 
 
-def approve_monthly(db: Session, user: User, report_id: int) -> dict:
+def approve_monthly(db: Session, user: User, report_id: int, rating: Optional[int] = None) -> dict:
     report = db.get(MonthlyReport, report_id)
     if not report or not parent_can_see_monthly(report):
         raise ValueError("Report not found")
@@ -396,6 +397,7 @@ def approve_monthly(db: Session, user: User, report_id: int) -> dict:
     now = datetime.now(timezone.utc)
     report.parent_review_status = ParentReviewStatus.APPROVED.value
     report.parent_reviewed_at = now
+    report.parent_monthly_rating = rating
     report.status = ReportStatus.PUBLISHED
     db.flush()
     _notify_case_team(
@@ -410,7 +412,7 @@ def approve_monthly(db: Session, user: User, report_id: int) -> dict:
     return {"status": "approved", "parentReviewStatus": report.parent_review_status}
 
 
-def feedback_monthly(db: Session, user: User, report_id: int, message: str) -> dict:
+def feedback_monthly(db: Session, user: User, report_id: int, message: str, rating: Optional[int] = None) -> dict:
     report = db.get(MonthlyReport, report_id)
     if not report or not parent_can_see_monthly(report):
         raise ValueError("Report not found")
@@ -419,6 +421,7 @@ def feedback_monthly(db: Session, user: User, report_id: int, message: str) -> d
         raise ValueError("Report not found")
     report.parent_review_status = ParentReviewStatus.CHANGES_REQUESTED.value
     report.parent_feedback = message
+    report.parent_monthly_rating = rating
     report.parent_reviewed_at = datetime.now(timezone.utc)
     report.status = ReportStatus.UNDER_REVIEW
     review = Review(
