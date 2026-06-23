@@ -188,6 +188,8 @@ def end_session(
     lat: float | None = None,
     lng: float | None = None,
 ) -> TherapySession:
+    if session.status == SessionStatus.COMPLETED:
+        return session
     if session.status != SessionStatus.IN_PROGRESS:
         raise ValueError("Session is not in progress")
     end_time = _aware(end_at) if end_at else _now()

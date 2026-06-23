@@ -76,6 +76,7 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         checkout_lng=s.checkout_lng,
         invite_sent=getattr(s, "_invite_sent", False),
         invite_email=getattr(s, "_invite_email", None),
+        already_completed=getattr(s, "_already_completed", False),
     )
 
 
@@ -150,9 +151,38 @@ def create_session(
     user: User = Depends(require_permission("session.create")),
     db: Session = Depends(get_db),
 ):
+    idempotency_key = request.headers.get("Idempotency-Key")
+    if idempotency_key:
+        from app.models.session_start_idempotency import SessionStartIdempotency
+        existing_idem = db.scalars(
+            select(SessionStartIdempotency).where(SessionStartIdempotency.idempotency_key == idempotency_key)
+        ).first()
+        if existing_idem:
+            session = db.get(TherapySession, existing_idem.session_id)
+            if session:
+                return _session_read(session, session.case)
+
     case = case_service.get_case(db, payload.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+
+    # Check for unresolved same-day session
+    from app.core.timezone import today_ist
+    today = today_ist()
+    if payload.scheduled_date == today:
+        unresolved_statuses = (SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS)
+        existing = db.scalars(
+            select(TherapySession)
+            .where(
+                TherapySession.case_id == payload.case_id,
+                TherapySession.therapist_user_id == (payload.therapist_user_id or user.id),
+                TherapySession.scheduled_date == today,
+                TherapySession.status.in_(unresolved_statuses),
+            )
+        ).first()
+        if existing:
+            return _session_read(existing, case)
+
     from app.services.case_status_request_service import assert_case_allows_new_session
 
     try:
@@ -168,6 +198,18 @@ def create_session(
     session = TherapySession(**data)
     db.add(session)
     db.flush()
+
+    if idempotency_key:
+        from app.models.session_start_idempotency import SessionStartIdempotency
+        db.add(
+            SessionStartIdempotency(
+                idempotency_key=idempotency_key,
+                session_id=session.id,
+                therapist_user_id=session.therapist_user_id,
+            )
+        )
+        db.flush()
+
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="session", entity_id=session.id, new_value=payload.model_dump(), **meta)
     db.commit()
@@ -374,8 +416,10 @@ def end_session(
         raise HTTPException(status_code=403, detail="Access denied")
     if session.therapist_user_id != user.id:
         raise HTTPException(status_code=403, detail="Can only end your own sessions")
+    already_completed = session.status == SessionStatus.COMPLETED
     try:
         session = session_service.end_session(db, session, lat=payload.lat, lng=payload.lng)
+        session._already_completed = already_completed
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)

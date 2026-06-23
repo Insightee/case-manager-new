@@ -103,12 +103,18 @@ export function TherapistSessionComposer({
       setLocalError('Choose a client first.')
       return
     }
+    if (busy) return
     setBusy(true)
     setLocalError('')
     const today = todayIsoIST()
+    const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
+
     try {
       const created = await apiFetch('/api/v1/sessions', {
         method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           case_id: selectedCaseId,
           therapist_user_id: user?.id ?? 0,
@@ -119,7 +125,10 @@ export function TherapistSessionComposer({
           status: 'SCHEDULED',
         }),
       })
-      const started = await apiFetch(`/api/v1/sessions/${created.id}/start`, { method: 'POST' })
+      const started = await apiFetch(`/api/v1/sessions/${created.id}/start`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+      })
       if (started?.invite_sent && started?.invite_email) {
         onSessionStarted?.({
           inviteSent: true,
