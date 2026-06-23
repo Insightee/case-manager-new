@@ -17,6 +17,7 @@ from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.seed.demo_seed import run as seed_run
 from app.core.database import SessionLocal
+from app.tests.conftest import cm_email_for_case_id, pending_log_for_cm_email
 
 client = TestClient(app)
 
@@ -176,21 +177,18 @@ def test_submit_log_notifies_case_manager():
 
 
 def test_approve_log_notifies_parent():
+    pending = pending_log_for_cm_email("casemanager@demo.com") or pending_log_for_cm_email("shadowcm@demo.com")
+    assert pending is not None, "No pending log on a seeded CM caseload"
+    log_id = pending["id"]
+    cm_email = pending["cm_email"]
+
     db = SessionLocal()
     try:
-        log = db.scalars(
-            select(DailyLog)
-            .join(TherapySession)
-            .where(DailyLog.approval_status == LogApprovalStatus.PENDING)
-        ).first()
-        assert log is not None
-        log_id = log.id
-        before = db.scalars(select(Notification)).all()
-        before_count = len(before)
+        before_count = len(db.scalars(select(Notification)).all())
     finally:
         db.close()
 
-    headers = _login("casemanager@demo.com")
+    headers = _login(cm_email)
     res = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=headers)
     assert res.status_code == 200
 
@@ -234,30 +232,54 @@ def test_daily_log_submission_emails_parent(monkeypatch):
 
     end_active_sessions_for_therapist()
     th_headers = _login("therapist@demo.com")
-    session_ids = ensure_scheduled_sessions_for_therapist(min_count=1)
+    session_ids = ensure_scheduled_sessions_for_therapist(min_count=3)
     if not session_ids:
         pytest.skip("No scheduled sessions")
-    sid = session_ids[0]
-    assert client.post(f"/api/v1/sessions/{sid}/start", headers=th_headers).status_code == 200
-    backdate_in_progress_session(sid)
-    assert client.post(f"/api/v1/sessions/{sid}/end", headers=th_headers).status_code == 200
 
-    created = client.post(
-        "/api/v1/daily-logs",
-        headers=th_headers,
-        json={
-            "session_id": sid,
-            "attendance_status": "PRESENT",
-            "activities_done": "Email test activity",
-            "parent_notes": "Visible to parent after approval",
-        },
-    )
-    assert created.status_code == 201, created.text
+    log_id = None
+    sid = None
+    payload = {
+        "attendance_status": "PRESENT",
+        "activities_done": "Email test activity",
+        "parent_notes": "Visible to parent after approval",
+    }
+
+    for candidate_sid in session_ids:
+        started = client.post(f"/api/v1/sessions/{candidate_sid}/start", headers=th_headers)
+        if started.status_code == 409:
+            detail = started.json().get("detail") or {}
+            if detail.get("current_status") == "COMPLETED":
+                continue
+            assert started.status_code == 200, started.text
+        else:
+            assert started.status_code == 200, started.text
+        backdate_in_progress_session(candidate_sid)
+        ended = client.post(f"/api/v1/sessions/{candidate_sid}/end", headers=th_headers)
+        assert ended.status_code == 200, ended.text
+
+        create_payload = {"session_id": candidate_sid, **payload}
+        created = client.post("/api/v1/daily-logs", headers=th_headers, json=create_payload)
+        if created.status_code == 400 and "Late reason" in created.text:
+            create_payload["late_reason"] = "Email test coverage for prior-day session"
+            created = client.post("/api/v1/daily-logs", headers=th_headers, json=create_payload)
+        if created.status_code == 400 and "already exists" in created.text:
+            continue
+        assert created.status_code == 201, created.text
+        log_id = created.json()["id"]
+        sid = candidate_sid
+        break
+
+    if log_id is None:
+        pytest.skip("No session available for a fresh daily log in shared test DB")
+
     assert submitted, "Expected parent email on session log submission"
     assert submitted[0].get("to")
 
-    log_id = created.json()["id"]
-    cm_headers = _login("casemanager@demo.com")
+    with SessionLocal() as db:
+        sess = db.get(TherapySession, sid)
+        assert sess is not None
+        cm_email = cm_email_for_case_id(sess.case_id)
+    cm_headers = _login(cm_email)
     approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=cm_headers)
     assert approved.status_code == 200
     assert published, "Expected parent email on session log approval"

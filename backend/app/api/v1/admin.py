@@ -3658,6 +3658,36 @@ def admin_reports_observation_list(
     )
 
 
+@router.get("/reports/clinical-iep", response_model=PaginatedList[AdminReportListItem])
+def admin_reports_clinical_iep_list(
+    status: Optional[str] = None,
+    case_id: Optional[int] = None,
+    search: Optional[str] = None,
+    queue_only: bool = False,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user: User = Depends(_reports_reader),
+    db: Session = Depends(get_db),
+):
+    items, meta = admin_report_svc.list_clinical_iep_admin(
+        db,
+        user,
+        status=status,
+        case_id=case_id,
+        search=search,
+        queue_only=queue_only,
+        page=page,
+        page_size=page_size,
+    )
+    return PaginatedList[AdminReportListItem](
+        items=items,
+        total=meta["total"],
+        page=meta["page"],
+        page_size=meta["page_size"],
+        pages=meta["pages"],
+    )
+
+
 @router.get("/reports/monthly/{report_id}", response_model=AdminReportDetail)
 def admin_reports_monthly_detail(
     report_id: int,

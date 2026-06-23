@@ -20,11 +20,13 @@ import { CaseActivityPanel } from './CaseActivityPanel.jsx'
 import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { IepBuilderPanel } from './IepBuilderPanel.jsx'
 import { IepSupportPlanBuilder } from '../clinical/IepSupportPlanBuilder.jsx'
+import { ReportTypePlaceholder } from '../reports-engine/shell/ReportTypePlaceholder.jsx'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
 import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
-import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
+import { isReportsRevampActive, isReportsEngineActive } from '../../lib/reportsRevampFlags.js'
 import { CaseProfileShell } from '../case-profile/CaseProfileShell.jsx'
 import { CaseReportsHub } from '../case-profile/CaseReportsHub.jsx'
+import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
 import { ADMIN_CASE_TABS_REVAMP } from '../case-profile/caseProfileTabs.js'
 import { resolveLegacyReportsSection } from '../case-profile/reportsHubSections.js'
 import { CaseManagerSupervisionPanel } from '../clinical/cm/CaseManagerSupervisionPanel.jsx'
@@ -318,9 +320,22 @@ export function AdminCaseDetailPage() {
         />
       )}
 
-      {tab === 'iep' && can('iep.read') && !revampActive && <IepBuilderPanel caseId={caseRow?.id || caseId} />}
+      {tab === 'iep' && can('iep.read') && isReportsEngineActive() && (
+        <div className="cp-reports-hub forest-light">
+          <IepReportRoute
+            caseId={caseRow?.id || caseId}
+            caseCode={caseRow?.case_code}
+            childName={caseRow?.child_name}
+            variant="admin"
+          />
+        </div>
+      )}
 
-      {tab === 'iep' && can('iep.read') && revampActive && (
+      {tab === 'iep' && can('iep.read') && !isReportsEngineActive() && !revampActive && (
+        <IepBuilderPanel caseId={caseRow?.id || caseId} />
+      )}
+
+      {tab === 'iep' && can('iep.read') && !isReportsEngineActive() && revampActive && (
         <IepSupportPlanBuilder caseId={caseRow?.id || caseId} activeSection="goals" onSectionChange={() => {}} />
       )}
 

@@ -237,7 +237,8 @@ def test_staff_ticket_escalate():
 
 def test_viewer_cannot_create_assignment():
     viewer_h = _headers("viewonly@demo.com")
-    cases = client.get("/api/v1/cases", headers=viewer_h)
+    admin_h = _headers("superadmin@demo.com")
+    cases = client.get("/api/v1/cases?page_size=1", headers=admin_h)
     assert cases.status_code == 200
     case_id = api_items(cases.json())[0]["id"]
 

@@ -32,6 +32,14 @@ def raise_db_write_http_error(exc: OperationalError) -> None:
             status_code=503,
             detail="Database is busy. Wait a moment and try again.",
         ) from exc
+    if "timeout expired" in lowered or "could not connect" in lowered or "connection refused" in lowered:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Cannot reach the database. For local dev without Docker, start the API from backend/ "
+                "without DATABASE_URL (uses SQLite), or run: docker compose up -d postgres redis"
+            ),
+        ) from exc
     if "no such column" in lowered or "no such table" in lowered:
         hint = (
             "Database schema is out of date (missing table or column). "

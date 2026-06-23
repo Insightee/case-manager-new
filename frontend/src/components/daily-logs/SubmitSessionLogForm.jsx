@@ -21,9 +21,11 @@ import {
 } from '../clinical/session-log/SessionLogEvidencePanel.jsx'
 import { SessionLogV2Chrome } from '../clinical/session-log/SessionLogV2Chrome.jsx'
 import { SessionLogNotesDual } from '../clinical/session-log/SessionLogNotesDual.jsx'
+import { SessionLogParentPreview } from '../clinical/session-log/SessionLogParentPreview.jsx'
 import { SessionLogEvidenceUpload } from '../clinical/session-log/SessionLogEvidenceUpload.jsx'
 import { SessionLogAiAssist } from '../clinical/SessionLogAiAssist.jsx'
 import { GOALS_STRATEGIES_ENGINE_V2, STRUCTURED_SESSION_EVIDENCE } from '../../lib/reportsRevampFlags.js'
+import { goalHasSessionWork } from '../../lib/clinicalScoring.js'
 import { ClinicalVisibilityBadge } from '../clinical-ui/ClinicalVisibilityBadge.jsx'
 import '../../styles/goals-strategies-engine.css'
 import '../../styles/session-log-v2.css'
@@ -301,7 +303,11 @@ export function SubmitSessionLogForm({
         body.activities_done = autoActivities
       }
       if (!body.goals_addressed?.trim() && sessionEvidence?.goals?.length) {
-        body.goals_addressed = sessionEvidence.goals.map((g) => g.goal_label).filter(Boolean).join('; ')
+        body.goals_addressed = sessionEvidence.goals
+          .filter(goalHasSessionWork)
+          .map((g) => g.goal_label)
+          .filter(Boolean)
+          .join('; ')
       }
     }
     return body
@@ -422,12 +428,6 @@ export function SubmitSessionLogForm({
           </p>
         ) : null}
 
-        {isLateSession && (!isEdit || isResubmit) ? (
-          <p className="ic-session-log-panel__late-banner sl-v2-body" style={{ paddingTop: 0, margin: 0 }}>
-            This visit is from a past day — add a <strong>late reason</strong> before submitting.
-          </p>
-        ) : null}
-
         <form className="ic-session-log-form" onSubmit={isResubmit ? handleResubmit : handleSubmit}>
           <div className="sl-v2-body">
             <SessionLogEvidencePanel
@@ -446,7 +446,6 @@ export function SubmitSessionLogForm({
               readOnly={isEdit && !pendingEdit}
               caseId={session?.case_id}
               sessionDate={session?.scheduled_date}
-              sessionEvidence={sessionEvidence}
               voiceAttachment={parentVoiceAttachment}
               onVoiceAttachmentChange={setParentVoiceAttachment}
             />
@@ -460,25 +459,34 @@ export function SubmitSessionLogForm({
             />
 
             {isLateSession ? (
-              <label className="gs-field ic-session-log-field--warn">
-                <span className="gs-field__label">
-                  Late reason
-                  <span className="ic-session-log-field__req">Required</span>
-                </span>
-                <textarea
-                  required
-                  value={form.late_reason}
-                  onChange={(e) => {
-                    setForm({ ...form, late_reason: e.target.value })
-                    setDirtySinceServerSave(true)
-                  }}
-                  rows={3}
-                  placeholder="e.g. Session completed offline; submitting after travel."
-                />
-              </label>
+              <div className="sl-late-reason-block">
+                <p className="sl-late-banner" role="status">
+                  Past-day visit: add a late reason before submitting.
+                </p>
+                <label className="gs-field ic-session-log-field--warn">
+                  <span className="gs-field__label">
+                    Late reason
+                    <span className="ic-session-log-field__req">Required</span>
+                  </span>
+                  <textarea
+                    required
+                    value={form.late_reason}
+                    onChange={(e) => {
+                      setForm({ ...form, late_reason: e.target.value })
+                      setDirtySinceServerSave(true)
+                    }}
+                    rows={3}
+                    placeholder="e.g. Session completed offline; submitting after travel."
+                  />
+                </label>
+              </div>
             ) : null}
 
             {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}
+          </div>
+
+          <div className="sl-v2-footer-preview">
+            <SessionLogParentPreview sessionEvidence={sessionEvidence} parentNotes={form.parent_notes} />
           </div>
 
           <div className="sl-v2-footer">
@@ -501,7 +509,7 @@ export function SubmitSessionLogForm({
                 ? 'Saving…'
                 : isResubmit
                   ? 'Resubmit for review'
-                  : 'Sign & Complete Log ✓'}
+                  : 'Submit log'}
             </button>
           </div>
         </form>
@@ -569,13 +577,6 @@ export function SubmitSessionLogForm({
       )}
 
       {error ? <p className="ic-session-log-panel__error">{error}</p> : null}
-
-      {isLateSession && (!isEdit || isResubmit) ? (
-        <p className="ic-session-log-panel__late-banner">
-          This visit is from a past day. You must add a <strong>late reason</strong> below before admin can approve
-          the log.
-        </p>
-      ) : null}
 
       <form className="ic-session-log-form" onSubmit={isResubmit ? handleResubmit : handleSubmit}>
         <fieldset className="ic-session-log-form__attendance">
@@ -650,25 +651,30 @@ export function SubmitSessionLogForm({
         ) : null}
 
         {isLateSession ? (
-          <label className="ic-session-log-field ic-session-log-field--warn">
-            <span className="ic-session-log-field__label">
-              Late reason
-              <span className="ic-session-log-field__req">Required</span>
-            </span>
-            <span className="ic-session-log-field__hint">
-              Scheduled {formatDisplayDate(session?.scheduled_date)} — explain why the log is late (required to save).
-            </span>
-            <textarea
-              required
-              value={form.late_reason}
-              onChange={(e) => {
-                setForm({ ...form, late_reason: e.target.value })
-                setDirtySinceServerSave(true)
-              }}
-              rows={3}
-              placeholder="e.g. Session completed offline; submitting after travel."
-            />
-          </label>
+          <div className="sl-late-reason-block">
+            <p className="sl-late-banner" role="status">
+              Past-day visit: add a late reason before submitting.
+            </p>
+            <label className="ic-session-log-field ic-session-log-field--warn">
+              <span className="ic-session-log-field__label">
+                Late reason
+                <span className="ic-session-log-field__req">Required</span>
+              </span>
+              <span className="ic-session-log-field__hint">
+                Scheduled {formatDisplayDate(session?.scheduled_date)} — explain why the log is late.
+              </span>
+              <textarea
+                required
+                value={form.late_reason}
+                onChange={(e) => {
+                  setForm({ ...form, late_reason: e.target.value })
+                  setDirtySinceServerSave(true)
+                }}
+                rows={3}
+                placeholder="e.g. Session completed offline; submitting after travel."
+              />
+            </label>
+          </div>
         ) : null}
 
         {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}

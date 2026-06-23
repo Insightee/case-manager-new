@@ -29,8 +29,10 @@ import { NotificationCenterPage } from '../components/shared/NotificationCenterP
 import { RouteLoading } from '../components/shared/RouteLoading.jsx'
 import { PortalRouteError } from '../components/shared/PortalRouteError.jsx'
 
-const ReportEditPage = lazy(() =>
-  import('../components/reports/ReportEditPage.jsx').then((m) => ({ default: m.ReportEditPage }))
+const ReportsEditRouteGuard = lazy(() =>
+  import('../components/reports-engine/shell/ReportsEditRouteGuard.jsx').then((m) => ({
+    default: m.ReportsEditRouteGuard,
+  }))
 )
 const ParentPortalLayout = lazy(() =>
   import('./ParentPortalLayout.jsx').then((m) => ({ default: m.ParentPortalLayout }))
@@ -259,7 +261,7 @@ export function AppRoutes() {
           path="cases/:caseId/reports/monthly/:reportId"
           element={
             <Lazy>
-              <ReportEditPage />
+              <ReportsEditRouteGuard />
             </Lazy>
           }
         />
@@ -269,7 +271,7 @@ export function AppRoutes() {
           path="reports/edit/:reportId"
           element={
             <Lazy>
-              <ReportEditPage />
+              <ReportsEditRouteGuard />
             </Lazy>
           }
         />
@@ -495,7 +497,7 @@ export function AppRoutes() {
           path="reports/edit/:reportId"
           element={
             <Lazy>
-              <ReportEditPage />
+              <ReportsEditRouteGuard />
             </Lazy>
           }
         />

@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../../lib/apiClient.js'
-import { parseApiDatetime } from '../../../lib/datetime.js'
+import { formatDisplayDate, formatTimeIN12, parseApiDatetime } from '../../../lib/datetime.js'
 import {
   canEditSessionTimes,
   effectiveDurationMins,
-  formatClockRange,
   formatEditedRange,
   formatScheduledRange,
 } from '../../../lib/sessionTimes.js'
-import { formatDisplayDate } from '../../../lib/datetime.js'
 import { sessionLogProgressPct } from '../../../lib/clinicalScoring.js'
 
 function toDatetimeLocalValue(iso) {
@@ -25,6 +23,16 @@ function correctedDurationMins(startLocal, endLocal) {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
   const mins = Math.round((end.getTime() - start.getTime()) / 60000)
   return mins > 0 ? mins : null
+}
+
+function wallClock(t) {
+  if (!t) return '—'
+  return String(t).slice(0, 5)
+}
+
+function actualClock(iso) {
+  if (!iso) return null
+  return formatTimeIN12(iso, { suffix: '' })
 }
 
 export function SessionLogV2Chrome({
@@ -47,10 +55,14 @@ export function SessionLogV2Chrome({
   const code = caseCode || session?.case_code || ''
   const progress = sessionLogProgressPct(sessionEvidence?.goals || [])
   const duration = effectiveDurationMins(session, log)
-  const clock = formatClockRange(session)
   const editedClock = formatEditedRange(session)
   const scheduled = formatScheduledRange(session)
   const canEdit = canEditSessionTimes(session, log)
+  const scheduledStart = wallClock(session?.start_time)
+  const scheduledEnd = wallClock(session?.end_time)
+  const loginAt = actualClock(session?.edited_start_at || session?.actual_start_at)
+  const logoutAt = session?.edited_end_at || session?.actual_end_at ? actualClock(session?.edited_end_at || session?.actual_end_at) : null
+  const sessionActive = session?.status === 'IN_PROGRESS'
 
   useEffect(() => {
     if (!session?.case_id) return
@@ -112,7 +124,7 @@ export function SessionLogV2Chrome({
     <>
       <div className="sl-v2-context">
         <div>
-          <p className="sl-v2-context__label">Patient Context</p>
+          <p className="sl-v2-context__label">Client context</p>
           <p className="sl-v2-context__case">Case ID: {code ? `#${code}` : '—'}</p>
         </div>
         <div className="sl-v2-context__progress">
@@ -138,34 +150,56 @@ export function SessionLogV2Chrome({
         </div>
       </div>
 
-      <div className="sl-v2-duration">
+      <div className="sl-v2-duration sl-v2-duration-card">
         <div className="sl-v2-duration__main">
-          <p className="sl-v2-duration__label">Session Duration</p>
-          <p className="sl-v2-duration__value">
-            {duration ? `${duration} Minutes` : '—'}
-            {clock ? ` (${clock})` : ''}
-          </p>
-          {scheduled ? <p className="sl-v2-duration__sub">Scheduled: {scheduled}</p> : null}
-          {clock ? (
-            <p className="sl-v2-duration__sub">
-              Actual clock-in/out: <strong>{clock}</strong>
-            </p>
-          ) : null}
+          <p className="sl-v2-duration__label">Session duration</p>
+          {scheduled ? <p className="sl-v2-duration__scheduled-line">Scheduled: {scheduled}</p> : null}
+
+          <div className="sl-v2-duration-grid">
+            <div className="sl-v2-duration-grid__col">
+              <p className="sl-v2-duration-grid__heading">Scheduled</p>
+              <p className="sl-v2-duration-grid__row">
+                <span>Start</span>
+                <strong>{scheduledStart}</strong>
+              </p>
+              <p className="sl-v2-duration-grid__row">
+                <span>End</span>
+                <strong>{scheduledEnd}</strong>
+              </p>
+            </div>
+            <div className="sl-v2-duration-grid__col">
+              <p className="sl-v2-duration-grid__heading">Actual</p>
+              <p className="sl-v2-duration-grid__row">
+                <span>Login</span>
+                <strong>{loginAt || '—'}</strong>
+              </p>
+              <p className="sl-v2-duration-grid__row">
+                <span>Logout</span>
+                <strong>{sessionActive ? 'Not clocked out yet' : logoutAt || '—'}</strong>
+              </p>
+              {duration ? (
+                <p className="sl-v2-duration-grid__duration">
+                  Actual duration: <strong>{duration} min</strong>
+                </p>
+              ) : null}
+            </div>
+          </div>
+
           {editedClock && editedClock !== clock ? (
             <p className="sl-v2-duration__sub sl-v2-duration__sub--edited">
-              Corrected times: <strong>{editedClock}</strong>
+              Corrected: <strong>{editedClock}</strong>
             </p>
           ) : null}
         </div>
         {canEdit ? (
           <button type="button" className="sl-v2-duration__edit" onClick={() => setEditing((v) => !v)}>
-            <span aria-hidden="true">📅</span> {editing ? 'Close' : 'Edit Time'}
+            {editing ? 'Close' : 'Edit times'}
           </button>
         ) : null}
       </div>
 
       {editing ? (
-        <form className="sl-v2-time-edit" onSubmit={saveTimes}>
+        <div className="sl-v2-time-edit">
           <p className="sl-v2-time-edit__title">Correct session times</p>
           <div className="sl-v2-time-edit__grid">
             <label className="gs-field">
@@ -205,11 +239,11 @@ export function SessionLogV2Chrome({
             <button type="button" className="gs-btn gs-btn--ghost" onClick={() => setEditing(false)}>
               Cancel
             </button>
-            <button type="submit" className="gs-btn gs-btn--primary" disabled={busy}>
+            <button type="button" className="gs-btn gs-btn--primary" disabled={busy} onClick={saveTimes}>
               {busy ? 'Saving…' : 'Save times'}
             </button>
           </div>
-        </form>
+        </div>
       ) : null}
     </>
   )

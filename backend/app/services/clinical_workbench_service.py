@@ -309,10 +309,17 @@ def build_admin_clinical_dashboard(db: Session, user, *, limit: int = 100) -> di
     stmt = select(Case).where(Case.status == "ACTIVE").order_by(Case.id.desc()).limit(limit)
     stmt = apply_case_scope(stmt, user)
     cases = db.scalars(stmt).all()
+    from app.services import iep_report_service as iep_svc
+    from app.services import report_engine_service as re_svc
+
     rows = []
+    pending_iep_total = 0
     for case in cases:
         try:
             summary = build_clinical_quality_summary(db, case.id)
+            report = re_svc.get_active_iep_report(db, case.id)
+            pending_iep = len(iep_svc.list_pending_changes(db, report)) if report else 0
+            pending_iep_total += pending_iep
             rows.append(
                 {
                     "case_id": case.id,
@@ -322,6 +329,7 @@ def build_admin_clinical_dashboard(db: Session, user, *, limit: int = 100) -> di
                     "documentation_status": summary["documentation_status"],
                     "missing_items": summary["missing_items"],
                     "recommended_next_actions": summary["recommended_next_actions"][:3],
+                    "pending_iep_changes": pending_iep,
                 }
             )
         except Exception:
@@ -332,6 +340,7 @@ def build_admin_clinical_dashboard(db: Session, user, *, limit: int = 100) -> di
         "total_cases": len(rows),
         "urgent_count": len(urgent),
         "attention_count": len(attention),
+        "pending_iep_changes": pending_iep_total,
         "cases": rows,
     }
 
@@ -348,6 +357,7 @@ def build_clinical_quality_dashboard_summary(db: Session, user) -> dict[str, Any
         "urgent_count": dashboard["urgent_count"],
         "attention_count": dashboard["attention_count"],
         "ok_count": ok_count,
+        "pending_iep_changes": dashboard.get("pending_iep_changes", 0),
         "documentation_breakdown": {
             "complete": sum(1 for c in dashboard["cases"] if c["documentation_status"] == "complete"),
             "in_progress": sum(1 for c in dashboard["cases"] if c["documentation_status"] == "in_progress"),

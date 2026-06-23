@@ -38,6 +38,12 @@ export const EVIDENCE_DRIVE_V2 = revampOptIn
 
 export const AI_GATEWAY_HARDENED = false
 
+export const REPORTS_ENGINE_V1 = revampOptIn
+
+export function isReportsEngineActive() {
+  return REPORTS_ENGINE_V1 && REPORTS_REVAMP_ENABLED
+}
+
 export function isReportsRevampActive(portal = 'therapist') {
   if (!REPORTS_REVAMP_ENABLED) return false
   if (portal === 'therapist') return REPORTS_REVAMP_THERAPIST

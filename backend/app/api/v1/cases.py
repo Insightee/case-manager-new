@@ -359,7 +359,9 @@ def get_observation_checklist(
 ):
     case = _case_for_user(db, user, case_id)
     checklist = obs_svc.get_or_create_checklist(db, case, user.id)
-    return obs_svc.checklist_to_dict(db, checklist, case, user)
+    payload = obs_svc.checklist_to_dict(db, checklist, case, user)
+    db.commit()
+    return payload
 
 
 @router.put("/{case_id}/observation-checklist")

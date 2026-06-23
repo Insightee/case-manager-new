@@ -53,6 +53,7 @@ export function AdminClinicalDashboardPage() {
   const pendingReview  = summary?.pending_review  ?? data?.pending_review  ?? 0
   const noLog7d        = summary?.no_log_7d       ?? data?.no_log_7d       ?? 0
   const candidates     = summary?.goal_candidates ?? data?.goal_candidates ?? 0
+  const pendingIepChanges = summary?.pending_iep_changes ?? data?.pending_iep_changes ?? 0
 
   return (
     <div className="admin-page" style={{ background: 'var(--clinical-bg)', minHeight: '100vh', padding: '1.5rem' }}>
@@ -72,6 +73,7 @@ export function AdminClinicalDashboardPage() {
         <ClinicalMetricCard count={pendingReview}  label="Pending CM review"  icon="👁" />
         <ClinicalMetricCard count={noLog7d}        label="No log (7 days)"    icon="📋" accent="amber" />
         <ClinicalMetricCard count={candidates}     label="Goal candidates"    icon="🎯" />
+        <ClinicalMetricCard count={pendingIepChanges} label="Pending IEP changes" icon="📝" accent="amber" />
       </div>
 
       {/* Case grid */}
@@ -131,6 +133,14 @@ export function AdminClinicalDashboardPage() {
                   style={{ fontSize: '0.8125rem', color: 'var(--clinical-green)', fontWeight: 600, textDecoration: 'none' }}
                 >
                   Review Candidate
+                </Link>
+              ) : null}
+              {c.pending_iep_changes > 0 ? (
+                <Link
+                  to={`/admin/cases/${c.case_id}?tab=reports&section=iep&view=builder`}
+                  style={{ fontSize: '0.8125rem', color: 'var(--clinical-amber)', fontWeight: 600, textDecoration: 'none' }}
+                >
+                  IEP changes ({c.pending_iep_changes})
                 </Link>
               ) : null}
             </div>

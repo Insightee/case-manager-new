@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 import { useTherapistHome, useTherapistReportsPipeline } from '../../hooks/useTherapistHome.js'
 import { CreateDraftModal } from './CreateDraftModal.jsx'
@@ -8,6 +8,9 @@ import { ReportsDashboardSummary } from '../reports-hub/ReportsDashboardSummary.
 import { ReportsDashboardFilters } from '../reports-hub/ReportsDashboardFilters.jsx'
 import { ReportsDashboardCard } from '../reports-hub/ReportsDashboardCard.jsx'
 import { ReportsDashboardBottomRow } from '../reports-hub/ReportsDashboardBottomRow.jsx'
+import { ClinicalCaseHeader } from '../clinical-ui/ClinicalCaseHeader.jsx'
+import { ChangeCaseSheet } from '../case-profile/ChangeCaseSheet.jsx'
+import '../cases/my-cases.css'
 import '../../styles/reports-dashboard.css'
 
 const DEFAULT_FILTERS = { status: 'all', type: 'all', case: 'all' }
@@ -111,6 +114,7 @@ export function TherapistReportsHomeView({
     monthLabel: '',
   })
   const [toast, setToast] = useState({ visible: false, message: '' })
+  const [changeCaseOpen, setChangeCaseOpen] = useState(false)
 
   const showToast = useCallback((message) => {
     setToast({ visible: true, message })
@@ -133,13 +137,20 @@ export function TherapistReportsHomeView({
     return map
   }, [homeData])
 
+  const assignedCases = useMemo(() => homeData?.cases_board?.allCases || [], [homeData])
+
+  const selectedCase = useMemo(() => {
+    if (!caseFilterId) return null
+    return assignedCases.find((c) => String(c.id) === String(caseFilterId)) || null
+  }, [assignedCases, caseFilterId])
+
   const caseFilterOptions = useMemo(
     () =>
-      (homeData?.cases_board?.allCases || []).map((c) => ({
+      assignedCases.map((c) => ({
         value: String(c.id),
         label: `${c.child} (${c.caseId})`,
       })),
-    [homeData],
+    [assignedCases],
   )
 
   useEffect(() => {
@@ -245,11 +256,33 @@ export function TherapistReportsHomeView({
     navigate(`/therapist/reports?case_id=${caseDbId}`)
   }
 
-  const displayChild = childName || 'Client'
-  const displayCode = caseCode || (caseFilterId ? `Case #${caseFilterId}` : '')
+  function navigateToCase(caseRow) {
+    if (!caseRow?.id) return
+    if (isReportsRevampActive('therapist')) {
+      navigate(`/therapist/cases/${caseRow.id}?tab=reports&section=dashboard`)
+      return
+    }
+    setSearchParams({ case_id: String(caseRow.id) }, { replace: true })
+  }
+
+  function handlePickCase(caseRow) {
+    navigateToCase(caseRow)
+    setChangeCaseOpen(false)
+  }
+
+  function handleViewAllClients() {
+    onClearCaseFilter?.()
+    setChangeCaseOpen(false)
+  }
+
+  const displayChild = childName || selectedCase?.child || 'Client'
+  const displayCode = caseCode || selectedCase?.caseId || (caseFilterId ? `Case #${caseFilterId}` : '')
+  const displayService =
+    selectedCase?.service || selectedCase?.productModule || selectedCase?.focusLine || null
+  const displayStatus = selectedCase?.stage || selectedCase?.status || null
 
   if (loading) {
-    return <p className="ic-case-panel__loading">Loading reports…</p>
+    return <p className="reports-dashboard-loading">Loading reports…</p>
   }
 
   const content = (
@@ -285,36 +318,46 @@ export function TherapistReportsHomeView({
         )}
       />
 
-      {!embedded && scopedToCase && onClearCaseFilter ? (
-        <div className="reports-dashboard-scope-banner">
-          <p>
-            Showing: <strong>{displayChild}</strong>
-            {displayCode ? ` · ${displayCode}` : ''}
-          </p>
-          <div className="reports-dashboard-scope-banner__actions">
-            <Link to={`/therapist/cases/${caseFilterId}?tab=reports&section=dashboard`} className="reports-hub-btn reports-hub-btn--primary">
-              Open case
-            </Link>
-            <button type="button" onClick={onClearCaseFilter} className="reports-hub-btn reports-hub-btn--secondary">
-              All clients
-            </button>
-          </div>
+      {!embedded ? (
+        <div className="reports-dashboard-case-header">
+          <ClinicalCaseHeader
+            childName={scopedToCase ? displayChild : 'All clients'}
+            caseCode={scopedToCase ? displayCode : null}
+            serviceType={
+              scopedToCase
+                ? displayService
+                : 'Pick a client to focus reports — or browse all cases below.'
+            }
+            status={scopedToCase ? displayStatus : null}
+            onChangeCase={() => setChangeCaseOpen(true)}
+            changeCaseLabel={scopedToCase ? 'Change case' : 'Pick client'}
+          />
+          <ChangeCaseSheet
+            open={changeCaseOpen}
+            cases={assignedCases}
+            currentCaseId={caseFilterId}
+            onSelect={handlePickCase}
+            onClose={() => setChangeCaseOpen(false)}
+            onViewAll={scopedToCase && onClearCaseFilter ? handleViewAllClients : undefined}
+          />
         </div>
       ) : null}
 
       <ReportsDashboardSummary counts={summaryCounts} embedded={scopedToCase} />
 
-      <label className="reports-dashboard-search">
-        <span className="material-symbols-outlined reports-dashboard-search__icon" aria-hidden="true">search</span>
-        <input
-          className="reports-dashboard-search__input"
-          type="search"
-          placeholder={scopedToCase ? 'Search month or case ID…' : 'Search cases by child name or ID…'}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search reports"
-        />
-      </label>
+      {scopedToCase ? (
+        <label className="reports-dashboard-search">
+          <span className="material-symbols-outlined reports-dashboard-search__icon" aria-hidden="true">search</span>
+          <input
+            className="reports-dashboard-search__input"
+            type="search"
+            placeholder="Search month or case ID…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search reports"
+          />
+        </label>
+      ) : null}
 
       <ReportsDashboardFilters
         draft={filterDraft}
@@ -323,7 +366,7 @@ export function TherapistReportsHomeView({
         caseOptions={caseFilterOptions}
       />
 
-      {error ? <p className="ic-case-panel__error">{error}</p> : null}
+      {error ? <p className="reports-dashboard-error" role="alert">{error}</p> : null}
 
       <section className="reports-dashboard-grid-section" aria-labelledby="reports-dashboard-grid-title">
         <div className="reports-dashboard-grid-section__head">

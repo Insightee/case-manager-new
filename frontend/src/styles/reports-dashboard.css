@@ -1,4 +1,17 @@
-/* Reports Dashboard — Forest Light revamp */
+.reports-dashboard-loading,
+.reports-dashboard-error {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.reports-dashboard-error {
+  color: #b91c1c;
+}
+
+.reports-dashboard-loading {
+  color: #64748b;
+}
+
 
 .reports-home-page .reports-hub-header {
   display: flex;
@@ -273,6 +286,14 @@
 }
 
 /* Report cards */
+.reports-dashboard-case-header {
+  margin-bottom: 1rem;
+}
+
+.reports-dashboard-case-header .clinical-case-header {
+  margin: 0;
+}
+
 .reports-dashboard-card {
   display: flex;
   flex-direction: column;
@@ -285,7 +306,19 @@
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
-.reports-dashboard-card:hover {
+.reports-dashboard-card--interactive {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.reports-dashboard-card--interactive:focus-visible {
+  outline: 2px solid #2d4a3e;
+  outline-offset: 2px;
+}
+
+.reports-dashboard-card:hover,
+.reports-dashboard-card--interactive:hover {
   border-color: #cbd5e1;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
 }
@@ -461,14 +494,14 @@
   font-size: 0.8125rem;
   font-weight: 700;
   color: #3d5a4d;
-  cursor: pointer;
+  pointer-events: none;
 }
 
 .reports-dashboard-card__cta .material-symbols-outlined {
   font-size: 1rem;
 }
 
-.reports-dashboard-card__cta:hover {
+.reports-dashboard-card--interactive:hover .reports-dashboard-card__cta {
   color: #2f463b;
   text-decoration: underline;
 }

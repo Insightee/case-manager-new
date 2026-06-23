@@ -1,5 +1,4 @@
 import { ParentVoiceNote } from './ParentVoiceNote.jsx'
-import { SessionLogParentPreview } from './SessionLogParentPreview.jsx'
 
 export function SessionLogNotesDual({
   form,
@@ -7,7 +6,6 @@ export function SessionLogNotesDual({
   readOnly = false,
   caseId,
   sessionDate,
-  sessionEvidence,
   voiceAttachment,
   onVoiceAttachmentChange,
 }) {
@@ -52,7 +50,6 @@ export function SessionLogNotesDual({
           />
         </div>
       </div>
-      <SessionLogParentPreview sessionEvidence={sessionEvidence} parentNotes={form.parent_notes} />
     </>
   )
 }

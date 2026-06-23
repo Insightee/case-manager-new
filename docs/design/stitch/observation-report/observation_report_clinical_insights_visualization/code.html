@@ -1,0 +1,518 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>InsighteCase | Clinical Observation Workspace - Manan Sarda</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "error": "#ba1a1a",
+                    "on-secondary-fixed-variant": "#294e3f",
+                    "tertiary-container": "#002114",
+                    "inverse-surface": "#2f3131",
+                    "tertiary-fixed-dim": "#68dba9",
+                    "surface": "#f9f9f9",
+                    "on-secondary-fixed": "#002115",
+                    "on-tertiary": "#ffffff",
+                    "on-primary-fixed-variant": "#394a43",
+                    "surface-container-highest": "#e2e2e2",
+                    "on-tertiary-container": "#069669",
+                    "primary-fixed-dim": "#b7cbc1",
+                    "surface-variant": "#e2e2e2",
+                    "secondary-fixed": "#c3ecd7",
+                    "background": "#f9f9f9",
+                    "inverse-primary": "#b7cbc1",
+                    "on-tertiary-fixed-variant": "#005137",
+                    "outline-variant": "#c2c8c3",
+                    "on-error-container": "#93000a",
+                    "secondary": "#416656",
+                    "surface-container-low": "#f3f3f4",
+                    "surface-dim": "#dadada",
+                    "on-primary-container": "#75887f",
+                    "on-error": "#ffffff",
+                    "on-surface": "#1a1c1c",
+                    "on-primary": "#ffffff",
+                    "primary-fixed": "#d3e7dd",
+                    "secondary-container": "#c3ecd7",
+                    "surface-tint": "#50625a",
+                    "on-secondary-container": "#476c5b",
+                    "tertiary-fixed": "#85f8c4",
+                    "outline": "#737875",
+                    "on-tertiary-fixed": "#002114",
+                    "on-secondary": "#ffffff",
+                    "on-surface-variant": "#424845",
+                    "on-background": "#1a1c1c",
+                    "error-container": "#ffdad6",
+                    "secondary-fixed-dim": "#a8cfbc",
+                    "primary-container": "#0e1f19",
+                    "tertiary": "#000000",
+                    "surface-container-high": "#e8e8e8",
+                    "on-primary-fixed": "#0e1f19",
+                    "surface-container": "#eeeeee",
+                    "inverse-on-surface": "#f0f1f1",
+                    "surface-bright": "#f9f9f9",
+                    "surface-container-lowest": "#ffffff",
+                    "primary": "#000000",
+                    "lush-forest": "#0b1c16",
+                    "lush-mint": "#d1fae5",
+                    "lush-purple": "#6b46c1",
+                    "ai-accent": "#6366f1"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "sidebar-width": "280px",
+                    "gutter": "24px",
+                    "margin-mobile": "16px",
+                    "base": "8px",
+                    "margin-desktop": "40px"
+            },
+            "fontFamily": {
+                    "headline-lg-mobile": ["Manrope"],
+                    "headline-md": ["Manrope"],
+                    "headline-lg": ["Manrope"],
+                    "label-sm": ["JetBrains Mono"],
+                    "body-lg": ["Inter"],
+                    "body-md": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-lg-mobile": ["30px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "headline-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .sidebar-active {
+            background-color: rgba(209, 250, 229, 0.1);
+            border-left: 3px solid #d1fae5;
+            color: #ffffff;
+        }
+        .report-card {
+            border: 1px solid #e2e8f0;
+            transition: all 0.2s ease;
+        }
+        .ai-suggestion {
+            background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+            border: 1px dashed #c4b5fd;
+        }
+        .clinical-shadow {
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+        }
+        .sticky-footer {
+            box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.03);
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-surface-container-low text-on-surface font-body-md selection:bg-lush-mint selection:text-lush-forest">
+<!-- Top Navigation Shell -->
+<header class="fixed top-0 w-full z-50 bg-surface-container-lowest h-16 flex justify-between items-center px-gutter border-b border-outline-variant/30">
+<div class="flex items-center gap-4">
+<span class="text-primary font-headline-md font-extrabold tracking-tight">InsighteCase</span>
+<div class="h-6 w-px bg-outline-variant"></div>
+<h1 class="text-body-lg font-semibold text-on-surface-variant">Observation Builder</h1>
+<span class="bg-lush-purple/10 text-lush-purple px-3 py-1 rounded-full text-label-sm font-bold uppercase tracking-wider">Clinical Workspace</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-on-surface-variant text-body-md mr-4">Case #420-MS</span>
+<div class="flex items-center gap-2 bg-surface-container px-4 py-1.5 rounded-full border border-outline-variant/50">
+<div class="w-2 h-2 rounded-full bg-lush-forest animate-pulse"></div>
+<span class="text-label-sm font-semibold">Live Syncing</span>
+</div>
+</div>
+</header>
+<!-- Side Navigation Shell -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] w-sidebar-width bg-lush-forest text-white/70 flex flex-col py-6 overflow-y-auto z-40">
+<div class="px-6 mb-8">
+<p class="text-label-sm uppercase tracking-[0.2em] text-white/40 mb-1">Observation Module</p>
+<p class="text-body-md font-semibold text-white">Case Manager Portal</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-6 py-3 hover:text-white hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">home</span>
+<span class="">Reports Home</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 hover:text-white hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+<span class="">Session Logs</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 hover:text-white hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">visibility</span>
+<span class="">Observations</span>
+</a>
+<a class="sidebar-active flex items-center gap-3 px-6 py-3 text-white transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">description</span>
+<span class="">Report Builder</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 hover:text-white hover:bg-white/5 transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">assignment</span>
+<span class="">IEP Archive</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<div class="p-4 bg-white/5 rounded-xl border border-white/10 mb-4">
+<p class="text-xs text-white/40 uppercase mb-2">Workspace Help</p>
+<p class="text-xs leading-relaxed">Document auto-saves every 30 seconds. Insights update based on new logs.</p>
+</div>
+</div>
+</aside>
+<!-- Main Workspace -->
+<main class="ml-sidebar-width mt-16 p-8 pb-32 flex justify-center">
+<div class="max-w-5xl w-full flex gap-8">
+<!-- Document Content Area -->
+<div class="flex-1 space-y-8">
+<!-- 1. Header & Meta: Child Snapshot -->
+<section class="bg-surface-container-lowest p-8 rounded-xl clinical-shadow border border-outline-variant/30">
+<div class="flex items-start justify-between mb-8">
+<div class="flex gap-6">
+<div class="w-20 h-20 rounded-2xl bg-lush-mint/30 flex items-center justify-center">
+<span class="material-symbols-outlined text-4xl text-lush-forest" style="font-variation-settings: &quot;FILL&quot; 1;">face</span>
+</div>
+<div>
+<h2 class="text-headline-md font-bold text-lush-forest">Manan Sarda</h2>
+<div class="flex gap-4 text-on-surface-variant mt-1">
+<span class="flex items-center gap-1 text-label-sm"><span class="material-symbols-outlined text-sm">calendar_today</span> 12-05-2017 (6.5y)</span>
+<span class="flex items-center gap-1 text-label-sm"><span class="material-symbols-outlined text-sm">medical_services</span> ASD Level 1</span>
+</div>
+</div>
+</div>
+<div class="text-right">
+<p class="text-label-sm text-outline uppercase font-bold">Assessor</p>
+<p class="text-body-md font-bold">Dr. Sarah Thompson</p>
+<p class="text-on-surface-variant text-sm">Session Date: Oct 24, 2023</p>
+</div>
+</div>
+<div class="pt-6 border-t border-outline-variant/30">
+<h3 class="text-label-sm font-bold uppercase text-lush-forest mb-3 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">summarize</span> Case Summary
+                    </h3>
+<textarea class="w-full bg-transparent border-none p-0 text-body-md leading-relaxed text-on-surface focus:ring-0 min-h-[100px] resize-none" placeholder="Enter high-level clinical summary of this observation cycle...">Manan continues to demonstrate exceptional visual-spatial abilities. This cycle focuses on transitions and peer-play reciprocation.</textarea>
+</div>
+</section>
+<!-- 2. AI-Driven Tiles Section -->
+<div class="grid grid-cols-2 gap-6">
+<!-- Strengths -->
+<section class="bg-surface-container-lowest p-6 rounded-xl clinical-shadow border border-outline-variant/30">
+<h3 class="text-body-md font-bold text-lush-forest mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined">stars</span> Strengths
+                    </h3>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1.5 rounded-lg bg-lush-mint/40 text-lush-forest text-sm font-bold flex items-center gap-1">Visual Memory</span>
+<span class="px-3 py-1.5 rounded-lg bg-lush-mint/40 text-lush-forest text-sm font-bold flex items-center gap-1">Pattern Sorting</span>
+<!-- AI Recommended -->
+<span class="px-3 py-1.5 rounded-lg ai-suggestion text-lush-purple text-sm font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-xs">auto_awesome</span> 
+                            Focused Interests
+                            <button class="material-symbols-outlined text-xs">add</button>
+</span>
+<button class="px-3 py-1.5 rounded-lg border border-dashed border-outline text-outline text-sm font-semibold hover:border-lush-forest transition-colors">+ Add Yours</button>
+</div>
+</section>
+<!-- Interests -->
+<section class="bg-surface-container-lowest p-6 rounded-xl clinical-shadow border border-outline-variant/30">
+<h3 class="text-body-md font-bold text-lush-forest mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined">favorite</span> Interests
+                    </h3>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1.5 rounded-lg bg-lush-mint/40 text-lush-forest text-sm font-bold">Lego Technic</span>
+<!-- AI Recommended -->
+<span class="px-3 py-1.5 rounded-lg ai-suggestion text-lush-purple text-sm font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-xs">auto_awesome</span> 
+                            Marine Biology
+                            <button class="material-symbols-outlined text-xs">add</button>
+</span>
+<button class="px-3 py-1.5 rounded-lg border border-dashed border-outline text-outline text-sm font-semibold">+ Add Yours</button>
+</div>
+</section>
+<!-- Support Needs -->
+<section class="bg-surface-container-lowest p-6 rounded-xl clinical-shadow border border-outline-variant/30">
+<h3 class="text-body-md font-bold text-lush-forest mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined">psychology_alt</span> Support Needs
+                    </h3>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1.5 rounded-lg bg-surface-container text-on-surface text-sm font-bold">Social Cues Instruction</span>
+<!-- AI Recommended -->
+<span class="px-3 py-1.5 rounded-lg ai-suggestion text-lush-purple text-sm font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-xs">auto_awesome</span> 
+                            Sensory Breaks
+                            <button class="material-symbols-outlined text-xs">add</button>
+</span>
+<button class="px-3 py-1.5 rounded-lg border border-dashed border-outline text-outline text-sm font-semibold">+ Add Yours</button>
+</div>
+</section>
+<!-- Access Barriers -->
+<section class="bg-surface-container-lowest p-6 rounded-xl clinical-shadow border border-outline-variant/30">
+<h3 class="text-body-md font-bold text-error mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined">block</span> Access Barriers
+                    </h3>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1.5 rounded-lg bg-error-container/40 text-error text-sm font-bold">High Noise (Cafeteria)</span>
+<button class="px-3 py-1.5 rounded-lg border border-dashed border-outline text-outline text-sm font-semibold">+ Add Yours</button>
+</div>
+</section>
+</div>
+<!-- 3. Evidence & Insights -->
+<section class="bg-surface-container-lowest rounded-xl clinical-shadow border border-outline-variant/30 overflow-hidden">
+<div class="p-6 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-lowest">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-lush-purple">analytics</span>
+<h3 class="text-headline-md font-bold text-lush-forest">Evidence &amp; AI Insights</h3>
+</div>
+<button class="bg-lush-purple text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm hover:opacity-90 transition-all"><span class="material-symbols-outlined text-[20px]">refresh</span> Refresh Insights</button>
+</div>
+<div class="p-6 grid grid-cols-3 gap-6">
+<!-- Session Log Evidence -->
+<div class="p-5 rounded-xl bg-surface-container-low border border-outline-variant/30">
+<p class="text-label-sm font-bold uppercase text-outline mb-4">Log Evidence</p>
+<div class="flex items-center gap-4">
+<div class="text-center">
+<p class="text-2xl font-bold text-lush-forest">12</p>
+<p class="text-[10px] uppercase font-bold text-outline">Sessions</p>
+</div>
+<div class="w-px h-10 bg-outline-variant"></div>
+<div class="text-center">
+<p class="text-2xl font-bold text-lush-forest">48</p>
+<p class="text-[10px] uppercase font-bold text-outline">Logs</p>
+</div>
+</div>
+</div>
+<!-- AI Insights Preview Placeholder -->
+<div class="col-span-2 p-5 rounded-xl ai-suggestion border-lush-purple/30"><div class="flex justify-between items-center mb-4"><p class="text-label-sm font-bold uppercase text-lush-purple">Clinical Insights (Generated)</p><span class="text-[10px] font-bold text-lush-purple/60 uppercase">Last updated: Just now</span></div><div class="grid grid-cols-1 gap-3"><div class="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-lush-purple/10"><div class="flex-1"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-sm text-lush-purple">trending_up</span><p class="text-xs font-bold text-lush-forest">Pattern: Transition Difficulty</p></div><p class="text-[11px] text-on-surface-variant">Observed in 7/12 sessions. Primary trigger: verbal-only instructions.</p></div><div class="w-24 ml-4"><div class="flex justify-between text-[10px] mb-1"><span class="font-bold">Frequency</span><span>58%</span></div><div class="h-1.5 w-full bg-lush-purple/10 rounded-full overflow-hidden"><div class="h-full bg-lush-purple w-[58%]"></div></div></div></div><div class="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-lush-purple/10"><div class="flex-1"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-sm text-lush-purple">check_circle</span><p class="text-xs font-bold text-lush-forest">Pattern: Visual Support Efficacy</p></div><p class="text-[11px] text-on-surface-variant">85% success rate when using 'First-Then' boards.</p></div><div class="w-24 ml-4"><div class="flex justify-between text-[10px] mb-1"><span class="font-bold">Success</span><span>85%</span></div><div class="h-1.5 w-full bg-lush-purple/10 rounded-full overflow-hidden"><div class="h-full bg-lush-purple w-[85%]"></div></div></div></div><div class="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-lush-purple/10"><div class="flex-1"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-sm text-lush-purple">equalizer</span><p class="text-xs font-bold text-lush-forest">Pattern: Sensory Regulation</p></div><p class="text-[11px] text-on-surface-variant">Notable decrease in dysregulation (-22%) after noise-canceling headphones.</p></div><div class="w-24 ml-4"><div class="flex justify-between text-[10px] mb-1"><span class="font-bold">Reduction</span><span>22%</span></div><div class="h-1.5 w-full bg-lush-purple/10 rounded-full overflow-hidden"><div class="h-full bg-lush-purple w-[22%]"></div></div></div></div></div></div>
+</div>
+<!-- Evidence Drive Section -->
+<div class="px-6 pb-6">
+<div class="flex justify-between items-center mb-4">
+<h4 class="text-body-md font-bold">Evidence Drive</h4>
+<button class="text-lush-forest text-sm font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">upload</span> Add Evidences
+                        </button>
+</div>
+<div class="grid grid-cols-6 gap-3">
+<div class="aspect-square rounded-lg bg-surface-container flex flex-col items-center justify-center border border-outline-variant/50 hover:bg-lush-mint/10 transition-colors cursor-pointer group">
+<span class="material-symbols-outlined text-outline group-hover:text-lush-forest">image</span>
+<span class="text-[10px] font-bold mt-1 text-outline">JPG</span>
+</div>
+<div class="aspect-square rounded-lg bg-surface-container flex flex-col items-center justify-center border border-outline-variant/50 hover:bg-lush-mint/10 transition-colors cursor-pointer group">
+<span class="material-symbols-outlined text-outline group-hover:text-lush-forest">picture_as_pdf</span>
+<span class="text-[10px] font-bold mt-1 text-outline">Diagnosis</span>
+</div>
+<div class="aspect-square rounded-lg bg-surface-container flex flex-col items-center justify-center border border-outline-variant/50 hover:bg-lush-mint/10 transition-colors cursor-pointer group">
+<span class="material-symbols-outlined text-outline group-hover:text-lush-forest">video_library</span>
+<span class="text-[10px] font-bold mt-1 text-outline">MP4</span>
+</div>
+<button class="aspect-square rounded-lg border-2 border-dashed border-outline-variant flex items-center justify-center hover:border-lush-forest transition-colors">
+<span class="material-symbols-outlined text-outline">add</span>
+</button>
+</div>
+</div>
+</section>
+<!-- 4. Interactive Builder Modules -->
+<!-- Environments -->
+<section class="bg-surface-container-lowest p-8 rounded-xl clinical-shadow border border-outline-variant/30">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-headline-md font-bold text-lush-forest flex items-center gap-2">
+<span class="material-symbols-outlined">location_on</span> Environments Workspace
+                    </h3>
+</div>
+<div class="grid grid-cols-2 gap-6">
+<div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/30">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-lush-forest">home</span>
+<h4 class="font-bold text-lush-forest">Home</h4>
+</div>
+<button class="material-symbols-outlined text-outline text-sm">close</button>
+</div>
+<textarea class="w-full bg-transparent border-none p-0 text-sm focus:ring-0 min-h-[80px] resize-none" placeholder="Observations from home...">Observed in natural play setting. Demonstrated high functional use of toys. Transitions to meals require 5-minute visual countdown.</textarea>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/30">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-lush-forest">school</span>
+<h4 class="font-bold text-lush-forest">Classroom</h4>
+</div>
+<button class="material-symbols-outlined text-outline text-sm">close</button>
+</div>
+<textarea class="w-full bg-transparent border-none p-0 text-sm focus:ring-0 min-h-[80px] resize-none" placeholder="Feedback from classroom...">Social navigation observed during recess. Seeking sensory input through swinging. Requires prompts for group circle time.</textarea>
+</div>
+</div>
+<div class="mt-6 flex flex-wrap gap-2">
+<span class="text-label-sm font-bold uppercase text-outline w-full mb-2">Add Environment</span>
+<button class="px-3 py-1.5 rounded-lg border border-outline text-outline text-xs font-bold hover:border-lush-forest hover:text-lush-forest transition-colors">Playground</button>
+<button class="px-3 py-1.5 rounded-lg border border-outline text-outline text-xs font-bold hover:border-lush-forest hover:text-lush-forest transition-colors">Peer Relationships</button>
+<button class="px-3 py-1.5 rounded-lg border border-dashed border-outline text-outline text-xs font-bold hover:border-lush-forest transition-colors">+ Add Other</button>
+</div>
+</section>
+<!-- Strategies Builder -->
+<section class="bg-surface-container-lowest p-8 rounded-xl clinical-shadow border border-outline-variant/30">
+<h3 class="text-headline-md font-bold text-lush-forest mb-6">Suggested Goals</h3>
+<div class="space-y-4">
+<div class="flex items-center gap-4 p-4 bg-surface-container-low rounded-xl border border-outline-variant/30">
+<div class="w-10 h-10 rounded-full bg-lush-mint/50 flex items-center justify-center font-bold text-lush-forest">1</div>
+<div class="flex-1">
+<p class="font-bold text-sm">Improve Social Initiation</p>
+<p class="text-xs text-on-surface-variant">Initiate peer interaction in 3/5 opportunities with minimal prompting.</p>
+</div>
+<button class="bg-lush-forest text-white px-4 py-2 rounded-lg text-sm font-bold">Add Goal</button>
+</div>
+<div class="flex items-center gap-4 p-4 bg-surface-container-low rounded-xl border border-outline-variant/30">
+<div class="w-10 h-10 rounded-full bg-lush-mint/50 flex items-center justify-center font-bold text-lush-forest">2</div>
+<div class="flex-1">
+<p class="font-bold text-sm">Sensory Regulation during Transitions</p>
+<p class="text-xs text-on-surface-variant">Self-regulate using 'First-Then' visuals during transition periods.</p>
+</div>
+<button class="bg-lush-forest text-white px-4 py-2 rounded-lg text-sm font-bold">Add Goal</button>
+</div>
+<button class="w-full py-3 border-2 border-dashed border-outline-variant text-outline rounded-xl font-bold hover:border-lush-forest hover:text-lush-forest transition-all flex items-center justify-center gap-2 mt-4">
+<span class="material-symbols-outlined">add</span>
+                        Add Your Own Goal
+                    </button>
+</div>
+</section><section class="bg-surface-container-lowest p-8 rounded-xl clinical-shadow border border-outline-variant/30">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-headline-md font-bold text-lush-forest flex items-center gap-2">
+<span class="material-symbols-outlined">lightbulb</span> Strategies Workspace
+                    </h3>
+</div>
+<div class="space-y-6">
+<div>
+<p class="text-label-sm font-bold uppercase text-outline mb-3">Currently Using</p>
+<div class="space-y-2">
+<div class="flex items-center justify-between p-3 bg-surface-container rounded-lg border border-outline-variant/30">
+<span class="font-semibold text-sm">Visual Countdown Timer</span>
+<span class="text-[10px] uppercase font-bold text-outline px-2 py-0.5 border border-outline-variant rounded-full">Transition</span>
+</div>
+</div>
+</div>
+<div>
+<p class="text-label-sm font-bold uppercase text-lush-purple mb-3 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">auto_awesome</span> AI Recommended
+                        </p>
+<div class="grid grid-cols-2 gap-3">
+<div class="p-3 ai-suggestion rounded-lg flex items-center justify-between">
+<span class="text-sm font-bold">First-Then Board</span>
+<button class="text-lush-purple material-symbols-outlined text-sm">add_circle</button>
+</div>
+<div class="p-3 ai-suggestion rounded-lg flex items-center justify-between">
+<span class="text-sm font-bold">Sensory Weighted Lap Pad</span>
+<button class="text-lush-purple material-symbols-outlined text-sm">add_circle</button>
+</div>
+</div>
+</div>
+<button class="w-full py-3 border-2 border-dashed border-outline-variant text-outline rounded-xl font-bold hover:border-lush-forest hover:text-lush-forest transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined">add</span>
+                        Add Your Own Strategy
+                    </button>
+</div>
+</section>
+<!-- Suggested Goals -->
+<!-- Input Fields -->
+<section class="bg-surface-container-lowest p-8 rounded-xl clinical-shadow border border-outline-variant/30">
+<h3 class="text-headline-md font-bold text-lush-forest mb-6">Stakeholder Inputs</h3>
+<div class="space-y-6">
+<div>
+<label class="text-label-sm font-bold uppercase text-outline mb-2 block">Parent Inputs</label>
+<textarea class="w-full border border-outline-variant rounded-xl p-4 text-sm focus:ring-lush-mint min-h-[80px]" placeholder="Summary of parents' recent concerns...">Parents report frustration during screen-time to meal transitions.</textarea>
+</div>
+<div>
+<label class="text-label-sm font-bold uppercase text-outline mb-2 block">School Inputs</label>
+<textarea class="w-full border border-outline-variant rounded-xl p-4 text-sm focus:ring-lush-mint min-h-[80px]" placeholder="Summary of teacher/school feedback...">Engagement is high in math; requires support in social recess.</textarea>
+</div>
+<div>
+<label class="text-label-sm font-bold uppercase text-outline mb-2 block">Mentor/CM Inputs</label>
+<textarea class="w-full border border-outline-variant rounded-xl p-4 text-sm focus:ring-lush-mint min-h-[80px]" placeholder="Clinical supervisor notes..."></textarea>
+</div>
+<div>
+<label class="text-label-sm font-bold uppercase text-outline mb-2 block">Therapist Concerns</label>
+<textarea class="w-full border border-outline-variant rounded-xl p-4 text-sm focus:ring-lush-mint min-h-[80px]" placeholder="Clinical observations and therapist-specific concerns..."></textarea>
+</div></div>
+</section>
+</div>
+<!-- Right Side: AI Assistant (Static Panel) -->
+<aside class="w-80 space-y-6 shrink-0">
+<div class="sticky top-24">
+<div class="bg-surface-container-lowest p-6 rounded-xl clinical-shadow border border-ai-accent/20">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-lush-purple">psychology</span>
+<h4 class="font-bold text-body-md text-on-surface">InsighteAI Assistant</h4>
+</div>
+<div class="space-y-6">
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="text-label-sm text-outline uppercase">Draft Completeness</span>
+<span class="text-lush-forest font-bold">78%</span>
+</div>
+<div class="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-lush-forest w-[78%] rounded-full"></div>
+</div>
+</div>
+<div class="p-4 bg-lush-purple/5 border border-lush-purple/10 rounded-xl">
+<p class="text-label-sm font-bold text-lush-purple uppercase mb-2">Smart Action</p>
+<p class="text-sm text-on-surface-variant leading-snug">
+                                "The observation logs mention 'Swing' 5 times. Consider adding 'Vestibular Input' as a sensory strategy."
+                            </p>
+<button class="mt-3 text-lush-purple text-sm font-bold flex items-center gap-1">Apply Suggestion <span class="material-symbols-outlined text-sm">arrow_forward</span></button>
+</div>
+</div>
+</div>
+<div class="mt-6 bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/30">
+<h4 class="font-bold text-body-md mb-4">Quick Actions</h4>
+<div class="grid grid-cols-2 gap-2">
+<button class="p-3 bg-surface-container-low rounded-lg flex flex-col items-center gap-1 hover:bg-lush-mint/10 transition-all">
+<span class="material-symbols-outlined text-outline">print</span>
+<span class="text-[10px] font-bold">Print Draft</span>
+</button>
+<button class="p-3 bg-surface-container-low rounded-lg flex flex-col items-center gap-1 hover:bg-lush-mint/10 transition-all">
+<span class="material-symbols-outlined text-outline">history_edu</span>
+<span class="text-[10px] font-bold">Version History</span>
+</button>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+<!-- Sticky Footer Actions -->
+<footer class="fixed bottom-0 left-sidebar-width right-0 h-20 bg-surface-container-lowest border-t border-outline-variant/30 px-gutter flex items-center justify-between z-50 sticky-footer">
+<div class="flex items-center gap-4">
+<span class="text-label-sm text-outline font-bold italic">Last saved: 2 minutes ago</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="px-8 py-3 rounded-xl border-2 border-lush-forest text-lush-forest font-bold hover:bg-lush-mint/10 transition-all">
+            Preview Report
+        </button>
+<button class="px-8 py-3 rounded-xl bg-lush-forest text-white font-bold shadow-lg hover:opacity-90 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined">send</span>
+            Finalize &amp; Submit
+        </button>
+</div>
+</footer>
+<script>
+    // Placeholder logic for interactivity
+    document.querySelectorAll('.report-card button, button').forEach(button => {
+        button.addEventListener('click', function() {
+            // Future logic for adding tiles
+        });
+    });
+</script>
+</body></html>

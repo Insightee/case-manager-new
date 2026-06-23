@@ -3245,6 +3245,26 @@
   box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.18);
 }
 
+.change-case-sheet__view-all {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #2d4a3e;
+  cursor: pointer;
+  text-align: left;
+}
+
+.change-case-sheet__view-all:hover {
+  background: #f8fafc;
+}
+
 @media (min-width: 640px) {
   .change-case-sheet {
     align-items: center;

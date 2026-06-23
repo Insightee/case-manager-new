@@ -1,12 +1,12 @@
 import { TaxonomyTicker } from '../ClinicalTaxonomyPicker.jsx'
-import { STRATEGY_FEEDBACK_OPTIONS } from '../../../lib/clinicalScoring.js'
+import { STRATEGY_FEEDBACK_OPTIONS, goalHasSessionWork } from '../../../lib/clinicalScoring.js'
 
 const FEEDBACK_LABELS = Object.fromEntries(STRATEGY_FEEDBACK_OPTIONS.map((o) => [o.id, o.label]))
 
 /** Read-only preview of what parents / clients see from session evidence + summary. */
 export function SessionLogParentPreview({ sessionEvidence, parentNotes = '' }) {
-  const goals = sessionEvidence?.goals || []
-  const hasGoals = goals.some((g) => (g.goal_label || '').trim())
+  const goals = (sessionEvidence?.goals || []).filter(goalHasSessionWork)
+  const hasGoals = goals.length > 0
 
   if (!hasGoals && !parentNotes?.trim()) {
     return (

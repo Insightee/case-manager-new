@@ -7,6 +7,13 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clinical_measurement_criteria import (
+    GOAL_ACHIEVEMENT_VALUES,
+    INDEPENDENCE_VALUES,
+    PARTICIPATION_VALUES,
+    legacy_score_to_enum,
+    validate_measurement_value,
+)
 from app.core.clinical_scoring import validate_score, validate_strategy_feedback
 from app.models.case import Case
 from app.models.clinical_evidence import (
@@ -24,6 +31,9 @@ def entry_schema_version_from_row(entry: SessionGoalEntry) -> int:
         entry.participation_score is not None
         or entry.independence_score is not None
         or entry.goal_achievement_score is not None
+        or entry.participation
+        or entry.independence_support_needed
+        or entry.goal_achievement
     ):
         return 2
     return 1
@@ -50,6 +60,46 @@ def _json_list(raw: Any) -> list[str]:
     return []
 
 
+def _enum_index(values: tuple[str, ...], value: str | None) -> int | None:
+    if not value or value not in values:
+        return None
+    return values.index(value)
+
+
+def _resolve_goal_measurement(item: dict) -> dict[str, Any]:
+    """Prefer canonical enum strings; fall back to legacy 0–4 scores."""
+    participation = item.get("participation")
+    independence = item.get("independence_support_needed")
+    achievement = item.get("goal_achievement")
+
+    p_score = validate_score(item.get("participation_score"), field="participation_score")
+    i_score = validate_score(item.get("independence_score"), field="independence_score")
+    g_score = validate_score(item.get("goal_achievement_score"), field="goal_achievement_score")
+
+    if not validate_measurement_value("participation", participation):
+        participation = legacy_score_to_enum("participation", p_score)
+    if not validate_measurement_value("independence_support_needed", independence):
+        independence = legacy_score_to_enum("independence_support_needed", i_score)
+    if not validate_measurement_value("goal_achievement", achievement):
+        achievement = legacy_score_to_enum("goal_achievement", g_score)
+
+    if p_score is None and participation:
+        p_score = _enum_index(PARTICIPATION_VALUES, participation)
+    if i_score is None and independence:
+        i_score = _enum_index(INDEPENDENCE_VALUES, independence)
+    if g_score is None and achievement:
+        g_score = _enum_index(GOAL_ACHIEVEMENT_VALUES, achievement)
+
+    return {
+        "participation": participation,
+        "independence_support_needed": independence,
+        "goal_achievement": achievement,
+        "participation_score": p_score,
+        "independence_score": i_score,
+        "goal_achievement_score": g_score,
+    }
+
+
 def _dump_json_list(values: Any) -> Optional[str]:
     items = _json_list(values)
     return json.dumps(items) if items else None
@@ -71,6 +121,9 @@ def _goal_to_dict(g: SessionGoalEntry) -> dict[str, Any]:
         "participation_score": g.participation_score,
         "independence_score": g.independence_score,
         "goal_achievement_score": g.goal_achievement_score,
+        "participation": g.participation,
+        "independence_support_needed": g.independence_support_needed,
+        "goal_achievement": g.goal_achievement,
         "activity_used": g.activity_used,
         "goal_repository_item_id": g.goal_repository_item_id,
         "evidence_count": g.evidence_count or 0,
@@ -127,7 +180,17 @@ def _payload_is_v2(goals: list[dict], strategies: list[dict]) -> bool:
     for item in goals:
         if item.get("schema_version") == 2:
             return True
-        if any(item.get(k) is not None for k in ("participation_score", "independence_score", "goal_achievement_score")):
+        if any(
+            item.get(k) is not None
+            for k in (
+                "participation_score",
+                "independence_score",
+                "goal_achievement_score",
+                "participation",
+                "independence_support_needed",
+                "goal_achievement",
+            )
+        ):
             return True
     for item in strategies:
         if item.get("schema_version") == 2:
@@ -149,6 +212,26 @@ def _resolve_context(db: Session, daily_log: DailyLog, case_id: int) -> tuple[Th
 def assert_log_evidence_editable(log: DailyLog) -> None:
     if log.approval_status == LogApprovalStatus.APPROVED:
         raise HTTPException(status_code=403, detail="Approved logs cannot change structured evidence")
+
+
+def _goal_has_session_work(item: dict) -> bool:
+    """Goal row has therapist-documented updates for this session."""
+    primary = (item.get("strategies") or [None])[0] if item.get("strategies") else None
+    has_scores = any(item.get(k) is not None for k in ("participation_score", "independence_score", "goal_achievement_score"))
+    if has_scores:
+        return True
+    if primary:
+        steps = primary.get("strategy_steps") or []
+        if (primary.get("strategy_label") or "").strip():
+            return True
+        if primary.get("strategy_feedback"):
+            return True
+        if (primary.get("short_note") or "").strip():
+            return True
+        if any(steps):
+            return True
+    note = (item.get("measurement_note") or item.get("response_note") or "").strip()
+    return bool(note)
 
 
 def save_session_evidence(
@@ -186,14 +269,14 @@ def save_session_evidence(
     nested_strategies: list[dict] = []
 
     for idx, item in enumerate(goals):
+        if not _goal_has_session_work(item):
+            continue
         label = (item.get("goal_label") or "").strip()
         if not label:
             continue
         goal_labels.append(label)
 
-        participation = validate_score(item.get("participation_score"), field="participation_score")
-        independence = validate_score(item.get("independence_score"), field="independence_score")
-        achievement = validate_score(item.get("goal_achievement_score"), field="goal_achievement_score")
+        measurement = _resolve_goal_measurement(item)
 
         entry = SessionGoalEntry(
             daily_log_id=daily_log.id,
@@ -208,9 +291,12 @@ def save_session_evidence(
             case_id=case_id,
             child_id=child_id,
             created_by_user_id=created_by_user_id,
-            participation_score=participation,
-            independence_score=independence,
-            goal_achievement_score=achievement,
+            participation_score=measurement["participation_score"],
+            independence_score=measurement["independence_score"],
+            goal_achievement_score=measurement["goal_achievement_score"],
+            participation=measurement["participation"],
+            independence_support_needed=measurement["independence_support_needed"],
+            goal_achievement=measurement["goal_achievement"],
             activity_used=item.get("activity_used"),
             core_domains_json=_dump_json_list(item.get("core_domains")),
             core_environments_json=_dump_json_list(item.get("core_environments")),
@@ -222,8 +308,11 @@ def save_session_evidence(
         goal_entry_ids[idx] = entry.id
 
         summary = label
-        if use_v2 and participation is not None:
-            summary += f" (P{participation}/I{independence or '—'}/G{achievement or '—'})"
+        if use_v2 and measurement["participation_score"] is not None:
+            summary += (
+                f" (P{measurement['participation_score']}/I{measurement['independence_score'] or '—'}"
+                f"/G{measurement['goal_achievement_score'] or '—'})"
+            )
         elif item.get("response_note"):
             summary += f" — {item.get('response_note')}"
 
@@ -253,6 +342,7 @@ def save_session_evidence(
             goal_entry_id = goal_entry_ids.get(item["goal_entry_index"])
 
         feedback = validate_strategy_feedback(item.get("strategy_feedback"))
+        strat_measurement = _resolve_goal_measurement(item)
         db.add(
             StrategyUseEvent(
                 daily_log_id=daily_log.id,
@@ -268,11 +358,12 @@ def save_session_evidence(
                 created_by_user_id=created_by_user_id,
                 environment=item.get("environment") or getattr(session, "mode", None),
                 activity_used=item.get("activity_used"),
-                participation_score=validate_score(item.get("participation_score"), field="participation_score"),
-                independence_score=validate_score(item.get("independence_score"), field="independence_score"),
-                goal_achievement_score=validate_score(
-                    item.get("goal_achievement_score"), field="goal_achievement_score"
-                ),
+                participation_score=strat_measurement["participation_score"],
+                independence_score=strat_measurement["independence_score"],
+                goal_achievement_score=strat_measurement["goal_achievement_score"],
+                participation=strat_measurement["participation"],
+                independence_support_needed=strat_measurement["independence_support_needed"],
+                goal_achievement=strat_measurement["goal_achievement"],
                 strategy_feedback=feedback,
                 custom_strategy_id=item.get("custom_strategy_id"),
             )

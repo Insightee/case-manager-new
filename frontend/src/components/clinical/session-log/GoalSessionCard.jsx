@@ -1,7 +1,7 @@
 import { STRATEGY_FEEDBACK_OPTIONS, emptyStrategyRow, goalSessionStatus } from '../../../lib/clinicalScoring.js'
 import { matchRecommendedStrategies } from '../../../lib/coreClinicalTaxonomy.js'
 import { ClinicalTaxonomyPicker } from '../ClinicalTaxonomyPicker.jsx'
-import { SessionLogScoreScale } from './SessionLogScoreScale.jsx'
+import { MeasurementCriteriaSelect } from '../MeasurementCriteriaSelect.jsx'
 import { MeasurementHelpTicker } from './ScoreHelpButton.jsx'
 import { strategyNeedsAlternatives } from './SessionLogStrategyRow.jsx'
 import { StrategyAlternativesPanel } from './StrategyAlternativesPanel.jsx'
@@ -43,6 +43,7 @@ export function GoalSessionCard({
   onCreateStrategy,
   otherCaseGoals = [],
   onSelectCaseGoal,
+  cardRef,
 }) {
   const status = goalSessionStatus(goal)
   const strategies = goal.strategies || []
@@ -83,14 +84,27 @@ export function GoalSessionCard({
 
   const showAlternatives = strategies.some(strategyNeedsAlternatives)
 
+  function markCompleteForToday() {
+    onUpdate({ marked_complete_today: !goal.marked_complete_today })
+  }
+
   return (
-    <article className={`sl-goal-accordion${expanded ? ' is-expanded' : ''}`}>
+    <article ref={cardRef} className={`sl-goal-accordion${expanded ? ' is-expanded' : ''}`}>
       <button type="button" className="sl-goal-accordion__header" onClick={onToggle} aria-expanded={expanded}>
         <span className="sl-goal-accordion__num">{index + 1}</span>
         <span className="sl-goal-accordion__title-wrap">
-          <p className="sl-goal-accordion__title">{shortTitle.length > 52 ? `${shortTitle.slice(0, 52)}…` : shortTitle}</p>
+          <p className="sl-goal-accordion__title">{shortTitle}</p>
+          {status.worked ? (
+            <span className="sl-goal-accordion__worked-badge">Worked on this session</span>
+          ) : null}
         </span>
-        <span className={`sl-goal-accordion__status sl-goal-accordion__status--${status.tone}`}>{status.label}</span>
+        {status.label === 'add' ? (
+          <span className="sl-goal-accordion__add-btn" aria-hidden="true">
+            +
+          </span>
+        ) : (
+          <span className={`sl-goal-accordion__status sl-goal-accordion__status--${status.tone}`}>{status.label}</span>
+        )}
         <span className="sl-goal-accordion__chevron" aria-hidden="true">
           ▾
         </span>
@@ -98,6 +112,10 @@ export function GoalSessionCard({
 
       {expanded ? (
         <div className="sl-goal-accordion__body">
+          {goal.pending_review ? (
+            <p className="sl-goal-accordion__review-badge">Under review — usable for this client while pending</p>
+          ) : null}
+
           <label className="gs-field">
             <span className="gs-field__label">Goal title</span>
             <input
@@ -129,14 +147,22 @@ export function GoalSessionCard({
           />
 
           <section className="sl-strategy-block">
-            <div className="sl-strategy-block__head">
-              <p className="sl-v2-section-label">Strategy for this session</p>
-              {!readOnly ? (
-                <button type="button" className="sl-strategy-block__add" onClick={onToggleStrategyPanel}>
-                  + Add strategy ▾
-                </button>
-              ) : null}
-            </div>
+            {!readOnly && !primary?.strategy_label ? (
+              <button type="button" className="gs-btn gs-btn--secondary sl-strategy-block__add-full" onClick={onToggleStrategyPanel}>
+                + Add strategy
+              </button>
+            ) : null}
+
+            {primary?.strategy_label || readOnly ? (
+              <div className="sl-strategy-block__head">
+                <p className="sl-v2-section-label">Strategy this session</p>
+                {!readOnly && primary?.strategy_label ? (
+                  <button type="button" className="sl-strategy-block__change" onClick={onToggleStrategyPanel}>
+                    Change
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             {showStrategyPanel && !readOnly ? (
               <div className="sl-strategy-panel">
@@ -242,18 +268,23 @@ export function GoalSessionCard({
               <p className="sl-v2-section-label">Goal achievement</p>
               <MeasurementHelpTicker />
             </div>
-            <div className="sl-v2-measurement-grid">
-              {['participation_score', 'independence_score', 'goal_achievement_score'].map((key) => (
-                <SessionLogScoreScale
-                  key={key}
-                  dimension={key}
-                  value={goal[key] ?? null}
-                  disabled={readOnly}
-                  compact
-                  onChange={(n) => onUpdate({ [key]: n })}
-                />
-              ))}
-            </div>
+            <MeasurementCriteriaSelect
+              compact
+              readOnly={readOnly}
+              values={{
+                participation: goal.participation || '',
+                independence_support_needed: goal.independence_support_needed || '',
+                goal_achievement: goal.goal_achievement || '',
+              }}
+              onChange={(next) =>
+                onUpdate({
+                  schema_version: 2,
+                  participation: next.participation || null,
+                  independence_support_needed: next.independence_support_needed || null,
+                  goal_achievement: next.goal_achievement || null,
+                })
+              }
+            />
           </div>
 
           <label className="gs-field sl-short-note-field">
@@ -266,6 +297,18 @@ export function GoalSessionCard({
               onChange={(e) => setShortNote(e.target.value)}
             />
           </label>
+
+          {!readOnly ? (
+            <button
+              type="button"
+              className={`gs-btn sl-goal-mark-complete${goal.marked_complete_today ? ' is-done' : ''}`}
+              onClick={markCompleteForToday}
+            >
+              {goal.marked_complete_today ? '✓ Marked complete for today' : 'Mark completed for today'}
+            </button>
+          ) : goal.marked_complete_today ? (
+            <p className="sl-goal-mark-complete sl-goal-mark-complete--readonly">✓ Completed for today</p>
+          ) : null}
 
           {otherCaseGoals.length ? (
             <section className="sl-case-goals-rail">

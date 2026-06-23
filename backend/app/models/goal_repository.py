@@ -41,6 +41,7 @@ class GoalRepositoryItem(Base):
     lifecycle_status: Mapped[Optional[str]] = mapped_column(String(32))
     source: Mapped[Optional[str]] = mapped_column(String(32))
     scope: Mapped[Optional[str]] = mapped_column(String(32))
+    source_clinical_report_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clinical_reports.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -69,6 +70,7 @@ class StrategyRepositoryItem(Base):
     expected_outcome: Mapped[Optional[str]] = mapped_column(Text)
     source: Mapped[Optional[str]] = mapped_column(String(32))
     scope: Mapped[Optional[str]] = mapped_column(String(32))
+    source_clinical_report_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clinical_reports.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

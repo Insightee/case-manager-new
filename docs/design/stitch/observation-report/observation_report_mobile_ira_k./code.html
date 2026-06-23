@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Observation Report - Ira K.</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@600;700;800&family=JetBrains+Mono:wght@500&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..900&family=Manrope:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        .glass-overlay {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(8px);
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-high": "#e8e8e8",
+                        "secondary": "#416656",
+                        "background": "#f9f9f9",
+                        "on-primary-fixed-variant": "#394a43",
+                        "inverse-on-surface": "#f0f1f1",
+                        "outline": "#737875",
+                        "on-primary-container": "#75887f",
+                        "on-background": "#1a1c1c",
+                        "on-secondary-fixed": "#002115",
+                        "surface-bright": "#f9f9f9",
+                        "primary-container": "#0e1f19",
+                        "tertiary-container": "#002114",
+                        "surface": "#f9f9f9",
+                        "primary-fixed": "#d3e7dd",
+                        "on-tertiary-fixed-variant": "#005137",
+                        "on-surface": "#1a1c1c",
+                        "inverse-primary": "#b7cbc1",
+                        "surface-dim": "#dadada",
+                        "primary-fixed-dim": "#b7cbc1",
+                        "secondary-container": "#c3ecd7",
+                        "on-tertiary-fixed": "#002114",
+                        "secondary-fixed-dim": "#a8cfbc",
+                        "surface-container": "#eeeeee",
+                        "on-error-container": "#93000a",
+                        "tertiary": "#000000",
+                        "primary": "#000000",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#68dba9",
+                        "outline-variant": "#c2c8c3",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#294e3f",
+                        "on-primary": "#ffffff",
+                        "surface-container-low": "#f3f3f4",
+                        "on-secondary-container": "#476c5b",
+                        "error": "#ba1a1a",
+                        "surface-container-highest": "#e2e2e2",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed": "#85f8c4",
+                        "surface-variant": "#e2e2e2",
+                        "secondary-fixed": "#c3ecd7",
+                        "on-tertiary-container": "#069669",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-primary-fixed": "#0e1f19",
+                        "surface-tint": "#50625a",
+                        "on-surface-variant": "#424845",
+                        "inverse-surface": "#2f3131"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "sidebar-width": "280px",
+                        "margin-desktop": "40px",
+                        "gutter": "24px",
+                        "base": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Manrope"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["JetBrains Mono"],
+                        "headline-md": ["Manrope"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Manrope"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["30px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-lg": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
+<!-- TopAppBar -->
+<header class="sticky top-0 z-50 bg-surface shadow-sm px-margin-mobile py-base flex justify-between items-center w-full">
+<div class="flex items-center gap-base">
+<span class="material-symbols-outlined text-primary">clinical_notes</span>
+<h1 class="font-headline-md text-headline-md tracking-tight text-primary">InsighteCase</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-on-surface-variant">notifications</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a healthcare practitioner in a minimalist clinical setting, featuring soft natural lighting, a clean white uniform, and a calm, approachable demeanor. The background is a soft-focus forest green office." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAKDj8yT2RkGE8ffS_4DNg3s9VlLbA6qZ9qgMWzwHAgoWJVAChFvQ3bamBp6qTrx0kxz02flC17MAchOTUd_Ebq86QraD4bZIoogmglBBOh2_l7Gr_umLfpxF2tGLXh5qp7gM-cqmKtbD6f0a4j7bIlCAOGfuERSL3FlpriKVP3-RiVkWYXwsIvAA68fI2dEHbRTL510Bd73E3bsUn81RbWiT3CekXqU4rCG0fEPwCG6tBoaMzLO5FM0SXbRAEcj9EK_0SbjAsphKo"/>
+</div>
+</div>
+</header>
+<main class="pb-32">
+<!-- Child Profile Section -->
+<section class="px-margin-mobile pt-gutter">
+<div class="flex items-center gap-gutter mb-base">
+<div class="w-20 h-20 rounded-xl overflow-hidden border-2 border-primary-fixed">
+<img class="w-full h-full object-cover" data-alt="A high-quality studio portrait of a young boy with light hair, Ira K., looking thoughtfully at the camera. The lighting is soft and high-key, emphasizing a clean and professional medical child-care aesthetic. The color palette includes soft mint and deep forest green accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuATZ-GghQ_9ZV5E6zhBsMJENMtW9TvFB1ZCKkSFfQGtUDzRSqAyabYQRSK0C1eTAp7_zS2Qr1ShG_guzu5r9oyI3z72GnhKeukpdIdkL18miCCO6kbgH7BFr1Mc0DDDb5KLtXZt58pCV5KY-m3CpllS4ywi2QMU4thWY6QagbYgZjA2pCLb6HO-fXZKRv9Ecyg0UPfLx1JzPTlqbx468a-NwxZ-ckPbUPprG2ib0gpEVXdY3PPGk8Wr_e7VkCRC80r5RE_anNr3Ono"/>
+</div>
+<div>
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile text-primary">Ira K.</h2>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Case #8821 • 6 Years Old</p>
+<div class="mt-2 inline-flex items-center gap-1 px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded-full text-[10px] font-bold">
+<span class="material-symbols-outlined text-xs" style="font-variation-settings: 'FILL' 1;">emergency</span>
+                        ASD LEVEL 2
+                    </div>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-gutter rounded-xl mt-gutter shadow-sm">
+<h3 class="font-headline-md text-headline-md text-primary mb-2">Case Summary</h3>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+                    Ira shows significant engagement in structured environments but struggles with sensory-induced dysregulation during peak transition times. High efficacy noted with visual scheduling.
+                </p>
+</div>
+</section>
+<!-- Horizontal Chips Section -->
+<section class="mt-gutter">
+<div class="px-margin-mobile flex justify-between items-end mb-4">
+<h3 class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Core Attributes</h3>
+<span class="material-symbols-outlined text-outline">tune</span>
+</div>
+<div class="flex overflow-x-auto gap-base px-margin-mobile no-scrollbar">
+<div class="flex-shrink-0 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-full flex items-center gap-2 border border-secondary">
+<span class="material-symbols-outlined text-sm">bolt</span>
+<span class="text-sm font-semibold">Strengths</span>
+</div>
+<div class="flex-shrink-0 px-4 py-2 bg-surface-container-low text-on-surface-variant rounded-full flex items-center gap-2 border border-outline-variant">
+<span class="material-symbols-outlined text-sm">favorite</span>
+<span class="text-sm font-semibold">Interests</span>
+</div>
+<div class="flex-shrink-0 px-4 py-2 bg-surface-container-low text-on-surface-variant rounded-full flex items-center gap-2 border border-outline-variant">
+<span class="material-symbols-outlined text-sm">priority_high</span>
+<span class="text-sm font-semibold">Support Needs</span>
+</div>
+<div class="flex-shrink-0 px-4 py-2 bg-surface-container-low text-on-surface-variant rounded-full flex items-center gap-2 border border-outline-variant">
+<span class="material-symbols-outlined text-sm">block</span>
+<span class="text-sm font-semibold">Barriers</span>
+</div>
+</div>
+</section>
+<!-- Evidence & AI Insights -->
+<section class="mt-gutter px-margin-mobile">
+<div class="flex justify-between items-center mb-gutter">
+<h3 class="font-headline-md text-headline-md text-primary">AI Clinical Insights</h3>
+<div class="text-right">
+<p class="font-label-sm text-label-sm text-on-surface-variant">12 Sessions</p>
+<p class="font-body-md text-body-md font-bold text-secondary">48 Logs Verified</p>
+</div>
+</div>
+<div class="space-y-4">
+<!-- Insight Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl">
+<div class="flex justify-between items-start mb-3">
+<div class="flex items-center gap-3">
+<div class="bg-secondary-fixed p-2 rounded-lg">
+<span class="material-symbols-outlined text-on-secondary-fixed">trending_down</span>
+</div>
+<div>
+<h4 class="font-body-md font-bold text-on-surface">Transition Difficulty</h4>
+<p class="text-xs text-on-surface-variant">Primary barrier identified</p>
+</div>
+</div>
+<span class="font-label-sm text-error font-bold">-24% Frequency</span>
+</div>
+<div class="w-full bg-surface-container rounded-full h-1.5 mt-2">
+<div class="bg-secondary h-1.5 rounded-full" style="width: 76%"></div>
+</div>
+</div>
+<!-- Insight Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl">
+<div class="flex justify-between items-start mb-3">
+<div class="flex items-center gap-3">
+<div class="bg-tertiary-fixed p-2 rounded-lg">
+<span class="material-symbols-outlined text-on-tertiary-fixed">visibility</span>
+</div>
+<div>
+<h4 class="font-body-md font-bold text-on-surface">Visual Support Efficacy</h4>
+<p class="text-xs text-on-surface-variant">Highly responsive to icons</p>
+</div>
+</div>
+<span class="font-label-sm text-on-tertiary-container font-bold">92% Success</span>
+</div>
+<div class="w-full bg-surface-container rounded-full h-1.5 mt-2">
+<div class="bg-on-tertiary-container h-1.5 rounded-full" style="width: 92%"></div>
+</div>
+</div>
+<!-- Insight Card 3 -->
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl">
+<div class="flex justify-between items-start mb-3">
+<div class="flex items-center gap-3">
+<div class="bg-primary-fixed p-2 rounded-lg">
+<span class="material-symbols-outlined text-on-primary-fixed">self_care</span>
+</div>
+<div>
+<h4 class="font-body-md font-bold text-on-surface">Sensory Regulation</h4>
+<p class="text-xs text-on-surface-variant">Calm state duration</p>
+</div>
+</div>
+<span class="font-label-sm text-secondary font-bold">+15m Avg Duration</span>
+</div>
+<div class="w-full bg-surface-container rounded-full h-1.5 mt-2">
+<div class="bg-secondary h-1.5 rounded-full" style="width: 45%"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Environments Workspace -->
+<section class="mt-gutter px-margin-mobile">
+<h3 class="font-headline-md text-headline-md text-primary mb-4">Environments</h3>
+<div class="grid grid-cols-1 gap-4">
+<div class="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">home</span>
+<span class="font-body-md font-bold">Home</span>
+</div>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<div class="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">school</span>
+<span class="font-body-md font-bold">Classroom</span>
+</div>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<button class="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-outline-variant rounded-xl text-on-surface-variant hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined">add_circle</span>
+<span class="font-body-md font-medium">Add Environment</span>
+</button>
+</div>
+</section>
+<!-- Suggested Goals -->
+<section class="mt-gutter px-margin-mobile">
+<div class="flex justify-between items-center mb-4">
+<h3 class="font-headline-md text-headline-md text-primary">Suggested Goals</h3>
+<span class="px-2 py-1 bg-primary text-white text-[10px] rounded font-bold uppercase">AI Recommended</span>
+</div>
+<div class="space-y-4">
+<div class="bg-surface border border-outline-variant p-gutter rounded-xl relative overflow-hidden">
+<div class="absolute top-0 right-0 w-24 h-24 bg-secondary-container/20 rounded-full -mr-12 -mt-12"></div>
+<h4 class="font-body-md font-bold text-primary relative z-10">Improve Social Initiation</h4>
+<p class="text-sm text-on-surface-variant mt-1 mb-4 relative z-10">Increase independent greetings to peers from 10% to 40% over 3 months.</p>
+<button class="w-full py-2 bg-primary text-on-primary rounded-lg font-bold text-sm flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add</span>
+                        Add Goal
+                    </button>
+</div>
+<div class="bg-surface border border-outline-variant p-gutter rounded-xl relative overflow-hidden">
+<div class="absolute top-0 right-0 w-24 h-24 bg-tertiary-fixed/20 rounded-full -mr-12 -mt-12"></div>
+<h4 class="font-body-md font-bold text-primary relative z-10">Sensory Regulation during Transitions</h4>
+<p class="text-sm text-on-surface-variant mt-1 mb-4 relative z-10">Use visual timer to successfully navigate classroom transitions without vocal protest.</p>
+<button class="w-full py-2 bg-primary text-on-primary rounded-lg font-bold text-sm flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add</span>
+                        Add Goal
+                    </button>
+</div>
+</div>
+</section>
+<!-- Strategies Workspace -->
+<section class="mt-gutter px-margin-mobile">
+<h3 class="font-headline-md text-headline-md text-primary mb-4">Strategies</h3>
+<div class="space-y-3">
+<div class="flex items-center justify-between p-3 bg-secondary-container/30 border border-secondary/20 rounded-lg">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<div>
+<p class="text-sm font-bold text-on-secondary-container">First-Then Board</p>
+<p class="text-[10px] text-on-secondary-container/70 uppercase font-bold">Currently Active</p>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container-lowest border border-outline-variant rounded-lg">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline">auto_awesome</span>
+<div>
+<p class="text-sm font-bold text-on-surface">Sensory Weighted Lap Pad</p>
+<p class="text-[10px] text-on-tertiary-container uppercase font-bold">AI Recommended</p>
+</div>
+</div>
+<button class="material-symbols-outlined text-primary">add</button>
+</div>
+</div>
+</section>
+<!-- Stakeholder Inputs -->
+<section class="mt-gutter px-margin-mobile">
+<h3 class="font-headline-md text-headline-md text-primary mb-4">Stakeholder Inputs</h3>
+<div class="space-y-gutter">
+<div class="space-y-2">
+<label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest block">Parent Concerns</label>
+<textarea class="w-full rounded-xl border border-outline-variant bg-surface-container-lowest focus:ring-secondary focus:border-secondary text-sm p-4" placeholder="Ira's parent mentioned difficulty with evening routines..." rows="3"></textarea>
+</div>
+<div class="space-y-2">
+<label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest block">School / Teacher Feedback</label>
+<textarea class="w-full rounded-xl border border-outline-variant bg-surface-container-lowest focus:ring-secondary focus:border-secondary text-sm p-4" placeholder="Classroom teacher reports improved eye contact during morning circle..." rows="3"></textarea>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-2">
+<label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest block">Mentor / CM</label>
+<textarea class="w-full rounded-xl border border-outline-variant bg-surface-container-lowest focus:ring-secondary focus:border-secondary text-sm p-3" placeholder="Notes..." rows="2"></textarea>
+</div>
+<div class="space-y-2">
+<label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest block">Therapist</label>
+<textarea class="w-full rounded-xl border border-outline-variant bg-surface-container-lowest focus:ring-secondary focus:border-secondary text-sm p-3" placeholder="Notes..." rows="2"></textarea>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Sticky Bottom Bar -->
+<footer class="fixed bottom-0 left-0 right-0 bg-surface/90 backdrop-blur-md border-t border-outline-variant px-margin-mobile py-4 flex gap-4 z-[100]">
+<button class="flex-1 py-3 px-4 border border-outline text-primary font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-lg">visibility</span>
+            Preview
+        </button>
+<button class="flex-[2] py-3 px-4 bg-primary text-on-primary font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-lg">send</span>
+            Finalize & Submit
+        </button>
+</footer>
+<!-- Simple Interactivity for the UI -->
+<script>
+        document.querySelectorAll('button').forEach(button => {
+            button.addEventListener('touchstart', function() {
+                this.classList.add('opacity-80');
+            });
+            button.addEventListener('touchend', function() {
+                this.classList.remove('opacity-80');
+            });
+        });
+
+        // Horizontal Scroll Behavior for Chips
+        const chipContainer = document.querySelector('.no-scrollbar');
+        let isDown = false;
+        let startX;
+        let scrollLeft;
+
+        chipContainer.addEventListener('mousedown', (e) => {
+            isDown = true;
+            startX = e.pageX - chipContainer.offsetLeft;
+            scrollLeft = chipContainer.scrollLeft;
+        });
+        chipContainer.addEventListener('mouseleave', () => {
+            isDown = false;
+        });
+        chipContainer.addEventListener('mouseup', () => {
+            isDown = false;
+        });
+        chipContainer.addEventListener('mousemove', (e) => {
+            if(!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - chipContainer.offsetLeft;
+            const walk = (x - startX) * 2;
+            chipContainer.scrollLeft = scrollLeft - walk;
+        });
+    </script>
+</body></html>

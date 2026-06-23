@@ -70,4 +70,11 @@
 
   /* Spacing */
   --spacing-sidebar: 280px;
+  --spacing-gutter: 24px;
+
+  /* Stitch observation aliases */
+  --color-lush-forest: #0b1c16;
+  --color-lush-mint: #d1fae5;
+  --color-lush-purple: #6b46c1;
+  --color-ai-accent: #6366f1;
 }

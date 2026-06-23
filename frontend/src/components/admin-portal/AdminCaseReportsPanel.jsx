@@ -20,11 +20,12 @@ export function AdminCaseReportsPanel({ caseId, highlightReportId, highlightType
     setLoading(true)
     try {
       const qs = `?case_id=${caseId}&page_size=50`
-      const [monthly, observation] = await Promise.all([
+      const [monthly, observation, clinicalIep] = await Promise.all([
         apiFetch(`/api/v1/admin/reports/monthly${qs}`).catch(() => ({ items: [] })),
         apiFetch(`/api/v1/admin/reports/observation${qs}`).catch(() => ({ items: [] })),
+        apiFetch(`/api/v1/admin/reports/clinical-iep${qs}`).catch(() => ({ items: [] })),
       ])
-      const merged = [...(monthly.items || []), ...(observation.items || [])].sort(
+      const merged = [...(monthly.items || []), ...(observation.items || []), ...(clinicalIep.items || [])].sort(
         (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0),
       )
       setRows(merged)
@@ -61,7 +62,7 @@ export function AdminCaseReportsPanel({ caseId, highlightReportId, highlightType
     <section>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b' }}>
-          Monthly and observation reports for this case.
+          Monthly, observation, and IEP reports for this case.
         </p>
         <Link to={`/admin/reports?case_id=${caseId}`} className="admin-btn admin-btn--ghost admin-btn--sm">
           Open report management
@@ -89,7 +90,7 @@ export function AdminCaseReportsPanel({ caseId, highlightReportId, highlightType
                   <p className="admin-queue__title">
                     {r.label}
                     <span style={{ marginLeft: 8, fontSize: '0.7rem', color: '#64748b' }}>
-                      {r.report_type === 'observation' ? 'Observation' : 'Monthly'}
+                      {r.report_type === 'observation' ? 'Observation' : r.report_type === 'iep' ? 'IEP' : 'Monthly'}
                     </span>
                   </p>
                   <p className="admin-queue__meta">
@@ -102,7 +103,7 @@ export function AdminCaseReportsPanel({ caseId, highlightReportId, highlightType
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                   <span className={statusPillClass(r.status)}>{r.status}</span>
-                  {can('monthly_report.approve') ? (
+                  {can('monthly_report.approve') && r.report_type !== 'iep' ? (
                     <button
                       type="button"
                       className="admin-btn admin-btn--primary admin-btn--sm"
@@ -110,6 +111,13 @@ export function AdminCaseReportsPanel({ caseId, highlightReportId, highlightType
                     >
                       Review
                     </button>
+                  ) : r.report_type === 'iep' ? (
+                    <Link
+                      to={`/admin/cases/${caseId}?tab=reports&section=iep&view=builder`}
+                      className="admin-btn admin-btn--primary admin-btn--sm"
+                    >
+                      Open IEP
+                    </Link>
                   ) : (
                     <Link to={hubLink(r)} className="admin-btn admin-btn--ghost admin-btn--sm">
                       View in hub

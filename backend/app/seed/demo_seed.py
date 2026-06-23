@@ -961,6 +961,10 @@ def run():
                 )
             )
 
+        from app.seed.demo_clinical_reports_seed import seed_demo_clinical_reports
+
+        seed_demo_clinical_reports(db, case1, case2, therapist, case_mgr)
+
         from app.seed.product_billing_rules_seed import seed_product_billing_rules
 
         seed_product_billing_rules(db)

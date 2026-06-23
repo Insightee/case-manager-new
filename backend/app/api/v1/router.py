@@ -40,6 +40,7 @@ from app.api.v1 import (
     clinical,
     ai_routes,
     insights_routes,
+    clinical_reports,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -83,3 +84,4 @@ api_router.include_router(memos.router)
 api_router.include_router(clinical.router)
 api_router.include_router(ai_routes.router)
 api_router.include_router(insights_routes.router)
+api_router.include_router(clinical_reports.router)

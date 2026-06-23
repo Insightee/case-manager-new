@@ -6,7 +6,7 @@ import json
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.clinical_constants import OBSERVATION_CHECKLIST_SECTIONS
+from app.report_engine_constants import OBSERVATION_REPORT_SECTIONS, REQUIRED_OBSERVATION_SECTION_KEYS
 from app.core.database import SessionLocal, ensure_sqlite_schema_patches
 from app.main import app
 from app.models.case import Case
@@ -20,6 +20,9 @@ def _login(email: str, password: str = "demo123") -> str:
     r = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
+
+
+SAMPLE_TEXT = "Structured observation notes with enough detail for completion gate."
 
 
 def test_observation_checklist_submit_and_approve():
@@ -43,9 +46,9 @@ def test_observation_checklist_submit_and_approve():
     r = client.get(f"/api/v1/cases/{case_id}/observation-checklist", headers=headers)
     assert r.status_code == 200
     data = r.json()
-    assert len(data["sections"]) == len(OBSERVATION_CHECKLIST_SECTIONS)
+    assert len(data["sections"]) == len(OBSERVATION_REPORT_SECTIONS)
 
-    responses = {s["key"]: f"Sample text for {s['key']}" for s in data["sections"]}
+    responses = {key: SAMPLE_TEXT for key in REQUIRED_OBSERVATION_SECTION_KEYS}
     r = client.put(
         f"/api/v1/cases/{case_id}/observation-checklist",
         headers=headers,

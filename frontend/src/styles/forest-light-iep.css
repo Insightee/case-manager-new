@@ -1,0 +1,21 @@
+.iep-workspace .clinical-shadow {
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.iep-workspace .live-sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #22c55e;
+  display: inline-block;
+}
+
+.iep-workspace .sticky-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(194, 200, 195, 0.5);
+  padding: 12px 16px;
+}

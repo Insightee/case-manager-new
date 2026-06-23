@@ -922,7 +922,7 @@ export function AdminReportsPage() {
                       <td>
                         <div className="admin-btn-group">
                           <Link
-                            to={`/admin/cases/${r.case_id}?tab=iep`}
+                            to={`/admin/cases/${r.case_id}?tab=reports&section=iep&view=builder`}
                             className="admin-btn admin-btn--primary admin-btn--sm"
                           >
                             Open IEP

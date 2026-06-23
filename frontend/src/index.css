@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "./styles/forest-light-theme.css";
+@import "./styles/forest-light-observation.css";
+@import "./styles/forest-light-iep.css";
+@import "./styles/clinical-report-ui.css";
 @import "./styles/admin-portal.css";
 @import "./components/admin-portal/admin-portal-mobile.css";
 @import "./styles/ux-foundations.css";

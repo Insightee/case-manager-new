@@ -7,9 +7,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.clinical_constants import OBSERVATION_CHECKLIST_SECTIONS
+from app.services import observation_report_service as obs_report_svc
+from app.services import report_engine_service
 from app.models.case import Case
 from app.models.child import Child
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
+from app.models.clinical_report import ClinicalReport, ClinicalReportSection
 from app.models.report import ObservationReport, ReportCategory, ReportStatus
 from app.models.review import ReviewDecision
 from app.models.session import Session as TherapySession
@@ -126,22 +129,59 @@ def checklist_to_dict(db: Session, checklist: ObservationChecklist, case: Case, 
         checklist.due_at = due_at
         checklist.due_rule = due_rule
     today = date.today()
+    report = None
+    if checklist.clinical_report_id:
+        report = db.get(ClinicalReport, checklist.clinical_report_id)
+    if not report:
+        report, checklist = obs_report_svc.ensure_checklist_bridge(db, case, user)
+        db.flush()
+
+    workspace = report_engine_service.serialize_report_workspace(db, report, case)
+    status_map = {
+        "draft": ObservationChecklistStatus.DRAFT.value,
+        "in_progress": ObservationChecklistStatus.DRAFT.value,
+        "submitted_for_review": ObservationChecklistStatus.SUBMITTED.value,
+        "returned_for_changes": ObservationChecklistStatus.REJECTED.value,
+        "approved": ObservationChecklistStatus.APPROVED.value,
+        "locked": ObservationChecklistStatus.APPROVED.value,
+    }
+    checklist_status = status_map.get(report.status, checklist.status)
+
+    responses = {}
+    for sec in workspace["sections"]:
+        responses[sec["key"]] = sec.get("narrative_text") or ""
+    legacy = report_engine_service.sections_to_legacy_responses(
+        list(
+            db.scalars(
+                select(ClinicalReportSection).where(ClinicalReportSection.report_id == report.id)
+            ).all()
+        )
+    )
+    responses.update(legacy)
+
     is_due = bool(checklist.due_at and checklist.due_at <= today)
     is_overdue = bool(
         checklist.due_at
         and checklist.due_at < today
-        and checklist.status
+        and checklist_status
         in (ObservationChecklistStatus.DRAFT.value, ObservationChecklistStatus.REJECTED.value)
     )
-    can_edit, can_submit = _checklist_permissions(checklist, user, case)
+    can_edit = workspace["can_edit"] and checklist.therapist_user_id == user.id
+    can_submit = workspace["can_submit"] and can_edit
     return {
         "id": checklist.id,
         "case_id": checklist.case_id,
+        "clinical_report_id": report.id,
         "product_module": case.product_module,
         "therapist_user_id": checklist.therapist_user_id,
-        "status": checklist.status,
-        "sections": OBSERVATION_CHECKLIST_SECTIONS,
-        "responses": _parse_responses(checklist.section_responses_json),
+        "status": checklist_status,
+        "engine_status": report.status,
+        "sections": workspace["sections"],
+        "section_catalog": workspace["section_catalog"],
+        "responses": responses,
+        "completion_pct": workspace["completion_pct"],
+        "submit_ready": workspace["submit_ready"],
+        "missing_required": workspace["missing_required"],
         "due_at": checklist.due_at.isoformat() if checklist.due_at else None,
         "due_rule": checklist.due_rule,
         "is_due": is_due,
@@ -152,6 +192,7 @@ def checklist_to_dict(db: Session, checklist: ObservationChecklist, case: Case, 
         "observation_report_id": checklist.observation_report_id,
         "can_edit": can_edit,
         "can_submit": can_submit,
+        "workspace": workspace,
     }
 
 
@@ -170,17 +211,19 @@ def save_checklist(
         ObservationChecklistStatus.DRAFT.value,
         ObservationChecklistStatus.REJECTED.value,
     ):
-        raise ValueError("Checklist cannot be edited in its current state")
-    checklist.section_responses_json = _dump_responses(responses)
-    if sync_clinical_profile:
-        profile = get_or_create_profile(db, case.id)
-        summary = responses.get("summary_recommendations", "").strip()
-        referral = responses.get("referral_context", "").strip()
-        if referral:
-            profile.history = referral
-        if summary:
-            profile.goals_summary = summary
-        profile.updated_by_user_id = user.id
+        report = None
+        if checklist.clinical_report_id:
+            report = db.get(ClinicalReport, checklist.clinical_report_id)
+        if not report or report.status not in (
+            "draft",
+            "in_progress",
+            "returned_for_changes",
+        ):
+            raise ValueError("Checklist cannot be edited in its current state")
+    obs_report_svc.save_observation_responses(
+        db, case, user, responses, sync_clinical_profile=sync_clinical_profile
+    )
+    checklist = get_or_create_checklist(db, case, user.id)
     db.flush()
     return checklist
 
@@ -189,27 +232,9 @@ def submit_checklist(db: Session, case: Case, user: User) -> ObservationChecklis
     checklist = get_or_create_checklist(db, case, user.id)
     if checklist.therapist_user_id != user.id:
         raise ValueError("Not authorized")
-    if checklist.status not in (
-        ObservationChecklistStatus.DRAFT.value,
-        ObservationChecklistStatus.REJECTED.value,
-    ):
-        raise ValueError("Already submitted")
-    responses = _parse_responses(checklist.section_responses_json)
-    if not any(responses.get(s["key"], "").strip() for s in OBSERVATION_CHECKLIST_SECTIONS):
-        raise ValueError("Complete at least one section before submitting")
-    checklist.status = ObservationChecklistStatus.SUBMITTED.value
-    checklist.submitted_at = datetime.now(timezone.utc)
-    checklist.reviewer_comment = None
+    obs_report_svc.submit_observation(db, case, user)
+    checklist = get_or_create_checklist(db, case, user.id)
     db.flush()
-    if case.case_manager_user_id:
-        notification_service.create_notification(
-            db,
-            user_id=case.case_manager_user_id,
-            title="Observation checklist submitted",
-            body=f"Review checklist for {case.case_code}",
-            entity_type="observation_checklist",
-            entity_id=checklist.id,
-        )
     return checklist
 
 
@@ -245,7 +270,30 @@ def approve_checklist(
     case = case_service.get_case(db, checklist.case_id)
     if not case:
         raise ValueError("Case not found")
-    responses = _parse_responses(checklist.section_responses_json)
+
+    if checklist.clinical_report_id:
+        from app.models.clinical_report import ClinicalReport
+        from app.services import report_status_service
+
+        report = db.get(ClinicalReport, checklist.clinical_report_id)
+        if report and report.status == "submitted_for_review":
+            report_status_service.approve_report(
+                db, report, reviewer, share_parent=share_with_parent
+            )
+
+    sections = list(
+        db.scalars(
+            select(ClinicalReportSection).where(
+                ClinicalReportSection.report_id == checklist.clinical_report_id
+            )
+        ).all()
+    ) if checklist.clinical_report_id else []
+    responses = {}
+    for sec in sections:
+        if sec.narrative_text:
+            responses[sec.section_key] = sec.narrative_text
+    if not responses:
+        responses = _parse_responses(checklist.section_responses_json)
     body_html = _responses_to_html(responses)
     plain = _responses_to_plain(responses)
     child_name = case.child.full_name if case.child else "Child"
@@ -323,6 +371,15 @@ def reject_checklist(
         raise ValueError("Checklist is not awaiting review")
     if not (comment or "").strip():
         raise ValueError("Reviewer comment is required")
+
+    if checklist.clinical_report_id:
+        from app.models.clinical_report import ClinicalReport
+        from app.services import report_status_service
+
+        report = db.get(ClinicalReport, checklist.clinical_report_id)
+        if report and report.status == "submitted_for_review":
+            report_status_service.return_report(db, report, reviewer, comment.strip())
+
     checklist.status = ObservationChecklistStatus.REJECTED.value
     checklist.reviewed_by_user_id = reviewer.id
     checklist.reviewer_comment = comment.strip()

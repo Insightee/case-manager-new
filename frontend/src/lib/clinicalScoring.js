@@ -72,21 +72,41 @@ export function serializeActivityPhases(phases) {
   return JSON.stringify({ initial, core, closing })
 }
 
+/** True when the therapist documented something for this goal this session. */
+export function goalHasSessionWork(goal) {
+  if (!goal) return false
+  if (goal.marked_complete_today) return true
+  const primary = (goal.strategies || [])[0]
+  const hasScores = [goal.participation_score, goal.independence_score, goal.goal_achievement_score].some(
+    (s) => s != null,
+  )
+  const hasStrategy =
+    primary &&
+    ((primary.strategy_label || '').trim() ||
+      primary.strategy_feedback ||
+      (primary.short_note || '').trim() ||
+      (Array.isArray(primary.strategy_steps) && primary.strategy_steps.some(Boolean)))
+  const hasNote = (primary?.short_note || goal.measurement_note || '').trim()
+  return hasScores || hasStrategy || Boolean(hasNote)
+}
+
 export function goalSessionStatus(goal) {
+  if (goal?.marked_complete_today) return { label: 'Done today', tone: 'success', worked: true }
+  if (!goalHasSessionWork(goal)) return { label: 'add', tone: 'muted', worked: false }
   const scores = [goal.participation_score, goal.independence_score, goal.goal_achievement_score]
   const filled = scores.filter((s) => s != null).length
-  if (filled === 0) return { label: 'NOT STARTED', tone: 'muted' }
-  if (filled === 3) return { label: 'COMPLETED TODAY', tone: 'success' }
-  return { label: 'IN PROGRESS', tone: 'progress' }
+  if (filled === 3) return { label: 'Done today', tone: 'success', worked: true }
+  return { label: 'In progress', tone: 'progress', worked: true }
 }
 
 export function sessionLogProgressPct(goals) {
-  if (!goals?.length) return 0
-  const total = goals.reduce((sum, g) => {
+  const worked = (goals || []).filter(goalHasSessionWork)
+  if (!worked.length) return 0
+  const total = worked.reduce((sum, g) => {
     const filled = [g.participation_score, g.independence_score, g.goal_achievement_score].filter((s) => s != null).length
     return sum + filled / 3
   }, 0)
-  return Math.round((total / goals.length) * 100)
+  return Math.round((total / worked.length) * 100)
 }
 
 export function emptyGoalEntry(iepGoal = null) {
@@ -104,6 +124,7 @@ export function emptyGoalEntry(iepGoal = null) {
     activity_phases: { initial: '', core: '', closing: '' },
     activity_used: '',
     measurement_note: '',
+    marked_complete_today: false,
     strategies: [],
   }
 }

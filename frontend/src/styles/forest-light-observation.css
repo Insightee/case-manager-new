@@ -1,0 +1,126 @@
+/**
+ * Observation workspace — Stitch utilities only.
+ * Layout/colors use Tailwind classes from code.html + @theme in forest-light-theme.css.
+ * Visual source: docs/design/stitch/observation-report/observation_report_comprehensive_clinical_workspace/
+ */
+
+.observation-workspace {
+  min-width: 0;
+  color: #1a1c1c;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.observation-workspace .material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+}
+
+.observation-workspace .clinical-shadow {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+}
+
+.observation-workspace .ai-suggestion {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  border: 1px dashed #c4b5fd;
+}
+
+.observation-workspace .sticky-footer {
+  box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.03);
+}
+
+.observation-workspace .live-sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0b1c16;
+  animation: ob-live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes ob-live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .observation-workspace .live-sync-dot {
+    animation: none;
+  }
+}
+
+.observation-workspace .forest-gradient {
+  background: linear-gradient(135deg, #0b1c16 0%, #1a3a30 100%);
+}
+
+/* Collapsible AI rail — sticky panel, scrollable checklist */
+.observation-workspace .ob-ai-rail__sticky {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 8rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.observation-workspace .ob-ai-rail__checklist {
+  max-height: 14rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.observation-workspace .ob-checklist-item {
+  min-height: 2.25rem;
+}
+
+.observation-workspace .ob-builder-layout--expanded {
+  width: 100%;
+  max-width: none;
+}
+
+.observation-workspace .ob-builder-layout--split {
+  width: 100%;
+  max-width: 80rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .observation-workspace .ob-ai-rail {
+    animation: ob-rail-in 0.2s ease-out;
+  }
+}
+
+@keyframes ob-rail-in {
+  from { opacity: 0; transform: translateX(0.5rem); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .observation-workspace .ob-ai-rail {
+    animation: none;
+  }
+}
+
+/* Mobile-first observation builder ergonomics */
+@media (max-width: 767px) {
+  .observation-workspace .ob-builder-layout {
+    gap: 1.5rem;
+  }
+
+  .observation-workspace .ob-ai-rail__sticky {
+    position: static;
+    max-height: none;
+  }
+
+  .observation-workspace .ob-goal-row__cta {
+    display: none;
+  }
+
+  .observation-workspace .ob-goal-row > .flex {
+    flex-wrap: wrap;
+  }
+
+  .observation-workspace .ob-sticky-footer {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+}

@@ -1024,7 +1024,8 @@ def test_workbench_summary_scoped():
 def test_viewer_cannot_patch_case():
     token = _login("viewonly@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
-    cases = client.get("/api/v1/cases", headers=headers)
+    admin_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
+    cases = client.get("/api/v1/cases?page_size=1", headers=admin_headers)
     assert cases.status_code == 200
     case_id = api_items(cases.json())[0]["id"]
     patch = client.patch(

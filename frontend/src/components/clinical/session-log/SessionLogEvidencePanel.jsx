@@ -1,28 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../../lib/apiClient.js'
 import {
   emptyGoalEntry,
   emptyStrategyRow,
+  goalHasSessionWork,
   normalizeGoalEntry,
   prepareGoalForSubmit,
   parseActivityPhases,
 } from '../../../lib/clinicalScoring.js'
 import { loadSessionLogRepository } from '../../../lib/sessionLogRepository.js'
+import {
+  buildCaseGoalsForSessionLog,
+  goalLocalId,
+  repoGoalToSessionEntry,
+  strategyRowFromRepoItem,
+} from '../../../lib/sessionLogGoals.js'
 import { AddStrategyOverlay } from './AddStrategyOverlay.jsx'
 import { CreateGoalOverlay } from './CreateGoalOverlay.jsx'
 import { GoalSessionCard } from './GoalSessionCard.jsx'
-
-function repoGoalToEntry(g) {
-  return emptyGoalEntry({
-    id: g.goal_card_id,
-    label: g.label,
-    goal_statement: g.label,
-    domain_key: g.domain_key,
-    baseline: g.goal_brief || g.baseline,
-    core_domains: g.core_domains || [],
-    core_environments: g.core_environments || [],
-  })
-}
+import { SessionLogGoalSearch } from './SessionLogGoalSearch.jsx'
 
 export function SessionLogEvidencePanel({
   caseId,
@@ -35,10 +31,12 @@ export function SessionLogEvidencePanel({
 }) {
   const [repo, setRepo] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [expandedIdx, setExpandedIdx] = useState(0)
+  const [expandedIdx, setExpandedIdx] = useState(-1)
   const [showGoalOverlay, setShowGoalOverlay] = useState(false)
   const [strategyPanelIdx, setStrategyPanelIdx] = useState(null)
   const [strategyOverlayIdx, setStrategyOverlayIdx] = useState(null)
+  const hydratedRef = useRef(null)
+  const cardRefs = useRef({})
 
   const reloadRepo = useCallback(async () => {
     if (!caseId) return null
@@ -49,8 +47,14 @@ export function SessionLogEvidencePanel({
 
   useEffect(() => {
     let cancelled = false
+    const hydrateKey = `${caseId}:${logId || 'new'}`
+
     async function hydrate() {
       if (!caseId) {
+        setLoading(false)
+        return
+      }
+      if (hydratedRef.current === hydrateKey && value?.goals?.length) {
         setLoading(false)
         return
       }
@@ -67,21 +71,26 @@ export function SessionLogEvidencePanel({
           if (evidence?.goals?.length) {
             onChange?.({
               schema_version: 2,
-              goals: evidence.goals.map((g) => normalizeGoalEntry(g)),
+              goals: evidence.goals.map((g, i) =>
+                normalizeGoalEntry({ ...g, _localId: g._localId || goalLocalId(g, i) }),
+              ),
               strategies: evidence.strategies || [],
             })
+            hydratedRef.current = hydrateKey
+            if (expandedIdx < 0) setExpandedIdx(0)
             return
           }
         }
 
-        if (!value?.goals?.length && data.goals.length) {
+        if (!value?.goals?.length) {
+          const caseGoals = buildCaseGoalsForSessionLog(data)
           onChange?.({
             schema_version: 2,
-            goals: data.goals.slice(0, 3).map(repoGoalToEntry),
+            goals: caseGoals,
             strategies: [],
           })
-        } else if (!value?.goals?.length) {
-          onChange?.({ schema_version: 2, goals: [emptyGoalEntry()], strategies: [] })
+          hydratedRef.current = hydrateKey
+          if (caseGoals.length) setExpandedIdx(0)
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -115,42 +124,82 @@ export function SessionLogEvidencePanel({
     patchGoals(goals.map((g, idx) => (idx === i ? normalizeGoalEntry({ ...g, ...patch }) : g)))
   }
 
-  async function handleGoalCreated(candidate) {
-    await reloadRepo()
-    if (candidate?.label) {
-      patchGoals([
-        ...goals,
-        repoGoalToEntry({
-          goal_card_id: null,
-          label: candidate.label,
-          domain_key: candidate.domain_key,
-          core_domains: candidate.core_domains,
-          core_environments: candidate.core_environments,
-        }),
-      ])
-      setExpandedIdx(goals.length)
+  function focusGoalIndex(idx) {
+    setExpandedIdx(idx)
+    setStrategyPanelIdx(null)
+    requestAnimationFrame(() => {
+      const el = cardRefs.current[goalLocalId(goals[idx], idx)]
+      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
+
+  function addOrFocusCaseGoal(caseGoal) {
+    const label = (caseGoal.label || '').trim().toLowerCase()
+    const existingIdx = goals.findIndex((g) => (g.goal_label || '').trim().toLowerCase() === label)
+    if (existingIdx >= 0) {
+      focusGoalIndex(existingIdx)
+      return
     }
+    const entry = repoGoalToSessionEntry(caseGoal, goals.length)
+    patchGoals([...goals, entry])
+    focusGoalIndex(goals.length)
+  }
+
+  function addGoalFromSearch(item) {
+    addOrFocusCaseGoal(item)
+  }
+
+  function attachStrategyToExpanded(item) {
+    const idx = expandedIdx >= 0 ? expandedIdx : 0
+    if (!goals[idx]) return
+    updateGoal(idx, {
+      strategies: [strategyRowFromRepoItem({ ...item, goal_card_id: goals[idx].goal_card_id })],
+    })
+    setStrategyPanelIdx(null)
+    focusGoalIndex(idx)
+  }
+
+  async function handleGoalAndStrategyCreated({ goal, strategy }) {
+    await reloadRepo()
+    const entry = {
+      ...repoGoalToSessionEntry(
+        {
+          ...goal,
+          label: goal.label,
+          baseline_state: goal.baseline_state,
+          desired_state: goal.desired_state,
+          core_domains: goal.core_domains,
+          core_environments: goal.core_environments,
+          status: goal.status || 'local',
+          id: goal.id,
+        },
+        goals.length,
+      ),
+      strategies: strategy?.label
+        ? [
+            {
+              ...emptyStrategyRow(null),
+              strategy_id: strategy.id,
+              strategy_label: strategy.label,
+              strategy_steps: strategy.strategy_steps || ['', '', ''],
+              expected_outcome: strategy.expected_outcome || strategy.when_to_use || '',
+              custom_strategy_id: strategy.id,
+            },
+          ]
+        : [],
+    }
+    patchGoals([...goals, entry])
+    focusGoalIndex(goals.length)
   }
 
   async function handleStrategyCreated(candidate, goalIdx = expandedIdx) {
     await reloadRepo()
-    if (candidate?.label) {
+    if (candidate?.label && goals[goalIdx]) {
       updateGoal(goalIdx, {
-        strategies: [
-          ...(goals[goalIdx]?.strategies || []),
-          {
-            ...emptyStrategyRow(goals[goalIdx]?.goal_card_id),
-            strategy_id: candidate.id,
-            strategy_label: candidate.label,
-            custom_strategy_id: candidate.id,
-          },
-        ],
+        strategies: [strategyRowFromRepoItem({ ...candidate, goal_card_id: goals[goalIdx].goal_card_id })],
       })
+      focusGoalIndex(goalIdx)
     }
-  }
-
-  function selectCaseGoal(i, caseGoal) {
-    updateGoal(i, repoGoalToEntry(caseGoal))
   }
 
   if (loading) {
@@ -165,7 +214,7 @@ export function SessionLogEvidencePanel({
     <section className="sl-goals-section" aria-labelledby="sl-goals-title">
       <header className="sl-goals-section__head">
         <h3 id="sl-goals-title" className="sl-goals-section__title">
-          Goals
+          Goals worked on today
         </h3>
         {!readOnly ? (
           <button type="button" className="sl-v2-btn-add" onClick={() => setShowGoalOverlay(true)}>
@@ -174,50 +223,66 @@ export function SessionLogEvidencePanel({
         ) : null}
       </header>
 
-      {goals.map((g, i) => (
-        <GoalSessionCard
-          key={i}
-          goal={g}
-          index={i}
-          expanded={expandedIdx === i}
-          onToggle={() => setExpandedIdx(expandedIdx === i ? -1 : i)}
-          readOnly={readOnly}
-          repo={repo}
-          caseId={caseId}
-          environment={environment}
-          otherCaseGoals={otherGoalsByIndex[i] || []}
-          onSelectCaseGoal={(caseGoal) => selectCaseGoal(i, caseGoal)}
-          showStrategyPanel={strategyPanelIdx === i}
-          onToggleStrategyPanel={() => setStrategyPanelIdx(strategyPanelIdx === i ? null : i)}
-          onCreateStrategy={() => {
-            setStrategyOverlayIdx(i)
-            setStrategyPanelIdx(null)
-          }}
-          onUpdate={(patch) => updateGoal(i, patch)}
-          onPickStrategy={(item) => {
-            updateGoal(i, {
-              strategies: [
-                {
-                  ...emptyStrategyRow(g.goal_card_id),
-                  strategy_id: item.strategy_id,
-                  strategy_label: item.label,
-                  strategy_steps: item.strategy_steps || ['', '', ''],
-                  expected_outcome: item.expected_outcome || item.when_to_use || '',
-                },
-              ],
-            })
-            setStrategyPanelIdx(null)
-          }}
-        />
-      ))}
+      <SessionLogGoalSearch
+        repo={repo}
+        readOnly={readOnly}
+        onPickGoal={addGoalFromSearch}
+        onPickStrategy={attachStrategyToExpanded}
+      />
+
+      {!goals.length ? (
+        <p className="gs-muted sl-goals-section__empty">
+          No case goals loaded yet. Search above, pick from your case plan, or tap <strong>+ Add goal</strong>.
+        </p>
+      ) : null}
+
+      {goals.map((g, i) => {
+        const lid = goalLocalId(g, i)
+        return (
+          <GoalSessionCard
+            key={lid}
+            cardRef={(el) => {
+              if (el) cardRefs.current[lid] = el
+            }}
+            goal={g}
+            index={i}
+            expanded={expandedIdx === i}
+            onToggle={() => {
+              if (expandedIdx === i) {
+                setExpandedIdx(-1)
+              } else {
+                focusGoalIndex(i)
+              }
+            }}
+            readOnly={readOnly}
+            repo={repo}
+            caseId={caseId}
+            environment={environment}
+            otherCaseGoals={otherGoalsByIndex[i] || []}
+            onSelectCaseGoal={addOrFocusCaseGoal}
+            showStrategyPanel={strategyPanelIdx === i}
+            onToggleStrategyPanel={() => setStrategyPanelIdx(strategyPanelIdx === i ? null : i)}
+            onCreateStrategy={() => {
+              setStrategyOverlayIdx(i)
+              setStrategyPanelIdx(null)
+            }}
+            onUpdate={(patch) => updateGoal(i, patch)}
+            onPickStrategy={(item) => {
+              updateGoal(i, { strategies: [strategyRowFromRepoItem({ ...item, goal_card_id: g.goal_card_id })] })
+              setStrategyPanelIdx(null)
+            }}
+          />
+        )
+      })}
 
       {showGoalOverlay ? (
         <CreateGoalOverlay
           caseId={caseId}
           sessionId={sessionId}
           logId={logId}
+          reportType="session"
           onClose={() => setShowGoalOverlay(false)}
-          onCreated={handleGoalCreated}
+          onCreated={handleGoalAndStrategyCreated}
         />
       ) : null}
 
@@ -241,16 +306,17 @@ export function SessionLogEvidencePanel({
 export function sessionEvidenceHasPayload(evidence) {
   if (!evidence || evidence.schema_version === 1) return false
   const goalRows = evidence.goals || []
-  const hasGoal = goalRows.some((g) => (g.goal_label || '').trim())
+  const hasGoal = goalRows.some((g) => goalHasSessionWork(g))
   const hasNestedStrat = goalRows.some((g) =>
-    (g.strategies || []).some((s) => (s.strategy_label || '').trim() || s.strategy_feedback)
+    (g.strategies || []).some((s) => (s.strategy_label || '').trim() || s.strategy_feedback),
   )
   const hasLoose = (evidence.strategies || []).some((s) => (s.strategy_label || '').trim())
   const hasScores = goalRows.some(
     (g) =>
       g.participation_score != null ||
       g.independence_score != null ||
-      g.goal_achievement_score != null
+      g.goal_achievement_score != null ||
+      g.marked_complete_today,
   )
   const hasActivities = goalRows.some((g) => {
     const steps = (g.strategies || [])[0]?.strategy_steps || []
@@ -263,7 +329,7 @@ export function sessionEvidenceHasPayload(evidence) {
 
 export function buildActivitiesDoneFromEvidence(evidence) {
   if (!evidence?.goals?.length) return ''
-  const parts = evidence.goals.flatMap((g) => {
+  const parts = evidence.goals.filter(goalHasSessionWork).flatMap((g) => {
     const label = g.goal_label ? `${g.goal_label}: ` : ''
     const steps = (g.strategies || [])[0]?.strategy_steps || []
     const fromSteps = steps.filter(Boolean).map((x) => `${label}${x}`)
@@ -276,8 +342,9 @@ export function buildActivitiesDoneFromEvidence(evidence) {
 
 export function prepareEvidenceForSubmit(evidence) {
   if (!evidence) return evidence
+  const workedGoals = (evidence.goals || []).filter(goalHasSessionWork).map((g) => prepareGoalForSubmit(g))
   return {
     ...evidence,
-    goals: (evidence.goals || []).map((g) => prepareGoalForSubmit(g)),
+    goals: workedGoals,
   }
 }

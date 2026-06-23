@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
+from app.tests.conftest import cm_email_for_case_id
 
 client = TestClient(app)
 
@@ -118,7 +119,7 @@ def test_parent_cannot_see_internal_document():
 def test_cm_review_approve_and_parent_sees_published():
     parent_headers = _login("parent@demo.com")
     case_id = _parent_case_id(parent_headers)
-    cm_headers = _login("casemanager@demo.com")
+    cm_headers = _login(cm_email_for_case_id(case_id))
     create = client.post(
         f"/api/v1/cases/{case_id}/documents",
         headers=cm_headers,
@@ -136,15 +137,14 @@ def test_cm_review_approve_and_parent_sees_published():
         headers=cm_headers,
         json={},
     )
-    cm_review_headers = _login("shadowcm@demo.com")
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/approve",
-        headers=cm_review_headers,
+        headers=cm_headers,
         json={"visibility": "CLIENT_VISIBLE_AFTER_APPROVAL"},
     )
     client.post(
         f"/api/v1/documents/{doc_id}/workflow/publish_client",
-        headers=cm_review_headers,
+        headers=cm_headers,
         json={},
     )
     parent_headers = _login("parent@demo.com")

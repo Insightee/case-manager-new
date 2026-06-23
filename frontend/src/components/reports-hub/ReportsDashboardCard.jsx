@@ -44,6 +44,13 @@ function progressPct(item) {
   return 60
 }
 
+function handleCardKeyDown(e, onActivate) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    onActivate()
+  }
+}
+
 export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
   const status = statusMeta(item)
   const urgency = urgencyLabel(item)
@@ -52,8 +59,19 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
   const cmName = caseMeta?.caseManagerName || 'Unassigned'
   const tone = avatarTone(item.child)
 
+  function openReports() {
+    onViewReports?.(item)
+  }
+
   return (
-    <article className="reports-dashboard-card">
+    <article
+      className="reports-dashboard-card reports-dashboard-card--interactive"
+      role="button"
+      tabIndex={0}
+      onClick={openReports}
+      onKeyDown={(e) => handleCardKeyDown(e, openReports)}
+      aria-label={`${item.child}, ${reportType}, ${status.label}. View reports.`}
+    >
       <div className="reports-dashboard-card__head">
         <div className="reports-dashboard-card__identity">
           <span className={`reports-dashboard-card__avatar reports-dashboard-card__avatar--${tone}`} aria-hidden="true">
@@ -98,10 +116,10 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
         <p className="reports-dashboard-card__updated">
           Updated: {item.lastUpdated || item.month || '—'}
         </p>
-        <button type="button" className="reports-dashboard-card__cta" onClick={() => onViewReports(item)}>
+        <span className="reports-dashboard-card__cta" aria-hidden="true">
           View Reports
-          <span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
-        </button>
+          <span className="material-symbols-outlined">arrow_forward</span>
+        </span>
       </div>
     </article>
   )

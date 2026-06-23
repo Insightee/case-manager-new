@@ -117,6 +117,7 @@ function ParentReportsPageFull() {
   const [commentBody, setCommentBody] = useState('')
   const [commentType, setCommentType] = useState('GENERAL')
   const [goalSuggestionText, setGoalSuggestionText] = useState('')
+  const [clinicalIepInputText, setClinicalIepInputText] = useState('')
   const [acting, setActing] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -342,6 +343,24 @@ function ParentReportsPageFull() {
       setDetail({ ...refreshed, kind: 'iep' })
     } catch (err) {
       setError(err.message || 'Acknowledge failed')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function submitClinicalIepInput() {
+    if (!detail?.caseDbId || !clinicalIepInputText.trim()) return
+    setActing(true)
+    setError('')
+    try {
+      await apiFetch(`/api/v1/parent/cases/${detail.caseDbId}/iep-inputs`, {
+        method: 'POST',
+        body: JSON.stringify({ body: clinicalIepInputText.trim() }),
+      })
+      setClinicalIepInputText('')
+      setMessage('Your input was shared with the care team.')
+    } catch (err) {
+      setError(err.message || 'Could not share input right now')
     } finally {
       setActing(false)
     }
@@ -598,6 +617,31 @@ function ParentReportsPageFull() {
                       </li>
                     ))}
                   </ul>
+                </section>
+              ) : null}
+
+              {detail?.kind === 'iep' && detail.caseDbId ? (
+                <section className="parent-reports__goal-suggest" style={{ marginTop: 16 }}>
+                  <h3 style={{ fontSize: 15 }}>Share your input</h3>
+                  <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 8px' }}>
+                    Tell us what is working at home or what you would like the team to know about this plan.
+                  </p>
+                  <textarea
+                    value={clinicalIepInputText}
+                    onChange={(e) => setClinicalIepInputText(e.target.value)}
+                    rows={3}
+                    placeholder="Your thoughts on the support plan…"
+                    style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                  />
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary"
+                    style={{ marginTop: 8 }}
+                    disabled={acting || !clinicalIepInputText.trim()}
+                    onClick={submitClinicalIepInput}
+                  >
+                    Send input
+                  </button>
                 </section>
               ) : null}
 
