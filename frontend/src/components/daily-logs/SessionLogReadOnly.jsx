@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import { apiFetch } from '../../lib/apiClient.js'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
@@ -18,6 +20,218 @@ export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'follow_ups', label: 'Follow-ups' },
   { key: 'late_reason', label: 'Late reason' },
 ]
+
+function TeamLogCommentsSection({ logId, variant }) {
+  const [comments, setComments] = useState([])
+  const [newComment, setNewComment] = useState('')
+  const [visibility, setVisibility] = useState('parent_team')
+  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  async function loadComments() {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await apiFetch(`/api/v1/daily-logs/${logId}/comments`)
+      setComments(data || [])
+    } catch (err) {
+      setError(err.message || 'Could not load comments')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadComments()
+  }, [logId])
+
+  async function handlePostComment(e) {
+    e.preventDefault()
+    if (!newComment.trim()) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const posted = await apiFetch(`/api/v1/daily-logs/${logId}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ body: newComment.trim(), visibility }),
+      })
+      setComments((prev) => [...prev, posted])
+      setNewComment('')
+      loadComments()
+    } catch (err) {
+      setError(err.message || 'Could not post comment')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleUpdateStatus(commentId, newStatus) {
+    try {
+      await apiFetch(`/api/v1/daily-logs/comments/${commentId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus }),
+      })
+      setComments((prev) =>
+        prev.map((c) => (c.id === commentId ? { ...c, status: newStatus } : c))
+      )
+    } catch (err) {
+      alert(err.message || 'Could not update comment status')
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 16, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+      <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#334155', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        💬 Comments & Parent Discussion
+      </h4>
+
+      {loading && comments.length === 0 ? (
+        <p style={{ color: '#94a3b8', fontSize: '0.8125rem' }}>Loading comments...</p>
+      ) : null}
+
+      {comments.length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+          {comments.map((c) => {
+            const isParent = c.author_role === 'parent'
+            const isInternal = c.visibility === 'internal_only'
+            const statusLabel =
+              c.status === 'resolved'
+                ? 'Closed'
+                : c.status === 'acknowledged'
+                ? 'Reviewed by team'
+                : 'Open'
+            const statusColor =
+              c.status === 'resolved'
+                ? '#64748b'
+                : c.status === 'acknowledged'
+                ? '#16a34a'
+                : '#d97706'
+
+            return (
+              <div
+                key={c.id}
+                style={{
+                  background: isInternal ? '#fef2f2' : isParent ? '#f0f9ff' : '#f8fafc',
+                  padding: 10,
+                  borderRadius: 8,
+                  border: isInternal ? '1px solid #fecaca' : isParent ? '1px solid #bae6fd' : '1px solid #e2e8f0',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                  <div>
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b' }}>
+                      {c.author_name || 'User'}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: 6, textTransform: 'capitalize' }}>
+                      ({c.author_role || 'staff'})
+                    </span>
+                    {isInternal && (
+                      <span style={{ fontSize: '0.7rem', background: '#fee2e2', color: '#991b1b', padding: '1px 4px', borderRadius: 4, marginLeft: 6, fontWeight: 600 }}>
+                        Internal Note
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                    {c.created_at ? new Date(c.created_at).toLocaleString() : ''}
+                  </span>
+                </div>
+                
+                <p style={{ margin: '4px 0 8px', fontSize: '0.8125rem', color: '#334155', whiteSpace: 'pre-wrap' }}>
+                  {c.body}
+                </p>
+
+                {isParent && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                      Status: <strong style={{ color: statusColor }}>{statusLabel}</strong>
+                    </span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {c.status === 'open' && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateStatus(c.id, 'acknowledged')}
+                          style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 4, cursor: 'pointer' }}
+                        >
+                          Acknowledge
+                        </button>
+                      )}
+                      {c.status !== 'resolved' && (variant === 'admin' || variant === 'case_manager') && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateStatus(c.id, 'resolved')}
+                          style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}
+                        >
+                          Resolve
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        !loading && <p style={{ color: '#94a3b8', fontSize: '0.8125rem', fontStyle: 'italic', margin: '0 0 10px' }}>No comments yet.</p>
+      )}
+
+      {error && <p style={{ color: '#dc2626', fontSize: '0.8125rem', marginBottom: 8 }}>{error}</p>}
+
+      <form onSubmit={handlePostComment} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <textarea
+          placeholder="Reply to parent or add note..."
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+          disabled={submitting}
+          rows={2}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            fontSize: '0.8125rem',
+            borderRadius: 6,
+            border: '1px solid #cbd5e1',
+            outline: 'none',
+            background: '#fff',
+            resize: 'vertical'
+          }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <label style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name={`visibility-${logId}`}
+                value="parent_team"
+                checked={visibility === 'parent_team'}
+                onChange={() => setVisibility('parent_team')}
+              />
+              Reply to parent
+            </label>
+            <label style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name={`visibility-${logId}`}
+                value="internal_only"
+                checked={visibility === 'internal_only'}
+                onChange={() => setVisibility('internal_only')}
+              />
+              Internal note
+            </label>
+          </div>
+          <button
+            type="submit"
+            disabled={submitting || !newComment.trim()}
+            className="ic-btn ic-btn--primary"
+            style={{ padding: '6px 16px', fontSize: '0.8125rem' }}
+          >
+            {submitting ? 'Sending...' : 'Send'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
 
 export function SessionLogReadOnly({
   log,
@@ -131,6 +345,7 @@ export function SessionLogReadOnly({
           )
         })}
       </dl>
+      {log?.id > 0 && <TeamLogCommentsSection logId={log.id} variant={variant} />}
     </section>
   )
 }

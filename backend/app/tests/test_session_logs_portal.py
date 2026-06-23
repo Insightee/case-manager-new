@@ -289,4 +289,4 @@ def test_daily_log_submission_emails_parent(monkeypatch):
 
     approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=approve_headers)
     assert approved.status_code == 200
-    assert published, "Expected parent email on session log approval"
+    assert published == [], "CM approval should NOT send parent email (disabled by default; edits show in-app)"

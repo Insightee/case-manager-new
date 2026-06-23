@@ -191,7 +191,35 @@ def parent_cases(user: User = Depends(get_current_user), db: Session = Depends(g
     return parent_service.list_parent_cases(db, user)
 
 
-def _parent_session_log_read(log: DailyLog, case: Case | None, therapist: User | None) -> ParentSessionLogRead:
+def _get_log_comments(db: Session, log_id: int) -> list[LogCommentRead]:
+    from app.models.document_comment import DocumentComment
+    comments = db.scalars(
+        select(DocumentComment)
+        .where(
+            DocumentComment.entity_type == "daily_log",
+            DocumentComment.entity_id == log_id,
+            DocumentComment.visibility == "parent_team"
+        )
+        .order_by(DocumentComment.created_at.asc())
+    ).all()
+    out = []
+    for c in comments:
+        author = db.get(User, c.author_user_id)
+        out.append(
+            LogCommentRead(
+                id=c.id,
+                body=c.body,
+                author_name=author.full_name if author else None,
+                author_role=c.author_role,
+                visibility=c.visibility,
+                status=c.status,
+                created_at=c.created_at
+            )
+        )
+    return out
+
+
+def _parent_session_log_read(db: Session, log: DailyLog, case: Case | None, therapist: User | None) -> ParentSessionLogRead:
     from app.core.session_times import effective_session_datetimes
 
     fields = parent_home_service.parent_log_card_fields(
@@ -199,6 +227,15 @@ def _parent_session_log_read(log: DailyLog, case: Case | None, therapist: User |
     )
     s = log.session
     eff_start, eff_end = effective_session_datetimes(s, log) if s else (None, None)
+    
+    display_status = "Under Review"
+    if log.approval_status == LogApprovalStatus.APPROVED:
+        display_status = "Reviewed"
+    elif log.approval_status == LogApprovalStatus.REJECTED:
+        display_status = "Changes Requested"
+
+    comments_list = _get_log_comments(db, log.id)
+
     return ParentSessionLogRead(
         id=log.id,
         case_id=s.case_id if s else 0,
@@ -230,6 +267,9 @@ def _parent_session_log_read(log: DailyLog, case: Case | None, therapist: User |
         attendance_label=fields.get("attendance_label"),
         what_we_did=fields.get("what_we_did"),
         what_is_next=fields.get("what_is_next"),
+        parent_display_status=display_status,
+        can_parent_comment=True,
+        comments=comments_list,
     )
 
 
@@ -331,6 +371,9 @@ def _parent_virtual_session_log_read(db: Session, session: TherapySession, case:
         summary_paragraph=headline,
         absence_reason=absence_req.reason if absence_req else (session.actual_times_edit_reason or None),
         dispute_status=dispute_status,
+        parent_display_status="Reviewed",
+        can_parent_comment=True,
+        comments=_get_log_comments(db, -session.id),
     )
 
 
@@ -360,8 +403,6 @@ def parent_session_logs(
         .where(
             TherapySession.case_id.in_(cases.keys()),
             DailyLog.submitted_at.isnot(None),
-            DailyLog.visibility_status.in_(PARENT_VISIBLE),
-            DailyLog.approval_status == LogApprovalStatus.APPROVED,
         )
         .options(
             selectinload(DailyLog.session).selectinload(TherapySession.case).selectinload(Case.child),
@@ -382,7 +423,7 @@ def parent_session_logs(
             continue
         case = cases.get(s.case_id)
         therapist = db.get(User, s.therapist_user_id)
-        result.append(_parent_session_log_read(log, case, therapist))
+        result.append(_parent_session_log_read(db, log, case, therapist))
     
     # Query virtual sessions (Client Absent / Client Leave / Therapist Leave)
     session_stmt = select(TherapySession).where(
@@ -449,7 +490,7 @@ def parent_session_log_feedback(
     db.refresh(log)
     s = log.session
     therapist = db.get(User, s.therapist_user_id)
-    return _parent_session_log_read(log, case, therapist)
+    return _parent_session_log_read(db, log, case, therapist)
 
 
 class SessionDisputeCreate(BaseModel):
@@ -543,7 +584,8 @@ def parent_list_log_comments(
         select(DocumentComment)
         .where(
             DocumentComment.entity_type == "daily_log",
-            DocumentComment.entity_id == log_id
+            DocumentComment.entity_id == log_id,
+            DocumentComment.visibility == "parent_team"
         )
         .order_by(DocumentComment.created_at.asc())
     ).all()
@@ -556,6 +598,9 @@ def parent_list_log_comments(
                 id=c.id,
                 body=c.body,
                 author_name=author.full_name if author else None,
+                author_role=c.author_role,
+                visibility=c.visibility,
+                status=c.status,
                 created_at=c.created_at
             )
         )
@@ -598,6 +643,9 @@ def parent_add_log_comment(
         entity_id=log_id,
         case_id=case_id,
         author_user_id=user.id,
+        author_role="parent",
+        visibility="parent_team",
+        status="open",
         body=payload.body.strip(),
         comment_type="GENERAL"
     )
@@ -609,6 +657,9 @@ def parent_add_log_comment(
         id=comment.id,
         body=comment.body,
         author_name=user.full_name or user.email,
+        author_role=comment.author_role,
+        visibility=comment.visibility,
+        status=comment.status,
         created_at=comment.created_at
     )
 

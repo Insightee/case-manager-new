@@ -347,7 +347,12 @@ def list_log_comments(
         log = log_service.get_log(db, log_id)
         if not log:
             raise HTTPException(status_code=404, detail="Log not found")
-        _log_case_scope(db, user, log)
+        own_logs_only = _therapist_lists_own_logs_only(user)
+        if own_logs_only:
+            if not log.session or log.session.therapist_user_id != user.id:
+                raise HTTPException(status_code=403, detail="Log access denied")
+        else:
+            _log_case_scope(db, user, log)
     else:
         session = db.get(TherapySession, -log_id)
         if not session:
@@ -373,6 +378,9 @@ def list_log_comments(
                 id=c.id,
                 body=c.body,
                 author_name=author.full_name if author else None,
+                author_role=c.author_role,
+                visibility=c.visibility,
+                status=c.status,
                 created_at=c.created_at
             )
         )
@@ -391,7 +399,12 @@ def add_log_comment(
         log = log_service.get_log(db, log_id)
         if not log:
             raise HTTPException(status_code=404, detail="Log not found")
-        _log_case_scope(db, user, log)
+        own_logs_only = _therapist_lists_own_logs_only(user)
+        if own_logs_only:
+            if not log.session or log.session.therapist_user_id != user.id:
+                raise HTTPException(status_code=403, detail="Log access denied")
+        else:
+            _log_case_scope(db, user, log)
         case_id = log.session.case_id if log.session else None
     else:
         session = db.get(TherapySession, -log_id)
@@ -405,15 +418,41 @@ def add_log_comment(
     if not case_id:
         raise HTTPException(status_code=400, detail="Cannot comment on logs without a linked case")
 
+    # Determine author role
+    author_role = "therapist"
+    if "SUPER_ADMIN" in user.role_names or "MODULE_ADMIN" in user.role_names:
+        author_role = "admin"
+    elif "CASE_MANAGER" in user.role_names:
+        author_role = "case_manager"
+    elif "PARENT" in user.role_names:
+        author_role = "parent"
+
     comment = DocumentComment(
         entity_type="daily_log",
         entity_id=log_id,
         case_id=case_id,
         author_user_id=user.id,
+        author_role=author_role,
+        visibility=payload.visibility or "parent_team",
+        status="open",
         body=payload.body.strip(),
         comment_type="GENERAL"
     )
     db.add(comment)
+
+    # Acknowledge parent comments if team replies in public thread
+    if author_role in ("therapist", "case_manager", "admin") and (payload.visibility or "parent_team") == "parent_team":
+        db.execute(
+            DocumentComment.__table__.update()
+            .where(
+                DocumentComment.entity_type == "daily_log",
+                DocumentComment.entity_id == log_id,
+                DocumentComment.author_role == "parent",
+                DocumentComment.status == "open"
+            )
+            .values(status="acknowledged")
+        )
+
     db.commit()
     db.refresh(comment)
 
@@ -421,5 +460,53 @@ def add_log_comment(
         id=comment.id,
         body=comment.body,
         author_name=user.full_name or user.email,
+        author_role=comment.author_role,
+        visibility=comment.visibility,
+        status=comment.status,
+        created_at=comment.created_at
+    )
+
+
+class CommentStatusUpdate(BaseModel):
+    status: str
+
+
+@router.patch("/comments/{comment_id}/status", response_model=LogCommentRead)
+def update_comment_status(
+    comment_id: int,
+    payload: CommentStatusUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.status not in ("open", "acknowledged", "resolved"):
+        raise HTTPException(status_code=400, detail="Invalid status value")
+    comment = db.get(DocumentComment, comment_id)
+    if not comment or comment.entity_type != "daily_log":
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    case = case_service.get_case(db, comment.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Case access denied")
+
+    is_admin_or_cm = (
+        "SUPER_ADMIN" in user.role_names
+        or "MODULE_ADMIN" in user.role_names
+        or "CASE_MANAGER" in user.role_names
+    )
+    if not is_admin_or_cm and payload.status == "resolved":
+        raise HTTPException(status_code=403, detail="Only Case Manager or Admin can resolve comments")
+
+    comment.status = payload.status
+    db.commit()
+    db.refresh(comment)
+
+    author = db.get(User, comment.author_user_id)
+    return LogCommentRead(
+        id=comment.id,
+        body=comment.body,
+        author_name=author.full_name if author else None,
+        author_role=comment.author_role,
+        visibility=comment.visibility,
+        status=comment.status,
         created_at=comment.created_at
     )

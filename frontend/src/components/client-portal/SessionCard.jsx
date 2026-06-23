@@ -69,12 +69,41 @@ function LogCommentsSection({ logId }) {
           {comments.map((c) => (
             <div key={c.id} style={{ background: '#f8fafc', padding: 8, borderRadius: 8, border: '1px solid #f1f5f9' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>{c.author_name || 'User'}</span>
+                <div>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>{c.author_name || 'User'}</span>
+                  {c.author_role && (
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', marginLeft: 4, textTransform: 'capitalize' }}>
+                      ({c.author_role})
+                    </span>
+                  )}
+                </div>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                   {c.created_at ? new Date(c.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : ''}
                 </span>
               </div>
-              <p style={{ margin: 0, fontSize: '0.8125rem', color: '#334155', whiteSpace: 'pre-wrap' }}>{c.body}</p>
+              <p style={{ margin: '0 0 6px 0', fontSize: '0.8125rem', color: '#334155', whiteSpace: 'pre-wrap' }}>{c.body}</p>
+              {c.author_role === 'parent' && (
+                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                  Status:{' '}
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      color:
+                        c.status === 'resolved'
+                          ? '#64748b'
+                          : c.status === 'acknowledged'
+                          ? '#16a34a'
+                          : '#d97706',
+                    }}
+                  >
+                    {c.status === 'resolved'
+                      ? 'Closed'
+                      : c.status === 'acknowledged'
+                      ? 'Team has reviewed this'
+                      : 'Shared with team'}
+                  </span>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -178,10 +207,33 @@ export function SessionCard({ log, onSaved, onDispute }) {
             </p>
           ) : null}
         </div>
-        <span className={`session-card__badge ${isTherapistLeave ? 'session-card__badge--neutral' : ''}`}>
-          {badgeLabel}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          <span className={`session-card__badge ${isTherapistLeave ? 'session-card__badge--neutral' : ''}`}>
+            {badgeLabel}
+          </span>
+          {localLog.parent_display_status && (
+            <span
+              className="session-card__badge"
+              style={
+                localLog.parent_display_status === 'Under Review'
+                  ? { background: '#fef3c7', color: '#d97706', borderColor: '#fde68a' }
+                  : localLog.parent_display_status === 'Changes Requested'
+                  ? { background: '#fee2e2', color: '#b91c1c', borderColor: '#fecaca' }
+                  : { background: '#dcfce7', color: '#15803d', borderColor: '#bbf7d0' }
+              }
+            >
+              {localLog.parent_display_status}
+            </span>
+          )}
+        </div>
       </header>
+
+      {localLog.parent_display_status === 'Under Review' && (
+        <div style={{ padding: '10px 14px', background: '#fffbeb', borderBottom: '1px solid #fde68a', fontSize: '0.8125rem', color: '#b45309', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>💡</span>
+          <span>This session note has been submitted by the therapist and is currently under review. You can add comments if you have questions or context to share.</span>
+        </div>
+      )}
 
       {!isVirtual ? (
         <SessionLogParentBody log={localLog} collapsible />

@@ -59,7 +59,7 @@ def test_duplicate_leave_request_gating():
         }
     )
     assert res2.status_code == 400
-    assert "Leave is already marked for this date. View existing leave." in res2.json()["detail"]
+    assert "Please cancel the existing leave first if you need to resubmit." in res2.json()["detail"]
 
 
 def test_virtual_daily_logs_returned():

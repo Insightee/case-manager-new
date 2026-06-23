@@ -34,10 +34,13 @@ def test_therapist_reviews_endpoint():
 def test_parent_feedback_share_public_and_list():
     parent_token = _login("parent@demo.com")
     ph = {"Authorization": f"Bearer {parent_token}"}
-    logs = client.get("/api/v1/parent/session-logs", headers=ph)
-    if logs.status_code != 200 or not logs.json():
-        pytest.skip("No parent-visible session logs in seed")
-    log_id = logs.json()[0]["id"]
+    logs_res = client.get("/api/v1/parent/session-logs", headers=ph)
+    assert logs_res.status_code == 200
+    logs = logs_res.json()
+    approved_log = next((row for row in logs if row.get("parent_display_status") == "Reviewed"), None)
+    if not approved_log:
+        pytest.skip("No approved parent-visible session logs in seed")
+    log_id = approved_log["id"]
     patch = client.patch(
         f"/api/v1/parent/session-logs/{log_id}/feedback",
         headers=ph,

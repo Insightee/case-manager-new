@@ -71,6 +71,7 @@ def render_template(template_key: str, payload: dict[str, Any], *, locale: str =
         "cm_meeting_invite": _cm_meeting_invite,
         "session_log_submitted": _session_log_submitted,
         "session_log_published": _session_log_published,
+        "session_log_reviewed": _session_log_reviewed,
         "leave_approved_parent": _leave_approved_parent,
         "leave_approved_therapist": _leave_approved_therapist,
     }
@@ -306,7 +307,8 @@ def _session_log_submitted(payload: dict[str, Any], *, locale: str = "en") -> tu
     text = (
         f"Hi {parent_name},\n\n"
         f"{therapist_name} submitted a session log for {child_name} on {session_date}. "
-        f"It is pending review by your case manager and will appear in your portal once approved.\n\n"
+        f"It is now available to view in your portal as 'Under Review'. You can also post comments or questions directly on the log.\n\n"
+        f"Any future edits or final notes from the clinical team will show up directly in the app.\n\n"
         + (f"View your portal: {portal_url}\n" if portal_url else "")
     )
     portal_html = _button(portal_url, "Open parent portal") if portal_url else ""
@@ -314,12 +316,13 @@ def _session_log_submitted(payload: dict[str, Any], *, locale: str = "en") -> tu
         f"<p>Hi {escape(str(parent_name))},</p>"
         f"<p><strong>{escape(str(therapist_name))}</strong> submitted a session log for "
         f"<strong>{escape(str(child_name))}</strong> on <strong>{escape(str(session_date))}</strong>.</p>"
-        f"<p>Your case manager will review it shortly. You will receive another email when it is "
-        f"available to view in your portal.</p>"
+        f"<p>It is now available to view in your portal as <strong>Under Review</strong>. You can also post comments or questions directly on the log.</p>"
+        f"<p>Any future edits or final notes from the clinical team will show up directly in the app.</p>"
         f"{portal_html}"
     )
     html = _layout(title=subject, body_html=body, locale=locale)
     return subject, text, html
+
 
 
 def _session_log_published(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
@@ -340,6 +343,32 @@ def _session_log_published(payload: dict[str, Any], *, locale: str = "en") -> tu
         f"<p>A session log from <strong>{escape(str(therapist_name))}</strong> for "
         f"<strong>{escape(str(child_name))}</strong> on <strong>{escape(str(session_date))}</strong> "
         f"is now available in your portal.</p>"
+        f"{_button(portal_url, 'View session log') if portal_url else ''}"
+    )
+    html = _layout(title=subject, body_html=body, locale=locale)
+    return subject, text, html
+
+
+def _session_log_reviewed(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    parent_name = payload.get("parent_name", "there")
+    child_name = payload.get("child_name", "your child")
+    therapist_name = payload.get("therapist_name", "your therapist")
+    session_date = payload.get("session_date", "")
+    portal_url = (payload.get("portal_url") or "").strip()
+    subject = "Your child’s session log has been reviewed"
+    text = (
+        f"Hi {parent_name},\n\n"
+        f"The session log from {therapist_name} for {child_name} on {session_date} "
+        f"has been reviewed by the clinical team and is ready to view.\n\n"
+        f"Any comments you posted remain visible in the log thread.\n\n"
+        + (f"View session log: {portal_url}\n" if portal_url else "")
+    )
+    body = (
+        f"<p>Hi {escape(str(parent_name))},</p>"
+        f"<p>The session log from <strong>{escape(str(therapist_name))}</strong> for "
+        f"<strong>{escape(str(child_name))}</strong> on <strong>{escape(str(session_date))}</strong> "
+        f"has been reviewed by the clinical team.</p>"
+        f"<p>Any comments you posted remain visible in the log thread.</p>"
         f"{_button(portal_url, 'View session log') if portal_url else ''}"
     )
     html = _layout(title=subject, body_html=body, locale=locale)
