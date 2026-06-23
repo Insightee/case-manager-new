@@ -51,10 +51,7 @@ export function SessionBrief({ session, childName, caseCode, log = null, onEditT
         {scheduledLine ? (
           <>
             <dt>Scheduled</dt>
-            <dd>
-              {scheduledLine}
-              {session.mode ? ` · ${session.mode}` : ''}
-            </dd>
+            <dd>{scheduledLine}</dd>
           </>
         ) : null}
         {clockRange ? (

@@ -35,7 +35,6 @@ export function SessionVisitPanel({
             {session.start_time ? (
               <> · {formatTime(session.start_time)}–{formatTime(session.end_time)}</>
             ) : null}
-            {session.mode ? <> · {session.mode}</> : null}
           </p>
         </div>
         {onClose ? (

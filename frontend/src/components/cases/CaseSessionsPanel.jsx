@@ -340,7 +340,7 @@ export function CaseSessionsPanel({
             {upcoming.map((s) => (
               <li key={s.id} className="ic-case-sessions__row">
                 <span>
-                  {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)} · {s.mode}
+                  {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)}
                 </span>
               </li>
             ))}

@@ -97,7 +97,7 @@ export function SessionAbsenceSheet({
           >
             {sessions.map((s) => (
               <option key={s.id} value={s.id}>
-                {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)} · {s.mode}
+                {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)}
               </option>
             ))}
           </select>
