@@ -119,6 +119,13 @@ export function DailyLogsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const handleRetry = () => {
+    setError('')
+    queryClient.invalidateQueries({ queryKey: queryKeys.therapistWorkspace })
+    if (therapistId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.therapistDailyLogs(therapistId) })
+    }
+  }
   const [logTab, setLogTab] = useState('all')
   const [viewingLog, setViewingLog] = useState(null)
   const [sameDayConflict, setSameDayConflict] = useState(null)
@@ -679,7 +686,16 @@ export function DailyLogsPage() {
         </div>
       </header>
 
-      {error ? (
+      {error && String(error).includes('Connection unstable') ? (
+        <div className="ic-alert ic-alert--warn" style={{ borderLeft: '4px solid #f59e0b', backgroundColor: '#fffbeb', color: '#b45309', padding: '12px', marginBottom: 20, borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <strong>Connection Unstable</strong> — You are still logged in, but we cannot reach the server. Your drafts are saved on this device.
+          </div>
+          <button type="button" className="ic-btn ic-btn--secondary" onClick={handleRetry} style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
+            Retry now
+          </button>
+        </div>
+      ) : error ? (
         <div className="ic-alert ic-alert--error">{error}</div>
       ) : null}
       {success ? (
@@ -687,22 +703,18 @@ export function DailyLogsPage() {
       ) : null}
 
       {active ? (
-        <section className="ic-case-active" style={{ marginBottom: 24 }}>
-          <p className="ic-case-active__title">Session in progress</p>
+        <section className="ic-case-active" style={{ marginBottom: 24, border: '2px solid #f59e0b', backgroundColor: '#fffbeb', borderRadius: '8px', padding: '16px' }}>
+          <p className="ic-case-active__title" style={{ color: '#d97706', fontWeight: 'bold', fontSize: '1.1rem', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            ⚠️ Unfinished Session Found
+          </p>
           <p style={{ margin: '0 0 4px', fontSize: '0.875rem' }}>
-            {active.child_name || active.case_code} · {formatDisplayDate(active.scheduled_date)}
+            <strong>{active.child_name || active.case_code}</strong> · {formatDisplayDate(active.scheduled_date)}
             {active.auto_end_label ? (
               <span style={{ display: 'block', marginTop: 4, fontSize: '0.8125rem', fontWeight: 600, color: '#b45309' }}>
                 {active.auto_end_label}
               </span>
             ) : active.auto_ended ? (
               <span style={{ color: '#b45309' }}> (auto-ended)</span>
-            ) : null}
-            {active.case_id ? (
-              <>
-                {' · '}
-                <Link to={`/therapist/cases/${active.case_id}`}>Open case</Link>
-              </>
             ) : null}
           </p>
           {active.start_time ? (
@@ -723,13 +735,17 @@ export function DailyLogsPage() {
             {formatDuration(active.actual_start_at, tick)}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            {active.case_id ? (
+              <Link to={`/therapist/cases/${active.case_id}`} className="ic-btn ic-btn--primary">
+                Resume Session
+              </Link>
+            ) : null}
             <button
               type="button"
-              className="ic-btn ic-btn--primary"
-              style={{ background: '#dc2626', borderColor: '#dc2626' }}
+              className="ic-btn ic-btn--secondary"
               onClick={() => handleEnd(active.id)}
             >
-              End session & write log
+              End Session
             </button>
             <button
               type="button"
@@ -737,7 +753,7 @@ export function DailyLogsPage() {
               disabled={cancelBusy}
               onClick={() => handleCancel(active.id)}
             >
-              {cancelBusy ? 'Cancelling…' : 'Cancel session'}
+              {cancelBusy ? 'Cancelling…' : 'Cancel Session'}
             </button>
           </div>
         </section>

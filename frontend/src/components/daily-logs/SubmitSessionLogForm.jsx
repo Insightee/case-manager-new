@@ -333,6 +333,17 @@ export function SubmitSessionLogForm({
         />
       ) : null}
 
+      {session?.auto_ended ? (
+        <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn" style={{ borderLeft: '4px solid #f59e0b', backgroundColor: '#fffbeb', color: '#b45309', padding: '12px', margin: '0 0 16px 0', borderRadius: '4px' }}>
+          This session was auto-ended because it exceeded the expected duration. Please review actual start/end time before submitting the daily log.{' '}
+          {onEditTimes ? (
+            <button type="button" className="ic-btn ic-btn--link" onClick={onEditTimes} style={{ textDecoration: 'underline', cursor: 'pointer', padding: 0, border: 'none', background: 'none', color: '#d97706', fontWeight: 'bold' }}>
+              Edit times
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {isResubmit && existingLog?.review_note ? (
         <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn">
           <strong>Rejection feedback:</strong> {existingLog.review_note}

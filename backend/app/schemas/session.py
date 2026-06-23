@@ -81,6 +81,7 @@ class SessionRead(BaseModel):
     duplicate_day_session: bool = False
     resumed_count: int = 0
     recommended_action: Optional[str] = None
+    already_completed: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -1,6 +1,20 @@
 /** Production UI hosts that proxy /api on the same origin (see vercel.json rewrites). */
 const SAME_ORIGIN_API_HOSTS = /^((www\.)?insighte\.org|[a-z0-9-]+\.vercel\.app)$/i
 
+const getEnv = (key) => {
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    return import.meta.env[key]
+  }
+  return undefined
+}
+
+const isDev = () => {
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    return import.meta.env.DEV
+  }
+  return false
+}
+
 function parseApiErrorDetail(detail, statusText = '') {
   if (typeof detail === 'string' && detail.trim()) return detail
   if (Array.isArray(detail)) {
@@ -15,7 +29,7 @@ function parseApiErrorDetail(detail, statusText = '') {
 }
 
 function resolveApiBaseUrl() {
-  const configured = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+  const configured = (getEnv('VITE_API_URL') || '').replace(/\/$/, '')
   if (typeof window === 'undefined') return configured
   const host = window.location.hostname
   // Apex insighte.org 308-redirects to www before /api rewrites; use www explicitly to avoid
@@ -46,7 +60,7 @@ function recordApiMetric(path, elapsedMs, ok) {
   requestMetrics.byPath[path] = (requestMetrics.byPath[path] || 0) + 1
   if (elapsedMs >= 1200) requestMetrics.slow += 1
   if (!ok) requestMetrics.failures += 1
-  if (import.meta.env.DEV) {
+  if (isDev()) {
     globalThis.__insightcaseApiMetrics = requestMetrics
   }
 }
@@ -103,7 +117,7 @@ export function clearTokens() {
 
 function timeoutErrorMessage(timeoutMs = DEFAULT_TIMEOUT_MS) {
   const secs = Math.round(timeoutMs / 1000)
-  if (import.meta.env.DEV) {
+  if (isDev()) {
     const base = apiBase() || 'http://localhost:8000 (via Vite proxy)'
     return `Request timed out after ${secs}s. The API may be down or an operation is stuck — check GET /health and start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 (${base}).`
   }
@@ -134,21 +148,44 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TI
 
 async function refreshAccess() {
   const { refresh } = getTokens()
-  if (!refresh) return null
-  const res = await fetchWithTimeout(`${apiBase()}/api/v1/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refresh }),
-  })
-  if (!res.ok) return null
-  const data = await res.json()
-  setTokens(data.access_token, data.refresh_token)
-  return data.access_token
+  if (!refresh) {
+    const err = new Error('No refresh token')
+    err.isAuthError = true
+    throw err
+  }
+  try {
+    const res = await fetchWithTimeout(`${apiBase()}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refresh }),
+    })
+    if (res.status === 401 || res.status === 403) {
+      const err = new Error('Session expired')
+      err.isAuthError = true
+      err.status = res.status
+      throw err
+    }
+    if (!res.ok) {
+      const err = new Error(`Server returned ${res.status}`)
+      err.isServerError = true
+      err.status = res.status
+      throw err
+    }
+    const data = await res.json()
+    setTokens(data.access_token, data.refresh_token)
+    return data.access_token
+  } catch (err) {
+    if (err.isAuthError || err.status === 401 || err.status === 403) {
+      throw err
+    }
+    err.isNetworkOrServerError = true
+    throw err
+  }
 }
 
 /** True when the session should be cleared (auth failure, not network noise). */
 export function isAuthSessionError(err) {
-  if (err?.status === 401) return true
+  if (err?.status === 401 || err?.status === 403) return true
   const msg = String(err?.message || '')
   return (
     /session expired/i.test(msg) ||
@@ -163,14 +200,22 @@ export async function ensureAccessToken() {
   const { access, refresh } = getTokens()
   if (access) return access
   if (!refresh) return null
-  return refreshAccess()
+  try {
+    return await refreshAccess()
+  } catch {
+    return null
+  }
 }
 
 /** Silently rotate access token when a refresh token exists (e.g. tab refocus). */
 export async function tryRefreshSession() {
   const { refresh } = getTokens()
   if (!refresh) return null
-  return refreshAccess()
+  try {
+    return await refreshAccess()
+  } catch {
+    return null
+  }
 }
 
 export async function apiFetch(path, options = {}) {
@@ -220,23 +265,32 @@ export async function apiFetch(path, options = {}) {
       hint =
         `Cannot reach the API through ${origin}. Redeploy the frontend (vercel.json /api proxy) or check GET /health on the Railway API.`
     } else if (localDev) {
-      hint = `Cannot reach the API at ${import.meta.env.VITE_API_URL || '(vite proxy)'}. Start the backend (cd backend && python3 -m uvicorn app.main:app --reload --port 8000), or clear VITE_API_URL in frontend/.env.local and restart npm run dev.`
+      hint = `Cannot reach the API at ${getEnv('VITE_API_URL') || '(vite proxy)'}. Start the backend (cd backend && python3 -m uvicorn app.main:app --reload --port 8000), or clear VITE_API_URL in frontend/.env.local and restart npm run dev.`
     } else {
-      const configured = import.meta.env.VITE_API_URL || getApiBaseUrl() || '(not set)'
+      const configured = getEnv('VITE_API_URL') || getApiBaseUrl() || '(not set)'
       hint = `Cannot reach the API at ${configured}. Check that the server is running and CORS allows this site.`
     }
     throw new Error(hint)
   }
 
   if (res.status === 401 && !path.includes('/auth/')) {
-    const newAccess = await refreshAccess()
-    if (newAccess) {
-      headers.Authorization = `Bearer ${newAccess}`
-      res = await fetchWithTimeout(`${getApiBaseUrl()}${url}`, { ...fetchOptions, headers }, timeoutMs)
-    }
-    if (res.status === 401) {
-      clearTokens()
-      throw new Error('Session expired. Please log in again.')
+    try {
+      const newAccess = await refreshAccess()
+      if (newAccess) {
+        headers.Authorization = `Bearer ${newAccess}`
+        res = await fetchWithTimeout(`${getApiBaseUrl()}${url}`, { ...fetchOptions, headers }, timeoutMs)
+      } else {
+        clearTokens()
+        throw new Error('Session expired. Please log in again.')
+      }
+    } catch (refreshErr) {
+      if (refreshErr.isAuthError || refreshErr.status === 401 || refreshErr.status === 403) {
+        clearTokens()
+        throw new Error('Session expired. Please log in again.')
+      }
+      const netErr = new Error('Connection unstable. You are still logged in, but we cannot reach the server.')
+      netErr.isConnectionError = true
+      throw netErr
     }
   }
 
