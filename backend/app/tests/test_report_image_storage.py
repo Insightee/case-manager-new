@@ -240,6 +240,20 @@ def test_r2_backend_put_get_mocked(monkeypatch):
 def test_case_manager_can_upload_image_on_under_review_report():
     th_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
     case_id = _therapist_case_id(th_headers)
+    from app.core.database import SessionLocal
+    from app.models.user import User
+    from app.models.case import Case
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        case = db.get(Case, case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+    finally:
+        db.close()
+
     cm_headers = cm_headers_for_case(client, case_id)
     created = client.post(
         "/api/v1/reports/monthly",

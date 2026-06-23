@@ -186,7 +186,17 @@ def test_approve_log_notifies_parent():
         ).first()
         assert log is not None
         log_id = log.id
-        case = db.get(Case, log.session.case_id)
+        from app.models.user import User
+        from app.models.case import Case
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        session = db.get(TherapySession, log.session_id)
+        case = db.get(Case, session.case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+
+        case = db.get(Case, log.session_id)  # log.session is not set up on this relation directly in this test version
+        # OR we can get case from DB:
+        case = db.get(Case, session.case_id)
         assert case is not None and case.case_manager_user_id is not None
         cm = db.get(User, case.case_manager_user_id)
         assert cm is not None
@@ -265,11 +275,18 @@ def test_daily_log_submission_emails_parent(monkeypatch):
     log_id = created.json()["id"]
     db = SessionLocal()
     try:
-        session = db.get(TherapySession, sid)
-        assert session is not None
+        from app.models.user import User
+        from app.models.case import Case
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        log = db.get(DailyLog, log_id)
+        session = db.get(TherapySession, log.session_id)
+        case = db.get(Case, session.case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
         approve_headers = cm_headers_for_case(client, session.case_id)
     finally:
         db.close()
+
     approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=approve_headers)
     assert approved.status_code == 200
     assert published, "Expected parent email on session log approval"

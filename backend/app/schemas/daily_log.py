@@ -63,6 +63,8 @@ class DailyLogRead(BaseModel):
     can_edit: bool = False
     can_resubmit: bool = False
     editable_until: Optional[datetime] = None
+    absence_reason: Optional[str] = None
+    dispute_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -76,6 +78,8 @@ class DailyLogFinanceRead(BaseModel):
     submitted_at: Optional[datetime]
     approval_status: LogApprovalStatus
     late_addition: bool = False
+    absence_reason: Optional[str] = None
+    dispute_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -111,9 +115,22 @@ class ParentSessionLogRead(BaseModel):
     attendance_label: Optional[str] = None
     what_we_did: Optional[str] = None
     what_is_next: Optional[str] = None
+    absence_reason: Optional[str] = None
+    dispute_status: Optional[str] = None
 
 
 class ParentSessionFeedbackUpdate(BaseModel):
     rating: Optional[int] = Field(default=None, ge=1, le=5)
     feedback: Optional[str] = Field(default=None, max_length=2000)
     share_publicly: Optional[bool] = None
+
+
+class LogCommentRead(BaseModel):
+    id: int
+    body: str
+    author_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class LogCommentCreate(BaseModel):
+    body: str = Field(..., min_length=1)

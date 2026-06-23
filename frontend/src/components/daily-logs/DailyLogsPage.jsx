@@ -332,15 +332,17 @@ export function DailyLogsPage() {
   }
 
   function renderLogRow(l, { allowEdit = false, allowResubmit = false, allowView = false } = {}) {
-    const canEdit = allowEdit && isLogEditable(l)
-    const canResubmit = allowResubmit && isLogResubmittable(l)
-    const clockRange = formatClockRange(l)
-    const editedRange = l.actual_times_edited ? formatEditedRange(l) : null
+    const isVirtual = l.id < 0
+    const isTherapistLeave = l.attendance_status === 'THERAPIST_LEAVE'
+    const canEdit = !isVirtual && allowEdit && isLogEditable(l)
+    const canResubmit = !isVirtual && allowResubmit && isLogResubmittable(l)
+    const clockRange = isVirtual ? null : formatClockRange(l)
+    const editedRange = !isVirtual && l.actual_times_edited ? formatEditedRange(l) : null
     return (
       <div key={l.id} className="ic-session-log-recent__row">
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="ic-session-log-recent__title">
-            {l.child_name || l.case_code}
+            {isTherapistLeave ? 'Therapist Leave' : (l.child_name || l.case_code)}
             {l.scheduled_date ? <> · {formatDisplayDate(l.scheduled_date)}</> : null}
           </p>
           {clockRange ? <p className="ic-session-log-recent__times">Clock: {clockRange}</p> : null}
@@ -349,21 +351,27 @@ export function DailyLogsPage() {
               Corrected: {editedRange}
             </p>
           ) : null}
-          <SessionLogStatusBadge
-            approvalStatus={l.approval_status}
-            attendanceStatus={l.attendance_status}
-          />
-          {l.actual_times_edited ? (
+          {!isTherapistLeave ? (
+            <SessionLogStatusBadge
+              approvalStatus={l.approval_status}
+              attendanceStatus={l.attendance_status}
+            />
+          ) : (
+            <span className="ic-badge ic-badge--neutral" style={{ background: '#f3f4f6', color: '#374151' }}>
+              Therapist Leave
+            </span>
+          )}
+          {!isVirtual && l.actual_times_edited ? (
             <span className="ic-session-log-recent__meta" style={{ color: '#7c3aed', fontWeight: 600 }}>
               Times edited
             </span>
           ) : null}
-          {l.duplicate_day_session ? (
+          {!isVirtual && l.duplicate_day_session ? (
             <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
               Same-day duplicate
             </span>
           ) : null}
-          {l.review_note && l.approval_status === 'REJECTED' ? (
+          {!isVirtual && l.review_note && l.approval_status === 'REJECTED' ? (
             <p className="ic-session-log-recent__meta" style={{ color: '#b91c1c' }}>
               Rejection: {l.review_note}
             </p>
@@ -372,8 +380,13 @@ export function DailyLogsPage() {
             <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
               {l.status_label}
             </span>
-          ) : l.late_addition ? (
+          ) : (!isVirtual && l.late_addition) ? (
             <span className="ic-session-log-recent__meta">Late submission</span>
+          ) : null}
+          {isVirtual && l.absence_reason ? (
+            <p className="ic-session-log-recent__meta" style={{ color: '#4b5563', fontStyle: 'italic' }}>
+              Reason: {l.absence_reason}
+            </p>
           ) : null}
           {l.case_id ? (
             <span className="ic-session-log-recent__meta">
@@ -381,7 +394,16 @@ export function DailyLogsPage() {
             </span>
           ) : null}
         </div>
-        {canEditSessionTimes({ ...l, id: l.session_id, status: 'COMPLETED' }, l) && !canResubmit ? (
+        {isTherapistLeave ? (
+          <button
+            type="button"
+            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
+            onClick={() => navigate('/therapist/leave')}
+          >
+            View leave
+          </button>
+        ) : null}
+        {!isVirtual && canEditSessionTimes({ ...l, id: l.session_id, status: 'COMPLETED' }, l) && !canResubmit ? (
           <button
             type="button"
             className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
@@ -447,7 +469,7 @@ export function DailyLogsPage() {
             Edit log (24h)
           </button>
         ) : null}
-        {allowView && !canEdit && !canResubmit ? (
+        {allowView && !canEdit && !canResubmit && !isVirtual ? (
           <button
             type="button"
             className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
