@@ -117,18 +117,21 @@ def test_continue_in_progress_returns_same_session():
     assert r.json().get("resumed_count", 0) >= 1
 
 
-def test_schedule_aware_auto_end_overage():
+def test_schedule_aware_auto_end_overage(monkeypatch):
+    from app.core.timezone import IST
+
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
         case = db.scalars(select(Case).where(Case.product_module == "homecare")).first()
         if not case:
             pytest.skip("No homecare case")
-        started = datetime.now(timezone.utc) - timedelta(hours=4)
+        today = today_ist()
+        started = datetime.combine(today, time(15, 0), tzinfo=IST).astimezone(timezone.utc)
         session = TherapySession(
             case_id=case.id,
             therapist_user_id=therapist.id,
-            scheduled_date=today_ist(),
+            scheduled_date=today,
             start_time=time(15, 0),
             end_time=time(16, 0),
             slot_duration_minutes=60,
@@ -139,11 +142,13 @@ def test_schedule_aware_auto_end_overage():
         db.add(session)
         db.commit()
         db.refresh(session)
+        fake_now = datetime.combine(today, time(17, 30), tzinfo=IST).astimezone(timezone.utc)
+        monkeypatch.setattr(session_service, "_now", lambda: fake_now)
         ended = session_service.auto_end_if_stale(db, session)
         assert ended.status == SessionStatus.COMPLETED
         assert ended.auto_ended is True
         assert ended.scheduled_duration_mins == 60
-        assert ended.overage_mins == 120
+        assert ended.overage_mins == 45
         assert ended.time_confirmation_required is True
     finally:
         db.close()
