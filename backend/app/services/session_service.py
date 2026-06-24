@@ -11,6 +11,7 @@ from app.core.session_rules import (
     compute_auto_end_cap,
     duration_minutes_between,
     product_module_for_case,
+    resolve_clinical_service_category,
     scheduled_duration_minutes,
     validate_session_duration_minutes,
 )
@@ -93,13 +94,14 @@ def auto_end_if_stale(db: Session, session: TherapySession) -> TherapySession:
         return session
     started = _aware(session.actual_start_at)
     module = product_module_for_case(session.case)
+    category = resolve_clinical_service_category(session.case, db=db)
     hard_cap, reason, sched_mins, overage = compute_auto_end_cap(
         started_at=started,
         scheduled_date=session.scheduled_date,
         start_time=session.start_time,
         end_time=session.end_time,
-        slot_duration_minutes=session.slot_duration_minutes,
         product_module=module,
+        service_category=category,
     )
     if _now() >= hard_cap:
         session.scheduled_duration_mins = sched_mins

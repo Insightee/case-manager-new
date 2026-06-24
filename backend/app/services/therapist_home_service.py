@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.session_rules import auto_end_label as auto_end_label_for_reason
+from app.core.session_rules import scheduled_end_at_utc
 from app.core.timezone import ensure_utc_aware, now_ist, today_ist
 from app.models.case import Case
 from app.models.report import MonthlyReport, ReportStatus
@@ -71,6 +72,8 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         auto_end_label=auto_end_label_for_reason(
             getattr(s, "auto_end_reason", None),
             overage_mins=getattr(s, "overage_mins", None),
+            scheduled_end_at=scheduled_end_at_utc(s.scheduled_date, s.end_time),
+            actual_end_at=ensure_utc_aware(s.actual_end_at),
         ),
         slot_duration_minutes=s.slot_duration_minutes,
         scheduled_duration_mins=getattr(s, "scheduled_duration_mins", None),
