@@ -122,19 +122,32 @@ export function TherapistSessionComposer({
       : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
 
     try {
-      const created = await apiFetch('/api/v1/sessions', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey },
-        body: JSON.stringify({
-          case_id: selectedCaseId,
-          therapist_user_id: user?.id ?? 0,
-          scheduled_date: today,
-          start_time: walkInStart,
-          end_time: walkInEnd,
-          mode: walkInMode,
-          status: 'SCHEDULED',
-        }),
-      })
+      let created
+      try {
+        created = await apiFetch('/api/v1/sessions', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': idempotencyKey },
+          body: JSON.stringify({
+            case_id: selectedCaseId,
+            therapist_user_id: user?.id ?? 0,
+            scheduled_date: today,
+            start_time: walkInStart,
+            end_time: walkInEnd,
+            mode: walkInMode,
+            status: 'SCHEDULED',
+          }),
+        })
+      } catch (err) {
+        if (err?.status === 409 && err?.detail?.code === 'EXISTING_SESSION_FOR_DATE') {
+          // Session already exists — deep-link therapist to that session's log page.
+          onSessionStarted?.({
+            existingSessionId: err.detail.session_id,
+            message: 'A session already exists for this client today.',
+          })
+          return
+        }
+        throw err
+      }
       const started = await apiFetch(`/api/v1/sessions/${created.id}/start`, {
         method: 'POST',
         headers: { 'Idempotency-Key': idempotencyKey },
@@ -150,7 +163,6 @@ export function TherapistSessionComposer({
     } catch (err) {
       const msg = err.message || 'Could not start walk-in session'
       setLocalError(msg)
-      onError?.(msg)
     } finally {
       setBusy(false)
     }
@@ -284,7 +296,6 @@ export function TherapistSessionComposer({
             onError={(msg) => {
               setLocalError(msg)
               setComposerSuccess('')
-              onError?.(msg)
             }}
           />
           {composerSuccess ? (

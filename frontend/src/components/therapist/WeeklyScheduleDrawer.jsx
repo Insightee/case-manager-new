@@ -232,8 +232,35 @@ export function WeeklyScheduleDrawer({
   if (!config) {
     return (
       <div className="fixed inset-0 z-[70] flex justify-end bg-slate-900/30" onClick={onClose}>
-        <div className="h-full w-full max-w-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-          <p className="text-slate-500">Loading…</p>
+        <div className="flex h-full w-full max-w-lg flex-col bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="sticky top-0 z-10 border-b border-slate-100 bg-white px-5 py-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900">Schedule</h2>
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600">
+              Close
+            </button>
+          </div>
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
+            {error ? (
+              <>
+                <p className="text-sm font-semibold text-red-700">{error}</p>
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+                  onClick={() => {
+                    setError('')
+                    const qs = therapistId ? `?therapist_id=${therapistId}` : ''
+                    apiFetch(`/api/v1/slots/template${qs}`)
+                      .then((r) => setConfig(normalizeTemplateConfig(r.config)))
+                      .catch(() => setError('Could not load schedule'))
+                  }}
+                >
+                  Retry
+                </button>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Loading schedule…</p>
+            )}
+          </div>
         </div>
       </div>
     )

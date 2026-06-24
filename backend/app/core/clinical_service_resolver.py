@@ -203,8 +203,8 @@ def resolve_clinical_service_category(
 def product_module_for_case(case: Any, *, db: Session | None = None) -> str:
     """Backward-compatible module string for callers expecting product_module slug."""
     if case is None:
-        return "homecare"
-    raw = getattr(case, "product_module", None) or "homecare"
+        return "unknown"
+    raw = getattr(case, "product_module", None) or "unknown"
     return normalize_service_id(str(raw))
 
 

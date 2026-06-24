@@ -74,6 +74,7 @@ def auto_close_open_sessions_at_day_end(db: Session, now_ist_dt: datetime | None
             )
             .options(selectinload(TherapySession.case))
             .order_by(TherapySession.actual_start_at.asc())
+            .with_for_update(skip_locked=True)
         ).all()
     )
     closed_ids: list[int] = []
@@ -136,6 +137,7 @@ def close_previous_day_open_sessions(db: Session, now_ist_dt: datetime | None = 
             )
             .options(selectinload(TherapySession.case))
             .order_by(TherapySession.actual_start_at.asc())
+            .with_for_update(skip_locked=True)
         ).all()
     )
     closed_ids: list[int] = []

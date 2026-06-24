@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Any
 
 from sqlalchemy import select
+
+logger = logging.getLogger("insightcase.appointment_booking")
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.case import Case
@@ -86,8 +89,16 @@ def sync_session_for_slot(db: Session, slot: TherapistSlot) -> TherapySession | 
 def cancel_session_for_slot(db: Session, slot: TherapistSlot) -> None:
     if slot.session_id:
         sess = db.get(TherapySession, slot.session_id)
-        if sess and sess.status in (SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS):
-            sess.status = SessionStatus.CANCELLED
+        if sess:
+            if sess.status == SessionStatus.IN_PROGRESS:
+                logger.warning(
+                    "cancel_session_for_slot: skipping IN_PROGRESS session %s (slot %s)",
+                    sess.id,
+                    slot.id,
+                )
+                return
+            if sess.status == SessionStatus.SCHEDULED:
+                sess.status = SessionStatus.CANCELLED
     slot.session_id = None
     db.flush()
 
@@ -171,7 +182,7 @@ def parent_calendar_view(
     parent_user_id: int,
 ) -> dict[str, Any]:
     assignment = policy.get_active_assignment_for_case(db, case_id, therapist_user_id)
-    cal.materialize_range(db, therapist_user_id, from_date, to_date)
+    # Materialize is deferred to POST/booking paths; read path queries existing slots only.
 
     slots = db.scalars(
         select(TherapistSlot)

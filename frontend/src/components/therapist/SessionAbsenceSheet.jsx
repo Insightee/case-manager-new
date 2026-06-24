@@ -114,9 +114,26 @@ export function SessionAbsenceSheet({
 
   if (!sessions.length) {
     return (
-      <p className="ic-session-composer__hint">
-        No scheduled visit today for this client. Pick a client with a visit on today&apos;s date.
-      </p>
+      <div className="ic-session-composer__absence-empty" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <p className="ic-session-composer__hint" style={{ fontWeight: 600, color: '#374151' }}>
+          No session scheduled for today
+        </p>
+        <p className="ic-session-composer__hint">
+          Child absence can only be logged against a scheduled visit. Schedule a session for today first, then come back
+          here to mark the child as absent.
+        </p>
+        <Link
+          to="/therapist/slots"
+          className="ic-btn ic-btn--primary"
+          style={{ textAlign: 'center', textDecoration: 'none', display: 'block' }}
+        >
+          Go to scheduling
+        </Link>
+        <p className="ic-session-composer__hint" style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+          Tip: If the child is absent on a day that wasn&apos;t originally scheduled, add a manual session first, then log
+          the absence.
+        </p>
+      </div>
     )
   }
 

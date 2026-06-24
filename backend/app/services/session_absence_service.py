@@ -261,20 +261,36 @@ def create_request(
                 billing_cat = LeaveBillingCategory(row.leave_billing_category)
             except ValueError:
                 pass
-        leave = TherapistLeave(
-            therapist_user_id=user.id,
-            leave_type=LeaveType.CASUAL,
-            service_line=(case.product_module or "homecare").strip().lower(),
-            billing_category=billing_cat,
-            case_id=case.id,
-            start_date=session.scheduled_date,
-            end_date=session.scheduled_date,
-            reason=row.reason or row.notes,
-        )
-        db.add(leave)
-        db.flush()
-        row.therapist_leave_id = leave.id
-        leave_notify.notify_leave_submitted(db, leave, user)
+        # Check for an existing leave that already covers this therapist+date to avoid
+        # creating duplicate leave rows when the same absence is submitted more than once.
+        from app.services.leave_service import _leave_scopes_conflict
+
+        existing_leave = db.scalars(
+            select(TherapistLeave).where(
+                TherapistLeave.therapist_user_id == user.id,
+                TherapistLeave.status.in_([LeaveStatus.PENDING, LeaveStatus.APPROVED]),
+                TherapistLeave.start_date <= session.scheduled_date,
+                TherapistLeave.end_date >= session.scheduled_date,
+            )
+        ).first()
+
+        if existing_leave and _leave_scopes_conflict(existing_leave, [case.id]):
+            row.therapist_leave_id = existing_leave.id
+        else:
+            leave = TherapistLeave(
+                therapist_user_id=user.id,
+                leave_type=LeaveType.CASUAL,
+                service_line=(case.product_module or "unknown").strip().lower(),
+                billing_category=billing_cat,
+                case_id=case.id,
+                start_date=session.scheduled_date,
+                end_date=session.scheduled_date,
+                reason=row.reason or row.notes,
+            )
+            db.add(leave)
+            db.flush()
+            row.therapist_leave_id = leave.id
+            leave_notify.notify_leave_submitted(db, leave, user)
 
     _notify_on_submit(db, row, user)
     db.refresh(row)
@@ -392,6 +408,32 @@ def reject_request(db: Session, user: User, request_id: int, *, review_note: str
             leave.status = LeaveStatus.REJECTED
             leave.reviewed_by_user_id = user.id
             leave.review_note = row.review_note
+
+    # Restore session status — but only when safe (no downstream billing/log/report).
+    session = row.session or (db.get(TherapySession, row.session_id) if row.session_id else None)
+    if session and session.status in (SessionStatus.CLIENT_ABSENT, SessionStatus.THERAPIST_LEAVE):
+        from app.models.ledger_billing import BillingLedger
+        from app.models.daily_log import DailyLog
+        from app.models.report import MonthlyReport
+
+        has_ledger = db.scalars(
+            select(BillingLedger).where(BillingLedger.session_id == session.id)
+        ).first()
+        has_log = db.scalars(
+            select(DailyLog).where(DailyLog.session_id == session.id)
+        ).first()
+        has_report = db.scalars(
+            select(MonthlyReport).where(
+                MonthlyReport.case_id == session.case_id,
+                MonthlyReport.status.in_(["APPROVED", "SUBMITTED"]),
+            )
+        ).first()
+
+        if has_ledger or has_log or has_report:
+            session.data_quality_flag = "NEEDS_REVIEW_AFTER_REJECTION"
+        else:
+            session.status = SessionStatus.SCHEDULED
+            session.data_quality_flag = None
 
     therapist = db.get(User, row.therapist_user_id)
     if therapist:

@@ -257,6 +257,21 @@ def create_therapist_leave_request(
     if conflicting:
         raise ValueError("Leave is already marked for this date. View existing leave.")
 
+    # Attach a non-blocking warning count of scheduled/in-progress sessions in range.
+    # Callers may surface this to the user before finalising leave.
+    from app.models.session import Session as TherapySession
+    from app.models.session import SessionStatus as _SS
+    from sqlalchemy import func as _func
+
+    sessions_in_range: int = db.scalar(
+        select(_func.count(TherapySession.id)).where(
+            TherapySession.therapist_user_id == therapist.id,
+            TherapySession.scheduled_date >= start_date,
+            TherapySession.scheduled_date <= end_date,
+            TherapySession.status.in_([_SS.SCHEDULED, _SS.IN_PROGRESS]),
+        )
+    ) or 0
+
     if not auto_approve:
         leave_migration.validate_therapist_leave_dates(start_date, end_date)
 
@@ -301,6 +316,9 @@ def create_therapist_leave_request(
 
     db.add(leave)
     db.flush()
+
+    # Surface session conflict count as a transient attribute for callers to include in responses.
+    leave._sessions_in_range = sessions_in_range  # type: ignore[attr-defined]
 
     if auto_approve:
         leave_notify.notify_leave_approved(db, leave, therapist)

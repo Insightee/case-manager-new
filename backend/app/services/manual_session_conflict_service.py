@@ -16,8 +16,8 @@ VOID_STATUSES = frozenset({SessionStatus.CANCELLED, SessionStatus.RESCHEDULED})
 
 _STATUS_PRIORITY = (
     SessionStatus.IN_PROGRESS,
-    SessionStatus.SCHEDULED,
     SessionStatus.COMPLETED,
+    SessionStatus.SCHEDULED,
     SessionStatus.CLIENT_ABSENT,
     SessionStatus.THERAPIST_LEAVE,
     SessionStatus.NO_SHOW,
@@ -86,9 +86,12 @@ def build_existing_session_conflict(session: TherapySession) -> dict:
     child_name = case.child.full_name if case and case.child else (case.case_code if case else None)
     log_status = _log_status(session)
     recommended_action = _recommended_action(session, log_status)
+    daily_log = session.daily_log
     return {
         "code": "EXISTING_SESSION_FOR_DATE",
         "existing_session_id": session.id,
+        "daily_log_id": daily_log.id if daily_log else None,
+        "has_daily_log": daily_log is not None,
         "child_name": child_name,
         "case_id": session.case_id,
         "case_code": case.case_code if case else None,

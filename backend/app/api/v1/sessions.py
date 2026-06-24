@@ -170,7 +170,7 @@ def create_session(
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
 
-    # Check for unresolved same-day session
+    # Check for unresolved same-day session — return 409 so callers can deep-link
     from app.core.timezone import today_ist
     today = today_ist()
     if payload.scheduled_date == today:
@@ -185,7 +185,15 @@ def create_session(
             )
         ).first()
         if existing:
-            return _session_read(existing, case)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "EXISTING_SESSION_FOR_DATE",
+                    "session_id": existing.id,
+                    "status": existing.status.value,
+                    "message": "A session already exists for this client today.",
+                },
+            )
 
     from app.services.case_status_request_service import assert_case_allows_new_session
 
@@ -325,6 +333,106 @@ def get_session(
     case = session.case
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Access denied")
+    return _session_read(session, case)
+
+
+@router.post("/{session_id}/cancel-accidental-start", response_model=SessionRead)
+def cancel_accidental_start(
+    session_id: int,
+    request: Request,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    """Cancel a session that was started accidentally within the accidental-start window.
+
+    Allowed only when:
+    - session is IN_PROGRESS
+    - no DailyLog submitted
+    - no billing/ledger row exists for this session
+    - no absence/leave request linked to this session
+    - session started within ACCIDENTAL_START_WINDOW_MINUTES
+    """
+    from datetime import timezone as tz
+    from app.core.session_rules import ACCIDENTAL_START_WINDOW_MINUTES
+    from app.models.daily_log import DailyLog
+    from app.models.ledger_billing import BillingLedger
+    from app.models.session_absence import SessionAbsenceRequest
+
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == session_id)
+        .options(selectinload(TherapySession.case).selectinload(Case.child), selectinload(TherapySession.daily_log))
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    _therapist_only_update(user, session)
+
+    if session.status != SessionStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NOT_IN_PROGRESS", "message": "Only in-progress sessions can be cancelled as accidental starts."},
+        )
+
+    # Check duration window
+    if session.actual_start_at:
+        started = session.actual_start_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=tz.utc)
+        from datetime import datetime
+        elapsed_minutes = (datetime.now(tz.utc) - started).total_seconds() / 60
+        if elapsed_minutes > ACCIDENTAL_START_WINDOW_MINUTES:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "WINDOW_EXPIRED",
+                    "message": f"Accidental start cancellation is only allowed within {ACCIDENTAL_START_WINDOW_MINUTES} minutes of starting.",
+                },
+            )
+
+    # Guard: no DailyLog
+    if session.daily_log is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HAS_DAILY_LOG", "message": "A session log has already been submitted. Use the standard cancel flow."},
+        )
+
+    # Guard: no billing ledger rows
+    has_ledger = db.scalars(
+        select(BillingLedger).where(BillingLedger.session_id == session_id)
+    ).first()
+    if has_ledger:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HAS_BILLING_RECORD", "message": "Billing records exist for this session. Use the standard cancel flow."},
+        )
+
+    # Guard: no absence/leave request
+    has_absence = db.scalars(
+        select(SessionAbsenceRequest).where(SessionAbsenceRequest.session_id == session_id)
+    ).first()
+    if has_absence:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HAS_ABSENCE_REQUEST", "message": "An absence request is linked to this session. Use the standard cancel flow."},
+        )
+
+    session.status = SessionStatus.CANCELLED
+    session.cancellation_reason = "accidental_start"
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="cancel_accidental_start",
+        entity_type="session",
+        entity_id=session.id,
+        new_value={"status": "CANCELLED", "cancellation_reason": "accidental_start"},
+        **meta,
+    )
+    db.commit()
+    db.refresh(session)
     return _session_read(session, case)
 
 

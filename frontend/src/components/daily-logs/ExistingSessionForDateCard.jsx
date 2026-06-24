@@ -7,12 +7,19 @@ function formatClock(t) {
 
 function primaryLabel(conflict) {
   const action = conflict?.recommended_action
-  if (action === 'resume_session') return 'Resume / End session'
-  if (action === 'end_session') return 'End session'
-  if (action === 'view_log') {
-    return conflict?.log_status === 'approved' ? 'View approved log' : 'View / Edit log'
-  }
-  return 'Complete session log'
+  if (action === 'resume_session') return 'Go to active session'
+  if (action === 'view_log' && conflict?.log_status === 'approved') return 'View approved log'
+  if (action === 'edit_log' || action === 'view_log') return 'Edit session log'
+  return 'Edit session log'
+}
+
+function logStatusLabel(status) {
+  if (!status) return null
+  if (status === 'not_started') return 'Not started'
+  if (status === 'incomplete') return 'Needs log'
+  if (status === 'submitted') return 'Submitted'
+  if (status === 'approved') return 'Approved'
+  return status.replace(/_/g, ' ')
 }
 
 /**
@@ -45,13 +52,19 @@ export function ExistingSessionForDateCard({ conflict, onAction, onDismiss }) {
         {conflict.scheduled_date ? <> · {formatDisplayDate(conflict.scheduled_date)}</> : null}
       </p>
       {scheduled ? <p className="ic-existing-session-card__meta">Scheduled: {scheduled}</p> : null}
-      {actual ? <p className="ic-existing-session-card__meta">Actual: {actual}</p> : null}
+      {actual ? (
+        <p className="ic-existing-session-card__meta">
+          Session time: <strong>{actual}</strong>
+        </p>
+      ) : scheduled ? (
+        <p className="ic-existing-session-card__meta">Session time not recorded yet</p>
+      ) : null}
       <p className="ic-existing-session-card__meta">
         Status: <strong>{conflict.session_status?.replace(/_/g, ' ')}</strong>
         {conflict.log_status ? (
           <>
             {' '}
-            · Log: <strong>{conflict.log_status.replace(/_/g, ' ')}</strong>
+            · Log: <strong>{logStatusLabel(conflict.log_status)}</strong>
           </>
         ) : null}
       </p>

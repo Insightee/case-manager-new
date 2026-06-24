@@ -156,9 +156,9 @@ export function SessionCard({ log, onSaved, onDispute }) {
   }
 
   let badgeLabel = localLog.attendance_label || localLog.attendance_status
-  if (isTherapistLeave) badgeLabel = 'Therapist Leave'
-  else if (localLog.attendance_status === 'CLIENT_ABSENT') badgeLabel = 'Client Absent'
-  else if (localLog.attendance_status === 'CLIENT_LEAVE') badgeLabel = 'Client Leave'
+  if (isTherapistLeave) badgeLabel = 'Therapist unavailable'
+  else if (localLog.attendance_status === 'CLIENT_ABSENT') badgeLabel = 'Child on leave'
+  else if (localLog.attendance_status === 'CLIENT_LEAVE') badgeLabel = 'Child on leave'
 
   return (
     <article className="session-card">

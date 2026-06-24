@@ -53,7 +53,7 @@ export function labelForSessionAction(action, { hasDraft = false } = {}) {
     case 'CONTINUE_SESSION':
       return 'Continue session'
     case 'COMPLETE_LOG':
-      return 'Complete session log'
+      return 'Edit session log'
     case 'EDIT_LOG':
       return hasDraft ? 'Continue log' : 'Edit existing log'
     case 'VIEW_EXISTING':

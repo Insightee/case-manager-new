@@ -84,6 +84,60 @@ def test_manual_session_blocks_duplicate_same_day():
     assert detail["recommended_action"] in {"resume_session", "edit_log", "view_log"}
 
 
+def test_manual_session_prefers_completed_over_scheduled_same_day():
+    headers = _login("therapist@demo.com")
+    db = SessionLocal()
+    isolated_date = date(2020, 3, 20)
+    try:
+        case_id = _active_case_id(db)
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        scheduled = TherapySession(
+            case_id=case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=isolated_date,
+            start_time=time(16, 31),
+            end_time=time(17, 31),
+            mode=SessionMode.HOME,
+            status=SessionStatus.SCHEDULED,
+        )
+        completed = TherapySession(
+            case_id=case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=isolated_date,
+            start_time=time(10, 0),
+            end_time=time(11, 0),
+            mode=SessionMode.HOME,
+            status=SessionStatus.COMPLETED,
+            actual_start_at=datetime.combine(isolated_date, time(10, 0), tzinfo=timezone.utc),
+            actual_end_at=datetime.combine(isolated_date, time(11, 0), tzinfo=timezone.utc),
+        )
+        db.add(scheduled)
+        db.add(completed)
+        db.commit()
+        completed_id = completed.id
+    finally:
+        db.close()
+
+    start = datetime.combine(isolated_date, time(14, 0), tzinfo=timezone.utc)
+    end = start + timedelta(hours=1)
+    res = client.post(
+        "/api/v1/sessions/manual",
+        headers=headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": isolated_date.isoformat(),
+            "actual_start_at": start.isoformat().replace("+00:00", "Z"),
+            "actual_end_at": end.isoformat().replace("+00:00", "Z"),
+            "mode": "HOME",
+        },
+    )
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert detail["existing_session_id"] == completed_id
+    assert detail["session_status"] == "COMPLETED"
+    assert detail["recommended_action"] == "edit_log"
+
+
 def test_manual_session_allows_different_date():
     headers = _login("therapist@demo.com")
     db = SessionLocal()

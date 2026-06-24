@@ -29,10 +29,10 @@ import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
 import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
 import { SessionVisitPanel } from './SessionVisitPanel.jsx'
 import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
+import { existingVisitForDay, sessionToLogShape } from '../../lib/sessionDayConflict.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { canStartSessionToday, logsPathForSession } from '../../lib/sessionStartRules.js'
-import { SameDaySessionDialog } from './SameDaySessionDialog.jsx'
+import { canStartSessionToday } from '../../lib/sessionStartRules.js'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import { ActiveSessionCard } from './ActiveSessionCard.jsx'
 import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
@@ -114,8 +114,6 @@ export function DailyLogsPage() {
   }
   const [logTab, setLogTab] = useState('all')
   const [viewingLog, setViewingLog] = useState(null)
-  const [sameDayConflict, setSameDayConflict] = useState(null)
-  const [sameDayPending, setSameDayPending] = useState(null)
   const [editTimesSession, setEditTimesSession] = useState(null)
   const [composerCaseId, setComposerCaseId] = useState(null)
   const [existingSessionConflict, setExistingSessionConflict] = useState(null)
@@ -207,15 +205,39 @@ export function DailyLogsPage() {
     )
   }
 
+  const deepLinkContext = useMemo(
+    () => ({ active, needsLog, logs }),
+    [active, needsLog, logs],
+  )
+
   function openSessionFromDeepLink(session) {
     setError('')
-    const action = resolveSessionDeepLink(session, logs)
+    const action = resolveSessionDeepLink(session, logs, deepLinkContext)
     if (action.type === 'error') {
       setError(action.message || 'Could not open session')
       return
     }
     if (action.type === 'log') {
       setVisitSession(null)
+      if (action.fetchLog && action.session?.has_daily_log) {
+        void (async () => {
+          try {
+            const match = logs.find((l) => Number(l.session_id) === Number(action.session.id) && l.id > 0)
+            if (match) {
+              openLogForm(action.session, { required: action.required, log: match })
+              return
+            }
+            await loadAll({ silent: true })
+            const refreshed = queryClient.getQueryData(queryKeys.therapistDailyLogs(therapistId))
+            const list = Array.isArray(refreshed) ? refreshed : []
+            const found = list.find((l) => Number(l.session_id) === Number(action.session.id) && l.id > 0)
+            openLogForm(action.session, { required: action.required, log: found || null })
+          } catch (err) {
+            setError(err.message || 'Could not open session log')
+          }
+        })()
+        return
+      }
       openLogForm(action.session, { required: action.required, log: action.log || null })
       return
     }
@@ -476,7 +498,11 @@ export function DailyLogsPage() {
               )
             }
           >
-            Edit log (24h)
+            {(() => {
+              if (!l.editable_until) return 'Edit log'
+              const hoursLeft = Math.max(0, Math.ceil((new Date(l.editable_until) - Date.now()) / 3600000))
+              return hoursLeft > 0 ? `Edit log (${hoursLeft}h left)` : 'Edit log'
+            })()}
           </button>
         ) : null}
         {allowView && !canEdit && !canResubmit && !isVirtual ? (
@@ -525,22 +551,18 @@ export function DailyLogsPage() {
         allowDuplicate ? { allow_duplicate: true } : {},
       )
       if (!result.ok) {
-        if (result.conflict?.recommendedAction === 'DUPLICATE_SAME_DAY') {
-          setSameDayConflict(result.conflict)
-          setSameDayPending({ sessionId, meta })
-          return
-        }
         if (result.conflict?.recommendedAction === 'CONTINUE_SESSION') {
           setSuccess('A session is in progress — end it above to start another visit.')
           activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           return
         }
+        if (result.conflict?.existingSessionId) {
+          redirectForSessionConflict(result.conflict, navigate)
+          return
+        }
         setSuccess(result.message)
-        redirectForSessionConflict(result.conflict, navigate)
         return
       }
-      setSameDayConflict(null)
-      setSameDayPending(null)
       const started = result.session
       patchCachesAfterSessionStart(started)
       if (started?.invite_sent && started?.invite_email) {
@@ -549,24 +571,6 @@ export function DailyLogsPage() {
     } catch (err) {
       setError(err.message || 'Could not start session')
     }
-  }
-
-  async function handleSameDayStartAnother() {
-    if (!sameDayPending) return
-    setVisitBusy(true)
-    try {
-      await handleStart(sameDayPending.sessionId, sameDayPending.meta, { allowDuplicate: true })
-      setSameDayConflict(null)
-      setSameDayPending(null)
-    } finally {
-      setVisitBusy(false)
-    }
-  }
-
-  function handleEditExistingSession(existingId) {
-    setSameDayConflict(null)
-    setSameDayPending(null)
-    navigate(logsPathForSession(existingId))
   }
 
   function handleActualTimesSaved(updated) {
@@ -689,7 +693,34 @@ export function DailyLogsPage() {
     setExistingSessionConflict(null)
     setError('')
     try {
+      if (conflict.recommended_action === 'resume_session') {
+        void loadAll({ silent: true })
+        setVisitSession(null)
+        closeLogForm()
+        setSuccess('Session in progress — end it above when you are finished.')
+        activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return
+      }
+
       const session = await apiFetch(`/api/v1/sessions/${conflict.existing_session_id}`)
+      const sessionShape = sessionToLogShape(session)
+
+      if (conflict.daily_log_id) {
+        let log = logs.find((l) => Number(l.id) === Number(conflict.daily_log_id))
+        if (!log) {
+          log = await apiFetch(`/api/v1/daily-logs/${conflict.daily_log_id}`)
+        }
+        const readOnly = conflict.recommended_action === 'view_log' && log?.approval_status === 'APPROVED'
+        openLogForm(sessionShape, { log, required: false, readOnly })
+        return
+      }
+
+      if (conflict.recommended_action === 'edit_log' || session.status === 'COMPLETED') {
+        const log = logs.find((l) => Number(l.session_id) === Number(session.id) && l.id > 0)
+        openLogForm(sessionShape, { log: log || null, required: !session.has_daily_log })
+        return
+      }
+
       openSessionFromDeepLink(session)
     } catch (err) {
       setError(err.message || 'Could not open existing session')
@@ -780,8 +811,10 @@ export function DailyLogsPage() {
             session={visitSession}
             activeSessionId={active?.id}
             busy={visitBusy || endBusy}
+            dayBlocker={existingVisitForDay(visitSession, deepLinkContext)}
             onStart={handleVisitStart}
             onEnd={handleVisitEnd}
+            onOpenExisting={openSessionFromDeepLink}
             onClose={closeVisitFocus}
           />
         </section>
@@ -874,7 +907,7 @@ export function DailyLogsPage() {
                     <span className="ic-session-log-needs__draft"> · Draft saved</span>
                   ) : null}
                 </span>
-                <span className="ic-session-log-needs__cta">{draftIds.has(s.id) ? 'Continue log' : 'Complete log'}</span>
+                <span className="ic-session-log-needs__cta">{draftIds.has(s.id) ? 'Continue log' : 'Edit session log'}</span>
               </button>
             ))}
           </div>
@@ -900,7 +933,8 @@ export function DailyLogsPage() {
                 const actualEnd = formatTimeIST(s.actual_end_at)
                 const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
                 const isInProgress = s.status === 'IN_PROGRESS'
-                const isCompleted = s.status === 'COMPLETED'
+                const dayExisting = existingVisitForDay(s, deepLinkContext)
+                const canStartFresh = !active && !dayExisting && canStartSessionToday(s).ok
                 return (
                   <article
                     key={s.id}
@@ -979,7 +1013,15 @@ export function DailyLogsPage() {
                         </p>
                       ) : null}
                     </div>
-                    {!active && canStartSessionToday(s).ok ? (
+                    {!active && dayExisting ? (
+                      <button
+                        type="button"
+                        onClick={() => openSessionFromDeepLink(dayExisting)}
+                        className="ic-btn ic-btn--primary"
+                      >
+                        {dayExisting.status === 'IN_PROGRESS' ? 'Go to active session' : 'Edit session log'}
+                      </button>
+                    ) : canStartFresh ? (
                       <button
                         type="button"
                         onClick={() => handleStart(s.id, s)}
@@ -1132,17 +1174,6 @@ export function DailyLogsPage() {
         </div>
       </section>
 
-      <SameDaySessionDialog
-        open={Boolean(sameDayConflict)}
-        conflict={sameDayConflict}
-        busy={visitBusy}
-        onEditExisting={handleEditExistingSession}
-        onStartAnother={handleSameDayStartAnother}
-        onClose={() => {
-          setSameDayConflict(null)
-          setSameDayPending(null)
-        }}
-      />
       <EditActualTimesModal
         open={Boolean(editTimesSession)}
         session={editTimesSession}

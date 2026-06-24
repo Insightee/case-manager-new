@@ -344,6 +344,9 @@ def delete_late_session(db: Session, therapist_user_id: int, session_id: int) ->
 
 
 def compute_leave_deduction(db: Session, therapist_user_id: int, year: int, month: int) -> tuple[float, list[dict]]:
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus as _CAS
+    from app.models.ledger_billing import ProductBillingRule
+
     start, end = month_date_range(year, month)
     leaves = db.scalars(
         select(TherapistLeave).where(
@@ -352,11 +355,39 @@ def compute_leave_deduction(db: Session, therapist_user_id: int, year: int, mont
             TherapistLeave.end_date >= start,
         )
     ).all()
-    daily_rate = 500.0
+
+    # Resolve daily rate from the therapist's active case assignment rate (per session),
+    # falling back to 0 with a warning if no rate is configured.
+    case_rate: float | None = None
+    assignment = db.scalars(
+        select(CaseAssignment)
+        .join(Case, Case.id == CaseAssignment.case_id)
+        .where(
+            CaseAssignment.therapist_user_id == therapist_user_id,
+            CaseAssignment.status == _CAS.ACTIVE,
+            Case.therapist_fixed_pay_inr.isnot(None),
+        )
+        .order_by(CaseAssignment.id.desc())
+        .limit(1)
+    ).first()
+    if assignment:
+        from sqlalchemy.orm import object_session
+        a_case = db.get(Case, assignment.case_id)
+        case_rate = float(a_case.therapist_fixed_pay_inr) if a_case and a_case.therapist_fixed_pay_inr else None
+
+    if case_rate is None:
+        import logging as _logging
+        _logging.getLogger("insightcase.invoice_billing").warning(
+            "compute_leave_deduction: no daily rate found for therapist %s — deduction will be 0",
+            therapist_user_id,
+        )
+    daily_rate = case_rate or 0.0
+
     deduction = 0.0
     details: list[dict] = []
     for leave in leaves:
-        if leave.status == LeaveStatus.APPROVED:
+        # Skip approved and rejected leaves — only deduct PENDING leaves.
+        if leave.status in (LeaveStatus.APPROVED, LeaveStatus.REJECTED):
             details.append({
                 "leave_id": leave.id,
                 "leave_type": leave.leave_type.value,
@@ -364,7 +395,7 @@ def compute_leave_deduction(db: Session, therapist_user_id: int, year: int, mont
                 "end_date": leave.end_date.isoformat(),
                 "status": leave.status.value,
                 "deduction_inr": 0,
-                "note": "Approved leave — no deduction",
+                "note": f"{leave.status.value.capitalize()} leave — no deduction",
             })
             continue
         days = (min(leave.end_date, end) - max(leave.start_date, start)).days + 1
@@ -377,7 +408,7 @@ def compute_leave_deduction(db: Session, therapist_user_id: int, year: int, mont
             "end_date": leave.end_date.isoformat(),
             "status": leave.status.value,
             "deduction_inr": amt,
-            "note": "Unapproved or pending leave deduction",
+            "note": "Pending leave deduction",
         })
     return round(deduction, 2), details
 
@@ -871,6 +902,12 @@ def create_manual_line(
     return line
 
 
+def recalculate_invoice_totals(db: Session, invoice: Invoice) -> None:
+    """Recalculate invoice adjustment_inr from all currently approved manual lines."""
+    invoice.adjustment_inr = approved_manual_lines_total(invoice)
+    db.flush()
+
+
 def review_manual_line(
     db: Session,
     line: InvoiceManualLine,
@@ -881,6 +918,10 @@ def review_manual_line(
     line.status = ManualLineStatus.APPROVED if approve else ManualLineStatus.REJECTED
     line.approved_by_user_id = approver_user_id
     db.flush()
+    # Recalculate parent invoice totals after any line status change.
+    invoice = db.get(Invoice, line.invoice_id)
+    if invoice:
+        recalculate_invoice_totals(db, invoice)
     return line
 
 

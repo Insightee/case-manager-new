@@ -21,6 +21,10 @@ const PORTALS = [
   {
     id: 'therapist',
     label: 'Therapist',
+    cardTitle: 'I am a Therapist',
+    cardSubtitle: 'For attendance, session notes, and managing your clients',
+    cardAction: 'Open Therapist Dashboard',
+    iconSrc: '/branding/portal-therapist.png',
     subtitle: 'Daily logs, cases, reports, and invoices.',
     placeholder: 'therapist@demo.com',
     demos: [{ email: 'therapist@demo.com', label: 'Therapist', hint: 'Therapist home' }],
@@ -28,6 +32,10 @@ const PORTALS = [
   {
     id: 'parent',
     label: 'Client',
+    cardTitle: 'I am a Parent / Client',
+    cardSubtitle: 'For child updates, reports, IEP and billing',
+    cardAction: 'Open Parent Dashboard',
+    iconSrc: '/branding/portal-parent.png',
     subtitle: 'Approved reports, IEP acknowledgements, and billing.',
     placeholder: 'parent@demo.com',
     demos: [{ email: 'parent@demo.com', label: 'Parent / Guardian', hint: 'Client portal' }],
@@ -35,6 +43,11 @@ const PORTALS = [
   {
     id: 'admin',
     label: 'Admin',
+    cardTitle: 'I am an Insighte Admin',
+    cardSubtitle: 'For Admins, HR , Tech team',
+    cardSubtitleSmall: true,
+    cardAction: 'Open Admin Dashboard',
+    iconSrc: '/branding/portal-admin.png',
     subtitle: 'Case managers, module admins, finance, and HR.',
     placeholder: 'moduleadmin@demo.com',
     demoGroups: [
@@ -72,6 +85,18 @@ function flattenDemos(portal) {
     return portal.demoGroups.flatMap((g) => g.accounts)
   }
   return portal.demos ?? []
+}
+
+function InsighteLogo({ className = '' }) {
+  return (
+    <img
+      src="/branding/insighte-logo.png"
+      alt="Insighte"
+      className={className ? `login-insighte-logo ${className}` : 'login-insighte-logo'}
+      height={44}
+      width={180}
+    />
+  )
 }
 
 function formatLoginError(err) {
@@ -284,18 +309,13 @@ export function LoginPage({ portalType }) {
         <SkipLink />
         <div className="login-shell">
           <section className="login-card" style={{ maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '2rem', padding: '3rem' }}>
-            <header className="login-header" style={{ textAlign: 'center', marginBottom: '1rem' }}>
-              <p className="login-brand" style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.025em', color: 'var(--color-primary, #6366f1)', marginBottom: '0.5rem' }}>InsighteCase</p>
-              <h1 className="login-title" style={{ fontSize: '2.25rem', fontWeight: '800', tracking: '-0.025em', margin: '0' }}>Welcome to InsighteCase</h1>
-              <p className="login-sub" style={{ fontSize: '1rem', color: 'var(--color-text-muted, #6b7280)', marginTop: '0.5rem' }}>Please select your portal to sign in to your dashboard</p>
+            <header className="login-header login-header--gateway">
+              <InsighteLogo />
+              <h1 className="login-title login-title--gateway">Welcome</h1>
+              <p className="login-sub login-sub--gateway">Please select your portal to sign in to your dashboard</p>
             </header>
 
-            <div className="portal-selection-grid" style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '1.5rem',
-              width: '100%'
-            }}>
+            <div className="portal-selection-grid">
               {PORTALS.map((p) => {
                 const route =
                   p.id === 'parent'
@@ -308,62 +328,22 @@ export function LoginPage({ portalType }) {
                     key={p.id}
                     to={route}
                     className="portal-selection-card"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      padding: '2rem 1.5rem',
-                      borderRadius: '16px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                      backdropFilter: 'blur(16px)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      textDecoration: 'none',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      color: 'inherit',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-6px)'
-                      e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)'
-                      e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.08)'
-                      e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)'
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                    }}
                   >
-                    <div className="portal-icon-wrapper" style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: p.id === 'parent' ? 'rgba(59, 130, 246, 0.15)' : p.id === 'therapist' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                      color: p.id === 'parent' ? '#3b82f6' : p.id === 'therapist' ? '#10b981' : '#f59e0b',
-                      fontSize: '1.5rem',
-                      marginBottom: '1.25rem'
-                    }}>
-                      {p.id === 'parent' && '👥'}
-                      {p.id === 'therapist' && '🩺'}
-                      {p.id === 'admin' && '🛡️'}
-                    </div>
-                    <h3 className="portal-card-title" style={{ fontSize: '1.25rem', fontWeight: '700', margin: '0 0 0.5rem 0' }}>{p.label} Portal</h3>
-                    <p className="portal-card-desc" style={{ fontSize: '0.875rem', color: 'var(--color-text-muted, #9ca3af)', margin: '0', lineHeight: '1.5' }}>{p.subtitle}</p>
+                    <img
+                      src={p.iconSrc}
+                      alt=""
+                      className="portal-card-icon"
+                      width={56}
+                      height={56}
+                      aria-hidden="true"
+                    />
+                    <h3 className="portal-card-title">{p.cardTitle}</h3>
+                    <p className={`portal-card-desc${p.cardSubtitleSmall ? ' portal-card-desc--small' : ''}`}>
+                      {p.cardSubtitle}
+                    </p>
 
-                    <span className="portal-card-action" style={{
-                      marginTop: 'auto',
-                      paddingTop: '1.5rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: 'var(--color-primary, #6366f1)'
-                    }}>
-                      Open portal <span style={{ transition: 'transform 0.2s' }}>→</span>
+                    <span className="portal-card-action">
+                      {p.cardAction} <span aria-hidden="true">→</span>
                     </span>
                   </Link>
                 )
@@ -383,7 +363,7 @@ export function LoginPage({ portalType }) {
         <section className={`login-card ${portalType === 'dev' ? '' : 'login-card--single'}`}>
           <main id="main-content" className="login-main" tabIndex={-1}>
             <header className="login-header">
-              <p className="login-brand">InsighteCase</p>
+              <InsighteLogo className="login-insighte-logo--form" />
               <h1 className="login-title">{active.label} portal</h1>
               <p className="login-sub">{active.subtitle}</p>
             </header>

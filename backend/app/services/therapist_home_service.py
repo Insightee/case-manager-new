@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, time, timedelta
+from datetime import date, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -420,12 +420,7 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
 
 
 def build_sessions_workspace(db: Session, user: User) -> TherapistSessionsWorkspaceResponse:
-    from app.services.session_day_end_service import auto_close_open_sessions_at_day_end
-
     ist_now = now_ist()
-    if ist_now.time() >= time(22, 0):
-        auto_close_open_sessions_at_day_end(db, ist_now)
-
     cases = tpq.assigned_cases(db, user)
     case_ids = [c.id for c in cases]
     today = today_ist()

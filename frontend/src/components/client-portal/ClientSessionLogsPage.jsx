@@ -86,9 +86,9 @@ const ATTENDANCE_FILTERS = [
   { value: 'PARTIAL', label: 'Partial' },
   { value: 'NO_SHOW', label: 'No show' },
   { value: 'CANCELLED', label: 'Cancelled' },
-  { value: 'CLIENT_ABSENT', label: 'Client Absent' },
-  { value: 'CLIENT_LEAVE', label: 'Client Leave' },
-  { value: 'THERAPIST_LEAVE', label: 'Therapist Leave' },
+  { value: 'CLIENT_ABSENT', label: 'Child on leave' },
+  { value: 'CLIENT_LEAVE', label: 'Child on leave' },
+  { value: 'THERAPIST_LEAVE', label: 'Therapist unavailable' },
 ]
 
 export function ClientSessionLogsPage() {

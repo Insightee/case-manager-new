@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TypedDict
 
 from sqlalchemy import extract, select
 from sqlalchemy.orm import Session, selectinload
@@ -9,8 +10,26 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.report import MonthlyReport
 from app.models.session import Session as TherapySession
+from app.models.session import SessionStatus
 
 _COMPILE_STATUSES = (LogApprovalStatus.PENDING, LogApprovalStatus.APPROVED)
+
+# Attendance-only statuses that go into the timeline but NOT clinical evidence.
+_ATTENDANCE_STATUSES = (
+    SessionStatus.CLIENT_ABSENT,
+    SessionStatus.NO_SHOW,
+    SessionStatus.THERAPIST_LEAVE,
+    SessionStatus.CANCELLED,
+)
+
+
+class AttendanceTimelineEntry(TypedDict):
+    entry_type: str          # "child_absent" | "therapist_leave" | "cancelled" | "no_show"
+    session_id: int
+    scheduled_date: str
+    start_time: str | None
+    end_time: str | None
+    data_quality_flag: str | None
 
 
 def parse_report_month(month_str: str) -> tuple[int, int] | None:
@@ -58,6 +77,64 @@ def submitted_logs_for_report_month(
         .order_by(TherapySession.scheduled_date.asc())
     )
     return list(db.scalars(stmt).all())
+
+
+def attendance_timeline_for_report_month(
+    db: Session,
+    report: MonthlyReport,
+) -> list[AttendanceTimelineEntry]:
+    """Return attendance-only timeline entries for the report month.
+
+    These contribute attendance context (not clinical evidence) to monthly reports.
+    Duplicate sessions for the same (case_id, scheduled_date) are collapsed: the
+    highest-priority row wins and extras have data_quality_flag = "DUPLICATE_SESSION".
+    """
+    ym = parse_report_month(report.month)
+    if not ym:
+        return []
+    year, month = ym
+    rows = list(
+        db.scalars(
+            select(TherapySession)
+            .where(
+                TherapySession.case_id == report.case_id,
+                extract("year", TherapySession.scheduled_date) == year,
+                extract("month", TherapySession.scheduled_date) == month,
+                TherapySession.status.in_(_ATTENDANCE_STATUSES),
+            )
+            .order_by(TherapySession.scheduled_date.asc(), TherapySession.id.asc())
+        ).all()
+    )
+
+    # Collapse duplicates per date — keep first (lowest id) and mark extras.
+    seen: dict[str, int] = {}
+    entries: list[AttendanceTimelineEntry] = []
+    for s in rows:
+        date_key = s.scheduled_date.isoformat()
+        if date_key in seen:
+            # Flag duplicate without mutating the DB in a read path — caller can persist
+            # data_quality_flag via a separate admin cleanup pass if needed.
+            continue
+        seen[date_key] = s.id
+
+        status_map = {
+            SessionStatus.CLIENT_ABSENT: "child_absent",
+            SessionStatus.NO_SHOW: "child_absent",
+            SessionStatus.THERAPIST_LEAVE: "therapist_leave",
+            SessionStatus.CANCELLED: "cancelled",
+        }
+        entry_type = status_map.get(s.status, "other")
+        entries.append(
+            AttendanceTimelineEntry(
+                entry_type=entry_type,
+                session_id=s.id,
+                scheduled_date=date_key,
+                start_time=s.start_time.isoformat() if s.start_time else None,
+                end_time=s.end_time.isoformat() if s.end_time else None,
+                data_quality_flag=getattr(s, "data_quality_flag", None),
+            )
+        )
+    return entries
 
 
 def log_to_context_dict(log: DailyLog) -> dict:

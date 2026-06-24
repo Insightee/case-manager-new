@@ -14,8 +14,12 @@ from app.core.timezone import ensure_utc_aware
 
 IST = ZoneInfo("Asia/Kolkata")
 
-MIN_SESSION_MINUTES = 0
-MIN_SESSION_DURATION_ERROR = "Session duration must be positive."
+MIN_SESSION_MINUTES = 1
+MIN_SESSION_DURATION_ERROR = "Session duration must be at least 1 minute."
+
+# Sessions started within this window (minutes from actual_start_at) and with no
+# log/ledger/absence dependencies can be cancelled as "accidentally started".
+ACCIDENTAL_START_WINDOW_MINUTES = 5
 
 # Legacy module ceilings (unscheduled absolute caps from actual start).
 SHADOW_MAX_HOURS = 10
@@ -82,7 +86,7 @@ def _time_to_minutes(t: time | None) -> int | None:
 
 
 def validate_session_duration_minutes(minutes: int) -> None:
-    if minutes < 0:
+    if minutes < MIN_SESSION_MINUTES:
         raise ValueError(MIN_SESSION_DURATION_ERROR)
 
 
@@ -275,12 +279,14 @@ def module_absolute_ceiling(started_at: datetime, product_module: str) -> dateti
 
 
 __all__ = [
+    "ACCIDENTAL_START_WINDOW_MINUTES",
     "AUTO_END_REASON_LABELS",
     "CATEGORY_AFTER_SCHEDULE_BUFFER_MINUTES",
     "CATEGORY_DEFAULT_MAX_HOURS",
     "EARLY_CLOSE_ANOMALY_HINT",
     "HOMECARE_MAX_HOURS",
     "MIN_SESSION_DURATION_ERROR",
+    "MIN_SESSION_MINUTES",
     "SESSION_FALLBACK_MAX_HOURS",
     "SHADOW_MAX_HOURS",
     "auto_end_label",

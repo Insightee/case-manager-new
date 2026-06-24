@@ -356,7 +356,7 @@ export function SubmitSessionLogForm({
         ) : null}
       </header>
 
-      {(showBrief && !isEdit) || (isResubmit && showBrief) ? (
+      {showBrief ? (
         <SessionBrief
           session={session}
           childName={childName}
@@ -395,7 +395,7 @@ export function SubmitSessionLogForm({
         </p>
       ) : isEdit ? (
         <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
-          Changes save while the log is still pending review and within 24 hours of submission.
+          Use Save Draft to save without submitting.
         </p>
       ) : (
         <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
@@ -413,27 +413,6 @@ export function SubmitSessionLogForm({
       ) : null}
 
       <form className="ic-session-log-form" onSubmit={isResubmit ? handleResubmit : handleSubmit}>
-        <fieldset className="ic-session-log-form__attendance">
-          <legend>Attendance</legend>
-          <div className="ic-session-log-form__attendance-options">
-            {ATTENDANCE.map((a) => (
-              <label key={a.value} className="ic-session-log-attendance">
-                <input
-                  type="radio"
-                  name="attendance"
-                  value={a.value}
-                  checked={form.attendance_status === a.value}
-                  onChange={() => {
-                    setForm({ ...form, attendance_status: a.value })
-                    setDirtySinceServerSave(true)
-                  }}
-                />
-                <span>{a.label}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
         <div className="ic-session-log-form__grid">
           {FIELDS.map(({ key, label, hint, rows, highlight, required: fieldRequired }) => (
             <label
@@ -497,9 +476,23 @@ export function SubmitSessionLogForm({
                 Save progress
               </button>
             </>
+          ) : isEdit ? (
+            <>
+              <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
+                {submitting ? 'Submitting…' : 'Submit log'}
+              </button>
+              <button
+                type="button"
+                className="ic-btn ic-btn--ghost"
+                disabled={submitting}
+                onClick={handleSaveProgress}
+              >
+                Save draft
+              </button>
+            </>
           ) : (
             <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
-              {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Submit log & finish'}
+              {submitting ? 'Saving…' : 'Submit log & finish'}
             </button>
           )}
           {!isEdit && session?.id ? (
