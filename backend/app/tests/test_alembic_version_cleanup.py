@@ -1,6 +1,7 @@
 """Tests for alembic_version row compaction after reparented merge migrations."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,10 +17,14 @@ from app.db.alembic_version_cleanup import (
 )
 
 _BACKEND = Path(__file__).resolve().parents[2]
+_ALEMBIC_DIR = str(_BACKEND / "alembic")
 
 
 @pytest.fixture(scope="module")
 def script() -> ScriptDirectory:
+    # Migration files import migration_util from backend/alembic (same as CI alembic heads step).
+    if _ALEMBIC_DIR not in sys.path:
+        sys.path.insert(0, _ALEMBIC_DIR)
     cfg = Config(str(_BACKEND / "alembic.ini"))
     return ScriptDirectory.from_config(cfg)
 
