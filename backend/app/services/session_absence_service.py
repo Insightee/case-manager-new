@@ -51,8 +51,8 @@ def _serialize(db: Session, row: SessionAbsenceRequest) -> dict:
         "scheduled_date": session.scheduled_date.isoformat() if session else None,
         "start_time": str(session.start_time) if session and session.start_time else None,
         "end_time": str(session.end_time) if session and session.end_time else None,
-        "created_at": row.created_at,
-        "reviewed_at": row.reviewed_at,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
     }
 
 
@@ -162,6 +162,35 @@ def _apply_billing(db: Session, session: TherapySession, case: Case, absence_typ
     return json.dumps(outcome)
 
 
+def get_absence_for_session(db: Session, user: User, session_id: int) -> dict:
+    session = db.get(TherapySession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.therapist_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Can only view absence on your own sessions")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    row = db.scalars(
+        select(SessionAbsenceRequest)
+        .where(SessionAbsenceRequest.session_id == session_id)
+        .order_by(SessionAbsenceRequest.created_at.desc())
+    ).first()
+    if not row:
+        return {"status": "none", "message": None, "absence_request": None}
+
+    serialized = _serialize(db, row)
+    status_key = row.status.value.lower()
+    if row.status == SessionAbsenceStatus.PENDING_APPROVAL:
+        status_key = "pending"
+    return {
+        "status": status_key,
+        "message": None,
+        "absence_request": serialized,
+    }
+
+
 def create_request(
     db: Session,
     user: User,
@@ -199,7 +228,16 @@ def create_request(
         )
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="A pending absence request already exists for this session")
+        serialized = _serialize(db, existing)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "pending",
+                "message": "Child absence already submitted for this session.",
+                "existing": True,
+                "absence_request": serialized,
+            },
+        )
 
     row = SessionAbsenceRequest(
         session_id=session.id,

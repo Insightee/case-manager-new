@@ -1,0 +1,17 @@
+# Railway cron service — auto-close open sessions at 10 PM IST (16:30 UTC).
+#
+# Dashboard setup:
+#   1. New service → name: session-day-end
+#   2. Root Directory: backend
+#   3. Settings → Config file: railway.session-day-end-cron.toml
+#   4. Variables: DATABASE_URL=${{Postgres.DATABASE_URL}}
+#   5. Deploy
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python scripts/auto_close_sessions_day_end.py"
+cronSchedule = "30 16 * * *"
+restartPolicyType = "ON_FAILURE"

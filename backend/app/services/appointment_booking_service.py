@@ -142,8 +142,12 @@ def _slot_visible_to_parent(
     case_id: int,
     assignment,
 ) -> bool:
-    if slot.slot_date.isoformat() in cal._leave_dates(db, slot.therapist_user_id, slot.slot_date, slot.slot_date):
-        return False
+    overlay = cal._day_overlay_for(db, slot.therapist_user_id, slot.slot_date)
+    if overlay:
+        if overlay.get("therapist_wide"):
+            return False
+        if slot.case_id and int(slot.case_id) in (overlay.get("case_ids") or []):
+            return False
     duration = slot.slot_duration_minutes or 30
     if duration < policy.PARENT_SLOT_DURATION_MINUTES:
         return False
@@ -184,7 +188,8 @@ def parent_calendar_view(
     visible: list[dict[str, Any]] = []
 
     for s in slots:
-        if s.slot_date.isoformat() in leave_days:
+        overlay = leave_days.get(s.slot_date.isoformat())
+        if overlay and overlay.get("therapist_wide"):
             continue
         if not _slot_visible_to_parent(db, s, case_id, assignment):
             continue

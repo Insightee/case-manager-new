@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -113,3 +113,113 @@ def test_therapist_leave_admin_approve():
     )
     assert approve.status_code == 200
     assert approve.json()["status"] == "APPROVED"
+
+
+_fresh_session_counter = 0
+
+
+def _fresh_scheduled_session(headers: dict) -> int:
+    global _fresh_session_counter
+    today = date.today().isoformat()
+    cases = client.get("/api/v1/cases?assigned=true&page_size=20", headers=headers).json()
+    case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
+    if not case_items:
+        raise AssertionError("No assigned cases for therapist")
+    for attempt in range(len(case_items) * 3):
+        _fresh_session_counter += 1
+        case_id = int(case_items[_fresh_session_counter % len(case_items)]["id"])
+        hour = 8 + (_fresh_session_counter % 10)
+        minute = 10 + (_fresh_session_counter % 45)
+        start = f"{hour:02d}:{minute:02d}"
+        end = f"{hour:02d}:{minute + 29:02d}"
+        created = client.post(
+            "/api/v1/sessions",
+            headers=headers,
+            json={
+                "case_id": case_id,
+                "therapist_user_id": 0,
+                "scheduled_date": today,
+                "start_time": start,
+                "end_time": end,
+                "mode": "HOME",
+                "status": "SCHEDULED",
+            },
+        )
+        if created.status_code != 201:
+            continue
+        session_id = int(created.json()["id"])
+        existing = client.get(f"/api/v1/sessions/{session_id}/absence", headers=headers)
+        if existing.status_code == 200 and existing.json().get("status") == "none":
+            return session_id
+    raise AssertionError("Could not allocate a fresh scheduled session for absence tests")
+
+
+def test_absence_duplicate_returns_structured_409():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+    payload = {"absence_type": "CLIENT_ABSENT", "reason": "Unwell"}
+    first = client.post(f"/api/v1/sessions/{session_id}/absence", headers=therapist_headers, json=payload)
+    assert first.status_code == 201, first.text
+    second = client.post(f"/api/v1/sessions/{session_id}/absence", headers=therapist_headers, json=payload)
+    assert second.status_code == 409, second.text
+    detail = second.json()["detail"]
+    assert detail["existing"] is True
+    assert detail["absence_request"]["session_id"] == session_id
+    assert detail["status"] == "pending"
+
+
+def test_get_absence_by_session_id():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+    empty = client.get(f"/api/v1/sessions/{session_id}/absence", headers=therapist_headers)
+    assert empty.status_code == 200
+    assert empty.json()["status"] == "none"
+
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Travel"},
+    )
+    assert create.status_code == 201
+    pending = client.get(f"/api/v1/sessions/{session_id}/absence", headers=therapist_headers)
+    assert pending.status_code == 200
+    body = pending.json()
+    assert body["status"] == "pending"
+    assert body["absence_request"]["id"] == create.json()["id"]
+
+
+def test_absence_does_not_create_in_progress_or_daily_log():
+    therapist_headers = _login("therapist@demo.com")
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    cases = client.get("/api/v1/cases?assigned=true&page_size=1", headers=therapist_headers).json()
+    case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
+    case_id = int(case_items[0]["id"])
+    created = client.post(
+        "/api/v1/sessions",
+        headers=therapist_headers,
+        json={
+            "case_id": case_id,
+            "therapist_user_id": 0,
+            "scheduled_date": tomorrow,
+            "start_time": "15:20",
+            "end_time": "16:20",
+            "mode": "HOME",
+            "status": "SCHEDULED",
+        },
+    )
+    assert created.status_code == 201, created.text
+    session_id = int(created.json()["id"])
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Sick"},
+    )
+    assert create.status_code == 201, create.text
+    sess = client.get(f"/api/v1/sessions/{session_id}", headers=therapist_headers)
+    assert sess.status_code == 200
+    row = sess.json()
+    assert row["status"] == "SCHEDULED"
+    logs = client.get("/api/v1/daily-logs", headers=therapist_headers)
+    assert logs.status_code == 200
+    items = logs.json() if isinstance(logs.json(), list) else logs.json().get("items", [])
+    assert not any(l.get("session_id") == session_id for l in items)

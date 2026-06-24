@@ -104,6 +104,7 @@ export function DailyLogsPage() {
   })
   const upcoming = workspace?.upcoming || []
   const active = workspace?.active_session || null
+  const stalePrevious = workspace?.stale_previous_sessions || []
   const needsLog = workspace?.needs_log || []
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
   const loading = wsLoading || logsQuery.isLoading
@@ -669,7 +670,10 @@ export function DailyLogsPage() {
     }
   }
 
-  const showComposer = !logSession && !viewingLog && !visitSession && !active
+  const showComposerShell = !logSession && !viewingLog && !visitSession
+  const handleComposerError = (msg) => {
+    if (!error) setError(msg)
+  }
 
   if (loading && !logSession) {
     return <p style={{ padding: 24, color: '#6b7280' }}>Loading session logs…</p>
@@ -694,6 +698,10 @@ export function DailyLogsPage() {
           <button type="button" className="ic-btn ic-btn--secondary" onClick={handleRetry} style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
             Retry now
           </button>
+        </div>
+      ) : error && String(error).toLowerCase().includes('offline') ? (
+        <div className="ic-alert ic-alert--warn" style={{ marginBottom: 20 }}>
+          {error}
         </div>
       ) : error ? (
         <div className="ic-alert ic-alert--error">{error}</div>
@@ -723,9 +731,9 @@ export function DailyLogsPage() {
               {active.actual_start_at ? (
                 <>
                   {isStartedLateOnSchedule(active.actual_start_at, active.scheduled_date, active.start_time) ? (
-                    <span style={{ color: '#b45309', fontWeight: 600 }}> · Started late at {formatTimeIST(active.actual_start_at)} IST</span>
+                    <span style={{ color: '#b45309', fontWeight: 600 }}> · Started late at {formatTimeIST(active.actual_start_at)}</span>
                   ) : (
-                    <span> · Started at {formatTimeIST(active.actual_start_at)} IST</span>
+                    <span> · Started at {formatTimeIST(active.actual_start_at)}</span>
                   )}
                 </>
               ) : null}
@@ -756,6 +764,34 @@ export function DailyLogsPage() {
               {cancelBusy ? 'Cancelling…' : 'Cancel Session'}
             </button>
           </div>
+        </section>
+      ) : null}
+
+      {stalePrevious.length > 0 ? (
+        <section
+          className="ic-case-stale"
+          style={{
+            marginBottom: 24,
+            border: '1px solid #fbbf24',
+            backgroundColor: '#fffbeb',
+            borderRadius: '8px',
+            padding: '16px',
+          }}
+        >
+          <p style={{ color: '#b45309', fontWeight: 600, margin: '0 0 8px' }}>
+            Previous session pending closure
+          </p>
+          {stalePrevious.map((s) => (
+            <p key={s.id} style={{ margin: '0 0 6px', fontSize: '0.875rem' }}>
+              <strong>{s.child_name || s.case_code}</strong> · {formatDisplayDate(s.scheduled_date)}
+              {s.actual_start_at ? (
+                <span style={{ color: '#6b7280' }}> · started {formatTimeIST(s.actual_start_at)}</span>
+              ) : null}
+            </p>
+          ))}
+          <p style={{ margin: 0, fontSize: '0.8125rem', color: '#92400e' }}>
+            Open sessions auto-close at 10 PM IST. You can still start today&apos;s visits and log child absence.
+          </p>
         </section>
       ) : null}
 
@@ -817,17 +853,17 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
-      {showComposer ? (
+      {showComposerShell ? (
         <TherapistSessionComposer
           upcomingSessions={upcoming}
-          disabled={!!active}
+          liveBlocked={!!active}
           onSelectedCaseChange={setComposerCaseId}
           onSessionStarted={(info) => {
             if (info?.message) setSuccess(info.message)
             void loadAll({ silent: true })
           }}
           onManualSession={handleManualSession}
-          onError={setError}
+          onError={handleComposerError}
         />
       ) : null}
 

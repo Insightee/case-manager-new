@@ -45,3 +45,16 @@ class SessionAbsenceRead(BaseModel):
 
 class SessionAbsenceListResponse(BaseModel):
     items: list[SessionAbsenceRead] = Field(default_factory=list)
+
+
+class SessionAbsenceStatusResponse(BaseModel):
+    status: str  # none | pending | approved | rejected
+    message: Optional[str] = None
+    absence_request: Optional[SessionAbsenceRead] = None
+
+
+class SessionAbsenceDuplicateResponse(BaseModel):
+    status: str = "pending"
+    message: str
+    existing: bool = True
+    absence_request: SessionAbsenceRead

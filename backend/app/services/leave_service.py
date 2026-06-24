@@ -199,6 +199,27 @@ def report_to_csv(rows: list[dict]) -> str:
     return buf.getvalue()
 
 
+def _leave_case_ids(leave: TherapistLeave) -> list[int]:
+    ids = [int(x) for x in (leave.case_ids or [])]
+    if leave.case_id is not None and int(leave.case_id) not in ids:
+        ids.insert(0, int(leave.case_id))
+    return ids
+
+
+def _leave_scope_ids(leave: TherapistLeave) -> set[int] | None:
+    """None means therapist-wide leave."""
+    ids = _leave_case_ids(leave)
+    return set(ids) if ids else None
+
+
+def _leave_scopes_conflict(existing: TherapistLeave, new_case_ids: list[int] | None) -> bool:
+    existing_scope = _leave_scope_ids(existing)
+    new_scope = set(new_case_ids) if new_case_ids else None
+    if existing_scope is None or new_scope is None:
+        return True
+    return bool(existing_scope & new_scope)
+
+
 def create_therapist_leave_request(
     db: Session,
     *,
@@ -229,17 +250,17 @@ def create_therapist_leave_request(
         TherapistLeave.end_date >= start_date
     )
     overlapping_leaves = db.scalars(overlap_stmt).all()
-    if overlapping_leaves:
+    ids = list(dict.fromkeys(int(x) for x in (case_ids or [])))
+    if case_id is not None and int(case_id) not in ids:
+        ids.insert(0, int(case_id))
+    conflicting = [lv for lv in overlapping_leaves if _leave_scopes_conflict(lv, ids or None)]
+    if conflicting:
         raise ValueError("Leave is already marked for this date. View existing leave.")
 
     if not auto_approve:
         leave_migration.validate_therapist_leave_dates(start_date, end_date)
 
     get_or_create_profile(db, therapist.id)
-
-    ids = list(dict.fromkeys(int(x) for x in (case_ids or [])))
-    if case_id is not None and int(case_id) not in ids:
-        ids.insert(0, int(case_id))
 
     has_shadow = False
     has_homecare = False

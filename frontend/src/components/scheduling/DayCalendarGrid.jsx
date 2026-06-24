@@ -5,6 +5,9 @@ import {
   calendarGridEvents,
   dateStr,
   defaultHourRows,
+  isEventOnLeave,
+  isTherapistWideLeaveOverlay,
+  leaveOverlayHeaderLabel,
 } from './slotCalendarUtils.js'
 import { formatDisplayDateLabel } from '../../lib/datetime.js'
 import './scheduling-day.css'
@@ -37,12 +40,18 @@ export function DayCalendarGrid({
   const today = dateStr(new Date())
   const slotsByDayHour = useMemo(() => groupSlotsByDayHour(calendarGridEvents(calendar)), [calendar])
   const overlay = calendar?.day_overlays?.[ds]
+  const dayWideLeave = isTherapistWideLeaveOverlay(overlay)
   const isToday = ds === today
+
+  function decorateEvent(event) {
+    if (!overlay || dayWideLeave) return event
+    return isEventOnLeave(event, overlay) ? { ...event, on_leave: true } : event
+  }
 
   function renderHourCell(hour) {
     const key = `${ds}-${hour}`
     const cellSlots = slotsByDayHour[key] || []
-    if (overlay) {
+    if (dayWideLeave) {
       return (
         <div className="min-h-[44px] rounded bg-slate-200/80 text-center text-[10px] leading-[44px] text-slate-500">
           Unavailable
@@ -61,8 +70,9 @@ export function DayCalendarGrid({
           </button>
         ) : null}
         {cellSlots.map((s) => {
-          const style = calendarEventStyle(s, mode)
-          const label = calendarEventLabel(s, mode)
+          const event = decorateEvent(s)
+          const style = calendarEventStyle(event, mode)
+          const label = calendarEventLabel(event, mode)
           return (
             <button
               key={s.id}
@@ -114,7 +124,7 @@ export function DayCalendarGrid({
       ) : (
         <>
           <div className="day-cal__agenda">
-            {overlay ? (
+            {dayWideLeave ? (
               <p className="px-4 py-6 text-center text-sm text-amber-800">Leave day — unavailable</p>
             ) : (
               hours.map((hour) => (
@@ -124,7 +134,7 @@ export function DayCalendarGrid({
                 </div>
               ))
             )}
-            {showLeaveActions && onMarkLeave && !overlay ? (
+            {showLeaveActions && onMarkLeave && !dayWideLeave ? (
               <div className="border-t border-[#E2E8F0] px-4 py-3">
                 <button
                   type="button"
@@ -147,7 +157,9 @@ export function DayCalendarGrid({
                   >
                     <div className="text-lg font-bold">{dayDate.getDate()}</div>
                     {overlay ? (
-                      <span className="mt-1 block text-[10px] font-semibold text-amber-800">Leave</span>
+                      <span className="mt-1 block text-[10px] font-semibold text-amber-800">
+                        {leaveOverlayHeaderLabel(overlay)}
+                      </span>
                     ) : showLeaveActions && onMarkLeave ? (
                       <button
                         type="button"
@@ -164,7 +176,7 @@ export function DayCalendarGrid({
                 {hours.map((hour) => {
                   const key = `${ds}-${hour}`
                   const cellSlots = slotsByDayHour[key] || []
-                  if (overlay) {
+                  if (dayWideLeave) {
                     return (
                       <tr key={hour} className="border-t border-[#E2E8F0]">
                         <td className="p-2 text-right text-xs text-slate-400">{String(hour).padStart(2, '0')}:00</td>

@@ -54,7 +54,7 @@ def create_slot(
 ) -> TherapistSlot:
     if end_time <= start_time:
         raise ValueError("end_time must be after start_time")
-    if cal.is_day_on_leave(db, therapist_user_id, slot_date) and status == SlotStatus.AVAILABLE:
+    if cal.is_therapist_wide_leave_day(db, therapist_user_id, slot_date) and status == SlotStatus.AVAILABLE:
         raise ValueError("Cannot add availability on a leave day")
     existing = db.scalars(
         select(TherapistSlot).where(
@@ -247,7 +247,7 @@ def preview_recurring_schedule(
         if cal._weekday_key(d) not in weekdays:
             d += timedelta(days=1)
             continue
-        if cal.is_day_on_leave(db, therapist_user_id, d):
+        if cal.is_therapist_wide_leave_day(db, therapist_user_id, d):
             planned.append({"date": d.isoformat(), "status": "skipped_leave"})
             d += timedelta(days=1)
             continue
@@ -321,7 +321,7 @@ def assign_recurring_schedule(
         if cal._weekday_key(d) not in weekdays:
             d += timedelta(days=1)
             continue
-        if cal.is_day_on_leave(db, therapist_user_id, d):
+        if cal.is_therapist_wide_leave_day(db, therapist_user_id, d):
             d += timedelta(days=1)
             continue
         key = (d, start_time)

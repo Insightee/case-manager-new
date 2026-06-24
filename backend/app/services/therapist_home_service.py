@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.session_rules import auto_end_label as auto_end_label_for_reason
-from app.core.timezone import ensure_utc_aware
+from app.core.timezone import ensure_utc_aware, now_ist, today_ist
 from app.models.case import Case
 from app.models.report import MonthlyReport, ReportStatus
 from app.models.session import Session as TherapySession
@@ -331,7 +331,7 @@ def _prepare_session_reads(db: Session, sessions: list[TherapySession]) -> list[
 def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
     cases = tpq.assigned_cases(db, user)
     case_ids = [c.id for c in cases]
-    today = date.today()
+    today = today_ist()
     month_label = tpq.current_month_label()
 
     upcoming_raw = tpq.fetch_upcoming_sessions(
@@ -417,9 +417,15 @@ def build_therapist_home(db: Session, user: User) -> TherapistHomeResponse:
 
 
 def build_sessions_workspace(db: Session, user: User) -> TherapistSessionsWorkspaceResponse:
+    from app.services.session_day_end_service import auto_close_open_sessions_at_day_end
+
+    ist_now = now_ist()
+    if ist_now.time() >= time(22, 0):
+        auto_close_open_sessions_at_day_end(db, ist_now)
+
     cases = tpq.assigned_cases(db, user)
     case_ids = [c.id for c in cases]
-    today = date.today()
+    today = today_ist()
 
     upcoming_raw = tpq.fetch_upcoming_sessions(db, user, case_ids, days=7, limit=tpq.UPCOMING_LIMIT)
     needs_log_raw = tpq.fetch_needs_log_sessions(db, user, case_ids, limit=tpq.NEEDS_LOG_LIMIT)
@@ -427,8 +433,11 @@ def build_sessions_workspace(db: Session, user: User) -> TherapistSessionsWorksp
     upcoming_reads = _prepare_session_reads(db, upcoming_raw)
     needs_log_reads = _prepare_session_reads(db, needs_log_raw)
 
-    active = session_service.get_active_session(db, user.id)
+    active = session_service.get_active_session_for_today(db, user.id)
     active_read = _session_read(active, active.case) if active and active.case else None
+
+    stale_raw = session_service.get_stale_previous_sessions(db, user.id)
+    stale_reads = _prepare_session_reads(db, stale_raw)
 
     slot_end = today + timedelta(days=tpq.SLOT_FORWARD_DAYS)
     slots = tpq.fetch_booked_slots(db, user, from_date=today, to_date=slot_end)
@@ -437,6 +446,7 @@ def build_sessions_workspace(db: Session, user: User) -> TherapistSessionsWorksp
     return TherapistSessionsWorkspaceResponse(
         upcoming=upcoming_reads[: tpq.UPCOMING_LIMIT],
         active_session=active_read,
+        stale_previous_sessions=stale_reads,
         needs_log=needs_log_reads[: tpq.NEEDS_LOG_LIMIT],
         booked_slots=[cal._slot_to_dict(sl) for sl in slots],
     )

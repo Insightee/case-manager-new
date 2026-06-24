@@ -6,6 +6,9 @@ import {
   calendarGridEvents,
   dateStr,
   defaultHourRows,
+  isEventOnLeave,
+  isTherapistWideLeaveOverlay,
+  leaveOverlayHeaderLabel,
   startOfWeek,
   weekDays,
 } from './slotCalendarUtils.js'
@@ -85,6 +88,7 @@ export function WeekCalendarGrid({
                 {days.map((d) => {
                   const ds = dateStr(d)
                   const overlay = calendar?.day_overlays?.[ds]
+                  const dayWideLeave = isTherapistWideLeaveOverlay(overlay)
                   const isToday = ds === today
                   return (
                     <th
@@ -96,7 +100,9 @@ export function WeekCalendarGrid({
                       </div>
                       <div className="text-lg font-bold">{d.getDate()}</div>
                       {overlay ? (
-                        <span className="mt-1 block text-[10px] font-semibold text-amber-800">Leave</span>
+                        <span className="mt-1 block text-[10px] font-semibold text-amber-800">
+                          {leaveOverlayHeaderLabel(overlay)}
+                        </span>
                       ) : showLeaveActions && onMarkLeave ? (
                         <button
                           type="button"
@@ -118,9 +124,10 @@ export function WeekCalendarGrid({
                   {days.map((d) => {
                     const ds = dateStr(d)
                     const overlay = calendar?.day_overlays?.[ds]
+                    const dayWideLeave = isTherapistWideLeaveOverlay(overlay)
                     const key = `${ds}-${hour}`
                     const cellSlots = slotsByDayHour[key] || []
-                    if (overlay) {
+                    if (dayWideLeave) {
                       return (
                         <td key={ds} className="border-l border-[#E2E8F0] bg-slate-100 p-1 align-top">
                           <div className="min-h-[44px] rounded bg-slate-200/80 text-center text-[10px] leading-[44px] text-slate-500">
@@ -141,8 +148,10 @@ export function WeekCalendarGrid({
                           </button>
                         ) : null}
                         {cellSlots.map((s) => {
-                          const style = calendarEventStyle(s, mode)
-                          const label = calendarEventLabel(s, mode)
+                          const event =
+                            overlay && isEventOnLeave(s, overlay) ? { ...s, on_leave: true } : s
+                          const style = calendarEventStyle(event, mode)
+                          const label = calendarEventLabel(event, mode)
                           return (
                             <button
                               key={s.id}

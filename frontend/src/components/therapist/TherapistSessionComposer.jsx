@@ -39,6 +39,7 @@ export function TherapistSessionComposer({
   lockCaseLabel = '',
   upcomingSessions = [],
   disabled = false,
+  liveBlocked = false,
   onSessionStarted,
   onManualSession,
   onError,
@@ -89,11 +90,16 @@ export function TherapistSessionComposer({
     onSelectedCaseChange?.(selectedCaseId)
   }, [selectedCaseId, onSelectedCaseChange])
 
+  const blockLive = liveBlocked || disabled
+  const absenceAllowedStatuses = new Set(['SCHEDULED', 'IN_PROGRESS'])
   const todaySessionsForCase = useMemo(() => {
     if (!selectedCaseId) return []
     const today = todayIsoIST()
     return upcomingSessions.filter(
-      (s) => s.case_id === selectedCaseId && s.scheduled_date === today && s.status === 'SCHEDULED',
+      (s) =>
+        s.case_id === selectedCaseId &&
+        s.scheduled_date === today &&
+        absenceAllowedStatuses.has(s.status),
     )
   }, [upcomingSessions, selectedCaseId])
 
@@ -146,13 +152,11 @@ export function TherapistSessionComposer({
     }
   }
 
-  if (disabled) {
-    return (
-      <div className="ic-session-composer ic-session-composer--muted">
-        <p>End your current session before starting another.</p>
-      </div>
-    )
-  }
+  useEffect(() => {
+    if (blockLive && (mode === 'live' || mode === 'past')) {
+      setMode('absence')
+    }
+  }, [blockLive])
 
   return (
     <section className="ic-session-composer" aria-label="Add or start session">
@@ -165,6 +169,7 @@ export function TherapistSessionComposer({
             aria-selected={mode === 'live'}
             className={mode === 'live' ? 'active' : ''}
             onClick={() => setMode('live')}
+            disabled={blockLive}
           >
             Start now
           </button>
@@ -174,6 +179,7 @@ export function TherapistSessionComposer({
             aria-selected={mode === 'past'}
             className={mode === 'past' ? 'active' : ''}
             onClick={() => setMode('past')}
+            disabled={blockLive}
           >
             Forgot to log
           </button>
@@ -216,7 +222,13 @@ export function TherapistSessionComposer({
       ) : null}
       */}
 
-      {mode === 'past' ? (
+      {blockLive && (mode === 'live' || mode === 'past') ? (
+        <p className="ic-session-composer__hint">
+          End your current session before starting another. You can still log child absence below.
+        </p>
+      ) : null}
+
+      {mode === 'past' && !blockLive ? (
         <ForgotSessionForm
           fallbackCases={caseOptions}
           initialCaseId={lockCaseId ? String(lockCaseId) : caseId}
@@ -273,7 +285,7 @@ export function TherapistSessionComposer({
             }}
           />
         </div>
-      ) : mode === 'live' ? (
+      ) : mode === 'live' && !blockLive ? (
         <div className="ic-session-composer__body">
           {lockCaseId && lockCaseLabel ? (
             <p className="ic-session-composer__locked-client">

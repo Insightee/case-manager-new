@@ -153,4 +153,8 @@ def auto_end_label(
         return "Auto closed — Homecare 3 hour limit"
     if auto_end_reason == "shadow_10h_limit":
         return "Auto closed — Shadow 10 hour limit"
+    if auto_end_reason == "day_end_10pm_ist":
+        return "Auto closed at 10 PM IST — complete your log when ready"
+    if auto_end_reason == "historical_cleanup_at_day_end":
+        return "Previous session auto-closed at day end — complete your log when ready"
     return "Auto closed by system"

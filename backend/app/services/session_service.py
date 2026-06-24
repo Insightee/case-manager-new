@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.timezone import today_ist, wall_clock_time_ist
+from app.core.timezone import IST, today_ist, wall_clock_time_ist
 from app.core.session_rules import (
     MIN_SESSION_DURATION_ERROR,
     compute_auto_end_cap,
@@ -29,6 +29,63 @@ def _aware(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def session_ist_calendar_day(session: TherapySession) -> date:
+    """IST calendar day for an open or scheduled session."""
+    if session.actual_start_at:
+        return _aware(session.actual_start_at).astimezone(IST).date()
+    return session.scheduled_date
+
+
+def get_in_progress_sessions(db: Session, therapist_user_id: int) -> list[TherapySession]:
+    return list(
+        db.scalars(
+            select(TherapySession)
+            .where(
+                TherapySession.therapist_user_id == therapist_user_id,
+                TherapySession.status == SessionStatus.IN_PROGRESS,
+            )
+            .options(selectinload(TherapySession.case), selectinload(TherapySession.daily_log))
+            .order_by(TherapySession.actual_start_at.desc())
+        ).all()
+    )
+
+
+def partition_sessions_by_ist_day(
+    sessions: list[TherapySession],
+    *,
+    today: date | None = None,
+) -> tuple[list[TherapySession], list[TherapySession]]:
+    today = today or today_ist()
+    same_day: list[TherapySession] = []
+    stale: list[TherapySession] = []
+    for session in sessions:
+        if session_ist_calendar_day(session) == today:
+            same_day.append(session)
+        else:
+            stale.append(session)
+    return same_day, stale
+
+
+def get_active_session_for_today(db: Session, therapist_user_id: int) -> TherapySession | None:
+    """Same IST-day IN_PROGRESS only — blocks starting another live session."""
+    same_day, _ = partition_sessions_by_ist_day(get_in_progress_sessions(db, therapist_user_id))
+    if not same_day:
+        return None
+    session = same_day[0]
+    session = auto_end_if_stale(db, session)
+    if session.status == SessionStatus.IN_PROGRESS:
+        db.flush()
+        return session
+    db.commit()
+    return None
+
+
+def get_stale_previous_sessions(db: Session, therapist_user_id: int) -> list[TherapySession]:
+    """Prior IST-day IN_PROGRESS — informational; does not block today's work."""
+    _, stale = partition_sessions_by_ist_day(get_in_progress_sessions(db, therapist_user_id))
+    return stale
 
 
 def auto_end_if_stale(db: Session, session: TherapySession) -> TherapySession:
@@ -59,22 +116,8 @@ def auto_end_if_stale(db: Session, session: TherapySession) -> TherapySession:
 
 
 def get_active_session(db: Session, therapist_user_id: int) -> TherapySession | None:
-    session = db.scalars(
-        select(TherapySession)
-        .where(
-            TherapySession.therapist_user_id == therapist_user_id,
-            TherapySession.status == SessionStatus.IN_PROGRESS,
-        )
-        .options(selectinload(TherapySession.case), selectinload(TherapySession.daily_log))
-        .order_by(TherapySession.actual_start_at.desc())
-    ).first()
-    if session:
-        session = auto_end_if_stale(db, session)
-        if session.status == SessionStatus.IN_PROGRESS:
-            db.flush()
-            return session
-        db.commit()
-    return None
+    """Same-day live session only (backward-compatible alias)."""
+    return get_active_session_for_today(db, therapist_user_id)
 
 
 def start_session(
@@ -131,20 +174,19 @@ def start_session(
     assert_therapist_may_start_session(db, session.case_id)
     start_svc.resolve_start_conflict(db, session, therapist_user_id, allow_duplicate=allow_duplicate)
 
-    active = db.scalars(
-        select(TherapySession).where(
-            TherapySession.therapist_user_id == therapist_user_id,
-            TherapySession.status == SessionStatus.IN_PROGRESS,
-        )
-    ).first()
-    if active and active.id != session.id:
+    today = today_ist()
+    for active in get_in_progress_sessions(db, therapist_user_id):
+        if active.id == session.id:
+            continue
+        if session_ist_calendar_day(active) != today:
+            continue
         active = auto_end_if_stale(db, active)
         if active.status == SessionStatus.IN_PROGRESS:
             raise SessionStartConflict(
                 existing_session_id=active.id,
                 current_status=active.status.value,
                 recommended_action=RecommendedAction.CONTINUE_SESSION,
-                message=f"You already have an active session. Continue it before starting another.",
+                message="You already have an active session. Continue it before starting another.",
             )
 
     now = _now()

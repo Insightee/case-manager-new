@@ -107,6 +107,7 @@ class TherapistHomeResponse(BaseModel):
 class TherapistSessionsWorkspaceResponse(BaseModel):
     upcoming: list[SessionRead]
     active_session: Optional[SessionRead] = None
+    stale_previous_sessions: list[SessionRead] = []
     needs_log: list[SessionRead]
     booked_slots: list[dict]
 

@@ -121,10 +121,49 @@ def _existing_slot_keys(db: Session, therapist_user_id: int, from_date: date, to
     return {(s.slot_date, s.start_time) for s in slots}
 
 
+def _leave_case_ids(leave: TherapistLeave) -> list[int]:
+    ids = [int(x) for x in (leave.case_ids or [])]
+    if leave.case_id is not None and int(leave.case_id) not in ids:
+        ids.insert(0, int(leave.case_id))
+    return ids
+
+
+def _merge_day_overlay(
+    overlays: dict[str, dict[str, Any]],
+    day_key: str,
+    *,
+    therapist_wide: bool,
+    case_ids: list[int],
+    leave_id: int,
+    leave_type: str,
+    status: str,
+) -> None:
+    existing = overlays.get(day_key)
+    if existing is None:
+        overlays[day_key] = {
+            "overlay": "leave",
+            "therapist_wide": therapist_wide,
+            "case_ids": list(case_ids),
+            "leave_ids": [leave_id],
+            "leave_type": leave_type,
+            "status": status,
+        }
+        return
+    if therapist_wide:
+        existing["therapist_wide"] = True
+    merged_cases = set(existing.get("case_ids") or [])
+    merged_cases.update(case_ids)
+    existing["case_ids"] = sorted(merged_cases)
+    leave_ids = list(existing.get("leave_ids") or [])
+    if leave_id not in leave_ids:
+        leave_ids.append(leave_id)
+    existing["leave_ids"] = leave_ids
+
+
 def _leave_dates(
     db: Session, therapist_user_id: int, from_date: date, to_date: date
 ) -> dict[str, dict[str, Any]]:
-    """Pending and approved leave block booking."""
+    """Pending and approved leave overlays keyed by ISO date."""
     leaves = db.scalars(
         select(TherapistLeave).where(
             TherapistLeave.therapist_user_id == therapist_user_id,
@@ -135,27 +174,58 @@ def _leave_dates(
     ).all()
     overlays: dict[str, dict[str, Any]] = {}
     for leave in leaves:
+        case_ids = _leave_case_ids(leave)
+        therapist_wide = not case_ids
         d = max(leave.start_date, from_date)
         end = min(leave.end_date, to_date)
+        leave_type = leave.leave_type.value
+        status = leave.status.value
         while d <= end:
-            overlays[d.isoformat()] = {
-                "overlay": "leave",
-                "leave_id": leave.id,
-                "leave_type": leave.leave_type.value,
-                "status": leave.status.value,
-            }
+            _merge_day_overlay(
+                overlays,
+                d.isoformat(),
+                therapist_wide=therapist_wide,
+                case_ids=case_ids,
+                leave_id=leave.id,
+                leave_type=leave_type,
+                status=status,
+            )
             d += timedelta(days=1)
     return overlays
 
 
-def is_day_on_leave(db: Session, therapist_user_id: int, day: date) -> bool:
-    return day.isoformat() in _leave_dates(db, therapist_user_id, day, day)
+def _day_overlay_for(
+    db: Session, therapist_user_id: int, day: date
+) -> dict[str, Any] | None:
+    return _leave_dates(db, therapist_user_id, day, day).get(day.isoformat())
+
+
+def is_day_on_leave(
+    db: Session, therapist_user_id: int, day: date, case_id: int | None = None
+) -> bool:
+    overlay = _day_overlay_for(db, therapist_user_id, day)
+    if not overlay:
+        return False
+    if overlay.get("therapist_wide"):
+        return True
+    if case_id is None:
+        return False
+    return int(case_id) in (overlay.get("case_ids") or [])
+
+
+def is_therapist_wide_leave_day(db: Session, therapist_user_id: int, day: date) -> bool:
+    overlay = _day_overlay_for(db, therapist_user_id, day)
+    return bool(overlay and overlay.get("therapist_wide"))
+
+
+def is_slot_on_leave(db: Session, slot: TherapistSlot) -> bool:
+    return is_day_on_leave(db, slot.therapist_user_id, slot.slot_date, slot.case_id)
 
 
 def is_slot_bookable(db: Session, slot: TherapistSlot) -> bool:
     if slot.status not in (SlotStatus.AVAILABLE,):
         return False
-    if is_day_on_leave(db, slot.therapist_user_id, slot.slot_date):
+    if is_day_on_leave(db, slot.therapist_user_id, slot.slot_date, slot.case_id):
         return False
     return True
 
@@ -177,7 +247,7 @@ def materialize_range(
     created = 0
     d = from_date
     while d <= to_date:
-        if is_day_on_leave(db, therapist_user_id, d):
+        if is_therapist_wide_leave_day(db, therapist_user_id, d):
             d += timedelta(days=1)
             continue
         day_cfg = normalize_day_config(days_cfg.get(_weekday_key(d), {}))
@@ -214,7 +284,7 @@ def create_recurring_slots(
             d = from_date + timedelta(days=week * 7 + day_offset)
             if _weekday_key(d) not in weekday_keys:
                 continue
-            if is_day_on_leave(db, therapist_user_id, d):
+            if is_therapist_wide_leave_day(db, therapist_user_id, d):
                 continue
             key = (d, start_time)
             if key in existing:

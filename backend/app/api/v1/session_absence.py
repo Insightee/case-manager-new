@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -8,7 +8,13 @@ from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.permissions import require_permission
 from app.models.user import User
-from app.schemas.session_absence import SessionAbsenceCreate, SessionAbsenceListResponse, SessionAbsenceRead, SessionAbsenceReview
+from app.schemas.session_absence import (
+    SessionAbsenceCreate,
+    SessionAbsenceListResponse,
+    SessionAbsenceRead,
+    SessionAbsenceReview,
+    SessionAbsenceStatusResponse,
+)
 from app.services import session_absence_service as absence_svc
 
 router = APIRouter(prefix="/sessions", tags=["session-absence"])
@@ -22,15 +28,18 @@ def create_session_absence(
     user: User = Depends(require_permission("session.update")),
     db: Session = Depends(get_db),
 ):
-    detail = absence_svc.create_request(
-        db,
-        user,
-        session_id,
-        absence_type=payload.absence_type,
-        reason=payload.reason,
-        notes=payload.notes,
-        leave_billing_category=payload.leave_billing_category,
-    )
+    try:
+        detail = absence_svc.create_request(
+            db,
+            user,
+            session_id,
+            absence_type=payload.absence_type,
+            reason=payload.reason,
+            notes=payload.notes,
+            leave_billing_category=payload.leave_billing_category,
+        )
+    except HTTPException:
+        raise
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -43,6 +52,15 @@ def create_session_absence(
     )
     db.commit()
     return detail
+
+
+@router.get("/{session_id}/absence", response_model=SessionAbsenceStatusResponse)
+def get_session_absence(
+    session_id: int,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    return absence_svc.get_absence_for_session(db, user, session_id)
 
 
 @router.get("/absence/pending", response_model=SessionAbsenceListResponse)

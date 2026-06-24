@@ -251,6 +251,11 @@ export async function apiFetch(path, options = {}) {
     })
     // #endregion
     if (err?.message?.startsWith('Request timed out')) throw err
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      const offlineErr = new Error('You appear offline. Check your connection and try again.')
+      offlineErr.isConnectionError = true
+      throw offlineErr
+    }
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
     const onVercel = /\.vercel\.app$/i.test(hostname)
     const onInsighte = SAME_ORIGIN_API_HOSTS.test(hostname)
