@@ -8,8 +8,7 @@
 #   5. Deploy
 
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+builder = "RAILPACK"
 
 [deploy]
 startCommand = "python scripts/auto_close_sessions_day_end.py"
