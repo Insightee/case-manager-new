@@ -16,10 +16,11 @@ sys.path.insert(0, str(_root / "alembic"))
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 
 from app.core.config import settings
 from app.core.database import engine
+from app.db.alembic_version_cleanup import compact_stale_version_rows, current_revision
 
 import app.models  # noqa: F401
 
@@ -53,15 +54,6 @@ def _missing_required_columns(insp) -> list[str]:
     return missing
 
 
-def _current_revision() -> str | None:
-    insp = inspect(engine)
-    if not insp.has_table("alembic_version"):
-        return None
-    with engine.connect() as conn:
-        row = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).first()
-    return row[0] if row else None
-
-
 def _resolve_head(cfg: Config, script: ScriptDirectory) -> str:
     heads = script.get_heads()
     if len(heads) > 1:
@@ -87,7 +79,8 @@ def main() -> None:
         command.stamp(cfg, head)
         return
 
-    current = _current_revision()
+    compact_stale_version_rows(engine, script)
+    current = current_revision(engine, script)
     missing = _missing_required_columns(insp)
     if current == head and not missing:
         print(f"Database already at head ({head}).")
@@ -113,7 +106,7 @@ def main() -> None:
             f"Migration finished but required columns still missing: {missing_after}. "
             "Do not start the API until Alembic head is fully applied."
         )
-    final = _current_revision()
+    final = current_revision(engine, script)
     print(f"Migration complete (revision {final}).")
 
 
