@@ -52,7 +52,9 @@ test.describe('Session patch UI', () => {
       await loginTherapist(page)
       await navigateTherapist(page, 'Session Logs')
 
-      await expect(page.getByText(/Unfinished Session Found/i)).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole('heading', { name: 'Session in Progress' })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole('button', { name: 'End Session' })).toBeVisible()
+      await expect(page.getByText(/A session is in progress — end it above/i)).toBeVisible()
       await expect(page.getByRole('region', { name: 'Add or start session' })).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Child absence' })).toBeVisible()
       await expect(page.getByRole('tab', { name: 'Start now' })).toBeDisabled()

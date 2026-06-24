@@ -21,7 +21,6 @@ import {
   formatSessionActualRange,
   formatTimeIST,
   isStartedLateOnSchedule,
-  parseApiDatetime,
 } from '../../lib/datetime.js'
 import { isLogEditable, isLogResubmittable } from '../../lib/sessionLogUtils.js'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
@@ -35,6 +34,7 @@ import { todayIsoIST } from '../../lib/datetime.js'
 import { canStartSessionToday, logsPathForSession } from '../../lib/sessionStartRules.js'
 import { SameDaySessionDialog } from './SameDaySessionDialog.jsx'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
+import { ActiveSessionCard } from './ActiveSessionCard.jsx'
 import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
 import '../cases/my-cases.css'
 
@@ -65,22 +65,6 @@ const LOG_TABS = [
   { id: 'approved', label: 'Approved' },
   { id: 'rejected', label: 'Rejected' },
 ]
-
-function formatTime(t) {
-  if (!t) return '—'
-  return String(t).slice(0, 5)
-}
-
-function formatDuration(startIso, tick) {
-  if (!startIso) return '00:00:00'
-  const start = parseApiDatetime(startIso)?.getTime()
-  if (start == null) return '00:00:00'
-  const secs = Math.max(0, Math.floor((tick - start) / 1000))
-  const h = Math.floor(secs / 3600)
-  const m = Math.floor((secs % 3600) / 60)
-  const s = secs % 60
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
 
 export function DailyLogsPage() {
   const navigate = useNavigate()
@@ -114,6 +98,7 @@ export function DailyLogsPage() {
   const [logSession, setLogSession] = useState(null)
   const [visitSession, setVisitSession] = useState(null)
   const [visitBusy, setVisitBusy] = useState(false)
+  const [endBusy, setEndBusy] = useState(false)
   const [cancelBusy, setCancelBusy] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
   const [logRequired, setLogRequired] = useState(false)
@@ -134,6 +119,7 @@ export function DailyLogsPage() {
   const [editTimesSession, setEditTimesSession] = useState(null)
   const [composerCaseId, setComposerCaseId] = useState(null)
   const logPanelRef = useRef(null)
+  const activeSessionCardRef = useRef(null)
   const deepLinkResolvedRef = useRef(null)
 
   const pendingLogs = useMemo(
@@ -528,6 +514,11 @@ export function DailyLogsPage() {
           setSameDayPending({ sessionId, meta })
           return
         }
+        if (result.conflict?.recommendedAction === 'CONTINUE_SESSION') {
+          setSuccess('A session is in progress — end it above to start another visit.')
+          activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          return
+        }
         setSuccess(result.message)
         redirectForSessionConflict(result.conflict, navigate)
         return
@@ -588,6 +579,7 @@ export function DailyLogsPage() {
   }
 
   async function handleEnd(sessionId) {
+    setEndBusy(true)
     setError('')
     try {
       const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, {
@@ -598,11 +590,12 @@ export function DailyLogsPage() {
       openLogForm(ended, { required: true })
     } catch (err) {
       setError(err.message || 'Could not end session')
+    } finally {
+      setEndBusy(false)
     }
   }
 
   async function handleCancel(sessionId) {
-    if (!window.confirm('Cancel this session? The timer will stop and no log will be created.')) return
     setCancelBusy(true)
     setError('')
     try {
@@ -612,6 +605,7 @@ export function DailyLogsPage() {
       })
       patchCachesAfterSessionCancel(cancelled)
       if (visitSession?.id === sessionId) setVisitSession(null)
+      if (logSession?.id === sessionId) closeLogForm()
       setSuccess('Session cancelled — you can start again when ready.')
     } catch (err) {
       setError(err.message || 'Could not cancel session')
@@ -711,60 +705,13 @@ export function DailyLogsPage() {
       ) : null}
 
       {active ? (
-        <section className="ic-case-active" style={{ marginBottom: 24, border: '2px solid #f59e0b', backgroundColor: '#fffbeb', borderRadius: '8px', padding: '16px' }}>
-          <p className="ic-case-active__title" style={{ color: '#d97706', fontWeight: 'bold', fontSize: '1.1rem', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            ⚠️ Unfinished Session Found
-          </p>
-          <p style={{ margin: '0 0 4px', fontSize: '0.875rem' }}>
-            <strong>{active.child_name || active.case_code}</strong> · {formatDisplayDate(active.scheduled_date)}
-            {active.auto_end_label ? (
-              <span style={{ display: 'block', marginTop: 4, fontSize: '0.8125rem', fontWeight: 600, color: '#b45309' }}>
-                {active.auto_end_label}
-              </span>
-            ) : active.auto_ended ? (
-              <span style={{ color: '#b45309' }}> (auto-ended)</span>
-            ) : null}
-          </p>
-          {active.start_time ? (
-            <p style={{ margin: '0 0 10px', fontSize: '0.78rem', color: '#6b7280' }}>
-              Scheduled: {formatTime(active.start_time)}–{formatTime(active.end_time)}
-              {active.actual_start_at ? (
-                <>
-                  {isStartedLateOnSchedule(active.actual_start_at, active.scheduled_date, active.start_time) ? (
-                    <span style={{ color: '#b45309', fontWeight: 600 }}> · Started late at {formatTimeIST(active.actual_start_at)}</span>
-                  ) : (
-                    <span> · Started at {formatTimeIST(active.actual_start_at)}</span>
-                  )}
-                </>
-              ) : null}
-            </p>
-          ) : null}
-          <p className="attendance-timer" style={{ fontSize: '2rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: '0 0 16px' }}>
-            {formatDuration(active.actual_start_at, tick)}
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            {active.case_id ? (
-              <Link to={`/therapist/cases/${active.case_id}`} className="ic-btn ic-btn--primary">
-                Resume Session
-              </Link>
-            ) : null}
-            <button
-              type="button"
-              className="ic-btn ic-btn--secondary"
-              onClick={() => handleEnd(active.id)}
-            >
-              End Session
-            </button>
-            <button
-              type="button"
-              className="ic-btn ic-btn--ghost"
-              disabled={cancelBusy}
-              onClick={() => handleCancel(active.id)}
-            >
-              {cancelBusy ? 'Cancelling…' : 'Cancel Session'}
-            </button>
-          </div>
-        </section>
+        <ActiveSessionCard
+          ref={activeSessionCardRef}
+          session={active}
+          tick={tick}
+          endBusy={endBusy}
+          onEnd={handleEnd}
+        />
       ) : null}
 
       {stalePrevious.length > 0 ? (
@@ -779,7 +726,7 @@ export function DailyLogsPage() {
           }}
         >
           <p style={{ color: '#b45309', fontWeight: 600, margin: '0 0 8px' }}>
-            Previous session pending closure
+            Previous session was not closed
           </p>
           {stalePrevious.map((s) => (
             <p key={s.id} style={{ margin: '0 0 6px', fontSize: '0.875rem' }}>
@@ -800,10 +747,9 @@ export function DailyLogsPage() {
           <SessionVisitPanel
             session={visitSession}
             activeSessionId={active?.id}
-            busy={visitBusy}
+            busy={visitBusy || endBusy}
             onStart={handleVisitStart}
             onEnd={handleVisitEnd}
-            onCancel={handleCancel}
             onClose={closeVisitFocus}
           />
         </section>
@@ -830,6 +776,12 @@ export function DailyLogsPage() {
             childName={logSession.child_name}
             required={logRequired && !editingLog}
             onEditTimes={() => openEditTimesForSession(logSession)}
+            onCancelSession={
+              logRequired && !editingLog && logSession?.id
+                ? () => handleCancel(logSession.id)
+                : undefined
+            }
+            cancelSessionBusy={cancelBusy}
             onSuccess={(savedLog) => {
               const wasResubmit = editingLog?.approval_status === 'REJECTED' && savedLog?.approval_status === 'PENDING'
               setSuccess(

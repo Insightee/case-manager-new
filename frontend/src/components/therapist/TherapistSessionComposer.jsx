@@ -152,12 +152,6 @@ export function TherapistSessionComposer({
     }
   }
 
-  useEffect(() => {
-    if (blockLive && (mode === 'live' || mode === 'past')) {
-      setMode('absence')
-    }
-  }, [blockLive])
-
   return (
     <section className="ic-session-composer" aria-label="Add or start session">
       <div className="ic-session-composer__head">
@@ -222,9 +216,9 @@ export function TherapistSessionComposer({
       ) : null}
       */}
 
-      {blockLive && (mode === 'live' || mode === 'past') ? (
-        <p className="ic-session-composer__hint">
-          End your current session before starting another. You can still log child absence below.
+      {blockLive ? (
+        <p className="ic-session-composer__live-blocked" role="status">
+          A session is in progress — end it above to start another visit.
         </p>
       ) : null}
 

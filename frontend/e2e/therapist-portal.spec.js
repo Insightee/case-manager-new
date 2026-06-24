@@ -72,9 +72,10 @@ test.describe('Therapist portal smoke', () => {
     const startBtn = page.getByRole('button', { name: 'Start session' }).first()
     if (await startBtn.isVisible()) {
       await startBtn.click()
-      await expect(page.getByText(/Unfinished Session Found/i)).toBeVisible({ timeout: 15_000 })
-      await page.getByRole('button', { name: /End session/i }).click()
-      await expect(page.getByRole('heading', { name: 'Submit session log' })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole('heading', { name: 'Session in Progress' })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole('region', { name: 'Session in progress' })).toBeVisible()
+      await page.getByRole('button', { name: /End Session/i }).click()
+      await expect(page.getByText(/Complete Session Log/i)).toBeVisible({ timeout: 15_000 })
       await page.getByLabel('Attendance').selectOption('PRESENT')
       await page.getByLabel('Session notes (internal)').fill('Playwright E2E session notes')
       await page.getByLabel('Activities').fill('Play activities')
@@ -82,13 +83,13 @@ test.describe('Therapist portal smoke', () => {
       await page.getByLabel('Observations (internal)').fill('Engaged throughout')
       await page.getByLabel('Follow-ups').fill('Continue plan')
       await page.getByLabel('Notes for family').fill('Good session today')
-      await page.getByRole('button', { name: 'Submit log' }).click()
+      await page.getByRole('button', { name: /Submit log/i }).click()
       await expect(page.getByText(/submitted for review/i)).toBeVisible({ timeout: 15_000 })
     } else {
       const needsLog = page.getByRole('button', { name: /needs log/i }).first()
       if (await needsLog.isVisible()) {
         await needsLog.click()
-        await expect(page.getByRole('heading', { name: 'Submit session log' })).toBeVisible()
+        await expect(page.getByText(/Complete session log/i)).toBeVisible()
       } else {
         test.skip(true, 'No startable session or pending log in seed data')
       }
