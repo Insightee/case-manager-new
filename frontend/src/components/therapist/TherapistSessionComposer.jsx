@@ -40,6 +40,9 @@ export function TherapistSessionComposer({
   upcomingSessions = [],
   disabled = false,
   liveBlocked = false,
+  existingSessionConflict = null,
+  onExistingSessionAction,
+  onDismissExistingSessionConflict,
   onSessionStarted,
   onManualSession,
   onError,
@@ -54,6 +57,7 @@ export function TherapistSessionComposer({
   const [walkInMode, setWalkInMode] = useState('HOME')
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState('')
+  const [composerSuccess, setComposerSuccess] = useState('')
   const [absenceSessionId, setAbsenceSessionId] = useState(null)
 
   useEffect(() => {
@@ -227,6 +231,9 @@ export function TherapistSessionComposer({
           fallbackCases={caseOptions}
           initialCaseId={lockCaseId ? String(lockCaseId) : caseId}
           submitting={busy}
+          existingSessionConflict={existingSessionConflict}
+          onExistingSessionAction={onExistingSessionAction}
+          onDismissExistingSessionConflict={onDismissExistingSessionConflict}
           onSubmit={async (payload) => {
             setBusy(true)
             try {
@@ -271,13 +278,20 @@ export function TherapistSessionComposer({
             disabled={busy}
             onSuccess={(msg) => {
               setLocalError('')
+              setComposerSuccess(msg || 'Child absent logged — parent or admin will review.')
               onSessionStarted?.({ message: msg })
             }}
             onError={(msg) => {
               setLocalError(msg)
+              setComposerSuccess('')
               onError?.(msg)
             }}
           />
+          {composerSuccess ? (
+            <p className="ic-composer-inline-success" role="status">
+              {composerSuccess}
+            </p>
+          ) : null}
         </div>
       ) : mode === 'live' && !blockLive ? (
         <div className="ic-session-composer__body">

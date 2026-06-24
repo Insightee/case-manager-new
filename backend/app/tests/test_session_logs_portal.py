@@ -176,6 +176,69 @@ def test_submit_log_notifies_case_manager():
         db.close()
 
 
+def test_duplicate_log_submit_returns_existing_without_extra_notifications():
+    db = SessionLocal()
+    try:
+        session = db.scalars(
+            select(TherapySession).where(TherapySession.status == SessionStatus.COMPLETED).limit(1)
+        ).first()
+        if not session:
+            pytest.skip("No completed session")
+        existing = db.scalars(select(DailyLog).where(DailyLog.session_id == session.id)).first()
+        if existing:
+            db.delete(existing)
+            db.commit()
+        case = db.get(Case, session.case_id)
+        cm_id = case.case_manager_user_id if case else None
+        if not cm_id:
+            pytest.skip("Case has no CM")
+        session_id = session.id
+    finally:
+        db.close()
+
+    headers = _login("therapist@demo.com")
+    payload = {
+        "session_id": session_id,
+        "attendance_status": "PRESENT",
+        "session_notes": "Idempotent test",
+        "late_reason": "Retroactive test entry",
+    }
+    first = client.post("/api/v1/therapist/session-logs", headers=headers, json=payload)
+    assert first.status_code == 201, first.text
+    log_id = first.json()["id"]
+
+    db = SessionLocal()
+    try:
+        notif_count = len(
+            db.scalars(
+                select(Notification).where(
+                    Notification.user_id == cm_id,
+                    Notification.entity_type == "daily_log",
+                )
+            ).all()
+        )
+    finally:
+        db.close()
+
+    second = client.post("/api/v1/therapist/session-logs", headers=headers, json=payload)
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] == log_id
+
+    db = SessionLocal()
+    try:
+        after = len(
+            db.scalars(
+                select(Notification).where(
+                    Notification.user_id == cm_id,
+                    Notification.entity_type == "daily_log",
+                )
+            ).all()
+        )
+        assert after == notif_count
+    finally:
+        db.close()
+
+
 def test_approve_log_notifies_parent():
     db = SessionLocal()
     try:

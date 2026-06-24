@@ -58,6 +58,7 @@ export function AuthProvider({ children }) {
         clearTokens()
         setUser(null)
       }
+      // Connection/API errors: keep existing user — do not logout on network blips.
     } finally {
       setLoading(false)
     }

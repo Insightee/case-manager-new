@@ -846,6 +846,61 @@
   line-height: 1.45;
 }
 
+.ic-existing-session-card {
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--ic-border);
+}
+
+.ic-existing-session-card__title {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ic-text);
+}
+
+.ic-existing-session-card__name {
+  margin: 0 0 4px;
+  font-size: 0.875rem;
+}
+
+.ic-existing-session-card__meta {
+  margin: 0 0 4px;
+  font-size: 0.8125rem;
+  color: var(--ic-muted);
+}
+
+.ic-existing-session-card__hint {
+  margin: 12px 0 16px;
+  font-size: 0.8125rem;
+  color: var(--ic-muted);
+  line-height: 1.45;
+}
+
+.ic-existing-session-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ic-existing-session-card__actions .ic-btn--primary {
+  flex: 1;
+  min-height: 44px;
+}
+
+.ic-composer-inline-success {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid #86efac;
+  color: #166534;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
 .ic-btn--muted {
   background: #f1f5f9;
   color: #475569;

@@ -117,6 +117,8 @@ class ParentSessionLogRead(BaseModel):
     what_is_next: Optional[str] = None
     absence_reason: Optional[str] = None
     dispute_status: Optional[str] = None
+    approval_status: Optional[str] = None
+    status_label: Optional[str] = None
 
 
 class ParentSessionFeedbackUpdate(BaseModel):

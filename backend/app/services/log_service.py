@@ -91,7 +91,8 @@ def list_logs(
     return logs
 
 
-def create_daily_log(db: Session, **kwargs) -> DailyLog:
+def create_daily_log(db: Session, **kwargs) -> tuple[DailyLog, bool]:
+    """Create a daily log. Returns (log, created). Idempotent on session_id."""
     session = db.get(TherapySession, kwargs["session_id"])
     if not session:
         raise ValueError("Session not found")
@@ -99,7 +100,7 @@ def create_daily_log(db: Session, **kwargs) -> DailyLog:
         raise ValueError("End the session before submitting a log")
     existing = db.scalars(select(DailyLog).where(DailyLog.session_id == kwargs["session_id"])).first()
     if existing:
-        raise ValueError("Daily log already exists for this session")
+        return existing, False
 
     late = session.scheduled_date < today_ist()
     late_reason = kwargs.get("late_reason")
@@ -124,7 +125,7 @@ def create_daily_log(db: Session, **kwargs) -> DailyLog:
     )
     db.add(log)
     db.flush()
-    return log
+    return log, True
 
 
 def update_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwargs) -> DailyLog:

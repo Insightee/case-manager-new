@@ -92,7 +92,7 @@ def list_therapist_my_cases(db: Session, user: User) -> dict:
     return {"items": items, "total": len(items)}
 
 
-def create_therapist_session_log(db: Session, user: User, payload: dict) -> DailyLog:
+def create_therapist_session_log(db: Session, user: User, payload: dict) -> tuple[DailyLog, bool]:
     session = db.scalars(
         select(TherapySession)
         .where(TherapySession.id == payload["session_id"])
@@ -105,10 +105,11 @@ def create_therapist_session_log(db: Session, user: User, payload: dict) -> Dail
     case = session.case or case_service.get_case(db, session.case_id)
     if not case or not case_scope_check(db, user, case):
         raise ValueError("Case access denied")
-    log = log_service.create_daily_log(db, **payload)
-    notify_case_managers_log_submitted(db, log, therapist=user)
-    notify_parents_session_log_submitted(db, log, therapist=user)
-    return log
+    log, created = log_service.create_daily_log(db, **payload)
+    if created:
+        notify_case_managers_log_submitted(db, log, therapist=user)
+        notify_parents_session_log_submitted(db, log, therapist=user)
+    return log, created
 
 
 def notify_case_managers_log_submitted(db: Session, log: DailyLog, *, therapist: User, resubmitted: bool = False) -> int:
@@ -139,15 +140,19 @@ def notify_case_managers_log_submitted(db: Session, log: DailyLog, *, therapist:
     for uid in recipient_ids:
         if uid == therapist.id:
             continue
-        notification_service.create_notification(
+        event = "log_resubmitted" if resubmitted else "log_submitted"
+        status = log.approval_status.value if log.approval_status else "PENDING"
+        n = notification_service.create_notification(
             db,
             user_id=uid,
             title=title,
             body=body,
             entity_type="daily_log",
             entity_id=log.id,
+            dedupe_key=notification_service.notification_dedupe_key(event, "daily_log", log.id, status),
         )
-        count += 1
+        if n:
+            count += 1
     return count
 
 

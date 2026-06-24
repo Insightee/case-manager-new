@@ -18,6 +18,7 @@ from app.models.daily_log import LogApprovalStatus
 from app.models.user import User
 from app.schemas.daily_log import DailyLogCreate, DailyLogFinanceRead, DailyLogRead, DailyLogUpdate, LogCommentRead, LogCommentCreate
 from app.services import billing_ledger_service, case_service, log_service
+from app.services import virtual_session_log_service as virtual_logs
 
 from sqlalchemy import select
 from app.models.session import Session as TherapySession, SessionStatus
@@ -26,66 +27,6 @@ from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.document_comment import DocumentComment, DocumentEntityType
 
 router = APIRouter(prefix="/daily-logs", tags=["daily-logs"])
-
-
-def serialize_virtual_log(db: Session, session: TherapySession, case: Case, include_clinical: bool = True) -> dict:
-    # 1. Determine attendance_status
-    attendance_status = "THERAPIST_LEAVE"
-    absence_req = None
-    if session.status == SessionStatus.CLIENT_ABSENT:
-        absence_req = db.scalars(
-            select(SessionAbsenceRequest).where(
-                SessionAbsenceRequest.session_id == session.id,
-                SessionAbsenceRequest.status == SessionAbsenceStatus.APPROVED
-            )
-        ).first()
-        if absence_req and absence_req.absence_type == "CLIENT_ABSENT":
-            attendance_status = "CLIENT_LEAVE"
-        else:
-            attendance_status = "CLIENT_ABSENT"
-
-    # 2. Check dispute status
-    dispute_stmt = select(SupportTicket).where(
-        SupportTicket.disputed_session_id == session.id,
-        SupportTicket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS])
-    )
-    disputed_ticket = db.scalars(dispute_stmt).first()
-    dispute_status = "DISPUTED" if disputed_ticket else "NONE"
-
-    # 3. Build dict
-    sub_dt = datetime.combine(session.scheduled_date, datetime.min.time(), tzinfo=timezone.utc)
-    res = {
-        "id": -session.id,
-        "session_id": session.id,
-        "case_id": session.case_id,
-        "case_code": case.case_code if case else None,
-        "child_name": case.child.full_name if (case and case.child) else None,
-        "scheduled_date": session.scheduled_date,
-        "actual_start_at": session.actual_start_at,
-        "actual_end_at": session.actual_end_at,
-        "edited_start_at": getattr(session, "edited_start_at", None),
-        "edited_end_at": getattr(session, "edited_end_at", None),
-        "actual_times_edited": bool(getattr(session, "actual_times_edited", False)),
-        "actual_times_edit_reason": getattr(session, "actual_times_edit_reason", None),
-        "duplicate_day_session": bool(getattr(session, "is_additional_visit", False)),
-        "status_label": "Therapist Leave" if session.status == SessionStatus.THERAPIST_LEAVE else ("Client Leave" if attendance_status == "CLIENT_LEAVE" else "Client Absent"),
-        "attendance_status": attendance_status,
-        "submitted_at": sub_dt,
-        "approval_status": LogApprovalStatus.APPROVED,
-        "late_addition": False,
-        "can_edit": False,
-        "can_resubmit": False,
-        "absence_reason": absence_req.reason if absence_req else (session.actual_times_edit_reason or None),
-        "dispute_status": dispute_status,
-    }
-    if include_clinical:
-        res.update({
-            "session_notes": None,
-            "activities_done": None,
-            "observations": None,
-            "parent_notes": None,
-        })
-    return res
 
 
 class LogRejectAction(BaseModel):
@@ -143,44 +84,38 @@ def list_daily_logs(
                 scoped.append(log)
         logs = scoped
     is_finance = RoleName.FINANCE.value in user.role_names and RoleName.SUPER_ADMIN.value not in user.role_names
-    
-    virtual_logs = []
-    if (approval_status is None or approval_status == LogApprovalStatus.APPROVED) and (late_addition is None or late_addition is False):
-        from app.models.case import Case
-        session_stmt = select(TherapySession).where(
-            TherapySession.status.in_([SessionStatus.CLIENT_ABSENT, SessionStatus.THERAPIST_LEAVE])
-        )
-        if therapist_user_id:
-            session_stmt = session_stmt.where(TherapySession.therapist_user_id == therapist_user_id)
-        if case_id:
-            session_stmt = session_stmt.where(TherapySession.case_id == case_id)
-        if product_module:
-            session_stmt = session_stmt.join(Case, TherapySession.case_id == Case.id).where(Case.product_module == product_module)
-        
-        sessions = db.scalars(session_stmt).all()
-        for s in sessions:
-            case = case_service.get_case(db, s.case_id)
-            if not case:
+
+    virtual_log_dicts = virtual_logs.collect_virtual_logs(
+        db,
+        therapist_user_id=therapist_user_id,
+        case_id=case_id,
+        month=month,
+        product_module=product_module,
+        approval_status_filter=approval_status,
+        late_addition=late_addition,
+        include_clinical=not is_finance,
+    )
+    virtual_logs_out = []
+    for vlog_dict in virtual_log_dicts:
+        if own_logs_only and vlog_dict.get("case_id"):
+            session_row = db.get(TherapySession, vlog_dict["session_id"])
+            if not session_row or session_row.therapist_user_id != user.id:
                 continue
-            if own_logs_only and s.therapist_user_id != user.id:
+        elif vlog_dict.get("case_id"):
+            case = case_service.get_case(db, vlog_dict["case_id"])
+            if not case or not case_scope_check(db, user, case):
                 continue
-            if not own_logs_only and not case_scope_check(db, user, case):
-                continue
-            if month and s.scheduled_date.strftime("%b %Y") != month:
-                continue
-            
-            vlog_dict = serialize_virtual_log(db, s, case, include_clinical=not is_finance)
-            if is_finance:
-                virtual_logs.append(DailyLogFinanceRead(**vlog_dict))
-            else:
-                virtual_logs.append(DailyLogRead(**vlog_dict))
+        if is_finance:
+            virtual_logs_out.append(DailyLogFinanceRead(**vlog_dict))
+        else:
+            virtual_logs_out.append(DailyLogRead(**vlog_dict))
 
     if is_finance:
         res = [DailyLogFinanceRead(**log_service.log_to_read(l, include_clinical=False)) for l in logs]
     else:
         res = [DailyLogRead(**log_service.log_to_read(l)) for l in logs]
-    
-    combined = res + virtual_logs
+
+    combined = res + virtual_logs_out
     combined.sort(key=lambda x: x.scheduled_date or datetime.min.date(), reverse=True)
     return combined
 
@@ -215,15 +150,16 @@ def create_daily_log(
     db: Session = Depends(get_db),
 ):
     try:
-        log = log_service.create_daily_log(db, **payload.model_dump())
+        log, created = log_service.create_daily_log(db, **payload.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    from app.services import session_log_service
+    if created:
+        from app.services import session_log_service
 
-    session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
-    session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
-    meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="create", entity_type="daily_log", entity_id=log.id, new_value=payload.model_dump(), **meta)
+        session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
+        session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
+        meta = get_request_meta(request)
+        log_audit(db, actor_user_id=user.id, action="create", entity_type="daily_log", entity_id=log.id, new_value=payload.model_dump(), **meta)
     db.commit()
     return DailyLogRead(**log_service.log_to_read(log))
 

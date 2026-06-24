@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatApiDateIN, todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { ExistingSessionForDateCard } from './ExistingSessionForDateCard.jsx'
 
 const MODES = [
   { value: 'HOME', label: 'Home' },
@@ -90,7 +91,16 @@ const tabBtnStyle = (active) => ({
   cursor: 'pointer',
 })
 
-export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, submitting, initialCaseId = '' }) {
+export function ForgotSessionForm({
+  fallbackCases = [],
+  onSubmit,
+  onCancel,
+  submitting,
+  initialCaseId = '',
+  existingSessionConflict = null,
+  onExistingSessionAction,
+  onDismissExistingSessionConflict,
+}) {
   const [clientTab, setClientTab] = useState(initialCaseId ? 'existing' : 'existing')
   const [form, setForm] = useState(() => ({
     ...defaultForgotSession(),
@@ -192,6 +202,14 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
   }
 
   return (
+    <>
+      {existingSessionConflict ? (
+        <ExistingSessionForDateCard
+          conflict={existingSessionConflict}
+          onAction={onExistingSessionAction}
+          onDismiss={onDismissExistingSessionConflict}
+        />
+      ) : (
     <form
       onSubmit={handleSubmit}
       className="forgot-session-form"
@@ -447,5 +465,7 @@ export function ForgotSessionForm({ fallbackCases = [], onSubmit, onCancel, subm
         </div>
       </div>
     </form>
+      )}
+    </>
   )
 }

@@ -30,6 +30,7 @@ from app.core.session_rules import scheduled_end_at_utc
 from app.core.session_start import SessionStartConflict
 from app.core.timezone import ensure_utc_aware
 from app.services import case_service, session_service, therapist_intake_service
+from app.services import manual_session_conflict_service as manual_conflict
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -230,6 +231,17 @@ def create_manual_session(
     case = case_service.get_case(db, payload.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+    existing = manual_conflict.find_existing_session_for_date(
+        db,
+        case_id=payload.case_id,
+        therapist_user_id=user.id,
+        scheduled_date=payload.scheduled_date,
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=manual_conflict.build_existing_session_conflict(existing),
+        )
     try:
         session = session_service.create_manual_session(
             db,

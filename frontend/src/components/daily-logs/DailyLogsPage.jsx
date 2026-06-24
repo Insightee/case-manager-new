@@ -118,6 +118,7 @@ export function DailyLogsPage() {
   const [sameDayPending, setSameDayPending] = useState(null)
   const [editTimesSession, setEditTimesSession] = useState(null)
   const [composerCaseId, setComposerCaseId] = useState(null)
+  const [existingSessionConflict, setExistingSessionConflict] = useState(null)
   const logPanelRef = useRef(null)
   const activeSessionCardRef = useRef(null)
   const deepLinkResolvedRef = useRef(null)
@@ -327,6 +328,11 @@ export function DailyLogsPage() {
 
   function renderLogRow(l, { allowEdit = false, allowResubmit = false, allowView = false } = {}) {
     const isVirtual = l.id < 0
+    const isAbsenceRecord =
+      isVirtual ||
+      l.attendance_status === 'THERAPIST_LEAVE' ||
+      l.attendance_status === 'CLIENT_ABSENT' ||
+      l.attendance_status === 'CLIENT_LEAVE'
     const isTherapistLeave = l.attendance_status === 'THERAPIST_LEAVE'
     const canEdit = !isVirtual && allowEdit && isLogEditable(l)
     const canResubmit = !isVirtual && allowResubmit && isLogResubmittable(l)
@@ -336,7 +342,11 @@ export function DailyLogsPage() {
       <div key={l.id} className="ic-session-log-recent__row">
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="ic-session-log-recent__title">
-            {isTherapistLeave ? 'Therapist Leave' : (l.child_name || l.case_code)}
+            {isTherapistLeave
+              ? 'Therapist Leave'
+              : l.attendance_status === 'CLIENT_ABSENT' || l.attendance_status === 'CLIENT_LEAVE'
+                ? l.status_label || 'Child Absent'
+                : l.child_name || l.case_code}
             {l.scheduled_date ? <> · {formatDisplayDate(l.scheduled_date)}</> : null}
           </p>
           {clockRange ? <p className="ic-session-log-recent__times">Clock: {clockRange}</p> : null}
@@ -349,11 +359,17 @@ export function DailyLogsPage() {
             <SessionLogStatusBadge
               approvalStatus={l.approval_status}
               attendanceStatus={l.attendance_status}
+              isAbsenceRecord={isAbsenceRecord}
             />
           ) : (
-            <span className="ic-badge ic-badge--neutral" style={{ background: '#f3f4f6', color: '#374151' }}>
-              Therapist Leave
-            </span>
+            <div className="ic-log-badge-row">
+              <span className="ic-badge ic-badge--neutral" style={{ background: '#f3f4f6', color: '#374151' }}>
+                Therapist Leave
+              </span>
+              <span className={`ic-log-badge ${l.approval_status === 'PENDING' ? 'ic-log-badge--pending' : 'ic-log-badge--approved'}`}>
+                {l.approval_status === 'PENDING' ? 'Pending review' : 'Approved'}
+              </span>
+            </div>
           )}
           {!isVirtual && l.actual_times_edited ? (
             <span className="ic-session-log-recent__meta" style={{ color: '#7c3aed', fontWeight: 600 }}>
@@ -617,6 +633,7 @@ export function DailyLogsPage() {
   async function handleManualSession(payload) {
     setSubmitting(true)
     setError('')
+    setExistingSessionConflict(null)
     try {
       let session
       if (payload.walkIn) {
@@ -658,9 +675,24 @@ export function DailyLogsPage() {
       openLogForm(session, { required: true })
       void loadAll({ silent: true })
     } catch (err) {
+      if (err?.status === 409 && err.detail?.code === 'EXISTING_SESSION_FOR_DATE') {
+        setExistingSessionConflict(err.detail)
+        return
+      }
       setError(err.message || 'Could not add session')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleExistingSessionAction(conflict) {
+    setExistingSessionConflict(null)
+    setError('')
+    try {
+      const session = await apiFetch(`/api/v1/sessions/${conflict.existing_session_id}`)
+      openSessionFromDeepLink(session)
+    } catch (err) {
+      setError(err.message || 'Could not open existing session')
     }
   }
 
@@ -810,6 +842,9 @@ export function DailyLogsPage() {
           upcomingSessions={upcoming}
           liveBlocked={!!active}
           onSelectedCaseChange={setComposerCaseId}
+          existingSessionConflict={existingSessionConflict}
+          onExistingSessionAction={handleExistingSessionAction}
+          onDismissExistingSessionConflict={() => setExistingSessionConflict(null)}
           onSessionStarted={(info) => {
             if (info?.message) setSuccess(info.message)
             void loadAll({ silent: true })

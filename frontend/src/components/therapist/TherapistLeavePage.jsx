@@ -276,6 +276,11 @@ export function TherapistLeavePage() {
         >
           {submitting ? 'Submitting…' : 'Submit request'}
         </button>
+        {success ? (
+          <div className="ic-composer-inline-success therapist-leave-page__alert therapist-leave-page__alert--success" role="status">
+            {success}
+          </div>
+        ) : null}
       </form>
     </div>
   ) : null
@@ -394,7 +399,9 @@ export function TherapistLeavePage() {
         </div>
       ) : null}
       {error ? <div className="therapist-leave-page__alert therapist-leave-page__alert--error">{error}</div> : null}
-      {success ? <div className="therapist-leave-page__alert therapist-leave-page__alert--success">{success}</div> : null}
+      {success && !showForm ? (
+        <div className="therapist-leave-page__alert therapist-leave-page__alert--success">{success}</div>
+      ) : null}
 
       <div className="therapist-leave-page__requests-card">
         <div className="therapist-leave-page__requests-head">

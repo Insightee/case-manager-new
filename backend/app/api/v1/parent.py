@@ -331,6 +331,57 @@ def _parent_virtual_session_log_read(db: Session, session: TherapySession, case:
         summary_paragraph=headline,
         absence_reason=absence_req.reason if absence_req else (session.actual_times_edit_reason or None),
         dispute_status=dispute_status,
+        approval_status=LogApprovalStatus.APPROVED.value,
+        status_label=attendance_label,
+    )
+
+
+def _parent_virtual_from_dict(
+    db: Session,
+    vlog: dict,
+    case: Case,
+    therapist: User | None,
+) -> ParentSessionLogRead:
+    attendance_status = vlog.get("attendance_status") or "THERAPIST_LEAVE"
+    status_label = vlog.get("status_label") or attendance_status
+    approval = vlog.get("approval_status")
+    approval_value = approval.value if hasattr(approval, "value") else str(approval) if approval else LogApprovalStatus.APPROVED.value
+    if attendance_status == "CLIENT_ABSENT":
+        headline = status_label if "pending" in status_label.lower() else "Client Absent"
+        attendance_label = headline
+    elif attendance_status == "CLIENT_LEAVE":
+        headline = status_label if "pending" in status_label.lower() else "Client Leave"
+        attendance_label = headline
+    else:
+        headline = status_label if "pending" in status_label.lower() else "Therapist Leave"
+        attendance_label = headline
+    sub_dt = vlog.get("submitted_at") or datetime.combine(
+        vlog["scheduled_date"], datetime.min.time(), tzinfo=timezone.utc
+    )
+    session_id = vlog.get("session_id")
+    session = db.get(TherapySession, session_id) if session_id else None
+    return ParentSessionLogRead(
+        id=vlog["id"],
+        case_id=vlog["case_id"],
+        case_code=vlog.get("case_code"),
+        child_name=vlog.get("child_name"),
+        therapist_name=therapist.full_name if therapist else None,
+        scheduled_date=vlog["scheduled_date"],
+        start_time=str(session.start_time) if session and session.start_time else None,
+        end_time=str(session.end_time) if session and session.end_time else None,
+        actual_start_at=vlog.get("actual_start_at"),
+        actual_end_at=vlog.get("actual_end_at"),
+        clock_start_at=vlog.get("actual_start_at"),
+        clock_end_at=vlog.get("actual_end_at"),
+        attendance_status=attendance_status,
+        submitted_at=sub_dt,
+        headline=headline,
+        summary_paragraph=headline,
+        attendance_label=attendance_label,
+        absence_reason=vlog.get("absence_reason"),
+        dispute_status=vlog.get("dispute_status"),
+        approval_status=approval_value,
+        status_label=status_label,
     )
 
 
@@ -384,28 +435,32 @@ def parent_session_logs(
         therapist = db.get(User, s.therapist_user_id)
         result.append(_parent_session_log_read(log, case, therapist))
     
-    # Query virtual sessions (Client Absent / Client Leave / Therapist Leave)
-    session_stmt = select(TherapySession).where(
-        TherapySession.case_id.in_(cases.keys()),
-        TherapySession.status.in_([SessionStatus.CLIENT_ABSENT, SessionStatus.THERAPIST_LEAVE])
+    # Virtual absence / leave rows (approved and pending approval)
+    from app.services import virtual_session_log_service as virtual_logs
+
+    month_label = None
+    if year is not None and month is not None:
+        month_label = datetime(year, month, 1).strftime("%b %Y")
+    virtual_dicts = virtual_logs.collect_virtual_logs(
+        db,
+        case_id=case_id,
+        month=month_label,
+        case_scope_ids=set(cases.keys()),
     )
-    if year is not None:
-        from sqlalchemy import extract
-        session_stmt = session_stmt.where(extract("year", TherapySession.scheduled_date) == year)
-    if month is not None:
-        from sqlalchemy import extract as _extract
-        session_stmt = session_stmt.where(_extract("month", TherapySession.scheduled_date) == month)
-    
-    sessions = db.scalars(session_stmt).all()
-    virtual_logs = []
-    for s in sessions:
-        case = cases.get(s.case_id)
+    virtual_logs_out = []
+    for v in virtual_dicts:
+        if year is not None and v["scheduled_date"].year != year:
+            continue
+        if month is not None and v["scheduled_date"].month != month:
+            continue
+        case = cases.get(v["case_id"])
         if not case:
             continue
-        therapist = db.get(User, s.therapist_user_id)
-        virtual_logs.append(_parent_virtual_session_log_read(db, s, case, therapist))
-    
-    combined = result + virtual_logs
+        session = db.get(TherapySession, v["session_id"])
+        therapist = db.get(User, session.therapist_user_id) if session else None
+        virtual_logs_out.append(_parent_virtual_from_dict(db, v, case, therapist))
+
+    combined = result + virtual_logs_out
     combined.sort(key=lambda x: x.scheduled_date, reverse=True)
     return combined
 

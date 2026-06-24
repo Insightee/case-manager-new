@@ -6,6 +6,16 @@ from sqlalchemy.orm import Session
 from app.models.notification import Notification
 
 
+def notification_dedupe_key(
+    event_type: str,
+    entity_type: str,
+    entity_id: int,
+    target_status: str,
+) -> str:
+    """Stable key for in-app notification dedupe: event:entity:id:status."""
+    return f"{event_type}:{entity_type}:{entity_id}:{target_status}"
+
+
 def create_notification(
     db: Session,
     *,
@@ -14,7 +24,21 @@ def create_notification(
     body: str,
     entity_type: str | None = None,
     entity_id: int | None = None,
-) -> Notification:
+    dedupe_key: str | None = None,
+) -> Notification | None:
+    if dedupe_key and entity_type and entity_id is not None:
+        existing = db.scalars(
+            select(Notification).where(
+                Notification.user_id == user_id,
+                Notification.entity_type == entity_type,
+                Notification.entity_id == entity_id,
+                Notification.body.like(f"%{dedupe_key}%"),
+            )
+        ).first()
+        if existing:
+            return None
+    if dedupe_key:
+        body = f"[{dedupe_key}] {body}"
     n = Notification(user_id=user_id, title=title, body=body, entity_type=entity_type, entity_id=entity_id)
     db.add(n)
     db.flush()

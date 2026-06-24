@@ -290,3 +290,31 @@ def test_start_session_idempotent_same_session():
     assert r2.status_code == 200
     assert r1.json()["id"] == r2.json()["id"]
     assert r2.json()["status"] == "IN_PROGRESS"
+
+
+def test_close_previous_day_open_sessions_skips_same_day():
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        case = db.scalars(select(Case).limit(1)).first()
+        today = today_ist()
+        yesterday = today - timedelta(days=2)
+        stale_start = datetime.combine(yesterday, time(11, 0), tzinfo=IST).astimezone(timezone.utc)
+        today_start = datetime.combine(today, time(10, 0), tzinfo=IST).astimezone(timezone.utc)
+        stale = _create_in_progress(
+            db, therapist_id=therapist.id, case_id=case.id, session_day=yesterday, started_at=stale_start
+        )
+        live = _create_in_progress(
+            db, therapist_id=therapist.id, case_id=case.id, session_day=today, started_at=today_start
+        )
+        db.commit()
+        stale_id, live_id = stale.id, live.id
+        now_ist = datetime.combine(today, time(15, 0), tzinfo=IST)
+        closed = session_day_end_service.close_previous_day_open_sessions(db, now_ist)
+        db.commit()
+        assert stale_id in closed
+        assert live_id not in closed
+        assert db.get(TherapySession, stale_id).status == SessionStatus.COMPLETED
+        assert db.get(TherapySession, live_id).status == SessionStatus.IN_PROGRESS
+    finally:
+        db.close()

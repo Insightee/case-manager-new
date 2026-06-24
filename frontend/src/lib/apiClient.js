@@ -146,41 +146,51 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TI
   }
 }
 
+let refreshInFlight = null
+
 async function refreshAccess() {
-  const { refresh } = getTokens()
-  if (!refresh) {
-    const err = new Error('No refresh token')
-    err.isAuthError = true
-    throw err
-  }
-  try {
-    const res = await fetchWithTimeout(`${apiBase()}/api/v1/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refresh }),
-    })
-    if (res.status === 401 || res.status === 403) {
-      const err = new Error('Session expired')
+  if (refreshInFlight) return refreshInFlight
+
+  refreshInFlight = (async () => {
+    const { refresh } = getTokens()
+    if (!refresh) {
+      const err = new Error('No refresh token')
       err.isAuthError = true
-      err.status = res.status
       throw err
     }
-    if (!res.ok) {
-      const err = new Error(`Server returned ${res.status}`)
-      err.isServerError = true
-      err.status = res.status
+    try {
+      const res = await fetchWithTimeout(`${apiBase()}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      })
+      if (res.status === 401 || res.status === 403) {
+        const err = new Error('Session expired')
+        err.isAuthError = true
+        err.status = res.status
+        throw err
+      }
+      if (!res.ok) {
+        const err = new Error(`Server returned ${res.status}`)
+        err.isServerError = true
+        err.status = res.status
+        throw err
+      }
+      const data = await res.json()
+      setTokens(data.access_token, data.refresh_token)
+      return data.access_token
+    } catch (err) {
+      if (err.isAuthError || err.status === 401 || err.status === 403) {
+        throw err
+      }
+      err.isNetworkOrServerError = true
       throw err
+    } finally {
+      refreshInFlight = null
     }
-    const data = await res.json()
-    setTokens(data.access_token, data.refresh_token)
-    return data.access_token
-  } catch (err) {
-    if (err.isAuthError || err.status === 401 || err.status === 403) {
-      throw err
-    }
-    err.isNetworkOrServerError = true
-    throw err
-  }
+  })()
+
+  return refreshInFlight
 }
 
 /** True when the session should be cleared (auth failure, not network noise). */
