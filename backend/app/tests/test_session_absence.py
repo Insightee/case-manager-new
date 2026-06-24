@@ -116,11 +116,12 @@ def test_therapist_leave_admin_approve():
 
 
 _fresh_session_counter = 0
+# Far-future dates avoid same-day duplicate rules and seed collisions in the shared CI DB.
+_FRESH_SESSION_BASE = date(2099, 1, 1)
 
 
 def _fresh_scheduled_session(headers: dict) -> int:
     global _fresh_session_counter
-    today = date.today().isoformat()
     cases = client.get("/api/v1/cases?assigned=true&page_size=20", headers=headers).json()
     case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
     if not case_items:
@@ -128,17 +129,20 @@ def _fresh_scheduled_session(headers: dict) -> int:
     for attempt in range(len(case_items) * 3):
         _fresh_session_counter += 1
         case_id = int(case_items[_fresh_session_counter % len(case_items)]["id"])
+        day = (_FRESH_SESSION_BASE + timedelta(days=_fresh_session_counter)).isoformat()
         hour = 8 + (_fresh_session_counter % 10)
         minute = 10 + (_fresh_session_counter % 45)
         start = f"{hour:02d}:{minute:02d}"
-        end = f"{hour:02d}:{minute + 29:02d}"
+        end_hour = hour + ((minute + 29) // 60)
+        end_minute = (minute + 29) % 60
+        end = f"{end_hour:02d}:{end_minute:02d}"
         created = client.post(
             "/api/v1/sessions",
             headers=headers,
             json={
                 "case_id": case_id,
                 "therapist_user_id": 0,
-                "scheduled_date": today,
+                "scheduled_date": day,
                 "start_time": start,
                 "end_time": end,
                 "mode": "HOME",
@@ -189,8 +193,13 @@ def test_get_absence_by_session_id():
 
 
 def test_absence_does_not_create_in_progress_or_daily_log():
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.daily_log import DailyLog
+
     therapist_headers = _login("therapist@demo.com")
-    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    isolated_day = (date(2099, 6, 1)).isoformat()
     cases = client.get("/api/v1/cases?assigned=true&page_size=1", headers=therapist_headers).json()
     case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
     case_id = int(case_items[0]["id"])
@@ -200,7 +209,7 @@ def test_absence_does_not_create_in_progress_or_daily_log():
         json={
             "case_id": case_id,
             "therapist_user_id": 0,
-            "scheduled_date": tomorrow,
+            "scheduled_date": isolated_day,
             "start_time": "15:20",
             "end_time": "16:20",
             "mode": "HOME",
@@ -219,7 +228,9 @@ def test_absence_does_not_create_in_progress_or_daily_log():
     assert sess.status_code == 200
     row = sess.json()
     assert row["status"] == "SCHEDULED"
-    logs = client.get("/api/v1/daily-logs", headers=therapist_headers)
-    assert logs.status_code == 200
-    items = logs.json() if isinstance(logs.json(), list) else logs.json().get("items", [])
-    assert not any(l.get("session_id") == session_id for l in items)
+    db = SessionLocal()
+    try:
+        persisted_log = db.scalars(select(DailyLog).where(DailyLog.session_id == session_id)).first()
+        assert persisted_log is None
+    finally:
+        db.close()
