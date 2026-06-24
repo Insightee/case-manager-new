@@ -33,8 +33,6 @@ export function WeekCalendarGrid({
   onSlotClick,
   onCellClick,
   selectedSlotId,
-  showLeaveActions = false,
-  onMarkLeave,
   onReload,
 }) {
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart])
@@ -88,7 +86,6 @@ export function WeekCalendarGrid({
                 {days.map((d) => {
                   const ds = dateStr(d)
                   const overlay = calendar?.day_overlays?.[ds]
-                  const dayWideLeave = isTherapistWideLeaveOverlay(overlay)
                   const isToday = ds === today
                   return (
                     <th
@@ -103,14 +100,6 @@ export function WeekCalendarGrid({
                         <span className="mt-1 block text-[10px] font-semibold text-amber-800">
                           {leaveOverlayHeaderLabel(overlay)}
                         </span>
-                      ) : showLeaveActions && onMarkLeave ? (
-                        <button
-                          type="button"
-                          className="mt-1 text-[10px] text-slate-500 underline"
-                          onClick={() => onMarkLeave(d)}
-                        >
-                          Mark leave
-                        </button>
                       ) : null}
                     </th>
                   )
