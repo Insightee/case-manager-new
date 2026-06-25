@@ -950,6 +950,32 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
     assert body.get("therapist_name")
 
 
+def test_cm_meeting_observation_checklist_review_type():
+    """Regression: Postgres meetingtype enum must accept product meeting types."""
+    th_token = _login("therapist@demo.com")
+    th_headers = {"Authorization": f"Bearer {th_token}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    assert cases.status_code == 200, cases.text
+    case_id = cases.json()[0]["id"]
+    created = client.post(
+        "/api/v1/cm-meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": "2027-03-15",
+            "scheduled_time": "14:30:00",
+            "duration_minutes": 30,
+            "meeting_type": "OBSERVATION_CHECKLIST_REVIEW",
+            "title": "Observation checklist review",
+            "meeting_url": "https://meet.google.com/test-checklist-review",
+            "invite_therapist": True,
+            "invite_case_manager": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json().get("meeting_type") == "OBSERVATION_CHECKLIST_REVIEW"
+
+
 def test_therapist_cm_meeting_without_case_returns_400_not_module_error():
     th_token = _login("therapist@demo.com")
     th_headers = {"Authorization": f"Bearer {th_token}"}

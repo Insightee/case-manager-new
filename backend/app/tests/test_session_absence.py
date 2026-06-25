@@ -222,4 +222,30 @@ def test_absence_does_not_create_in_progress_or_daily_log():
     logs = client.get("/api/v1/daily-logs", headers=therapist_headers)
     assert logs.status_code == 200
     items = logs.json() if isinstance(logs.json(), list) else logs.json().get("items", [])
-    assert not any(l.get("session_id") == session_id for l in items)
+    assert not any(l.get("session_id") == session_id and l.get("id", 0) > 0 for l in items)
+
+
+def test_pending_absence_excludes_session_from_workspace_queues():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _therapist_scheduled_session(therapist_headers)
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Unwell"},
+    )
+    assert create.status_code == 201, create.text
+
+    ws = client.get("/api/v1/therapist/sessions/workspace", headers=therapist_headers)
+    assert ws.status_code == 200
+    body = ws.json()
+    upcoming_ids = {int(s["id"]) for s in body.get("upcoming", [])}
+    needs_ids = {int(s["id"]) for s in body.get("needs_log", [])}
+    assert session_id not in upcoming_ids
+    assert session_id not in needs_ids
+
+    logs = client.get("/api/v1/daily-logs", headers=therapist_headers)
+    assert logs.status_code == 200
+    items = logs.json() if isinstance(logs.json(), list) else []
+    virtual = [l for l in items if l.get("session_id") == session_id and l.get("id", 0) < 0]
+    assert virtual
+    assert virtual[0]["attendance_status"] == "CLIENT_ABSENT"
