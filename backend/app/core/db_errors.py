@@ -69,6 +69,22 @@ def raise_db_api_http_error(exc: DBAPIError) -> None:
                 "Run alembic upgrade head on the API service, then try again."
             ),
         ) from exc
+    if "invalid input value for enum" in lowered and "meetingtype" in lowered:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Database schema is out of date (meeting type enum). "
+                "Run alembic upgrade head on the API service, then try again."
+            ),
+        ) from exc
+    if "invalid input value for enum" in lowered and "meetingstatus" in lowered:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Database schema is out of date (meeting status enum). "
+                "Run alembic upgrade head on the API service, then try again."
+            ),
+        ) from exc
     if isinstance(exc, OperationalError):
         raise_db_write_http_error(exc)
     if settings.is_development:
