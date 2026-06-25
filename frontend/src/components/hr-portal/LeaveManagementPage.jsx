@@ -5,6 +5,7 @@ import {
   AdminPageHeader,
   AdminPanel,
   AdminEmptyState,
+  AdminSearchInput,
   AdminToolbar,
   PortalTabBar,
   RejectWithComment,
@@ -29,9 +30,9 @@ const REVIEW_TABS = [
   ['ALL', 'All'],
 ]
 
-const TYPE_TABS = [
-  ['ALL', 'All types'],
-  ['CHILD_ABSENCE', 'Child absence'],
+const REQUEST_VIEWS = [
+  { id: 'leave', label: 'Leave requests' },
+  { id: 'child_absence', label: 'Child absence' },
 ]
 
 function normalizeLeaveRow(row) {
@@ -50,12 +51,35 @@ function normalizeChildAbsenceRow(row) {
   }
 }
 
+function resolveRequestView(searchParams) {
+  const view = searchParams.get('view')
+  if (view === 'child_absence') return 'child_absence'
+  if (searchParams.get('type') === 'CHILD_ABSENCE') return 'child_absence'
+  return 'leave'
+}
+
+function matchesSearch(row, query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const haystack = [
+    row.therapist_name,
+    row.child_name,
+    row.reason,
+    row.case_code,
+    row.leave_type,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(q)
+}
+
 export function LeaveManagementPage({ portal = 'hr' }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const mainTab = tabParam === 'report' || tabParam === 'manual' ? tabParam : 'approvals'
   const tab = searchParams.get('status') || 'PENDING'
-  const typeTab = searchParams.get('type') || 'ALL'
+  const requestView = resolveRequestView(searchParams)
 
   const [leaves, setLeaves] = useState([])
   const [childAbsences, setChildAbsences] = useState([])
@@ -70,6 +94,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   const [reportRows, setReportRows] = useState([])
   const [reportLoading, setReportLoading] = useState(false)
   const [migrationInfo, setMigrationInfo] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const eyebrow = portal === 'admin' ? 'Admin' : 'HR'
 
@@ -132,11 +157,12 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     setSearchParams(nextParams, { replace: true })
   }
 
-  function setTypeTab(next) {
+  function setRequestView(next) {
     const nextParams = new URLSearchParams(searchParams)
     nextParams.set('tab', 'approvals')
-    if (next === 'ALL') nextParams.delete('type')
-    else nextParams.set('type', next)
+    nextParams.delete('type')
+    if (next === 'leave') nextParams.delete('view')
+    else nextParams.set('view', 'child_absence')
     setSearchParams(nextParams, { replace: true })
   }
 
@@ -247,27 +273,27 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     }
   }
 
-  const allRequests = [
-    ...leaves.map(normalizeLeaveRow),
-    ...childAbsences.map(normalizeChildAbsenceRow),
-  ]
+  const viewRequests =
+    requestView === 'child_absence'
+      ? childAbsences.map(normalizeChildAbsenceRow)
+      : leaves.map(normalizeLeaveRow)
 
-  const typeFiltered =
-    typeTab === 'CHILD_ABSENCE'
-      ? allRequests.filter((r) => r.record_type === 'child_absence')
-      : allRequests
+  const statusFiltered =
+    tab === 'ALL' ? viewRequests : viewRequests.filter((r) => r.display_status === tab)
 
-  const displayed =
-    tab === 'ALL' ? typeFiltered : typeFiltered.filter((r) => r.display_status === tab)
+  const displayed = statusFiltered.filter((r) => matchesSearch(r, searchQuery))
 
   const counts = {
-    PENDING: allRequests.filter((r) => r.display_status === 'PENDING').length,
-    APPROVED: allRequests.filter((r) => r.display_status === 'APPROVED').length,
-    REJECTED: allRequests.filter((r) => r.display_status === 'REJECTED').length,
-    ALL: allRequests.length,
+    PENDING: viewRequests.filter((r) => r.display_status === 'PENDING').length,
+    APPROVED: viewRequests.filter((r) => r.display_status === 'APPROVED').length,
+    REJECTED: viewRequests.filter((r) => r.display_status === 'REJECTED').length,
+    ALL: viewRequests.length,
   }
 
-  const childAbsenceCount = allRequests.filter((r) => r.record_type === 'child_absence').length
+  const panelTitle =
+    requestView === 'child_absence'
+      ? `${displayed.length} child absence request${displayed.length === 1 ? '' : 's'}`
+      : `${displayed.length} leave request${displayed.length === 1 ? '' : 's'}`
 
   return (
     <div className="admin-page leave-mgmt">
@@ -284,7 +310,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
         activeId={mainTab}
         onChange={setMainTab}
         tabs={[
-          { id: 'approvals', label: 'Approvals', badge: counts.PENDING || null },
+          { id: 'approvals', label: 'Approvals' },
           { id: 'manual', label: 'Manual' },
           { id: 'report', label: 'Report' },
         ]}
@@ -313,39 +339,54 @@ export function LeaveManagementPage({ portal = 'hr' }) {
         </>
       ) : mainTab === 'approvals' ? (
         <>
-          <div className="leave-mgmt__status-row" role="group" aria-label="Filter by status">
-            {REVIEW_TABS.map(([val, label]) => (
-              <button
-                key={val}
-                type="button"
-                className={`leave-mgmt__status-pill ${tab === val ? 'is-active' : ''}`}
-                onClick={() => setStatusTab(val)}
-              >
-                {label} ({counts[val]})
-              </button>
-            ))}
+          <PortalTabBar
+            ariaLabel="Request type"
+            activeId={requestView}
+            onChange={setRequestView}
+            className="leave-mgmt__view-tabs"
+            tabs={REQUEST_VIEWS}
+          />
+
+          <div className="leave-mgmt__filter-section">
+            <div className="leave-mgmt__status-row" role="group" aria-label="Filter by status">
+              {REVIEW_TABS.map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  className={`leave-mgmt__status-pill ${tab === val ? 'is-active' : ''}`}
+                  onClick={() => setStatusTab(val)}
+                >
+                  {label} ({counts[val]})
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="leave-mgmt__status-row" role="group" aria-label="Filter by request type">
-            {TYPE_TABS.map(([val, label]) => (
-              <button
-                key={val}
-                type="button"
-                className={`leave-mgmt__status-pill ${typeTab === val ? 'is-active' : ''}`}
-                onClick={() => setTypeTab(val)}
-              >
-                {label}
-                {val === 'CHILD_ABSENCE' && childAbsenceCount ? ` (${childAbsenceCount})` : ''}
-              </button>
-            ))}
+          <div className="leave-mgmt__search-row">
+            <AdminSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder={
+                requestView === 'child_absence'
+                  ? 'Search child, therapist, case…'
+                  : 'Search therapist, reason, type…'
+              }
+            />
           </div>
 
-          <AdminPanel title={`${displayed.length} requests`} padded={false}>
+          <AdminPanel title={panelTitle} padded={false}>
             <div className="leave-mgmt__list">
               {loading ? (
                 <div className="admin-skeleton" />
               ) : displayed.length === 0 ? (
-                <AdminEmptyState title="No requests" description="Nothing matches this filter." />
+                <AdminEmptyState
+                  title="No requests"
+                  description={
+                    searchQuery.trim()
+                      ? 'Nothing matches your search. Try a different name or keyword.'
+                      : 'Nothing matches this filter.'
+                  }
+                />
               ) : (
                 <div>
                   {displayed.map((l) => {
