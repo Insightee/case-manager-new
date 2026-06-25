@@ -120,8 +120,9 @@ def test_create_session_unresolved_same_day_duplicate():
         assert exc_info.value.status_code == 409
         detail = exc_info.value.detail
         assert detail["code"] == "EXISTING_SESSION_FOR_DATE"
-        assert detail["session_id"] == first_created.id
-        assert detail["status"] == SessionStatus.SCHEDULED.value
+        assert detail["existing_session_id"] == first_created.id
+        assert detail["session_status"] == SessionStatus.SCHEDULED.value
+        assert "scheduled session already exists" in detail["message"].lower()
     finally:
         db.rollback()
         db.close()

@@ -170,30 +170,24 @@ def create_session(
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
 
-    # Check for unresolved same-day session — return 409 so callers can deep-link
+    # Walk-in today: reuse manual-session conflict detection so UI can route correctly.
     from app.core.timezone import today_ist
     today = today_ist()
+    therapist_id = payload.therapist_user_id or user.id
     if payload.scheduled_date == today:
-        unresolved_statuses = (SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS)
-        existing = db.scalars(
-            select(TherapySession)
-            .where(
-                TherapySession.case_id == payload.case_id,
-                TherapySession.therapist_user_id == (payload.therapist_user_id or user.id),
-                TherapySession.scheduled_date == today,
-                TherapySession.status.in_(unresolved_statuses),
-            )
-        ).first()
+        existing = manual_conflict.find_existing_session_for_date(
+            db,
+            case_id=payload.case_id,
+            therapist_user_id=therapist_id,
+            scheduled_date=today,
+        )
         if existing:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "EXISTING_SESSION_FOR_DATE",
-                    "session_id": existing.id,
-                    "status": existing.status.value,
-                    "message": "A session already exists for this client today.",
-                },
-            )
+            conflict = manual_conflict.build_existing_session_conflict(existing)
+            if existing.status == SessionStatus.SCHEDULED:
+                conflict["message"] = (
+                    "A scheduled session already exists for this client today."
+                )
+            raise HTTPException(status_code=409, detail=conflict)
 
     from app.services.case_status_request_service import assert_case_allows_new_session
 

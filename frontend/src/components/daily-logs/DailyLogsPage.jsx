@@ -124,8 +124,11 @@ export function DailyLogsPage() {
   const [editTimesSession, setEditTimesSession] = useState(null)
   const [composerCaseId, setComposerCaseId] = useState(null)
   const [existingSessionConflict, setExistingSessionConflict] = useState(null)
+  const [walkInConflict, setWalkInConflict] = useState(null)
+  const [scheduledSessionHint, setScheduledSessionHint] = useState('')
   const logPanelRef = useRef(null)
   const activeSessionCardRef = useRef(null)
+  const upcomingSectionRef = useRef(null)
   const deepLinkResolvedRef = useRef(null)
 
   const pendingLogs = useMemo(
@@ -168,6 +171,33 @@ export function DailyLogsPage() {
     if (!composerCaseId) return upcoming
     return upcoming.filter((s) => s.case_id === composerCaseId)
   }, [upcoming, composerCaseId])
+
+  useEffect(() => {
+    setScheduledSessionHint('')
+  }, [composerCaseId])
+
+  function scrollToUpcomingSessions() {
+    requestAnimationFrame(() => {
+      upcomingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  function handleScheduledSessionExists(info) {
+    setWalkInConflict(null)
+    setScheduledSessionHint(
+      info?.message || 'A scheduled session already exists for this client today.',
+    )
+    void loadAll({ silent: true }).then(() => scrollToUpcomingSessions())
+  }
+
+  function handleWalkInSessionConflict(detail) {
+    setScheduledSessionHint('')
+    setWalkInConflict(detail)
+  }
+
+  function dismissWalkInConflict() {
+    setWalkInConflict(null)
+  }
 
   const logYears = useMemo(() => {
     const years = new Set([now.getFullYear()])
@@ -704,6 +734,8 @@ export function DailyLogsPage() {
 
   async function handleExistingSessionAction(conflict) {
     setExistingSessionConflict(null)
+    setWalkInConflict(null)
+    setScheduledSessionHint('')
     setError('')
     try {
       if (conflict.recommended_action === 'resume_session') {
@@ -889,9 +921,15 @@ export function DailyLogsPage() {
           liveBlocked={!!active}
           onSelectedCaseChange={setComposerCaseId}
           existingSessionConflict={existingSessionConflict}
+          walkInConflict={walkInConflict}
           onExistingSessionAction={handleExistingSessionAction}
           onDismissExistingSessionConflict={() => setExistingSessionConflict(null)}
+          onDismissWalkInConflict={dismissWalkInConflict}
+          onScheduledSessionExists={handleScheduledSessionExists}
+          onWalkInSessionConflict={handleWalkInSessionConflict}
           onSessionStarted={(info) => {
+            setWalkInConflict(null)
+            setScheduledSessionHint('')
             if (info?.message) setSuccess(info.message)
             void loadAll({ silent: true })
           }}
@@ -928,7 +966,16 @@ export function DailyLogsPage() {
       ) : null}
 
       {!logSession ? (
-        <section style={{ marginBottom: 24 }}>
+        <section ref={upcomingSectionRef} style={{ marginBottom: 24 }}>
+          {scheduledSessionHint ? (
+            <p
+              className="ic-alert ic-alert--success"
+              role="status"
+              style={{ marginBottom: 12 }}
+            >
+              {scheduledSessionHint}
+            </p>
+          ) : null}
           <h3 className="ic-section-head__title" style={{ marginBottom: 12 }}>
             Upcoming sessions
           </h3>

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { ExistingSessionForDateCard } from '../daily-logs/ExistingSessionForDateCard.jsx'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
 // TODO: re-enable when therapist self-onboarding is allowed again
 // import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
@@ -41,8 +42,12 @@ export function TherapistSessionComposer({
   disabled = false,
   liveBlocked = false,
   existingSessionConflict = null,
+  walkInConflict = null,
   onExistingSessionAction,
   onDismissExistingSessionConflict,
+  onDismissWalkInConflict,
+  onScheduledSessionExists,
+  onWalkInSessionConflict,
   onSessionStarted,
   onManualSession,
   onError,
@@ -116,6 +121,7 @@ export function TherapistSessionComposer({
     if (busy) return
     setBusy(true)
     setLocalError('')
+    onDismissWalkInConflict?.()
     const today = todayIsoIST()
     const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
@@ -139,11 +145,19 @@ export function TherapistSessionComposer({
         })
       } catch (err) {
         if (err?.status === 409 && err?.detail?.code === 'EXISTING_SESSION_FOR_DATE') {
-          // Session already exists — deep-link therapist to that session's log page.
-          onSessionStarted?.({
-            existingSessionId: err.detail.session_id,
-            message: 'A session already exists for this client today.',
-          })
+          const detail = err.detail
+          const status = detail.session_status || detail.status
+          if (status === 'SCHEDULED') {
+            onScheduledSessionExists?.({
+              sessionId: detail.existing_session_id || detail.session_id,
+              caseId: detail.case_id,
+              message:
+                detail.message ||
+                'A scheduled session already exists for this client today.',
+            })
+          } else {
+            onWalkInSessionConflict?.(detail)
+          }
           return
         }
         throw err
@@ -341,7 +355,13 @@ export function TherapistSessionComposer({
             </div>
           )}
 
-          {selectedCaseId ? (
+          {walkInConflict ? (
+            <ExistingSessionForDateCard
+              conflict={walkInConflict}
+              onAction={onExistingSessionAction}
+              onDismiss={onDismissWalkInConflict}
+            />
+          ) : selectedCaseId ? (
             <>
               <form className="ic-session-composer__walkin" onSubmit={handleWalkIn}>
                 <p className="ic-session-composer__walkin-title">
