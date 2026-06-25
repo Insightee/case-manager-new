@@ -64,10 +64,11 @@ def test_start_session_preserves_scheduled_start_time():
         ).first()
         assert assignment
 
+        visit_day = date(2026, 6, 8)
         session = TherapySession(
             case_id=assignment.case_id,
             therapist_user_id=therapist.id,
-            scheduled_date=date.today(),
+            scheduled_date=visit_day,
             start_time=time(9, 30),
             end_time=time(10, 30),
             mode=SessionMode.HOME,
@@ -79,10 +80,13 @@ def test_start_session_preserves_scheduled_start_time():
         checkin_utc = datetime(2026, 6, 8, 9, 31, tzinfo=timezone.utc)
 
         with patch.object(session_service, "_now", return_value=checkin_utc):
-            started = session_service.start_session(db, session, therapist.id)
+            with patch.object(session_service, "today_ist", return_value=visit_day):
+                with patch("app.services.session_start_service.today_ist", return_value=visit_day):
+                    started = session_service.start_session(db, session, therapist.id)
 
         assert started.start_time == time(9, 30)
         assert started.end_time == time(10, 30)
         assert started.actual_start_at == checkin_utc
     finally:
+        db.rollback()
         db.close()

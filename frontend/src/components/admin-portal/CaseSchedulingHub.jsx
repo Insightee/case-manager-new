@@ -651,7 +651,6 @@ export function CaseSchedulingHub({
                           caseId={caseItem.id}
                           mode="therapist"
                           refreshKey={calendarRefresh}
-                          showLeaveActions={false}
                           onSlotClick={(slot) => setDetailSlot(slot)}
                           selectedSlotId={detailSlot?.id}
                         />

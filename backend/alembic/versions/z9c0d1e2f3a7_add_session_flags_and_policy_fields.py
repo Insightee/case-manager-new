@@ -1,14 +1,16 @@
 """Add session cancellation_reason, data_quality_flag; billing rule absence policy fields.
 
 Revision ID: z9c0d1e2f3a7
-Revises: z9b0c1d2e3f6
+Revises: d0b7effca6df
 Create Date: 2026-06-24
 """
+from typing import Union
+
 from alembic import op
 import sqlalchemy as sa
 
-revision = "z9c0d1e2f3a7"
-down_revision = "z9b0c1d2e3f6"
+revision: str = "z9c0d1e2f3a7"
+down_revision: Union[str, None] = "d0b7effca6df"
 branch_labels = None
 depends_on = None
 

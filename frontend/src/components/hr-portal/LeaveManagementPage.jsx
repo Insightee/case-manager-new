@@ -29,15 +29,38 @@ const REVIEW_TABS = [
   ['ALL', 'All'],
 ]
 
+const TYPE_TABS = [
+  ['ALL', 'All types'],
+  ['CHILD_ABSENCE', 'Child absence'],
+]
+
+function normalizeLeaveRow(row) {
+  return { ...row, record_type: 'leave', display_status: row.status }
+}
+
+function normalizeChildAbsenceRow(row) {
+  return {
+    ...row,
+    record_type: 'child_absence',
+    display_status: row.leave_status || row.status,
+    start_date: row.scheduled_date,
+    end_date: row.scheduled_date,
+    day_count: 1,
+    leave_type: 'CHILD_ABSENT',
+  }
+}
+
 export function LeaveManagementPage({ portal = 'hr' }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const mainTab = tabParam === 'report' || tabParam === 'manual' ? tabParam : 'approvals'
   const tab = searchParams.get('status') || 'PENDING'
+  const typeTab = searchParams.get('type') || 'ALL'
 
   const [leaves, setLeaves] = useState([])
+  const [childAbsences, setChildAbsences] = useState([])
   const [loading, setLoading] = useState(true)
-  const [rejectingId, setRejectingId] = useState(null)
+  const [rejectingKey, setRejectingKey] = useState(null)
   const [rejectComment, setRejectComment] = useState('')
   const [processing, setProcessing] = useState({})
   const [error, setError] = useState('')
@@ -53,11 +76,13 @@ export function LeaveManagementPage({ portal = 'hr' }) {
   async function load() {
     setLoading(true)
     try {
-      const [data, migration] = await Promise.all([
+      const [data, childData, migration] = await Promise.all([
         apiFetch('/api/v1/leave'),
+        apiFetch('/api/v1/leave/child-absence').catch(() => ({ items: [] })),
         apiFetch('/api/v1/leave/migration-info').catch(() => null),
       ])
       setLeaves(Array.isArray(data) ? data : [])
+      setChildAbsences(Array.isArray(childData?.items) ? childData.items : [])
       setMigrationInfo(migration)
       return true
     } catch (err) {
@@ -107,16 +132,29 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     setSearchParams(nextParams, { replace: true })
   }
 
+  function setTypeTab(next) {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tab', 'approvals')
+    if (next === 'ALL') nextParams.delete('type')
+    else nextParams.set('type', next)
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function rowKey(row) {
+    return `${row.record_type}-${row.id}`
+  }
+
   async function reviewLeave(id, status, note = null) {
-    setProcessing((p) => ({ ...p, [id]: true }))
+    const key = `leave-${id}`
+    setProcessing((p) => ({ ...p, [key]: true }))
     setError('')
     try {
       const updated = await apiFetch(`/api/v1/leave/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status, review_note: note }),
       })
-      if (rejectingId === id) {
-        setRejectingId(null)
+      if (rejectingKey === key) {
+        setRejectingKey(null)
         setRejectComment('')
       }
       if (updated?.id) {
@@ -137,27 +175,65 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     } catch (err) {
       setError(err.message || 'Could not update leave status')
     } finally {
-      setProcessing((p) => ({ ...p, [id]: false }))
+      setProcessing((p) => ({ ...p, [key]: false }))
     }
   }
 
-  function startReject(id) {
-    setRejectingId(id)
+  async function reviewChildAbsence(id, action, note = null) {
+    const key = `child_absence-${id}`
+    setProcessing((p) => ({ ...p, [key]: true }))
+    setError('')
+    try {
+      await apiFetch(`/api/v1/sessions/absence/${id}/${action}`, {
+        method: 'POST',
+        body: JSON.stringify({ review_note: note }),
+      })
+      if (rejectingKey === key) {
+        setRejectingKey(null)
+        setRejectComment('')
+      }
+      await load()
+    } catch (err) {
+      setError(err.message || 'Could not update child absence status')
+    } finally {
+      setProcessing((p) => ({ ...p, [key]: false }))
+    }
+  }
+
+  function startReject(key) {
+    setRejectingKey(key)
     setRejectComment('')
   }
 
   function cancelReject() {
-    setRejectingId(null)
+    setRejectingKey(null)
     setRejectComment('')
   }
 
-  async function confirmReject(id) {
+  async function confirmReject(row) {
     const note = rejectComment.trim()
     if (!note) {
-      setError('Add a comment explaining why this leave was rejected.')
+      setError('Add a comment explaining why this request was rejected.')
       return
     }
-    await reviewLeave(id, 'REJECTED', note)
+    const key = rowKey(row)
+    if (row.record_type === 'child_absence') {
+      await reviewChildAbsence(row.id, 'reject', note)
+    } else {
+      await reviewLeave(row.id, 'REJECTED', note)
+    }
+    if (rejectingKey === key) {
+      setRejectingKey(null)
+      setRejectComment('')
+    }
+  }
+
+  async function approveRow(row) {
+    if (row.record_type === 'child_absence') {
+      await reviewChildAbsence(row.id, 'approve')
+    } else {
+      await reviewLeave(row.id, 'APPROVED', null)
+    }
   }
 
   async function exportCsv() {
@@ -171,21 +247,34 @@ export function LeaveManagementPage({ portal = 'hr' }) {
     }
   }
 
-  const displayed = tab === 'ALL' ? leaves : leaves.filter((l) => l.status === tab)
+  const allRequests = [
+    ...leaves.map(normalizeLeaveRow),
+    ...childAbsences.map(normalizeChildAbsenceRow),
+  ]
+
+  const typeFiltered =
+    typeTab === 'CHILD_ABSENCE'
+      ? allRequests.filter((r) => r.record_type === 'child_absence')
+      : allRequests
+
+  const displayed =
+    tab === 'ALL' ? typeFiltered : typeFiltered.filter((r) => r.display_status === tab)
 
   const counts = {
-    PENDING: leaves.filter((l) => l.status === 'PENDING').length,
-    APPROVED: leaves.filter((l) => l.status === 'APPROVED').length,
-    REJECTED: leaves.filter((l) => l.status === 'REJECTED').length,
-    ALL: leaves.length,
+    PENDING: allRequests.filter((r) => r.display_status === 'PENDING').length,
+    APPROVED: allRequests.filter((r) => r.display_status === 'APPROVED').length,
+    REJECTED: allRequests.filter((r) => r.display_status === 'REJECTED').length,
+    ALL: allRequests.length,
   }
+
+  const childAbsenceCount = allRequests.filter((r) => r.record_type === 'child_absence').length
 
   return (
     <div className="admin-page leave-mgmt">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Leave management"
-        subtitle="Review therapist leave requests, record leave manually, and export reports."
+        subtitle="Review therapist leave and child absence requests, record leave manually, and export reports."
       />
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
@@ -237,19 +326,35 @@ export function LeaveManagementPage({ portal = 'hr' }) {
             ))}
           </div>
 
+          <div className="leave-mgmt__status-row" role="group" aria-label="Filter by request type">
+            {TYPE_TABS.map(([val, label]) => (
+              <button
+                key={val}
+                type="button"
+                className={`leave-mgmt__status-pill ${typeTab === val ? 'is-active' : ''}`}
+                onClick={() => setTypeTab(val)}
+              >
+                {label}
+                {val === 'CHILD_ABSENCE' && childAbsenceCount ? ` (${childAbsenceCount})` : ''}
+              </button>
+            ))}
+          </div>
+
           <AdminPanel title={`${displayed.length} requests`} padded={false}>
             <div className="leave-mgmt__list">
               {loading ? (
                 <div className="admin-skeleton" />
               ) : displayed.length === 0 ? (
-                <AdminEmptyState title="No leave requests" description="Nothing matches this filter." />
+                <AdminEmptyState title="No requests" description="Nothing matches this filter." />
               ) : (
                 <div>
                   {displayed.map((l) => {
-                    const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
-                    const retroHint = leaveRetroactiveHint(l, migrationInfo)
+                    const key = rowKey(l)
+                    const sc = STATUS_COLORS[l.display_status] || STATUS_COLORS.PENDING
+                    const retroHint = l.record_type === 'leave' ? leaveRetroactiveHint(l, migrationInfo) : null
+                    const isChildAbsence = l.record_type === 'child_absence'
                     return (
-                      <div key={l.id} className="leave-mgmt__card">
+                      <div key={key} className="leave-mgmt__card">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                           <span
                             style={{
@@ -262,30 +367,51 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                               borderRadius: 20,
                             }}
                           >
-                            {l.status}
+                            {l.display_status}
                           </span>
+                          {isChildAbsence ? (
+                            <span className="leave-mgmt__retro-badge">Child absent</span>
+                          ) : null}
                           {l.is_retroactive ? (
                             <span className="leave-mgmt__retro-badge">Previous leave</span>
                           ) : null}
-                          <span className="admin-chip admin-chip--sm">{l.leave_type}</span>
+                          {!isChildAbsence ? (
+                            <span className="admin-chip admin-chip--sm">{l.leave_type}</span>
+                          ) : null}
                           <span className="admin-table__primary">
-                            {l.therapist_name || `Therapist #${l.therapist_user_id}`}
+                            {isChildAbsence
+                              ? `${l.child_name || 'Child'} · ${l.therapist_name || `Therapist #${l.therapist_user_id}`}`
+                              : l.therapist_name || `Therapist #${l.therapist_user_id}`}
                           </span>
                           <span className="admin-muted" style={{ marginLeft: 'auto', fontSize: '0.75rem' }}>
-                            {formatLeaveRecordSplit(l)} · {l.day_count} day{l.day_count === 1 ? '' : 's'}
+                            {isChildAbsence
+                              ? `${l.start_date}${l.start_time ? ` · ${String(l.start_time).slice(0, 5)}` : ''}`
+                              : `${formatLeaveRecordSplit(l)} · ${l.day_count} day${l.day_count === 1 ? '' : 's'}`}
                           </span>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                          <div>
-                            <p className="admin-muted" style={{ fontSize: '0.72rem', margin: 0 }}>From</p>
+                        {!isChildAbsence ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                            <div>
+                              <p className="admin-muted" style={{ fontSize: '0.72rem', margin: 0 }}>From</p>
+                              <p style={{ fontWeight: 600, margin: '2px 0 0' }}>{l.start_date}</p>
+                            </div>
+                            <div>
+                              <p className="admin-muted" style={{ fontSize: '0.72rem', margin: 0 }}>To</p>
+                              <p style={{ fontWeight: 600, margin: '2px 0 0' }}>{l.end_date}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ marginBottom: 10 }}>
+                            <p className="admin-muted" style={{ fontSize: '0.72rem', margin: 0 }}>Session date</p>
                             <p style={{ fontWeight: 600, margin: '2px 0 0' }}>{l.start_date}</p>
+                            {l.case_code ? (
+                              <p className="admin-muted" style={{ fontSize: '0.8rem', margin: '6px 0 0' }}>
+                                Case {l.case_code}
+                              </p>
+                            ) : null}
                           </div>
-                          <div>
-                            <p className="admin-muted" style={{ fontSize: '0.72rem', margin: 0 }}>To</p>
-                            <p style={{ fontWeight: 600, margin: '2px 0 0' }}>{l.end_date}</p>
-                          </div>
-                        </div>
-                        {l.consulted_with_parents ? (
+                        )}
+                        {!isChildAbsence && l.consulted_with_parents ? (
                           <p
                             className="admin-muted"
                             style={{
@@ -300,7 +426,7 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                             Consulted with parents
                           </p>
                         ) : null}
-                        {Array.isArray(l.case_ids) && l.case_ids.length > 1 ? (
+                        {!isChildAbsence && Array.isArray(l.case_ids) && l.case_ids.length > 1 ? (
                           <p className="admin-muted" style={{ fontSize: '0.8rem', marginBottom: 10 }}>
                             {l.case_ids.length} cases on this request
                           </p>
@@ -308,12 +434,12 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                         {l.reason ? (
                           <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>{l.reason}</p>
                         ) : null}
-                        {retroHint && l.status === 'PENDING' ? (
+                        {retroHint && l.display_status === 'PENDING' ? (
                           <p className="leave-mgmt__retro-note" role="note">
                             {retroHint}
                           </p>
                         ) : null}
-                        {l.status === 'REJECTED' && l.review_note ? (
+                        {l.display_status === 'REJECTED' && l.review_note ? (
                           <p
                             className="admin-muted"
                             style={{
@@ -328,23 +454,27 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                             <strong>Rejection note:</strong> {l.review_note}
                           </p>
                         ) : null}
-                        {l.status === 'PENDING' ? (
+                        {l.display_status === 'PENDING' ? (
                           <div className="leave-mgmt__card-actions">
-                            {rejectingId === l.id && !rejectComment.trim() ? (
+                            {rejectingKey === key && !rejectComment.trim() ? (
                               <p className="leave-mgmt__inline-error">
                                 Add a rejection comment, then confirm reject.
                               </p>
                             ) : null}
                             <RejectWithComment
-                              rejecting={rejectingId === l.id}
-                              comment={rejectingId === l.id ? rejectComment : ''}
+                              rejecting={rejectingKey === key}
+                              comment={rejectingKey === key ? rejectComment : ''}
                               onCommentChange={setRejectComment}
-                              onStartReject={() => startReject(l.id)}
+                              onStartReject={() => startReject(key)}
                               onCancelReject={cancelReject}
-                              onConfirmReject={() => confirmReject(l.id)}
-                              onApprove={() => reviewLeave(l.id, 'APPROVED', null)}
-                              processing={!!processing[l.id]}
-                              placeholder="Why is this leave rejected? (required)"
+                              onConfirmReject={() => confirmReject(l)}
+                              onApprove={() => approveRow(l)}
+                              processing={!!processing[key]}
+                              placeholder={
+                                isChildAbsence
+                                  ? 'Why is this child absence rejected? (required)'
+                                  : 'Why is this leave rejected? (required)'
+                              }
                             />
                           </div>
                         ) : null}

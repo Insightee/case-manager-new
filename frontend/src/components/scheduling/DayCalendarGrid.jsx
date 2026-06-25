@@ -32,8 +32,6 @@ export function DayCalendarGrid({
   onSlotClick,
   onCellClick,
   selectedSlotId,
-  showLeaveActions = false,
-  onMarkLeave,
 }) {
   const ds = dateStr(dayDate)
   const hours = defaultHourRows()
@@ -134,17 +132,6 @@ export function DayCalendarGrid({
                 </div>
               ))
             )}
-            {showLeaveActions && onMarkLeave && !dayWideLeave ? (
-              <div className="border-t border-[#E2E8F0] px-4 py-3">
-                <button
-                  type="button"
-                  className="text-sm text-slate-600 underline"
-                  onClick={() => onMarkLeave(dayDate)}
-                >
-                  Mark leave for this day
-                </button>
-              </div>
-            ) : null}
           </div>
 
           <div className="day-cal__table-wrap overflow-x-auto">
@@ -160,14 +147,6 @@ export function DayCalendarGrid({
                       <span className="mt-1 block text-[10px] font-semibold text-amber-800">
                         {leaveOverlayHeaderLabel(overlay)}
                       </span>
-                    ) : showLeaveActions && onMarkLeave ? (
-                      <button
-                        type="button"
-                        className="mt-1 text-[10px] text-slate-500 underline"
-                        onClick={() => onMarkLeave(dayDate)}
-                      >
-                        Mark leave
-                      </button>
                     ) : null}
                   </th>
                 </tr>
