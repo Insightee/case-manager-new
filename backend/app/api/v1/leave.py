@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.permissions import RoleName, user_has_permission
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.user import User
+from app.schemas.session_absence import SessionAbsenceListResponse
 from app.services import leave_migration_service as leave_migration
 from app.services import leave_notification_service as leave_notify
 from app.services import leave_policy_service as policy
@@ -118,6 +119,18 @@ def list_leave(
         stmt = stmt.where(TherapistLeave.status == leave_status)
     leaves = db.scalars(stmt).all()
     return [_serialise(l, db) for l in leaves]
+
+
+@router.get("/child-absence", response_model=SessionAbsenceListResponse)
+def list_child_absence_requests(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import session_absence_service as absence_svc
+
+    if not user_has_permission(user, "leave.manage") and not user_has_permission(user, "case.read.all"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return {"items": absence_svc.list_child_absence_for_admin(db, user)}
 
 
 @router.get("/balance/{therapist_user_id}")

@@ -51,70 +51,6 @@ def _therapist_scheduled_session(headers: dict) -> int:
     return int(created.json()["id"])
 
 
-def test_child_absent_parent_approve_flow():
-    therapist_headers = _login("therapist@demo.com")
-    session_id = _therapist_scheduled_session(therapist_headers)
-    create = client.post(
-        f"/api/v1/sessions/{session_id}/absence",
-        headers=therapist_headers,
-        json={"absence_type": "CLIENT_ABSENT", "reason": "Unwell"},
-    )
-    assert create.status_code == 201, create.text
-    body = create.json()
-    assert body["status"] == "PENDING_APPROVAL"
-    assert body["absence_type"] == "CLIENT_ABSENT"
-
-    parent_headers = _login("parent@demo.com")
-    inbox = client.get("/api/v1/parent/absence-requests", headers=parent_headers)
-    assert inbox.status_code == 200
-    ids = {item["id"] for item in inbox.json().get("items", [])}
-    assert body["id"] in ids
-
-    approve = client.post(
-        f"/api/v1/sessions/absence/{body['id']}/approve",
-        headers=parent_headers,
-        json={},
-    )
-    assert approve.status_code == 200, approve.text
-    assert approve.json()["status"] == "APPROVED"
-
-    sessions = client.get("/api/v1/sessions?page_size=100", headers=therapist_headers)
-    assert sessions.status_code == 200
-    items = sessions.json().get("items", sessions.json()) if isinstance(sessions.json(), dict) else sessions.json()
-    row = next((s for s in items if s["id"] == session_id), None)
-    assert row is not None
-    assert row["status"] in ("CLIENT_ABSENT", "CANCELLED")
-
-
-def test_therapist_leave_admin_approve():
-    therapist_headers = _login("therapist@demo.com")
-    session_id = _therapist_scheduled_session(therapist_headers)
-    create = client.post(
-        f"/api/v1/sessions/{session_id}/absence",
-        headers=therapist_headers,
-        json={
-            "absence_type": "THERAPIST_LEAVE",
-            "leave_billing_category": "UNPAID",
-            "reason": "Personal",
-        },
-    )
-    assert create.status_code == 201, create.text
-    req_id = create.json()["id"]
-
-    admin_headers = _login("superadmin@demo.com")
-    pending = client.get("/api/v1/sessions/absence/pending", headers=admin_headers)
-    assert pending.status_code == 200
-    assert req_id in {i["id"] for i in pending.json().get("items", [])}
-
-    approve = client.post(
-        f"/api/v1/sessions/absence/{req_id}/approve",
-        headers=admin_headers,
-        json={"review_note": "Approved"},
-    )
-    assert approve.status_code == 200
-    assert approve.json()["status"] == "APPROVED"
-
-
 _fresh_session_counter = 0
 # Far-future dates avoid same-day duplicate rules and seed collisions in the shared CI DB.
 _FRESH_SESSION_BASE = date(2099, 1, 1)
@@ -156,6 +92,111 @@ def _fresh_scheduled_session(headers: dict) -> int:
         if existing.status_code == 200 and existing.json().get("status") == "none":
             return session_id
     raise AssertionError("Could not allocate a fresh scheduled session for absence tests")
+
+
+def test_child_absent_admin_approve_parent_notification():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Unwell"},
+    )
+    assert create.status_code == 201, create.text
+    body = create.json()
+    assert body["status"] == "PENDING_APPROVAL"
+    assert body["absence_type"] == "CLIENT_ABSENT"
+
+    parent_headers = _login("parent@demo.com")
+    inbox_before = client.get("/api/v1/parent/absence-requests", headers=parent_headers)
+    assert inbox_before.status_code == 200
+    assert body["id"] not in {item["id"] for item in inbox_before.json().get("items", [])}
+
+    parent_approve = client.post(
+        f"/api/v1/sessions/absence/{body['id']}/approve",
+        headers=parent_headers,
+        json={},
+    )
+    assert parent_approve.status_code == 403
+
+    admin_headers = _login("superadmin@demo.com")
+    child_queue = client.get("/api/v1/leave/child-absence", headers=admin_headers)
+    assert child_queue.status_code == 200
+    assert body["id"] in {item["id"] for item in child_queue.json().get("items", [])}
+
+    approve = client.post(
+        f"/api/v1/sessions/absence/{body['id']}/approve",
+        headers=admin_headers,
+        json={},
+    )
+    assert approve.status_code == 200, approve.text
+    assert approve.json()["status"] == "APPROVED"
+
+    inbox_after = client.get("/api/v1/parent/absence-requests", headers=parent_headers)
+    assert inbox_after.status_code == 200
+    assert body["id"] in {item["id"] for item in inbox_after.json().get("items", [])}
+
+    sessions = client.get("/api/v1/sessions?page_size=100", headers=therapist_headers)
+    assert sessions.status_code == 200
+    items = sessions.json().get("items", sessions.json()) if isinstance(sessions.json(), dict) else sessions.json()
+    row = next((s for s in items if s["id"] == session_id), None)
+    assert row is not None
+    assert row["status"] in ("CLIENT_ABSENT", "CANCELLED")
+
+
+def test_child_absent_admin_reject_notifies_therapist():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Travel"},
+    )
+    assert create.status_code == 201, create.text
+    req_id = create.json()["id"]
+
+    admin_headers = _login("superadmin@demo.com")
+    reject = client.post(
+        f"/api/v1/sessions/absence/{req_id}/reject",
+        headers=admin_headers,
+        json={"review_note": "Session was held as scheduled"},
+    )
+    assert reject.status_code == 200, reject.text
+    assert reject.json()["status"] == "REJECTED"
+    assert reject.json()["review_note"] == "Session was held as scheduled"
+
+    sess = client.get(f"/api/v1/sessions/{session_id}", headers=therapist_headers)
+    assert sess.status_code == 200
+    assert sess.json()["status"] == "SCHEDULED"
+
+
+def test_therapist_leave_admin_approve():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _therapist_scheduled_session(therapist_headers)
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={
+            "absence_type": "THERAPIST_LEAVE",
+            "leave_billing_category": "UNPAID",
+            "reason": "Personal",
+        },
+    )
+    assert create.status_code == 201, create.text
+    req_id = create.json()["id"]
+
+    admin_headers = _login("superadmin@demo.com")
+    pending = client.get("/api/v1/sessions/absence/pending", headers=admin_headers)
+    assert pending.status_code == 200
+    assert req_id in {i["id"] for i in pending.json().get("items", [])}
+
+    approve = client.post(
+        f"/api/v1/sessions/absence/{req_id}/approve",
+        headers=admin_headers,
+        json={"review_note": "Approved"},
+    )
+    assert approve.status_code == 200
+    assert approve.json()["status"] == "APPROVED"
 
 
 def test_absence_duplicate_returns_structured_409():

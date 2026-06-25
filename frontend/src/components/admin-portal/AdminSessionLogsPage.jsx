@@ -708,7 +708,7 @@ export function AdminSessionLogsPage() {
         subtitle="Scheduled sessions and submitted daily logs — filter by case, therapist, and date."
       />
 
-      <AdminTaskCard title="Pending absence requests" subtitle="Child absent and therapist leave — approve or decline.">
+      <AdminTaskCard title="Pending therapist leave" subtitle="Session-level therapist leave requests awaiting approval.">
         <SessionAbsenceApprovals
           listPath="/api/v1/sessions/absence/pending"
           emptyLabel="No absence requests in the queue."

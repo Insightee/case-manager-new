@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useParentHome } from '../../hooks/useParentHome.js'
 import { QueryState } from '../shared/QueryState.jsx'
 import { formatDisplayDateLabel } from '../../lib/datetime.js'
-import { SessionAbsenceApprovals } from '../shared/SessionAbsenceApprovals.jsx'
+import { AbsentNotifications } from './AbsentNotifications.jsx'
 import { ClientSupportPage } from './ClientSupportPage.jsx'
 import './parent-dashboard.css'
 
@@ -432,12 +432,9 @@ export function ClientDashboardPage({
 
           <section className="parent-recent-updates" style={{ marginTop: 20 }}>
             <div className="parent-recent-updates__head">
-              <h2>Absence approvals</h2>
+              <h2>Absent notification</h2>
             </div>
-            <SessionAbsenceApprovals
-              listPath="/api/v1/parent/absence-requests"
-              emptyLabel="No child absence requests waiting for your approval."
-            />
+            <AbsentNotifications />
           </section>
 
           <RecentUpdatesSection updates={recentUpdates} />

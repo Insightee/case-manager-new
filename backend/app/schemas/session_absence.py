@@ -39,6 +39,9 @@ class SessionAbsenceRead(BaseModel):
     end_time: Optional[str] = None
     created_at: Optional[datetime] = None
     reviewed_at: Optional[datetime] = None
+    dispute_status: Optional[str] = None
+    record_type: Optional[str] = None
+    leave_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
