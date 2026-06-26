@@ -56,6 +56,19 @@ def _serialize(db: Session, row: SessionAbsenceRequest) -> dict:
     }
 
 
+def has_blocking_absence_for_session(db: Session, session_id: int) -> bool:
+    """True when an active absence claim should block void/cancel flows (not historical rejections)."""
+    row = db.scalars(
+        select(SessionAbsenceRequest).where(
+            SessionAbsenceRequest.session_id == session_id,
+            SessionAbsenceRequest.status.in_(
+                (SessionAbsenceStatus.PENDING_APPROVAL, SessionAbsenceStatus.APPROVED)
+            ),
+        )
+    ).first()
+    return row is not None
+
+
 def _admin_can_review(user: User) -> bool:
     return user_has_permission(user, "leave.manage") or user_has_permission(user, "case.read.all")
 

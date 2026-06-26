@@ -294,16 +294,13 @@ def void_session_before_log(
         raise ValueError("Cannot void a session that already has a log")
 
     from app.models.ledger_billing import BillingLedger
-    from app.models.session_absence import SessionAbsenceRequest
+    from app.services import session_absence_service as absence_svc
 
     has_ledger = db.scalars(select(BillingLedger).where(BillingLedger.session_id == session.id)).first()
     if has_ledger:
         raise ValueError("Billing records exist for this session — contact your case manager")
 
-    has_absence = db.scalars(
-        select(SessionAbsenceRequest).where(SessionAbsenceRequest.session_id == session.id)
-    ).first()
-    if has_absence:
+    if absence_svc.has_blocking_absence_for_session(db, session.id):
         raise ValueError("An absence request is linked to this session — contact your case manager")
 
     anchor = _void_window_anchor(session)

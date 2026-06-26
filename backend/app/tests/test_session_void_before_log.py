@@ -112,6 +112,66 @@ def test_void_rejects_after_window(monkeypatch):
         db.close()
 
 
+def test_void_succeeds_with_rejected_absence_history():
+    db = SessionLocal()
+    try:
+        from app.models.session_absence import (
+            SessionAbsenceRequest,
+            SessionAbsenceStatus,
+            SessionAbsenceType,
+        )
+
+        therapist, case_id = _therapist_and_case(db)
+        session = _completed_session(db, therapist_id=therapist.id, case_id=case_id)
+        db.add(
+            SessionAbsenceRequest(
+                session_id=session.id,
+                case_id=case_id,
+                therapist_user_id=therapist.id,
+                absence_type=SessionAbsenceType.CLIENT_ABSENT,
+                status=SessionAbsenceStatus.REJECTED,
+                reason="Travel",
+                requested_by_user_id=therapist.id,
+            )
+        )
+        db.flush()
+        voided = session_service.void_session_before_log(db, session, therapist.id)
+        assert voided.status == SessionStatus.CANCELLED
+        assert voided.actual_start_at is None
+        assert voided.actual_end_at is None
+    finally:
+        db.close()
+
+
+def test_void_rejects_pending_absence():
+    db = SessionLocal()
+    try:
+        from app.models.session_absence import (
+            SessionAbsenceRequest,
+            SessionAbsenceStatus,
+            SessionAbsenceType,
+        )
+
+        therapist, case_id = _therapist_and_case(db)
+        session = _completed_session(db, therapist_id=therapist.id, case_id=case_id)
+        db.add(
+            SessionAbsenceRequest(
+                session_id=session.id,
+                case_id=case_id,
+                therapist_user_id=therapist.id,
+                absence_type=SessionAbsenceType.CLIENT_ABSENT,
+                status=SessionAbsenceStatus.PENDING_APPROVAL,
+                reason="Travel",
+                requested_by_user_id=therapist.id,
+            )
+        )
+        db.flush()
+        with pytest.raises(ValueError, match="absence request is linked"):
+            session_service.void_session_before_log(db, session, therapist.id)
+    finally:
+        db.close()
+
+
 def test_void_rejects_in_progress():
     db = SessionLocal()
     try:

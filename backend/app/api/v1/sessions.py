@@ -350,7 +350,7 @@ def cancel_accidental_start(
     from app.core.session_rules import ACCIDENTAL_START_WINDOW_MINUTES
     from app.models.daily_log import DailyLog
     from app.models.ledger_billing import BillingLedger
-    from app.models.session_absence import SessionAbsenceRequest
+    from app.services import session_absence_service as absence_svc
 
     session = db.scalars(
         select(TherapySession)
@@ -403,11 +403,8 @@ def cancel_accidental_start(
             detail={"code": "HAS_BILLING_RECORD", "message": "Billing records exist for this session. Use the standard cancel flow."},
         )
 
-    # Guard: no absence/leave request
-    has_absence = db.scalars(
-        select(SessionAbsenceRequest).where(SessionAbsenceRequest.session_id == session_id)
-    ).first()
-    if has_absence:
+    # Guard: no active absence/leave request (rejected history does not block)
+    if absence_svc.has_blocking_absence_for_session(db, session_id):
         raise HTTPException(
             status_code=409,
             detail={"code": "HAS_ABSENCE_REQUEST", "message": "An absence request is linked to this session. Use the standard cancel flow."},
