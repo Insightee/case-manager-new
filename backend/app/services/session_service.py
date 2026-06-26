@@ -5,7 +5,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.timezone import IST, today_ist, wall_clock_time_ist
+from app.core.config import settings
+from app.core.timezone import IST, today_ist, wall_clock_time_ist, ensure_utc_aware
 from app.core.session_rules import (
     MIN_SESSION_DURATION_ERROR,
     compute_auto_end_cap,
@@ -253,6 +254,96 @@ def end_session(
     return session
 
 
+def session_audit_snapshot(session: TherapySession) -> dict:
+    """Structured session fields for audit events (who voided/cancelled which visit on which day)."""
+    status = session.status.value if hasattr(session.status, "value") else str(session.status)
+    return {
+        "session_id": session.id,
+        "case_id": session.case_id,
+        "therapist_user_id": session.therapist_user_id,
+        "scheduled_date": session.scheduled_date.isoformat() if session.scheduled_date else None,
+        "status": status,
+        "slot_id": session.slot_id,
+        "actual_start_at": session.actual_start_at.isoformat() if session.actual_start_at else None,
+        "actual_end_at": session.actual_end_at.isoformat() if session.actual_end_at else None,
+        "cancellation_reason": session.cancellation_reason,
+        "auto_ended": bool(session.auto_ended),
+        "is_additional_visit": bool(session.is_additional_visit),
+    }
+
+
+def _void_window_anchor(session: TherapySession) -> datetime:
+    if session.actual_start_at:
+        return ensure_utc_aware(session.actual_start_at)
+    day_start = datetime.combine(session.scheduled_date, time.min, tzinfo=IST)
+    return day_start.astimezone(timezone.utc)
+
+
+def void_session_before_log(
+    db: Session,
+    session: TherapySession,
+    therapist_user_id: int,
+) -> TherapySession:
+    """Void a completed visit that has no log — revert scheduled slots or cancel unbooked/manual rows."""
+    if session.therapist_user_id != therapist_user_id:
+        raise ValueError("Not your session")
+    if session.status != SessionStatus.COMPLETED:
+        raise ValueError("Only completed sessions without a log can be voided")
+    if session.daily_log is not None:
+        raise ValueError("Cannot void a session that already has a log")
+
+    from app.models.ledger_billing import BillingLedger
+    from app.models.session_absence import SessionAbsenceRequest
+
+    has_ledger = db.scalars(select(BillingLedger).where(BillingLedger.session_id == session.id)).first()
+    if has_ledger:
+        raise ValueError("Billing records exist for this session — contact your case manager")
+
+    has_absence = db.scalars(
+        select(SessionAbsenceRequest).where(SessionAbsenceRequest.session_id == session.id)
+    ).first()
+    if has_absence:
+        raise ValueError("An absence request is linked to this session — contact your case manager")
+
+    anchor = _void_window_anchor(session)
+    window = timedelta(hours=settings.session_void_window_hours)
+    if datetime.now(timezone.utc) > anchor + window:
+        hours = settings.session_void_window_hours
+        raise ValueError(
+            f"Void window expired — sessions can only be cancelled within {hours} hours of starting"
+        )
+
+    _clear_visit_clock_fields(session)
+    if session.slot_id is not None:
+        session.status = SessionStatus.SCHEDULED
+        session.cancellation_reason = None
+    else:
+        session.status = SessionStatus.CANCELLED
+        session.cancellation_reason = "void_before_log"
+    db.flush()
+    return session
+
+
+def _clear_visit_clock_fields(session: TherapySession) -> None:
+    session.actual_start_at = None
+    session.actual_end_at = None
+    session.auto_ended = False
+    session.auto_end_reason = None
+    session.scheduled_duration_mins = None
+    session.overage_mins = None
+    session.time_confirmation_required = False
+    session.checkin_lat = None
+    session.checkin_lng = None
+    session.checkout_lat = None
+    session.checkout_lng = None
+    session.edited_start_at = None
+    session.edited_end_at = None
+    session.actual_times_edited = False
+    session.actual_times_edited_at = None
+    session.actual_times_edited_by = None
+    session.actual_times_edit_reason = None
+
+
 def cancel_session(
     db: Session,
     session: TherapySession,
@@ -265,18 +356,9 @@ def cancel_session(
         raise ValueError("Session is not in progress")
     if session.daily_log is not None:
         raise ValueError("Cannot cancel a session that already has a log")
+    _clear_visit_clock_fields(session)
     session.status = SessionStatus.SCHEDULED
-    session.actual_start_at = None
-    session.actual_end_at = None
-    session.auto_ended = False
-    session.auto_end_reason = None
-    session.scheduled_duration_mins = None
-    session.overage_mins = None
-    session.time_confirmation_required = False
-    session.checkin_lat = None
-    session.checkin_lng = None
-    session.checkout_lat = None
-    session.checkout_lng = None
+    session.cancellation_reason = "cancel_in_progress"
     db.flush()
     return session
 
@@ -386,4 +468,10 @@ def validate_manual_duration(actual_start_at: datetime, actual_end_at: datetime)
     validate_session_duration_minutes(duration_minutes_between(actual_start_at, actual_end_at))
 
 
-__all__ = ["MIN_SESSION_DURATION_ERROR", "create_manual_session", "validate_manual_duration"]
+__all__ = [
+    "MIN_SESSION_DURATION_ERROR",
+    "create_manual_session",
+    "session_audit_snapshot",
+    "void_session_before_log",
+    "validate_manual_duration",
+]

@@ -10,8 +10,8 @@ export function SessionCancelConfirmDialog({ open, busy, onKeep, onConfirm }) {
       <div className="ic-case-status-modal__sheet">
         <h2 id="cancel-session-title">Cancel this session?</h2>
         <p className="ic-case-panel__hint">
-          Use this only if the session was started by mistake and no session happened. This will remove the
-          active timer and mark the session as cancelled.
+          Use this only if the session was started by mistake and no visit happened. The clock times will be cleared
+          and you can start again, mark the child absent, or cancel the scheduled visit separately.
         </p>
         <div className="ic-case-status-modal__actions" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <button type="button" className="ic-btn ic-btn--primary" disabled={busy} onClick={onKeep}>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
+import { clearLogDraft } from '../../lib/logDraftStore.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { queryKeys } from '../../lib/queryClient.js'
@@ -658,18 +659,29 @@ export function DailyLogsPage() {
     }
   }
 
-  async function handleCancel(sessionId) {
+  async function handleCancel(sessionId, sessionStatus) {
     setCancelBusy(true)
     setError('')
+    const endpoint =
+      sessionStatus === 'COMPLETED'
+        ? `/api/v1/sessions/${sessionId}/void-before-log`
+        : `/api/v1/sessions/${sessionId}/cancel`
     try {
-      const cancelled = await apiFetch(`/api/v1/sessions/${sessionId}/cancel`, {
+      const cancelled = await apiFetch(endpoint, {
         method: 'POST',
         body: JSON.stringify({}),
       })
       patchCachesAfterSessionCancel(cancelled)
       if (visitSession?.id === sessionId) setVisitSession(null)
-      if (logSession?.id === sessionId) closeLogForm()
-      setSuccess('Session cancelled — you can start again when ready.')
+      if (logSession?.id === sessionId) {
+        void clearLogDraft(sessionId)
+        closeLogForm()
+      }
+      setSuccess(
+        sessionStatus === 'COMPLETED'
+          ? 'Session removed — you can start again, mark absent, or update the schedule.'
+          : 'Session cancelled — you can start again when ready.',
+      )
     } catch (err) {
       setError(err.message || 'Could not cancel session')
     } finally {
@@ -888,7 +900,7 @@ export function DailyLogsPage() {
             onEditTimes={() => openEditTimesForSession(logSession)}
             onCancelSession={
               logRequired && !editingLog && logSession?.id
-                ? () => handleCancel(logSession.id)
+                ? () => handleCancel(logSession.id, logSession.status)
                 : undefined
             }
             cancelSessionBusy={cancelBusy}

@@ -21,6 +21,9 @@ MIN_SESSION_DURATION_ERROR = "Session duration must be at least 1 minute."
 # log/ledger/absence dependencies can be cancelled as "accidentally started".
 ACCIDENTAL_START_WINDOW_MINUTES = 5
 
+# Default void window when settings are unavailable (tests); production uses settings.session_void_window_hours.
+DEFAULT_SESSION_VOID_WINDOW_HOURS = 168
+
 # Legacy module ceilings (unscheduled absolute caps from actual start).
 SHADOW_MAX_HOURS = 10
 HOMECARE_MAX_HOURS = 3

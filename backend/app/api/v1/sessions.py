@@ -610,11 +610,66 @@ def cancel_session_route(
         raise HTTPException(status_code=403, detail="Access denied")
     if session.therapist_user_id != user.id:
         raise HTTPException(status_code=403, detail="Can only cancel your own sessions")
+    old_snapshot = session_service.session_audit_snapshot(session)
     try:
         session = session_service.cancel_session(db, session, user.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="cancel", entity_type="session", entity_id=session.id, **meta)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="cancel",
+        entity_type="session",
+        entity_id=session.id,
+        case_id=session.case_id,
+        old_value=old_snapshot,
+        new_value=session_service.session_audit_snapshot(session),
+        **meta,
+    )
+    db.commit()
+    return _session_read(session, case)
+
+
+@router.post("/{session_id}/void-before-log", response_model=SessionRead)
+def void_session_before_log_route(
+    session_id: int,
+    request: Request,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    """Void a completed visit with no submitted log (within session_void_window_hours of start)."""
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == session_id)
+        .options(
+            selectinload(TherapySession.case).selectinload(Case.child),
+            selectinload(TherapySession.daily_log),
+        )
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if session.therapist_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Can only void your own sessions")
+    old_snapshot = session_service.session_audit_snapshot(session)
+    try:
+        session = session_service.void_session_before_log(db, session, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="void_before_log",
+        entity_type="session",
+        entity_id=session.id,
+        case_id=session.case_id,
+        old_value=old_snapshot,
+        new_value=session_service.session_audit_snapshot(session),
+        **meta,
+    )
     db.commit()
     return _session_read(session, case)

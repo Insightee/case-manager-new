@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { clearLogDraft } from '../../lib/logDraftStore.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
@@ -50,6 +51,7 @@ export function CaseSessionsPanel({
   const [success, setSuccess] = useState('')
   const [historyMonth, setHistoryMonth] = useState('ALL')
   const [historyYear, setHistoryYear] = useState(() => String(new Date().getFullYear()))
+  const [cancelSessionBusy, setCancelSessionBusy] = useState(false)
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -155,24 +157,46 @@ export function CaseSessionsPanel({
     }
   }
 
-  async function handleCancel(sessionId) {
-    if (!window.confirm('Cancel this session? The timer will stop and no log will be created.')) return
+  async function handleCancelSession(sessionId, sessionStatus) {
+    setCancelSessionBusy(true)
     setError('')
+    const endpoint =
+      sessionStatus === 'COMPLETED'
+        ? `/api/v1/sessions/${sessionId}/void-before-log`
+        : `/api/v1/sessions/${sessionId}/cancel`
     try {
-      const cancelled = await apiFetch(`/api/v1/sessions/${sessionId}/cancel`, {
+      const cancelled = await apiFetch(endpoint, {
         method: 'POST',
         body: JSON.stringify({}),
       })
       patchCachesAfterSessionCancel(cancelled)
+      void clearLogDraft(sessionId)
+      closeLogForm()
       setActive(null)
       setSessions((prev) =>
-        prev.map((s) => (s.id === sessionId ? { ...s, ...cancelled, status: 'SCHEDULED' } : s)),
+        prev.map((s) =>
+          s.id === sessionId
+            ? { ...s, ...cancelled, status: cancelled.status, has_daily_log: false }
+            : s,
+        ),
       )
-      setSuccess('Session cancelled.')
+      setSuccess(
+        sessionStatus === 'COMPLETED'
+          ? 'Session removed — you can start again, mark absent, or update the schedule.'
+          : 'Session cancelled.',
+      )
       onScheduleChange?.()
+      void load({ silent: true })
     } catch (err) {
       setError(err.message || 'Could not cancel session')
+    } finally {
+      setCancelSessionBusy(false)
     }
+  }
+
+  async function handleCancel(sessionId) {
+    if (!window.confirm('Cancel this session? The timer will stop and no log will be created.')) return
+    await handleCancelSession(sessionId, 'IN_PROGRESS')
   }
 
   async function handleManual(payload) {
@@ -288,6 +312,12 @@ export function CaseSessionsPanel({
           childName={childName}
           caseCode={caseCode}
           required={logRequired && !editingLog}
+          onCancelSession={
+            logRequired && !editingLog && logSession?.id
+              ? () => handleCancelSession(logSession.id, logSession.status || 'COMPLETED')
+              : undefined
+          }
+          cancelSessionBusy={cancelSessionBusy}
           onSuccess={(savedLog) => {
             const sessionId = logSession?.id ?? savedLog?.session_id
             closeLogForm()
