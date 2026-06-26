@@ -2453,6 +2453,52 @@ def admin_list_families(
     return family_admin_service.list_families(db, search)
 
 
+@router.get("/families/parents-awaiting-login")
+def admin_parents_awaiting_login(
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    return family_admin_service.list_parents_awaiting_first_login(db)
+
+
+class BulkParentInviteRequest(BaseModel):
+    user_ids: Optional[list[int]] = None
+    invite_ids: Optional[list[int]] = None
+
+
+@router.post("/families/bulk-invite-parents")
+def admin_bulk_invite_parents(
+    payload: BulkParentInviteRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import family_admin_service
+
+    result = family_admin_service.bulk_invite_parents_awaiting_first_login(
+        db,
+        actor_user_id=user.id,
+        background_tasks=background_tasks,
+        user_ids=payload.user_ids,
+        invite_ids=payload.invite_ids,
+    )
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="bulk_invite_parents",
+        entity_type="family",
+        entity_id=None,
+        new_value=result,
+        **meta,
+    )
+    db.commit()
+    return result
+
+
 class ClientBulkRow(BaseModel):
     child_first: str
     child_last: str = ""
@@ -4277,12 +4323,15 @@ def resend_invite_email(
             status_code=400,
             detail="Invite delivery failed. Correct the email and use force resend.",
         )
-    if ensure_utc_aware(invite.expires_at) <= now and not force_resend:
+    expired = ensure_utc_aware(invite.expires_at) <= now
+    if expired and not force_resend:
         raise HTTPException(status_code=400, detail="Invite has expired")
-    if force_resend and ensure_utc_aware(invite.expires_at) <= now:
-        invite.expires_at = now + timedelta(days=7)
+    if force_resend or expired:
+        from app.services.family_admin_service import rotate_invite_token
+
         invite.expired_due_to_delivery_failure = False
-        db.flush()
+        invite = rotate_invite_token(db, invite, created_by_user_id=user.id)
+        force_resend = True
     from app.services.email.service import enqueue_portal_invite_email, invite_email_delivery_status
 
     url = f"{settings.frontend_url.rstrip('/')}/invite/{invite.token}"
@@ -4308,6 +4357,8 @@ def resend_invite_email(
     return {
         "ok": True,
         "email": invite.email,
+        "invite_id": invite.id,
+        "invite_url": url,
         "email_delivery": email_delivery,
         "email_log_id": log_id,
         "skipped": log_id is None and email_delivery != "skipped_no_smtp",

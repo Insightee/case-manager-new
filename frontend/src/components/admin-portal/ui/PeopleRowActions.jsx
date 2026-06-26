@@ -167,7 +167,7 @@ export function PeopleRowActions({
         onClick={() => inviteToLogin(false)}
         aria-busy={busyInvite}
       >
-        {busyInvite ? 'Sending…' : user.invite_status === 'pending' ? 'Resend invite' : 'Invite to login'}
+        {busyInvite ? 'Sending…' : user.invite_status === 'pending' ? 'Resend invite' : user.invite_status === 'expired' ? 'Send fresh invite' : 'Invite to login'}
       </button>
       {(user.is_email_suppressed || user.invite_status === 'delivery_failed') && (
         <button

@@ -7,6 +7,8 @@ export function AdminClientOnboardPanel({
   canManageUsers,
   isHrPortal,
   pendingInvites,
+  parentsAwaitingLoginCount = 0,
+  onBulkInviteAwaitingLogin,
   invitesViewOpen,
   onInvitesViewChange,
   onAddFamily,
@@ -15,6 +17,18 @@ export function AdminClientOnboardPanel({
   onReload,
 }) {
   const navigate = useNavigate()
+  const [bulkBusy, setBulkBusy] = useState(false)
+
+  async function handleBulkAwaitingLogin() {
+    if (!onBulkInviteAwaitingLogin || bulkBusy) return
+    setBulkBusy(true)
+    onError?.('')
+    try {
+      await onBulkInviteAwaitingLogin()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   return (
     <>
@@ -39,12 +53,26 @@ export function AdminClientOnboardPanel({
           </>
         ) : null}
         {canManageUsers ? (
-          <PeoplePendingInvitesToggle
-            label="Pending parent invites"
-            count={pendingInvites.length}
-            active={invitesViewOpen}
-            onClick={() => onInvitesViewChange?.(!invitesViewOpen)}
-          />
+          <>
+            <PeoplePendingInvitesToggle
+              label="Pending parent invites"
+              count={pendingInvites.length}
+              active={invitesViewOpen}
+              onClick={() => onInvitesViewChange?.(!invitesViewOpen)}
+            />
+            {parentsAwaitingLoginCount > 0 ? (
+              <button
+                type="button"
+                className="admin-btn admin-btn--secondary admin-btn--sm"
+                disabled={bulkBusy}
+                onClick={handleBulkAwaitingLogin}
+              >
+                {bulkBusy
+                  ? 'Sending invites…'
+                  : `Invite parents awaiting login (${parentsAwaitingLoginCount})`}
+              </button>
+            ) : null}
+          </>
         ) : null}
         <Link to="/admin/client-profiles" className="admin-btn admin-btn--secondary admin-btn--sm">
           Bulk import
@@ -57,10 +85,17 @@ export function AdminClientOnboardPanel({
         </p>
       ) : null}
 
+      {canManageUsers && parentsAwaitingLoginCount > 0 && !invitesViewOpen ? (
+        <p className="admin-muted admin-people-onboard__hint">
+          {parentsAwaitingLoginCount} parent(s) with open cases have not signed in yet — includes expired
+          invites and accounts waiting on first login.
+        </p>
+      ) : null}
+
       {canManageUsers ? (
         <PeoplePendingInvitesPanel
           label="Pending parent invites"
-          subtitle="Invites not yet accepted"
+          subtitle="Active invite links not yet accepted (expire after 7 days)"
           pendingInvites={pendingInvites}
           open={invitesViewOpen}
           onOpenChange={onInvitesViewChange}
