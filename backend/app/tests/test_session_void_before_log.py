@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.timezone import today_ist
+from app.core.timezone import today_ist, ensure_utc_aware
 from app.models.audit_event import AuditEvent
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.session import Session as TherapySession
@@ -188,5 +188,57 @@ def test_void_before_log_api_writes_audit_trail():
         assert '"scheduled_date"' in (latest.old_value or "")
         assert '"COMPLETED"' in (latest.old_value or "")
         assert '"CANCELLED"' in (latest.new_value or "")
+    finally:
+        db.close()
+
+
+def test_restart_after_void_with_same_idempotency_key():
+    from app.services import session_start_service as start_svc
+
+    db = SessionLocal()
+    try:
+        therapist, case_id = _therapist_and_case(db)
+        visit_day = today_ist()
+        slot = TherapistSlot(
+            therapist_user_id=therapist.id,
+            slot_date=visit_day,
+            start_time=time(18, 45),
+            end_time=time(19, 45),
+            status=SlotStatus.BOOKED,
+            case_id=case_id,
+        )
+        db.add(slot)
+        db.flush()
+        session = TherapySession(
+            case_id=case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=visit_day,
+            start_time=time(18, 45),
+            end_time=time(19, 45),
+            mode=SessionMode.HOME,
+            status=SessionStatus.SCHEDULED,
+            slot_id=slot.id,
+        )
+        db.add(session)
+        db.flush()
+
+        key = start_svc.default_idempotency_key(therapist.id, session)
+        started = session_service.start_session(
+            db, session, therapist.id, idempotency_key=key
+        )
+        assert started.status == SessionStatus.IN_PROGRESS
+
+        end_at = ensure_utc_aware(started.actual_start_at) + timedelta(minutes=2)
+        ended = session_service.end_session(db, started, end_at=end_at)
+        assert ended.status == SessionStatus.COMPLETED
+
+        voided = session_service.void_session_before_log(db, ended, therapist.id)
+        assert voided.status == SessionStatus.SCHEDULED
+
+        restarted = session_service.start_session(
+            db, voided, therapist.id, idempotency_key=key
+        )
+        assert restarted.status == SessionStatus.IN_PROGRESS
+        assert restarted.actual_start_at is not None
     finally:
         db.close()

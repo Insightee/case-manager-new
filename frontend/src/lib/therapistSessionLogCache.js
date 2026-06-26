@@ -7,6 +7,7 @@ export function therapistDailyLogsKey(userId) {
 
 export function applySessionStartedToWorkspace(workspace, started) {
   if (!workspace || !started?.id) return workspace
+  if (started.status && started.status !== 'IN_PROGRESS') return workspace
   const sid = Number(started.id)
   return {
     ...workspace,

@@ -88,6 +88,7 @@ export function DailyLogsPage() {
   })
   const upcomingRaw = workspace?.upcoming || []
   const active = workspace?.active_session || null
+  const activeInProgress = active?.status === 'IN_PROGRESS' ? active : null
   const stalePrevious = workspace?.stale_previous_sessions || []
   const needsLogRaw = workspace?.needs_log || []
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
@@ -231,10 +232,10 @@ export function DailyLogsPage() {
   }, [loadAll])
 
   useEffect(() => {
-    if (!active?.actual_start_at) return undefined
+    if (!activeInProgress?.actual_start_at) return undefined
     const id = setInterval(() => setTick(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [active?.actual_start_at, active?.id])
+  }, [activeInProgress?.actual_start_at, activeInProgress?.id])
 
   useEffect(() => {
     if ((logSession || visitSession) && logPanelRef.current) {
@@ -254,8 +255,8 @@ export function DailyLogsPage() {
   }
 
   const deepLinkContext = useMemo(
-    () => ({ active, needsLog, logs }),
-    [active, needsLog, logs],
+    () => ({ active: activeInProgress, needsLog, logs }),
+    [activeInProgress, needsLog, logs],
   )
 
   function openSessionFromDeepLink(session) {
@@ -329,7 +330,7 @@ export function DailyLogsPage() {
     const match =
       needsLog.find((s) => s.id === sid) ||
       upcoming.find((s) => s.id === sid) ||
-      (active?.id === sid ? active : null)
+      (activeInProgress?.id === sid ? activeInProgress : null)
 
     if (match) {
       deepLinkResolvedRef.current = sid
@@ -354,7 +355,7 @@ export function DailyLogsPage() {
     return () => {
       cancelled = true
     }
-  }, [searchParams, logsReady, needsLog, upcoming, active, logs])
+  }, [searchParams, logsReady, needsLog, upcoming, activeInProgress, logs])
 
   useEffect(() => {
     if (!searchParams.get('session')) {
@@ -608,6 +609,11 @@ export function DailyLogsPage() {
         return
       }
       const started = result.session
+      if (started?.status !== 'IN_PROGRESS') {
+        setError('Could not start session — please refresh and try again.')
+        void loadAll({ silent: true })
+        return
+      }
       patchCachesAfterSessionStart(started)
       if (started?.invite_sent && started?.invite_email) {
         setSuccess(`Invite sent to ${started.invite_email} — they will join the Client portal.`)
@@ -824,10 +830,10 @@ export function DailyLogsPage() {
         <div className="ic-alert ic-alert--success">{success}</div>
       ) : null}
 
-      {active ? (
+      {activeInProgress ? (
         <ActiveSessionCard
           ref={activeSessionCardRef}
-          session={active}
+          session={activeInProgress}
           tick={tick}
           endBusy={endBusy}
           onEnd={handleEnd}
@@ -866,7 +872,7 @@ export function DailyLogsPage() {
         <section ref={logPanelRef} className="ic-session-log-panel-wrap" style={{ marginBottom: 24 }}>
           <SessionVisitPanel
             session={visitSession}
-            activeSessionId={active?.id}
+            activeSessionId={activeInProgress?.id}
             busy={visitBusy || endBusy}
             dayBlocker={existingVisitForDay(visitSession, deepLinkContext)}
             onStart={handleVisitStart}
@@ -930,7 +936,7 @@ export function DailyLogsPage() {
       {showComposerShell ? (
         <TherapistSessionComposer
           upcomingSessions={upcoming}
-          liveBlocked={!!active}
+          liveBlocked={!!activeInProgress}
           onSelectedCaseChange={setComposerCaseId}
           existingSessionConflict={existingSessionConflict}
           walkInConflict={walkInConflict}
@@ -950,7 +956,7 @@ export function DailyLogsPage() {
         />
       ) : null}
 
-      {!active && needsLog.length > 0 && !logSession ? (
+      {!activeInProgress && needsLog.length > 0 && !logSession ? (
         <section className="ic-session-log-needs" style={{ marginBottom: 24 }}>
           <h3 className="ic-section-head__title">Needs log</h3>
           <p className="ic-session-log-needs__sub">
@@ -1006,7 +1012,7 @@ export function DailyLogsPage() {
                 const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
                 const isInProgress = s.status === 'IN_PROGRESS'
                 const dayExisting = existingVisitForDay(s, deepLinkContext)
-                const canStartFresh = !active && !dayExisting && canStartSessionToday(s).ok
+                const canStartFresh = !activeInProgress && !dayExisting && canStartSessionToday(s).ok
                 return (
                   <article
                     key={s.id}
@@ -1085,7 +1091,7 @@ export function DailyLogsPage() {
                         </p>
                       ) : null}
                     </div>
-                    {!active && dayExisting ? (
+                    {!activeInProgress && dayExisting ? (
                       <button
                         type="button"
                         onClick={() => openSessionFromDeepLink(dayExisting)}
@@ -1101,7 +1107,7 @@ export function DailyLogsPage() {
                       >
                         Start session
                       </button>
-                    ) : !active && s.scheduled_date > todayIsoIST() ? (
+                    ) : !activeInProgress && s.scheduled_date > todayIsoIST() ? (
                       <span className="ic-session-log-recent__meta">Opens on visit day</span>
                     ) : null}
                   </article>

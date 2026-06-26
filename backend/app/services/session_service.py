@@ -139,7 +139,7 @@ def start_session(
     cached = start_svc.get_idempotent_session(
         db, idempotency_key=idempotency_key, therapist_user_id=therapist_user_id
     )
-    if cached:
+    if cached and cached.status == SessionStatus.IN_PROGRESS:
         return cached
 
     if session.status == SessionStatus.IN_PROGRESS:
@@ -250,6 +250,7 @@ def end_session(
         session.checkout_lat = lat
     if lng is not None:
         session.checkout_lng = lng
+    start_svc.clear_idempotency_for_session(db, session.id)
     db.flush()
     return session
 
@@ -320,6 +321,7 @@ def void_session_before_log(
     else:
         session.status = SessionStatus.CANCELLED
         session.cancellation_reason = "void_before_log"
+    start_svc.clear_idempotency_for_session(db, session.id)
     db.flush()
     return session
 
@@ -359,6 +361,7 @@ def cancel_session(
     _clear_visit_clock_fields(session)
     session.status = SessionStatus.SCHEDULED
     session.cancellation_reason = "cancel_in_progress"
+    start_svc.clear_idempotency_for_session(db, session.id)
     db.flush()
     return session
 
