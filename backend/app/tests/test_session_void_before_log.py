@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.timezone import today_ist, ensure_utc_aware
@@ -18,8 +19,16 @@ from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
 from app.services import session_service
 from app.core.database import SessionLocal
+from app.tests.session_helpers import end_active_sessions_for_therapist
 
 IST = ZoneInfo("Asia/Kolkata")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_sessions():
+    end_active_sessions_for_therapist()
+    yield
+    end_active_sessions_for_therapist()
 
 
 def _therapist_and_case(db):
@@ -59,6 +68,28 @@ def _completed_session(
     db.add(session)
     db.flush()
     return session
+
+
+def _void_completed_without_log_same_day(db, therapist_id: int, case_id: int) -> None:
+    """Clear COMPLETED no-log visits that block start_session in the shared CI database."""
+    sessions = db.scalars(
+        select(TherapySession)
+        .where(
+            TherapySession.therapist_user_id == therapist_id,
+            TherapySession.case_id == case_id,
+            TherapySession.scheduled_date == today_ist(),
+            TherapySession.status == SessionStatus.COMPLETED,
+        )
+        .options(selectinload(TherapySession.daily_log))
+    ).all()
+    for session in sessions:
+        if session.daily_log is not None:
+            continue
+        try:
+            session_service.void_session_before_log(db, session, therapist_id)
+        except ValueError:
+            pass
+    db.flush()
 
 
 def test_void_completed_with_slot_reverts_to_scheduled():
@@ -258,6 +289,7 @@ def test_restart_after_void_with_same_idempotency_key():
     db = SessionLocal()
     try:
         therapist, case_id = _therapist_and_case(db)
+        _void_completed_without_log_same_day(db, therapist.id, case_id)
         visit_day = today_ist()
         slot = TherapistSlot(
             therapist_user_id=therapist.id,
