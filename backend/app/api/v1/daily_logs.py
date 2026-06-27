@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.db_errors import commit_or_http
 from app.core.module_access import user_has_feature
 from app.core.module_write import ensure_case_write_access, ensure_feature_write_access
 from app.core.permissions import RoleName, case_scope_check, require_permission, user_has_permission
@@ -232,7 +233,7 @@ def create_daily_log(
         session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
         meta = get_request_meta(request)
         log_audit(db, actor_user_id=user.id, action="create", entity_type="daily_log", entity_id=log.id, new_value=payload.model_dump(), **meta)
-    db.commit()
+    commit_or_http(db)
     return DailyLogRead(**log_service.log_to_read(log))
 
 

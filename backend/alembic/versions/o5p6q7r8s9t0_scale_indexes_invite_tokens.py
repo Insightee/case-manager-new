@@ -8,7 +8,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-from migration_util import create_index_if_missing, has_table
+from migration_util import create_index_if_missing, has_column, has_table
 
 revision: str = "o5p6q7r8s9t0"
 down_revision: Union[str, None] = "n4o5p6q7r8s9"
@@ -48,7 +48,7 @@ def upgrade() -> None:
         ["case_id", "status"],
     )
 
-    if has_table("daily_logs"):
+    if has_table("daily_logs") and has_column("daily_logs", "visibility_status"):
         create_index_if_missing(
             "ix_daily_logs_approval_visibility_submitted",
             "daily_logs",

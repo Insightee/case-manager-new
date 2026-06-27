@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.db_errors import commit_or_http
 from app.core.permissions import require_permission, user_has_permission
 from app.models.user import User
 from app.schemas.session import TherapistClientIntakeCreate, TherapistClientIntakeResponse
@@ -62,7 +63,7 @@ def therapist_create_session_log(
             new_value=payload.model_dump(),
             **meta,
         )
-    db.commit()
+    commit_or_http(db)
     return SessionLogRead(**session_log_service.session_log_read(db, log))
 
 

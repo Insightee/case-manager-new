@@ -576,7 +576,7 @@ def session_log_submitted_parent_email(
             entity_id=log_id,
         )
         db.add(log_row)
-        db.commit()
+        db.flush()
 
 
 def session_log_published_parent_email(
@@ -664,7 +664,7 @@ def session_log_reviewed_parent_email(
             entity_id=log_id,
         )
         db.add(log_entry)
-        db.commit()
+        db.flush()
 
 
 def leave_sessions_cancelled_email(

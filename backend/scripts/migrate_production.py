@@ -29,7 +29,7 @@ _REQUIRED_AT_HEAD: dict[str, tuple[str, ...]] = {
     "users": ("external_employee_id",),
     "children": ("external_client_id",),
     "cases": ("external_case_ref",),
-    "daily_logs": ("parent_notified_at", "resubmitted_at"),
+    "daily_logs": ("parent_notified_at", "resubmitted_at", "visibility_status"),
     "case_assignments": (
         "therapist_accepted_at",
         "parent_accepted_at",
