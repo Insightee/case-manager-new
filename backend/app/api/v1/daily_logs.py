@@ -16,7 +16,15 @@ from app.core.permissions import RoleName, case_scope_check, require_permission,
 from app.models.case import ClientBillingMode
 from app.models.daily_log import LogApprovalStatus
 from app.models.user import User
-from app.schemas.daily_log import DailyLogCreate, DailyLogFinanceRead, DailyLogRead, DailyLogUpdate, LogCommentRead, LogCommentCreate
+from app.schemas.daily_log import (
+    DailyLogCreate,
+    DailyLogFinanceRead,
+    DailyLogRead,
+    DailyLogUpdate,
+    LogCommentCountRead,
+    LogCommentCreate,
+    LogCommentRead,
+)
 from app.services import billing_ledger_service, case_service, log_service
 from app.services import virtual_session_log_service as virtual_logs
 
@@ -96,6 +104,7 @@ def list_daily_logs(
         include_clinical=not is_finance,
     )
     virtual_logs_out = []
+    virtual_dicts_for_counts = []
     for vlog_dict in virtual_log_dicts:
         if own_logs_only and vlog_dict.get("case_id"):
             session_row = db.get(TherapySession, vlog_dict["session_id"])
@@ -108,16 +117,77 @@ def list_daily_logs(
         if is_finance:
             virtual_logs_out.append(DailyLogFinanceRead(**vlog_dict))
         else:
-            virtual_logs_out.append(DailyLogRead(**vlog_dict))
+            virtual_dicts_for_counts.append(vlog_dict)
 
     if is_finance:
         res = [DailyLogFinanceRead(**log_service.log_to_read(l, include_clinical=False)) for l in logs]
+        combined = res + virtual_logs_out
     else:
-        res = [DailyLogRead(**log_service.log_to_read(l)) for l in logs]
-
-    combined = res + virtual_logs_out
+        log_dicts = [log_service.log_to_read(l) for l in logs]
+        log_service.attach_comment_counts(db, log_dicts + virtual_dicts_for_counts, parent_visible_only=False)
+        res = [DailyLogRead(**d) for d in log_dicts]
+        combined = res + [DailyLogRead(**v) for v in virtual_dicts_for_counts]
     combined.sort(key=lambda x: x.scheduled_date or datetime.min.date(), reverse=True)
     return combined
+
+
+@router.get("/comment-counts")
+def get_log_comment_counts(
+    log_ids: str = Query(..., description="Comma-separated daily log IDs"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.review"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    parsed_ids: list[int] = []
+    for part in log_ids.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            parsed_ids.append(int(part))
+        except ValueError:
+            continue
+    if not parsed_ids:
+        return {}
+
+    own_logs_only = _therapist_lists_own_logs_only(user)
+    allowed_ids: list[int] = []
+    for log_id in parsed_ids:
+        if log_id > 0:
+            log = log_service.get_log(db, log_id)
+            if not log:
+                continue
+            if own_logs_only:
+                if not log.session or log.session.therapist_user_id != user.id:
+                    continue
+            else:
+                if not log.session:
+                    continue
+                case = case_service.get_case(db, log.session.case_id)
+                if not case or not case_scope_check(db, user, case):
+                    continue
+            allowed_ids.append(log_id)
+        else:
+            session = db.get(TherapySession, -log_id)
+            if not session:
+                continue
+            case = case_service.get_case(db, session.case_id)
+            if not case or not case_scope_check(db, user, case):
+                continue
+            if own_logs_only and session.therapist_user_id != user.id:
+                continue
+            allowed_ids.append(log_id)
+
+    counts = log_service.comment_counts_for_log_ids(db, allowed_ids, parent_visible_only=False)
+    return {
+        str(log_id): LogCommentCountRead(
+            comment_count=counts.get(log_id, (0, 0))[0],
+            open_parent_comment_count=counts.get(log_id, (0, 0))[1],
+        )
+        for log_id in allowed_ids
+    }
 
 
 @router.get("/{log_id}", response_model=DailyLogRead)
@@ -139,7 +209,9 @@ def get_daily_log(
             raise HTTPException(status_code=403, detail="Log access denied")
     else:
         _log_case_scope(db, user, log)
-    return DailyLogRead(**log_service.log_to_read(log))
+    read = log_service.log_to_read(log)
+    log_service.attach_comment_counts(db, [read], parent_visible_only=False)
+    return DailyLogRead(**read)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

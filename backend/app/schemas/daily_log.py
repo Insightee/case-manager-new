@@ -65,6 +65,8 @@ class DailyLogRead(BaseModel):
     editable_until: Optional[datetime] = None
     absence_reason: Optional[str] = None
     dispute_status: Optional[str] = None
+    comment_count: int = 0
+    open_parent_comment_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -120,6 +122,7 @@ class ParentSessionLogRead(BaseModel):
     status_label: Optional[str] = None
     parent_display_status: Optional[str] = None
     can_parent_comment: bool = True
+    comment_count: int = 0
     comments: Optional[list[LogCommentRead]] = None
 
 
@@ -142,3 +145,8 @@ class LogCommentRead(BaseModel):
 class LogCommentCreate(BaseModel):
     body: str = Field(..., min_length=1)
     visibility: Optional[str] = "parent_team"
+
+
+class LogCommentCountRead(BaseModel):
+    comment_count: int = 0
+    open_parent_comment_count: int = 0

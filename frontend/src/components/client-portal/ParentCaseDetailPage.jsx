@@ -289,10 +289,11 @@ export function ParentCaseDetailPage() {
           {logs.length === 0 ? (
             <p style={{ color: '#9ca3af' }}>No approved session updates yet.</p>
           ) : (
-            logs.map((log) => (
+            logs.map((log, index) => (
               <SessionCard
                 key={log.id}
                 log={log}
+                defaultExpanded={index === 0}
                 onSaved={load}
                 onDispute={handleSessionDispute}
               />

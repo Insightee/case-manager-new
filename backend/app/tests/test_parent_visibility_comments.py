@@ -221,6 +221,27 @@ def test_parent_visibility_and_comments_flow():
         assert parent_comment is not None
         assert parent_comment["status"] == "acknowledged"
 
+        # Comment counts on list endpoints
+        cm_list = client.get(f"/api/v1/daily-logs?case_id={case.id}", headers=cm_headers)
+        assert cm_list.status_code == 200
+        cm_log = next((l for l in cm_list.json() if l["id"] == log_id), None)
+        assert cm_log is not None
+        assert cm_log["comment_count"] >= 3
+        assert cm_log["open_parent_comment_count"] == 0
+
+        parent_list = client.get("/api/v1/parent/session-logs", headers=parent_headers)
+        parent_log_counts = next((l for l in parent_list.json() if l["id"] == log_id), None)
+        assert parent_log_counts is not None
+        assert parent_log_counts["comment_count"] == 2
+
+        # Comment counts batch endpoint
+        batch = client.get(
+            f"/api/v1/daily-logs/comment-counts?log_ids={log_id}",
+            headers=cm_headers,
+        )
+        assert batch.status_code == 200
+        assert batch.json()[str(log_id)]["comment_count"] >= 3
+
         # 11. CM updates parent comment status to "resolved"
         status_res = client.patch(
             f"/api/v1/daily-logs/comments/{comment_id}/status",

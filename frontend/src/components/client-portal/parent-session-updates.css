@@ -5,7 +5,44 @@
   padding: 0;
   margin-bottom: 10px;
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
-  overflow: hidden;
+}
+
+.session-card--collapsed .session-card__head {
+  border-bottom: none;
+}
+
+.session-card__collapse-bar {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0 14px 12px;
+}
+
+.session-card__collapse-bar--bottom {
+  padding-top: 0;
+  padding-bottom: 14px;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 4px;
+}
+
+.session-card__expand-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #4f46e5;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.session-card__expand-btn--muted {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.session-card__expand-btn:hover {
+  color: #4338ca;
 }
 
 .session-card__head {
@@ -178,8 +215,12 @@
 
 .session-card__feedback {
   border-top: 1px solid #e2e8f0;
-  margin: 8px 14px 12px;
-  padding: 10px 0 0;
+  margin: 8px 14px 0;
+  padding: 10px 0 4px;
+}
+
+.log-comments-section {
+  padding-bottom: 8px;
 }
 
 .session-card__stars {

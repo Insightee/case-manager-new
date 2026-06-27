@@ -205,13 +205,23 @@ export function ClientSessionLogsPage() {
             ...meetings.map((m) => ({ type: 'meeting', date: m.scheduled_date, data: m })),
           ].sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0))
 
-          return combined.map((item) =>
-            item.type === 'log' ? (
-              <SessionCard key={`log-${item.data.id}`} log={item.data} onSaved={load} onDispute={handleDispute} />
-            ) : (
-              <CmMeetingCard key={`cm-${item.data.id}`} meeting={item.data} />
-            ),
-          )
+          let firstLogSeen = false
+          return combined.map((item) => {
+            if (item.type === 'log') {
+              const defaultExpanded = !firstLogSeen
+              firstLogSeen = true
+              return (
+                <SessionCard
+                  key={`log-${item.data.id}`}
+                  log={item.data}
+                  defaultExpanded={defaultExpanded}
+                  onSaved={load}
+                  onDispute={handleDispute}
+                />
+              )
+            }
+            return <CmMeetingCard key={`cm-${item.data.id}`} meeting={item.data} />
+          })
         })()
       )}
     </ClientPortalLayout>

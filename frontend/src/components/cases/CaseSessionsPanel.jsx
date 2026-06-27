@@ -17,6 +17,7 @@ import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
 import { SessionLogHistoryRow } from '../daily-logs/SessionLogHistoryRow.jsx'
 import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
 import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
+import { enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -68,7 +69,8 @@ export function CaseSessionsPanel({
         apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
       ])
       setSessions(unwrapList(sess))
-      setLogs(Array.isArray(caseLogs) ? caseLogs : unwrapList(caseLogs))
+      const rawLogs = Array.isArray(caseLogs) ? caseLogs : unwrapList(caseLogs)
+      setLogs(await enrichLogsWithCommentCounts(rawLogs, apiFetch))
       setUpcomingAll(Array.isArray(upcoming) ? upcoming : unwrapList(upcoming))
       if (act?.case_id === Number(caseId)) setActive(act)
       else setActive(null)

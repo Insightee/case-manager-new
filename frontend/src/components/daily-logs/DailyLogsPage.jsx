@@ -43,6 +43,8 @@ import {
   isLeaveLog,
   sortLogsBySessionDate,
 } from '../../lib/sessionLogFilters.js'
+import { formatLogCommentCount, enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
+import { LogCommentCountPill } from '../shared/LogCommentCountBadge.jsx'
 import '../cases/my-cases.css'
 
 const MONTHS = [
@@ -78,12 +80,15 @@ export function DailyLogsPage() {
   const { data: workspace, isLoading: wsLoading } = useTherapistSessionsWorkspace()
   const logsQuery = useQuery({
     queryKey: queryKeys.therapistDailyLogs(therapistId),
-    queryFn: () =>
-      apiFetch(
+    queryFn: async () => {
+      const data = await apiFetch(
         therapistId
           ? `/api/v1/daily-logs?therapist_user_id=${therapistId}`
           : '/api/v1/daily-logs',
-      ),
+      )
+      const rows = Array.isArray(data) ? data : unwrapList(data || [])
+      return enrichLogsWithCommentCounts(rows, apiFetch)
+    },
     enabled: therapistId != null,
   })
   const upcomingRaw = workspace?.upcoming || []
@@ -132,6 +137,35 @@ export function DailyLogsPage() {
   const activeSessionCardRef = useRef(null)
   const upcomingSectionRef = useRef(null)
   const deepLinkResolvedRef = useRef(null)
+
+  function handleLogCommentCountChange(logId, commentCount, openParentCommentCount = 0) {
+    if (therapistId) {
+      queryClient.setQueryData(queryKeys.therapistDailyLogs(therapistId), (prev) => {
+        const rows = Array.isArray(prev) ? prev : []
+        return rows.map((entry) =>
+          entry.id === logId
+            ? {
+                ...entry,
+                comment_count: commentCount,
+                open_parent_comment_count: openParentCommentCount,
+              }
+            : entry,
+        )
+      })
+    }
+    setViewingLog((prev) =>
+      prev && prev.log?.id === logId
+        ? {
+            ...prev,
+            log: {
+              ...prev.log,
+              comment_count: commentCount,
+              open_parent_comment_count: openParentCommentCount,
+            },
+          }
+        : prev,
+    )
+  }
 
   const pendingLogs = useMemo(
     () => sortLogsBySessionDate(logs.filter((l) => l.approval_status === 'PENDING')),
@@ -415,6 +449,9 @@ export function DailyLogsPage() {
           <p className="ic-session-log-recent__title">
             {l.child_name || l.case_code}
             {l.scheduled_date ? <> · {formatDisplayDate(l.scheduled_date)}</> : null}
+            {formatLogCommentCount(l.comment_count) ? (
+              <span className="ic-session-log-recent__comment-count"> · {formatLogCommentCount(l.comment_count)}</span>
+            ) : null}
           </p>
           {clockRange ? <p className="ic-session-log-recent__times">Clock: {clockRange}</p> : null}
           {editedRange ? (
@@ -423,11 +460,16 @@ export function DailyLogsPage() {
             </p>
           ) : null}
           {!isTherapistLeave ? (
-            <SessionLogStatusBadge
-              approvalStatus={l.approval_status}
-              attendanceStatus={l.attendance_status}
-              isAbsenceRecord={isAbsenceRecord}
-            />
+            <div className="ic-log-badge-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+              <SessionLogStatusBadge
+                approvalStatus={l.approval_status}
+                attendanceStatus={l.attendance_status}
+                isAbsenceRecord={isAbsenceRecord}
+              />
+              {formatLogCommentCount(l.comment_count) ? (
+                <LogCommentCountPill count={l.comment_count} className="log-comment-count-pill--inline" />
+              ) : null}
+            </div>
           ) : (
             <div className="ic-log-badge-row">
               <span className="ic-badge ic-badge--neutral" style={{ background: '#f3f4f6', color: '#374151' }}>
@@ -891,6 +933,7 @@ export function DailyLogsPage() {
             childName={viewingLog.log.child_name}
             caseCode={viewingLog.log.case_code}
             onClose={closeLogForm}
+            onCommentCountChange={handleLogCommentCountChange}
           />
         </section>
       ) : null}

@@ -269,6 +269,7 @@ def _parent_session_log_read(db: Session, log: DailyLog, case: Case | None, ther
         what_is_next=fields.get("what_is_next"),
         parent_display_status=display_status,
         can_parent_comment=True,
+        comment_count=len(comments_list),
         comments=comments_list,
     )
 
@@ -350,7 +351,8 @@ def _parent_virtual_session_log_read(db: Session, session: TherapySession, case:
 
     # 3. Build ParentSessionLogRead
     sub_dt = datetime.combine(session.scheduled_date, time.min, tzinfo=timezone.utc)
-    
+    comments_list = _get_log_comments(db, -session.id)
+
     return ParentSessionLogRead(
         id=-session.id,
         case_id=session.case_id,
@@ -374,7 +376,8 @@ def _parent_virtual_session_log_read(db: Session, session: TherapySession, case:
         status_label=attendance_label,
         parent_display_status="Reviewed",
         can_parent_comment=True,
-        comments=_get_log_comments(db, -session.id),
+        comment_count=len(comments_list),
+        comments=comments_list,
     )
 
 
@@ -407,6 +410,7 @@ def _parent_virtual_from_dict(
     )
     session_id = vlog.get("session_id")
     session = db.get(TherapySession, session_id) if session_id else None
+    comments_list = _get_log_comments(db, vlog["id"])
     return ParentSessionLogRead(
         id=vlog["id"],
         case_id=vlog["case_id"],
@@ -430,7 +434,8 @@ def _parent_virtual_from_dict(
         status_label=status_label,
         parent_display_status=display_status,
         can_parent_comment=True,
-        comments=_get_log_comments(db, vlog["id"]),
+        comment_count=len(comments_list),
+        comments=comments_list,
     )
 
 

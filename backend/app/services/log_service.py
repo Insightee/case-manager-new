@@ -4,10 +4,11 @@ from datetime import date, datetime, timedelta, timezone
 
 LOG_EDIT_WINDOW = timedelta(hours=24)
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.case import Case
+from app.models.document_comment import DocumentComment, DocumentEntityType
 from app.models.daily_log import AttendanceStatus, DailyLog, LogApprovalStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
@@ -180,6 +181,68 @@ def resubmit_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwa
     log.resubmitted_at = datetime.now(timezone.utc)
     db.flush()
     return log
+
+
+def comment_counts_for_log_ids(
+    db: Session,
+    log_ids: list[int],
+    *,
+    parent_visible_only: bool = False,
+) -> dict[int, tuple[int, int]]:
+    """Return {log_id: (comment_count, open_parent_comment_count)}."""
+    if not log_ids:
+        return {}
+
+    filters = [
+        DocumentComment.entity_type == DocumentEntityType.DAILY_LOG.value,
+        DocumentComment.entity_id.in_(log_ids),
+    ]
+    if parent_visible_only:
+        filters.append(DocumentComment.visibility == "parent_team")
+
+    open_parent_expr = func.sum(
+        case(
+            (
+                and_(
+                    DocumentComment.author_role == "parent",
+                    DocumentComment.status == "open",
+                    DocumentComment.visibility == "parent_team",
+                ),
+                1,
+            ),
+            else_=0,
+        )
+    )
+
+    rows = db.execute(
+        select(
+            DocumentComment.entity_id,
+            func.count(DocumentComment.id),
+            open_parent_expr,
+        )
+        .where(*filters)
+        .group_by(DocumentComment.entity_id)
+    ).all()
+
+    return {
+        int(entity_id): (int(total), int(open_parent or 0))
+        for entity_id, total, open_parent in rows
+    }
+
+
+def attach_comment_counts(
+    db: Session,
+    reads: list[dict],
+    *,
+    parent_visible_only: bool = False,
+) -> None:
+    log_ids = [item["id"] for item in reads if item.get("id") is not None]
+    counts = comment_counts_for_log_ids(db, log_ids, parent_visible_only=parent_visible_only)
+    for item in reads:
+        log_id = item.get("id")
+        total, open_parent = counts.get(log_id, (0, 0))
+        item["comment_count"] = total
+        item["open_parent_comment_count"] = open_parent
 
 
 def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:

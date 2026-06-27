@@ -9,6 +9,7 @@ import {
   formatScheduledRange,
   sessionHasTimeEdit,
 } from '../../lib/sessionTimes.js'
+import { logCommentFieldStyle, logCommentSendButtonStyle } from '../../lib/logCommentComposerStyles.js'
 
 export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'attendance_status', label: 'Attendance' },
@@ -21,7 +22,11 @@ export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'late_reason', label: 'Late reason' },
 ]
 
-function TeamLogCommentsSection({ logId, variant }) {
+function TeamLogCommentsSection({ logId, variant, onCountChange }) {
+  const isAdminVariant = variant === 'admin' || variant === 'case_manager'
+  const sendButtonClass = isAdminVariant
+    ? 'admin-btn admin-btn--primary admin-btn--sm'
+    : 'ic-btn ic-btn--primary'
   const [comments, setComments] = useState([])
   const [newComment, setNewComment] = useState('')
   const [visibility, setVisibility] = useState('parent_team')
@@ -34,7 +39,14 @@ function TeamLogCommentsSection({ logId, variant }) {
     setError('')
     try {
       const data = await apiFetch(`/api/v1/daily-logs/${logId}/comments`)
-      setComments(data || [])
+      const rows = Array.isArray(data) ? data : []
+      setComments(rows)
+      onCountChange?.(
+        rows.length,
+        rows.filter(
+          (c) => c.author_role === 'parent' && c.status === 'open' && c.visibility === 'parent_team',
+        ).length,
+      )
     } catch (err) {
       setError(err.message || 'Could not load comments')
     } finally {
@@ -58,7 +70,7 @@ function TeamLogCommentsSection({ logId, variant }) {
       })
       setComments((prev) => [...prev, posted])
       setNewComment('')
-      loadComments()
+      await loadComments()
     } catch (err) {
       setError(err.message || 'Could not post comment')
     } finally {
@@ -81,9 +93,9 @@ function TeamLogCommentsSection({ logId, variant }) {
   }
 
   return (
-    <div style={{ marginTop: 16, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
-      <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#334155', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-        💬 Comments & Parent Discussion
+    <div className="session-log-comments" style={{ marginTop: 16, borderTop: '1px solid #e2e8f0', paddingTop: 12, paddingBottom: 8 }}>
+      <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#334155', margin: '0 0 10px' }}>
+        Comments & Updates
       </h4>
 
       {loading && comments.length === 0 ? (
@@ -186,44 +198,39 @@ function TeamLogCommentsSection({ logId, variant }) {
           disabled={submitting}
           rows={2}
           style={{
-            width: '100%',
-            padding: '8px 10px',
-            fontSize: '0.8125rem',
-            borderRadius: 6,
-            border: '1px solid #cbd5e1',
-            outline: 'none',
-            background: '#fff',
-            resize: 'vertical'
+            ...logCommentFieldStyle,
+            resize: 'vertical',
+            minHeight: 64,
           }}
         />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <label style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name={`visibility-${logId}`}
-                value="parent_team"
-                checked={visibility === 'parent_team'}
-                onChange={() => setVisibility('parent_team')}
-              />
-              Reply to parent
-            </label>
-            <label style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name={`visibility-${logId}`}
-                value="internal_only"
-                checked={visibility === 'internal_only'}
-                onChange={() => setVisibility('internal_only')}
-              />
-              Internal note
-            </label>
-          </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+          <label style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name={`visibility-${logId}`}
+              value="parent_team"
+              checked={visibility === 'parent_team'}
+              onChange={() => setVisibility('parent_team')}
+            />
+            Reply to parent
+          </label>
+          <label style={{ fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name={`visibility-${logId}`}
+              value="internal_only"
+              checked={visibility === 'internal_only'}
+              onChange={() => setVisibility('internal_only')}
+            />
+            Internal note
+          </label>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button
             type="submit"
             disabled={submitting || !newComment.trim()}
-            className="ic-btn ic-btn--primary"
-            style={{ padding: '6px 16px', fontSize: '0.8125rem' }}
+            className={sendButtonClass}
+            style={logCommentSendButtonStyle(submitting || !newComment.trim())}
           >
             {submitting ? 'Sending...' : 'Send'}
           </button>
@@ -242,6 +249,7 @@ export function SessionLogReadOnly({
   variant = 'therapist',
   hideHeader = false,
   className = '',
+  onCommentCountChange,
 }) {
   const isAdmin = variant === 'admin'
   const displayName = childName || log?.child_name || caseCode || log?.case_code || 'Client'
@@ -345,7 +353,15 @@ export function SessionLogReadOnly({
           )
         })}
       </dl>
-      {log?.id > 0 && <TeamLogCommentsSection logId={log.id} variant={variant} />}
+      {log?.id != null && log.id !== 0 ? (
+        <TeamLogCommentsSection
+          logId={log.id}
+          variant={variant}
+          onCountChange={(count, openParentCount) =>
+            onCommentCountChange?.(log.id, count, openParentCount)
+          }
+        />
+      ) : null}
     </section>
   )
 }

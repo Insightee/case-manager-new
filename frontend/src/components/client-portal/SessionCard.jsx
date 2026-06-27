@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate, formatDisplayDateLabel } from '../../lib/datetime.js'
 import { formatParentLogClockFootnote, formatParentLogSessionTime } from '../../lib/parentSessionLogDisplay.js'
+import { formatLogCommentCount } from '../../lib/sessionLogComments.js'
+import { logCommentFieldStyle, logCommentSendButtonStyle } from '../../lib/logCommentComposerStyles.js'
 import { SessionLogParentBody } from './SessionLogParentBody.jsx'
 
 function formatSubmittedAt(iso) {
@@ -13,7 +15,7 @@ function formatSubmittedAt(iso) {
   }
 }
 
-function LogCommentsSection({ logId }) {
+function LogCommentsSection({ logId, onCountChange }) {
   const [comments, setComments] = useState([])
   const [newComment, setNewComment] = useState('')
   const [loading, setLoading] = useState(false)
@@ -26,6 +28,7 @@ function LogCommentsSection({ logId }) {
     try {
       const data = await apiFetch(`/api/v1/parent/session-logs/${logId}/comments`)
       setComments(data || [])
+      onCountChange?.((data || []).length)
     } catch (err) {
       setError(err.message || 'Could not load comments')
     } finally {
@@ -49,6 +52,7 @@ function LogCommentsSection({ logId }) {
       })
       setComments((prev) => [...prev, posted])
       setNewComment('')
+      onCountChange?.(comments.length + 1)
     } catch (err) {
       setError(err.message || 'Could not post comment')
     } finally {
@@ -113,38 +117,32 @@ function LogCommentsSection({ logId }) {
 
       {error && <p style={{ color: '#dc2626', fontSize: '0.8125rem', marginBottom: 8 }}>{error}</p>}
 
-      <form onSubmit={handlePostComment} style={{ display: 'flex', gap: 8 }}>
+      <form onSubmit={handlePostComment} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 4 }}>
         <input
           type="text"
           placeholder="Add a comment..."
           value={newComment}
           onChange={(e) => setNewComment(e.target.value)}
           disabled={submitting}
-          style={{
-            flex: 1,
-            padding: '6px 10px',
-            fontSize: '0.8125rem',
-            borderRadius: 6,
-            border: '1px solid #cbd5e1',
-            outline: 'none',
-            background: '#fff'
-          }}
+          style={logCommentFieldStyle}
         />
-        <button
-          type="submit"
-          disabled={submitting || !newComment.trim()}
-          className="ic-btn ic-btn--primary"
-          style={{ padding: '6px 12px', fontSize: '0.8125rem' }}
-        >
-          {submitting ? '...' : 'Send'}
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="submit"
+            disabled={submitting || !newComment.trim()}
+            style={logCommentSendButtonStyle(submitting || !newComment.trim())}
+          >
+            {submitting ? 'Sending…' : 'Send'}
+          </button>
+        </div>
       </form>
     </div>
   )
 }
 
-export function SessionCard({ log, onSaved, onDispute }) {
+export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true }) {
   const [localLog, setLocalLog] = useState(log)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const [showReason, setShowReason] = useState(false)
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [disputeComment, setDisputeComment] = useState('')
@@ -154,6 +152,10 @@ export function SessionCard({ log, onSaved, onDispute }) {
   useEffect(() => {
     setLocalLog(log)
   }, [log])
+
+  useEffect(() => {
+    setExpanded(defaultExpanded)
+  }, [log.id, defaultExpanded])
 
   const isVirtual = localLog.id < 0
   const isTherapistLeave = localLog.attendance_status === 'THERAPIST_LEAVE'
@@ -190,7 +192,7 @@ export function SessionCard({ log, onSaved, onDispute }) {
   else if (localLog.attendance_status === 'CLIENT_LEAVE') badgeLabel = 'Child on leave'
 
   return (
-    <article className="session-card">
+    <article className={`session-card${expanded ? '' : ' session-card--collapsed'}`}>
       <header className="session-card__head">
         <div>
           <h3 className="session-card__title">
@@ -200,6 +202,7 @@ export function SessionCard({ log, onSaved, onDispute }) {
             {dateLabel}
             {!isTherapistLeave && localLog.therapist_name ? ` · ${localLog.therapist_name}` : ''}
             {timeLabel ? ` · ${timeLabel}` : ''}
+            {formatLogCommentCount(localLog.comment_count) ? ` · ${formatLogCommentCount(localLog.comment_count)}` : ''}
           </p>
           {clockFootnote ? (
             <p className="session-card__meta" style={{ color: '#94a3b8', fontSize: '0.78rem' }}>
@@ -228,101 +231,120 @@ export function SessionCard({ log, onSaved, onDispute }) {
         </div>
       </header>
 
-      {localLog.parent_display_status === 'Under Review' && (
-        <div style={{ padding: '10px 14px', background: '#fffbeb', borderBottom: '1px solid #fde68a', fontSize: '0.8125rem', color: '#b45309', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-          <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>💡</span>
-          <span>This session note has been submitted by the therapist and is currently under review. You can add comments if you have questions or context to share.</span>
+      {!expanded ? (
+        <div className="session-card__collapse-bar">
+          <button type="button" className="session-card__expand-btn" onClick={() => setExpanded(true)}>
+            Show full log
+          </button>
         </div>
-      )}
-
-      {!isVirtual ? (
-        <SessionLogParentBody log={localLog} collapsible />
       ) : (
-        <div className="session-card__body">
-          <p className="session-card__section-text" style={{ color: '#475569' }}>
-            {isTherapistLeave 
-              ? 'Therapist was on leave.' 
-              : `Session was marked as ${localLog.attendance_status === 'CLIENT_LEAVE' ? 'Client Leave' : 'Client Absent'}.`
-            }
-          </p>
-        </div>
-      )}
-
-      <div className="session-card__feedback" style={{ borderTop: 'none', paddingTop: 0 }}>
-        {isClientAbsentOrLeave && localLog.absence_reason ? (
-          <div style={{ marginTop: 8, marginBottom: 8 }}>
-            <button
-              type="button"
-              className="session-card__notes-toggle"
-              onClick={() => setShowReason((prev) => !prev)}
-              style={{ fontSize: '0.78rem', color: '#4f46e5', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-            >
-              {showReason ? 'Hide reason' : 'Show reason'}
-            </button>
-            {showReason && (
-              <p style={{ marginTop: 6, padding: '8px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: '0.8125rem', color: '#4b5563', fontStyle: 'italic' }}>
-                Reason: {localLog.absence_reason}
-              </p>
-            )}
-          </div>
-        ) : null}
-
-        <div className="session-card__action-row" style={{ marginTop: 12, justifyContent: 'flex-start', alignItems: 'center', gap: 12 }}>
-          {isDisputed ? (
-            <span style={{ color: '#dc2626', fontWeight: 600, fontSize: '0.8125rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              ⚠️ Disputed
-            </span>
-          ) : isClientAbsentOrLeave ? (
-            <button
-              type="button"
-              className="ic-btn ic-btn--primary"
-              style={{ background: '#dc2626', borderColor: '#dc2626', padding: '6px 12px', fontSize: '0.8125rem' }}
-              onClick={() => setShowDisputeForm(true)}
-            >
-              Dispute
-            </button>
-          ) : null}
-        </div>
-
-        {showDisputeForm && (
-          <div className="session-card__dispute-form" style={{ marginTop: 12, padding: 12, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8 }}>
-            <p style={{ margin: '0 0 8px', fontSize: '0.875rem', fontWeight: 600, color: '#991b1b' }}>Dispute Attendance Status</p>
-            <textarea
-              style={{ width: '100%', padding: 8, fontSize: '0.875rem', borderRadius: 6, border: '1px solid #d1d5db', marginBottom: 8, background: '#fff' }}
-              placeholder="Describe why you dispute this status..."
-              value={disputeComment}
-              onChange={(e) => setDisputeComment(e.target.value)}
-              rows={3}
-            />
-            {disputeError && <p style={{ color: '#dc2626', fontSize: '0.8125rem', margin: '0 0 8px' }}>{disputeError}</p>}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                className="ic-btn ic-btn--primary"
-                style={{ background: '#dc2626', borderColor: '#dc2626', padding: '4px 10px', fontSize: '0.78rem' }}
-                onClick={submitDispute}
-                disabled={disputeBusy || !disputeComment.trim()}
-              >
-                {disputeBusy ? 'Submitting...' : 'Submit Dispute'}
-              </button>
-              <button
-                type="button"
-                className="ic-btn ic-btn--ghost"
-                style={{ padding: '4px 10px', fontSize: '0.78rem' }}
-                onClick={() => {
-                  setShowDisputeForm(false)
-                  setDisputeComment('')
-                  setDisputeError('')
-                }}
-              >
-                Cancel
-              </button>
+        <>
+          {localLog.parent_display_status === 'Under Review' && (
+            <div style={{ padding: '10px 14px', background: '#fffbeb', borderBottom: '1px solid #fde68a', fontSize: '0.8125rem', color: '#b45309', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>💡</span>
+              <span>This session note has been submitted by the therapist and is currently under review. You can add comments if you have questions or context to share.</span>
             </div>
-          </div>
-        )}
+          )}
 
-        <LogCommentsSection logId={localLog.id} />
-      </div>
+          {!isVirtual ? (
+            <SessionLogParentBody log={localLog} collapsible />
+          ) : (
+            <div className="session-card__body">
+              <p className="session-card__section-text" style={{ color: '#475569' }}>
+                {isTherapistLeave 
+                  ? 'Therapist was on leave.' 
+                  : `Session was marked as ${localLog.attendance_status === 'CLIENT_LEAVE' ? 'Client Leave' : 'Client Absent'}.`
+                }
+              </p>
+            </div>
+          )}
+
+          <div className="session-card__feedback" style={{ borderTop: 'none', paddingTop: 0 }}>
+            {isClientAbsentOrLeave && localLog.absence_reason ? (
+              <div style={{ marginTop: 8, marginBottom: 8 }}>
+                <button
+                  type="button"
+                  className="session-card__notes-toggle"
+                  onClick={() => setShowReason((prev) => !prev)}
+                  style={{ fontSize: '0.78rem', color: '#4f46e5', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                >
+                  {showReason ? 'Hide reason' : 'Show reason'}
+                </button>
+                {showReason && (
+                  <p style={{ marginTop: 6, padding: '8px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: '0.8125rem', color: '#4b5563', fontStyle: 'italic' }}>
+                    Reason: {localLog.absence_reason}
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            <div className="session-card__action-row" style={{ marginTop: 12, justifyContent: 'flex-start', alignItems: 'center', gap: 12 }}>
+              {isDisputed ? (
+                <span style={{ color: '#dc2626', fontWeight: 600, fontSize: '0.8125rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  ⚠️ Disputed
+                </span>
+              ) : isClientAbsentOrLeave ? (
+                <button
+                  type="button"
+                  className="ic-btn ic-btn--primary"
+                  style={{ background: '#dc2626', borderColor: '#dc2626', padding: '6px 12px', fontSize: '0.8125rem' }}
+                  onClick={() => setShowDisputeForm(true)}
+                >
+                  Dispute
+                </button>
+              ) : null}
+            </div>
+
+            {showDisputeForm && (
+              <div className="session-card__dispute-form" style={{ marginTop: 12, padding: 12, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8 }}>
+                <p style={{ margin: '0 0 8px', fontSize: '0.875rem', fontWeight: 600, color: '#991b1b' }}>Dispute Attendance Status</p>
+                <textarea
+                  style={{ width: '100%', padding: 8, fontSize: '0.875rem', borderRadius: 6, border: '1px solid #d1d5db', marginBottom: 8, background: '#fff' }}
+                  placeholder="Describe why you dispute this status..."
+                  value={disputeComment}
+                  onChange={(e) => setDisputeComment(e.target.value)}
+                  rows={3}
+                />
+                {disputeError && <p style={{ color: '#dc2626', fontSize: '0.8125rem', margin: '0 0 8px' }}>{disputeError}</p>}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="ic-btn ic-btn--primary"
+                    style={{ background: '#dc2626', borderColor: '#dc2626', padding: '4px 10px', fontSize: '0.78rem' }}
+                    onClick={submitDispute}
+                    disabled={disputeBusy || !disputeComment.trim()}
+                  >
+                    {disputeBusy ? 'Submitting...' : 'Submit Dispute'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ic-btn ic-btn--ghost"
+                    style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                    onClick={() => {
+                      setShowDisputeForm(false)
+                      setDisputeComment('')
+                      setDisputeError('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <LogCommentsSection
+              logId={localLog.id}
+              onCountChange={(count) => setLocalLog((prev) => ({ ...prev, comment_count: count }))}
+            />
+          </div>
+
+          <div className="session-card__collapse-bar session-card__collapse-bar--bottom">
+            <button type="button" className="session-card__expand-btn session-card__expand-btn--muted" onClick={() => setExpanded(false)}>
+              Hide full log
+            </button>
+          </div>
+        </>
+      )}
     </article>
   )
 }
