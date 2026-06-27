@@ -87,7 +87,7 @@ def upgrade() -> None:
         sa.Column("line_type", sa.Enum("INCLUDED", "ADDITIONAL", "PER_SESSION", name="sessionlinetype"), nullable=False),
         sa.Column("amount_inr", sa.Numeric(12, 2), nullable=False),
         sa.Column("source", sa.Enum("LOG", "MANUAL_LATE", "ADJUSTMENT", name="sessionlinesource"), nullable=False),
-        sa.Column("included", sa.Boolean(), server_default="1"),
+        sa.Column("included", sa.Boolean(), server_default=sa.true()),
         sa.Column("flags", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         )
