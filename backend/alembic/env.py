@@ -77,6 +77,7 @@ def run_migrations_online() -> None:
             transaction_per_migration=is_sqlite,
         )
         context.run_migrations()
+        connection.commit()
 
 
 if context.is_offline_mode():

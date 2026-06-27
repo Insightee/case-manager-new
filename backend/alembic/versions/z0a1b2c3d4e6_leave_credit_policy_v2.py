@@ -11,17 +11,26 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("therapist_leaves", sa.Column("case_ids", sa.JSON(), nullable=True))
-    op.add_column("therapist_leaves", sa.Column("paid_days", sa.Integer(), nullable=True))
-    op.add_column("therapist_leaves", sa.Column("unpaid_days", sa.Integer(), nullable=True))
-    op.add_column(
-        "therapist_leaves",
-        sa.Column("consulted_with_parents", sa.Boolean(), nullable=False, server_default=sa.false()),
-    )
-    op.add_column(
-        "therapist_leaves",
-        sa.Column("includes_shadow_cases", sa.Boolean(), nullable=False, server_default=sa.false()),
-    )
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    cols = {c["name"] for c in insp.get_columns("therapist_leaves")} if insp.has_table("therapist_leaves") else set()
+
+    if "case_ids" not in cols:
+        op.add_column("therapist_leaves", sa.Column("case_ids", sa.JSON(), nullable=True))
+    if "paid_days" not in cols:
+        op.add_column("therapist_leaves", sa.Column("paid_days", sa.Integer(), nullable=True))
+    if "unpaid_days" not in cols:
+        op.add_column("therapist_leaves", sa.Column("unpaid_days", sa.Integer(), nullable=True))
+    if "consulted_with_parents" not in cols:
+        op.add_column(
+            "therapist_leaves",
+            sa.Column("consulted_with_parents", sa.Boolean(), nullable=False, server_default=sa.false()),
+        )
+    if "includes_shadow_cases" not in cols:
+        op.add_column(
+            "therapist_leaves",
+            sa.Column("includes_shadow_cases", sa.Boolean(), nullable=False, server_default=sa.false()),
+        )
 
 
 def downgrade() -> None:

@@ -11,7 +11,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("therapist_profiles", sa.Column("leave_year_snapshots", sa.JSON(), nullable=True))
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    cols = {c["name"] for c in insp.get_columns("therapist_profiles")} if insp.has_table("therapist_profiles") else set()
+    if "leave_year_snapshots" not in cols:
+        op.add_column("therapist_profiles", sa.Column("leave_year_snapshots", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
