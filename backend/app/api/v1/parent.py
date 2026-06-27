@@ -1796,3 +1796,215 @@ def parent_escalate_incident(
     incident = inc_svc.get_incident_detail(db, incident_id)
     case = case_service.get_case(db, incident.case_id) if incident.case_id else None
     return inc_svc.incident_to_detail_dict(db, incident, case, user)
+
+
+# Parent Chat Endpoints
+from app.schemas.chat import MessageCreate, MessageRead
+
+@router.get("/chats/{case_id}/messages", response_model=dict)
+def parent_get_chat_messages(
+    case_id: int,
+    therapist_id: Optional[int] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    case = _parent_case_or_404(db, user, case_id)
+
+    # 1. 90-day retention pruning
+    from datetime import datetime, timedelta, timezone
+    from app.models.parent_therapist_message import ParentTherapistMessage
+    from sqlalchemy import delete
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    db.execute(delete(ParentTherapistMessage).where(ParentTherapistMessage.created_at < cutoff))
+    db.commit()
+
+    # 2. Get active therapists on the case
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    active_assignments = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE
+        )
+    ).all()
+
+    active_therapists_list = []
+    seen = set()
+    for assign in active_assignments:
+        t = db.get(User, assign.therapist_user_id)
+        if t and t.id not in seen:
+            seen.add(t.id)
+            active_therapists_list.append(t)
+
+    # 3. Determine selected therapist
+    active_therapist_user = None
+    if therapist_id:
+        active_therapist_user = db.get(User, therapist_id)
+    elif active_therapists_list:
+        active_therapist_user = active_therapists_list[0]
+
+    selected_therapist_id = active_therapist_user.id if active_therapist_user else None
+
+    # 4. Fetch messages if therapist is selected
+    messages_rows = []
+    if selected_therapist_id:
+        messages_rows = db.scalars(
+            select(ParentTherapistMessage)
+            .where(
+                ParentTherapistMessage.case_id == case_id,
+                (
+                    (ParentTherapistMessage.sender_id == user.id) &
+                    (ParentTherapistMessage.recipient_id == selected_therapist_id)
+                ) | (
+                    (ParentTherapistMessage.sender_id == selected_therapist_id) &
+                    (ParentTherapistMessage.recipient_id == user.id)
+                )
+            )
+            .order_by(ParentTherapistMessage.created_at.asc())
+        ).all()
+
+    # 5. Format response payload
+    active_therapist_data = None
+    if active_therapist_user:
+        active_therapist_data = {
+            "id": active_therapist_user.id,
+            "full_name": active_therapist_user.full_name
+        }
+
+    from app.schemas.chat import MessageRead
+    return {
+        "messages": [MessageRead.model_validate(m) for m in messages_rows],
+        "active_therapists": [{"id": t.id, "full_name": t.full_name} for t in active_therapists_list],
+        "active_therapist": active_therapist_data,
+        "selected_therapist_id": selected_therapist_id
+    }
+
+
+@router.post("/chats/{case_id}/messages", response_model=MessageRead)
+def parent_send_chat_message(
+    case_id: int,
+    payload: MessageCreate,
+    therapist_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.schemas.chat import MessageCreate, MessageRead
+    _require_parent(user)
+    case = _parent_case_or_404(db, user, case_id)
+
+    # Validate therapist is active on the case
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    is_active = db.scalar(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id == therapist_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE
+        )
+    ) is not None
+    if not is_active:
+        raise HTTPException(status_code=400, detail="Therapist is not actively assigned to this case")
+
+    from app.models.parent_therapist_message import ParentTherapistMessage
+    new_msg = ParentTherapistMessage(
+        case_id=case_id,
+        sender_id=user.id,
+        recipient_id=therapist_id,
+        body=payload.body
+    )
+    db.add(new_msg)
+    db.commit()
+    db.refresh(new_msg)
+    return new_msg
+
+
+@router.post("/chats/{case_id}/upload", response_model=MessageRead)
+async def parent_upload_chat_attachment(
+    case_id: int,
+    therapist_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.schemas.chat import MessageRead
+    _require_parent(user)
+    case = _parent_case_or_404(db, user, case_id)
+
+    # Validate therapist is active on the case
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    is_active = db.scalar(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id == therapist_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE
+        )
+    ) is not None
+    if not is_active:
+        raise HTTPException(status_code=400, detail="Therapist is not actively assigned to this case")
+
+    # Enforce 10MB limit
+    MAX_SIZE = 10 * 1024 * 1024
+    content = await file.read(MAX_SIZE + 1)
+    if len(content) > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="File size exceeds 10MB limit")
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file not allowed")
+
+    from app.storage.object_io import put_stored_bytes
+    mime = (file.content_type or "application/octet-stream").split(";")[0].strip().lower()
+    storage_key, _provider = put_stored_bytes(
+        "chats",
+        f"case_{case_id}",
+        "attachments",
+        filename=file.filename or "file",
+        data=content,
+        content_type=mime,
+    )
+
+    from app.models.parent_therapist_message import ParentTherapistMessage
+    new_msg = ParentTherapistMessage(
+        case_id=case_id,
+        sender_id=user.id,
+        recipient_id=therapist_id,
+        body=f"Sent a photo: {file.filename}",
+        attachment_path=storage_key,
+        attachment_name=file.filename or "attachment"
+    )
+    db.add(new_msg)
+    db.commit()
+    db.refresh(new_msg)
+    return new_msg
+
+
+@router.get("/chats/messages/attachments/{msg_id}")
+def parent_download_chat_attachment(
+    msg_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.parent_therapist_message import ParentTherapistMessage
+    msg = db.get(ParentTherapistMessage, msg_id)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    if user.id not in (msg.sender_id, msg.recipient_id):
+        raise HTTPException(status_code=403, detail="Not authorized to access this attachment")
+
+    if not msg.attachment_path:
+        raise HTTPException(status_code=400, detail="Message has no attachment")
+
+    from app.storage.object_io import stored_file_response
+    import mimetypes
+    mime, _ = mimetypes.guess_type(msg.attachment_name or "")
+    if not mime:
+        mime = "application/octet-stream"
+
+    return stored_file_response(
+        file_path=msg.attachment_path,
+        filename=msg.attachment_name,
+        media_type=mime,
+        inline=True
+    )

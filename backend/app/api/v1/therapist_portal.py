@@ -129,3 +129,254 @@ def therapist_client_intake(
         invite_sent=result["invite_sent"],
         invite_url=result.get("invite_url"),
     )
+
+
+# Therapist Chat Endpoints
+
+from app.schemas.chat import MessageCreate, MessageRead, CaseChatTab
+from typing import List
+from fastapi import UploadFile, File
+
+@router.get("/chats", response_model=List[CaseChatTab])
+def therapist_list_chats(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_therapist(user)
+    
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case
+    from sqlalchemy import select, func
+    from app.models.parent_therapist_message import ParentTherapistMessage
+    from app.services.parent_service import primary_parent_user_id_for_child
+
+    # Find active case assignments for this therapist
+    active_assignments = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.therapist_user_id == user.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE
+        )
+    ).all()
+
+    tabs = []
+    for assign in active_assignments:
+        case = db.get(Case, assign.case_id)
+        if not case:
+            continue
+        child_name = case.child.full_name if case.child else "Unknown Kid"
+        
+        parent_name = None
+        parent_user_id = primary_parent_user_id_for_child(db, case.child_id) if case.child_id else None
+        if parent_user_id:
+            parent_user = db.get(User, parent_user_id)
+            if parent_user:
+                parent_name = parent_user.full_name
+
+        unread_count = db.scalar(
+            select(func.count(ParentTherapistMessage.id))
+            .where(
+                ParentTherapistMessage.case_id == case.id,
+                ParentTherapistMessage.recipient_id == user.id,
+                ParentTherapistMessage.is_read == False
+            )
+        ) or 0
+
+        tabs.append({
+            "case_id": case.id,
+            "child_name": child_name,
+            "case_code": case.case_code,
+            "therapist_name": user.full_name,
+            "parent_name": parent_name,
+            "unread_count": unread_count
+        })
+
+    return tabs
+
+
+@router.get("/chats/{case_id}/messages", response_model=dict)
+def therapist_get_chat_messages(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_therapist(user)
+    
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case
+    from sqlalchemy import select, update
+    from app.models.parent_therapist_message import ParentTherapistMessage
+    from app.services.parent_service import primary_parent_user_id_for_child
+
+    # Verify authorization
+    is_active = db.scalar(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id == user.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE
+        )
+    ) is not None
+    if not is_active:
+        raise HTTPException(status_code=403, detail="Not authorized to access this case chat")
+
+    case = db.get(Case, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    parent_info = None
+    parent_user_id = primary_parent_user_id_for_child(db, case.child_id) if case.child_id else None
+    if parent_user_id:
+        parent_user = db.get(User, parent_user_id)
+        if parent_user:
+            parent_info = {
+                "id": parent_user.id,
+                "full_name": parent_user.full_name
+            }
+
+    # Mark incoming messages as read
+    db.execute(
+        update(ParentTherapistMessage)
+        .where(
+            ParentTherapistMessage.case_id == case_id,
+            ParentTherapistMessage.recipient_id == user.id,
+            ParentTherapistMessage.is_read == False
+        )
+        .values(is_read=True)
+    )
+    db.commit()
+
+    messages_rows = []
+    if parent_user_id:
+        messages_rows = db.scalars(
+            select(ParentTherapistMessage)
+            .where(
+                ParentTherapistMessage.case_id == case_id,
+                (
+                    (ParentTherapistMessage.sender_id == user.id) &
+                    (ParentTherapistMessage.recipient_id == parent_user_id)
+                ) | (
+                    (ParentTherapistMessage.sender_id == parent_user_id) &
+                    (ParentTherapistMessage.recipient_id == user.id)
+                )
+            )
+            .order_by(ParentTherapistMessage.created_at.asc())
+        ).all()
+
+    return {
+        "messages": [MessageRead.model_validate(m) for m in messages_rows],
+        "parent_info": parent_info
+    }
+
+
+@router.post("/chats/{case_id}/messages", response_model=MessageRead)
+def therapist_send_chat_message(
+    case_id: int,
+    payload: MessageCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_therapist(user)
+    
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case
+    from sqlalchemy import select
+    from app.models.parent_therapist_message import ParentTherapistMessage
+    from app.services.parent_service import primary_parent_user_id_for_child
+
+    is_active = db.scalar(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id == user.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE
+        )
+    ) is not None
+    if not is_active:
+        raise HTTPException(status_code=403, detail="Not authorized to message on this case")
+
+    case = db.get(Case, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    parent_user_id = primary_parent_user_id_for_child(db, case.child_id) if case.child_id else None
+    if not parent_user_id:
+        raise HTTPException(status_code=400, detail="No parent associated with this case child")
+
+    new_msg = ParentTherapistMessage(
+        case_id=case_id,
+        sender_id=user.id,
+        recipient_id=parent_user_id,
+        body=payload.body
+    )
+    db.add(new_msg)
+    db.commit()
+    db.refresh(new_msg)
+    return new_msg
+
+
+@router.post("/chats/{case_id}/upload", response_model=MessageRead)
+async def therapist_upload_chat_attachment(
+    case_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_therapist(user)
+    
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+    from app.models.case import Case
+    from sqlalchemy import select
+    from app.models.parent_therapist_message import ParentTherapistMessage
+    from app.services.parent_service import primary_parent_user_id_for_child
+
+    is_active = db.scalar(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id == user.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE
+        )
+    ) is not None
+    if not is_active:
+        raise HTTPException(status_code=403, detail="Not authorized to message on this case")
+
+    case = db.get(Case, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    parent_user_id = primary_parent_user_id_for_child(db, case.child_id) if case.child_id else None
+    if not parent_user_id:
+        raise HTTPException(status_code=400, detail="No parent associated with this case child")
+
+    # Enforce 10MB limit
+    MAX_SIZE = 10 * 1024 * 1024
+    content = await file.read(MAX_SIZE + 1)
+    if len(content) > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="File size exceeds 10MB limit")
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file not allowed")
+
+    from app.storage.object_io import put_stored_bytes
+    mime = (file.content_type or "application/octet-stream").split(";")[0].strip().lower()
+    storage_key, _provider = put_stored_bytes(
+        "chats",
+        f"case_{case_id}",
+        "attachments",
+        filename=file.filename or "file",
+        data=content,
+        content_type=mime,
+    )
+
+    new_msg = ParentTherapistMessage(
+        case_id=case_id,
+        sender_id=user.id,
+        recipient_id=parent_user_id,
+        body=f"Sent a photo: {file.filename}",
+        attachment_path=storage_key,
+        attachment_name=file.filename or "attachment"
+    )
+    db.add(new_msg)
+    db.commit()
+    db.refresh(new_msg)
+    return new_msg
