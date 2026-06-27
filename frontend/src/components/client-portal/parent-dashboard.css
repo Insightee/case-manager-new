@@ -606,6 +606,54 @@
   line-height: 1.5;
 }
 
+.parent-logs-under-review {
+  margin-top: 20px;
+}
+
+.parent-logs-under-review__intro {
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.parent-update-list__item--review {
+  border-color: #e0e7ff;
+  background: linear-gradient(180deg, #fafaff 0%, #ffffff 100%);
+}
+
+.parent-update-list__headline-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.parent-logs-under-review__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.parent-logs-under-review__comments {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4338ca;
+}
+
+.parent-update-list__body--muted {
+  color: #64748b;
+  font-style: italic;
+}
+
 .parent-action-alert {
   display: flex;
   align-items: center;

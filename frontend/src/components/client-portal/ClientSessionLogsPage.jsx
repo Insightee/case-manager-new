@@ -127,6 +127,28 @@ export function ClientSessionLogsPage() {
   }
 
   useEffect(() => {
+    if (!highlightLogId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const allLogs = await apiFetch('/api/v1/parent/session-logs')
+        if (cancelled) return
+        const match = (allLogs || []).find((l) => String(l.id) === String(highlightLogId))
+        if (!match?.scheduled_date) return
+        const d = new Date(match.scheduled_date)
+        if (Number.isNaN(d.getTime())) return
+        const monthValue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        setSelectedMonth((prev) => (prev === monthValue ? prev : monthValue))
+      } catch {
+        /* keep default month */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [highlightLogId])
+
+  useEffect(() => {
     load()
   }, [caseId, selectedMonth])
 

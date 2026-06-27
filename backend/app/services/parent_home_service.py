@@ -5,10 +5,9 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.user import User
-
 from app.models.case import Case
 from app.models.daily_log import DailyLog, LogApprovalStatus
+from app.models.document_comment import DocumentComment
 from app.models.session import Session as TherapySession
 from app.models.user import User
 from app.schemas.parent_home import (
@@ -67,19 +66,49 @@ def parent_log_card_fields(log: DailyLog, *, case: Case | None, therapist_name: 
     }
 
 
-def _approved_logs_for_parent(db: Session, user: User, *, limit: int | None = None) -> list[DailyLog]:
+def _parent_case_ids(db: Session, user: User) -> tuple[dict[int, Case], set[int]]:
     child_ids = parent_service.child_ids_for_parent(db, user.id)
     if not child_ids:
-        return []
-    case_stmt = select(Case).where(Case.child_id.in_(child_ids))
-    cases = {c.id: c for c in db.scalars(case_stmt).all()}
-    if not cases:
+        return {}, set()
+    cases = {c.id: c for c in db.scalars(select(Case).where(Case.child_id.in_(child_ids))).all()}
+    return cases, set(cases.keys())
+
+
+def _recent_update_from_log(
+    log: DailyLog,
+    *,
+    therapist_names: dict[int, str | None],
+    parent_display_status: str | None = None,
+    comment_count: int = 0,
+) -> ParentRecentUpdate | None:
+    s = log.session
+    if not s:
+        return None
+    case = s.case
+    fields = parent_log_card_fields(log, case=case, therapist_name=therapist_names.get(s.therapist_user_id))
+    return ParentRecentUpdate(
+        id=log.id,
+        case_id=s.case_id,
+        case_code=case.case_code if case else None,
+        child_name=case.child.full_name if case and case.child else None,
+        submitted_at=log.submitted_at,
+        scheduled_date=s.scheduled_date,
+        session_start_time=s.start_time.strftime("%H:%M") if s.start_time else None,
+        parent_display_status=parent_display_status,
+        comment_count=comment_count,
+        **{k: v for k, v in fields.items() if k not in ("scheduled_date",)},
+    )
+
+
+def _approved_logs_for_parent(db: Session, user: User, *, limit: int | None = None) -> list[DailyLog]:
+    cases, case_ids = _parent_case_ids(db, user)
+    if not case_ids:
         return []
     log_stmt = (
         select(DailyLog)
         .join(TherapySession)
         .where(
-            TherapySession.case_id.in_(cases.keys()),
+            TherapySession.case_id.in_(case_ids),
             DailyLog.submitted_at.isnot(None),
             DailyLog.visibility_status.in_(parent_service.PARENT_VISIBLE),
             DailyLog.approval_status == LogApprovalStatus.APPROVED,
@@ -92,6 +121,44 @@ def _approved_logs_for_parent(db: Session, user: User, *, limit: int | None = No
     if limit:
         log_stmt = log_stmt.limit(limit)
     return list(db.scalars(log_stmt).all())
+
+
+def _under_review_logs_for_parent(db: Session, user: User, *, limit: int = 5) -> list[DailyLog]:
+    _cases, case_ids = _parent_case_ids(db, user)
+    if not case_ids:
+        return []
+    log_stmt = (
+        select(DailyLog)
+        .join(TherapySession)
+        .where(
+            TherapySession.case_id.in_(case_ids),
+            DailyLog.submitted_at.isnot(None),
+            DailyLog.approval_status == LogApprovalStatus.PENDING,
+        )
+        .options(
+            selectinload(DailyLog.session).selectinload(TherapySession.case).selectinload(Case.child),
+        )
+        .order_by(TherapySession.scheduled_date.desc())
+        .limit(limit)
+    )
+    return list(db.scalars(log_stmt).all())
+
+
+def _comment_counts_for_logs(db: Session, log_ids: list[int]) -> dict[int, int]:
+    if not log_ids:
+        return {}
+    rows = db.execute(
+        select(DocumentComment.entity_id, DocumentComment.id)
+        .where(
+            DocumentComment.entity_type == "daily_log",
+            DocumentComment.entity_id.in_(log_ids),
+            DocumentComment.visibility == "parent_team",
+        )
+    ).all()
+    counts: dict[int, int] = {}
+    for entity_id, _comment_id in rows:
+        counts[int(entity_id)] = counts.get(int(entity_id), 0) + 1
+    return counts
 
 
 def build_parent_home(db: Session, user: User) -> ParentHomeResponse:
@@ -107,9 +174,13 @@ def build_parent_home(db: Session, user: User) -> ParentHomeResponse:
             break
 
     logs = _approved_logs_for_parent(db, user, limit=50)
+    under_review_logs = _under_review_logs_for_parent(db, user, limit=5)
     latest_by_case: dict[int, DailyLog] = {}
     therapist_ids: set[int] = set()
     for log in logs:
+        if log.session:
+            therapist_ids.add(log.session.therapist_user_id)
+    for log in under_review_logs:
         if log.session:
             therapist_ids.add(log.session.therapist_user_id)
     therapist_names: dict[int, str | None] = {}
@@ -152,25 +223,22 @@ def build_parent_home(db: Session, user: User) -> ParentHomeResponse:
 
     recent: list[ParentRecentUpdate] = []
     for log in logs[:3]:
-        s = log.session
-        if not s:
-            continue
-        case = s.case
-        fields = parent_log_card_fields(
-            log, case=case, therapist_name=therapist_names.get(s.therapist_user_id)
+        row = _recent_update_from_log(log, therapist_names=therapist_names, parent_display_status="Reviewed")
+        if row:
+            recent.append(row)
+
+    under_review_ids = [log.id for log in under_review_logs]
+    comment_counts = _comment_counts_for_logs(db, under_review_ids)
+    logs_under_review: list[ParentRecentUpdate] = []
+    for log in under_review_logs:
+        row = _recent_update_from_log(
+            log,
+            therapist_names=therapist_names,
+            parent_display_status="Under Review",
+            comment_count=comment_counts.get(log.id, 0),
         )
-        recent.append(
-            ParentRecentUpdate(
-                id=log.id,
-                case_id=s.case_id,
-                case_code=case.case_code if case else None,
-                child_name=case.child.full_name if case and case.child else None,
-                submitted_at=log.submitted_at,
-                scheduled_date=s.scheduled_date,
-                session_start_time=s.start_time.strftime("%H:%M") if s.start_time else None,
-                **{k: v for k, v in fields.items() if k not in ("scheduled_date",)},
-            )
-        )
+        if row:
+            logs_under_review.append(row)
 
     upcoming: list[dict] = []
     today = date.today()
@@ -201,6 +269,7 @@ def build_parent_home(db: Session, user: User) -> ParentHomeResponse:
         ),
         cases=cases,
         recent_updates=recent,
+        logs_under_review=logs_under_review,
         upcoming_appointments=upcoming,
         pending_assignment_acceptance=pending_rows,
     )

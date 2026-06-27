@@ -98,6 +98,8 @@ def test_parent_home():
     assert "stats" in data
     assert "cases" in data
     assert "recent_updates" in data
+    assert "logs_under_review" in data
+    assert isinstance(data["logs_under_review"], list)
 
 
 def test_parent_session_logs_have_friendly_fields():
