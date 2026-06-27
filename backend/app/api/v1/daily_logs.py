@@ -26,7 +26,7 @@ from app.schemas.daily_log import (
     LogCommentCreate,
     LogCommentRead,
 )
-from app.services import billing_ledger_service, case_service, log_comment_notify_service, log_service
+from app.services import billing_ledger_service, case_service, log_comment_notify_service, log_service, session_log_service
 from app.services import virtual_session_log_service as virtual_logs
 
 from sqlalchemy import select
@@ -227,13 +227,32 @@ def create_daily_log(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if created:
-        from app.services import session_log_service
+        commit_or_http(db)
+        db.refresh(log)
+        try:
+            session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
+            session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
+            meta = get_request_meta(request)
+            log_audit(
+                db,
+                actor_user_id=user.id,
+                action="create",
+                entity_type="daily_log",
+                entity_id=log.id,
+                new_value=payload.model_dump(),
+                **meta,
+            )
+            commit_or_http(db)
+        except HTTPException:
+            raise
+        except Exception:
+            import logging
 
-        session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
-        session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
-        meta = get_request_meta(request)
-        log_audit(db, actor_user_id=user.id, action="create", entity_type="daily_log", entity_id=log.id, new_value=payload.model_dump(), **meta)
-    commit_or_http(db)
+            logging.getLogger("insightcase").exception(
+                "Post-create notify/audit failed for daily_log %s; log was saved",
+                log.id,
+            )
+            db.rollback()
     return DailyLogRead(**log_service.log_to_read(log))
 
 

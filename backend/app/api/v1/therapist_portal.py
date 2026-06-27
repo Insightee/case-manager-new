@@ -53,17 +53,32 @@ def therapist_create_session_log(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if created:
-        meta = get_request_meta(request)
-        log_audit(
-            db,
-            actor_user_id=user.id,
-            action="create",
-            entity_type="daily_log",
-            entity_id=log.id,
-            new_value=payload.model_dump(),
-            **meta,
-        )
-    commit_or_http(db)
+        commit_or_http(db)
+        db.refresh(log)
+        try:
+            session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
+            session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
+            meta = get_request_meta(request)
+            log_audit(
+                db,
+                actor_user_id=user.id,
+                action="create",
+                entity_type="daily_log",
+                entity_id=log.id,
+                new_value=payload.model_dump(),
+                **meta,
+            )
+            commit_or_http(db)
+        except HTTPException:
+            raise
+        except Exception:
+            import logging
+
+            logging.getLogger("insightcase").exception(
+                "Post-create notify/audit failed for daily_log %s; log was saved",
+                log.id,
+            )
+            db.rollback()
     return SessionLogRead(**session_log_service.session_log_read(db, log))
 
 

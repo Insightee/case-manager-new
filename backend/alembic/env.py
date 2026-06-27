@@ -38,9 +38,8 @@ def run_migrations_online() -> None:
     script = ScriptDirectory.from_config(config)
     heads = script.get_heads()
     if len(heads) != 1:
-        head_rev = "heads"
-    else:
-        head_rev = heads[0]
+        raise RuntimeError(f"Expected a single Alembic head for greenfield stamp; got: {heads}")
+    head_rev = heads[0]
 
     with connectable.connect() as connection:
         is_sqlite = connection.dialect.name == "sqlite"

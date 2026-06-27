@@ -42,6 +42,14 @@ def raise_db_write_http_error(exc: OperationalError) -> None:
         if settings.is_development:
             hint += f" Technical detail: {message[:240]}"
         raise HTTPException(status_code=503, detail=hint) from exc
+    if "does not exist" in lowered and ("column" in lowered or "relation" in lowered):
+        hint = (
+            "Database schema is out of date (missing table or column). "
+            "Redeploy the API so migrations run, or run python scripts/migrate_production.py."
+        )
+        if settings.is_development:
+            hint += f" Technical detail: {message[:240]}"
+        raise HTTPException(status_code=503, detail=hint) from exc
     if settings.is_development:
         raise HTTPException(status_code=500, detail=f"Database error: {message[:320]}") from exc
     raise HTTPException(status_code=500, detail="Database error") from exc

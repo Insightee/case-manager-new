@@ -107,9 +107,6 @@ def create_therapist_session_log(db: Session, user: User, payload: dict) -> tupl
     if not case or not case_scope_check(db, user, case):
         raise ValueError("Case access denied")
     log, created = log_service.create_daily_log(db, **payload)
-    if created:
-        notify_case_managers_log_submitted(db, log, therapist=user)
-        notify_parents_session_log_submitted(db, log, therapist=user)
     return log, created
 
 
@@ -320,7 +317,7 @@ def notify_parents_session_log_approved(
 
 def publish_log_to_parents(log: DailyLog) -> None:
     """Set visibility for parent portal after CM approval."""
-    log.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT
+    log.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT.value
 
 
 def _case_ids_for_admin(db: Session, user: User, product_module: str | None) -> list[int] | None:

@@ -48,8 +48,8 @@ class DailyLog(Base):
     late_reason: Mapped[Optional[str]] = mapped_column(Text)
     review_note: Mapped[Optional[str]] = mapped_column(Text)
     resubmitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    visibility_status: Mapped[VisibilityStatus] = mapped_column(
-        Enum(VisibilityStatus), default=VisibilityStatus.INTERNAL_ONLY, index=True
+    visibility_status: Mapped[str] = mapped_column(
+        String(32), default=VisibilityStatus.INTERNAL_ONLY.value, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
