@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatTimestampDateIN } from '../../lib/datetime.js'
-import { resolveNotificationLink } from './notificationLinks.js'
+import { formatNotificationBody, resolveNotificationLink, resolveNotificationLinkAsync } from './notificationLinks.js'
 
 const DROPDOWN_WIDTH = 360
 const DROPDOWN_MAX_HEIGHT = 520
@@ -127,7 +127,7 @@ export function NotificationBell({ portal }) {
   async function handleClick(item) {
     setOpen(false)
     if (!item.is_read) await markRead(item.id)
-    const path = resolveNotificationLink(item.entity_type, item.entity_id, portal)
+    const path = await resolveNotificationLinkAsync(item.entity_type, item.entity_id, portal, apiFetch)
     if (path) navigate(path)
   }
 
@@ -192,7 +192,7 @@ export function NotificationBell({ portal }) {
                             <span className="notification-bell__item-title">{item.title}</span>
                             <span className="notification-bell__item-time">{fmtTime(item.created_at)}</span>
                           </div>
-                          <span className="notification-bell__item-body">{item.body}</span>
+                          <span className="notification-bell__item-body">{formatNotificationBody(item.body)}</span>
                           {path ? (
                             <span className="notification-bell__item-cta">View →</span>
                           ) : null}

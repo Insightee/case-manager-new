@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { apiFetch } from '../../lib/apiClient.js'
 import { useMarkNotificationRead, useNotifications } from '../../hooks/useNotifications.js'
 import { QueryState } from './QueryState.jsx'
 import { formatTimestampDateIN } from '../../lib/datetime.js'
-import { resolveNotificationLink } from './notificationLinks.js'
+import { formatNotificationBody, resolveNotificationLinkAsync } from './notificationLinks.js'
 import './notification-center.css'
 
 function fmtTime(iso) {
@@ -35,7 +36,7 @@ export function NotificationCenterPage({ portal }) {
     if (!n.is_read) {
       markRead.mutate(n.id)
     }
-    const href = resolveNotificationLink(n.entity_type, n.entity_id, portal)
+    const href = await resolveNotificationLinkAsync(n.entity_type, n.entity_id, portal, apiFetch)
     if (href) navigate(href)
   }
 
@@ -88,7 +89,7 @@ export function NotificationCenterPage({ portal }) {
                 <span className="notification-center__dot" aria-hidden />
                 <span className="notification-center__body">
                   <span className="notification-center__row-title">{n.title}</span>
-                  {n.body ? <p className="notification-center__row-text">{n.body}</p> : null}
+                  {n.body ? <p className="notification-center__row-text">{formatNotificationBody(n.body)}</p> : null}
                   <time className="notification-center__row-time" dateTime={n.created_at}>
                     {fmtTime(n.created_at)}
                   </time>

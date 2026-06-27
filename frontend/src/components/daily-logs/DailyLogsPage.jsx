@@ -137,6 +137,7 @@ export function DailyLogsPage() {
   const activeSessionCardRef = useRef(null)
   const upcomingSectionRef = useRef(null)
   const deepLinkResolvedRef = useRef(null)
+  const logDeepLinkResolvedRef = useRef(null)
 
   function handleLogCommentCountChange(logId, commentCount, openParentCommentCount = 0) {
     if (therapistId) {
@@ -282,6 +283,7 @@ export function DailyLogsPage() {
       (prev) => {
         const next = new URLSearchParams(prev)
         next.delete('session')
+        next.delete('log_id')
         return next
       },
       { replace: true },
@@ -394,6 +396,53 @@ export function DailyLogsPage() {
   useEffect(() => {
     if (!searchParams.get('session')) {
       deepLinkResolvedRef.current = null
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    const logIdParam = searchParams.get('log_id')
+    if (!logIdParam || !logsReady) return
+    const lid = Number(logIdParam)
+    if (!Number.isFinite(lid)) return
+    if (logDeepLinkResolvedRef.current === lid) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        let log = logs.find((l) => Number(l.id) === lid)
+        if (!log) {
+          log = await apiFetch(`/api/v1/daily-logs/${lid}`)
+        }
+        if (cancelled || !log) return
+        let session = null
+        if (log.session_id) {
+          session = await apiFetch(`/api/v1/sessions/${log.session_id}`).catch(() => ({
+            id: log.session_id,
+            case_code: log.case_code,
+            child_name: log.child_name,
+            scheduled_date: log.scheduled_date,
+          }))
+        }
+        logDeepLinkResolvedRef.current = lid
+        openLogForm(session || { id: log.session_id }, { readOnly: true, log })
+        setTimeout(() => {
+          logPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 120)
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || `Could not open session log ${lid}`)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, logsReady, logs])
+
+  useEffect(() => {
+    if (!searchParams.get('log_id')) {
+      logDeepLinkResolvedRef.current = null
     }
   }, [searchParams])
 

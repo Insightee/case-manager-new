@@ -95,8 +95,6 @@ def notify_staff_on_parent_log_comment(
         f"{parent_name} left a comment on {child_name}'s session log ({date_label}). "
         "Open the log to read and reply."
     )
-    dedupe_key = f"log_comment:parent:{comment_id}"
-
     count = 0
     for uid in _staff_recipient_ids(db, case, session, exclude_user_id=parent_user.id):
         n = notification_service.create_notification(
@@ -106,7 +104,6 @@ def notify_staff_on_parent_log_comment(
             body=body,
             entity_type="daily_log",
             entity_id=log_id,
-            dedupe_key=dedupe_key,
         )
         if n:
             count += 1
@@ -140,8 +137,6 @@ def notify_parents_on_staff_log_reply(
         f"{staff_label} replied on the session log for {date_label}. "
         "Open session updates to read the message."
     )
-    dedupe_key = f"log_comment:staff:{comment_id}"
-
     count = 0
     for uid in parent_user_ids_for_case(db, case):
         if uid == staff_user.id:
@@ -153,7 +148,6 @@ def notify_parents_on_staff_log_reply(
             body=body,
             entity_type="daily_log",
             entity_id=log_id,
-            dedupe_key=dedupe_key,
         )
         if n:
             count += 1

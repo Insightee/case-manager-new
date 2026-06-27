@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.notification import Notification
+
+_DEDUPE_BODY_PREFIX = re.compile(r"^\[[^\]]+\]\s*")
+
+
+def notification_body_for_read(body: str | None) -> str:
+    """Hide internal dedupe markers from in-app notification copy."""
+    return _DEDUPE_BODY_PREFIX.sub("", body or "")
 
 
 def notification_dedupe_key(
