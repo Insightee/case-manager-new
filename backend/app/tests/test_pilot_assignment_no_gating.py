@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.core.timezone import today_ist
 from app.core.database import SessionLocal
 from app.main import app
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
@@ -110,6 +111,19 @@ def test_therapist_can_start_session_without_parent_acceptance():
         ).first()
         if not session:
             pytest.skip("No scheduled session on parent demo case for therapist start test")
+        visit_day = today_ist()
+        conflicting = db.scalars(
+            select(TherapySession).where(
+                TherapySession.case_id == case_id,
+                TherapySession.therapist_user_id == assignment.therapist_user_id,
+                TherapySession.scheduled_date == visit_day,
+                TherapySession.id != session.id,
+            )
+        ).all()
+        for other in conflicting:
+            other.scheduled_date = visit_day - timedelta(days=7)
+        session.scheduled_date = visit_day
+        db.commit()
         sid = session.id
     finally:
         db.close()

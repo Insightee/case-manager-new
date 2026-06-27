@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.core.timezone import today_ist
 from app.main import app
 from app.models.case import Case
 from app.models.daily_log import DailyLog, LogApprovalStatus
@@ -66,7 +67,7 @@ def test_parent_visibility_and_comments_flow():
                 case_id=case.id,
                 therapist_user_id=therapist_user.id,
                 status=CaseAssignmentStatus.ACTIVE,
-                start_date=date.today(),
+                start_date=today_ist(),
             )
             db.add(assignment)
             db.commit()
@@ -75,7 +76,7 @@ def test_parent_visibility_and_comments_flow():
         session = TherapySession(
             case_id=case.id,
             therapist_user_id=therapist_user.id,
-            scheduled_date=date.today(),
+            scheduled_date=today_ist(),
             start_time=datetime.now(timezone.utc).time(),
             end_time=datetime.now(timezone.utc).time(),
             mode=SessionMode.HOME,
