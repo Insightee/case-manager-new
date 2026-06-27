@@ -54,6 +54,20 @@ def _missing_required_columns(insp) -> list[str]:
     return missing
 
 
+def _bootstrap_empty_database(cfg: Config, script: ScriptDirectory) -> None:
+    """Greenfield Postgres: create_all via bootstrap revision, then stamp head(s).
+
+    Must run before any incremental ``upgrade("heads")`` — incremental migrations
+    recreate enums/tables that bootstrap already materialized from current models.
+    """
+    heads = script.get_heads()
+    print("Empty database — running bootstrap revision 70ed65093b89...")
+    command.upgrade(cfg, "70ed65093b89")
+    stamp_target = heads[0] if len(heads) == 1 else "heads"
+    print(f"Stamping alembic ({stamp_target}) after model bootstrap...")
+    command.stamp(cfg, stamp_target)
+
+
 def _resolve_head(cfg: Config, script: ScriptDirectory) -> str:
     heads = script.get_heads()
     if len(heads) > 1:
@@ -69,15 +83,13 @@ def main() -> None:
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", settings.database_url)
     script = ScriptDirectory.from_config(cfg)
-    head = _resolve_head(cfg, script)
     insp = inspect(engine)
 
     if not insp.has_table("users"):
-        print("Empty database — running bootstrap revision 70ed65093b89...")
-        command.upgrade(cfg, "70ed65093b89")
-        print(f"Stamping alembic head ({head}) after model bootstrap...")
-        command.stamp(cfg, head)
+        _bootstrap_empty_database(cfg, script)
         return
+
+    head = _resolve_head(cfg, script)
 
     compact_stale_version_rows(engine, script)
     current = current_revision(engine, script)
