@@ -124,7 +124,7 @@ def create_daily_log(db: Session, **kwargs) -> tuple[DailyLog, bool]:
         follow_ups=kwargs.get("follow_ups"),
         parent_notes=kwargs.get("parent_notes"),
         submitted_at=datetime.now(timezone.utc),
-        approval_status=LogApprovalStatus.PENDING,
+        approval_status=LogApprovalStatus.PENDING.value,
         late_addition=late,
         late_reason=late_reason.strip() if late and late_reason else None,
         visibility_status=VisibilityStatus.INTERNAL_ONLY.value,
@@ -175,7 +175,7 @@ def resubmit_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwa
 
     _apply_log_field_updates(log, kwargs)
     _validate_log_for_submission(log)
-    log.approval_status = LogApprovalStatus.PENDING
+    log.approval_status = LogApprovalStatus.PENDING.value
     log.review_note = None
     log.submitted_at = datetime.now(timezone.utc)
     log.resubmitted_at = datetime.now(timezone.utc)

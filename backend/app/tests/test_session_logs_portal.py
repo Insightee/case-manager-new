@@ -276,7 +276,7 @@ def test_approve_log_notifies_parent():
     db = SessionLocal()
     try:
         log = db.get(DailyLog, log_id)
-        assert log.approval_status == LogApprovalStatus.APPROVED
+        assert log.approval_status == LogApprovalStatus.APPROVED.value
         assert log.visibility_status == VisibilityStatus.APPROVED_FOR_PARENT.value
         after = db.scalars(select(Notification).order_by(Notification.id.desc())).all()
         assert len(after) >= before_count

@@ -401,7 +401,7 @@ def update_actual_times(
     db.flush()
 
     if log and log.approval_status != LogApprovalStatus.REJECTED:
-        log.approval_status = LogApprovalStatus.PENDING
+        log.approval_status = LogApprovalStatus.PENDING.value
         db.flush()
     return session
 

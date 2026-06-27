@@ -139,7 +139,8 @@ def notify_case_managers_log_submitted(db: Session, log: DailyLog, *, therapist:
         if uid == therapist.id:
             continue
         event = "log_resubmitted" if resubmitted else "log_submitted"
-        status = log.approval_status.value if log.approval_status else "PENDING"
+        raw_status = log.approval_status
+        status = raw_status.value if isinstance(raw_status, LogApprovalStatus) else (raw_status or "PENDING")
         n = notification_service.create_notification(
             db,
             user_id=uid,

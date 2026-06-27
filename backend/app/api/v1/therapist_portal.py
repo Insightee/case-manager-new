@@ -69,8 +69,16 @@ def therapist_create_session_log(
                 **meta,
             )
             commit_or_http(db)
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            import logging
+
+            logging.getLogger("insightcase").warning(
+                "Post-create notify/audit failed for daily_log %s (HTTP %s): %s; log was saved",
+                log.id,
+                exc.status_code,
+                exc.detail,
+            )
+            db.rollback()
         except Exception:
             import logging
 

@@ -243,8 +243,16 @@ def create_daily_log(
                 **meta,
             )
             commit_or_http(db)
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            import logging
+
+            logging.getLogger("insightcase").warning(
+                "Post-create notify/audit failed for daily_log %s (HTTP %s): %s; log was saved",
+                log.id,
+                exc.status_code,
+                exc.detail,
+            )
+            db.rollback()
         except Exception:
             import logging
 
@@ -316,7 +324,7 @@ def approve_log(
     if case:
         ensure_case_write_access(user, case, db)
         ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
-    log.approval_status = LogApprovalStatus.APPROVED
+    log.approval_status = LogApprovalStatus.APPROVED.value
     if not log.submitted_at:
         log.submitted_at = datetime.now(timezone.utc)
     from app.services import session_log_service
@@ -354,7 +362,7 @@ def reject_log(
     if case:
         ensure_case_write_access(user, case, db)
         ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
-    log.approval_status = LogApprovalStatus.REJECTED
+    log.approval_status = LogApprovalStatus.REJECTED.value
     log.review_note = comment
     from app.services import session_log_service
 

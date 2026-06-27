@@ -5,7 +5,7 @@ from typing import Optional
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -43,7 +43,9 @@ class DailyLog(Base):
     parent_feedback_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     submitted_at: Mapped[Optional[datetime ]] = mapped_column(DateTime(timezone=True), index=True)
     parent_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    approval_status: Mapped[LogApprovalStatus] = mapped_column(Enum(LogApprovalStatus), default=LogApprovalStatus.PENDING)
+    approval_status: Mapped[str] = mapped_column(
+        String(32), default=LogApprovalStatus.PENDING.value, index=True
+    )
     late_addition: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     late_reason: Mapped[Optional[str]] = mapped_column(Text)
     review_note: Mapped[Optional[str]] = mapped_column(Text)
