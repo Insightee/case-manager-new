@@ -130,7 +130,7 @@ def test_overlapping_same_case_blocked():
             )
         )
         db.commit()
-        with pytest.raises(ValueError, match="already marked"):
+        with pytest.raises(ValueError, match="Leave already exists"):
             leave_service.create_therapist_leave_request(
                 db,
                 therapist=therapist,

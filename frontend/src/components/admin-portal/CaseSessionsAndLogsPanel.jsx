@@ -9,6 +9,8 @@ import {
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import { AdminDataList, AdminTaskCard, RejectWithComment, StatusBadge } from './ui/index.js'
 import { CaseSessionMonthlyReportBar } from './CaseSessionMonthlyReportBar.jsx'
+import { LogCommentCountPill, LogOpenParentCommentBadge } from '../shared/LogCommentCountBadge.jsx'
+import { buildSessionLogMeta, enrichLogsWithCommentCounts, logCommentMetaSuffix } from '../../lib/sessionLogComments.js'
 import './admin-sessions-dashboard.css'
 
 function fmtDate(s) {
@@ -59,6 +61,7 @@ function SessionLogExpandableBody({
   rejectComment,
   setRejectComment,
   analyticsSessionId,
+  onCommentCountChange,
 }) {
   if (!log) return null
 
@@ -87,7 +90,13 @@ function SessionLogExpandableBody({
               Resubmitted after changes — review the therapist&apos;s corrections before approving.
             </p>
           ) : null}
-          <SessionLogReadOnly log={log} session={session} variant="admin" hideHeader />
+          <SessionLogReadOnly
+            log={log}
+            session={session}
+            variant="admin"
+            hideHeader
+            onCommentCountChange={onCommentCountChange}
+          />
           {log.approval_status === 'PENDING' && canReview ? (
             <div style={{ marginTop: 12 }}>
               <RejectWithComment
@@ -138,6 +147,7 @@ function SessionLogCard({
   setRejectingLogId,
   rejectComment,
   setRejectComment,
+  onCommentCountChange,
 }) {
   const isHighlight = highlightSessionId && String(session.id) === String(highlightSessionId)
   const title = formatSessionLogRowTitle(session, { fmtDate })
@@ -174,6 +184,7 @@ function SessionLogCard({
           rejectComment={rejectComment}
           setRejectComment={setRejectComment}
           analyticsSessionId={session.id}
+          onCommentCountChange={onCommentCountChange}
         />
       )}
     </>
@@ -184,14 +195,16 @@ function SessionLogCard({
       <AdminTaskCard
         highlight={isHighlight}
         title={title}
-        meta={`Session #${session.id}${session.therapist_user_id ? ` · Therapist #${session.therapist_user_id}` : ''}`}
+        meta={buildSessionLogMeta(session, log)}
         badges={
           <>
             <StatusBadge status={session.status} />
             {log ? <StatusBadge status={log.approval_status} /> : null}
+            {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
             {log?.resubmitted_at ? (
               <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
             ) : null}
+            <LogOpenParentCommentBadge log={log} />
             {sessionHasTimeEdit(session, log) ? (
               <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
             ) : null}
@@ -221,6 +234,7 @@ function OrphanLogRow({
   setRejectingLogId,
   rejectComment,
   setRejectComment,
+  onCommentCountChange,
 }) {
   return (
     <li className="admin-queue__item case-sessions-logs__item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
@@ -230,12 +244,17 @@ function OrphanLogRow({
           <p className="admin-queue__meta">
             Session #{log.session_id ?? '—'}
             {log.scheduled_date ? ` · ${fmtDate(log.scheduled_date)}` : ''}
+            {logCommentMetaSuffix(log)}
           </p>
         </div>
-        <StatusBadge status={log.approval_status} />
-        {log.resubmitted_at ? (
-          <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
-        ) : null}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <StatusBadge status={log.approval_status} />
+          {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
+          {log.resubmitted_at ? (
+            <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
+          ) : null}
+          <LogOpenParentCommentBadge log={log} />
+        </div>
       </div>
       <SessionLogExpandableBody
         expandKey={expandKey}
@@ -252,6 +271,7 @@ function OrphanLogRow({
         rejectComment={rejectComment}
         setRejectComment={setRejectComment}
         analyticsSessionId={log.session_id}
+        onCommentCountChange={onCommentCountChange}
       />
     </li>
   )
@@ -274,7 +294,8 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
       apiFetch(`/api/v1/daily-logs?case_id=${caseId}`),
     ])
     const nextSessions = unwrapList(sessData)
-    const nextLogs = Array.isArray(logData) ? logData : unwrapList(logData)
+    const rawLogs = Array.isArray(logData) ? logData : unwrapList(logData)
+    const nextLogs = await enrichLogsWithCommentCounts(rawLogs, apiFetch)
     setSessions(nextSessions)
     setLogs(nextLogs)
     return { sessions: nextSessions, logs: nextLogs }
@@ -373,6 +394,20 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     }
   }
 
+  function handleLogCommentCountChange(logId, commentCount, openParentCommentCount = 0) {
+    setLogs((prev) =>
+      prev.map((entry) =>
+        entry.id === logId
+          ? {
+              ...entry,
+              comment_count: commentCount,
+              open_parent_comment_count: openParentCommentCount,
+            }
+          : entry,
+      ),
+    )
+  }
+
   if (loading) {
     return <p className="admin-muted">Loading sessions…</p>
   }
@@ -394,6 +429,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     rejectComment,
     setRejectComment,
     onToggleExpand: toggleExpand,
+    onCommentCountChange: handleLogCommentCountChange,
   }
 
   return (
@@ -426,13 +462,17 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
                         {rowTitle}
                       </p>
                       <p className="admin-queue__meta">
-                        Session #{session.id}
-                        {session.therapist_user_id ? ` · Therapist #${session.therapist_user_id}` : ''}
+                        {buildSessionLogMeta(session, log)}
                       </p>
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <StatusBadge status={session.status} />
                       {log ? <StatusBadge status={log.approval_status} /> : null}
+                      {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
+                      {log?.resubmitted_at ? (
+                        <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
+                      ) : null}
+                      <LogOpenParentCommentBadge log={log} />
                       {sessionHasTimeEdit(session, log) ? (
                         <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
                       ) : null}

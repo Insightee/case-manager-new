@@ -149,7 +149,8 @@ def main() -> int:
         "R2_ENDPOINT_URL": "https://0409ea66ef188ae9783c5e9aa7af9445.r2.cloudflarestorage.com",
         "FRONTEND_URL": VERCEL_URL.rstrip("/"),
         "CORS_ORIGINS": cors,
-        # Requires a Redis plugin service named \"Redis\" in the same Railway project.
+        # Plugin references — stay in sync when Postgres/Redis credentials rotate.
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "REDIS_URL": "${{Redis.REDIS_URL}}",
         # ~100 concurrent logins: keep workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) below Postgres max_connections
         "WEB_CONCURRENCY": "3",

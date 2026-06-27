@@ -87,6 +87,65 @@ function NextUpcomingSessionCard({ appointments }) {
   )
 }
 
+function LogsUnderReviewSection({ logs }) {
+  if (!logs?.length) return null
+  return (
+    <section className="parent-recent-updates parent-logs-under-review">
+      <div className="parent-recent-updates__head">
+        <h2>Logs under review</h2>
+        <Link to="/parent/session-logs" className="parent-recent-updates__link">
+          All session logs →
+        </Link>
+      </div>
+      <p className="parent-logs-under-review__intro">
+        Your therapist submitted these session notes. Our team is reviewing them — you can read them and add comments
+        anytime.
+      </p>
+      <ul className="parent-update-list">
+        {logs.map((u) => {
+          const when = formatUpdateSessionWhen(u)
+          const metaParts = [when, u.child_name, u.therapist_name].filter(Boolean)
+          return (
+            <li key={u.id}>
+              <Link
+                to={`/parent/session-logs?log_id=${u.id}`}
+                className="card parent-update-list__item parent-update-list__item--link parent-update-list__item--review"
+              >
+                <div className="parent-update-list__row">
+                  <div className="parent-update-list__main">
+                    <div className="parent-update-list__headline-row">
+                      <div className="parent-update-list__headline">{u.attendance_label || u.headline}</div>
+                      <span className="parent-logs-under-review__badge">Under review</span>
+                    </div>
+                    {metaParts.length ? (
+                      <p className="parent-update-list__meta">{metaParts.join(' · ')}</p>
+                    ) : null}
+                    {u.summary_paragraph ? (
+                      <p className="parent-update-list__body">{u.summary_paragraph}</p>
+                    ) : (
+                      <p className="parent-update-list__body parent-update-list__body--muted">
+                        Session note submitted — open to read details or leave a comment for the team.
+                      </p>
+                    )}
+                    {u.comment_count > 0 ? (
+                      <p className="parent-logs-under-review__comments">
+                        {u.comment_count === 1 ? '1 comment' : `${u.comment_count} comments`}
+                      </p>
+                    ) : null}
+                  </div>
+                  <span className="parent-update-list__chevron" aria-hidden>
+                    →
+                  </span>
+                </div>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
 function RecentUpdatesSection({ updates }) {
   if (!updates?.length) return null
   return (
@@ -375,6 +434,7 @@ export function ClientDashboardPage({
     }))
   }, [home, cases])
   const recentUpdates = home?.recent_updates || []
+  const logsUnderReview = home?.logs_under_review || []
   const pendingAcceptance = home?.pending_assignment_acceptance || []
   const highlight = homeCases?.[0]?.session_highlight
   const childLabel = homeCases?.[0]?.childName
@@ -436,6 +496,8 @@ export function ClientDashboardPage({
             </div>
             <AbsentNotifications />
           </section>
+
+          <LogsUnderReviewSection logs={logsUnderReview} />
 
           <RecentUpdatesSection updates={recentUpdates} />
 

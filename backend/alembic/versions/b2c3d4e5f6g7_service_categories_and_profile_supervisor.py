@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(64), primary_key=True),
         sa.Column("label", sa.String(255), nullable=False),
         sa.Column("description", sa.Text(), server_default=""),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="1"),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )

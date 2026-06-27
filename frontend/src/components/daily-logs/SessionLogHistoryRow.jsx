@@ -4,6 +4,8 @@ import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
+import { formatLogCommentCount, enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
+import { LogCommentCountPill } from '../shared/LogCommentCountBadge.jsx'
 
 function formatTime(t) {
   if (!t) return '—'
@@ -59,6 +61,9 @@ export function SessionLogHistoryRow({
       <div className="ic-session-history-row__main">
         <div className="ic-session-history-row__info">
           <strong>{formatDisplayDate(session.scheduled_date)}</strong>
+          {formatLogCommentCount(logSummary?.comment_count) ? (
+            <LogCommentCountPill count={logSummary.comment_count} className="log-comment-count-pill--inline" />
+          ) : null}
           <span className="ic-session-history-row__time">
             {formatSessionWhen(session)} · {session.status}
           </span>

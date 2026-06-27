@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -351,10 +351,24 @@ def review_leave(
         raise HTTPException(status_code=404, detail="Leave request not found")
 
     if payload.status == LeaveStatus.CANCELLED:
-        if leave.therapist_user_id != user.id:
+        is_own = leave.therapist_user_id == user.id
+        is_manager = user_has_permission(user, "leave.manage")
+        if not is_own and not is_manager:
             raise HTTPException(status_code=403, detail="Can only cancel your own leave")
-        if leave.status != LeaveStatus.PENDING:
-            raise HTTPException(status_code=400, detail="Only pending leave can be cancelled")
+        if leave.status == LeaveStatus.CANCELLED:
+            raise HTTPException(status_code=400, detail="Leave is already cancelled")
+        if leave.status == LeaveStatus.REJECTED:
+            raise HTTPException(status_code=400, detail="Rejected leave cannot be cancelled")
+        # Approved leave: therapists can only cancel 24+ hours before start date.
+        # Managers can cancel at any time.
+        if leave.status == LeaveStatus.APPROVED and is_own and not is_manager:
+            now_utc = datetime.now(timezone.utc)
+            leave_start_utc = datetime.combine(leave.start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+            if leave_start_utc - now_utc < timedelta(hours=24):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Approved leave can only be cancelled at least 24 hours before the leave date. Please contact your case manager.",
+                )
     else:
         if not user_has_permission(user, "leave.manage"):
             raise HTTPException(status_code=403, detail="leave.manage permission required")
@@ -371,6 +385,10 @@ def review_leave(
         leave.review_note = (payload.review_note or "").strip() or None
     if payload.status in (LeaveStatus.APPROVED, LeaveStatus.REJECTED):
         leave.reviewed_by_user_id = user.id
+
+    # Unblock therapist slots when cancelling a previously approved leave.
+    if payload.status == LeaveStatus.CANCELLED and previous_status == LeaveStatus.APPROVED:
+        leave_notify.unblock_slots_for_leave(db, leave.id)
 
     therapist = db.get(User, leave.therapist_user_id)
     if therapist and previous_status == LeaveStatus.PENDING:

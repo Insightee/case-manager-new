@@ -545,6 +545,7 @@ def session_log_submitted_parent_email(
     session_date: str,
     portal_url: str,
     db: Session | None = None,
+    log_id: Optional[int] = None,
 ) -> None:
     payload = {
         "parent_name": parent_name,
@@ -554,7 +555,7 @@ def session_log_submitted_parent_email(
         "portal_url": portal_url,
     }
     subject, body_text, body_html = render_template("session_log_submitted", payload)
-    send_email(
+    sent = send_email(
         to=to,
         subject=subject,
         body_text=body_text,
@@ -562,6 +563,20 @@ def session_log_submitted_parent_email(
         event=EmailEvent.SESSION_LOG_SUBMITTED,
         db=db,
     )
+    if sent and db is not None and log_id is not None:
+        from app.models.email_log import EmailLog, EmailLogStatus
+        log_row = EmailLog(
+            event_type=EmailEvent.SESSION_LOG_SUBMITTED.value,
+            recipient_email=to,
+            subject=subject,
+            template_key="session_log_submitted",
+            payload_json=payload,
+            status=EmailLogStatus.ACCEPTED.value,
+            entity_type="daily_log",
+            entity_id=log_id,
+        )
+        db.add(log_row)
+        db.flush()
 
 
 def session_log_published_parent_email(
@@ -590,6 +605,66 @@ def session_log_published_parent_email(
         event=EmailEvent.SESSION_LOG_PUBLISHED,
         db=db,
     )
+
+
+def session_log_reviewed_parent_email(
+    *,
+    to: str,
+    parent_name: str,
+    child_name: str,
+    therapist_name: str,
+    session_date: str,
+    portal_url: str,
+    db: Session | None = None,
+    log_id: int | None = None,
+) -> None:
+    if db and log_id:
+        from sqlalchemy import select
+        from app.models.email_log import EmailLog
+        existing = db.scalars(
+            select(EmailLog).where(
+                EmailLog.entity_type == "daily_log",
+                EmailLog.entity_id == log_id,
+                EmailLog.event_type == EmailEvent.SESSION_LOG_REVIEWED.value,
+                EmailLog.recipient_email == to,
+            )
+        ).first()
+        if existing:
+            import logging
+            logging.getLogger("insightcase").info(f"Skipping duplicate session_log_reviewed email for log_id={log_id} to={to}")
+            return
+
+    payload = {
+        "parent_name": parent_name,
+        "child_name": child_name,
+        "therapist_name": therapist_name,
+        "session_date": session_date,
+        "portal_url": portal_url,
+    }
+    subject, body_text, body_html = render_template("session_log_reviewed", payload)
+    send_email(
+        to=to,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        event=EmailEvent.SESSION_LOG_REVIEWED,
+        db=db,
+    )
+
+    if db and log_id:
+        from app.models.email_log import EmailLog, EmailLogStatus
+        log_entry = EmailLog(
+            recipient_email=to,
+            event_type=EmailEvent.SESSION_LOG_REVIEWED.value,
+            subject=subject,
+            template_key="session_log_reviewed",
+            payload_json=payload,
+            status=EmailLogStatus.ACCEPTED.value,
+            entity_type="daily_log",
+            entity_id=log_id,
+        )
+        db.add(log_entry)
+        db.flush()
 
 
 def leave_sessions_cancelled_email(

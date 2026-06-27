@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
+    expose_db_errors: bool = False
     seed_demo_data: bool = False
     database_url: str = Field(default_factory=default_sqlite_database_url)
     redis_url: str = "redis://localhost:6379/0"
@@ -129,6 +130,12 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.app_env.lower() in ("development", "dev", "local", "test")
+
+    @property
+    def expose_db_error_detail(self) -> bool:
+        if self.expose_db_errors:
+            return True
+        return self.app_env.lower() in ("development", "dev", "local", "test", "staging", "testing")
 
     @property
     def is_sqlite(self) -> bool:

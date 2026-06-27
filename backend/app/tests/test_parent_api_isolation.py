@@ -72,7 +72,7 @@ def _parent_case_id(headers: dict[str, str]) -> int:
     return cases[0]["id"]
 
 
-def test_parent_cannot_see_unapproved_daily_log():
+def test_parent_can_see_submitted_daily_log_with_under_review():
     headers = _login("parent@demo.com")
     case_id = _parent_case_id(headers)
 
@@ -88,25 +88,16 @@ def test_parent_cannot_see_unapproved_daily_log():
         ).first()
         assert pending is not None, "Seed includes a pending-review daily log"
         pending_id = pending.id
-        pending.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT
+        if not pending.submitted_at:
+            pending.submitted_at = datetime.now(timezone.utc)
         db.commit()
     finally:
         db.close()
 
     logs = client.get("/api/v1/parent/session-logs", headers=headers).json()
-    assert all(row["id"] != pending_id for row in logs)
-
-    home = client.get("/api/v1/parent/home", headers=headers).json()
-    recent_ids = {u["id"] for u in home.get("recent_updates", [])}
-    assert pending_id not in recent_ids
-    for case in home.get("cases", []):
-        highlight = case.get("session_highlight")
-        if highlight:
-            _assert_no_forbidden_keys(highlight, path="session_highlight")
-
-    detail = client.get(f"/api/v1/parent/session-logs", headers=headers, params={"case_id": case_id})
-    assert detail.status_code == 200
-    assert all(row["id"] != pending_id for row in detail.json())
+    matched = next((row for row in logs if row["id"] == pending_id), None)
+    assert matched is not None
+    assert matched["parent_display_status"] == "Under Review"
 
     feedback = client.patch(
         f"/api/v1/parent/session-logs/{pending_id}/feedback",

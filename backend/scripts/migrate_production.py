@@ -16,11 +16,11 @@ sys.path.insert(0, str(_root / "alembic"))
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from app.core.config import settings
 from app.core.database import engine
-from app.db.alembic_version_cleanup import compact_stale_version_rows, current_revision
+from app.db.alembic_version_cleanup import all_stored_revisions, compact_stale_version_rows, current_revision
 
 import app.models  # noqa: F401
 
@@ -29,7 +29,17 @@ _REQUIRED_AT_HEAD: dict[str, tuple[str, ...]] = {
     "users": ("external_employee_id",),
     "children": ("external_client_id",),
     "cases": ("external_case_ref",),
-    "daily_logs": ("parent_notified_at", "resubmitted_at"),
+    "daily_logs": (
+        "session_notes",
+        "goals_addressed",
+        "follow_ups",
+        "parent_feedback_public",
+        "parent_notified_at",
+        "resubmitted_at",
+        "visibility_status",
+        "late_addition",
+        "created_at",
+    ),
     "case_assignments": (
         "therapist_accepted_at",
         "parent_accepted_at",
@@ -54,6 +64,87 @@ def _missing_required_columns(insp) -> list[str]:
     return missing
 
 
+def _bootstrap_empty_database(cfg: Config, script: ScriptDirectory) -> None:
+    """Greenfield Postgres: create_all via bootstrap revision, then stamp head(s).
+
+    Must run before any incremental ``upgrade("heads")`` — incremental migrations
+    recreate enums/tables that bootstrap already materialized from current models.
+    """
+    heads = script.get_heads()
+    print("Empty database — running bootstrap revision 70ed65093b89...")
+    command.upgrade(cfg, "70ed65093b89")
+    head = _resolve_head(cfg, script)
+    print(f"Stamping alembic ({head}) after model bootstrap...")
+    command.stamp(cfg, head)
+
+
+_DAILY_LOGS_REPAIR_DDL: tuple[tuple[str, str], ...] = (
+    ("session_notes", "TEXT"),
+    ("goals_addressed", "TEXT"),
+    ("follow_ups", "TEXT"),
+    ("parent_session_rating", "INTEGER"),
+    ("parent_feedback", "TEXT"),
+    ("parent_feedback_at", "TIMESTAMPTZ"),
+    ("parent_feedback_public", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("parent_notified_at", "TIMESTAMPTZ"),
+    ("review_note", "TEXT"),
+    ("resubmitted_at", "TIMESTAMPTZ"),
+    ("visibility_status", "VARCHAR(32) NOT NULL DEFAULT 'INTERNAL_ONLY'"),
+    ("late_addition", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("late_reason", "TEXT"),
+    ("created_at", "TIMESTAMPTZ NOT NULL DEFAULT now()"),
+)
+
+
+def _repair_daily_logs_columns() -> list[str]:
+    """Postgres-only idempotent column adds when Alembic skipped due to 'heads' stamp."""
+    if settings.is_sqlite:
+        return []
+    insp = inspect(engine)
+    if not insp.has_table("daily_logs"):
+        return []
+    existing = {c["name"] for c in insp.get_columns("daily_logs")}
+    added: list[str] = []
+    with engine.begin() as conn:
+        for col, ddl in _DAILY_LOGS_REPAIR_DDL:
+            if col in existing:
+                continue
+            conn.execute(text(f"ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS {col} {ddl}"))
+            added.append(col)
+    if added:
+        print(f"Repaired daily_logs columns: {added}")
+    return added
+
+
+def _reconcile_heads_literal(cfg: Config, script: ScriptDirectory) -> None:
+    """Replace alembic_version='heads' so incremental migrations actually run.
+
+    Greenfield bootstrap historically stamped the literal string ``heads``. Alembic
+    treats that as already at head and skips ``upgrade()``, leaving schema drift.
+    """
+    versions = all_stored_revisions(engine)
+    if "heads" not in versions:
+        return
+    restamp = "p0q1r2s3t4u5"
+    if script.get_revision(restamp) is None:
+        head = _resolve_head(cfg, script)
+        rev = script.get_revision(head)
+        down = rev.down_revision if rev else None
+        restamp = down[0] if isinstance(down, (tuple, list)) else down
+    if not restamp:
+        raise RuntimeError("Cannot reconcile alembic_version='heads' without a parent revision")
+    print(
+        "Replacing invalid alembic_version 'heads' with revision "
+        f"{restamp} so pending migrations can apply..."
+    )
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM alembic_version WHERE version_num = 'heads'"))
+        conn.execute(
+            text("INSERT INTO alembic_version (version_num) VALUES (:rev)"),
+            {"rev": restamp},
+        )
+
+
 def _resolve_head(cfg: Config, script: ScriptDirectory) -> str:
     heads = script.get_heads()
     if len(heads) > 1:
@@ -69,17 +160,17 @@ def main() -> None:
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", settings.database_url)
     script = ScriptDirectory.from_config(cfg)
-    head = _resolve_head(cfg, script)
     insp = inspect(engine)
 
     if not insp.has_table("users"):
-        print("Empty database — running bootstrap revision 70ed65093b89...")
-        command.upgrade(cfg, "70ed65093b89")
-        print(f"Stamping alembic head ({head}) after model bootstrap...")
-        command.stamp(cfg, head)
+        _bootstrap_empty_database(cfg, script)
         return
 
+    head = _resolve_head(cfg, script)
+
     compact_stale_version_rows(engine, script)
+    _reconcile_heads_literal(cfg, script)
+    _repair_daily_logs_columns()
     current = current_revision(engine, script)
     missing = _missing_required_columns(insp)
     if current == head and not missing:
@@ -101,6 +192,9 @@ def main() -> None:
             raise
 
     missing_after = _missing_required_columns(inspect(engine))
+    if missing_after:
+        _repair_daily_logs_columns()
+        missing_after = _missing_required_columns(inspect(engine))
     if missing_after:
         raise RuntimeError(
             f"Migration finished but required columns still missing: {missing_after}. "

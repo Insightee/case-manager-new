@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useParentPortal } from '../../hooks/useParentPortal.js'
 import { ClientPortalLayout } from './ClientPortalLayout.jsx'
@@ -94,6 +94,9 @@ const ATTENDANCE_FILTERS = [
 export function ClientSessionLogsPage() {
   const { cases } = useParentPortal()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const highlightLogId = searchParams.get('log_id')
+  const logCardRefs = useRef(new Map())
   const monthOptions = useMemo(() => buildMonthOptions(), [])
   const [selectedMonth, setSelectedMonth] = useState(monthOptions[0].value)
   const [logs, setLogs] = useState([])
@@ -124,8 +127,40 @@ export function ClientSessionLogsPage() {
   }
 
   useEffect(() => {
+    if (!highlightLogId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const allLogs = await apiFetch('/api/v1/parent/session-logs')
+        if (cancelled) return
+        const match = (allLogs || []).find((l) => String(l.id) === String(highlightLogId))
+        if (!match?.scheduled_date) return
+        const d = new Date(match.scheduled_date)
+        if (Number.isNaN(d.getTime())) return
+        const monthValue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        setSelectedMonth((prev) => (prev === monthValue ? prev : monthValue))
+      } catch {
+        /* keep default month */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [highlightLogId])
+
+  useEffect(() => {
     load()
   }, [caseId, selectedMonth])
+
+  useEffect(() => {
+    if (!highlightLogId || loading) return
+    const node = logCardRefs.current.get(String(highlightLogId))
+    if (!node) return
+    const t = setTimeout(() => {
+      node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 120)
+    return () => clearTimeout(t)
+  }, [highlightLogId, loading, logs])
 
   const caseOptions = useMemo(() => {
     const byChild = new Map()
@@ -205,13 +240,30 @@ export function ClientSessionLogsPage() {
             ...meetings.map((m) => ({ type: 'meeting', date: m.scheduled_date, data: m })),
           ].sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0))
 
-          return combined.map((item) =>
-            item.type === 'log' ? (
-              <SessionCard key={`log-${item.data.id}`} log={item.data} onSaved={load} onDispute={handleDispute} />
-            ) : (
-              <CmMeetingCard key={`cm-${item.data.id}`} meeting={item.data} />
-            ),
-          )
+          let firstLogSeen = false
+          return combined.map((item) => {
+            if (item.type === 'log') {
+              const isHighlighted = highlightLogId && String(item.data.id) === String(highlightLogId)
+              const defaultExpanded = isHighlighted || (!highlightLogId && !firstLogSeen)
+              if (!highlightLogId && !firstLogSeen) firstLogSeen = true
+              return (
+                <div
+                  key={`log-${item.data.id}`}
+                  ref={(node) => {
+                    if (node) logCardRefs.current.set(String(item.data.id), node)
+                  }}
+                >
+                  <SessionCard
+                    log={item.data}
+                    defaultExpanded={defaultExpanded}
+                    onSaved={load}
+                    onDispute={handleDispute}
+                  />
+                </div>
+              )
+            }
+            return <CmMeetingCard key={`cm-${item.data.id}`} meeting={item.data} />
+          })
         })()
       )}
     </ClientPortalLayout>

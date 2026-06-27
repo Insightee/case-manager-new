@@ -1479,7 +1479,11 @@ def export_session_logs(
             s.actual_start_at.isoformat() if s and s.actual_start_at else "",
             s.actual_end_at.isoformat() if s and s.actual_end_at else "",
             log.submitted_at.isoformat() if log.submitted_at else "",
-            log.approval_status.value,
+            (
+                log.approval_status.value
+                if hasattr(log.approval_status, "value")
+                else str(log.approval_status)
+            ),
             log.late_addition,
         ])
     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=session_logs.csv"})

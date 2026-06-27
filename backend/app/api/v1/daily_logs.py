@@ -10,14 +10,23 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.db_errors import commit_or_http
 from app.core.module_access import user_has_feature
 from app.core.module_write import ensure_case_write_access, ensure_feature_write_access
 from app.core.permissions import RoleName, case_scope_check, require_permission, user_has_permission
 from app.models.case import ClientBillingMode
 from app.models.daily_log import LogApprovalStatus
 from app.models.user import User
-from app.schemas.daily_log import DailyLogCreate, DailyLogFinanceRead, DailyLogRead, DailyLogUpdate, LogCommentRead, LogCommentCreate
-from app.services import billing_ledger_service, case_service, log_service
+from app.schemas.daily_log import (
+    DailyLogCreate,
+    DailyLogFinanceRead,
+    DailyLogRead,
+    DailyLogUpdate,
+    LogCommentCountRead,
+    LogCommentCreate,
+    LogCommentRead,
+)
+from app.services import billing_ledger_service, case_service, log_comment_notify_service, log_service, session_log_service
 from app.services import virtual_session_log_service as virtual_logs
 
 from sqlalchemy import select
@@ -96,6 +105,7 @@ def list_daily_logs(
         include_clinical=not is_finance,
     )
     virtual_logs_out = []
+    virtual_dicts_for_counts = []
     for vlog_dict in virtual_log_dicts:
         if own_logs_only and vlog_dict.get("case_id"):
             session_row = db.get(TherapySession, vlog_dict["session_id"])
@@ -108,16 +118,77 @@ def list_daily_logs(
         if is_finance:
             virtual_logs_out.append(DailyLogFinanceRead(**vlog_dict))
         else:
-            virtual_logs_out.append(DailyLogRead(**vlog_dict))
+            virtual_dicts_for_counts.append(vlog_dict)
 
     if is_finance:
         res = [DailyLogFinanceRead(**log_service.log_to_read(l, include_clinical=False)) for l in logs]
+        combined = res + virtual_logs_out
     else:
-        res = [DailyLogRead(**log_service.log_to_read(l)) for l in logs]
-
-    combined = res + virtual_logs_out
+        log_dicts = [log_service.log_to_read(l) for l in logs]
+        log_service.attach_comment_counts(db, log_dicts + virtual_dicts_for_counts, parent_visible_only=False)
+        res = [DailyLogRead(**d) for d in log_dicts]
+        combined = res + [DailyLogRead(**v) for v in virtual_dicts_for_counts]
     combined.sort(key=lambda x: x.scheduled_date or datetime.min.date(), reverse=True)
     return combined
+
+
+@router.get("/comment-counts")
+def get_log_comment_counts(
+    log_ids: str = Query(..., description="Comma-separated daily log IDs"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.review"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    parsed_ids: list[int] = []
+    for part in log_ids.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            parsed_ids.append(int(part))
+        except ValueError:
+            continue
+    if not parsed_ids:
+        return {}
+
+    own_logs_only = _therapist_lists_own_logs_only(user)
+    allowed_ids: list[int] = []
+    for log_id in parsed_ids:
+        if log_id > 0:
+            log = log_service.get_log(db, log_id)
+            if not log:
+                continue
+            if own_logs_only:
+                if not log.session or log.session.therapist_user_id != user.id:
+                    continue
+            else:
+                if not log.session:
+                    continue
+                case = case_service.get_case(db, log.session.case_id)
+                if not case or not case_scope_check(db, user, case):
+                    continue
+            allowed_ids.append(log_id)
+        else:
+            session = db.get(TherapySession, -log_id)
+            if not session:
+                continue
+            case = case_service.get_case(db, session.case_id)
+            if not case or not case_scope_check(db, user, case):
+                continue
+            if own_logs_only and session.therapist_user_id != user.id:
+                continue
+            allowed_ids.append(log_id)
+
+    counts = log_service.comment_counts_for_log_ids(db, allowed_ids, parent_visible_only=False)
+    return {
+        str(log_id): LogCommentCountRead(
+            comment_count=counts.get(log_id, (0, 0))[0],
+            open_parent_comment_count=counts.get(log_id, (0, 0))[1],
+        )
+        for log_id in allowed_ids
+    }
 
 
 @router.get("/{log_id}", response_model=DailyLogRead)
@@ -139,7 +210,9 @@ def get_daily_log(
             raise HTTPException(status_code=403, detail="Log access denied")
     else:
         _log_case_scope(db, user, log)
-    return DailyLogRead(**log_service.log_to_read(log))
+    read = log_service.log_to_read(log)
+    log_service.attach_comment_counts(db, [read], parent_visible_only=False)
+    return DailyLogRead(**read)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -154,13 +227,40 @@ def create_daily_log(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if created:
-        from app.services import session_log_service
+        commit_or_http(db)
+        db.refresh(log)
+        try:
+            session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
+            session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
+            meta = get_request_meta(request)
+            log_audit(
+                db,
+                actor_user_id=user.id,
+                action="create",
+                entity_type="daily_log",
+                entity_id=log.id,
+                new_value=payload.model_dump(),
+                **meta,
+            )
+            commit_or_http(db)
+        except HTTPException as exc:
+            import logging
 
-        session_log_service.notify_case_managers_log_submitted(db, log, therapist=user)
-        session_log_service.notify_parents_session_log_submitted(db, log, therapist=user)
-        meta = get_request_meta(request)
-        log_audit(db, actor_user_id=user.id, action="create", entity_type="daily_log", entity_id=log.id, new_value=payload.model_dump(), **meta)
-    db.commit()
+            logging.getLogger("insightcase").warning(
+                "Post-create notify/audit failed for daily_log %s (HTTP %s): %s; log was saved",
+                log.id,
+                exc.status_code,
+                exc.detail,
+            )
+            db.rollback()
+        except Exception:
+            import logging
+
+            logging.getLogger("insightcase").exception(
+                "Post-create notify/audit failed for daily_log %s; log was saved",
+                log.id,
+            )
+            db.rollback()
     return DailyLogRead(**log_service.log_to_read(log))
 
 
@@ -224,7 +324,7 @@ def approve_log(
     if case:
         ensure_case_write_access(user, case, db)
         ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
-    log.approval_status = LogApprovalStatus.APPROVED
+    log.approval_status = LogApprovalStatus.APPROVED.value
     if not log.submitted_at:
         log.submitted_at = datetime.now(timezone.utc)
     from app.services import session_log_service
@@ -262,7 +362,7 @@ def reject_log(
     if case:
         ensure_case_write_access(user, case, db)
         ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
-    log.approval_status = LogApprovalStatus.REJECTED
+    log.approval_status = LogApprovalStatus.REJECTED.value
     log.review_note = comment
     from app.services import session_log_service
 
@@ -283,7 +383,12 @@ def list_log_comments(
         log = log_service.get_log(db, log_id)
         if not log:
             raise HTTPException(status_code=404, detail="Log not found")
-        _log_case_scope(db, user, log)
+        own_logs_only = _therapist_lists_own_logs_only(user)
+        if own_logs_only:
+            if not log.session or log.session.therapist_user_id != user.id:
+                raise HTTPException(status_code=403, detail="Log access denied")
+        else:
+            _log_case_scope(db, user, log)
     else:
         session = db.get(TherapySession, -log_id)
         if not session:
@@ -309,6 +414,9 @@ def list_log_comments(
                 id=c.id,
                 body=c.body,
                 author_name=author.full_name if author else None,
+                author_role=c.author_role,
+                visibility=c.visibility,
+                status=c.status,
                 created_at=c.created_at
             )
         )
@@ -327,7 +435,12 @@ def add_log_comment(
         log = log_service.get_log(db, log_id)
         if not log:
             raise HTTPException(status_code=404, detail="Log not found")
-        _log_case_scope(db, user, log)
+        own_logs_only = _therapist_lists_own_logs_only(user)
+        if own_logs_only:
+            if not log.session or log.session.therapist_user_id != user.id:
+                raise HTTPException(status_code=403, detail="Log access denied")
+        else:
+            _log_case_scope(db, user, log)
         case_id = log.session.case_id if log.session else None
     else:
         session = db.get(TherapySession, -log_id)
@@ -341,15 +454,52 @@ def add_log_comment(
     if not case_id:
         raise HTTPException(status_code=400, detail="Cannot comment on logs without a linked case")
 
+    # Determine author role
+    author_role = "therapist"
+    if "SUPER_ADMIN" in user.role_names or "MODULE_ADMIN" in user.role_names:
+        author_role = "admin"
+    elif "CASE_MANAGER" in user.role_names:
+        author_role = "case_manager"
+    elif "PARENT" in user.role_names:
+        author_role = "parent"
+
     comment = DocumentComment(
         entity_type="daily_log",
         entity_id=log_id,
         case_id=case_id,
         author_user_id=user.id,
+        author_role=author_role,
+        visibility=payload.visibility or "parent_team",
+        status="open",
         body=payload.body.strip(),
         comment_type="GENERAL"
     )
     db.add(comment)
+    db.flush()
+
+    # Acknowledge parent comments if team replies in public thread
+    if author_role in ("therapist", "case_manager", "admin") and (payload.visibility or "parent_team") == "parent_team":
+        db.execute(
+            DocumentComment.__table__.update()
+            .where(
+                DocumentComment.entity_type == "daily_log",
+                DocumentComment.entity_id == log_id,
+                DocumentComment.author_role == "parent",
+                DocumentComment.status == "open"
+            )
+            .values(status="acknowledged")
+        )
+
+    log_comment_notify_service.notify_parents_on_staff_log_reply(
+        db,
+        comment_id=comment.id,
+        log_id=log_id,
+        case_id=case_id,
+        staff_user=user,
+        author_role=author_role,
+        visibility=payload.visibility or "parent_team",
+    )
+
     db.commit()
     db.refresh(comment)
 
@@ -357,5 +507,53 @@ def add_log_comment(
         id=comment.id,
         body=comment.body,
         author_name=user.full_name or user.email,
+        author_role=comment.author_role,
+        visibility=comment.visibility,
+        status=comment.status,
+        created_at=comment.created_at
+    )
+
+
+class CommentStatusUpdate(BaseModel):
+    status: str
+
+
+@router.patch("/comments/{comment_id}/status", response_model=LogCommentRead)
+def update_comment_status(
+    comment_id: int,
+    payload: CommentStatusUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.status not in ("open", "acknowledged", "resolved"):
+        raise HTTPException(status_code=400, detail="Invalid status value")
+    comment = db.get(DocumentComment, comment_id)
+    if not comment or comment.entity_type != "daily_log":
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    case = case_service.get_case(db, comment.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Case access denied")
+
+    is_admin_or_cm = (
+        "SUPER_ADMIN" in user.role_names
+        or "MODULE_ADMIN" in user.role_names
+        or "CASE_MANAGER" in user.role_names
+    )
+    if not is_admin_or_cm and payload.status == "resolved":
+        raise HTTPException(status_code=403, detail="Only Case Manager or Admin can resolve comments")
+
+    comment.status = payload.status
+    db.commit()
+    db.refresh(comment)
+
+    author = db.get(User, comment.author_user_id)
+    return LogCommentRead(
+        id=comment.id,
+        body=comment.body,
+        author_name=author.full_name if author else None,
+        author_role=comment.author_role,
+        visibility=comment.visibility,
+        status=comment.status,
         created_at=comment.created_at
     )

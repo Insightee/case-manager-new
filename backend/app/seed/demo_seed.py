@@ -427,8 +427,8 @@ def run():
                     log = db.scalars(select(DailyLog).where(DailyLog.session_id == existing.id)).first()
                     if log:
                         log.submitted_at = log.submitted_at or datetime.now(timezone.utc)
-                        log.approval_status = LogApprovalStatus.APPROVED
-                        log.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT
+                        log.approval_status = LogApprovalStatus.APPROVED.value
+                        log.visibility_status = VisibilityStatus.APPROVED_FOR_PARENT.value
                         log.parent_notes = log.parent_notes or "Great engagement during the session."
                         log.goals_addressed = log.goals_addressed or "Communication and social skills"
                         log.follow_ups = log.follow_ups or "Continue weekly sessions"
@@ -454,8 +454,8 @@ def run():
                     follow_ups="Continue weekly sessions" if parent_visible else None,
                     parent_notes="Great engagement during the session." if parent_visible else None,
                     observations="Approved for billing",
-                    approval_status=LogApprovalStatus.APPROVED,
-                    visibility_status=vis,
+                    approval_status=LogApprovalStatus.APPROVED.value,
+                    visibility_status=vis.value if parent_visible else VisibilityStatus.INTERNAL_ONLY.value,
                     submitted_at=datetime.now(timezone.utc) if parent_visible else None,
                 )
             )
@@ -545,8 +545,8 @@ def run():
                     follow_ups="Practice at home",
                     parent_notes="Aarav participated well in today's session.",
                     submitted_at=datetime.now(timezone.utc),
-                    approval_status=LogApprovalStatus.PENDING,
-                    visibility_status=VisibilityStatus.INTERNAL_ONLY,
+                    approval_status=LogApprovalStatus.PENDING.value,
+                    visibility_status=VisibilityStatus.INTERNAL_ONLY.value,
                 )
             )
 

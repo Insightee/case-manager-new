@@ -29,7 +29,7 @@ def list_my_notifications(
             NotificationRead(
                 id=n.id,
                 title=n.title,
-                body=n.body,
+                body=notification_service.notification_body_for_read(n.body),
                 is_read=n.is_read,
                 created_at=n.created_at,
                 entity_type=n.entity_type,

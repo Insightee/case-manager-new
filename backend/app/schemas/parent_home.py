@@ -31,6 +31,8 @@ class ParentRecentUpdate(BaseModel):
     session_start_time: Optional[str] = None
     therapist_name: Optional[str] = None
     submitted_at: Optional[datetime] = None
+    parent_display_status: Optional[str] = None
+    comment_count: int = 0
 
 
 class ParentHomeStats(BaseModel):
@@ -68,5 +70,6 @@ class ParentHomeResponse(BaseModel):
     stats: ParentHomeStats
     cases: list[ParentHomeCase]
     recent_updates: list[ParentRecentUpdate]
+    logs_under_review: list[ParentRecentUpdate] = []
     upcoming_appointments: list[dict[str, Any]]
     pending_assignment_acceptance: list[PendingAssignmentAcceptance] = []

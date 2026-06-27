@@ -64,7 +64,7 @@ class User(Base):
     service_access_grants: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     org_capability_grants: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     feature_overrides: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
-    is_view_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
+    is_view_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     roles = relationship("Role", secondary=user_roles, back_populates="users")
@@ -105,6 +105,6 @@ class InviteToken(Base):
     email_next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     delivery_failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     expired_due_to_delivery_failure: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="0"
+        Boolean, default=False, server_default="false"
     )
     resend_allowed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

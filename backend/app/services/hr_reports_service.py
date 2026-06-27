@@ -189,7 +189,11 @@ def _session_log_rows(
                 "caseCode": case.case_code if case else "",
                 "clientName": case_service.case_child_display_name(case) if case else "",
                 "scheduledDate": s.scheduled_date.isoformat() if s and s.scheduled_date else "",
-                "approvalStatus": log.approval_status.value if log.approval_status else "",
+                "approvalStatus": (
+                    log.approval_status.value
+                    if log.approval_status and hasattr(log.approval_status, "value")
+                    else (str(log.approval_status) if log.approval_status else "")
+                ),
                 "submittedAt": log.submitted_at.isoformat() if log.submitted_at else "",
             }
         )

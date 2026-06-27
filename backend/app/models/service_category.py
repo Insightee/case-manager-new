@@ -15,7 +15,7 @@ class ServiceCategory(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="1")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
     access_group: Mapped[str] = mapped_column(String(64), default="Clinical", nullable=False, server_default="Clinical")
     product_modules: Mapped[Optional[list[Any]]] = mapped_column(JSON, nullable=True)

@@ -168,7 +168,11 @@ def session_line_dict(
         "amount_inr": amount,
         "source": source.value,
         "included": included,
-        "approval_status": log.approval_status.value,
+        "approval_status": (
+            log.approval_status.value
+            if hasattr(log.approval_status, "value")
+            else str(log.approval_status)
+        ),
         "flags": flags,
     }
 

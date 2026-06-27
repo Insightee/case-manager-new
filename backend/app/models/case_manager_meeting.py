@@ -78,7 +78,7 @@ class CaseManagerMeeting(Base):
     # Meeting Notes refactoring
     notes_outcome: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # RESOLVED, FOLLOW_UP_REQUIRED, ESCALATED, NO_ACTION_REQUIRED
     notes_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    notes_next_meeting_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=sa.text("0"))
+    notes_next_meeting_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=sa.false())
     notes_additional: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Linked Records

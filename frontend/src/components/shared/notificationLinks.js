@@ -1,3 +1,9 @@
+/** Strip internal dedupe keys from legacy notification bodies. */
+export function formatNotificationBody(body) {
+  if (!body || typeof body !== 'string') return body || ''
+  return body.replace(/^\[[^\]]+\]\s*/, '')
+}
+
 /** Derive a navigation path from entity_type + entity_id + portal. */
 export function resolveNotificationLink(entityType, entityId, portal) {
   if (!entityType) return null
@@ -16,6 +22,13 @@ export function resolveNotificationLink(entityType, entityId, portal) {
       return '/admin/cases'
     case 'session':
     case 'daily_log':
+      if (entityId != null) {
+        const logId = Number(entityId)
+        if (Number.isFinite(logId)) {
+          if (portal === 'parent') return `/parent/session-logs?log_id=${logId}`
+          if (portal === 'therapist') return `/therapist/logs?log_id=${logId}`
+        }
+      }
       if (portal === 'parent') return '/parent/session-logs'
       if (portal === 'therapist') return '/therapist/logs'
       return '/admin/logs'
@@ -71,4 +84,27 @@ export function resolveNotificationLink(entityType, entityId, portal) {
     default:
       return null
   }
+}
+
+/** Resolve session-log notifications to the exact log (admin needs case lookup). */
+export async function resolveNotificationLinkAsync(entityType, entityId, portal, apiFetch) {
+  const et = (entityType || '').toLowerCase()
+  if ((et === 'daily_log' || et === 'session') && entityId != null) {
+    const logId = Number(entityId)
+    if (Number.isFinite(logId)) {
+      if (portal === 'therapist') return `/therapist/logs?log_id=${logId}`
+      if (portal === 'parent') return `/parent/session-logs?log_id=${logId}`
+      if (portal === 'admin') {
+        try {
+          const log = await apiFetch(`/api/v1/daily-logs/${logId}`)
+          if (log?.case_id && log?.session_id) {
+            return `/admin/cases/${log.case_id}?tab=logs&session_id=${log.session_id}`
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+    }
+  }
+  return resolveNotificationLink(entityType, entityId, portal)
 }

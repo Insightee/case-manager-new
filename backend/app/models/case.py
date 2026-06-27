@@ -76,7 +76,7 @@ class Case(Base):
     service_landmark: Mapped[Optional[str]] = mapped_column(String(255))
     service_latitude: Mapped[Optional[float]] = mapped_column(Float)
     service_longitude: Mapped[Optional[float]] = mapped_column(Float)
-    billing_address_same_as_service: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="1")
+    billing_address_same_as_service: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     billing_address_line1: Mapped[Optional[str]] = mapped_column(String(255))
     billing_address_line2: Mapped[Optional[str]] = mapped_column(String(255))
     billing_address_city: Mapped[Optional[str]] = mapped_column(String(128))
