@@ -17,6 +17,8 @@ from app.core.database import SessionLocal
 from app.seed.demo_seed import run as seed_run
 from app.models.parent import ParentGuardian
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+from app.models.notification import Notification
+from app.models.therapist_profile import TherapistProfile
 
 client = TestClient(app)
 
@@ -144,6 +146,12 @@ def test_parent_visibility_and_comments_flow():
         assert parent_log["parent_display_status"] == "Under Review"
         assert parent_log["can_parent_comment"] is True
 
+        mentor_user = db.scalars(select(User).where(User.email == "superadmin@demo.com")).first()
+        tp = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == therapist_user.id)).first()
+        if tp and mentor_user:
+            tp.mentor_user_id = mentor_user.id
+            db.commit()
+
         # 4. Parent posts a comment to the log
         comment_res = client.post(
             f"/api/v1/parent/session-logs/{log_id}/comments",
@@ -152,6 +160,17 @@ def test_parent_visibility_and_comments_flow():
         )
         assert comment_res.status_code == 201
         comment_id = comment_res.json()["id"]
+
+        db.expire_all()
+        for uid in {therapist_user.id, casemanager_user.id, mentor_user.id if mentor_user else None} - {None}:
+            staff_notifs = db.scalars(
+                select(Notification).where(
+                    Notification.user_id == uid,
+                    Notification.entity_type == "daily_log",
+                    Notification.entity_id == log_id,
+                )
+            ).all()
+            assert any("Family comment" in n.title for n in staff_notifs), f"Expected staff bell alert for user {uid}"
 
         # 5. Therapist, CM, and Admin see the parent's comment
         for role_email in ["therapist@demo.com", "casemanager@demo.com", "superadmin@demo.com"]:
@@ -195,6 +214,16 @@ def test_parent_visibility_and_comments_flow():
         assert internal_res.status_code == 201
         internal_id = internal_res.json()["id"]
 
+        db.expire_all()
+        parent_reply_notifs_before = db.scalars(
+            select(Notification).where(
+                Notification.user_id == parent_user.id,
+                Notification.entity_type == "daily_log",
+                Notification.entity_id == log_id,
+            )
+        ).all()
+        parent_reply_count_before = sum(1 for n in parent_reply_notifs_before if "Reply on" in n.title)
+
         # Parent fetches comments - must NOT see internal note
         parent_c_res = client.get(f"/api/v1/parent/session-logs/{log_id}/comments", headers=parent_headers)
         assert parent_c_res.status_code == 200
@@ -216,6 +245,33 @@ def test_parent_visibility_and_comments_flow():
         assert reply_found["author_role"] == "case_manager"
         assert reply_found["visibility"] == "parent_team"
 
+        db.expire_all()
+        parent_reply_notifs_after = db.scalars(
+            select(Notification).where(
+                Notification.user_id == parent_user.id,
+                Notification.entity_type == "daily_log",
+                Notification.entity_id == log_id,
+            )
+        ).all()
+        parent_reply_count_after = sum(1 for n in parent_reply_notifs_after if "Reply on" in n.title)
+        assert parent_reply_count_after == parent_reply_count_before + 1
+
+        therapist_reply_res = client.post(
+            f"/api/v1/daily-logs/{log_id}/comments",
+            headers=_login("therapist@demo.com"),
+            json={"body": "Thanks — we will follow up at the next session.", "visibility": "parent_team"},
+        )
+        assert therapist_reply_res.status_code == 201
+        db.expire_all()
+        parent_reply_notifs_therapist = db.scalars(
+            select(Notification).where(
+                Notification.user_id == parent_user.id,
+                Notification.entity_type == "daily_log",
+                Notification.entity_id == log_id,
+            )
+        ).all()
+        assert sum(1 for n in parent_reply_notifs_therapist if "Reply on" in n.title) == parent_reply_count_after + 1
+
         # Parent comment status should automatically transition to "acknowledged" due to reply
         parent_comment = next((c for c in parent_c_res2.json() if c["id"] == comment_id), None)
         assert parent_comment is not None
@@ -226,13 +282,13 @@ def test_parent_visibility_and_comments_flow():
         assert cm_list.status_code == 200
         cm_log = next((l for l in cm_list.json() if l["id"] == log_id), None)
         assert cm_log is not None
-        assert cm_log["comment_count"] >= 3
+        assert cm_log["comment_count"] >= 4
         assert cm_log["open_parent_comment_count"] == 0
 
         parent_list = client.get("/api/v1/parent/session-logs", headers=parent_headers)
         parent_log_counts = next((l for l in parent_list.json() if l["id"] == log_id), None)
         assert parent_log_counts is not None
-        assert parent_log_counts["comment_count"] == 2
+        assert parent_log_counts["comment_count"] == 3
 
         # Comment counts batch endpoint
         batch = client.get(
@@ -240,7 +296,7 @@ def test_parent_visibility_and_comments_flow():
             headers=cm_headers,
         )
         assert batch.status_code == 200
-        assert batch.json()[str(log_id)]["comment_count"] >= 3
+        assert batch.json()[str(log_id)]["comment_count"] >= 4
 
         # 11. CM updates parent comment status to "resolved"
         status_res = client.patch(

@@ -25,7 +25,7 @@ from app.schemas.daily_log import (
     LogCommentCreate,
     LogCommentRead,
 )
-from app.services import billing_ledger_service, case_service, log_service
+from app.services import billing_ledger_service, case_service, log_comment_notify_service, log_service
 from app.services import virtual_session_log_service as virtual_logs
 
 from sqlalchemy import select
@@ -447,6 +447,7 @@ def add_log_comment(
         comment_type="GENERAL"
     )
     db.add(comment)
+    db.flush()
 
     # Acknowledge parent comments if team replies in public thread
     if author_role in ("therapist", "case_manager", "admin") and (payload.visibility or "parent_team") == "parent_team":
@@ -460,6 +461,16 @@ def add_log_comment(
             )
             .values(status="acknowledged")
         )
+
+    log_comment_notify_service.notify_parents_on_staff_log_reply(
+        db,
+        comment_id=comment.id,
+        log_id=log_id,
+        case_id=case_id,
+        staff_user=user,
+        author_role=author_role,
+        visibility=payload.visibility or "parent_team",
+    )
 
     db.commit()
     db.refresh(comment)

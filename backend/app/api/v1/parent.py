@@ -44,6 +44,7 @@ from app.services import (
     appointment_booking_service as appt_booking,
     appointment_policy,
     case_service,
+    log_comment_notify_service,
     notification_service,
     parent_home_service,
     parent_reports_service,
@@ -716,6 +717,16 @@ def parent_add_log_comment(
         comment_type="GENERAL"
     )
     db.add(comment)
+    db.flush()
+
+    log_comment_notify_service.notify_staff_on_parent_log_comment(
+        db,
+        comment_id=comment.id,
+        log_id=log_id,
+        case_id=case_id,
+        parent_user=user,
+    )
+
     db.commit()
     db.refresh(comment)
 
