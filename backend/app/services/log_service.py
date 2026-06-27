@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 LOG_EDIT_WINDOW = timedelta(hours=24)
 
 from sqlalchemy import and_, case, func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, lazyload, selectinload
 
 from app.models.case import Case
 from app.models.document_comment import DocumentComment, DocumentEntityType
@@ -94,11 +94,13 @@ def list_logs(
 
 def create_daily_log(db: Session, **kwargs) -> tuple[DailyLog, bool]:
     """Create a daily log. Returns (log, created). Idempotent on session_id."""
-    # Lock the TherapySession row to serialize concurrent log submissions for this session.
+    # Case uses lazy="joined" on TherapySession; lock only sessions (Postgres rejects
+    # FOR UPDATE on the nullable side of an outer join to cases).
     session = db.scalars(
         select(TherapySession)
         .where(TherapySession.id == kwargs["session_id"])
-        .with_for_update()
+        .options(lazyload(TherapySession.case))
+        .with_for_update(of=TherapySession)
     ).first()
     if not session:
         raise ValueError("Session not found")
