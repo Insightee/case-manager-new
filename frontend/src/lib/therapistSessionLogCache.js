@@ -7,6 +7,7 @@ export function therapistDailyLogsKey(userId) {
 
 export function applySessionStartedToWorkspace(workspace, started) {
   if (!workspace || !started?.id) return workspace
+  if (started.status && started.status !== 'IN_PROGRESS') return workspace
   const sid = Number(started.id)
   return {
     ...workspace,
@@ -71,13 +72,22 @@ export function applySessionCancelledToWorkspace(workspace, cancelled) {
   if (!workspace || !cancelled?.id) return workspace
   const sid = Number(cancelled.id)
   const upcoming = workspace.upcoming || []
+  const needsLog = (workspace.needs_log || []).filter((s) => s.id !== sid)
+  const status = cancelled.status || 'SCHEDULED'
   const inUpcoming = upcoming.some((s) => s.id === sid)
+  let nextUpcoming = upcoming
+  if (status === 'SCHEDULED') {
+    nextUpcoming = inUpcoming
+      ? upcoming.map((s) => (s.id === sid ? { ...s, ...cancelled } : s))
+      : [cancelled, ...upcoming]
+  } else if (inUpcoming) {
+    nextUpcoming = upcoming.filter((s) => s.id !== sid)
+  }
   return {
     ...workspace,
     active_session: workspace.active_session?.id === sid ? null : workspace.active_session,
-    upcoming: inUpcoming
-      ? upcoming.map((s) => (s.id === sid ? { ...s, ...cancelled } : s))
-      : [cancelled, ...upcoming],
+    needs_log: needsLog,
+    upcoming: nextUpcoming,
   }
 }
 

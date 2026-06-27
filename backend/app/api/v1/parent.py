@@ -7,7 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -27,7 +27,11 @@ from app.models.incident import Incident, IncidentMessage, IncidentStatus
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.schemas.address import ServiceAddressUpdate
-from app.schemas.daily_log import ParentSessionFeedbackUpdate, ParentSessionLogRead
+from app.schemas.daily_log import ParentSessionFeedbackUpdate, ParentSessionLogRead, LogCommentRead, LogCommentCreate
+from app.models.session import SessionStatus
+from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus
+from app.models.document_comment import DocumentComment, DocumentEntityType
+from app.models.support_ticket import TicketCategory
 from app.schemas.parent_profile import ParentChildCreate, ParentProfileRead, ParentProfileUpdate
 from app.schemas.notification import NotificationRead
 from app.schemas.parent_reports import ParentMonthlyFeedback, ParentReportCommentCreate
@@ -270,6 +274,117 @@ def parent_update_service_address(
     }
 
 
+def _parent_virtual_session_log_read(db: Session, session: TherapySession, case: Case, therapist: User | None) -> ParentSessionLogRead:
+    from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus
+    from app.models.support_ticket import SupportTicket, TicketStatus
+    from datetime import datetime, time, timezone
+
+    # 1. Determine attendance_status and labels
+    attendance_status = "THERAPIST_LEAVE"
+    headline = "Therapist Leave"
+    attendance_label = "Therapist Leave"
+    absence_req = None
+    if session.status == SessionStatus.CLIENT_ABSENT:
+        absence_req = db.scalars(
+            select(SessionAbsenceRequest).where(
+                SessionAbsenceRequest.session_id == session.id,
+                SessionAbsenceRequest.status == SessionAbsenceStatus.APPROVED
+            )
+        ).first()
+        if absence_req and absence_req.absence_type == "CLIENT_ABSENT":
+            attendance_status = "CLIENT_LEAVE"
+            headline = "Client Leave"
+            attendance_label = "Client Leave"
+        else:
+            attendance_status = "CLIENT_ABSENT"
+            headline = "Client Absent"
+            attendance_label = "Client Absent"
+
+    # 2. Check dispute status
+    dispute_stmt = select(SupportTicket).where(
+        SupportTicket.disputed_session_id == session.id,
+        SupportTicket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS])
+    )
+    disputed_ticket = db.scalars(dispute_stmt).first()
+    dispute_status = "DISPUTED" if disputed_ticket else "NONE"
+
+    # 3. Build ParentSessionLogRead
+    sub_dt = datetime.combine(session.scheduled_date, time.min, tzinfo=timezone.utc)
+    
+    return ParentSessionLogRead(
+        id=-session.id,
+        case_id=session.case_id,
+        case_code=case.case_code if case else None,
+        child_name=case.child.full_name if (case and case.child) else None,
+        therapist_name=therapist.full_name if therapist else None,
+        scheduled_date=session.scheduled_date,
+        start_time=session.start_time.isoformat() if session.start_time else None,
+        end_time=session.end_time.isoformat() if session.end_time else None,
+        actual_start_at=session.actual_start_at,
+        actual_end_at=session.actual_end_at,
+        clock_start_at=session.actual_start_at,
+        clock_end_at=session.actual_end_at,
+        attendance_status=attendance_status,
+        submitted_at=sub_dt,
+        headline=headline,
+        attendance_label=attendance_label,
+        summary_paragraph=headline,
+        absence_reason=absence_req.reason if absence_req else (session.actual_times_edit_reason or None),
+        dispute_status=dispute_status,
+        approval_status=LogApprovalStatus.APPROVED.value,
+        status_label=attendance_label,
+    )
+
+
+def _parent_virtual_from_dict(
+    db: Session,
+    vlog: dict,
+    case: Case,
+    therapist: User | None,
+) -> ParentSessionLogRead:
+    attendance_status = vlog.get("attendance_status") or "THERAPIST_LEAVE"
+    status_label = vlog.get("status_label") or attendance_status
+    approval = vlog.get("approval_status")
+    approval_value = approval.value if hasattr(approval, "value") else str(approval) if approval else LogApprovalStatus.APPROVED.value
+    if attendance_status == "CLIENT_ABSENT":
+        headline = status_label if "pending" in status_label.lower() else "Client Absent"
+        attendance_label = headline
+    elif attendance_status == "CLIENT_LEAVE":
+        headline = status_label if "pending" in status_label.lower() else "Client Leave"
+        attendance_label = headline
+    else:
+        headline = status_label if "pending" in status_label.lower() else "Therapist Leave"
+        attendance_label = headline
+    sub_dt = vlog.get("submitted_at") or datetime.combine(
+        vlog["scheduled_date"], datetime.min.time(), tzinfo=timezone.utc
+    )
+    session_id = vlog.get("session_id")
+    session = db.get(TherapySession, session_id) if session_id else None
+    return ParentSessionLogRead(
+        id=vlog["id"],
+        case_id=vlog["case_id"],
+        case_code=vlog.get("case_code"),
+        child_name=vlog.get("child_name"),
+        therapist_name=therapist.full_name if therapist else None,
+        scheduled_date=vlog["scheduled_date"],
+        start_time=str(session.start_time) if session and session.start_time else None,
+        end_time=str(session.end_time) if session and session.end_time else None,
+        actual_start_at=vlog.get("actual_start_at"),
+        actual_end_at=vlog.get("actual_end_at"),
+        clock_start_at=vlog.get("actual_start_at"),
+        clock_end_at=vlog.get("actual_end_at"),
+        attendance_status=attendance_status,
+        submitted_at=sub_dt,
+        headline=headline,
+        summary_paragraph=headline,
+        attendance_label=attendance_label,
+        absence_reason=vlog.get("absence_reason"),
+        dispute_status=vlog.get("dispute_status"),
+        approval_status=approval_value,
+        status_label=status_label,
+    )
+
+
 @router.get("/session-logs", response_model=list[ParentSessionLogRead])
 def parent_session_logs(
     case_id: Optional[int] = None,
@@ -319,7 +434,35 @@ def parent_session_logs(
         case = cases.get(s.case_id)
         therapist = db.get(User, s.therapist_user_id)
         result.append(_parent_session_log_read(log, case, therapist))
-    return result
+    
+    # Virtual absence / leave rows (approved and pending approval)
+    from app.services import virtual_session_log_service as virtual_logs
+
+    month_label = None
+    if year is not None and month is not None:
+        month_label = datetime(year, month, 1).strftime("%b %Y")
+    virtual_dicts = virtual_logs.collect_virtual_logs(
+        db,
+        case_id=case_id,
+        month=month_label,
+        case_scope_ids=set(cases.keys()),
+    )
+    virtual_logs_out = []
+    for v in virtual_dicts:
+        if year is not None and v["scheduled_date"].year != year:
+            continue
+        if month is not None and v["scheduled_date"].month != month:
+            continue
+        case = cases.get(v["case_id"])
+        if not case:
+            continue
+        session = db.get(TherapySession, v["session_id"])
+        therapist = db.get(User, session.therapist_user_id) if session else None
+        virtual_logs_out.append(_parent_virtual_from_dict(db, v, case, therapist))
+
+    combined = result + virtual_logs_out
+    combined.sort(key=lambda x: x.scheduled_date, reverse=True)
+    return combined
 
 
 @router.patch("/session-logs/{log_id}/feedback", response_model=ParentSessionLogRead)
@@ -349,21 +492,180 @@ def parent_session_log_feedback(
     if log.approval_status != LogApprovalStatus.APPROVED:
         raise HTTPException(status_code=400, detail="Feedback only on approved session updates")
     if payload.rating is not None:
-        if payload.rating < 1 or payload.rating > 5:
-            raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
         log.parent_session_rating = payload.rating
     if payload.feedback is not None:
         log.parent_feedback = payload.feedback.strip() or None
     if payload.share_publicly is not None:
         log.parent_feedback_public = payload.share_publicly
-    if not log.parent_session_rating and not log.parent_feedback:
-        raise HTTPException(status_code=400, detail="Add a star rating or written review")
+    if not log.parent_feedback:
+        raise HTTPException(status_code=400, detail="Add a written review")
     log.parent_feedback_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(log)
     s = log.session
     therapist = db.get(User, s.therapist_user_id)
     return _parent_session_log_read(log, case, therapist)
+
+
+class SessionDisputeCreate(BaseModel):
+    comment: str = Field(..., min_length=1)
+
+
+@router.post("/session-logs/{session_id}/dispute")
+def dispute_session(
+    session_id: int,
+    payload: SessionDisputeCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    session = db.get(TherapySession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = _parent_case_or_404(db, user, session.case_id)
+
+    # Check if already disputed
+    existing_ticket = db.scalars(
+        select(SupportTicket).where(
+            SupportTicket.disputed_session_id == session.id,
+            SupportTicket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS])
+        )
+    ).first()
+    if existing_ticket:
+        raise HTTPException(status_code=400, detail="A dispute ticket is already open for this session")
+
+    # Create the support ticket
+    subject = f"Dispute session on {session.scheduled_date}"
+    ticket = SupportTicket(
+        case_id=case.id,
+        raised_by_user_id=user.id,
+        topic=TicketTopic.THERAPIST,
+        category=TicketCategory.OTHER,
+        subject=subject,
+        body=payload.comment.strip(),
+        status=TicketStatus.OPEN,
+        product_module=case.product_module,
+        disputed_session_id=session.id
+    )
+    from app.services import ticket_escalation_service as ticket_esc
+    ticket_esc.assign_ticket(db, ticket, case)
+    db.add(ticket)
+    db.flush()
+
+    msg = TicketMessage(
+        ticket_id=ticket.id,
+        author_user_id=user.id,
+        body=payload.comment.strip()
+    )
+    db.add(msg)
+    
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="create_dispute", entity_type="support_ticket", entity_id=ticket.id, **meta)
+    db.commit()
+
+    return {"status": "disputed", "ticket_id": ticket.id}
+
+
+@router.get("/session-logs/{log_id}/comments", response_model=list[LogCommentRead])
+def parent_list_log_comments(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    child_ids = parent_service.child_ids_for_parent(db, user.id)
+    if log_id > 0:
+        log = db.scalars(
+            select(DailyLog)
+            .join(TherapySession)
+            .where(DailyLog.id == log_id)
+        ).first()
+        if not log or not log.session:
+            raise HTTPException(status_code=404, detail="Session log not found")
+        case = log.session.case
+        if not case or case.child_id not in child_ids:
+            raise HTTPException(status_code=403, detail="Access denied")
+    else:
+        session = db.get(TherapySession, -log_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        case = db.get(Case, session.case_id)
+        if not case or case.child_id not in child_ids:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    comments = db.scalars(
+        select(DocumentComment)
+        .where(
+            DocumentComment.entity_type == "daily_log",
+            DocumentComment.entity_id == log_id
+        )
+        .order_by(DocumentComment.created_at.asc())
+    ).all()
+    
+    out = []
+    for c in comments:
+        author = db.get(User, c.author_user_id)
+        out.append(
+            LogCommentRead(
+                id=c.id,
+                body=c.body,
+                author_name=author.full_name if author else None,
+                created_at=c.created_at
+            )
+        )
+    return out
+
+
+@router.post("/session-logs/{log_id}/comments", response_model=LogCommentRead, status_code=201)
+def parent_add_log_comment(
+    log_id: int,
+    payload: LogCommentCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    child_ids = parent_service.child_ids_for_parent(db, user.id)
+    case_id = None
+    if log_id > 0:
+        log = db.scalars(
+            select(DailyLog)
+            .join(TherapySession)
+            .where(DailyLog.id == log_id)
+        ).first()
+        if not log or not log.session:
+            raise HTTPException(status_code=404, detail="Session log not found")
+        case = log.session.case
+        if not case or case.child_id not in child_ids:
+            raise HTTPException(status_code=403, detail="Access denied")
+        case_id = case.id
+    else:
+        session = db.get(TherapySession, -log_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        case = db.get(Case, session.case_id)
+        if not case or case.child_id not in child_ids:
+            raise HTTPException(status_code=403, detail="Access denied")
+        case_id = case.id
+
+    comment = DocumentComment(
+        entity_type="daily_log",
+        entity_id=log_id,
+        case_id=case_id,
+        author_user_id=user.id,
+        body=payload.body.strip(),
+        comment_type="GENERAL"
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+
+    return LogCommentRead(
+        id=comment.id,
+        body=comment.body,
+        author_name=user.full_name or user.email,
+        created_at=comment.created_at
+    )
 
 
 @router.get("/documents")
@@ -648,16 +950,22 @@ def parent_monthly_report_comment(
     return row
 
 
+class ParentMonthlyApprove(BaseModel):
+    rating: Optional[int] = Field(default=None, ge=1, le=5)
+
+
 @router.post("/reports/monthly/{report_id}/approve")
 def parent_approve_monthly_report(
     report_id: int,
     request: Request,
+    payload: Optional[ParentMonthlyApprove] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_parent(user)
+    rating = payload.rating if payload else None
     try:
-        result = parent_reports_service.approve_monthly(db, user, report_id)
+        result = parent_reports_service.approve_monthly(db, user, report_id, rating=rating)
     except ValueError:
         raise HTTPException(status_code=404, detail="Report not found")
     meta = get_request_meta(request)
@@ -676,7 +984,7 @@ def parent_feedback_monthly_report(
 ):
     _require_parent(user)
     try:
-        result = parent_reports_service.feedback_monthly(db, user, report_id, payload.message.strip())
+        result = parent_reports_service.feedback_monthly(db, user, report_id, payload.message.strip(), rating=payload.rating)
     except ValueError:
         raise HTTPException(status_code=404, detail="Report not found")
     meta = get_request_meta(request)

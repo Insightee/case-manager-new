@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { addDays, addMonths, calendarGridEvents, dateStr, startOfMonth } from './slotCalendarUtils.js'
+import { addDays, addMonths, calendarGridEvents, dateStr, isTherapistWideLeaveOverlay, leaveOverlayHeaderLabel, startOfMonth } from './slotCalendarUtils.js'
 
 function eventsForDate(calendar, ds) {
   return calendarGridEvents(calendar).filter((s) => s.slot_date === ds)
@@ -68,6 +68,7 @@ export function MonthCalendarGrid({
               const inMonth = d.getMonth() === monthDate.getMonth()
               const dayEvents = eventsForDate(calendar, ds)
               const overlay = calendar?.day_overlays?.[ds]
+              const dayWideLeave = isTherapistWideLeaveOverlay(overlay)
               const hasBooked = dayEvents.some(
                 (s) => s.status === 'BOOKED' || s.event_type === 'session',
               )
@@ -87,12 +88,15 @@ export function MonthCalendarGrid({
                   </span>
                   <span className="mt-1 flex flex-wrap gap-0.5">
                     {overlay ? (
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" title="Leave" />
+                      <span
+                        className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
+                        title={leaveOverlayHeaderLabel(overlay)}
+                      />
                     ) : null}
                     {hasBooked ? (
                       <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-600" title="Booked" />
                     ) : null}
-                    {hasAvailable && !overlay ? (
+                    {hasAvailable && !dayWideLeave ? (
                       <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" title="Available" />
                     ) : null}
                   </span>

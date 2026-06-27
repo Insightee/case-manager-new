@@ -26,9 +26,11 @@ from app.schemas.session import (
     SessionUpdate,
 )
 from app.core.session_rules import auto_end_label as auto_end_label_for_reason
+from app.core.session_rules import scheduled_end_at_utc
 from app.core.session_start import SessionStartConflict
 from app.core.timezone import ensure_utc_aware
 from app.services import case_service, session_service, therapist_intake_service
+from app.services import manual_session_conflict_service as manual_conflict
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -59,6 +61,8 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         auto_end_label=auto_end_label_for_reason(
             getattr(s, "auto_end_reason", None),
             overage_mins=getattr(s, "overage_mins", None),
+            scheduled_end_at=scheduled_end_at_utc(s.scheduled_date, s.end_time),
+            actual_end_at=ensure_utc_aware(s.actual_end_at),
         ),
         slot_duration_minutes=s.slot_duration_minutes,
         scheduled_duration_mins=getattr(s, "scheduled_duration_mins", None),
@@ -76,6 +80,7 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         checkout_lng=s.checkout_lng,
         invite_sent=getattr(s, "_invite_sent", False),
         invite_email=getattr(s, "_invite_email", None),
+        already_completed=getattr(s, "_already_completed", False),
     )
 
 
@@ -150,9 +155,40 @@ def create_session(
     user: User = Depends(require_permission("session.create")),
     db: Session = Depends(get_db),
 ):
+    idempotency_key = request.headers.get("Idempotency-Key")
+    if idempotency_key:
+        from app.models.session_start_idempotency import SessionStartIdempotency
+        existing_idem = db.scalars(
+            select(SessionStartIdempotency).where(SessionStartIdempotency.idempotency_key == idempotency_key)
+        ).first()
+        if existing_idem:
+            session = db.get(TherapySession, existing_idem.session_id)
+            if session:
+                return _session_read(session, session.case)
+
     case = case_service.get_case(db, payload.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+
+    # Walk-in today: reuse manual-session conflict detection so UI can route correctly.
+    from app.core.timezone import today_ist
+    today = today_ist()
+    therapist_id = payload.therapist_user_id or user.id
+    if payload.scheduled_date == today:
+        existing = manual_conflict.find_existing_session_for_date(
+            db,
+            case_id=payload.case_id,
+            therapist_user_id=therapist_id,
+            scheduled_date=today,
+        )
+        if existing:
+            conflict = manual_conflict.build_existing_session_conflict(existing)
+            if existing.status == SessionStatus.SCHEDULED:
+                conflict["message"] = (
+                    "A scheduled session already exists for this client today."
+                )
+            raise HTTPException(status_code=409, detail=conflict)
+
     from app.services.case_status_request_service import assert_case_allows_new_session
 
     try:
@@ -168,6 +204,18 @@ def create_session(
     session = TherapySession(**data)
     db.add(session)
     db.flush()
+
+    if idempotency_key:
+        from app.models.session_start_idempotency import SessionStartIdempotency
+        db.add(
+            SessionStartIdempotency(
+                idempotency_key=idempotency_key,
+                session_id=session.id,
+                therapist_user_id=session.therapist_user_id,
+            )
+        )
+        db.flush()
+
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="session", entity_id=session.id, new_value=payload.model_dump(), **meta)
     db.commit()
@@ -185,6 +233,17 @@ def create_manual_session(
     case = case_service.get_case(db, payload.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+    existing = manual_conflict.find_existing_session_for_date(
+        db,
+        case_id=payload.case_id,
+        therapist_user_id=user.id,
+        scheduled_date=payload.scheduled_date,
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=manual_conflict.build_existing_session_conflict(existing),
+        )
     try:
         session = session_service.create_manual_session(
             db,
@@ -268,6 +327,103 @@ def get_session(
     case = session.case
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Access denied")
+    return _session_read(session, case)
+
+
+@router.post("/{session_id}/cancel-accidental-start", response_model=SessionRead)
+def cancel_accidental_start(
+    session_id: int,
+    request: Request,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    """Cancel a session that was started accidentally within the accidental-start window.
+
+    Allowed only when:
+    - session is IN_PROGRESS
+    - no DailyLog submitted
+    - no billing/ledger row exists for this session
+    - no absence/leave request linked to this session
+    - session started within ACCIDENTAL_START_WINDOW_MINUTES
+    """
+    from datetime import timezone as tz
+    from app.core.session_rules import ACCIDENTAL_START_WINDOW_MINUTES
+    from app.models.daily_log import DailyLog
+    from app.models.ledger_billing import BillingLedger
+    from app.services import session_absence_service as absence_svc
+
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == session_id)
+        .options(selectinload(TherapySession.case).selectinload(Case.child), selectinload(TherapySession.daily_log))
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    _therapist_only_update(user, session)
+
+    if session.status != SessionStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NOT_IN_PROGRESS", "message": "Only in-progress sessions can be cancelled as accidental starts."},
+        )
+
+    # Check duration window
+    if session.actual_start_at:
+        started = session.actual_start_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=tz.utc)
+        from datetime import datetime
+        elapsed_minutes = (datetime.now(tz.utc) - started).total_seconds() / 60
+        if elapsed_minutes > ACCIDENTAL_START_WINDOW_MINUTES:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "WINDOW_EXPIRED",
+                    "message": f"Accidental start cancellation is only allowed within {ACCIDENTAL_START_WINDOW_MINUTES} minutes of starting.",
+                },
+            )
+
+    # Guard: no DailyLog
+    if session.daily_log is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HAS_DAILY_LOG", "message": "A session log has already been submitted. Use the standard cancel flow."},
+        )
+
+    # Guard: no billing ledger rows
+    has_ledger = db.scalars(
+        select(BillingLedger).where(BillingLedger.session_id == session_id)
+    ).first()
+    if has_ledger:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HAS_BILLING_RECORD", "message": "Billing records exist for this session. Use the standard cancel flow."},
+        )
+
+    # Guard: no active absence/leave request (rejected history does not block)
+    if absence_svc.has_blocking_absence_for_session(db, session_id):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HAS_ABSENCE_REQUEST", "message": "An absence request is linked to this session. Use the standard cancel flow."},
+        )
+
+    session.status = SessionStatus.CANCELLED
+    session.cancellation_reason = "accidental_start"
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="cancel_accidental_start",
+        entity_type="session",
+        entity_id=session.id,
+        new_value={"status": "CANCELLED", "cancellation_reason": "accidental_start"},
+        **meta,
+    )
+    db.commit()
+    db.refresh(session)
     return _session_read(session, case)
 
 
@@ -374,8 +530,10 @@ def end_session(
         raise HTTPException(status_code=403, detail="Access denied")
     if session.therapist_user_id != user.id:
         raise HTTPException(status_code=403, detail="Can only end your own sessions")
+    already_completed = session.status == SessionStatus.COMPLETED
     try:
         session = session_service.end_session(db, session, lat=payload.lat, lng=payload.lng)
+        session._already_completed = already_completed
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
@@ -449,11 +607,66 @@ def cancel_session_route(
         raise HTTPException(status_code=403, detail="Access denied")
     if session.therapist_user_id != user.id:
         raise HTTPException(status_code=403, detail="Can only cancel your own sessions")
+    old_snapshot = session_service.session_audit_snapshot(session)
     try:
         session = session_service.cancel_session(db, session, user.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="cancel", entity_type="session", entity_id=session.id, **meta)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="cancel",
+        entity_type="session",
+        entity_id=session.id,
+        case_id=session.case_id,
+        old_value=old_snapshot,
+        new_value=session_service.session_audit_snapshot(session),
+        **meta,
+    )
+    db.commit()
+    return _session_read(session, case)
+
+
+@router.post("/{session_id}/void-before-log", response_model=SessionRead)
+def void_session_before_log_route(
+    session_id: int,
+    request: Request,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    """Void a completed visit with no submitted log (within session_void_window_hours of start)."""
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == session_id)
+        .options(
+            selectinload(TherapySession.case).selectinload(Case.child),
+            selectinload(TherapySession.daily_log),
+        )
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if session.therapist_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Can only void your own sessions")
+    old_snapshot = session_service.session_audit_snapshot(session)
+    try:
+        session = session_service.void_session_before_log(db, session, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="void_before_log",
+        entity_type="session",
+        entity_id=session.id,
+        case_id=session.case_id,
+        old_value=old_snapshot,
+        new_value=session_service.session_audit_snapshot(session),
+        **meta,
+    )
     db.commit()
     return _session_read(session, case)

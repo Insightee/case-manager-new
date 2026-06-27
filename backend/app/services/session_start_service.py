@@ -162,6 +162,14 @@ def get_idempotent_session(
     ).first()
 
 
+def clear_idempotency_for_session(db: Session, session_id: int) -> None:
+    """Drop cached start keys when a visit ends or is voided so the slot can be started again."""
+    from sqlalchemy import delete
+
+    db.execute(delete(SessionStartIdempotency).where(SessionStartIdempotency.session_id == session_id))
+    db.flush()
+
+
 def store_idempotency(
     db: Session,
     *,

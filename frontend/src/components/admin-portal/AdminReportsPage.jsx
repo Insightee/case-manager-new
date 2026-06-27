@@ -23,11 +23,11 @@ import { AdminReportsTable } from './AdminReportsTable.jsx'
 import { AdminClientStatusReportSection } from './AdminClientStatusReportSection.jsx'
 import './admin-reports.css'
 
-const API_URL = import.meta.env.VITE_API_URL || ''
+import { getApiBaseUrl } from '../../lib/apiClient.js'
 
 async function downloadExport(path, filename) {
   const { access } = getTokens()
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
     headers: access ? { Authorization: `Bearer ${access}` } : {},
   })
   if (!res.ok) throw new Error('Export failed')

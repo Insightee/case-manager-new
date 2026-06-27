@@ -5,12 +5,14 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.timezone import today_ist, wall_clock_time_ist
+from app.core.config import settings
+from app.core.timezone import IST, today_ist, wall_clock_time_ist, ensure_utc_aware
 from app.core.session_rules import (
     MIN_SESSION_DURATION_ERROR,
     compute_auto_end_cap,
     duration_minutes_between,
     product_module_for_case,
+    resolve_clinical_service_category,
     scheduled_duration_minutes,
     validate_session_duration_minutes,
 )
@@ -31,18 +33,76 @@ def _aware(dt: datetime) -> datetime:
     return dt
 
 
+def session_ist_calendar_day(session: TherapySession) -> date:
+    """IST calendar day for an open or scheduled session."""
+    if session.actual_start_at:
+        return _aware(session.actual_start_at).astimezone(IST).date()
+    return session.scheduled_date
+
+
+def get_in_progress_sessions(db: Session, therapist_user_id: int) -> list[TherapySession]:
+    return list(
+        db.scalars(
+            select(TherapySession)
+            .where(
+                TherapySession.therapist_user_id == therapist_user_id,
+                TherapySession.status == SessionStatus.IN_PROGRESS,
+            )
+            .options(selectinload(TherapySession.case), selectinload(TherapySession.daily_log))
+            .order_by(TherapySession.actual_start_at.desc())
+        ).all()
+    )
+
+
+def partition_sessions_by_ist_day(
+    sessions: list[TherapySession],
+    *,
+    today: date | None = None,
+) -> tuple[list[TherapySession], list[TherapySession]]:
+    today = today or today_ist()
+    same_day: list[TherapySession] = []
+    stale: list[TherapySession] = []
+    for session in sessions:
+        if session_ist_calendar_day(session) == today:
+            same_day.append(session)
+        else:
+            stale.append(session)
+    return same_day, stale
+
+
+def get_active_session_for_today(db: Session, therapist_user_id: int) -> TherapySession | None:
+    """Same IST-day IN_PROGRESS only — blocks starting another live session."""
+    same_day, _ = partition_sessions_by_ist_day(get_in_progress_sessions(db, therapist_user_id))
+    if not same_day:
+        return None
+    session = same_day[0]
+    session = auto_end_if_stale(db, session)
+    if session.status == SessionStatus.IN_PROGRESS:
+        db.flush()
+        return session
+    db.commit()
+    return None
+
+
+def get_stale_previous_sessions(db: Session, therapist_user_id: int) -> list[TherapySession]:
+    """Prior IST-day IN_PROGRESS — informational; does not block today's work."""
+    _, stale = partition_sessions_by_ist_day(get_in_progress_sessions(db, therapist_user_id))
+    return stale
+
+
 def auto_end_if_stale(db: Session, session: TherapySession) -> TherapySession:
     if session.status != SessionStatus.IN_PROGRESS or not session.actual_start_at:
         return session
     started = _aware(session.actual_start_at)
     module = product_module_for_case(session.case)
+    category = resolve_clinical_service_category(session.case, db=db)
     hard_cap, reason, sched_mins, overage = compute_auto_end_cap(
         started_at=started,
         scheduled_date=session.scheduled_date,
         start_time=session.start_time,
         end_time=session.end_time,
-        slot_duration_minutes=session.slot_duration_minutes,
         product_module=module,
+        service_category=category,
     )
     if _now() >= hard_cap:
         session.scheduled_duration_mins = sched_mins
@@ -59,22 +119,8 @@ def auto_end_if_stale(db: Session, session: TherapySession) -> TherapySession:
 
 
 def get_active_session(db: Session, therapist_user_id: int) -> TherapySession | None:
-    session = db.scalars(
-        select(TherapySession)
-        .where(
-            TherapySession.therapist_user_id == therapist_user_id,
-            TherapySession.status == SessionStatus.IN_PROGRESS,
-        )
-        .options(selectinload(TherapySession.case), selectinload(TherapySession.daily_log))
-        .order_by(TherapySession.actual_start_at.desc())
-    ).first()
-    if session:
-        session = auto_end_if_stale(db, session)
-        if session.status == SessionStatus.IN_PROGRESS:
-            db.flush()
-            return session
-        db.commit()
-    return None
+    """Same-day live session only (backward-compatible alias)."""
+    return get_active_session_for_today(db, therapist_user_id)
 
 
 def start_session(
@@ -93,7 +139,7 @@ def start_session(
     cached = start_svc.get_idempotent_session(
         db, idempotency_key=idempotency_key, therapist_user_id=therapist_user_id
     )
-    if cached:
+    if cached and cached.status == SessionStatus.IN_PROGRESS:
         return cached
 
     if session.status == SessionStatus.IN_PROGRESS:
@@ -131,20 +177,19 @@ def start_session(
     assert_therapist_may_start_session(db, session.case_id)
     start_svc.resolve_start_conflict(db, session, therapist_user_id, allow_duplicate=allow_duplicate)
 
-    active = db.scalars(
-        select(TherapySession).where(
-            TherapySession.therapist_user_id == therapist_user_id,
-            TherapySession.status == SessionStatus.IN_PROGRESS,
-        )
-    ).first()
-    if active and active.id != session.id:
+    today = today_ist()
+    for active in get_in_progress_sessions(db, therapist_user_id):
+        if active.id == session.id:
+            continue
+        if session_ist_calendar_day(active) != today:
+            continue
         active = auto_end_if_stale(db, active)
         if active.status == SessionStatus.IN_PROGRESS:
             raise SessionStartConflict(
                 existing_session_id=active.id,
                 current_status=active.status.value,
                 recommended_action=RecommendedAction.CONTINUE_SESSION,
-                message=f"You already have an active session. Continue it before starting another.",
+                message="You already have an active session. Continue it before starting another.",
             )
 
     now = _now()
@@ -188,6 +233,8 @@ def end_session(
     lat: float | None = None,
     lng: float | None = None,
 ) -> TherapySession:
+    if session.status == SessionStatus.COMPLETED:
+        return session
     if session.status != SessionStatus.IN_PROGRESS:
         raise ValueError("Session is not in progress")
     end_time = _aware(end_at) if end_at else _now()
@@ -203,8 +250,97 @@ def end_session(
         session.checkout_lat = lat
     if lng is not None:
         session.checkout_lng = lng
+    start_svc.clear_idempotency_for_session(db, session.id)
     db.flush()
     return session
+
+
+def session_audit_snapshot(session: TherapySession) -> dict:
+    """Structured session fields for audit events (who voided/cancelled which visit on which day)."""
+    status = session.status.value if hasattr(session.status, "value") else str(session.status)
+    return {
+        "session_id": session.id,
+        "case_id": session.case_id,
+        "therapist_user_id": session.therapist_user_id,
+        "scheduled_date": session.scheduled_date.isoformat() if session.scheduled_date else None,
+        "status": status,
+        "slot_id": session.slot_id,
+        "actual_start_at": session.actual_start_at.isoformat() if session.actual_start_at else None,
+        "actual_end_at": session.actual_end_at.isoformat() if session.actual_end_at else None,
+        "cancellation_reason": session.cancellation_reason,
+        "auto_ended": bool(session.auto_ended),
+        "is_additional_visit": bool(session.is_additional_visit),
+    }
+
+
+def _void_window_anchor(session: TherapySession) -> datetime:
+    if session.actual_start_at:
+        return ensure_utc_aware(session.actual_start_at)
+    day_start = datetime.combine(session.scheduled_date, time.min, tzinfo=IST)
+    return day_start.astimezone(timezone.utc)
+
+
+def void_session_before_log(
+    db: Session,
+    session: TherapySession,
+    therapist_user_id: int,
+) -> TherapySession:
+    """Void a completed visit that has no log — revert scheduled slots or cancel unbooked/manual rows."""
+    if session.therapist_user_id != therapist_user_id:
+        raise ValueError("Not your session")
+    if session.status != SessionStatus.COMPLETED:
+        raise ValueError("Only completed sessions without a log can be voided")
+    if session.daily_log is not None:
+        raise ValueError("Cannot void a session that already has a log")
+
+    from app.models.ledger_billing import BillingLedger
+    from app.services import session_absence_service as absence_svc
+
+    has_ledger = db.scalars(select(BillingLedger).where(BillingLedger.session_id == session.id)).first()
+    if has_ledger:
+        raise ValueError("Billing records exist for this session — contact your case manager")
+
+    if absence_svc.has_blocking_absence_for_session(db, session.id):
+        raise ValueError("An absence request is linked to this session — contact your case manager")
+
+    anchor = _void_window_anchor(session)
+    window = timedelta(hours=settings.session_void_window_hours)
+    if datetime.now(timezone.utc) > anchor + window:
+        hours = settings.session_void_window_hours
+        raise ValueError(
+            f"Void window expired — sessions can only be cancelled within {hours} hours of starting"
+        )
+
+    _clear_visit_clock_fields(session)
+    if session.slot_id is not None:
+        session.status = SessionStatus.SCHEDULED
+        session.cancellation_reason = None
+    else:
+        session.status = SessionStatus.CANCELLED
+        session.cancellation_reason = "void_before_log"
+    start_svc.clear_idempotency_for_session(db, session.id)
+    db.flush()
+    return session
+
+
+def _clear_visit_clock_fields(session: TherapySession) -> None:
+    session.actual_start_at = None
+    session.actual_end_at = None
+    session.auto_ended = False
+    session.auto_end_reason = None
+    session.scheduled_duration_mins = None
+    session.overage_mins = None
+    session.time_confirmation_required = False
+    session.checkin_lat = None
+    session.checkin_lng = None
+    session.checkout_lat = None
+    session.checkout_lng = None
+    session.edited_start_at = None
+    session.edited_end_at = None
+    session.actual_times_edited = False
+    session.actual_times_edited_at = None
+    session.actual_times_edited_by = None
+    session.actual_times_edit_reason = None
 
 
 def cancel_session(
@@ -219,18 +355,10 @@ def cancel_session(
         raise ValueError("Session is not in progress")
     if session.daily_log is not None:
         raise ValueError("Cannot cancel a session that already has a log")
+    _clear_visit_clock_fields(session)
     session.status = SessionStatus.SCHEDULED
-    session.actual_start_at = None
-    session.actual_end_at = None
-    session.auto_ended = False
-    session.auto_end_reason = None
-    session.scheduled_duration_mins = None
-    session.overage_mins = None
-    session.time_confirmation_required = False
-    session.checkin_lat = None
-    session.checkin_lng = None
-    session.checkout_lat = None
-    session.checkout_lng = None
+    session.cancellation_reason = "cancel_in_progress"
+    start_svc.clear_idempotency_for_session(db, session.id)
     db.flush()
     return session
 
@@ -340,4 +468,10 @@ def validate_manual_duration(actual_start_at: datetime, actual_end_at: datetime)
     validate_session_duration_minutes(duration_minutes_between(actual_start_at, actual_end_at))
 
 
-__all__ = ["MIN_SESSION_DURATION_ERROR", "create_manual_session", "validate_manual_duration"]
+__all__ = [
+    "MIN_SESSION_DURATION_ERROR",
+    "create_manual_session",
+    "session_audit_snapshot",
+    "void_session_before_log",
+    "validate_manual_duration",
+]

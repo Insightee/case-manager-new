@@ -17,7 +17,7 @@ from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.seed.demo_seed import run as seed_run
 from app.core.database import SessionLocal
-from app.tests.conftest import cm_email_for_case_id, pending_log_for_cm_email
+from app.tests.conftest import cm_headers_for_case
 
 client = TestClient(app)
 
@@ -176,15 +176,96 @@ def test_submit_log_notifies_case_manager():
         db.close()
 
 
-def test_approve_log_notifies_parent():
-    pending = pending_log_for_cm_email("casemanager@demo.com") or pending_log_for_cm_email("shadowcm@demo.com")
-    assert pending is not None, "No pending log on a seeded CM caseload"
-    log_id = pending["id"]
-    cm_email = pending["cm_email"]
+def test_duplicate_log_submit_returns_existing_without_extra_notifications():
+    db = SessionLocal()
+    try:
+        session = db.scalars(
+            select(TherapySession).where(TherapySession.status == SessionStatus.COMPLETED).limit(1)
+        ).first()
+        if not session:
+            pytest.skip("No completed session")
+        existing = db.scalars(select(DailyLog).where(DailyLog.session_id == session.id)).first()
+        if existing:
+            db.delete(existing)
+            db.commit()
+        case = db.get(Case, session.case_id)
+        cm_id = case.case_manager_user_id if case else None
+        if not cm_id:
+            pytest.skip("Case has no CM")
+        session_id = session.id
+    finally:
+        db.close()
+
+    headers = _login("therapist@demo.com")
+    payload = {
+        "session_id": session_id,
+        "attendance_status": "PRESENT",
+        "session_notes": "Idempotent test",
+        "late_reason": "Retroactive test entry",
+    }
+    first = client.post("/api/v1/therapist/session-logs", headers=headers, json=payload)
+    assert first.status_code == 201, first.text
+    log_id = first.json()["id"]
 
     db = SessionLocal()
     try:
-        before_count = len(db.scalars(select(Notification)).all())
+        notif_count = len(
+            db.scalars(
+                select(Notification).where(
+                    Notification.user_id == cm_id,
+                    Notification.entity_type == "daily_log",
+                )
+            ).all()
+        )
+    finally:
+        db.close()
+
+    second = client.post("/api/v1/therapist/session-logs", headers=headers, json=payload)
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] == log_id
+
+    db = SessionLocal()
+    try:
+        after = len(
+            db.scalars(
+                select(Notification).where(
+                    Notification.user_id == cm_id,
+                    Notification.entity_type == "daily_log",
+                )
+            ).all()
+        )
+        assert after == notif_count
+    finally:
+        db.close()
+
+
+def test_approve_log_notifies_parent():
+    db = SessionLocal()
+    try:
+        log = db.scalars(
+            select(DailyLog)
+            .join(TherapySession)
+            .where(DailyLog.approval_status == LogApprovalStatus.PENDING)
+        ).first()
+        assert log is not None
+        log_id = log.id
+        from app.models.user import User
+        from app.models.case import Case
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        session = db.get(TherapySession, log.session_id)
+        case = db.get(Case, session.case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+
+        case = db.get(Case, log.session_id)  # log.session is not set up on this relation directly in this test version
+        # OR we can get case from DB:
+        case = db.get(Case, session.case_id)
+        assert case is not None and case.case_manager_user_id is not None
+        cm = db.get(User, case.case_manager_user_id)
+        assert cm is not None
+        cm_email = cm.email
+        before = db.scalars(select(Notification)).all()
+        before_count = len(before)
     finally:
         db.close()
 
@@ -232,54 +313,43 @@ def test_daily_log_submission_emails_parent(monkeypatch):
 
     end_active_sessions_for_therapist()
     th_headers = _login("therapist@demo.com")
-    session_ids = ensure_scheduled_sessions_for_therapist(min_count=3)
+    session_ids = ensure_scheduled_sessions_for_therapist(min_count=1)
     if not session_ids:
         pytest.skip("No scheduled sessions")
+    sid = session_ids[0]
+    assert client.post(f"/api/v1/sessions/{sid}/start", headers=th_headers).status_code == 200
+    backdate_in_progress_session(sid)
+    assert client.post(f"/api/v1/sessions/{sid}/end", headers=th_headers).status_code == 200
 
-    log_id = None
-    sid = None
-    payload = {
-        "attendance_status": "PRESENT",
-        "activities_done": "Email test activity",
-        "parent_notes": "Visible to parent after approval",
-    }
-
-    for candidate_sid in session_ids:
-        started = client.post(f"/api/v1/sessions/{candidate_sid}/start", headers=th_headers)
-        if started.status_code == 409:
-            detail = started.json().get("detail") or {}
-            if detail.get("current_status") == "COMPLETED":
-                continue
-            assert started.status_code == 200, started.text
-        else:
-            assert started.status_code == 200, started.text
-        backdate_in_progress_session(candidate_sid)
-        ended = client.post(f"/api/v1/sessions/{candidate_sid}/end", headers=th_headers)
-        assert ended.status_code == 200, ended.text
-
-        create_payload = {"session_id": candidate_sid, **payload}
-        created = client.post("/api/v1/daily-logs", headers=th_headers, json=create_payload)
-        if created.status_code == 400 and "Late reason" in created.text:
-            create_payload["late_reason"] = "Email test coverage for prior-day session"
-            created = client.post("/api/v1/daily-logs", headers=th_headers, json=create_payload)
-        if created.status_code == 400 and "already exists" in created.text:
-            continue
-        assert created.status_code == 201, created.text
-        log_id = created.json()["id"]
-        sid = candidate_sid
-        break
-
-    if log_id is None:
-        pytest.skip("No session available for a fresh daily log in shared test DB")
-
+    created = client.post(
+        "/api/v1/daily-logs",
+        headers=th_headers,
+        json={
+            "session_id": sid,
+            "attendance_status": "PRESENT",
+            "activities_done": "Email test activity",
+            "parent_notes": "Visible to parent after approval",
+        },
+    )
+    assert created.status_code == 201, created.text
     assert submitted, "Expected parent email on session log submission"
     assert submitted[0].get("to")
 
-    with SessionLocal() as db:
-        sess = db.get(TherapySession, sid)
-        assert sess is not None
-        cm_email = cm_email_for_case_id(sess.case_id)
-    cm_headers = _login(cm_email)
-    approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=cm_headers)
+    log_id = created.json()["id"]
+    db = SessionLocal()
+    try:
+        from app.models.user import User
+        from app.models.case import Case
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        log = db.get(DailyLog, log_id)
+        session = db.get(TherapySession, log.session_id)
+        case = db.get(Case, session.case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+        approve_headers = cm_headers_for_case(client, session.case_id)
+    finally:
+        db.close()
+
+    approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=approve_headers)
     assert approved.status_code == 200
     assert published, "Expected parent email on session log approval"

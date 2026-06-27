@@ -23,8 +23,6 @@ export function TherapistCalendar({
   onSlotClick,
   onCellClick,
   selectedSlotId,
-  showLeaveActions = true,
-  onMarkLeave,
   refreshKey = 0,
   onScheduleContext,
   onCalendarLoad,
@@ -123,28 +121,6 @@ export function TherapistCalendar({
     load()
   }, [load])
 
-  async function handleMarkLeave(dayDateArg) {
-    if (onMarkLeave) {
-      onMarkLeave(dayDateArg)
-      return
-    }
-    const d = dateStr(dayDateArg)
-    try {
-      await apiFetch('/api/v1/leave', {
-        method: 'POST',
-        body: JSON.stringify({
-          leave_type: 'CASUAL',
-          start_date: d,
-          end_date: d,
-          reason: 'Marked from calendar',
-        }),
-      })
-      load()
-    } catch (err) {
-      setError(err.message || 'Could not mark leave')
-    }
-  }
-
   function switchView(next) {
     setView(next)
     if (next === 'week') setWeekStart(startOfWeek(dayDate))
@@ -194,8 +170,6 @@ export function TherapistCalendar({
           onSlotClick={onSlotClick}
           onCellClick={onCellClick}
           selectedSlotId={selectedSlotId}
-          showLeaveActions={showLeaveActions}
-          onMarkLeave={handleMarkLeave}
           onReload={load}
         />
         </>
@@ -211,8 +185,6 @@ export function TherapistCalendar({
           onSlotClick={onSlotClick}
           onCellClick={onCellClick}
           selectedSlotId={selectedSlotId}
-          showLeaveActions={showLeaveActions}
-          onMarkLeave={handleMarkLeave}
         />
       ) : null}
 

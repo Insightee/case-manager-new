@@ -48,19 +48,20 @@ def therapist_create_session_log(
 ):
     _require_therapist(user)
     try:
-        log = session_log_service.create_therapist_session_log(db, user, payload.model_dump())
+        log, created = session_log_service.create_therapist_session_log(db, user, payload.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    meta = get_request_meta(request)
-    log_audit(
-        db,
-        actor_user_id=user.id,
-        action="create",
-        entity_type="daily_log",
-        entity_id=log.id,
-        new_value=payload.model_dump(),
-        **meta,
-    )
+    if created:
+        meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="create",
+            entity_type="daily_log",
+            entity_id=log.id,
+            new_value=payload.model_dump(),
+            **meta,
+        )
     db.commit()
     return SessionLogRead(**session_log_service.session_log_read(db, log))
 

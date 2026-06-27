@@ -14,3 +14,4 @@ class ParentReportCommentCreate(BaseModel):
 class ParentMonthlyFeedback(BaseModel):
     message: str = Field(min_length=1)
     comment_type: Optional[str] = None
+    rating: Optional[int] = Field(default=None, ge=1, le=5)

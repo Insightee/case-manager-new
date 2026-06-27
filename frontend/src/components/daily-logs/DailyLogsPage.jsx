@@ -32,6 +32,12 @@ import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { todayIsoIST } from '../../lib/datetime.js'
 import { canStartSessionToday, logsPathForSession } from '../../lib/sessionStartRules.js'
+import {
+  filterSessionsWithoutAbsence,
+  isChildAbsentLog,
+  isLeaveLog,
+  sortLogsBySessionDate,
+} from '../../lib/sessionLogFilters.js'
 import { SameDaySessionDialog } from './SameDaySessionDialog.jsx'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import '../cases/my-cases.css'
@@ -61,6 +67,8 @@ function logMatchesMonth(log, year, monthIndex) {
 const LOG_TABS = [
   { id: 'all', label: 'All logs' },
   { id: 'needs', label: 'Needs log' },
+  { id: 'child_absent', label: 'Child absent' },
+  { id: 'leave', label: 'Leave' },
   { id: 'pending', label: 'Pending review' },
   { id: 'approved', label: 'Approved' },
   { id: 'rejected', label: 'Rejected' },
@@ -102,10 +110,18 @@ export function DailyLogsPage() {
       ),
     enabled: therapistId != null,
   })
-  const upcoming = workspace?.upcoming || []
+  const upcomingRaw = workspace?.upcoming || []
   const active = workspace?.active_session || null
-  const needsLog = workspace?.needs_log || []
+  const needsLogRaw = workspace?.needs_log || []
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
+  const needsLog = useMemo(
+    () => filterSessionsWithoutAbsence(needsLogRaw, logs),
+    [needsLogRaw, logs],
+  )
+  const upcoming = useMemo(
+    () => filterSessionsWithoutAbsence(upcomingRaw, logs),
+    [upcomingRaw, logs],
+  )
   const caseFilterId = searchParams.get('case_id')
   const scopedToCase = Boolean(caseFilterId)
 
@@ -155,6 +171,8 @@ export function DailyLogsPage() {
     () => displayLogs.filter((l) => l.approval_status === 'REJECTED'),
     [displayLogs],
   )
+  const childAbsentLogs = useMemo(() => displayLogs.filter(isChildAbsentLog), [displayLogs])
+  const leaveLogs = useMemo(() => displayLogs.filter(isLeaveLog), [displayLogs])
 
   const filterByMonth = useCallback(
     (list) => list.filter((l) => logMatchesMonth(l, logYear, logMonth)),
@@ -165,8 +183,16 @@ export function DailyLogsPage() {
   const filteredApproved = useMemo(() => filterByMonth(approvedLogs), [filterByMonth, approvedLogs])
   const filteredRejected = useMemo(() => filterByMonth(rejectedLogs), [filterByMonth, rejectedLogs])
   const filteredAll = useMemo(
-    () => sortLogsByRecency(filterByMonth(displayLogs)),
+    () => sortLogsBySessionDate(filterByMonth(displayLogs)),
     [filterByMonth, displayLogs],
+  )
+  const filteredChildAbsent = useMemo(
+    () => sortLogsBySessionDate(filterByMonth(childAbsentLogs)),
+    [filterByMonth, childAbsentLogs],
+  )
+  const filteredLeave = useMemo(
+    () => sortLogsBySessionDate(filterByMonth(leaveLogs)),
+    [filterByMonth, leaveLogs],
   )
 
   const displayUpcoming = useMemo(() => {
@@ -935,6 +961,12 @@ export function DailyLogsPage() {
               {t.id === 'needs' && displayNeedsLog.length > 0 ? (
                 <span className="session-logs-tabs__count">{displayNeedsLog.length}</span>
               ) : null}
+              {t.id === 'child_absent' && childAbsentLogs.length > 0 ? (
+                <span className="session-logs-tabs__count">{childAbsentLogs.length}</span>
+              ) : null}
+              {t.id === 'leave' && leaveLogs.length > 0 ? (
+                <span className="session-logs-tabs__count">{leaveLogs.length}</span>
+              ) : null}
               {t.id === 'pending' && pendingLogs.length > 0 ? (
                 <span className="session-logs-tabs__count session-logs-tabs__count--amber">{pendingLogs.length}</span>
               ) : null}
@@ -970,6 +1002,26 @@ export function DailyLogsPage() {
                     </button>
                   </div>
                 ))}
+              </div>
+            )
+          ) : null}
+
+          {logTab === 'child_absent' ? (
+            filteredChildAbsent.length === 0 ? (
+              <p className="ic-empty-hint">No child absence records for {MONTHS[logMonth]} {logYear}.</p>
+            ) : (
+              <div className="ic-session-log-recent">
+                {filteredChildAbsent.map((l) => renderLogRow(l))}
+              </div>
+            )
+          ) : null}
+
+          {logTab === 'leave' ? (
+            filteredLeave.length === 0 ? (
+              <p className="ic-empty-hint">No therapist leave records for {MONTHS[logMonth]} {logYear}.</p>
+            ) : (
+              <div className="ic-session-log-recent">
+                {filteredLeave.map((l) => renderLogRow(l))}
               </div>
             )
           ) : null}

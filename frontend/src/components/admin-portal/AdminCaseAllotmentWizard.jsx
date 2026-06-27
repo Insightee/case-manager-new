@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatSessionWhen } from '../../lib/sessionDisplay.js'
 import { apiFetch } from '../../lib/apiClient.js'
@@ -148,16 +148,35 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
     return () => clearTimeout(t)
   }, [parentSearch, parentIsExisting, familyMode])
 
-  useEffect(() => {
+  const caseCodeRequestRef = useRef(0)
+
+  const refreshCaseCode = useCallback(() => {
     if (!productModule) return
+    const requestId = caseCodeRequestRef.current + 1
+    caseCodeRequestRef.current = requestId
     setCaseCodeLoading(true)
     apiFetch(`/api/v1/admin/cases/next-code?product_module=${encodeURIComponent(productModule)}`)
       .then((r) => {
+        if (caseCodeRequestRef.current !== requestId) return
         setCaseCode(r.case_code || '')
       })
-      .catch(() => setCaseCode(''))
-      .finally(() => setCaseCodeLoading(false))
+      .catch(() => {
+        if (caseCodeRequestRef.current !== requestId) return
+        setCaseCode('')
+      })
+      .finally(() => {
+        if (caseCodeRequestRef.current !== requestId) return
+        setCaseCodeLoading(false)
+      })
   }, [productModule])
+
+  useEffect(() => {
+    refreshCaseCode()
+  }, [refreshCaseCode])
+
+  useEffect(() => {
+    if (step === 2) refreshCaseCode()
+  }, [step, refreshCaseCode])
 
   useEffect(() => {
     if (!therapistId || !productModule) {
@@ -244,7 +263,6 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         child_id: cid,
         service_type: serviceType.trim(),
         product_module: productModule,
-        case_code: caseCode || undefined,
         billing_type: billing.billing_type,
         client_billing_mode: billing.client_billing_mode,
         compensation_mode: billing.compensation_mode,

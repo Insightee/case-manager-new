@@ -30,6 +30,20 @@ PARENT_PORTAL_ACTIVE_CASE_STATUSES = (
 )
 
 
+def parent_has_portal_session(db: Session, user_id: int) -> bool:
+    from app.models.audit_event import AuditEvent
+
+    return (
+        db.scalars(
+            select(AuditEvent.id).where(
+                AuditEvent.actor_user_id == user_id,
+                AuditEvent.action.in_(("login", "accept_invite")),
+            ).limit(1)
+        ).first()
+        is not None
+    )
+
+
 def _unique_children(children: list[Child]) -> list[Child]:
     seen: set[int] = set()
     out: list[Child] = []

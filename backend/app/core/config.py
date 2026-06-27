@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).
     leave_migration_end_date: str = "2026-06-30"
+    # Hours after actual_start_at a therapist may void a COMPLETED visit that has no log (168 = 7 days cleanup window).
+    session_void_window_hours: int = 168
 
     storage_provider: str = "local"
     storage_prefix: str = "insightcase"
@@ -140,7 +142,7 @@ class Settings(BaseSettings):
         # Vercel production aliases (frontend-omega-eight-92.vercel.app) and git previews
         # (frontend-git-<branch>-insightes-projects.vercel.app). Explicit production URL
         # should still be listed in CORS_ORIGINS for invite/email link consistency.
-        return r"https://frontend-[a-zA-Z0-9-]+\.vercel\.app"
+        return r"https://((frontend-[a-zA-Z0-9-]+\.vercel\.app)|(www\.)?insighte\.org)"
 
     @property
     def is_development(self) -> bool:

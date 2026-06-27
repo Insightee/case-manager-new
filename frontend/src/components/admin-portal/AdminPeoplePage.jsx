@@ -50,6 +50,7 @@ export function AdminPeoplePage() {
   const [profiles, setProfiles] = useState([])
   const [clients, setClients] = useState([])
   const [invites, setInvites] = useState([])
+  const [parentsAwaitingLogin, setParentsAwaitingLogin] = useState({ count: 0, items: [] })
   const [catalog, setCatalog] = useState([])
   const [roleDefaults, setRoleDefaults] = useState({})
   const [assignableRoles, setAssignableRoles] = useState([])
@@ -121,13 +122,18 @@ export function AdminPeoplePage() {
       const rbacFetch = canManageUsers
         ? apiFetch('/api/v1/admin/rbac/catalog').catch(() => null)
         : Promise.resolve(null)
-      const [userResult, moduleMeta, rbacMeta, profileRows, clientRows, inviteRows] = await Promise.all([
+      const awaitingFetch = canManageUsers
+        ? apiFetch('/api/v1/admin/families/parents-awaiting-login').catch(() => ({ count: 0, items: [] }))
+        : Promise.resolve({ count: 0, items: [] })
+      const [userResult, moduleMeta, rbacMeta, profileRows, clientRows, inviteRows, awaitingRows] =
+        await Promise.all([
         userFetch,
         modulesFetch,
         rbacFetch,
         canReadTherapists ? apiFetch('/api/v1/admin/therapist-profiles') : Promise.resolve([]),
         apiFetch('/api/v1/admin/families'),
         canManageUsers ? apiFetch('/api/v1/admin/invites').catch(() => []) : Promise.resolve([]),
+        awaitingFetch,
       ])
       const normalizedUsers = canReadStaffDirectory
         ? userResult.items
@@ -156,6 +162,7 @@ export function AdminPeoplePage() {
       setProfiles(profileRows)
       setClients(clientRows)
       setInvites(Array.isArray(inviteRows) ? inviteRows : [])
+      setParentsAwaitingLogin(awaitingRows?.count != null ? awaitingRows : { count: 0, items: [] })
     } catch (err) {
       setError(err.message || 'Could not load people data')
     } finally {
@@ -264,7 +271,8 @@ export function AdminPeoplePage() {
           ? 'expired'
           : 'pending'
         : undefined,
-      pending_invite_url: f.pendingInvite?.inviteUrl,
+      pending_invite_url:
+        f.pendingInvite && !f.pendingInvite.isExpired ? f.pendingInvite.inviteUrl : undefined,
       _reactivateCaseId:
         f.allCasesClosed && primary.parentIsActive !== false ? f.primaryCaseId : null,
     }
@@ -275,10 +283,11 @@ export function AdminPeoplePage() {
       setError('')
       try {
         const force = f.pendingInvite.isExpired ? '?force_resend=true' : ''
-        await apiFetch(`/api/v1/admin/invites/${f.pendingInvite.inviteId}/resend-email${force}`, {
+        const res = await apiFetch(`/api/v1/admin/invites/${f.pendingInvite.inviteId}/resend-email${force}`, {
           method: 'POST',
         })
-        setSuccess(`Invite resent to ${f.pendingInvite.pendingEmail}.`)
+        if (res.invite_url) setInviteUrl(res.invite_url)
+        setSuccess(`Fresh invite link sent to ${f.pendingInvite.pendingEmail}.`)
         load()
       } catch (err) {
         setError(err.message || 'Could not resend invite')
@@ -288,6 +297,31 @@ export function AdminPeoplePage() {
     const primary = f.parents?.[0]
     if (primary?.userId) {
       await inviteParent(primary.userId, f.childId, primary.parentEmail)
+    }
+  }
+
+  async function bulkInviteParentsAwaitingLogin() {
+    const count = parentsAwaitingLogin.count || 0
+    if (!count) return
+    if (
+      !window.confirm(
+        `Send a fresh portal invite to ${count} parent(s) who have not signed in yet?`,
+      )
+    ) {
+      return
+    }
+    setError('')
+    try {
+      const res = await apiFetch('/api/v1/admin/families/bulk-invite-parents', {
+        method: 'POST',
+        body: JSON.stringify({}),
+        timeoutMs: 120_000,
+      })
+      const skippedNote = res.skipped ? ` ${res.skipped} skipped.` : ''
+      setSuccess(`Invite emails queued for ${res.sent} of ${res.total} parent(s).${skippedNote}`)
+      load()
+    } catch (err) {
+      setError(err.message || 'Bulk invite failed')
     }
   }
 
@@ -351,13 +385,15 @@ export function AdminPeoplePage() {
       return (
         <div className="admin-btn-group admin-btn-group--wrap">
           {secondary}
-          <CopyLinkButton url={f.pendingInvite.inviteUrl} label="Copy invite link" />
+          {f.pendingInvite.inviteUrl ? (
+            <CopyLinkButton url={f.pendingInvite.inviteUrl} label="Copy invite link" />
+          ) : null}
           <button
             type="button"
             className="admin-btn admin-btn--ghost admin-btn--sm"
             onClick={() => invitePendingParent(f)}
           >
-            Resend invite
+            {f.pendingInvite.isExpired ? 'Send fresh invite' : 'Resend invite'}
           </button>
         </div>
       )
@@ -786,6 +822,8 @@ export function AdminPeoplePage() {
                 canManageUsers={canManageUsers}
                 isHrPortal={isHrPortal}
                 pendingInvites={parentPendingInvites}
+                parentsAwaitingLoginCount={parentsAwaitingLogin.count || 0}
+                onBulkInviteAwaitingLogin={bulkInviteParentsAwaitingLogin}
                 invitesViewOpen={pendingInvitesView}
                 onInvitesViewChange={setPendingInvitesView}
                 onAddFamily={() => setShowFamilyWizard(true)}

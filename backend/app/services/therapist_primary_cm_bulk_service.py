@@ -6,10 +6,10 @@ from typing import Literal, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.assignment import CaseAssignment, CaseAssignmentStatus
-from app.models.case import Case, CaseStatus
+from app.models.case import Case
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
+from app.services.assignment_service import assigned_case_ids_for_therapist, sync_case_managers_for_therapist
 
 CM_ROLE_NAMES = frozenset({"CASE_MANAGER", "MODULE_ADMIN", "ADMIN", "SUPER_ADMIN"})
 
@@ -82,18 +82,7 @@ def _resolve_case_manager(db: Session, email: str | None) -> tuple[User | None, 
 
 
 def _active_case_ids_for_therapist(db: Session, therapist_user_id: int) -> list[int]:
-    stmt = (
-        select(Case.id)
-        .join(CaseAssignment, CaseAssignment.case_id == Case.id)
-        .where(
-            CaseAssignment.therapist_user_id == therapist_user_id,
-            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
-            Case.status == CaseStatus.ACTIVE,
-        )
-        .distinct()
-        .order_by(Case.id)
-    )
-    return list(db.scalars(stmt).all())
+    return assigned_case_ids_for_therapist(db, therapist_user_id)
 
 
 def _current_cm_email(db: Session, user_id: int | None) -> str | None:
@@ -184,13 +173,14 @@ def process_bulk_primary_cm_rows(
         base["new_cm_email"] = new_cm_email
 
         profile_needs_update = profile.supervisor_user_id != cm.id
-        cases_to_update: list[Case] = []
-        for case_id in case_ids:
-            case = db.get(Case, case_id)
-            if case and case.case_manager_user_id != cm.id:
-                cases_to_update.append(case)
+        case_ids = _active_case_ids_for_therapist(db, therapist.id)
+        cases_to_update_count = sum(
+            1
+            for case_id in case_ids
+            if (case := db.get(Case, case_id)) and case.case_manager_user_id != cm.id
+        )
 
-        if not profile_needs_update and not cases_to_update:
+        if not profile_needs_update and not cases_to_update_count:
             results.append({**base, "status": "unchanged", "message": "Case manager already matches"})
             summary["unchanged"] += 1
             continue
@@ -203,10 +193,10 @@ def process_bulk_primary_cm_rows(
                     "message": (
                         f"Will update profile"
                         f"{'' if profile_needs_update else ' (unchanged)'}"
-                        f" and {len(cases_to_update)} active case(s)"
+                        f" and {cases_to_update_count} active case(s)"
                     ),
                     "profile_updated": profile_needs_update,
-                    "cases_updated": len(cases_to_update),
+                    "cases_updated": cases_to_update_count,
                 }
             )
             summary["will_update"] += 1
@@ -216,10 +206,7 @@ def process_bulk_primary_cm_rows(
             profile.supervisor_user_id = cm.id
             base["profile_updated"] = True
 
-        updated_cases = 0
-        for case in cases_to_update:
-            case.case_manager_user_id = cm.id
-            updated_cases += 1
+        updated_cases = sync_case_managers_for_therapist(db, therapist.id, cm.id)
         base["cases_updated"] = updated_cases
 
         results.append(

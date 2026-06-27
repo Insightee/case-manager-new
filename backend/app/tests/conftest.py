@@ -56,10 +56,23 @@ def api_items(data):
     return data
 
 
+def api_first_case_id(client, headers: dict, *, page_size: int = 1) -> int:
+    """First case visible to the authenticated user (team-scoped for CMs)."""
+    res = client.get(f"/api/v1/cases?page_size={page_size}", headers=headers)
+    assert res.status_code == 200, res.text
+    items = api_items(res.json())
+    assert items, "Expected at least one visible case"
+    return int(items[0]["id"])
+
+
+def login_headers(client, email: str, password: str = "demo123") -> dict[str, str]:
+    res = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert res.status_code == 200, res.text
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
 def cm_email_for_case_id(case_id: int) -> str:
     """Return the managing case manager email for a case (demo seed / RBAC tests)."""
-    from sqlalchemy import select
-
     from app.core.database import SessionLocal
     from app.models.case import Case
     from app.models.user import User
@@ -72,6 +85,12 @@ def cm_email_for_case_id(case_id: int) -> str:
         if not cm or not cm.email:
             raise AssertionError(f"Case manager user missing for case {case_id}")
         return cm.email
+
+
+def cm_headers_for_case(client, case_id: int, password: str = "demo123") -> dict[str, str]:
+    """Auth headers for the case manager assigned to ``case_id``."""
+    email = cm_email_for_case_id(case_id)
+    return login_headers(client, email, password=password)
 
 
 def casemanager_homecare_case_id() -> int:

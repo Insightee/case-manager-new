@@ -1,4 +1,51 @@
-const API_URL = import.meta.env.VITE_API_URL || ''
+/** Production UI hosts that proxy /api on the same origin (see vercel.json rewrites). */
+const SAME_ORIGIN_API_HOSTS = /^((www\.)?insighte\.org|[a-z0-9-]+\.vercel\.app)$/i
+
+const getEnv = (key) => {
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    return import.meta.env[key]
+  }
+  return undefined
+}
+
+const isDev = () => {
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    return import.meta.env.DEV
+  }
+  return false
+}
+
+function parseApiErrorDetail(detail, statusText = '') {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const joined = detail.map((d) => d?.msg || d?.message || JSON.stringify(d)).filter(Boolean).join(', ')
+    if (joined) return joined
+  }
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) return detail.message
+    if (typeof detail.detail === 'string' && detail.detail.trim()) return detail.detail
+  }
+  return statusText || ''
+}
+
+function resolveApiBaseUrl() {
+  const configured = (getEnv('VITE_API_URL') || '').replace(/\/$/, '')
+  if (typeof window === 'undefined') return configured
+  const host = window.location.hostname
+  // Apex insighte.org 308-redirects to www before /api rewrites; use www explicitly to avoid
+  // redirect stripping PATCH bodies / Authorization on cross-host hops.
+  if (host === 'insighte.org') {
+    return 'https://www.insighte.org'
+  }
+  if (SAME_ORIGIN_API_HOSTS.test(host)) {
+    return ''
+  }
+  return configured
+}
+
+function apiBase() {
+  return resolveApiBaseUrl()
+}
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const requestMetrics = {
@@ -13,7 +60,7 @@ function recordApiMetric(path, elapsedMs, ok) {
   requestMetrics.byPath[path] = (requestMetrics.byPath[path] || 0) + 1
   if (elapsedMs >= 1200) requestMetrics.slow += 1
   if (!ok) requestMetrics.failures += 1
-  if (import.meta.env.DEV) {
+  if (isDev()) {
     globalThis.__insightcaseApiMetrics = requestMetrics
   }
 }
@@ -39,7 +86,7 @@ function debugBillingApiLog(location, message, data, hypothesisId = 'E') {
 // #endregion
 
 export function getApiBaseUrl() {
-  return API_URL
+  return resolveApiBaseUrl()
 }
 
 export function getApiMetricsSnapshot() {
@@ -70,8 +117,8 @@ export function clearTokens() {
 
 function timeoutErrorMessage(timeoutMs = DEFAULT_TIMEOUT_MS) {
   const secs = Math.round(timeoutMs / 1000)
-  if (import.meta.env.DEV) {
-    const base = API_URL || 'http://localhost:8000 (via Vite proxy)'
+  if (isDev()) {
+    const base = apiBase() || 'http://localhost:8000 (via Vite proxy)'
     return `Request timed out after ${secs}s. The API may be down or an operation is stuck — check GET /health and start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 (${base}).`
   }
   return `This is taking longer than expected (${secs}s). Check your connection and try again.`
@@ -99,23 +146,56 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TI
   }
 }
 
+let refreshInFlight = null
+
 async function refreshAccess() {
-  const { refresh } = getTokens()
-  if (!refresh) return null
-  const res = await fetchWithTimeout(`${API_URL}/api/v1/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refresh }),
-  })
-  if (!res.ok) return null
-  const data = await res.json()
-  setTokens(data.access_token, data.refresh_token)
-  return data.access_token
+  if (refreshInFlight) return refreshInFlight
+
+  refreshInFlight = (async () => {
+    const { refresh } = getTokens()
+    if (!refresh) {
+      const err = new Error('No refresh token')
+      err.isAuthError = true
+      throw err
+    }
+    try {
+      const res = await fetchWithTimeout(`${apiBase()}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      })
+      if (res.status === 401 || res.status === 403) {
+        const err = new Error('Session expired')
+        err.isAuthError = true
+        err.status = res.status
+        throw err
+      }
+      if (!res.ok) {
+        const err = new Error(`Server returned ${res.status}`)
+        err.isServerError = true
+        err.status = res.status
+        throw err
+      }
+      const data = await res.json()
+      setTokens(data.access_token, data.refresh_token)
+      return data.access_token
+    } catch (err) {
+      if (err.isAuthError || err.status === 401 || err.status === 403) {
+        throw err
+      }
+      err.isNetworkOrServerError = true
+      throw err
+    } finally {
+      refreshInFlight = null
+    }
+  })()
+
+  return refreshInFlight
 }
 
 /** True when the session should be cleared (auth failure, not network noise). */
 export function isAuthSessionError(err) {
-  if (err?.status === 401) return true
+  if (err?.status === 401 || err?.status === 403) return true
   const msg = String(err?.message || '')
   return (
     /session expired/i.test(msg) ||
@@ -130,14 +210,22 @@ export async function ensureAccessToken() {
   const { access, refresh } = getTokens()
   if (access) return access
   if (!refresh) return null
-  return refreshAccess()
+  try {
+    return await refreshAccess()
+  } catch {
+    return null
+  }
 }
 
 /** Silently rotate access token when a refresh token exists (e.g. tab refocus). */
 export async function tryRefreshSession() {
   const { refresh } = getTokens()
   if (!refresh) return null
-  return refreshAccess()
+  try {
+    return await refreshAccess()
+  } catch {
+    return null
+  }
 }
 
 export async function apiFetch(path, options = {}) {
@@ -161,7 +249,7 @@ export async function apiFetch(path, options = {}) {
   let res
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
   try {
-    res = await fetchWithTimeout(`${API_URL}${url}`, { ...fetchOptions, headers }, timeoutMs)
+    res = await fetchWithTimeout(`${getApiBaseUrl()}${url}`, { ...fetchOptions, headers }, timeoutMs)
   } catch (err) {
     const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt
     recordApiMetric(path, elapsed, false)
@@ -173,36 +261,51 @@ export async function apiFetch(path, options = {}) {
     })
     // #endregion
     if (err?.message?.startsWith('Request timed out')) throw err
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      const offlineErr = new Error('You appear offline. Check your connection and try again.')
+      offlineErr.isConnectionError = true
+      throw offlineErr
+    }
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
     const onVercel = /\.vercel\.app$/i.test(hostname)
+    const onInsighte = SAME_ORIGIN_API_HOSTS.test(hostname)
     const localDev = hostname === 'localhost' || hostname === '127.0.0.1'
     let hint
-    if (!API_URL) {
+    if (!getApiBaseUrl() && localDev) {
       hint =
         'Cannot reach the API. Start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 — then refresh this page.'
-    } else if (onVercel) {
+    } else if (onInsighte || onVercel) {
       const origin =
         typeof window !== 'undefined' && window.location?.origin ? window.location.origin : hostname
       hint =
-        `Cannot reach the API at ${API_URL}. The API may be down, or this site origin (${origin}) may not be allowed by Railway CORS. ` +
-        `Add ${origin} to Railway CORS_ORIGINS and FRONTEND_URL, redeploy the API, and confirm VITE_API_URL on Vercel (${API_URL}).`
+        `Cannot reach the API through ${origin}. Redeploy the frontend (vercel.json /api proxy) or check GET /health on the Railway API.`
     } else if (localDev) {
-      hint = `Cannot reach the API at ${API_URL}. Start the backend (cd backend && python3 -m uvicorn app.main:app --reload --port 8000), or clear VITE_API_URL in frontend/.env.local and restart npm run dev to use the Vite proxy.`
+      hint = `Cannot reach the API at ${getEnv('VITE_API_URL') || '(vite proxy)'}. Start the backend (cd backend && python3 -m uvicorn app.main:app --reload --port 8000), or clear VITE_API_URL in frontend/.env.local and restart npm run dev.`
     } else {
-      hint = `Cannot reach the API at ${API_URL}. Check that the server is running and CORS allows this site.`
+      const configured = getEnv('VITE_API_URL') || getApiBaseUrl() || '(not set)'
+      hint = `Cannot reach the API at ${configured}. Check that the server is running and CORS allows this site.`
     }
     throw new Error(hint)
   }
 
   if (res.status === 401 && !path.includes('/auth/')) {
-    const newAccess = await refreshAccess()
-    if (newAccess) {
-      headers.Authorization = `Bearer ${newAccess}`
-      res = await fetchWithTimeout(`${API_URL}${url}`, { ...fetchOptions, headers }, timeoutMs)
-    }
-    if (res.status === 401) {
-      clearTokens()
-      throw new Error('Session expired. Please log in again.')
+    try {
+      const newAccess = await refreshAccess()
+      if (newAccess) {
+        headers.Authorization = `Bearer ${newAccess}`
+        res = await fetchWithTimeout(`${getApiBaseUrl()}${url}`, { ...fetchOptions, headers }, timeoutMs)
+      } else {
+        clearTokens()
+        throw new Error('Session expired. Please log in again.')
+      }
+    } catch (refreshErr) {
+      if (refreshErr.isAuthError || refreshErr.status === 401 || refreshErr.status === 403) {
+        clearTokens()
+        throw new Error('Session expired. Please log in again.')
+      }
+      const netErr = new Error('Connection unstable. You are still logged in, but we cannot reach the server.')
+      netErr.isConnectionError = true
+      throw netErr
     }
   }
 
@@ -218,13 +321,9 @@ export async function apiFetch(path, options = {}) {
     // #endregion
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
-    let message = res.statusText
-    if (typeof detail === 'string') {
-      message = detail
-    } else if (Array.isArray(detail)) {
-      message = detail.map((d) => d.msg).join(', ')
-    } else if (detail && typeof detail === 'object' && detail.message) {
-      message = detail.message
+    let message = parseApiErrorDetail(detail, res.statusText)
+    if (!message && typeof err === 'object' && err !== null) {
+      message = parseApiErrorDetail(err.message, res.statusText)
     }
     if (res.status === 502 || res.status === 503) {
       if (message && message !== res.statusText && message !== 'Bad Gateway' && message !== 'Service Unavailable') {
@@ -239,7 +338,7 @@ export async function apiFetch(path, options = {}) {
           : 'API is not responding. Check that the backend service is running and VITE_API_URL points to it.',
       )
     }
-    const apiError = new Error(message || 'Request failed')
+    const apiError = new Error(message || `Request failed (${res.status})`)
     apiError.status = res.status
     apiError.detail = detail
     throw apiError
@@ -258,7 +357,7 @@ export function apiPostKeepalive(path, payload) {
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
-  return fetch(`${API_URL}${path}`, {
+  return fetch(`${apiBase()}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -282,20 +381,19 @@ export async function apiFetchBlob(path, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
 
-  let res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
+  let res = await fetchWithTimeout(`${apiBase()}${path}`, { headers }, timeoutMs)
   if (res.status === 401 && access) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
+      res = await fetchWithTimeout(`${apiBase()}${path}`, { headers }, timeoutMs)
     }
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
-    const message =
-      typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join(', ') : res.statusText
-    throw new Error(message || 'Request failed')
+    const message = parseApiErrorDetail(detail, res.statusText)
+    throw new Error(message || `Request failed (${res.status})`)
   }
   return res.blob()
 }
@@ -312,7 +410,7 @@ export async function apiUpload(path, formData, { timeoutMs = 60000 } = {}) {
     }, timeoutMs)
   let res
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    res = await fetch(`${apiBase()}${path}`, {
       method: 'POST',
       headers,
       body: formData,
@@ -330,7 +428,7 @@ export async function apiUpload(path, formData, { timeoutMs = 60000 } = {}) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetch(`${API_URL}${path}`, {
+      res = await fetch(`${apiBase()}${path}`, {
         method: 'POST',
         headers,
         body: formData,
@@ -357,12 +455,12 @@ export async function apiDownload(path, filename, { timeoutMs = DEFAULT_TIMEOUT_
   const { access } = getTokens()
   if (access) headers.Authorization = `Bearer ${access}`
 
-  let res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
+  let res = await fetchWithTimeout(`${apiBase()}${path}`, { headers }, timeoutMs)
   if (res.status === 401 && access) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
-      res = await fetchWithTimeout(`${API_URL}${path}`, { headers }, timeoutMs)
+      res = await fetchWithTimeout(`${apiBase()}${path}`, { headers }, timeoutMs)
     }
   }
   if (!res.ok) {

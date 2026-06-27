@@ -1,8 +1,26 @@
+.leave-mgmt__view-tabs {
+  margin-top: 24px;
+  margin-bottom: 28px;
+}
+
+.leave-mgmt__filter-section {
+  margin-bottom: 24px;
+}
+
 .leave-mgmt__status-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 0;
+}
+
+.leave-mgmt__search-row {
+  margin-bottom: 24px;
+}
+
+.leave-mgmt__search-row .admin-search {
+  max-width: 360px;
+  width: 100%;
 }
 
 .leave-mgmt__status-pill {

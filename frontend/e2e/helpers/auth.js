@@ -15,12 +15,13 @@ export async function login(page, { email, password = 'demo123', path = '/login'
 export async function loginTherapist(page) {
   await login(page, { email: 'therapist@demo.com', path: '/therapistlogin' })
   await page.waitForURL(/\/therapist/)
-  const quickNav = page.getByRole('navigation', { name: 'Quick navigation' })
-  if (await quickNav.isVisible()) {
-    await quickNav.waitFor()
-  } else {
-    await portalNav(page).waitFor()
-  }
+  const shellReady = page
+    .getByRole('navigation', { name: 'Quick navigation' })
+    .or(page.getByRole('button', { name: /Open navigation menu/i }))
+    .or(portalNav(page))
+    .first()
+  await shellReady.waitFor({ state: 'visible', timeout: 20_000 })
+  await page.getByRole('main').waitFor()
 }
 
 /** Sidebar nav link (desktop). */
@@ -37,13 +38,14 @@ const THERAPIST_QUICK_NAV = {
 /** Mobile or desktop therapist nav — opens drawer when needed. */
 export async function navigateTherapist(page, label) {
   const quickNav = page.getByRole('navigation', { name: 'Quick navigation' })
-  if (await quickNav.isVisible()) {
-    const quickLabel = THERAPIST_QUICK_NAV[label]
-    if (quickLabel) {
-      await quickNav.getByRole('link', { name: quickLabel, exact: true }).click()
-      return
-    }
-    await page.getByRole('button', { name: 'Open navigation menu' }).click()
+  const quickLabel = THERAPIST_QUICK_NAV[label]
+  if (quickLabel && (await quickNav.isVisible())) {
+    await quickNav.getByRole('link', { name: quickLabel, exact: true }).click()
+    return
+  }
+  const menuBtn = page.getByRole('button', { name: /Open navigation menu/i })
+  if (await menuBtn.isVisible()) {
+    await menuBtn.click()
     await page.locator('#portal-nav-drawer').getByRole('link', { name: label, exact: true }).click()
     return
   }

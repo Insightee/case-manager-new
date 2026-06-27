@@ -51,12 +51,33 @@ def _cases_for_therapist_active(db: Session, therapist_user_id: int) -> list[Cas
     return [a.case for a in assignments if a.case]
 
 
-def _parents_for_therapist_cases(db: Session, therapist_user_id: int) -> dict[int, list[Case]]:
+def _cases_for_leave_scope(db: Session, leave: TherapistLeave) -> list[Case]:
+    scope = leave_service._leave_scope_ids(leave)
+    if scope is None:
+        return _cases_for_therapist_active(db, leave.therapist_user_id)
+    if not scope:
+        return []
+    return list(
+        db.scalars(
+            select(Case).where(Case.id.in_(scope)).options(selectinload(Case.child))
+        ).all()
+    )
+
+
+def _parents_for_leave_scope(db: Session, leave: TherapistLeave) -> dict[int, list[Case]]:
     by_parent: dict[int, list[Case]] = defaultdict(list)
-    for case in _cases_for_therapist_active(db, therapist_user_id):
+    for case in _cases_for_leave_scope(db, leave):
         for parent_user_id in _parents_for_case(db, case.id):
             by_parent[parent_user_id].append(case)
     return by_parent
+
+
+def _slot_in_leave_scope(slot: TherapistSlot, scope: set[int] | None) -> bool:
+    if scope is None:
+        return True
+    if slot.case_id is None:
+        return False
+    return int(slot.case_id) in scope
 
 
 def unblock_slots_for_leave(db: Session, leave_id: int) -> int:
@@ -128,7 +149,7 @@ def notify_leave_submitted(db: Session, leave: TherapistLeave, therapist: User) 
     if retro:
         return count
 
-    for parent_user_id, cases in _parents_for_therapist_cases(db, leave.therapist_user_id).items():
+    for parent_user_id, cases in _parents_for_leave_scope(db, leave).items():
         case_codes = ", ".join(c.case_code for c in cases[:3])
         if len(cases) > 3:
             case_codes += f" (+{len(cases) - 3} more)"
@@ -188,6 +209,8 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
             )
         return 1
 
+    scope = leave_service._leave_scope_ids(leave)
+
     booked_slots = db.scalars(
         select(TherapistSlot)
         .where(
@@ -201,7 +224,7 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
 
     cancelled_by_parent: dict[int, list[str]] = defaultdict(list)
     for slot in booked_slots:
-        if not slot.case_id:
+        if not slot.case_id or not _slot_in_leave_scope(slot, scope):
             continue
         try:
             appt_booking.cancel_booking_with_session(db, slot.id)
@@ -225,6 +248,8 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         )
     ).all()
     for s in avail_slots:
+        if not _slot_in_leave_scope(s, scope):
+            continue
         s.status = SlotStatus.BLOCKED
         s.leave_block_leave_id = leave.id
         s.notes = f"[blocked: leave {leave.id}]"
@@ -265,7 +290,7 @@ def notify_leave_approved(db: Session, leave: TherapistLeave, therapist: User) -
         notified_parents.add(parent_user_id)
         count += 1
 
-    for parent_user_id, cases in _parents_for_therapist_cases(db, leave.therapist_user_id).items():
+    for parent_user_id, cases in _parents_for_leave_scope(db, leave).items():
         if parent_user_id in notified_parents:
             continue
         case_codes = ", ".join(c.case_code for c in cases)
@@ -355,7 +380,7 @@ def notify_leave_rejected(db: Session, leave: TherapistLeave, therapist: User) -
         db=db,
     )
     count += 1
-    for parent_user_id, cases in _parents_for_therapist_cases(db, leave.therapist_user_id).items():
+    for parent_user_id, cases in _parents_for_leave_scope(db, leave).items():
         case_codes = ", ".join(c.case_code for c in cases)
         body = (
             f"The leave request for {therapist.full_name} ({date_range}) was not approved. "

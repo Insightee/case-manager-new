@@ -14,6 +14,8 @@ from app.core.config import Settings
         "https://frontend-omega-eight-92.vercel.app",
         "https://frontend-insightes-projects.vercel.app",
         "https://frontend-git-main-insightes-projects.vercel.app",
+        "https://www.insighte.org",
+        "https://insighte.org",
     ],
 )
 def test_production_cors_regex_matches_vercel_frontend_origins(origin: str):

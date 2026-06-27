@@ -1,14 +1,22 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  DEFAULT_SIGN_IN_PATH,
   loginPathFromRoleName,
   portalHomePath,
+  portalLoginPath,
   resolveAuthPortal,
   sessionMatchesLoginPage,
   SIGN_IN_PATH,
 } from './portalLogin.js'
 
 describe('portalLogin', () => {
+  it('defaults unknown portal sign-in to the portal picker', () => {
+    assert.equal(DEFAULT_SIGN_IN_PATH, '/login')
+    assert.equal(portalLoginPath(null), '/login')
+    assert.equal(portalLoginPath(undefined), '/login')
+  })
+
   it('maps invite sign-in links to the correct portal login page', () => {
     assert.equal(loginPathFromRoleName('PARENT'), SIGN_IN_PATH.parent)
     assert.equal(loginPathFromRoleName('THERAPIST'), SIGN_IN_PATH.therapist)

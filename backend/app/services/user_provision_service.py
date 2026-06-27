@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.timezone import ensure_utc_aware
@@ -25,6 +25,11 @@ def login_ready(user: User, db: Session | None = None) -> bool:
         return False
     if db is not None and _pending_invite(db, user.email) is not None:
         return False
+    if db is not None and "PARENT" in (user.role_names or []):
+        from app.services.parent_service import parent_has_portal_session
+
+        if not parent_has_portal_session(db, user.id):
+            return False
     return True
 
 
@@ -172,6 +177,19 @@ def activate_user_for_login(db: Session, user_id: int) -> dict:
     return _build_result(user, db=db, invite_sent=False, invite_error=None)
 
 
+def _primary_child_id_for_parent(db: Session, user_id: int) -> int | None:
+    from app.models.parent import ParentGuardian
+
+    pg = db.scalars(
+        select(ParentGuardian)
+        .where(ParentGuardian.user_id == user_id)
+        .options(selectinload(ParentGuardian.children))
+    ).first()
+    if not pg or not pg.children:
+        return None
+    return pg.children[0].id
+
+
 def invite_user_to_login(
     db: Session,
     user_id: int,
@@ -201,18 +219,32 @@ def invite_user_to_login(
     delivery = invite_email_delivery_status(
         send_email=True, background_tasks=background_tasks
     )
-    if delivery == "skipped_no_smtp":
-        return _build_result(
-            user,
-            db=db,
-            invite_sent=False,
-            invite_error="smtp_not_configured",
-        )
+    smtp_skipped = delivery == "skipped_no_smtp"
 
     pending = _pending_invite(db, user.email)
+    roles = user.role_names or []
+    is_parent = "PARENT" in roles
 
     try:
-        if pending:
+        if is_parent and not login_ready(user, db):
+            from app.services import family_admin_service
+
+            child_id = _primary_child_id_for_parent(db, user.id)
+            invite_url = family_admin_service.refresh_parent_portal_invite(
+                db,
+                user.id,
+                actor_user_id,
+                child_id=child_id,
+                send_email=not smtp_skipped,
+                background_tasks=background_tasks,
+                force_resend=force_resend,
+            )
+            invite_sent = not smtp_skipped and (
+                delivery in ("queued", "sent_sync") or background_tasks is not None
+            )
+            if smtp_skipped:
+                invite_error = "smtp_not_configured"
+        elif pending:
             invite_url = f"{settings.frontend_url.rstrip('/')}/invite/{pending.token}"
             if background_tasks is not None:
                 role = pending.role_name or _primary_role(user) or "USER"
@@ -229,7 +261,10 @@ def invite_user_to_login(
                     force_resend=force_resend,
                 )
                 invite_sent = log_id is not None or delivery in ("queued", "sent_sync")
-                if log_id is None and not force_resend:
+                if smtp_skipped:
+                    invite_sent = False
+                    invite_error = "smtp_not_configured"
+                elif log_id is None and not force_resend:
                     invite_error = "cooldown_or_duplicate"
             else:
                 invite_sent = False
@@ -251,7 +286,10 @@ def invite_user_to_login(
                     force_resend=force_resend,
                 )
                 invite_sent = log_id is not None or delivery == "sent_sync"
-                if log_id is None and not force_resend:
+                if smtp_skipped:
+                    invite_sent = False
+                    invite_error = "smtp_not_configured"
+                elif log_id is None and not force_resend:
                     invite_error = "cooldown_or_duplicate"
             else:
                 invite_sent = False

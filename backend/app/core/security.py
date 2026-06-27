@@ -56,7 +56,9 @@ def _try_connect_redis() -> redis.Redis | None:
             _redis_client = redis.Redis(connection_pool=_redis_pool)
         _redis_client.ping()
         return _redis_client
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger("insightcase").error(f"Redis connection attempt failed: {exc}")
         _redis_client = None
         if _redis_pool is not None:
             try:
@@ -74,11 +76,15 @@ def get_redis() -> redis.Redis | None:
     client = _try_connect_redis()
     if client is not None:
         return client
+    import logging
+    logger = logging.getLogger("insightcase")
     if not _allow_memory_refresh_fallback():
+        logger.critical("PRODUCTION REDIS IS DOWN! Redis is required in production and memory fallback is disabled.")
         raise RuntimeError(
             "REDIS_URL is required in production but Redis is unreachable. "
             "Check Railway Redis plugin and REDIS_URL on the API service."
         )
+    logger.warning("Local Redis connection failed. Falling back to in-memory refresh token storage.")
     _use_memory_refresh = True
     return None
 
@@ -110,12 +116,17 @@ def ping_redis_for_health() -> str:
 
 def verify_redis_at_startup() -> None:
     """Fail fast in production when refresh-token Redis is not reachable."""
+    import logging
+    logger = logging.getLogger("insightcase")
     if settings.is_development:
-        warm_redis_connection()
+        status = warm_redis_connection()
+        logger.info(f"Dev Redis warmup status: {status}")
         return
     status = ping_redis_for_health()
     if status == "fail":
+        logger.critical("PRODUCTION REDIS NOT REACHABLE AT STARTUP!")
         raise RuntimeError("REDIS_URL is required in production for refresh token storage")
+    logger.info("Production Redis check successful.")
 
 
 def hash_password(password: str) -> str:

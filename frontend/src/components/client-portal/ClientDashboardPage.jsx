@@ -5,7 +5,8 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useParentHome } from '../../hooks/useParentHome.js'
 import { QueryState } from '../shared/QueryState.jsx'
 import { formatDisplayDateLabel } from '../../lib/datetime.js'
-import { SessionAbsenceApprovals } from '../shared/SessionAbsenceApprovals.jsx'
+import { AbsentNotifications } from './AbsentNotifications.jsx'
+import { ClientSupportPage } from './ClientSupportPage.jsx'
 import './parent-dashboard.css'
 
 function formatUpdateSessionWhen(update) {
@@ -358,6 +359,7 @@ export function ClientDashboardPage({
 }) {
   const { user } = useAuth()
   const { data: home, isLoading: homeLoading, isError, error, refetch } = useParentHome()
+  const [activeTab, setActiveTab] = useState('overview')
   const stats = home?.stats
   const firstName = user?.full_name?.split(/\s+/)[0] || 'there'
   const homeCases = useMemo(() => {
@@ -393,168 +395,193 @@ export function ClientDashboardPage({
     <>
       <header className="parent-dashboard-greeting parent-dashboard-greeting--compact">
         <h1 className="parent-dashboard-greeting__title">Dear {firstName},</h1>
+        <div className="ic-session-log-tabs" style={{ marginTop: 16 }} role="tablist" aria-label="Dashboard views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'overview'}
+            className={`ic-session-log-tabs__btn${activeTab === 'overview' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('overview')}
+          >
+            Overview
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'updates'}
+            className={`ic-session-log-tabs__btn${activeTab === 'updates' ? ' is-active' : ''}`}
+            onClick={() => setActiveTab('updates')}
+          >
+            Parent Updates
+          </button>
+        </div>
       </header>
 
-      <QueryState
-        isLoading={homeLoading}
-        isError={isError}
-        error={error}
-        onRetry={() => refetch()}
-      >
-      <PendingAssignmentBanner items={pendingAcceptance} onAccepted={() => refetch()} />
-      <ActionAlertsBanner billingSummary={billingSummary} pendingIepCount={pendingIepCount} />
-
-      <NextUpcomingSessionCard appointments={appointments} />
-
-      <section className="parent-recent-updates" style={{ marginTop: 20 }}>
-        <div className="parent-recent-updates__head">
-          <h2>Absence approvals</h2>
-        </div>
-        <SessionAbsenceApprovals
-          listPath="/api/v1/parent/absence-requests"
-          emptyLabel="No child absence requests waiting for your approval."
-        />
-      </section>
-
-      <RecentUpdatesSection updates={recentUpdates} />
-
-      {highlight ? (
-        <section className="parent-home-hero card" style={{ marginBottom: 20, padding: 20 }}>
-          <p className="parent-home-hero__eyebrow">
-            This week{childLabel ? ` with ${childLabel}` : ''}
-          </p>
-          <h2 style={{ margin: '0 0 8px', fontSize: '1.25rem' }}>{highlight.headline}</h2>
-          {highlight.summary_paragraph ? (
-            <p style={{ margin: 0, color: '#475569', lineHeight: 1.5 }}>{highlight.summary_paragraph}</p>
-          ) : null}
-          {highlight.what_we_did && highlight.what_we_did !== highlight.summary_paragraph ? (
-            <p style={{ margin: '10px 0 0', fontSize: '0.875rem', color: '#334155' }}>
-              <strong style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', marginBottom: 4 }}>
-                What we did today
-              </strong>
-              {highlight.what_we_did}
-            </p>
-          ) : null}
-          {highlight.what_is_next ? (
-            <p style={{ margin: '10px 0 0', fontSize: '0.875rem', color: '#334155' }}>
-              <strong style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', marginBottom: 4 }}>
-                What&apos;s next
-              </strong>
-              {highlight.what_is_next}
-            </p>
-          ) : null}
-          <Link to="/parent/session-logs" style={{ display: 'inline-block', marginTop: 12, fontWeight: 600 }}>
-            All session updates →
-          </Link>
-        </section>
-      ) : null}
-      </QueryState>
-
-      {stats ? (
-        <section className="parent-dashboard-hero" aria-label="Current progress">
-          <p className="parent-dashboard-hero__label">Current progress</p>
-          <p className="parent-dashboard-hero__count">
-            {stats.case_count} active case{stats.case_count === 1 ? '' : 's'}
-          </p>
-          <p className="parent-dashboard-hero__meta">
-            {recentUpdates.length > 0
-              ? `${recentUpdates.length} recent session update${recentUpdates.length === 1 ? '' : 's'}`
-              : 'Session updates and reports appear here after your therapist logs a visit.'}
-            {pendingIepCount > 0
-              ? ` · ${pendingIepCount} IEP review${pendingIepCount === 1 ? '' : 's'} pending`
-              : ''}
-          </p>
-          <Link
-            to={homeCases[0] ? `/parent/cases/${homeCases[0].id}` : '/parent/session-logs'}
-            className="parent-dashboard-hero__cta"
+      {activeTab === 'overview' ? (
+        <>
+          <QueryState
+            isLoading={homeLoading}
+            isError={isError}
+            error={error}
+            onRetry={() => refetch()}
           >
-            View all details
-          </Link>
-        </section>
-      ) : null}
+          <PendingAssignmentBanner items={pendingAcceptance} onAccepted={() => refetch()} />
+          <ActionAlertsBanner billingSummary={billingSummary} pendingIepCount={pendingIepCount} />
 
-      {stats ? (
-        <section className="parent-dashboard-stats" aria-label="Family summary">
-          <ul className="parent-dashboard-stats__grid">
-            <li>
-              <div className="parent-dashboard-stats__tile">
-                <strong>{stats.case_count}</strong>
-                <span>Active cases</span>
+          <NextUpcomingSessionCard appointments={appointments} />
+
+          <section className="parent-recent-updates" style={{ marginTop: 20 }}>
+            <div className="parent-recent-updates__head">
+              <h2>Absent notification</h2>
+            </div>
+            <AbsentNotifications />
+          </section>
+
+          <RecentUpdatesSection updates={recentUpdates} />
+
+          {highlight ? (
+            <section className="parent-home-hero card" style={{ marginBottom: 20, padding: 20 }}>
+              <p className="parent-home-hero__eyebrow">
+                This week{childLabel ? ` with ${childLabel}` : ''}
+              </p>
+              <h2 style={{ margin: '0 0 8px', fontSize: '1.25rem' }}>{highlight.headline}</h2>
+              {highlight.summary_paragraph ? (
+                <p style={{ margin: 0, color: '#475569', lineHeight: 1.5 }}>{highlight.summary_paragraph}</p>
+              ) : null}
+              {highlight.what_we_did && highlight.what_we_did !== highlight.summary_paragraph ? (
+                <p style={{ margin: '10px 0 0', fontSize: '0.875rem', color: '#334155' }}>
+                  <strong style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', marginBottom: 4 }}>
+                    What we did today
+                  </strong>
+                  {highlight.what_we_did}
+                </p>
+              ) : null}
+              {highlight.what_is_next ? (
+                <p style={{ margin: '10px 0 0', fontSize: '0.875rem', color: '#334155' }}>
+                  <strong style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', marginBottom: 4 }}>
+                    What&apos;s next
+                  </strong>
+                  {highlight.what_is_next}
+                </p>
+              ) : null}
+              <Link to="/parent/session-logs" style={{ display: 'inline-block', marginTop: 12, fontWeight: 600 }}>
+                All session updates →
+              </Link>
+            </section>
+          ) : null}
+          </QueryState>
+
+          {stats ? (
+            <section className="parent-dashboard-hero" aria-label="Current progress">
+              <p className="parent-dashboard-hero__label">Current progress</p>
+              <p className="parent-dashboard-hero__count">
+                {stats.case_count} active case{stats.case_count === 1 ? '' : 's'}
+              </p>
+              <p className="parent-dashboard-hero__meta">
+                {recentUpdates.length > 0
+                  ? `${recentUpdates.length} recent session update${recentUpdates.length === 1 ? '' : 's'}`
+                  : 'Session updates and reports appear here after your therapist logs a visit.'}
+                {pendingIepCount > 0
+                  ? ` · ${pendingIepCount} IEP review${pendingIepCount === 1 ? '' : 's'} pending`
+                  : ''}
+              </p>
+              <Link
+                to={homeCases[0] ? `/parent/cases/${homeCases[0].id}` : '/parent/session-logs'}
+                className="parent-dashboard-hero__cta"
+              >
+                View all details
+              </Link>
+            </section>
+          ) : null}
+
+          {stats ? (
+            <section className="parent-dashboard-stats" aria-label="Family summary">
+              <ul className="parent-dashboard-stats__grid">
+                <li>
+                  <div className="parent-dashboard-stats__tile">
+                    <strong>{stats.case_count}</strong>
+                    <span>Active cases</span>
+                  </div>
+                </li>
+                <li>
+                  <Link to="/parent/session-logs" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--updates">
+                    <strong>{recentUpdates.length}</strong>
+                    <span>Recent updates</span>
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/parent/reports?type=iep" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--iep">
+                    <strong>{stats.pending_iep}</strong>
+                    <span>IEP pending</span>
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/parent/notifications" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--alerts">
+                    <strong>{stats.unread_notifications}</strong>
+                    <span>Unread alerts</span>
+                  </Link>
+                </li>
+              </ul>
+            </section>
+          ) : null}
+
+          <section className="parent-dashboard-panel-grid">
+            <article className="card">
+              <div className="card-head">
+                <h3>Your Active Cases</h3>
               </div>
-            </li>
-            <li>
-              <Link to="/parent/session-logs" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--updates">
-                <strong>{recentUpdates.length}</strong>
-                <span>Recent updates</span>
-              </Link>
-            </li>
-            <li>
-              <Link to="/parent/reports?type=iep" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--iep">
-                <strong>{stats.pending_iep}</strong>
-                <span>IEP pending</span>
-              </Link>
-            </li>
-            <li>
-              <Link to="/parent/notifications" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--alerts">
-                <strong>{stats.unread_notifications}</strong>
-                <span>Unread alerts</span>
-              </Link>
-            </li>
-          </ul>
-        </section>
-      ) : null}
-
-      <section className="parent-dashboard-panel-grid">
-        <article className="card">
-          <div className="card-head">
-            <h3>Your Active Cases</h3>
-          </div>
-          {(homeCases || []).length === 0 ? (
-            <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>No active cases on your account yet.</p>
-          ) : (
-            <ul className="parent-case-card">
-              {(homeCases || []).map((item) => {
-                const pendingIep = pendingIepByChild.get(item.childName?.toLowerCase())
-                return (
-                  <li key={item.id} className="parent-case-card__item">
-                    <div className="parent-case-card__head">
-                      <div>
-                        <p className="parent-case-card__name">
-                          <Link to={`/parent/cases/${item.id}`}>{item.childName}</Link>
+              {(homeCases || []).length === 0 ? (
+                <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>No active cases on your account yet.</p>
+              ) : (
+                <ul className="parent-case-card">
+                  {(homeCases || []).map((item) => {
+                    const pendingIep = pendingIepByChild.get(item.childName?.toLowerCase())
+                    return (
+                      <li key={item.id} className="parent-case-card__item">
+                        <div className="parent-case-card__head">
+                          <div>
+                            <p className="parent-case-card__name">
+                              <Link to={`/parent/cases/${item.id}`}>{item.childName}</Link>
+                            </p>
+                            <span className="parent-case-card__code">{item.caseId}</span>
+                          </div>
+                          <span className="parent-case-card__tag">{item.serviceType}</span>
+                        </div>
+                        <p className="parent-case-card__meta">
+                          Therapist: {item.therapist}
+                          <br />
+                          Case manager: {item.caseManager}
+                          <br />
+                          Latest approved report: {item.latestApprovedReportMonth}
                         </p>
-                        <span className="parent-case-card__code">{item.caseId}</span>
-                      </div>
-                      <span className="parent-case-card__tag">{item.serviceType}</span>
-                    </div>
-                    <p className="parent-case-card__meta">
-                      Therapist: {item.therapist}
-                      <br />
-                      Case manager: {item.caseManager}
-                      <br />
-                      Latest approved report: {item.latestApprovedReportMonth}
-                    </p>
-                    <div className="parent-case-card__actions">
-                      <Link to="/parent/reports" className="parent-case-card__btn parent-case-card__btn--outline">
-                        Latest report
-                      </Link>
-                      {pendingIep ? (
-                        <Link
-                          to="/parent/reports?type=iep"
-                          className="parent-case-card__btn parent-case-card__btn--primary"
-                        >
-                          Review IEP
-                        </Link>
-                      ) : null}
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </article>
+                        <div className="parent-case-card__actions">
+                          <Link to="/parent/reports" className="parent-case-card__btn parent-case-card__btn--outline">
+                            Latest report
+                          </Link>
+                          {pendingIep ? (
+                            <Link
+                              to="/parent/reports?type=iep"
+                              className="parent-case-card__btn parent-case-card__btn--primary"
+                            >
+                              Review IEP
+                            </Link>
+                          ) : null}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </article>
 
-        <RecentNotificationsPanel notifications={notifications} onMarkRead={handleMarkRead} />
-      </section>
+            <RecentNotificationsPanel notifications={notifications} onMarkRead={handleMarkRead} />
+          </section>
+        </>
+      ) : (
+        <div style={{ marginTop: 20 }}>
+          <ClientSupportPage cases={homeCases} />
+        </div>
+      )}
     </>
   )
 }

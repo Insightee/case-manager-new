@@ -96,7 +96,8 @@ def allot_case(
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
     client_mode = data.pop("client_billing_mode", None)
     case_code = (data.pop("case_code", None) or "").strip()
-    product_module = data["product_module"]
+    product_module = case_code_service.normalize_product_module(data["product_module"])
+    data["product_module"] = product_module
     if not case_code:
         case_code = case_code_service.generate_case_code(db, product_module)
     else:

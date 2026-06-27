@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Optional
+
+logger = logging.getLogger("insightcase.billing_ledger")
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -338,6 +342,16 @@ def reconcile_month(db: Session, *, case_id: int, billing_month: str) -> dict:
 def consume_package_session(db: Session, *, case_id: int, session: TherapySession) -> BillingLedger | None:
     from app.models.client_billing import CarePackage, CarePackageStatus
 
+    # Idempotency guard — do not double-consume for the same session.
+    existing_consumption = db.scalars(
+        select(BillingLedger).where(
+            BillingLedger.source_type == LedgerSourceType.PACKAGE_CONSUMPTION,
+            BillingLedger.session_id == session.id,
+        )
+    ).first()
+    if existing_consumption:
+        return existing_consumption
+
     pkg = db.scalars(
         select(CarePackage)
         .where(
@@ -374,3 +388,120 @@ def consume_package_session(db: Session, *, case_id: int, session: TherapySessio
     db.add(row)
     db.flush()
     return row
+
+
+# ---------------------------------------------------------------------------
+# Central financial effect resolver
+# ---------------------------------------------------------------------------
+
+# Individual / per-session product categories where child absence = cancelled/not billable.
+_PER_SESSION_CATEGORIES = frozenset(
+    {
+        "homecare",
+        "counselling",
+        "special_educator",
+        "behavior_therapy",
+        "play_therapy",
+        "occupational_therapy",
+        "speech_therapy",
+        "assessment",
+        "parent_training",
+        "other",
+        "other_clinical",
+    }
+)
+
+
+@dataclass
+class FinancialEffect:
+    client_billable: bool
+    package_consumed: bool
+    therapist_payable: bool
+    therapist_deductible: bool
+    ledger_event_type: LedgerEventType
+    report_label: str
+
+
+def resolve_session_financial_effect(
+    outcome: SessionStatus,
+    case: Case,
+    rule: Optional[ProductBillingRule],
+) -> FinancialEffect:
+    """Return the financial effect of a session attendance outcome.
+
+    Routes based on billing_model + product_category from the matched ProductBillingRule.
+    Falls back to per-session (non-billable) behaviour when no rule is found.
+    """
+    billing_model = rule.billing_model if rule else None
+    product_category = (rule.product_category if rule else None) or (
+        getattr(case, "product_module", None) or "unknown"
+    )
+    product_category = product_category.strip().lower()
+
+    # --- CHILD_ABSENT / CLIENT_ABSENT / NO_SHOW ---
+    if outcome in (SessionStatus.CLIENT_ABSENT, SessionStatus.NO_SHOW):
+        is_package_or_retainer = (
+            billing_model in (ProductBillingModel.PREPAID_PACKAGE, ProductBillingModel.MONTHLY_FIXED)
+            or product_category in ("shadow_support", "school_support", "school_services")
+        )
+        if is_package_or_retainer:
+            return FinancialEffect(
+                client_billable=False,
+                package_consumed=bool(rule and getattr(rule, "package_consumes_on_child_absent", False)),
+                therapist_payable=bool(rule and getattr(rule, "child_absent_therapist_payable", False)),
+                therapist_deductible=False,
+                ledger_event_type=LedgerEventType.CHILD_ABSENT,
+                report_label="Child absent",
+            )
+        # Per-session individual services
+        return FinancialEffect(
+            client_billable=bool(rule and rule.client_no_show_billable),
+            package_consumed=False,
+            therapist_payable=False,
+            therapist_deductible=False,
+            ledger_event_type=LedgerEventType.CLIENT_NO_SHOW,
+            report_label="Child absent — session not delivered",
+        )
+
+    # --- THERAPIST_LEAVE ---
+    if outcome == SessionStatus.THERAPIST_LEAVE:
+        is_shadow = product_category in ("shadow_support", "school_support")
+        therapist_payable = False
+        therapist_deductible = False
+        if is_shadow and rule and rule.included_paid_leaves:
+            # Leave policy configured: mark as payable; full balance check in payout service.
+            therapist_payable = True
+            therapist_deductible = False
+        elif is_shadow:
+            therapist_payable = False
+            therapist_deductible = bool(rule and rule.unpaid_leave_deduction_method)
+        return FinancialEffect(
+            client_billable=False,
+            package_consumed=False,
+            therapist_payable=therapist_payable,
+            therapist_deductible=therapist_deductible,
+            ledger_event_type=LedgerEventType.THERAPIST_CANCEL,
+            report_label="Therapist leave",
+        )
+
+    # --- CANCELLED ---
+    if outcome == SessionStatus.CANCELLED:
+        return FinancialEffect(
+            client_billable=False,
+            package_consumed=False,
+            therapist_payable=False,
+            therapist_deductible=False,
+            ledger_event_type=LedgerEventType.SESSION_CANCELLED,
+            report_label="Session cancelled",
+        )
+
+    # Default fallback
+    logger.warning("resolve_session_financial_effect: unhandled outcome %s for case %s", outcome, case.id)
+    return FinancialEffect(
+        client_billable=False,
+        package_consumed=False,
+        therapist_payable=False,
+        therapist_deductible=False,
+        ledger_event_type=LedgerEventType.SESSION_CANCELLED,
+        report_label=str(outcome),
+    )

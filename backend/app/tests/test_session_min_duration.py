@@ -22,8 +22,10 @@ def test_validate_session_duration_rejects_negative_minutes():
         validate_session_duration_minutes(-1)
 
 
-def test_validate_session_duration_allows_zero_minutes():
-    validate_session_duration_minutes(0)
+def test_validate_session_duration_rejects_zero_minutes():
+    """Zero-duration sessions are now explicitly rejected (min = 1 minute)."""
+    with pytest.raises(ValueError, match=MIN_SESSION_DURATION_ERROR):
+        validate_session_duration_minutes(0)
 
 
 def test_end_session_allows_short_manual_end():

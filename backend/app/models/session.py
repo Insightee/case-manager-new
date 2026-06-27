@@ -63,6 +63,10 @@ class Session(Base):
     actual_times_edit_reason: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     is_additional_visit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     additional_visit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Reason code stored when a session is manually cancelled (e.g. "accidental_start").
+    cancellation_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Data-quality flag set by duplicate/conflict detection or rejection-safety checks.
+    data_quality_flag: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     resumed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

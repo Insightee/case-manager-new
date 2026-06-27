@@ -1,0 +1,12 @@
+# Cron: auto-close open sessions at 10 PM IST (16:30 UTC).
+# Service: session-day-end — Root Directory empty, this config file at repo root.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["backend/**"]
+
+[deploy]
+startCommand = "python scripts/auto_close_sessions_day_end.py"
+cronSchedule = "30 16 * * *"
+restartPolicyType = "ON_FAILURE"

@@ -55,6 +55,7 @@ class MonthlyReport(Base):
     visibility_status: Mapped[VisibilityStatus] = mapped_column(Enum(VisibilityStatus), default=VisibilityStatus.INTERNAL_ONLY)
     parent_review_status: Mapped[Optional[str]] = mapped_column(String(32))
     parent_feedback: Mapped[Optional[str]] = mapped_column(Text)
+    parent_monthly_rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     parent_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     submitted_for_review_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     cm_published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

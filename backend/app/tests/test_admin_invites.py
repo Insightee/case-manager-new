@@ -129,6 +129,18 @@ def test_bulk_user_status_and_invite_revoke():
         assert bulk.json()["updated"] == 1
 
 
+def test_invite_preview_includes_login_portal():
+    inv = _create_pending_invite(f"therapist.preview.{secrets.token_hex(4)}@demo.com", role_name="THERAPIST")
+    preview = client.get(f"/api/v1/auth/invite/{inv.token}/preview")
+    assert preview.status_code == 200
+    assert preview.json()["login_portal"] == "therapist"
+
+    staff = _create_pending_invite(f"staff.preview.{secrets.token_hex(4)}@demo.com", role_name="CASE_MANAGER")
+    staff_preview = client.get(f"/api/v1/auth/invite/{staff.token}/preview")
+    assert staff_preview.status_code == 200
+    assert staff_preview.json()["login_portal"] == "staff"
+
+
 def test_revoke_invite_blocks_preview():
     headers = _login("superadmin@demo.com")
     email = f"revoke.test.{secrets.token_hex(4)}@demo.com"
@@ -136,6 +148,7 @@ def test_revoke_invite_blocks_preview():
 
     preview = client.get(f"/api/v1/auth/invite/{inv.token}/preview")
     assert preview.status_code == 200
+    assert preview.json()["login_portal"] == "staff"
 
     revoke = client.post(f"/api/v1/admin/invites/{inv.id}/revoke", headers=headers)
     assert revoke.status_code == 200

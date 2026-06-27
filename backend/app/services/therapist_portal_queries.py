@@ -12,8 +12,10 @@ from app.models.case import Case
 from app.services.case_portal_visibility import portal_visible_case_status_filter
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.report import MonthlyReport, ReportStatus
+from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
+from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus
 from app.models.slot import SlotStatus, TherapistSlot
 from app.models.user import User
 
@@ -59,6 +61,65 @@ def _session_options():
     )
 
 
+def _leave_case_ids(leave: TherapistLeave) -> list[int]:
+    if leave.case_ids:
+        return [int(x) for x in leave.case_ids]
+    if leave.case_id:
+        return [int(leave.case_id)]
+    return []
+
+
+def absence_blocked_session_ids(db: Session, user: User, case_ids: list[int]) -> set[int]:
+    """Sessions with filed absence/leave — exclude from upcoming and needs-log queues."""
+    if not case_ids:
+        return set()
+
+    blocked: set[int] = set(
+        db.scalars(
+            select(SessionAbsenceRequest.session_id).where(
+                SessionAbsenceRequest.therapist_user_id == user.id,
+                SessionAbsenceRequest.case_id.in_(case_ids),
+                SessionAbsenceRequest.status.in_(
+                    (SessionAbsenceStatus.PENDING_APPROVAL, SessionAbsenceStatus.APPROVED)
+                ),
+            )
+        ).all()
+    )
+    blocked.update(
+        db.scalars(
+            select(TherapySession.id).where(
+                TherapySession.therapist_user_id == user.id,
+                TherapySession.case_id.in_(case_ids),
+                TherapySession.status.in_((SessionStatus.CLIENT_ABSENT, SessionStatus.THERAPIST_LEAVE)),
+            )
+        ).all()
+    )
+
+    pending_leaves = db.scalars(
+        select(TherapistLeave).where(
+            TherapistLeave.therapist_user_id == user.id,
+            TherapistLeave.status == LeaveStatus.PENDING,
+        )
+    ).all()
+    case_id_set = set(case_ids)
+    for leave in pending_leaves:
+        leave_cases = [cid for cid in _leave_case_ids(leave) if cid in case_id_set]
+        if not leave_cases:
+            continue
+        blocked.update(
+            db.scalars(
+                select(TherapySession.id).where(
+                    TherapySession.therapist_user_id == user.id,
+                    TherapySession.case_id.in_(leave_cases),
+                    TherapySession.scheduled_date >= leave.start_date,
+                    TherapySession.scheduled_date <= leave.end_date,
+                    TherapySession.status.in_((SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS)),
+                )
+            ).all()
+        )
+    return blocked
+
+
 def fetch_calendar_sessions(
     db: Session,
     therapist_user_id: int,
@@ -96,21 +157,23 @@ def fetch_upcoming_sessions(
         return []
     today = date.today()
     end = today + timedelta(days=days)
-    return list(
-        db.scalars(
-            select(TherapySession)
-            .where(
-                TherapySession.therapist_user_id == user.id,
-                TherapySession.case_id.in_(case_ids),
-                TherapySession.status == SessionStatus.SCHEDULED,
-                TherapySession.scheduled_date >= today,
-                TherapySession.scheduled_date <= end,
-            )
-            .options(*_session_options())
-            .order_by(TherapySession.scheduled_date.asc(), TherapySession.start_time.asc())
-            .limit(limit)
-        ).all()
+    blocked = absence_blocked_session_ids(db, user, case_ids)
+    stmt = (
+        select(TherapySession)
+        .where(
+            TherapySession.therapist_user_id == user.id,
+            TherapySession.case_id.in_(case_ids),
+            TherapySession.status == SessionStatus.SCHEDULED,
+            TherapySession.scheduled_date >= today,
+            TherapySession.scheduled_date <= end,
+        )
+        .options(*_session_options())
+        .order_by(TherapySession.scheduled_date.asc(), TherapySession.start_time.asc())
+        .limit(limit)
     )
+    if blocked:
+        stmt = stmt.where(TherapySession.id.not_in(blocked))
+    return list(db.scalars(stmt).all())
 
 
 def fetch_needs_log_sessions(
@@ -122,27 +185,30 @@ def fetch_needs_log_sessions(
 ) -> list[TherapySession]:
     if not case_ids:
         return []
-    return list(
-        db.scalars(
-            select(TherapySession)
-            .outerjoin(DailyLog, DailyLog.session_id == TherapySession.id)
-            .where(
-                TherapySession.therapist_user_id == user.id,
-                TherapySession.case_id.in_(case_ids),
-                TherapySession.status == SessionStatus.COMPLETED,
-                DailyLog.id.is_(None),
-            )
-            .options(*_session_options())
-            .order_by(TherapySession.scheduled_date.desc(), TherapySession.id.desc())
-            .limit(limit)
-        ).all()
+    blocked = absence_blocked_session_ids(db, user, case_ids)
+    stmt = (
+        select(TherapySession)
+        .outerjoin(DailyLog, DailyLog.session_id == TherapySession.id)
+        .where(
+            TherapySession.therapist_user_id == user.id,
+            TherapySession.case_id.in_(case_ids),
+            TherapySession.status == SessionStatus.COMPLETED,
+            DailyLog.id.is_(None),
+        )
+        .options(*_session_options())
+        .order_by(TherapySession.scheduled_date.desc(), TherapySession.id.desc())
+        .limit(limit)
     )
+    if blocked:
+        stmt = stmt.where(TherapySession.id.not_in(blocked))
+    return list(db.scalars(stmt).all())
 
 
 def needs_log_count_by_case(db: Session, user: User, case_ids: list[int]) -> dict[int, int]:
     if not case_ids:
         return {}
-    rows = db.execute(
+    blocked = absence_blocked_session_ids(db, user, case_ids)
+    stmt = (
         select(TherapySession.case_id, func.count(TherapySession.id))
         .outerjoin(DailyLog, DailyLog.session_id == TherapySession.id)
         .where(
@@ -152,7 +218,10 @@ def needs_log_count_by_case(db: Session, user: User, case_ids: list[int]) -> dic
             DailyLog.id.is_(None),
         )
         .group_by(TherapySession.case_id)
-    ).all()
+    )
+    if blocked:
+        stmt = stmt.where(TherapySession.id.not_in(blocked))
+    rows = db.execute(stmt).all()
     return {int(cid): int(cnt) for cid, cnt in rows}
 
 
@@ -163,7 +232,8 @@ def upcoming_count_by_case(
         return {}
     today = date.today()
     end = today + timedelta(days=days)
-    rows = db.execute(
+    blocked = absence_blocked_session_ids(db, user, case_ids)
+    stmt = (
         select(TherapySession.case_id, func.count(TherapySession.id))
         .where(
             TherapySession.therapist_user_id == user.id,
@@ -173,7 +243,10 @@ def upcoming_count_by_case(
             TherapySession.scheduled_date <= end,
         )
         .group_by(TherapySession.case_id)
-    ).all()
+    )
+    if blocked:
+        stmt = stmt.where(TherapySession.id.not_in(blocked))
+    rows = db.execute(stmt).all()
     return {int(cid): int(cnt) for cid, cnt in rows}
 
 

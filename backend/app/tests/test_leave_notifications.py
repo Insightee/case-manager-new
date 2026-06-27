@@ -264,6 +264,94 @@ def test_therapist_notified_on_reject_with_note():
     assert "Coverage required" in reject_notes[0]["body"]
 
 
+def test_case_scoped_leave_only_affects_selected_case():
+    """Shadow-only leave must not mention or cancel homecare sessions."""
+    therapist = _login("therapist@demo.com")
+    parent = _login("parent@demo.com")
+    hr = _login("hr@demo.com")
+    th = _headers(therapist)
+
+    cases = client.get("/api/v1/slots/bookable-cases", headers=th).json()
+    assert len(cases) >= 2, "Seed therapist needs shadow + homecare cases"
+    shadow = next(c for c in cases if c.get("product_module") == "shadow_support")
+    homecare = next(c for c in cases if c["case_id"] != shadow["case_id"])
+
+    day = date(2026, 9, 3)
+    client.post(
+        "/api/v1/slots/materialize",
+        headers=th,
+        json={"from_date": day.isoformat(), "to_date": day.isoformat()},
+    )
+    cal = client.get(
+        f"/api/v1/slots/calendar?from_date={day.isoformat()}&to_date={day.isoformat()}",
+        headers=th,
+    )
+    available = [s for s in cal.json()["slots"] if s["status"] == "AVAILABLE"]
+    assert len(available) >= 2, "Need at least two open slots for booking test"
+
+    homecare_slot_id = available[0]["id"]
+    shadow_slot_id = available[1]["id"]
+    assert (
+        client.post(
+            f"/api/v1/slots/{homecare_slot_id}/book",
+            headers=th,
+            json={"case_id": homecare["case_id"]},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/api/v1/slots/{shadow_slot_id}/book",
+            headers=th,
+            json={"case_id": shadow["case_id"]},
+        ).status_code
+        == 200
+    )
+
+    leave = client.post(
+        "/api/v1/leave",
+        headers=th,
+        json={
+            "service_line": "shadow_support",
+            "leave_type": "ANNUAL",
+            "start_date": day.isoformat(),
+            "end_date": day.isoformat(),
+            "case_ids": [shadow["case_id"]],
+        },
+    )
+    assert leave.status_code == 201
+    leave_id = leave.json()["id"]
+
+    notes = _parent_notifications(parent)
+    tentative = [n for n in notes if n.get("entity_id") == leave_id and n["title"] == "Therapist leave requested"]
+    assert len(tentative) == 1
+    assert shadow["case_code"] in tentative[0]["body"]
+    assert homecare["case_code"] not in tentative[0]["body"]
+
+    review = client.patch(
+        f"/api/v1/leave/{leave_id}",
+        headers=_headers(hr),
+        json={"status": "APPROVED"},
+    )
+    assert review.status_code == 200
+
+    db = SessionLocal()
+    try:
+        homecare_slot = db.get(TherapistSlot, homecare_slot_id)
+        shadow_slot = db.get(TherapistSlot, shadow_slot_id)
+        assert homecare_slot.status == SlotStatus.BOOKED
+        assert homecare_slot.case_id == homecare["case_id"]
+        assert shadow_slot.status == SlotStatus.CANCELLED
+    finally:
+        db.close()
+
+    notes = _parent_notifications(parent)
+    leave_notes = [n for n in notes if n.get("entity_id") == leave_id]
+    bodies = " ".join(n["body"] for n in leave_notes)
+    assert homecare["case_code"] not in bodies
+    assert shadow["case_code"] in bodies
+
+
 def test_leave_summary_and_report():
     therapist = _login("therapist@demo.com")
     hr = _login("hr@demo.com")

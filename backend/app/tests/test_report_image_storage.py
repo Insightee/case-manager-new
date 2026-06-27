@@ -14,7 +14,7 @@ from app.models.report_image import ReportImage
 from app.seed.demo_seed import run as seed_run
 from app.storage.factory import get_storage_backend, reset_storage_backend_for_tests
 from app.storage.local_backend import LocalStorageBackend
-from app.tests.conftest import api_items, casemanager_homecare_case_id
+from app.tests.conftest import api_items, cm_headers_for_case
 
 client = TestClient(app)
 
@@ -239,8 +239,22 @@ def test_r2_backend_put_get_mocked(monkeypatch):
 
 def test_case_manager_can_upload_image_on_under_review_report():
     th_headers = {"Authorization": f"Bearer {_login('therapist@demo.com')}"}
-    cm_headers = {"Authorization": f"Bearer {_login('casemanager@demo.com')}"}
-    case_id = casemanager_homecare_case_id()
+    case_id = _therapist_case_id(th_headers)
+    from app.core.database import SessionLocal
+    from app.models.user import User
+    from app.models.case import Case
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        case = db.get(Case, case_id)
+        case.case_manager_user_id = user.id
+        db.commit()
+    finally:
+        db.close()
+
+    cm_headers = cm_headers_for_case(client, case_id)
     created = client.post(
         "/api/v1/reports/monthly",
         headers=th_headers,

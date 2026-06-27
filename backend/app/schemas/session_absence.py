@@ -39,9 +39,25 @@ class SessionAbsenceRead(BaseModel):
     end_time: Optional[str] = None
     created_at: Optional[datetime] = None
     reviewed_at: Optional[datetime] = None
+    dispute_status: Optional[str] = None
+    record_type: Optional[str] = None
+    leave_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
 
 class SessionAbsenceListResponse(BaseModel):
     items: list[SessionAbsenceRead] = Field(default_factory=list)
+
+
+class SessionAbsenceStatusResponse(BaseModel):
+    status: str  # none | pending | approved | rejected
+    message: Optional[str] = None
+    absence_request: Optional[SessionAbsenceRead] = None
+
+
+class SessionAbsenceDuplicateResponse(BaseModel):
+    status: str = "pending"
+    message: str
+    existing: bool = True
+    absence_request: SessionAbsenceRead

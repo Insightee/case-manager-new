@@ -13,10 +13,10 @@ export function SameDaySessionDialog({ open, conflict, busy, onEditExisting, onS
     <div className="ic-case-status-modal" role="dialog" aria-modal="true" aria-labelledby="same-day-title">
       <button type="button" className="ic-case-status-modal__backdrop" aria-label="Close" onClick={onClose} />
       <div className="ic-case-status-modal__sheet">
-        <h2 id="same-day-title">Another session today?</h2>
+        <h2 id="same-day-title">You already have a visit today for this client</h2>
         <p className="ic-case-panel__hint">
           {conflict.message ||
-            'You already completed a session for this client today. Edit the existing session or start another visit explicitly.'}
+            'Edit the existing session or start another visit explicitly.'}
         </p>
         <div className="ic-case-status-modal__actions" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <button

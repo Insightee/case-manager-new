@@ -24,8 +24,8 @@ export const SIGN_IN_PATH = {
   admin: '/adminlogin',
 }
 
-/** Default sign-in when portal is unknown — client portal. */
-export const DEFAULT_SIGN_IN_PATH = SIGN_IN_PATH.parent
+/** Default sign-in when portal is unknown — portal picker. */
+export const DEFAULT_SIGN_IN_PATH = '/login'
 
 /** @param {'parent' | 'therapist' | 'admin' | null | undefined} portal */
 export function portalLoginPath(portal) {

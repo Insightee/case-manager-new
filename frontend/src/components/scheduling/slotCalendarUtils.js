@@ -77,6 +77,7 @@ export function isCaseUnderReview(caseStatus) {
 export function calendarEventLabel(s, mode = 'therapist') {
   const isParent = mode === 'parent'
   if (isParent) {
+    if (s.on_leave) return `Leave · ${s.start_time}`
     return s.is_mine ? `My session · ${s.start_time}` : `Available · ${s.start_time}`
   }
   if (s.event_type === 'cm_meeting') {
@@ -85,12 +86,18 @@ export function calendarEventLabel(s, mode = 'therapist') {
   if (s.event_type === 'session') {
     const underReview = isCaseUnderReview(s.case_status)
     const who = s.child_name || s.case_code || 'Visit'
+    if (s.on_leave) {
+      return `Leave · ${who}`
+    }
     const prefix =
       s.status === 'IN_PROGRESS' ? 'In progress · ' : underReview ? 'Under review · ' : 'Session · '
     return `${prefix}${who}`
   }
   if (s.status === 'BOOKED') {
     const who = s.child_name || s.case_code || 'Booked'
+    if (s.on_leave) {
+      return `Leave · ${who}`
+    }
     if (isCaseUnderReview(s.case_status)) {
       return `Under review · ${who}`
     }
@@ -107,7 +114,11 @@ export function calendarEventLabel(s, mode = 'therapist') {
 
 export function calendarEventStyle(s, mode = 'therapist') {
   if (mode === 'parent') {
+    if (s.on_leave) return PARENT_SLOT_STYLES.leave
     return PARENT_SLOT_STYLES[s.is_mine ? 'mine' : 'available']
+  }
+  if (s.on_leave) {
+    return THERAPIST_STATUS_STYLES.HOLIDAY
   }
   if (s.event_type === 'session') {
     return THERAPIST_STATUS_STYLES[s.status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'SESSION']
@@ -153,4 +164,26 @@ export const STATUS_LABELS = {
 export const PARENT_SLOT_STYLES = {
   available: 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100',
   mine: 'bg-indigo-100 text-indigo-900 border-indigo-300 hover:bg-indigo-200',
+  leave: 'bg-amber-100 text-amber-900 border-amber-300',
+}
+
+/** Whole-day unavailable (therapist-wide leave). */
+export function isTherapistWideLeaveOverlay(overlay) {
+  return Boolean(overlay?.therapist_wide)
+}
+
+/** Case-scoped or therapist-wide leave affecting a slot/session. */
+export function isEventOnLeave(event, overlay) {
+  if (!overlay) return false
+  if (overlay.therapist_wide) return true
+  const caseId = event?.case_id != null ? Number(event.case_id) : null
+  if (caseId == null) return false
+  return (overlay.case_ids || []).map(Number).includes(caseId)
+}
+
+export function leaveOverlayHeaderLabel(overlay) {
+  if (!overlay) return ''
+  if (overlay.therapist_wide) return 'Leave'
+  if ((overlay.case_ids || []).length) return 'Case leave'
+  return 'Leave'
 }

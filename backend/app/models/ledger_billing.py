@@ -30,11 +30,13 @@ class LedgerEventType(str, enum.Enum):
     SESSION_COMPLETED = "SESSION_COMPLETED"
     SESSION_CANCELLED = "SESSION_CANCELLED"
     CLIENT_NO_SHOW = "CLIENT_NO_SHOW"
+    CHILD_ABSENT = "CHILD_ABSENT"
     THERAPIST_CANCEL = "THERAPIST_CANCEL"
     MONTHLY_FEE = "MONTHLY_FEE"
     LEAVE_DEDUCTION = "LEAVE_DEDUCTION"
     PACKAGE_CONSUMPTION = "PACKAGE_CONSUMPTION"
     MANUAL_ADJUSTMENT = "MANUAL_ADJUSTMENT"
+    ACCIDENTAL_START_CANCELLED = "ACCIDENTAL_START_CANCELLED"
 
 
 class BillableStatus(str, enum.Enum):
@@ -69,6 +71,11 @@ class ProductBillingRule(Base):
     payment_terms: Mapped[Optional[str]] = mapped_column(String(64))
     client_no_show_billable: Mapped[bool] = mapped_column(Boolean, default=False)
     therapist_cancel_billable: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Child-absent policy: whether the therapist is payable when the child is absent
+    # (applies to package/retainer/shadow services where therapist was available).
+    child_absent_therapist_payable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Whether a child-absent day should consume a package session.
+    package_consumes_on_child_absent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     included_paid_leaves: Mapped[Optional[int]] = mapped_column(Integer)
     unpaid_leave_deduction_method: Mapped[Optional[str]] = mapped_column(String(64))
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)

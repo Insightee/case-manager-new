@@ -26,7 +26,6 @@ export function ClientCalendar({
           onSlotClick={onSlotClick}
           selectedSlotId={selectedSlotId}
           refreshKey={refreshKey}
-          showLeaveActions={false}
           onCalendarLoad={onCalendarLoad}
         />
       </div>

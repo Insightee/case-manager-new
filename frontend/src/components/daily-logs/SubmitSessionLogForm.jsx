@@ -10,7 +10,7 @@ import {
   todayIsoIST,
   validateSessionLogForm,
 } from '../../lib/sessionLogUtils.js'
-import { formatDisplayDate } from '../../lib/datetime.js'
+import { formatDisplayDate, formatTimeIST } from '../../lib/datetime.js'
 import { SessionBrief } from './SessionBrief.jsx'
 import { SessionLogGoalTracker } from '../clinical/SessionLogGoalTracker.jsx'
 import {
@@ -27,6 +27,7 @@ import { SessionLogAiAssist } from '../clinical/SessionLogAiAssist.jsx'
 import { GOALS_STRATEGIES_ENGINE_V2, STRUCTURED_SESSION_EVIDENCE } from '../../lib/reportsRevampFlags.js'
 import { goalHasSessionWork } from '../../lib/clinicalScoring.js'
 import { ClinicalVisibilityBadge } from '../clinical-ui/ClinicalVisibilityBadge.jsx'
+import { SessionCancelConfirmDialog } from './SessionCancelConfirmDialog.jsx'
 import '../../styles/goals-strategies-engine.css'
 import '../../styles/session-log-v2.css'
 
@@ -71,6 +72,8 @@ export function SubmitSessionLogForm({
   required = false,
   onSuccess,
   onCancel,
+  onCancelSession,
+  cancelSessionBusy = false,
   onEditTimes,
 }) {
   const isEdit = Boolean(existingLog?.id)
@@ -79,6 +82,7 @@ export function SubmitSessionLogForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [draftNote, setDraftNote] = useState('')
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const draftTimer = useRef(null)
   const serverAutosaveTimer = useRef(null)
   const [serverAutosaveState, setServerAutosaveState] = useState('idle')
@@ -519,19 +523,48 @@ export function SubmitSessionLogForm({
 
   return (
     <div className={`ic-session-log-panel${required ? ' ic-session-log-panel--required' : ''}`}>
+      <SessionCancelConfirmDialog
+        open={cancelDialogOpen}
+        busy={cancelSessionBusy}
+        onKeep={() => setCancelDialogOpen(false)}
+        onConfirm={async () => {
+          if (!onCancelSession) return
+          await onCancelSession()
+          setCancelDialogOpen(false)
+        }}
+      />
       <header className="ic-session-log-panel__head">
         <div>
           <p className="ic-session-log-panel__eyebrow">
-            {isResubmit ? 'Rejected session log' : isEdit ? 'Edit session log' : required ? 'Required to close session' : 'Session log'}
+            {isResubmit
+              ? 'Rejected session log'
+              : isEdit
+                ? 'Edit session log'
+                : required
+                  ? 'Complete Session Log'
+                  : 'Session log'}
           </p>
           <h2 className="ic-session-log-panel__title">
             {isResubmit ? 'Review and resubmit' : isEdit ? 'Update visit details' : 'Complete session log'}
           </h2>
-          <p className="ic-session-log-panel__meta">
-            <strong>{displayName}</strong>
-            {session?.scheduled_date ? <> · {formatDisplayDate(session.scheduled_date)}</> : null}
-            {timeRange ? <> · {timeRange}</> : null}
-          </p>
+          {required && session?.actual_end_at ? (
+            <p className="ic-session-log-panel__meta">
+              Session ended at {formatTimeIST(session.actual_end_at)}. Now complete the session log.
+            </p>
+          ) : (
+            <p className="ic-session-log-panel__meta">
+              <strong>{displayName}</strong>
+              {session?.scheduled_date ? <> · {formatDisplayDate(session.scheduled_date)}</> : null}
+              {timeRange ? <> · {timeRange}</> : null}
+            </p>
+          )}
+          {required && session?.actual_end_at ? (
+            <p className="ic-session-log-panel__meta">
+              <strong>{displayName}</strong>
+              {session?.scheduled_date ? <> · {formatDisplayDate(session.scheduled_date)}</> : null}
+              {timeRange ? <> · {timeRange}</> : null}
+            </p>
+          ) : null}
         </div>
         {!required && onCancel ? (
           <button type="button" className="ic-btn ic-btn--ghost ic-session-log-panel__dismiss" onClick={onCancel}>
@@ -540,7 +573,7 @@ export function SubmitSessionLogForm({
         ) : null}
       </header>
 
-      {(showBrief && !isEdit) || (isResubmit && showBrief) ? (
+      {showBrief ? (
         <SessionBrief
           session={session}
           childName={childName}
@@ -548,6 +581,17 @@ export function SubmitSessionLogForm({
           log={existingLog}
           onEditTimes={onEditTimes}
         />
+      ) : null}
+
+      {session?.auto_ended ? (
+        <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn" style={{ borderLeft: '4px solid #f59e0b', backgroundColor: '#fffbeb', color: '#b45309', padding: '12px', margin: '0 0 16px 0', borderRadius: '4px' }}>
+          This session was auto-ended because it exceeded the expected duration. Please review actual start/end time before submitting the daily log.{' '}
+          {onEditTimes ? (
+            <button type="button" className="ic-btn ic-btn--link" onClick={onEditTimes} style={{ textDecoration: 'underline', cursor: 'pointer', padding: 0, border: 'none', background: 'none', color: '#d97706', fontWeight: 'bold' }}>
+              Edit times
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {isResubmit && existingLog?.review_note ? (
@@ -568,7 +612,7 @@ export function SubmitSessionLogForm({
         </p>
       ) : isEdit ? (
         <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
-          Changes save while the log is still pending review and within 24 hours of submission.
+          Use Save Draft to save without submitting.
         </p>
       ) : (
         <p className="ic-session-log-panel__banner ic-session-log-panel__banner--muted">
@@ -579,27 +623,6 @@ export function SubmitSessionLogForm({
       {error ? <p className="ic-session-log-panel__error">{error}</p> : null}
 
       <form className="ic-session-log-form" onSubmit={isResubmit ? handleResubmit : handleSubmit}>
-        <fieldset className="ic-session-log-form__attendance">
-          <legend>Attendance</legend>
-          <div className="ic-session-log-form__attendance-options">
-            {ATTENDANCE.map((a) => (
-              <label key={a.value} className="ic-session-log-attendance">
-                <input
-                  type="radio"
-                  name="attendance"
-                  value={a.value}
-                  checked={form.attendance_status === a.value}
-                  onChange={() => {
-                    setForm({ ...form, attendance_status: a.value })
-                    setDirtySinceServerSave(true)
-                  }}
-                />
-                <span>{a.label}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
         <div className="ic-session-log-form__grid">
           {FIELDS.map(({ key, label, hint, rows, highlight, required: fieldRequired }) => {
             const isParentField   = key === 'parent_notes'
@@ -694,9 +717,23 @@ export function SubmitSessionLogForm({
                 Save progress
               </button>
             </>
+          ) : isEdit ? (
+            <>
+              <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
+                {submitting ? 'Submitting…' : 'Submit log'}
+              </button>
+              <button
+                type="button"
+                className="ic-btn ic-btn--ghost"
+                disabled={submitting}
+                onClick={handleSaveProgress}
+              >
+                Save draft
+              </button>
+            </>
           ) : (
             <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
-              {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Submit log & finish'}
+              {submitting ? 'Saving…' : 'Submit log & finish'}
             </button>
           )}
           {!isEdit && session?.id ? (
@@ -715,6 +752,16 @@ export function SubmitSessionLogForm({
             The visit is already ended on the clock. Submit the log when you can — drafts are stored on this device only
             until you submit.
           </p>
+        ) : null}
+        {required && !isEdit && onCancelSession ? (
+          <button
+            type="button"
+            className="ic-session-log-mistake-cancel"
+            disabled={submitting || cancelSessionBusy}
+            onClick={() => setCancelDialogOpen(true)}
+          >
+            Started by mistake? Cancel this session
+          </button>
         ) : null}
         {isEdit && pendingEdit ? (
           <p className="ic-session-log-form__footnote">

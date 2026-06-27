@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed.demo_seed import run as seed_run
-from app.tests.conftest import api_items
+from app.tests.conftest import api_first_case_id, api_items, login_headers
 
 client = TestClient(app)
 
@@ -269,6 +269,75 @@ def test_create_case_without_manual_code():
     assert res.status_code == 201, res.text
     code = res.json()["case_code"]
     assert code.startswith("IC-") and "-HC-" in code
+
+
+def test_allotment_next_code_increments_without_client_code():
+    import uuid
+
+    token = _login("casemanager@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    preview = client.get("/api/v1/admin/cases/next-code?product_module=homecare", headers=headers)
+    assert preview.status_code == 200
+    expected_code = preview.json()["case_code"]
+
+    therapists = client.get(
+        "/api/v1/admin/allotment/therapists?product_module=homecare&approved_only=false",
+        headers=headers,
+    )
+    assert therapists.status_code == 200
+    therapist_id = therapists.json()[0]["therapist_user_id"]
+
+    admin_token = _login("superadmin@demo.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    suffix = uuid.uuid4().hex[:8]
+    fam = client.post(
+        "/api/v1/admin/families",
+        headers=admin_headers,
+        json={
+            "parent_email": f"seq-parent-{suffix}@demo.com",
+            "parent_full_name": "Seq Parent",
+            "child": {"first_name": "Seq", "last_name": suffix},
+            "send_invite": False,
+        },
+    )
+    assert fam.status_code == 201, fam.text
+    child_id = fam.json()["childId"]
+
+    allot = client.post(
+        "/api/v1/admin/cases/allot",
+        headers=headers,
+        json={
+            "child_id": child_id,
+            "service_type": "Homecare",
+            "product_module": "homecare",
+            "billing_type": "PER_SESSION",
+            "compensation_mode": "PERCENTAGE",
+            "client_billing_mode": "POSTPAID",
+            "client_rate_per_session_inr": 1200,
+            "pay_share_amount_inr": 720,
+            "therapist_user_id": therapist_id,
+        },
+    )
+    assert allot.status_code == 201, allot.text
+    created_code = allot.json()["case"]["case_code"]
+    assert created_code == expected_code
+
+    next_preview = client.get("/api/v1/admin/cases/next-code?product_module=homecare", headers=headers)
+    assert next_preview.status_code == 200
+    next_code = next_preview.json()["case_code"]
+    assert next_code != created_code
+    assert int(next_code.rsplit("-", 1)[-1]) == int(created_code.rsplit("-", 1)[-1]) + 1
+
+
+def test_b2b_next_case_code_preview():
+    token = _login("casemanager@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    preview = client.get("/api/v1/admin/cases/next-code?product_module=b2b", headers=headers)
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["case_code"].startswith("IC-")
+    assert "-B2-" in body["case_code"]
+    assert "B2" in body["preview"]
 
 
 def test_admin_create_child_and_family():
@@ -881,6 +950,32 @@ def test_therapist_can_book_cm_meeting_on_assigned_case():
     assert body.get("therapist_name")
 
 
+def test_cm_meeting_observation_checklist_review_type():
+    """Regression: Postgres meetingtype enum must accept product meeting types."""
+    th_token = _login("therapist@demo.com")
+    th_headers = {"Authorization": f"Bearer {th_token}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    assert cases.status_code == 200, cases.text
+    case_id = cases.json()[0]["id"]
+    created = client.post(
+        "/api/v1/cm-meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": "2027-03-15",
+            "scheduled_time": "14:30:00",
+            "duration_minutes": 30,
+            "meeting_type": "OBSERVATION_CHECKLIST_REVIEW",
+            "title": "Observation checklist review",
+            "meeting_url": "https://meet.google.com/test-checklist-review",
+            "invite_therapist": True,
+            "invite_case_manager": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json().get("meeting_type") == "OBSERVATION_CHECKLIST_REVIEW"
+
+
 def test_therapist_cm_meeting_without_case_returns_400_not_module_error():
     th_token = _login("therapist@demo.com")
     th_headers = {"Authorization": f"Bearer {th_token}"}
@@ -1022,12 +1117,24 @@ def test_workbench_summary_scoped():
 
 
 def test_viewer_cannot_patch_case():
+    from app.core.database import SessionLocal
+    from app.models.user import User
+    from app.models.case import Case, CaseStatus
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).where(User.email == "viewonly@demo.com")).first()
+        case = db.scalars(select(Case).where(Case.status == CaseStatus.ACTIVE)).first()
+        case.case_manager_user_id = user.id
+        db.commit()
+    finally:
+        db.close()
+
     token = _login("viewonly@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
-    admin_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
-    cases = client.get("/api/v1/cases?page_size=1", headers=admin_headers)
-    assert cases.status_code == 200
-    case_id = api_items(cases.json())[0]["id"]
+    # View-only CMs see no caseload until assigned; use any case id for write-denial check.
+    case_id = api_first_case_id(client, login_headers(client, "superadmin@demo.com"))
     patch = client.patch(
         f"/api/v1/cases/{case_id}",
         headers=headers,

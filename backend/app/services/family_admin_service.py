@@ -85,6 +85,267 @@ def provision_parent_for_child(
     return user, pg
 
 
+def rotate_invite_token(
+    db: Session,
+    invite: InviteToken,
+    *,
+    created_by_user_id: int,
+) -> InviteToken:
+    """Retire an unused invite and mint a fresh token with the same metadata."""
+    now = datetime.now(timezone.utc)
+    prior_meta = dict(invite.invite_metadata or {})
+    invite.used_at = now
+    consumed = dict(prior_meta)
+    consumed["consumed_reason"] = "rotated"
+    invite.invite_metadata = consumed
+    new_invite = InviteToken(
+        email=invite.email,
+        role_name=invite.role_name,
+        module_assignments=list(invite.module_assignments or []),
+        token=secrets.token_urlsafe(32),
+        expires_at=now + timedelta(days=7),
+        created_by_user_id=created_by_user_id,
+        linked_child_id=invite.linked_child_id,
+        invite_metadata=prior_meta,
+    )
+    db.add(new_invite)
+    db.flush()
+    return new_invite
+
+
+def parent_has_portal_session(db: Session, user_id: int) -> bool:
+    from app.services.parent_service import parent_has_portal_session as _has_session
+
+    return _has_session(db, user_id)
+
+
+def refresh_parent_portal_invite(
+    db: Session,
+    parent_user_id: int,
+    created_by_user_id: int,
+    *,
+    child_id: int | None = None,
+    send_email: bool = True,
+    background_tasks=None,
+    force_resend: bool = False,
+) -> str:
+    """Consume stale parent invites and issue a fresh portal invite link."""
+    from app.core.permissions import RoleName
+
+    user = db.get(User, parent_user_id)
+    if not user or RoleName.PARENT.value not in user.role_names:
+        raise ValueError("Parent user not found")
+    consume_pending_parent_invites(db, user.email, reason="rotated")
+    return issue_parent_invite(
+        db,
+        parent_user_id,
+        created_by_user_id,
+        child_id=child_id,
+        send_email=send_email,
+        background_tasks=background_tasks,
+        force_resend=force_resend,
+    )
+
+
+def list_parents_awaiting_first_login(db: Session) -> dict:
+    """Parents linked to open cases who have never signed in or accepted an invite."""
+    from app.core.permissions import RoleName
+    from app.core.timezone import ensure_utc_aware
+
+    now = datetime.now(timezone.utc)
+    closed_val = CaseStatus.CLOSED.value
+
+    cases_by_child: dict[int, list[Case]] = {}
+    for case in db.scalars(select(Case)).all():
+        cases_by_child.setdefault(case.child_id, []).append(case)
+
+    def child_has_open_case(child_id: int) -> bool:
+        rows = cases_by_child.get(child_id, [])
+        return any((c.status.value if c.status else None) != closed_val for c in rows)
+
+    parent_rows = db.scalars(
+        select(ParentGuardian).options(
+            selectinload(ParentGuardian.children),
+            selectinload(ParentGuardian.user),
+        )
+    ).all()
+
+    seen_user_ids: set[int] = set()
+    items: list[dict] = []
+
+    for pg in parent_rows:
+        u = pg.user
+        if not u or not u.is_active or RoleName.PARENT.value not in u.role_names:
+            continue
+        if u.id in seen_user_ids or parent_has_portal_session(db, u.id):
+            continue
+        open_children = [c for c in pg.children if child_has_open_case(c.id)]
+        if not open_children:
+            continue
+        child = open_children[0]
+        seen_user_ids.add(u.id)
+        items.append(
+            {
+                "userId": u.id,
+                "parentEmail": u.email,
+                "parentName": u.full_name,
+                "childId": child.id,
+                "childName": child.full_name,
+                "loginReady": login_ready(u, db),
+                "kind": "parent_user",
+            }
+        )
+
+    pending_by_child: dict[int, InviteToken] = {}
+    for inv in db.scalars(
+        select(InviteToken)
+        .where(
+            InviteToken.used_at.is_(None),
+            InviteToken.linked_child_id.isnot(None),
+            InviteToken.role_name == "PARENT",
+        )
+        .order_by(InviteToken.id.desc())
+    ).all():
+        cid = inv.linked_child_id
+        if cid and cid not in pending_by_child:
+            pending_by_child[cid] = inv
+
+    child_has_parent_user: dict[int, bool] = {}
+    for pg in parent_rows:
+        for c in pg.children:
+            child_has_parent_user[c.id] = True
+
+    for child_id, inv in pending_by_child.items():
+        if not child_has_open_case(child_id):
+            continue
+        existing_user = db.scalars(select(User).where(User.email == inv.email.lower())).first()
+        if existing_user and existing_user.id in seen_user_ids:
+            continue
+        if existing_user and parent_has_portal_session(db, existing_user.id):
+            continue
+        if child_has_parent_user.get(child_id) and existing_user:
+            continue
+        child = db.get(Child, child_id)
+        expired = ensure_utc_aware(inv.expires_at) <= now
+        items.append(
+            {
+                "userId": existing_user.id if existing_user else None,
+                "parentEmail": inv.email,
+                "parentName": (inv.invite_metadata or {}).get("full_name") or inv.email,
+                "childId": child_id,
+                "childName": child.full_name if child else None,
+                "inviteId": inv.id,
+                "inviteExpired": expired,
+                "kind": "invite_only",
+            }
+        )
+
+    return {"count": len(items), "items": items}
+
+
+def bulk_invite_parents_awaiting_first_login(
+    db: Session,
+    *,
+    actor_user_id: int,
+    background_tasks,
+    user_ids: list[int] | None = None,
+    invite_ids: list[int] | None = None,
+) -> dict:
+    """Send fresh portal invites to parents who have never logged in."""
+    from app.services.email.delivery_metadata import delivery_metadata_for_email
+    from app.services.email.service import enqueue_password_reset_email, invite_email_delivery_status
+    from app.services import password_reset_service
+
+    roster = list_parents_awaiting_first_login(db)
+    targets = roster["items"]
+    if user_ids is not None:
+        allowed = set(user_ids)
+        targets = [t for t in targets if t.get("userId") in allowed]
+    if invite_ids is not None:
+        allowed_inv = set(invite_ids)
+        targets = [t for t in targets if t.get("inviteId") in allowed_inv]
+
+    sent = 0
+    skipped = 0
+    errors: list[dict] = []
+    delivery = invite_email_delivery_status(send_email=True, background_tasks=background_tasks)
+
+    for row in targets:
+        email = row["parentEmail"]
+        meta = delivery_metadata_for_email(db, email, None)
+        if meta.get("is_email_suppressed"):
+            skipped += 1
+            errors.append({"email": email, "error": "email_suppressed"})
+            continue
+        try:
+            if row.get("userId"):
+                user = db.get(User, row["userId"])
+                if not user:
+                    skipped += 1
+                    errors.append({"email": email, "error": "user_missing"})
+                    continue
+                if login_ready(user, db):
+                    plain, token_id = password_reset_service.get_or_create_reset_token(
+                        db, user, force_new=True
+                    )
+                    reset_url = f"{settings.frontend_url.rstrip('/')}/reset-password/{plain}"
+                    if background_tasks is not None and delivery != "skipped_no_smtp":
+                        enqueue_password_reset_email(
+                            background_tasks,
+                            db,
+                            to=user.email,
+                            full_name=user.full_name or user.email,
+                            reset_url=reset_url,
+                            expires_hours=settings.password_reset_expire_hours,
+                            entity_id=token_id,
+                            force_resend=True,
+                        )
+                    sent += 1
+                else:
+                    refresh_parent_portal_invite(
+                        db,
+                        row["userId"],
+                        actor_user_id,
+                        child_id=row.get("childId"),
+                        send_email=True,
+                        background_tasks=background_tasks,
+                        force_resend=True,
+                    )
+                    sent += 1
+            elif row.get("inviteId"):
+                inv = db.get(InviteToken, row["inviteId"])
+                if not inv or inv.used_at is not None:
+                    skipped += 1
+                    errors.append({"email": email, "error": "invite_missing"})
+                    continue
+                new_inv = rotate_invite_token(db, inv, created_by_user_id=actor_user_id)
+                url = f"{settings.frontend_url.rstrip('/')}/invite/{new_inv.token}"
+                child_name = row.get("childName") or "your child"
+                display_name = row.get("parentName") or email
+                if background_tasks is not None:
+                    queue_parent_portal_invite_email(
+                        background_tasks,
+                        db,
+                        to=email,
+                        invite_url=url,
+                        full_name=display_name,
+                        child_name=child_name,
+                        invite_id=new_inv.id,
+                        force_resend=True,
+                    )
+                else:
+                    _send_parent_invite_email(email, url, display_name, child_name)
+                sent += 1
+            else:
+                skipped += 1
+                errors.append({"email": email, "error": "no_target"})
+        except Exception as exc:
+            skipped += 1
+            errors.append({"email": email, "error": str(exc)[:200]})
+
+    return {"sent": sent, "skipped": skipped, "errors": errors, "total": len(targets)}
+
+
 def consume_pending_parent_invites(db: Session, email: str, *, reason: str = "activated") -> None:
     """Mark unused parent portal invites consumed (e.g. after admin set-password)."""
     from app.core.timezone import ensure_utc_aware
@@ -191,13 +452,17 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
             from app.core.timezone import ensure_utc_aware
 
             expired = ensure_utc_aware(inv.expires_at) <= now
-            pending_by_child[inv.linked_child_id] = {
+            pending_entry = {
                 "pendingEmail": inv.email,
                 "inviteId": inv.id,
-                "inviteUrl": f"{settings.frontend_url.rstrip('/')}/invite/{inv.token}",
                 "inviteExpiresAt": inv.expires_at.isoformat() if inv.expires_at else None,
                 "isExpired": expired,
             }
+            if not expired:
+                pending_entry["inviteUrl"] = (
+                    f"{settings.frontend_url.rstrip('/')}/invite/{inv.token}"
+                )
+            pending_by_child[inv.linked_child_id] = pending_entry
 
     result = []
     q = (search or "").strip().lower()
@@ -412,6 +677,7 @@ def queue_parent_portal_invite_email(
     full_name: str,
     child_name: str,
     invite_id: int | None = None,
+    force_resend: bool = False,
 ) -> None:
     from app.services.email.service import enqueue_portal_invite_email
 
@@ -425,6 +691,7 @@ def queue_parent_portal_invite_email(
         intro_line=f"You have been invited to the Insighte parent portal for {child_name}.",
         recipient_role="parent",
         invite_id=invite_id,
+        force_resend=force_resend,
     )
 
 
@@ -436,6 +703,7 @@ def issue_parent_invite(
     child_id: int | None = None,
     send_email: bool = True,
     background_tasks=None,
+    force_resend: bool = False,
 ) -> str:
     from app.core.permissions import RoleName
     from app.services.invite_policy_service import assert_can_create_invite
@@ -481,6 +749,7 @@ def issue_parent_invite(
                 full_name=user.full_name or user.email,
                 child_name=child_name,
                 invite_id=invite.id,
+                force_resend=force_resend,
             )
         else:
             _send_parent_invite_email(user.email, url, user.full_name or user.email, child_name)

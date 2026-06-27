@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.core.db_errors import commit_or_http
 from app.core.module_access import get_allowed_case_product_modules, is_view_only_user
 from app.core.module_write import ensure_feature_write_access, guard_clinical_case
 from app.core.permissions import RoleName, case_scope_check, user_has_permission
@@ -609,7 +610,7 @@ def create_meeting(
         invite_case_manager=payload.invite_case_manager,
     )
 
-    db.commit()
+    commit_or_http(db)
     db.refresh(meeting)
     return _serialize(meeting, db)
 
