@@ -93,7 +93,12 @@ def list_logs(
 
 def create_daily_log(db: Session, **kwargs) -> tuple[DailyLog, bool]:
     """Create a daily log. Returns (log, created). Idempotent on session_id."""
-    session = db.get(TherapySession, kwargs["session_id"])
+    # Lock the TherapySession row to serialize concurrent log submissions for this session.
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == kwargs["session_id"])
+        .with_for_update()
+    ).first()
     if not session:
         raise ValueError("Session not found")
     if session.status != SessionStatus.COMPLETED:

@@ -22,6 +22,7 @@ from app.services import parent_service
 from app.services.email.service import (
     session_log_published_parent_email,
     session_log_submitted_parent_email,
+    session_log_reviewed_parent_email,
 )
 
 AdminLogStatus = Literal["missing", "pending", "submitted", "approved"]
@@ -209,6 +210,19 @@ def notify_parents_session_log_submitted(
     session = log.session or db.get(TherapySession, log.session_id)
     if not session:
         return 0
+
+    from app.models.email_log import EmailLog
+    from app.services.email.events import EmailEvent
+    already_sent = db.scalars(
+        select(EmailLog)
+        .where(
+            EmailLog.entity_type == "daily_log",
+            EmailLog.entity_id == log.id,
+            EmailLog.event_type == EmailEvent.SESSION_LOG_SUBMITTED.value,
+        )
+    ).first()
+    if already_sent:
+        return 0
     case = session.case or case_service.get_case(db, session.case_id)
     if not case:
         return 0
@@ -247,6 +261,7 @@ def notify_parents_session_log_submitted(
                 session_date=session_date,
                 portal_url=portal_url,
                 db=db,
+                log_id=log.id,
             )
         count += 1
     return count
@@ -256,7 +271,7 @@ def notify_parents_session_log_approved(
     db: Session,
     log: DailyLog,
     *,
-    send_email: bool = True,
+    send_email: bool = False,
 ) -> int:
     session = log.session or db.get(TherapySession, log.session_id)
     if not session:
@@ -287,7 +302,7 @@ def notify_parents_session_log_approved(
         if send_email:
             parent_user = db.get(User, uid)
             if parent_user and parent_user.email:
-                session_log_published_parent_email(
+                session_log_reviewed_parent_email(
                     to=parent_user.email,
                     parent_name=parent_user.full_name or parent_user.email,
                     child_name=child_name,
@@ -295,6 +310,7 @@ def notify_parents_session_log_approved(
                     session_date=session_date,
                     portal_url=portal_url,
                     db=db,
+                    log_id=log.id,
                 )
         count += 1
     if count:

@@ -15,5 +15,6 @@ class EmailEvent(str, Enum):
     CM_MEETING_INVITE = "cm_meeting_invite"
     SESSION_LOG_SUBMITTED = "session_log_submitted"
     SESSION_LOG_PUBLISHED = "session_log_published"
+    SESSION_LOG_REVIEWED = "session_log_reviewed"
     LEAVE_APPROVED = "leave_approved"
     SECURITY_ALERT = "security_alert"

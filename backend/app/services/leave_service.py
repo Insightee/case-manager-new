@@ -241,13 +241,23 @@ def create_therapist_leave_request(
         raise ValueError("end_date must be on or after start_date")
     if RoleName.THERAPIST.value not in therapist.role_names:
         raise ValueError("Target user is not a therapist")
+
+    # Lock therapist User row for update to serialize concurrent leave requests for this therapist.
+    db.scalars(select(User).where(User.id == therapist.id).with_for_update()).first()
     
-    # Gating duplicate leaves on overlapping date ranges
-    overlap_stmt = select(TherapistLeave).where(
-        TherapistLeave.therapist_user_id == therapist.id,
-        TherapistLeave.status.in_([LeaveStatus.PENDING, LeaveStatus.APPROVED]),
-        TherapistLeave.start_date <= end_date,
-        TherapistLeave.end_date >= start_date
+    # Gating duplicate leaves on overlapping date ranges.
+    # Use with_for_update() to prevent race conditions from concurrent rapid
+    # requests (e.g. fast calendar taps on mobile).
+    svc = (service_line or "").strip().lower() or "shadow_support"
+    overlap_stmt = (
+        select(TherapistLeave)
+        .where(
+            TherapistLeave.therapist_user_id == therapist.id,
+            TherapistLeave.status.in_([LeaveStatus.PENDING, LeaveStatus.APPROVED]),
+            TherapistLeave.start_date <= end_date,
+            TherapistLeave.end_date >= start_date,
+        )
+        .with_for_update()
     )
     overlapping_leaves = db.scalars(overlap_stmt).all()
     ids = list(dict.fromkeys(int(x) for x in (case_ids or [])))
@@ -255,7 +265,16 @@ def create_therapist_leave_request(
         ids.insert(0, int(case_id))
     conflicting = [lv for lv in overlapping_leaves if _leave_scopes_conflict(lv, ids or None)]
     if conflicting:
-        raise ValueError("Leave is already marked for this date. View existing leave.")
+        conflict = conflicting[0]
+        conflict_dates = (
+            conflict.start_date.isoformat()
+            if conflict.start_date == conflict.end_date
+            else f"{conflict.start_date.isoformat()} to {conflict.end_date.isoformat()}"
+        )
+        raise ValueError(
+            f"Leave already exists for {conflict_dates} (status: {conflict.status.value}). "
+            f"Please cancel the existing leave first if you need to resubmit."
+        )
 
     # Attach a non-blocking warning count of scheduled/in-progress sessions in range.
     # Callers may surface this to the user before finalising leave.
