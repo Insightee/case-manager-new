@@ -156,6 +156,54 @@ def _resolve_head(cfg: Config, script: ScriptDirectory) -> str:
     return heads[0]
 
 
+def _next_revisions(script: ScriptDirectory, current: str | None) -> list[str]:
+    if current is None:
+        return []
+    rev = script.get_revision(current)
+    if rev is None:
+        return []
+    nextrev = rev.nextrev
+    if not nextrev:
+        return []
+    if isinstance(nextrev, (tuple, list)):
+        return list(nextrev)
+    return [nextrev]
+
+
+def _upgrade_with_drift_tolerance(cfg: Config, script: ScriptDirectory, head: str) -> None:
+    """Step migrations forward; stamp past revisions whose objects already exist."""
+    max_steps = 500
+    for _ in range(max_steps):
+        current = current_revision(engine, script)
+        if current == head:
+            return
+        before = current
+        try:
+            command.upgrade(cfg, "+1")
+        except Exception as exc:
+            err = str(exc).lower()
+            if "duplicate" not in err and "already exists" not in err:
+                raise
+            after = current_revision(engine, script)
+            if after != before:
+                print(f"Partial migration applied ({before} -> {after}); continuing...")
+                continue
+            targets = _next_revisions(script, before)
+            if len(targets) != 1:
+                raise RuntimeError(
+                    f"Cannot auto-stamp past drift at {before!r} "
+                    f"(ambiguous next revisions {targets}): {exc}"
+                ) from exc
+            target = targets[0]
+            print(
+                f"Schema drift at {target} (objects already exist); "
+                f"stamping {before or '(none)'} -> {target}..."
+            )
+            command.stamp(cfg, target)
+            continue
+    raise RuntimeError(f"Migration loop exceeded {max_steps} steps without reaching {head}")
+
+
 def main() -> None:
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", settings.database_url)
@@ -181,15 +229,7 @@ def main() -> None:
         print(f"Schema drift: missing {missing}; migrating to head ({head})...")
 
     print(f"Migrating {current or '(none)'} -> {head}...")
-    try:
-        command.upgrade(cfg, head)
-    except Exception as exc:
-        err = str(exc).lower()
-        if "duplicate" in err or "already exists" in err:
-            print(f"Upgrade hit existing object ({exc!r}); retrying upgrade to head...")
-            command.upgrade(cfg, head)
-        else:
-            raise
+    _upgrade_with_drift_tolerance(cfg, script, head)
 
     missing_after = _missing_required_columns(inspect(engine))
     if missing_after:
