@@ -39,6 +39,7 @@ from app.core.config import settings
 from app.schemas.parent_home import ParentHomeResponse
 from app.schemas.session_absence import SessionAbsenceListResponse
 from app.schemas.iep_plan import IepPlanSuggestionCreate
+from app.schemas.clinical_brain import ParentGoalInputCreate
 from app.services import (
     address_service,
     appointment_booking_service as appt_booking,
@@ -246,6 +247,36 @@ def parent_case_detail(case_id: int, user: User = Depends(get_current_user), db:
     if not case.child:
         db.refresh(case, ["child"])
     return parent_service.parent_case_payload(db, case)
+
+
+@router.get("/cases/{case_id}/parent-safe-goals")
+def parent_safe_goals(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.services import parent_safe_goals_service as psg_svc
+
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    return {"items": psg_svc.list_parent_safe_goals(db, case_id)}
+
+
+@router.post("/cases/{case_id}/goal-inputs", status_code=201)
+def parent_goal_input(
+    case_id: int,
+    payload: ParentGoalInputCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import parent_goal_input_service as pgi_svc
+
+    _require_parent(user)
+    case = _parent_case_or_404(db, user, case_id)
+    return pgi_svc.create_parent_goal_input(
+        db,
+        case=case,
+        user=user,
+        goal_ref=payload.goal_ref,
+        input_type=payload.input_type,
+        comment=payload.comment,
+    )
 
 
 @router.patch("/cases/{case_id}/service-address")

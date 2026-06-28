@@ -28,6 +28,10 @@ Detail: [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) · Deploy checklist: [DEPLOY.md
 | Variable | Required | Default | Where | Description |
 |----------|----------|---------|-------|-------------|
 | `VITE_API_URL` | Vercel yes; local optional | *(empty)* | Vercel only | Public API base URL, **no trailing slash**. Local dev: leave empty to proxy `/api` → `http://localhost:8000`. |
+| `VITE_ENABLE_REPORTS` | no | `false` | Vercel | Reports hub + revamp UI (therapist/admin/parent). |
+| `VITE_ENABLE_BILLING` | no | `false` | Vercel | Therapist invoices + admin billing UI. |
+| `VITE_ENABLE_CLINICAL_BRAIN` | no | `false` | Vercel | Goal bank, strategy pool, clinical review queue. |
+| `VITE_ENABLE_REPORT_BUILDER` | no | `false` | Vercel | Observation/IEP/monthly report builder routes. |
 | `VITE_POLICIES_BOT_URL` | no | — | Frontend | Fallback policies-bot URL if `/api/v1/support/info` does not return one. |
 
 **Do not** set on Vercel: `DATABASE_URL`, `JWT_*`, `SMTP_*`, `R2_*`, or any backend-only var.
@@ -133,6 +137,10 @@ Setup: [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
+| `ENABLE_REPORTS` | no | `false` | Clinical reports engine API (`/clinical-reports/*`). |
+| `ENABLE_BILLING` | no | `false` | Client billing, ledger, therapist invoices API. |
+| `ENABLE_CLINICAL_BRAIN` | no | `false` | Clinical brain, evidence events, review queue API. |
+| `ENABLE_REPORT_GENERATION` | no | `false` | AI report drafting (`/clinical-ai/*`). Requires brain flag context. |
 | `BILLING_LEDGER_DRAFTS` | no | `true` | Billing ledger draft mode. |
 | `ACCEPTANCE_GATING_ENABLED` | no | `false` | When false, parent assignment acceptance is informational only (pilot default). |
 | `TICKET_ATTACHMENT_MAX_BYTES` | no | 5 MiB | Max size per ticket attachment. |

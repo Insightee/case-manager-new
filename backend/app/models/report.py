@@ -1,3 +1,10 @@
+"""COMPAT: Legacy MonthlyReport and ObservationReport tables.
+
+Historical and active compatibility storage. Canonical lifecycle moves to
+clinical_reports. Do not extend with new report types — add to ClinicalReportType.
+See docs/REPORT_ARCHITECTURE.md.
+"""
+
 from __future__ import annotations
 
 from typing import Optional

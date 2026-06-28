@@ -20,6 +20,7 @@ from app.core.permissions import (
 from app.models.case import Case, CaseStatus, ClientBillingMode
 from app.models.user import User
 from app.schemas.case import CaseCreate, CaseRead, CaseUpdate
+from app.schemas.clinical_brain import GoalCandidatePatch, StrategyCandidatePatch
 from app.schemas.pagination import PaginatedList
 from app.core.billing_validation import apply_billing_payload
 from app.services import address_service, case_code_service, case_service
@@ -450,6 +451,12 @@ class GoalCandidateCreate(BaseModel):
     source: Optional[str] = None
     source_daily_log_id: Optional[int] = None
     source_session_id: Optional[int] = None
+    goal_use: Optional[str] = Field(
+        default=None,
+        pattern="^(session_log_only|case_candidate|cm_iep_review)$",
+    )
+    action: Optional[str] = Field(default=None, pattern="^(save_draft|submit_for_cm_review)$")
+    metadata: Optional[dict] = None
 
 
 class StrategyCandidateCreate(BaseModel):
@@ -466,6 +473,12 @@ class StrategyCandidateCreate(BaseModel):
     source: Optional[str] = None
     linked_goal_card_id: Optional[int] = None
     source_daily_log_id: Optional[int] = None
+    strategy_type: Optional[str] = Field(
+        default=None,
+        pattern="^(pool|case_specific|adaptation|one_time)$",
+    )
+    action: Optional[str] = Field(default=None, pattern="^(save_draft|submit_for_cm_review)$")
+    metadata: Optional[dict] = None
 
 
 class RepositoryReviewAction(BaseModel):
@@ -548,7 +561,20 @@ def create_goal_candidate(
         desired_state=payload.desired_state,
         goal_statement=payload.goal_statement,
         source=payload.source,
+        goal_use=payload.goal_use,
     )
+    if payload.action == "submit_for_cm_review" and item.get("id"):
+        item = repo_svc.update_goal_candidate(
+            db,
+            item["id"],
+            case_id=case_id,
+            action="submit_for_cm_review",
+            metadata=payload.metadata,
+        ) or item
+    elif payload.metadata and item.get("id"):
+        item = repo_svc.update_goal_candidate(
+            db, item["id"], case_id=case_id, metadata=payload.metadata
+        ) or item
     return item
 
 
@@ -593,8 +619,113 @@ def create_strategy_candidate(
         strategy_steps=payload.strategy_steps,
         expected_outcome=payload.expected_outcome,
         source=payload.source,
+        strategy_type=payload.strategy_type,
+        action=payload.action,
+        metadata=payload.metadata,
     )
     return item
+
+
+@router.patch("/{case_id}/goal-candidates/{item_id}")
+def patch_goal_candidate(
+    case_id: int,
+    item_id: int,
+    payload: GoalCandidatePatch,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user_write(db, user, case_id)
+    item = repo_svc.update_goal_candidate(
+        db,
+        item_id,
+        case_id=case_id,
+        action=payload.action,
+        label=payload.label,
+        goal_statement=payload.goal_statement,
+        rationale=payload.rationale,
+        domain_key=payload.domain_key,
+        metadata=payload.metadata,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Goal candidate not found")
+    return item
+
+
+@router.patch("/{case_id}/strategy-candidates/{item_id}")
+def patch_strategy_candidate(
+    case_id: int,
+    item_id: int,
+    payload: StrategyCandidatePatch,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user_write(db, user, case_id)
+    item = repo_svc.update_strategy_candidate(
+        db,
+        item_id,
+        case_id=case_id,
+        action=payload.action,
+        label=payload.label,
+        when_to_use=payload.when_to_use,
+        how_to_use=payload.how_to_use,
+        avoid=payload.avoid,
+        domain_key=payload.domain_key,
+        environment_context=payload.environment_context,
+        strategy_steps=payload.strategy_steps,
+        linked_goal_card_id=payload.linked_goal_card_id,
+        metadata=payload.metadata,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Strategy candidate not found")
+    return item
+
+
+@router.get("/{case_id}/goal-templates")
+def list_goal_templates(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    q: str = "",
+    domain: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    _case_for_user(db, user, case_id)
+    return {"items": repo_svc.search_org_goal_templates(db, q=q, domain=domain, limit=limit)}
+
+
+@router.get("/{case_id}/strategy-pool-matches")
+def list_strategy_pool_matches(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    domain: Optional[str] = None,
+    support_need: Optional[str] = None,
+    environment: Optional[str] = None,
+    support_level: Optional[str] = None,
+    goal_card_id: Optional[int] = None,
+    limit: int = Query(20, ge=1, le=100),
+):
+    from app.services import strategy_pool_matching_service as match_svc
+
+    _case_for_user(db, user, case_id)
+    return {
+        "items": match_svc.match_strategy_pool(
+            db,
+            case_id,
+            domain=domain,
+            support_need=support_need,
+            environment=environment,
+            support_level=support_level,
+            goal_card_id=goal_card_id,
+            limit=limit,
+        )
+    }
 
 
 @router.get("/{case_id}/repository-review-queue")

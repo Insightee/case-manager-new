@@ -22,6 +22,7 @@ export function CasesPageHeader({ search = '', onSearchChange, resultCount, tota
           className="ic-search"
           placeholder="Search child, case ID, service..."
           aria-label="Search cases"
+          autoComplete="off"
           value={search}
           onChange={(e) => onSearchChange?.(e.target.value)}
         />

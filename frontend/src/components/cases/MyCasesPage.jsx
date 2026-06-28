@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   buildSectionsFromCases,
   buildStatsFromCases,
+  collectBoardCases,
   filterAndSortCases,
   uniqueServices,
 } from '../../lib/caseWorkbench.js'
@@ -48,10 +49,11 @@ export function MyCasesPage() {
 
   const workbench = useMemo(() => {
     const board = home?.cases_board || {}
+    const allCases = collectBoardCases(board)
     return {
       stats: board.stats || [],
       sections: board.sections || [],
-      allCases: board.allCases || [],
+      allCases,
     }
   }, [home])
 
@@ -105,6 +107,13 @@ export function MyCasesPage() {
 
   return (
     <div className="ic-my-cases forest-light">
+      <CasesPageHeader
+        search={search}
+        onSearchChange={setSearch}
+        resultCount={resultCount}
+        totalCount={totalCount}
+      />
+
       <QueryState
         isLoading={isLoading}
         isError={isError}
@@ -113,13 +122,6 @@ export function MyCasesPage() {
         isEmpty={!isLoading && totalCount === 0}
         emptyMessage="No assigned cases yet."
       >
-      <CasesPageHeader
-        search={search}
-        onSearchChange={setSearch}
-        resultCount={resultCount}
-        totalCount={totalCount}
-      />
-
       <UpcomingSessionsPanel items={scheduleItems} loading={isLoading} />
 
       <section className="ic-stats" aria-label="Case summary">

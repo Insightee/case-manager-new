@@ -6,24 +6,69 @@ const todayIso = () => new Date().toISOString().slice(0, 10)
 
 /** Safe text for search/filter matching. */
 function norm(value) {
-  return String(value ?? '').toLowerCase().trim()
+  if (value == null) return ''
+  if (typeof value === 'object') {
+    if (typeof value.formatted === 'string') return value.formatted.toLowerCase().trim()
+    if (typeof value.full_name === 'string') return value.full_name.toLowerCase().trim()
+    return ''
+  }
+  return String(value).toLowerCase().trim()
+}
+
+function caseSearchHaystack(caseRow) {
+  return [
+    caseRow.id,
+    caseRow.caseId,
+    caseRow.case_id,
+    caseRow.caseCode,
+    caseRow.case_code,
+    caseRow.child,
+    caseRow.child_name,
+    caseRow.childName,
+    caseRow.service,
+    caseRow.service_type,
+    caseRow.productModule,
+    caseRow.product_module,
+    caseRow.stage,
+    caseRow.nextDue,
+    caseRow.next_due,
+    caseRow.status,
+    caseRow.caseManagerName,
+    caseRow.case_manager_name,
+    caseRow.serviceAddress,
+    caseRow.service_address,
+  ]
+    .map(norm)
+    .filter(Boolean)
+    .join(' ')
 }
 
 export function matchesCaseSearch(caseRow, query) {
   const q = norm(query)
   if (!q) return true
-  const hay = [
-    caseRow.caseId,
-    caseRow.child,
-    caseRow.service,
-    caseRow.productModule,
-    caseRow.stage,
-    caseRow.nextDue,
-    caseRow.status,
-  ]
-    .map(norm)
-    .join(' ')
-  return hay.includes(q)
+  const hay = caseSearchHaystack(caseRow)
+  if (!hay) return false
+  if (hay.includes(q)) return true
+  const tokens = q.split(/\s+/).filter(Boolean)
+  if (tokens.length <= 1) return false
+  return tokens.every((token) => hay.includes(token))
+}
+
+/** Flatten therapist home board rows for search/filter (supports legacy API shapes). */
+export function collectBoardCases(board = {}) {
+  const direct = board.allCases || board.all_cases
+  if (Array.isArray(direct) && direct.length > 0) return direct
+
+  const fromSections = []
+  const seen = new Set()
+  for (const section of board.sections || []) {
+    for (const row of section?.cases || []) {
+      if (!row?.id || seen.has(row.id)) continue
+      seen.add(row.id)
+      fromSections.push(row)
+    }
+  }
+  return fromSections
 }
 
 function isDueSoon(caseRow) {

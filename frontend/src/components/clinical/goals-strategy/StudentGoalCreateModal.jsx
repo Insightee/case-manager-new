@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../../lib/apiClient.js'
 import { GOAL_MODAL_DOMAIN_CHIPS, GOAL_MODAL_TABS } from '../../../lib/clinicalUiContract.js'
+import { STRATEGY_TYPE_OPTIONS } from '../../../lib/clinicalEvidenceFields.js'
 import { AI_ENABLED } from '../../../lib/reportsRevampFlags.js'
+import { GoalUseCards } from '../../clinical-brain/GoalUseCards.jsx'
+import { GoalTemplateLibrary } from '../../clinical-brain/GoalTemplateLibrary.jsx'
+import '../../../styles/clinical-brain.css'
 
 const EMPTY_FORM = {
   label: '',
@@ -12,6 +16,8 @@ const EMPTY_FORM = {
   domain: 'communication_aac',
   strategy_label: '',
   strategy_steps: ['', '', ''],
+  goal_use: 'case_candidate',
+  strategy_type: 'case_specific',
 }
 
 /**
@@ -28,6 +34,8 @@ export function StudentGoalCreateModal({
   standaloneStrategy = false,
   sessionId,
   logId,
+  captureGoalUse = false,
+  captureStrategyType = false,
   onClose,
   onCreated,
 }) {
@@ -248,6 +256,7 @@ export function StudentGoalCreateModal({
         source: 'therapist',
         source_daily_log_id: logId || undefined,
         source_session_id: sessionId || undefined,
+        goal_use: captureGoalUse ? form.goal_use : undefined,
       }),
     })
     const linked = []
@@ -265,6 +274,7 @@ export function StudentGoalCreateModal({
             linked_goal_card_id: goal.id || goal.goal_card_id,
             source: 'therapist',
             source_daily_log_id: logId || undefined,
+            strategy_type: captureStrategyType ? form.strategy_type : undefined,
           }),
         },
       )
@@ -284,6 +294,7 @@ export function StudentGoalCreateModal({
             linked_goal_card_id: goal.id || goal.goal_card_id,
             source: 'therapist',
             source_daily_log_id: logId || undefined,
+            strategy_type: captureStrategyType ? form.strategy_type : undefined,
           }),
         },
       )
@@ -350,6 +361,7 @@ export function StudentGoalCreateModal({
             domain_key: form.domain,
             source: 'therapist',
             source_daily_log_id: logId || undefined,
+            strategy_type: captureStrategyType ? form.strategy_type : undefined,
           }),
         })
         onCreated?.({ strategy: created })
@@ -551,6 +563,14 @@ export function StudentGoalCreateModal({
             </div>
 
             {tab === 'templates' ? (
+              repositoryKind === 'goals' && !strategyOnly ? (
+                <GoalTemplateLibrary
+                  caseId={caseId}
+                  onUseTemplate={handleAddTemplate}
+                  onPreview={(item) => selectTemplateForCustom(item)}
+                  onSelectForCustom={selectTemplateForCustom}
+                />
+              ) : (
               <>
                 <div className="sg-search-row">
                   <input
@@ -621,6 +641,7 @@ export function StudentGoalCreateModal({
                   <p className="sg-hint">No templates match — try another domain or search term.</p>
                 ) : null}
               </>
+              )
             ) : null}
 
             {tab === 'custom' ? (
@@ -667,6 +688,34 @@ export function StudentGoalCreateModal({
                       placeholder="Verbal initiation (greeting or question)"
                     />
                   </label>
+                ) : null}
+                {captureGoalUse && !standaloneStrategy ? (
+                  <fieldset className="sg-field">
+                    <legend className="sg-field__label">Goal use</legend>
+                    <GoalUseCards
+                      value={form.goal_use}
+                      onChange={(goal_use) => setForm({ ...form, goal_use })}
+                      disabled={busy}
+                    />
+                  </fieldset>
+                ) : null}
+                {captureStrategyType && (standaloneStrategy || form.strategy_label || preSelectedGoal) ? (
+                  <fieldset className="sg-field">
+                    <legend className="sg-field__label">Strategy type</legend>
+                    <div className="sg-radio-row">
+                      {STRATEGY_TYPE_OPTIONS.map((opt) => (
+                        <label key={opt.id} className="sg-radio">
+                          <input
+                            type="radio"
+                            name="strategy_type"
+                            checked={form.strategy_type === opt.id}
+                            onChange={() => setForm({ ...form, strategy_type: opt.id })}
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
                 ) : null}
                 {(standaloneStrategy && !preSelectedGoal) || (!strategyOnly && reportType !== 'iep') ? (
                   <>
@@ -742,6 +791,14 @@ export function StudentGoalCreateModal({
             <div className="sg-rail__block">
               <p className="sg-rail__block-title">Statement summary</p>
               <p className="sg-rail__summary">{statementPreview}</p>
+            </div>
+            <div className="sg-rail__block">
+              <p className="sg-rail__block-title">Parent-safe preview</p>
+              <p className="sg-rail__summary">
+                {form.label.trim()
+                  ? `Your child is working on: ${form.label}. ${form.desired_state || form.supports || ''}`
+                  : 'Parent-friendly wording appears after you draft a goal statement.'}
+              </p>
             </div>
             <div className="sg-rail__block">
               <p className="sg-rail__block-title">Active strategies ({previewStrategies.length || form.strategy_label ? 1 : 0})</p>

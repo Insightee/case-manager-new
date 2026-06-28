@@ -28,6 +28,7 @@ export function SessionLogEvidencePanel({
   value,
   onChange,
   readOnly = false,
+  showNudges = false,
 }) {
   const [repo, setRepo] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -271,6 +272,7 @@ export function SessionLogEvidencePanel({
               updateGoal(i, { strategies: [strategyRowFromRepoItem({ ...item, goal_card_id: g.goal_card_id })] })
               setStrategyPanelIdx(null)
             }}
+            showNudges={showNudges}
           />
         )
       })}

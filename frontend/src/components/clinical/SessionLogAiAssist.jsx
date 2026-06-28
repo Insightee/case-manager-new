@@ -6,16 +6,14 @@ export function SessionLogAiAssist({ logId, note, onImprovedNote }) {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const run = async (path, body) => {
-    if (!logId) return
+  const runClinicalAi = async (path, body) => {
     setLoading(true)
     setMessage('')
     try {
-      const data = await apiFetch(`/api/v1/daily-logs/${logId}/ai/${path}`, {
+      return await apiFetch(`/api/v1/clinical-ai/${path}`, {
         method: 'POST',
-        body: body ? JSON.stringify(body) : undefined,
+        body: JSON.stringify(body),
       })
-      return data
     } catch (err) {
       setMessage(err.message || 'Could not complete AI assist.')
       return null
@@ -27,35 +25,27 @@ export function SessionLogAiAssist({ logId, note, onImprovedNote }) {
   return (
     <div className="session-log-ai-assist" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
       <ClinicalSecondaryButton
-        disabled={loading || !logId || !note?.trim()}
+        disabled={loading || !note?.trim()}
         onClick={async () => {
-          const data = await run('improve-note', { note })
+          const data = await runClinicalAi('session-note/improve', { raw_note: note, context: { daily_log_id: logId } })
           if (data?.draft_text) onImprovedNote?.(data.draft_text)
+          else if (data?.skipped) setMessage(data.reason || 'AI assist is off — your note is unchanged.')
         }}
       >
         Improve note
       </ClinicalSecondaryButton>
       <ClinicalSecondaryButton
-        disabled={loading || !logId}
+        disabled={loading || !note?.trim()}
         onClick={async () => {
-          const data = await run('check-evidence')
-          if (data?.missing?.length) {
-            setMessage(`Consider adding: ${data.missing.join(', ')}`)
+          const data = await runClinicalAi('language-check/parent-safe', { text: note })
+          if (data?.safe_to_publish === false) {
+            setMessage(`Consider rephrasing: ${(data.flagged_phrases || []).join(', ')}`)
           } else if (data) {
-            setMessage('Structured evidence looks complete for this log.')
+            setMessage('Language looks parent-safe.')
           }
         }}
       >
-        Check missing evidence
-      </ClinicalSecondaryButton>
-      <ClinicalSecondaryButton
-        disabled={loading || !logId}
-        onClick={async () => {
-          const data = await run('suggest-capture')
-          if (data?.suggestions?.length) setMessage(data.suggestions[0])
-        }}
-      >
-        Suggest what to capture
+        Check parent-safe language
       </ClinicalSecondaryButton>
       {message ? <p style={{ width: '100%', fontSize: '0.8125rem', margin: 0 }}>{message}</p> : null}
     </div>

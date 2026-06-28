@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -310,6 +310,7 @@ class SessionGoalEntryIn(BaseModel):
     activity_used: Optional[str] = None
     goal_repository_item_id: Optional[int] = None
     evidence_count: Optional[int] = None
+    clinical_extension: Optional[dict[str, Any]] = None
     strategies: list["StrategyUseEventIn"] = Field(default_factory=list)
 
 
@@ -328,6 +329,7 @@ class StrategyUseEventIn(BaseModel):
     goal_achievement_score: Optional[int] = None
     strategy_feedback: Optional[str] = None
     custom_strategy_id: Optional[int] = None
+    clinical_extension: Optional[dict[str, Any]] = None
 
 
 class SessionEvidenceSave(BaseModel):

@@ -371,3 +371,202 @@ def seed_demo_clinical_reports(
 
     _seed_iep_draft(db, case_aarav, therapist)
     _seed_iep_draft(db, case_ira, therapist)
+    _seed_org_clinical_brain_library(db, case_mgr)
+
+
+def _seed_org_clinical_brain_library(db: Session, approver: User) -> None:
+    """Organisation goal bank + strategy pool with metadata for Clinical Brain UI."""
+    from datetime import datetime, timezone
+
+    from app.models.goal_repository import RepositoryItemStatus
+    from app.services.clinical_brain_metadata import dump_metadata
+
+    org_goals = [
+        {
+            "label": "Request a break using AAC or gesture",
+            "domain_key": "communication_aac",
+            "goal_statement": "During structured activities, the child will request a break using AAC or an agreed gesture.",
+            "metadata": {
+                "support_need": "transitions",
+                "parent_friendly_explanation": "Your child can ask for a pause when things feel busy.",
+                "parent_safe": True,
+                "service_type": "shadow_support",
+                "age_group": "primary",
+            },
+        },
+        {
+            "label": "Initiate peer interaction with visual support",
+            "domain_key": "peer_social",
+            "goal_statement": "With visual support, the child will initiate a brief peer interaction during group activities.",
+            "metadata": {
+                "support_need": "peer_participation",
+                "parent_friendly_explanation": "Your child is practising ways to join play with a friend.",
+                "parent_safe": True,
+            },
+        },
+    ]
+    for spec in org_goals:
+        exists = db.scalars(
+            select(GoalRepositoryItem).where(
+                GoalRepositoryItem.case_id.is_(None),
+                GoalRepositoryItem.label == spec["label"],
+            )
+        ).first()
+        if exists:
+            continue
+        row = GoalRepositoryItem(
+            case_id=None,
+            created_by_user_id=approver.id,
+            approved_by_user_id=approver.id,
+            approved_at=datetime.now(timezone.utc),
+            domain_key=spec["domain_key"],
+            label=spec["label"],
+            goal_statement=spec["goal_statement"],
+            status=RepositoryItemStatus.APPROVED.value,
+            scope="organization",
+            metadata_json=dump_metadata(spec["metadata"]),
+        )
+        db.add(row)
+
+    org_strategies = [
+        {
+            "label": "Visual countdown before transition",
+            "domain_key": "emotional_regulation",
+            "when_to_use": "Gives predictable time before changing activities",
+            "how_to_use": "Show countdown card\nGive verbal preview\nOffer co-regulation if needed",
+            "avoid": "May need longer countdown in noisy settings",
+            "metadata": {
+                "support_need": "transitions",
+                "support_level": "visual_support",
+                "environments": ["school_classroom", "home"],
+                "parent_friendly_explanation": "A visual timer helps your child know when a change is coming.",
+            },
+        },
+        {
+            "label": "First-then board",
+            "domain_key": "communication_aac",
+            "when_to_use": "Shows what happens now and what comes next",
+            "how_to_use": "Place preferred activity on then\nUse simple pictures\nKeep language brief",
+            "metadata": {
+                "support_need": "task_initiation",
+                "support_level": "visual_support",
+                "environments": ["school_classroom"],
+            },
+        },
+    ]
+    for spec in org_strategies:
+        exists = db.scalars(
+            select(StrategyRepositoryItem).where(
+                StrategyRepositoryItem.case_id.is_(None),
+                StrategyRepositoryItem.label == spec["label"],
+            )
+        ).first()
+        if exists:
+            continue
+        row = StrategyRepositoryItem(
+            case_id=None,
+            created_by_user_id=approver.id,
+            approved_by_user_id=approver.id,
+            approved_at=datetime.now(timezone.utc),
+            domain_key=spec["domain_key"],
+            label=spec["label"],
+            when_to_use=spec["when_to_use"],
+            how_to_use=spec["how_to_use"],
+            avoid=spec.get("avoid"),
+            status=RepositoryItemStatus.APPROVED.value,
+            scope="organization",
+            metadata_json=dump_metadata(spec["metadata"]),
+        )
+        db.add(row)
+    db.commit()
+
+
+def ensure_clinical_brain_phase_seed(db: Session) -> None:
+    """Idempotent demo rows for Clinical Brain phases 2B–5 (E2E + local QA)."""
+    from datetime import datetime, timezone
+
+    from app.models.goal_repository import RepositoryItemStatus
+    from app.models.parent_goal_input import ParentGoalInput
+    from app.models.strategy_recommendation_feedback import FeedbackStatus, StrategyRecommendationFeedback
+
+    case = db.scalars(select(Case).where(Case.case_code == "IC-2026-041")).first()
+    if not case:
+        case = db.scalars(select(Case).limit(1)).first()
+    if not case:
+        return
+
+    therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+    parent = db.scalars(select(User).where(User.email == "parent@demo.com")).first()
+
+    pending = db.scalars(
+        select(StrategyRepositoryItem).where(
+            StrategyRepositoryItem.case_id == case.id,
+            StrategyRepositoryItem.status == RepositoryItemStatus.CANDIDATE.value,
+        )
+    ).first()
+    if not pending and therapist:
+        db.add(
+            StrategyRepositoryItem(
+                case_id=case.id,
+                created_by_user_id=therapist.id,
+                label="Quiet corner break before lunch",
+                when_to_use="Before cafeteria transitions",
+                status=RepositoryItemStatus.CANDIDATE.value,
+                scope="case",
+            )
+        )
+
+    exists_fb = db.scalars(
+        select(StrategyRecommendationFeedback).where(
+            StrategyRecommendationFeedback.case_id == case.id,
+            StrategyRecommendationFeedback.feedback_status == FeedbackStatus.NEEDS_CM_INPUT.value,
+        )
+    ).first()
+    if not exists_fb and therapist:
+        strat = db.scalars(select(StrategyRepositoryItem).limit(1)).first()
+        db.add(
+            StrategyRecommendationFeedback(
+                case_id=case.id,
+                child_id=case.child_id,
+                strategy_repository_item_id=strat.id if strat else None,
+                recommendation_source="library_match",
+                feedback_status=FeedbackStatus.NEEDS_CM_INPUT.value,
+                dismissal_reason="Unsure if this fits at home",
+                created_by_user_id=therapist.id,
+                created_by_role="THERAPIST",
+            )
+        )
+
+    exists_pgi = db.scalars(select(ParentGoalInput).where(ParentGoalInput.case_id == case.id).limit(1)).first()
+    if not exists_pgi and parent:
+        db.add(
+            ParentGoalInput(
+                case_id=case.id,
+                goal_ref="peer_play",
+                input_type="see_at_home",
+                comment="We practise turn-taking with siblings on weekends.",
+                parent_user_id=parent.id,
+            )
+        )
+
+    db.commit()
+
+
+def ensure_org_clinical_brain_library(db: Session) -> None:
+    """Idempotent org goal bank + strategy pool for Clinical Brain (dev/E2E)."""
+    from app.models.user import User
+
+    has_org_goal = db.scalars(
+        select(GoalRepositoryItem.id).where(GoalRepositoryItem.case_id.is_(None)).limit(1)
+    ).first()
+    has_org_strategy = db.scalars(
+        select(StrategyRepositoryItem.id).where(StrategyRepositoryItem.case_id.is_(None)).limit(1)
+    ).first()
+    if has_org_goal and has_org_strategy:
+        return
+    approver = db.scalars(select(User).where(User.email == "superadmin@demo.com")).first()
+    if not approver:
+        approver = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+    if not approver:
+        return
+    _seed_org_clinical_brain_library(db, approver)

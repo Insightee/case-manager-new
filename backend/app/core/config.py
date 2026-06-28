@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     ticket_attachment_max_files: int = 3
     case_document_max_bytes: int = 5 * 1024 * 1024
     billing_ledger_drafts: bool = True
+    # Staged module rollout — default off for production safety
+    enable_reports: bool = False
+    enable_billing: bool = False
+    enable_clinical_brain: bool = False
+    enable_report_generation: bool = False
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).

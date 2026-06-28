@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clinical_evidence_contract import normalize_clinical_extension
 from app.core.clinical_measurement_criteria import (
     GOAL_ACHIEVEMENT_VALUES,
     INDEPENDENCE_VALUES,
@@ -22,6 +23,7 @@ from app.models.clinical_evidence import (
     StrategyUseEvent,
 )
 from app.models.daily_log import DailyLog, LogApprovalStatus
+from app.services.strategy_repository_stats_service import record_strategy_use
 from app.models.session import Session as TherapySession
 
 
@@ -100,6 +102,26 @@ def _resolve_goal_measurement(item: dict) -> dict[str, Any]:
     }
 
 
+def _parse_extension_json(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return normalize_clinical_extension(raw)
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return normalize_clinical_extension(parsed)
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
+def _dump_extension_json(item: dict) -> Optional[str]:
+    ext = normalize_clinical_extension(item.get("clinical_extension"))
+    return json.dumps(ext) if ext else None
+
+
 def _dump_json_list(values: Any) -> Optional[str]:
     items = _json_list(values)
     return json.dumps(items) if items else None
@@ -127,6 +149,7 @@ def _goal_to_dict(g: SessionGoalEntry) -> dict[str, Any]:
         "activity_used": g.activity_used,
         "goal_repository_item_id": g.goal_repository_item_id,
         "evidence_count": g.evidence_count or 0,
+        "clinical_extension": _parse_extension_json(getattr(g, "clinical_extension_json", None)),
         "strategies": [],
     }
 
@@ -148,6 +171,7 @@ def _strategy_to_dict(s: StrategyUseEvent) -> dict[str, Any]:
         "goal_achievement_score": s.goal_achievement_score,
         "strategy_feedback": s.strategy_feedback,
         "custom_strategy_id": s.custom_strategy_id,
+        "clinical_extension": _parse_extension_json(getattr(s, "clinical_extension_json", None)),
     }
 
 
@@ -231,6 +255,19 @@ def _goal_has_session_work(item: dict) -> bool:
         if any(steps):
             return True
     note = (item.get("measurement_note") or item.get("response_note") or "").strip()
+    ext = item.get("clinical_extension") or {}
+    if isinstance(ext, dict) and any(
+        ext.get(k)
+        for k in (
+            "child_response",
+            "therapist_interpretation",
+            "participation_quality",
+            "environment_fit",
+            "barrier_type",
+            "adaptation_type",
+        )
+    ):
+        return True
     return bool(note)
 
 
@@ -302,6 +339,7 @@ def save_session_evidence(
             core_environments_json=_dump_json_list(item.get("core_environments")),
             goal_repository_item_id=item.get("goal_repository_item_id"),
             evidence_count=int(item.get("evidence_count") or 0),
+            clinical_extension_json=_dump_extension_json(item),
         )
         db.add(entry)
         db.flush()
@@ -343,6 +381,14 @@ def save_session_evidence(
 
         feedback = validate_strategy_feedback(item.get("strategy_feedback"))
         strat_measurement = _resolve_goal_measurement(item)
+        ext = item.get("clinical_extension") or {}
+        if item.get("support_level") and not strat_measurement.get("independence_support_needed"):
+            strat_measurement["independence_support_needed"] = item.get("support_level")
+        elif ext.get("support_needed"):
+            strat_measurement["independence_support_needed"] = ext.get("support_needed")
+        used_as = ext.get("strategy_status") or ""
+        used_as_adapted = used_as in ("adapted_today", "adapted")
+        goal_domain = item.get("domain_key")
         db.add(
             StrategyUseEvent(
                 daily_log_id=daily_log.id,
@@ -366,7 +412,18 @@ def save_session_evidence(
                 goal_achievement=strat_measurement["goal_achievement"],
                 strategy_feedback=feedback,
                 custom_strategy_id=item.get("custom_strategy_id"),
+                clinical_extension_json=_dump_extension_json(item),
             )
+        )
+        record_strategy_use(
+            db,
+            strategy_repository_item_id=item.get("strategy_id"),
+            goal_domain=goal_domain,
+            support_need=ext.get("support_need"),
+            environment_context=item.get("environment") or getattr(session, "mode", None),
+            support_level_tier=strat_measurement.get("independence_support_needed"),
+            strategy_feedback=feedback,
+            used_as_adapted=used_as_adapted,
         )
 
     if goal_labels:

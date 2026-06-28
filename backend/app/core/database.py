@@ -209,6 +209,8 @@ def ensure_sqlite_schema_patches() -> None:
             "is_additional_visit": "BOOLEAN NOT NULL DEFAULT 0",
             "additional_visit_reason": "VARCHAR(64)",
             "resumed_count": "INTEGER NOT NULL DEFAULT 0",
+            "cancellation_reason": "VARCHAR(64)",
+            "data_quality_flag": "VARCHAR(64)",
         }
         for col, typedef in _session_integrity_cols.items():
             if col not in sess_cols:
@@ -388,6 +390,7 @@ def ensure_sqlite_schema_patches() -> None:
                 ("core_environments_json", "TEXT"),
                 ("goal_repository_item_id", "INTEGER"),
                 ("evidence_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("clinical_extension_json", "TEXT"),
             ):
                 if col not in sge_cols:
                     conn.execute(text(f"ALTER TABLE session_goal_entries ADD COLUMN {col} {ddl}"))
@@ -413,6 +416,7 @@ def ensure_sqlite_schema_patches() -> None:
                 ("strategy_feedback", "VARCHAR(32)"),
                 ("short_note", "TEXT"),
                 ("custom_strategy_id", "INTEGER"),
+                ("clinical_extension_json", "TEXT"),
             ):
                 if col not in sue_cols:
                     conn.execute(text(f"ALTER TABLE strategy_use_events ADD COLUMN {col} {ddl}"))
@@ -439,6 +443,8 @@ def ensure_sqlite_schema_patches() -> None:
                 ("source", "VARCHAR(32)"),
                 ("scope", "VARCHAR(32)"),
                 ("source_clinical_report_id", "INTEGER"),
+                ("metadata_json", "TEXT"),
+                ("last_reviewed_at", "DATETIME"),
             ):
                 if col not in gri_cols:
                     conn.execute(text(f"ALTER TABLE goal_repository_items ADD COLUMN {col} {ddl}"))
@@ -459,6 +465,8 @@ def ensure_sqlite_schema_patches() -> None:
                 ("source", "VARCHAR(32)"),
                 ("scope", "VARCHAR(32)"),
                 ("source_clinical_report_id", "INTEGER"),
+                ("metadata_json", "TEXT"),
+                ("last_reviewed_at", "DATETIME"),
             ):
                 if col not in sri_cols:
                     conn.execute(text(f"ALTER TABLE strategy_repository_items ADD COLUMN {col} {ddl}"))
@@ -606,6 +614,162 @@ def ensure_sqlite_schema_patches() -> None:
                 )
             )
 
+    if not insp.has_table("strategy_repository_stats"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE strategy_repository_stats (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        strategy_repository_item_id INTEGER NOT NULL REFERENCES strategy_repository_items(id),
+                        goal_domain VARCHAR(64),
+                        support_need VARCHAR(64),
+                        environment_context VARCHAR(32),
+                        support_level_tier VARCHAR(32),
+                        total_uses INTEGER NOT NULL DEFAULT 0,
+                        helpful_count INTEGER NOT NULL DEFAULT 0,
+                        partly_helpful_count INTEGER NOT NULL DEFAULT 0,
+                        not_helpful_count INTEGER NOT NULL DEFAULT 0,
+                        child_rejected_count INTEGER NOT NULL DEFAULT 0,
+                        needs_adaptation_count INTEGER NOT NULL DEFAULT 0,
+                        adapted_count INTEGER NOT NULL DEFAULT 0,
+                        last_used_at DATETIME,
+                        evidence_strength VARCHAR(32),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_strategy_repository_stats_item_facets "
+                    "ON strategy_repository_stats (strategy_repository_item_id, goal_domain, support_need, environment_context, support_level_tier)"
+                )
+            )
+
+    if not insp.has_table("strategy_recommendation_feedback"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE strategy_recommendation_feedback (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        child_id INTEGER REFERENCES children(id),
+                        goal_repository_item_id INTEGER REFERENCES goal_repository_items(id),
+                        goal_card_id INTEGER REFERENCES iep_goal_cards(id),
+                        strategy_repository_item_id INTEGER REFERENCES strategy_repository_items(id),
+                        recommendation_source VARCHAR(32) NOT NULL DEFAULT 'library_match',
+                        feedback_status VARCHAR(32) NOT NULL,
+                        adaptation_text TEXT,
+                        dismissal_reason TEXT,
+                        created_by_user_id INTEGER NOT NULL REFERENCES users(id),
+                        created_by_role VARCHAR(32),
+                        source_context_json TEXT,
+                        parent_visible INTEGER NOT NULL DEFAULT 0,
+                        review_status VARCHAR(32),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("clinical_review_queue_items"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_review_queue_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        item_type VARCHAR(64) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                        priority VARCHAR(16) NOT NULL DEFAULT 'normal',
+                        source_case_id INTEGER NOT NULL REFERENCES cases(id),
+                        source_goal_id INTEGER,
+                        source_strategy_id INTEGER,
+                        linked_library_goal_id INTEGER,
+                        linked_library_strategy_id INTEGER,
+                        source_entity_kind VARCHAR(32),
+                        source_entity_id INTEGER,
+                        assigned_to_user_id INTEGER REFERENCES users(id),
+                        reviewer_user_id INTEGER REFERENCES users(id),
+                        reviewer_note TEXT,
+                        action_payload_json TEXT,
+                        title VARCHAR(255),
+                        summary TEXT,
+                        parent_safe INTEGER NOT NULL DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        resolved_at DATETIME
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("clinical_review_queue_events"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_review_queue_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        queue_item_id INTEGER NOT NULL REFERENCES clinical_review_queue_items(id),
+                        actor_user_id INTEGER NOT NULL REFERENCES users(id),
+                        old_status VARCHAR(32),
+                        new_status VARCHAR(32) NOT NULL,
+                        action VARCHAR(32) NOT NULL,
+                        note TEXT,
+                        payload_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("parent_goal_inputs"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE parent_goal_inputs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        goal_ref VARCHAR(64) NOT NULL,
+                        input_type VARCHAR(64) NOT NULL,
+                        comment TEXT,
+                        parent_user_id INTEGER NOT NULL REFERENCES users(id),
+                        review_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("monthly_report_evidence_snapshots"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE monthly_report_evidence_snapshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        report_id INTEGER,
+                        clinical_report_id INTEGER REFERENCES clinical_reports(id),
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        month VARCHAR(7) NOT NULL,
+                        evidence_json TEXT NOT NULL,
+                        source_hash VARCHAR(64) NOT NULL,
+                        compiler_version VARCHAR(16) NOT NULL DEFAULT '1.0.0',
+                        generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        generated_by_user_id INTEGER REFERENCES users(id)
+                    )
+                    """
+                )
+            )
+
+    if insp.has_table("support_tickets"):
         t_cols = {c["name"] for c in insp.get_columns("support_tickets")}
         with engine.begin() as conn:
             if "topic" not in t_cols:

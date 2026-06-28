@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { labelForMeasurement } from '../../../lib/clinicalMeasurementCriteria.js'
 import { MeasurementCriteriaSelect } from '../../clinical/MeasurementCriteriaSelect.jsx'
+import { IepGoalEvidenceStrip } from './IepGoalEvidenceStrip.jsx'
 
 const SOURCE_LABELS = {
   observation_candidate: 'Observation',
@@ -9,7 +10,17 @@ const SOURCE_LABELS = {
   manual: 'Manual',
 }
 
-export function IepGoalCard({ goal, readOnly, onEdit, onRemove, onLinkStrategy, onMarkAchieved }) {
+export function IepGoalCard({
+  goal,
+  caseId,
+  readOnly,
+  onEdit,
+  onRemove,
+  onLinkStrategy,
+  onMarkAchieved,
+  onReviewDecision,
+  onStrategyStatusChange,
+}) {
   const title = goal.title || goal.goal_statement || 'Goal'
   const strategies = goal.linked_strategy_ids?.length || 0
 
@@ -41,6 +52,15 @@ export function IepGoalCard({ goal, readOnly, onEdit, onRemove, onLinkStrategy, 
           <span>Support: {labelForMeasurement('independence_support_needed', goal.independence_support_needed)}</span>
           <span>Achievement: {labelForMeasurement('goal_achievement', goal.goal_achievement)}</span>
         </div>
+        {caseId ? (
+          <IepGoalEvidenceStrip
+            caseId={caseId}
+            goal={goal}
+            readOnly={readOnly}
+            onReviewDecision={onReviewDecision}
+            onStrategyStatusChange={onStrategyStatusChange}
+          />
+        ) : null}
         <p className="text-xs text-on-surface-variant m-0">
           {strategies} linked strateg{strategies === 1 ? 'y' : 'ies'}
         </p>

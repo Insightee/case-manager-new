@@ -1,9 +1,15 @@
+"""CANONICAL: clinical_reports engine API — observation, IEP, monthly, progress.
+
+Future single report lifecycle spine. Legacy /api/v1/reports/* routes delegate
+here over time. See docs/REPORT_ARCHITECTURE.md.
+"""
+
 from __future__ import annotations
 
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -184,10 +190,114 @@ def start_observation(case_id: int, user: User = Depends(get_current_user), db: 
         raise HTTPException(status_code=503, detail="Could not start observation report") from exc
 
 
+@router.get("/cases/{case_id}/reports/monthly/summary")
+def monthly_summary(
+    case_id: int,
+    month: str = Query(..., min_length=4),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user(db, user, case_id)
+    try:
+        return report_engine_service.monthly_summary(db, case, user, month)
+    except Exception as exc:
+        logger.exception("monthly_summary failed case_id=%s", case_id)
+        raise HTTPException(status_code=503, detail="Could not load monthly summary") from exc
+
+
+@router.post("/cases/{case_id}/reports/monthly/start")
+def start_monthly(
+    case_id: int,
+    month: str = Query(..., min_length=4),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = _case_for_user_write(db, user, case_id)
+    try:
+        report = report_engine_service.get_or_create_monthly_report(db, case, user, month)
+        db.commit()
+        return report_engine_service.serialize_report_workspace(db, report, case)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as exc:
+        logger.exception("start_monthly failed case_id=%s", case_id)
+        raise HTTPException(status_code=503, detail="Could not start monthly report") from exc
+
+
+@router.post("/reports/{report_id}/monthly/compile-evidence")
+def compile_monthly_evidence(
+    report_id: int,
+    force: bool = False,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import monthly_evidence_compiler_service as compiler_svc
+    from app.services.report_engine_service import _report_month_from_metadata
+
+    report = _report_or_404(db, report_id)
+    _case_for_user_write(db, user, report.case_id)
+    if report.report_type != "monthly":
+        raise HTTPException(status_code=400, detail="Not a monthly report")
+    month = _report_month_from_metadata(report)
+    if not month:
+        raise HTTPException(status_code=400, detail="Report month not set")
+    payload = compiler_svc.compile_monthly_evidence_snapshot(
+        db,
+        case_id=report.case_id,
+        month=month,
+        clinical_report_id=report.id,
+        user_id=user.id,
+        force=force,
+    )
+    return payload
+
+
+@router.get("/reports/{report_id}/evidence-snapshot")
+def get_monthly_evidence_snapshot(
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import monthly_evidence_compiler_service as compiler_svc
+    from app.services.report_engine_service import _report_month_from_metadata
+
+    report = _report_or_404(db, report_id)
+    _case_for_user_write(db, user, report.case_id)
+    month = _report_month_from_metadata(report)
+    if not month:
+        raise HTTPException(status_code=400, detail="Report month not set")
+    snap = compiler_svc.get_latest_snapshot(db, report.case_id, month)
+    if not snap:
+        raise HTTPException(status_code=404, detail="No compiled evidence snapshot yet")
+    return snap
+
+
+@router.post("/reports/{report_id}/monthly/populate-from-evidence")
+def populate_monthly_from_evidence(
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    report = _report_or_404(db, report_id)
+    case = _case_for_user_write(db, user, report.case_id)
+    if report.report_type != "monthly":
+        raise HTTPException(status_code=400, detail="Not a monthly report")
+    if not report_status_service.can_therapist_edit(report, user):
+        raise HTTPException(status_code=403, detail="Cannot edit this report")
+    try:
+        result = report_engine_service.populate_monthly_from_evidence(db, report)
+        db.commit()
+        result["workspace"] = report_engine_service.serialize_report_workspace(db, report, case)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.get("/cases/{case_id}/reports/{report_type}")
 def get_report_by_type(
     case_id: int,
     report_type: str,
+    month: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -206,6 +316,13 @@ def get_report_by_type(
         report = report_engine_service.get_active_iep_report(db, case.id)
         if not report:
             raise HTTPException(status_code=404, detail="No active IEP report")
+        return report_engine_service.serialize_report_workspace(db, report, case)
+    if report_type == "monthly":
+        if not month:
+            raise HTTPException(status_code=400, detail="month query parameter required")
+        report = report_engine_service.get_monthly_report_for_case_month(db, case.id, month)
+        if not report:
+            raise HTTPException(status_code=404, detail="No monthly report for this month")
         return report_engine_service.serialize_report_workspace(db, report, case)
     raise HTTPException(status_code=404, detail="Report type not implemented yet")
 
@@ -264,11 +381,26 @@ def submit_report(report_id: int, user: User = Depends(get_current_user), db: Se
             if not validation.get("ready"):
                 raise ValueError("Complete required IEP sections before submitting")
             report_status_service.submit_report(db, report, user, readiness_ok=True)
-        else:
-            from app.models.clinical_report import ClinicalReportSection
+        elif report.report_type == "monthly":
             from sqlalchemy import select
 
-            sections = list(db.scalars(select(ClinicalReportSection).where(ClinicalReportSection.report_id == report.id)).all())
+            from app.models.clinical_report import ClinicalReportSection
+
+            sections = list(
+                db.scalars(select(ClinicalReportSection).where(ClinicalReportSection.report_id == report.id)).all()
+            )
+            ready = report_engine_service.required_monthly_sections_complete(sections)
+            if not ready:
+                raise ValueError("Complete required monthly sections before submitting")
+            report_status_service.submit_report(db, report, user, readiness_ok=True)
+        else:
+            from sqlalchemy import select
+
+            from app.models.clinical_report import ClinicalReportSection
+
+            sections = list(
+                db.scalars(select(ClinicalReportSection).where(ClinicalReportSection.report_id == report.id)).all()
+            )
             ready = report_engine_service.required_sections_complete(sections)
             report_status_service.submit_report(db, report, user, readiness_ok=ready)
     except ValueError as e:
@@ -322,6 +454,21 @@ def evidence_summary(report_id: int, user: User = Depends(get_current_user), db:
     report = _report_or_404(db, report_id)
     _case_for_user(db, user, report.case_id)
     return report_evidence_service.evidence_summary(db, report)
+
+
+@router.get("/reports/{report_id}/clinical-brain-evidence")
+def clinical_brain_evidence(report_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.services import clinical_brain_evidence_service as brain_ev_svc
+
+    report = _report_or_404(db, report_id)
+    _case_for_user(db, user, report.case_id)
+    summary = brain_ev_svc.summarize_report_evidence(db, report)
+    gaps = summary.get("evidence_gaps") or []
+    summary["suggested_drafts"] = [
+        {"id": f"gap-{i}", "label": gap, "source_count": summary.get("materialized_event_count", 0)}
+        for i, gap in enumerate(gaps[:8])
+    ]
+    return summary
 
 
 @router.post("/reports/{report_id}/evidence")

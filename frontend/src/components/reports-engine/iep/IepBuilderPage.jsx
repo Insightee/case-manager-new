@@ -7,6 +7,7 @@ import { ClinicalBuilderShell } from '../shared/ClinicalBuilderShell.jsx'
 import { IepApprovalPanel } from './IepApprovalPanel.jsx'
 import { IepGoalEditor } from './IepGoalCard.jsx'
 import { IepBuilderSections } from './IepBuilderSections.jsx'
+import { IepReviewSuggestionsPanel } from './IepReviewSuggestionsPanel.jsx'
 import { IepInsightsRail } from './IepInsightsRail.jsx'
 import { IepPendingChangesPanel } from './IepPendingChangesPanel.jsx'
 
@@ -132,6 +133,36 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
   }, [generateSuggestions])
 
   const statusLabel = (workspace?.status || 'draft').replace(/_/g, ' ').toUpperCase()
+  const reviewPlan = sectionData(sections, 'review_parent_plan').structured_data || {}
+  const aggregatedInputs = workspace?.aggregated_inputs || suggestions?.aggregated_inputs || null
+
+  const importTherapistInput = useCallback(
+    (text) => {
+      if (!text?.trim()) return
+      const existing = (reviewPlan.therapist_input || '').trim()
+      patchSection('review_parent_plan', {
+        structured_data: {
+          ...reviewPlan,
+          therapist_input: existing ? `${existing}\n\n${text.trim()}` : text.trim(),
+        },
+      })
+    },
+    [reviewPlan, patchSection],
+  )
+
+  const importParentInput = useCallback(
+    (text) => {
+      if (!text?.trim()) return
+      const existing = (reviewPlan.parent_input_draft || '').trim()
+      patchSection('review_parent_plan', {
+        structured_data: {
+          ...reviewPlan,
+          parent_input_draft: existing ? `${existing}\n\n${text.trim()}` : text.trim(),
+        },
+      })
+    },
+    [reviewPlan, patchSection],
+  )
 
   const goPreview = useCallback(() => {
     navigate(`${basePath}?tab=reports&section=iep&view=preview`)
@@ -148,11 +179,45 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
         saving={saving}
         title="IEP Report Builder"
         aiAssistantOpen={insightsOpen}
-        onToggleAiAssistant={() => setInsightsOpen((o) => !o)}
+        onToggleAiAssistant={() => {
+          setInsightsOpen((open) => {
+            const next = !open
+            // #region agent log
+            fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
+              body: JSON.stringify({
+                sessionId: '3264f0',
+                location: 'IepBuilderPage.jsx:toggleAi',
+                message: 'InsighteAI panel toggled',
+                data: { open: next },
+                hypothesisId: 'H3',
+                timestamp: Date.now(),
+              }),
+            }).catch(() => {})
+            // #endregion
+            return next
+          })
+        }}
         completionPct={workspace?.completion_pct ?? 0}
       />
 
-      <div className={`flex gap-6 ${insightsOpen ? 'flex-col lg:flex-row lg:items-start' : 'flex-col'}`}>
+      {insightsOpen ? (
+        <IepInsightsRail
+          open={insightsOpen}
+          insights={suggestions}
+          clinicalInsights={clinicalInsights}
+          aggregatedInputs={aggregatedInputs}
+          readOnly={readOnly}
+          generating={generatingInsights}
+          onGenerate={handleGenerateInsights}
+          onPatchInsights={patchClinicalInsights}
+          onImportTherapistInput={importTherapistInput}
+          onImportParentInput={importParentInput}
+        />
+      ) : null}
+
+      <div className="flex flex-col">
         <div className="flex-1 min-w-0">
           <ClinicalBuilderShell
             title="IEP Support Plan"
@@ -221,6 +286,7 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
             <IepBuilderSections
               sections={sections}
               goals={goals}
+              caseId={caseId}
               childName={childName}
               readOnly={readOnly}
               suggestedGoals={suggestedGoals}
@@ -232,24 +298,18 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
                 setGoalModal(true)
               }}
               onMarkAchieved={(g) => markAchieved(g.iep_goal_id)}
+              onPatchGoal={patchGoal}
               onAddGoal={() => {
                 setStrategyGoal(null)
                 setGoalModal(true)
               }}
               onImportSuggestedGoal={handleImportSuggestedGoal}
+              aggregatedInputs={aggregatedInputs}
             />
+
+            <IepReviewSuggestionsPanel caseId={caseId} iepPlanId={workspace?.iep_plan_id} />
           </ClinicalBuilderShell>
         </div>
-
-        <IepInsightsRail
-          open={insightsOpen}
-          insights={suggestions}
-          clinicalInsights={clinicalInsights}
-          readOnly={readOnly}
-          generating={generatingInsights}
-          onGenerate={handleGenerateInsights}
-          onPatchInsights={patchClinicalInsights}
-        />
       </div>
 
       {goalModal ? (

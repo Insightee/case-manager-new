@@ -64,6 +64,7 @@ from app.models.user import InviteToken, User
 from app.schemas.admin_case_pipeline import AdminCasePipelineBoard
 from app.schemas.admin_iep import AdminIepDashboard
 from app.schemas.clinical import ObservationChecklistReview
+from app.schemas.clinical_brain import ReviewQueueAction, StrategyPoolCreate, StrategyPoolMerge, StrategyPoolPatch
 from app.schemas.iep_plan import IepPlanSave, IepPlanSuggestionCreate
 from app.schemas.therapist_onboarding import (
     TherapistBulkOnboardRequest,
@@ -616,6 +617,162 @@ def admin_goal_strategy_repository(
     from app.services import goals_engine_service as engine_svc
 
     return engine_svc.list_admin_goal_strategy_repository(db, limit=limit)
+
+
+@router.get("/goal-bank")
+def admin_goal_bank(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    q: str = "",
+    domain: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = Query(200, ge=1, le=500),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    return {
+        "items": repo_svc.list_org_goal_bank(db, q=q, domain=domain, status=status, limit=limit),
+    }
+
+
+@router.get("/strategy-pool")
+def admin_strategy_pool(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    q: str = "",
+    domain: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = Query(200, ge=1, le=500),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    return {
+        "items": repo_svc.list_org_strategy_pool(db, q=q, domain=domain, status=status, limit=limit),
+    }
+
+
+@router.post("/strategy-pool", status_code=201)
+def admin_create_strategy_pool(
+    payload: StrategyPoolCreate,
+    user: User = Depends(require_mutation_permission("iep.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    meta = payload.metadata or {}
+    if payload.core_environments:
+        meta.setdefault("environments", payload.core_environments)
+    item = repo_svc.create_org_strategy(
+        db,
+        user_id=user.id,
+        label=payload.label,
+        domain_key=payload.domain_key,
+        when_to_use=payload.when_to_use,
+        how_to_use=payload.how_to_use,
+        avoid=payload.avoid,
+        strategy_steps=payload.strategy_steps,
+        metadata=meta,
+        activate=payload.activate,
+    )
+    return item
+
+
+@router.patch("/strategy-pool/{strategy_id}")
+def admin_patch_strategy_pool(
+    strategy_id: int,
+    payload: StrategyPoolPatch,
+    user: User = Depends(require_mutation_permission("iep.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    patch = payload.model_dump(exclude_unset=True)
+    item = repo_svc.update_org_strategy(db, strategy_id, user_id=user.id, patch=patch)
+    if not item:
+        raise HTTPException(status_code=404, detail="Strategy not found in organisation pool")
+    return item
+
+
+@router.post("/strategy-pool/{strategy_id}/approve")
+def admin_approve_strategy_pool(
+    strategy_id: int,
+    user: User = Depends(require_mutation_permission("iep.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    item = repo_svc.approve_org_strategy(db, strategy_id, user.id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Strategy not found in organisation pool")
+    return item
+
+
+@router.post("/strategy-pool/{strategy_id}/deprecate")
+def admin_deprecate_strategy_pool(
+    strategy_id: int,
+    note: Optional[str] = None,
+    user: User = Depends(require_mutation_permission("iep.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    item = repo_svc.deprecate_org_strategy(db, strategy_id, user.id, note=note)
+    if not item:
+        raise HTTPException(status_code=404, detail="Strategy not found in organisation pool")
+    return item
+
+
+@router.post("/strategy-pool/{strategy_id}/merge")
+def admin_merge_strategy_pool(
+    strategy_id: int,
+    payload: StrategyPoolMerge,
+    user: User = Depends(require_mutation_permission("iep.manage")),
+    db: Session = Depends(get_db),
+):
+    from app.services import goal_repository_service as repo_svc
+
+    return repo_svc.merge_org_strategy_stub(db, strategy_id, payload.canonical_id, user.id)
+
+
+@router.get("/clinical-review-queue")
+def admin_clinical_review_queue(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+    tab: str = Query("goal_candidates"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    from app.services import clinical_brain_review_service as review_svc
+
+    return review_svc.list_clinical_review_queue(db, tab=tab, limit=limit)
+
+
+@router.post("/clinical-review-queue/{kind}/{item_id}/action")
+def admin_clinical_review_action(
+    kind: str,
+    item_id: int,
+    payload: ReviewQueueAction,
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import clinical_brain_review_service as review_svc
+
+    if kind not in ("goal", "strategy"):
+        raise HTTPException(status_code=400, detail="kind must be goal or strategy")
+    try:
+        item = review_svc.apply_review_queue_action(
+            db,
+            kind=kind,
+            item_id=item_id,
+            action=payload.action,
+            actor_user_id=user.id,
+            note=payload.note,
+            merged_into_id=payload.merged_into_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
 
 
 @router.get("/clinical-quality-dashboard/summary")

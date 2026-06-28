@@ -11,6 +11,7 @@ from app.models.clinical_report import (
     ClinicalReportReviewEvent,
     ClinicalReportSection,
     ClinicalReportStatus,
+    ClinicalReportVersion,
     ReviewEventType,
 )
 from app.models.user import User
@@ -92,6 +93,54 @@ def return_report(db: Session, report: ClinicalReport, reviewer: User, comment: 
     return report
 
 
+def _snapshot_sections(db: Session, report: ClinicalReport) -> dict:
+    sections = list(
+        db.scalars(
+            select(ClinicalReportSection)
+            .where(ClinicalReportSection.report_id == report.id)
+            .order_by(ClinicalReportSection.section_order)
+        ).all()
+    )
+    return {
+        "report_id": report.id,
+        "report_type": report.report_type,
+        "status": report.status,
+        "sections": [
+            {
+                "key": s.section_key,
+                "title": s.section_title,
+                "narrative_text": s.narrative_text,
+                "internal_notes": s.internal_notes,
+                "structured_data": json.loads(s.structured_data_json) if s.structured_data_json else {},
+                "visibility": s.visibility,
+            }
+            for s in sections
+        ],
+    }
+
+
+def create_approved_version_snapshot(db: Session, report: ClinicalReport, actor: User) -> ClinicalReportVersion:
+    """Preserve approved report content as a version snapshot."""
+    latest = db.scalar(
+        select(func.max(ClinicalReportVersion.version_number)).where(
+            ClinicalReportVersion.report_id == report.id
+        )
+    )
+    next_ver = int(latest or 0) + 1
+    snap = ClinicalReportVersion(
+        report_id=report.id,
+        version_number=next_ver,
+        created_by_id=actor.id,
+        status=report.status,
+        snapshot_json=json.dumps(_snapshot_sections(db, report)),
+        change_reason="Approved snapshot",
+    )
+    db.add(snap)
+    db.flush()
+    report.current_version_id = snap.id
+    return snap
+
+
 def approve_report(db: Session, report: ClinicalReport, reviewer: User, *, share_parent: bool = False) -> ClinicalReport:
     if not can_cm_review(report):
         raise ValueError("Report is not awaiting review")
@@ -105,6 +154,7 @@ def approve_report(db: Session, report: ClinicalReport, reviewer: User, *, share
     if share_parent:
         report.parent_visible_at = now
         log_review_event(db, report, reviewer, ReviewEventType.PARENT_SHARED.value)
+    create_approved_version_snapshot(db, report, reviewer)
     log_review_event(db, report, reviewer, ReviewEventType.APPROVED.value)
     if report.report_type != "iep":
         log_review_event(db, report, reviewer, ReviewEventType.LOCKED.value)

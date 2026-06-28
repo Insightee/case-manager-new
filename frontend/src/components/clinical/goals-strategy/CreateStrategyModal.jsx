@@ -8,6 +8,7 @@ export function CreateStrategyModal({
   goalLabel = '',
   clinicalReportId,
   iepGoalId,
+  captureStrategyType = false,
   onClose,
   onCreated,
 }) {
@@ -18,6 +19,7 @@ export function CreateStrategyModal({
       reportType={clinicalReportId ? 'iep' : 'session'}
       logId={logId}
       childName={goalLabel || 'Student'}
+      captureStrategyType={captureStrategyType}
       preSelectedGoal={{
         goal_card_id: goalCardId,
         iep_goal_id: iepGoalId,

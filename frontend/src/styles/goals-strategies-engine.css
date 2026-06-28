@@ -324,6 +324,50 @@
   color: var(--gs-forest-dark);
 }
 
+.gs-engine-badge--progress {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.gs-engine-badge--warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.gs-engine-badge--success {
+  background: var(--gs-mint-soft);
+  color: var(--gs-forest-dark);
+}
+
+.gs-engine-badge--negative {
+  background: var(--gs-error-soft);
+  color: var(--gs-error);
+}
+
+.gs-engine-badge--muted {
+  background: var(--gs-bg);
+  color: var(--gs-muted);
+}
+
+.gs-engine-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+
+.gs-engine-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.gs-engine-card__actions .gs-btn {
+  min-height: 36px;
+  font-size: 0.75rem;
+}
+
 .gs-engine-actions {
   display: flex;
   flex-wrap: wrap;

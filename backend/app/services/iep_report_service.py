@@ -895,10 +895,141 @@ def get_iep_progress_review_snapshot(db: Session, case_id: int, from_date: date,
 
 
 def generate_iep_suggestions(db: Session, report: ClinicalReport, case: Case) -> dict:
-    """Layer 1 deterministic suggestions — on-demand only."""
+    """Layer 1 deterministic suggestions — observation, session logs, and IEP domains."""
+    from app.models.clinical_evidence import SessionGoalEntry
+    from app.models.clinical_report import ClinicalReportSection
+    from app.services import clinical_evidence_event_service as cee_svc
+    from app.services.iep_input_aggregation_service import aggregate_case_inputs
+
     sec = _goals_plan_section(db, report)
     plan_data = _goals_plan_data(sec)
-    suggestions = []
+    suggestions: list[dict] = []
+    aggregates = aggregate_case_inputs(db, case.id)
+
+    sections = list(
+        db.scalars(select(ClinicalReportSection).where(ClinicalReportSection.report_id == report.id)).all()
+    )
+    iep_by_key = {s.section_key: s for s in sections}
+    domains_data = _json_loads((iep_by_key.get("priority_domains") or ClinicalReportSection()).structured_data_json or "{}")
+    present = domains_data.get("present_levels") or {}
+
+    obs = report_engine_service.get_active_observation_report(db, case.id)
+    obs_by_key: dict[str, ClinicalReportSection] = {}
+    if obs:
+        obs_sections = list(
+            db.scalars(
+                select(ClinicalReportSection).where(ClinicalReportSection.report_id == obs.id)
+            ).all()
+        )
+        obs_by_key = {s.section_key: s for s in obs_sections}
+
+    domain_labels = {
+        "communication": "Communication",
+        "regulation_sensory": "Regulation & Sensory",
+        "participation": "Participation",
+        "learning_access": "Learning Access",
+        "peer_interaction": "Social / Peer Interaction",
+    }
+
+    for domain_id, label in domain_labels.items():
+        obs_sec = obs_by_key.get(domain_id)
+        obs_text = (obs_sec.narrative_text or "").strip() if obs_sec else ""
+        row = present.get(domain_id) or {}
+        if obs_text and not (row.get("strengths") or row.get("support_needs")):
+            suggestions.append(
+                {
+                    "type": "domain_import",
+                    "target_section": "priority_domains",
+                    "target_domain": domain_id,
+                    "text": f"{label}: observation report has notes — consider importing strengths and support needs.",
+                    "source_refs": [{"kind": "observation", "section_key": domain_id}],
+                    "confidence": "high",
+                    "action": "review",
+                }
+            )
+        session_rows = list(
+            db.scalars(
+                select(SessionGoalEntry)
+                .where(
+                    SessionGoalEntry.case_id == case.id,
+                    SessionGoalEntry.domain_key == domain_id,
+                )
+                .order_by(SessionGoalEntry.id.desc())
+                .limit(5)
+            ).all()
+        )
+        if session_rows and not row.get("strengths"):
+            suggestions.append(
+                {
+                    "type": "session_evidence",
+                    "target_section": "priority_domains",
+                    "target_domain": domain_id,
+                    "text": f"{label}: {len(session_rows)} recent session goal entries — review participation patterns.",
+                    "source_refs": [{"kind": "session_log", "goal_entry_ids": [r.id for r in session_rows[:3]]}],
+                    "confidence": "medium",
+                    "action": "review",
+                }
+            )
+
+    events = cee_svc.materialize_for_case_month(
+        db, case.id, datetime.now(timezone.utc).strftime("%Y-%m")
+    )
+    barrier_counts: dict[str, int] = {}
+    strategy_counts: dict[str, int] = {}
+    for ev in events:
+        for b in (ev.get("context") or {}).get("barrier_type") or []:
+            barrier_counts[b] = barrier_counts.get(b, 0) + 1
+        title = (ev.get("strategy_linkage") or {}).get("strategy_title")
+        if title:
+            strategy_counts[title] = strategy_counts.get(title, 0) + 1
+    if barrier_counts:
+        top = sorted(barrier_counts.items(), key=lambda x: -x[1])[0]
+        suggestions.append(
+            {
+                "type": "barrier_pattern",
+                "target_section": "clinical_insights",
+                "text": f"Emerging barrier pattern in session logs: {top[0]} ({top[1]}× this month).",
+                "source_refs": [{"kind": "clinical_evidence_events"}],
+                "confidence": "medium",
+                "action": "review",
+            }
+        )
+    if strategy_counts:
+        top_s = sorted(strategy_counts.items(), key=lambda x: -x[1])[0]
+        suggestions.append(
+            {
+                "type": "strategy_pattern",
+                "target_section": "clinical_insights",
+                "text": f"Frequently used strategy: {top_s[0]} ({top_s[1]}×) — worth noting in clinical insights.",
+                "source_refs": [{"kind": "clinical_evidence_events"}],
+                "confidence": "medium",
+                "action": "review",
+            }
+        )
+
+    if aggregates.get("therapist_summary"):
+        suggestions.append(
+            {
+                "type": "therapist_input_ready",
+                "target_section": "review_parent_plan",
+                "text": "Session internal notes are available — import into therapist input.",
+                "source_refs": [{"kind": "session_logs"}],
+                "confidence": "high",
+                "action": "import",
+            }
+        )
+    if aggregates.get("parent_summary"):
+        suggestions.append(
+            {
+                "type": "parent_input_ready",
+                "target_section": "review_parent_plan",
+                "text": "Parent session notes and meeting inputs are available — import into family input.",
+                "source_refs": [{"kind": "parent_inputs"}],
+                "confidence": "high",
+                "action": "import",
+            }
+        )
+
     for g in plan_data.get("goals", []):
         if not (g.get("baseline_current_state") or "").strip():
             suggestions.append(
@@ -924,7 +1055,17 @@ def generate_iep_suggestions(db: Session, report: ClinicalReport, case: Case) ->
                     "action": "review",
                 }
             )
-    return {"suggestions": suggestions}
+
+    domain_insights = {
+        domain_id: [s for s in suggestions if s.get("target_domain") == domain_id]
+        for domain_id in domain_labels
+    }
+
+    return {
+        "suggestions": suggestions,
+        "domain_insights": domain_insights,
+        "aggregated_inputs": aggregates,
+    }
 
 
 def _filter_repository_items(items: list[dict], *, q: str = "", domain: str | None = None) -> list[dict]:

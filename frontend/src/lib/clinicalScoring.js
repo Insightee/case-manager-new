@@ -1,5 +1,7 @@
 /** 0–4 clinical measurement scales — shared with session log UI */
 
+import { validateQuickEvidence } from './clinicalEvidenceFields.js'
+
 export const PARTICIPATION_ANCHORS = {
   0: 'Not available',
   1: 'Observed only',
@@ -87,7 +89,16 @@ export function goalHasSessionWork(goal) {
       (primary.short_note || '').trim() ||
       (Array.isArray(primary.strategy_steps) && primary.strategy_steps.some(Boolean)))
   const hasNote = (primary?.short_note || goal.measurement_note || '').trim()
-  return hasScores || hasStrategy || Boolean(hasNote)
+  const ext = goal.clinical_extension || {}
+  const hasExtension =
+    ext.child_response ||
+    ext.therapist_interpretation ||
+    ext.participation_quality ||
+    ext.environment_fit ||
+    (ext.barrier_type || []).length ||
+    (ext.adaptation_type || []).length ||
+    ext.strategy_status
+  return hasScores || hasStrategy || Boolean(hasNote) || Boolean(hasExtension)
 }
 
 export function goalSessionStatus(goal) {
@@ -125,6 +136,7 @@ export function emptyGoalEntry(iepGoal = null) {
     activity_used: '',
     measurement_note: '',
     marked_complete_today: false,
+    clinical_extension: {},
     strategies: [],
   }
 }
@@ -140,6 +152,7 @@ export function emptyStrategyRow(goalCardId = null) {
     strategy_feedback: null,
     short_note: '',
     activity_used: '',
+    clinical_extension: {},
   }
 }
 
@@ -161,9 +174,45 @@ export function prepareGoalForSubmit(goal) {
   const legacySummary = [phases.initial, phases.core, phases.closing].filter(Boolean).join(' · ')
   const activityUsed = stepSummary || serialized || goal.activity_used || legacySummary
   const note = primary?.short_note || goal.measurement_note || stepSummary || legacySummary
-  return {
+  const goalExt = { ...(goal.clinical_extension || {}) }
+  const stratExt = primary?.clinical_extension || {}
+  const clinical_extension = {
+    ...goalExt,
+    ...stratExt,
+    field_provenance: { ...(goalExt.field_provenance || {}), ...(stratExt.field_provenance || {}) },
+  }
+  const preparedGoal = {
     ...goal,
     activity_used: activityUsed,
     measurement_note: note,
+    clinical_extension,
   }
+  if (primary) {
+    preparedGoal.strategies = [
+      {
+        ...primary,
+        clinical_extension: stratExt,
+        activity_used: primary.activity_used || activityUsed,
+      },
+    ]
+  }
+  return preparedGoal
+}
+
+/** Returns friendly message if quick evidence incomplete for worked goals */
+export function validateSessionEvidenceQuickFields(evidence) {
+  const goals = (evidence?.goals || []).filter(goalHasSessionWork)
+  for (const g of goals) {
+    const gaps = validateQuickEvidence(g.clinical_extension || {})
+    if (gaps.length) {
+      const label = g.goal_label || 'A goal'
+      if (gaps.includes('child_response')) {
+        return `${label}: add how the child responded — it helps the team learn what supports participation.`
+      }
+      if (gaps.includes('next_step')) {
+        return `${label}: add a next step so we know what to try next.`
+      }
+    }
+  }
+  return null
 }

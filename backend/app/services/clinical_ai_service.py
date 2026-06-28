@@ -1,113 +1,159 @@
-"""Clinical AI helpers — mock-first, no LLM spend by default."""
+"""High-level clinical AI tasks — provider-neutral gateway wrapper."""
 
 from __future__ import annotations
 
-import re
+import json
+from typing import Any
 
-from sqlalchemy import select
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.clinical_domains import CORE_DOMAINS, CORE_ENVIRONMENTS
-from app.models.goal_repository import GoalRepositoryItem, StrategyRepositoryItem
-from app.services import strategy_suggestion_service as sug_svc
+from app.core.config import settings
+from app.services import ai_gateway_service, clinical_brain_suggestion_service as brain_svc
+from app.services.monthly_evidence_compiler_service import get_latest_snapshot
 
 
-def suggest_alternative_strategies(
-    db: Session,
-    *,
-    case_id: int,
-    goal_card_id: int,
-    domain_key: str | None = None,
-    environment: str | None = None,
-    exclude_strategy_ids: list[int] | None = None,
-) -> list[dict]:
-    return sug_svc.suggest_alternative_strategies(
+def _ai_disabled() -> bool:
+    return not getattr(settings, "AI_ENABLED", False)
+
+
+def _disabled_payload(task: str) -> dict[str, Any]:
+    return {
+        "status": "skipped",
+        "message": "AI helpers are not enabled in this environment. You can continue without them.",
+        "task_type": task,
+    }
+
+
+def improve_session_note(db: Session, user, *, raw_note: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    if _ai_disabled():
+        return _disabled_payload("improve_session_note")
+    payload = {"note": raw_note, "context": context or {}}
+    gen = ai_gateway_service.AIGatewayService.preview(
         db,
-        case_id=case_id,
-        goal_card_id=goal_card_id,
-        domain_key=domain_key,
-        environment=environment,
-        exclude_strategy_ids=exclude_strategy_ids or [],
+        user_id=user.id,
+        action="improve_note",
+        payload=payload,
+        case_id=(context or {}).get("case_id"),
     )
+    return {
+        "status": "success",
+        "improved_note": gen.get("text") or gen.get("draft_text") or raw_note,
+        "safety_flags": gen.get("safety_flags") or [],
+        "missing_context_suggestions": gen.get("missing_context_suggestions") or [],
+        "generation_log_id": gen.get("generation_log_id"),
+    }
 
 
-def rewrite_parent_summary(session_data: dict) -> str:
-    notes = (session_data.get("parent_notes") or "").strip()
-    if not notes:
-        return "Today we worked on meaningful goals together. Ask your therapist if you'd like more detail."
-    cleaned = re.sub(r"\s+", " ", notes)
-    if len(cleaned) <= 280:
-        return cleaned
-    return cleaned[:277].rstrip() + "…"
+def draft_monthly_report_section(
+    db: Session,
+    user,
+    *,
+    report_id: int,
+    section_type: str,
+    parent_safe: bool = False,
+) -> dict[str, Any]:
+    if _ai_disabled():
+        return _disabled_payload("draft_monthly_report_section")
+    from app.models.clinical_report import ClinicalReport
+    from app.services.report_engine_service import _report_month_from_metadata
+
+    report = db.get(ClinicalReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    month = _report_month_from_metadata(report) or ""
+    snap = get_latest_snapshot(db, report.case_id, month) if month else None
+    if not snap:
+        raise HTTPException(
+            status_code=400,
+            detail="Compile evidence first — monthly drafts need a structured evidence snapshot.",
+        )
+    gen = ai_gateway_service.AIGatewayService.preview(
+        db,
+        user_id=user.id,
+        action="monthly_section_draft",
+        payload={"section_type": section_type, "evidence": snap, "parent_safe": parent_safe},
+        case_id=report.case_id,
+    )
+    strength = "evidence_limited"
+    if len(snap.get("goals") or []) >= 2:
+        strength = "evidence_moderate"
+    if not snap.get("quality_flags"):
+        strength = "evidence_strong"
+    return {
+        "status": "success",
+        "draft_text": gen.get("text") or "",
+        "source_ids": [g.get("source_log_ids") for g in snap.get("goals") or []],
+        "safety_flags": gen.get("safety_flags") or [],
+        "confidence_label": strength,
+        "generation_log_id": gen.get("generation_log_id"),
+    }
 
 
-def detect_duplicate_goal(db: Session, text: str, case_id: int) -> list[dict]:
-    needle = text.strip().lower()
-    if len(needle) < 5:
-        return []
-    rows = db.scalars(
-        select(GoalRepositoryItem).where(GoalRepositoryItem.case_id == case_id).limit(50)
-    ).all()
-    hits = []
-    for row in rows:
-        label = (row.label or "").lower()
-        if needle in label or label in needle:
-            hits.append({"id": row.id, "label": row.label, "status": row.status})
-    return hits[:5]
+def suggest_iep_goal_wording(db: Session, user, *, payload: dict[str, Any]) -> dict[str, Any]:
+    if _ai_disabled():
+        return _disabled_payload("suggest_iep_goal_wording")
+    gen = ai_gateway_service.AIGatewayService.preview(
+        db,
+        user_id=user.id,
+        action="iep_goal_wording",
+        payload=payload,
+        case_id=payload.get("case_id"),
+    )
+    return {
+        "status": "success",
+        "candidate_wording": gen.get("text") or "",
+        "indicators": gen.get("indicators") or [],
+        "parent_friendly_explanation": gen.get("parent_friendly_explanation"),
+        "cautions": gen.get("cautions") or [],
+        "generation_log_id": gen.get("generation_log_id"),
+    }
 
 
-def detect_duplicate_strategy(db: Session, text: str, case_id: int) -> list[dict]:
-    needle = text.strip().lower()
-    if len(needle) < 3:
-        return []
-    rows = db.scalars(
-        select(StrategyRepositoryItem).where(
-            StrategyRepositoryItem.case_id == case_id
-        ).limit(50)
-    ).all()
-    hits = []
-    for row in rows:
-        label = (row.label or "").lower()
-        if needle in label or label in needle:
-            hits.append({"id": row.id, "label": row.label, "status": row.status})
-    return hits[:5]
+def recommend_strategies(db: Session, user, *, case_id: int, goal_context: dict[str, Any]) -> dict[str, Any]:
+    from app.services import strategy_pool_matching_service as match_svc
+
+    pool = match_svc.match_strategy_pool(
+        db,
+        case_id,
+        domain=goal_context.get("domain"),
+        support_need=goal_context.get("support_need"),
+        environment=goal_context.get("environment"),
+        limit=8,
+    )
+    if _ai_disabled():
+        return {
+            "status": "success",
+            "recommended_strategies": [
+                {
+                    "strategy_id": row["id"],
+                    "strategy_name": row.get("label"),
+                    "why_this_may_fit": row.get("match_reason") or "Matches goal domain and support need.",
+                    "source_strategy_ids": [row["id"]],
+                }
+                for row in pool
+            ],
+            "ai_ranked": False,
+        }
+    gen = ai_gateway_service.AIGatewayService.preview(
+        db,
+        user_id=user.id,
+        action="strategy_recommendations",
+        payload={"case_id": case_id, "pool": pool, "goal": goal_context},
+        case_id=case_id,
+    )
+    return {
+        "status": "success",
+        "recommended_strategies": gen.get("recommended_strategies") or pool,
+        "ai_ranked": True,
+        "generation_log_id": gen.get("generation_log_id"),
+    }
 
 
-_KEYWORD_DOMAIN = {
-    "communication": ("speak", "talk", "language", "communicat"),
-    "social_participation": ("social", "peer", "friend", "group"),
-    "emotional_regulation": ("emotion", "frustrat", "calm", "regulat"),
-    "sensory_regulation": ("sensory", "noise", "touch", "overwhelm"),
-    "independence_daily_living": ("daily", "dress", "toilet", "self care", "independ"),
-    "learning_readiness": ("learn", "focus", "attention", "task"),
-    "play_engagement": ("play", "engage", "game", "toy"),
-    "motor_movement_participation": ("motor", "movement", "walk", "balance", "ot"),
-}
-
-
-def classify_goal_domain(text: str) -> str | None:
-    lower = text.lower()
-    for domain_id, keywords in _KEYWORD_DOMAIN.items():
-        if any(k in lower for k in keywords):
-            return domain_id
-    return CORE_DOMAINS[0]["id"] if CORE_DOMAINS else None
-
-
-_ENV_KEYWORDS = {
-    "home": ("home", "house", "family"),
-    "school_classroom": ("school", "class", "classroom"),
-    "playground": ("playground", "yard", "recess"),
-    "peer_interaction": ("peer", "friend", "classmate"),
-    "community_outing": ("community", "outing", "mall", "park"),
-    "transitions": ("transition", "change", "switch"),
-    "interests": ("interest", "hobby", "passion"),
-    "meal_self_care_routine": ("meal", "lunch", "self care", "routine", "bathroom"),
-}
-
-
-def classify_strategy_environment(text: str) -> str | None:
-    lower = text.lower()
-    for env_id, keywords in _ENV_KEYWORDS.items():
-        if any(k in lower for k in keywords):
-            return env_id
-    return CORE_ENVIRONMENTS[0]["id"] if CORE_ENVIRONMENTS else None
+def check_parent_safe_language(text: str) -> dict[str, Any]:
+    result = brain_svc.check_neuroaffirming_language(text)
+    return {
+        "is_parent_safe": result.get("safe_to_publish", True),
+        "concerns": result.get("flagged_phrases") or [],
+        "suggested_rewrite": result.get("suggested_replacements") or {},
+    }

@@ -20,8 +20,10 @@ from app.models.user import User
 from app.report_engine_constants import (
     IEP_REPORT_SECTIONS,
     LEGACY_CHECKLIST_KEY_MAP,
+    MONTHLY_REPORT_SECTIONS,
     OBSERVATION_REPORT_SECTIONS,
     REQUIRED_IEP_SECTION_KEYS,
+    REQUIRED_MONTHLY_SECTION_KEYS,
     REQUIRED_OBSERVATION_SECTION_KEYS,
     REPORT_TYPE_HOOKS,
 )
@@ -29,8 +31,11 @@ from app.services import report_status_service
 
 
 def _section_visibility(meta: dict) -> str:
-    if meta.get("visibility") == "internal_only":
+    vis = meta.get("visibility")
+    if vis == "internal_only":
         return SectionVisibility.INTERNAL_ONLY.value
+    if vis == "parent_visible":
+        return SectionVisibility.PARENT_VISIBLE.value
     return SectionVisibility.CLINICAL_TEAM.value
 
 
@@ -62,6 +67,28 @@ def seed_observation_sections(db: Session, report_id: int) -> None:
     ).all()
     have = set(existing)
     for i, meta in enumerate(OBSERVATION_REPORT_SECTIONS):
+        key = str(meta["key"])
+        if key in have:
+            continue
+        db.add(
+            ClinicalReportSection(
+                report_id=report_id,
+                section_key=key,
+                section_title=str(meta["label"]),
+                section_order=i,
+                visibility=_section_visibility(meta),
+                completion_status=SectionCompletionStatus.NOT_STARTED.value,
+            )
+        )
+    db.flush()
+
+
+def seed_monthly_sections(db: Session, report_id: int) -> None:
+    existing = db.scalars(
+        select(ClinicalReportSection.section_key).where(ClinicalReportSection.report_id == report_id)
+    ).all()
+    have = set(existing)
+    for i, meta in enumerate(MONTHLY_REPORT_SECTIONS):
         key = str(meta["key"])
         if key in have:
             continue
@@ -119,6 +146,173 @@ def missing_required_keys(sections: list[ClinicalReportSection]) -> list[str]:
             meta = next((m for m in OBSERVATION_REPORT_SECTIONS if m["key"] == key), None)
             missing.append(str(meta["label"]) if meta else key)
     return missing
+
+
+def required_monthly_sections_complete(sections: list[ClinicalReportSection]) -> bool:
+    by_key = {s.section_key: s for s in sections}
+    for key in REQUIRED_MONTHLY_SECTION_KEYS:
+        sec = by_key.get(key)
+        if not sec or sec.completion_status != SectionCompletionStatus.COMPLETED.value:
+            return False
+    return True
+
+
+def missing_monthly_required_keys(sections: list[ClinicalReportSection]) -> list[str]:
+    by_key = {s.section_key: s for s in sections}
+    missing = []
+    for key in REQUIRED_MONTHLY_SECTION_KEYS:
+        sec = by_key.get(key)
+        if not sec or sec.completion_status != SectionCompletionStatus.COMPLETED.value:
+            meta = next((m for m in MONTHLY_REPORT_SECTIONS if m["key"] == key), None)
+            missing.append(str(meta["label"]) if meta else key)
+    return missing
+
+
+def _normalize_month_key(month: str) -> str:
+    """Canonical YYYY-MM for metadata and lookups."""
+    from app.services.report_log_query import parse_report_month
+
+    ym = parse_report_month(month)
+    if ym:
+        return f"{ym[0]:04d}-{ym[1]:02d}"
+    return month.strip()
+
+
+def _report_month_from_metadata(report: ClinicalReport) -> str | None:
+    meta = json.loads(report.metadata_json) if report.metadata_json else {}
+    return meta.get("month")
+
+
+def get_monthly_report_for_case_month(db: Session, case_id: int, month: str) -> ClinicalReport | None:
+    month_key = _normalize_month_key(month)
+    rows = list(
+        db.scalars(
+            select(ClinicalReport).where(
+                ClinicalReport.case_id == case_id,
+                ClinicalReport.report_type == ClinicalReportType.MONTHLY.value,
+                ClinicalReport.archived_at.is_(None),
+            )
+        ).all()
+    )
+    for row in rows:
+        if _report_month_from_metadata(row) == month_key:
+            return row
+    return None
+
+
+def get_or_create_monthly_report(db: Session, case: Case, user: User, month: str) -> ClinicalReport:
+    month_key = _normalize_month_key(month)
+    existing = get_monthly_report_for_case_month(db, case.id, month_key)
+    if existing:
+        seed_monthly_sections(db, existing.id)
+        return existing
+    child_name = case.child.full_name if case.child else "Client"
+    row = ClinicalReport(
+        case_id=case.id,
+        child_id=case.child_id,
+        report_type=ClinicalReportType.MONTHLY.value,
+        title=f"Monthly Report — {month_key} — {child_name}",
+        status=ClinicalReportStatus.DRAFT.value,
+        created_by_id=user.id,
+        assigned_therapist_id=user.id,
+        case_manager_id=case.case_manager_user_id,
+        metadata_json=json.dumps({"month": month_key}),
+    )
+    db.add(row)
+    db.flush()
+    seed_monthly_sections(db, row.id)
+    report_status_service.log_review_event(db, row, user, "created")
+    return row
+
+
+def populate_monthly_from_evidence(db: Session, report: ClinicalReport) -> dict:
+    """Deterministic populate from session logs and structured evidence (no AI)."""
+    import html as html_mod
+
+    from app.models.clinical_evidence import IepGoalCard, SessionGoalEntry, StrategyUseEvent
+    from app.services import report_compile_service
+    from app.services.clinical_evidence_service import entry_schema_version_from_row
+    from app.services.report_log_query import submitted_logs_for_case_month
+
+    if report.report_type != ClinicalReportType.MONTHLY.value:
+        raise ValueError("Not a monthly clinical report")
+    month_key = _report_month_from_metadata(report) or ""
+    logs = submitted_logs_for_case_month(db, report.case_id, month_key)
+    seed_monthly_sections(db, report.id)
+
+    def _esc(text: str | None) -> str:
+        return html_mod.escape((text or "").strip())
+
+    session_html = report_compile_service.compile_body_html_from_logs(logs)
+    goal_lines = []
+    for log in logs:
+        entries = db.scalars(
+            select(SessionGoalEntry).where(SessionGoalEntry.daily_log_id == log.id)
+        ).all()
+        for e in entries:
+            if entry_schema_version_from_row(e) == 2:
+                parts = [
+                    f"P{e.participation_score if e.participation_score is not None else '—'}",
+                    f"I{e.independence_score if e.independence_score is not None else '—'}",
+                    f"G{e.goal_achievement_score if e.goal_achievement_score is not None else '—'}",
+                ]
+                note = e.measurement_note or e.response_note or e.activity_used or "Scored in session"
+                goal_lines.append(
+                    f"<li><strong>{_esc(e.goal_label)}</strong> ({'/'.join(parts)}) — {_esc(note)}</li>"
+                )
+            else:
+                goal_lines.append(f"<li>{_esc(e.goal_label)} — {_esc(e.response_note or 'Noted in session')}</li>")
+    goal_html = f"<ul>{''.join(goal_lines)}</ul>" if goal_lines else "<p><em>No structured goal entries.</em></p>"
+
+    strat_lines = []
+    for log in logs:
+        for s in db.scalars(
+            select(StrategyUseEvent).where(StrategyUseEvent.daily_log_id == log.id)
+        ).all():
+            feedback = f" ({s.strategy_feedback})" if s.strategy_feedback else ""
+            strat_lines.append(
+                f"<li>{_esc(s.strategy_label)}{feedback} — {_esc(s.short_note or s.outcome_note or '')}</li>"
+            )
+    strat_html = f"<ul>{''.join(strat_lines)}</ul>" if strat_lines else "<p><em>No strategy use recorded.</em></p>"
+
+    active_goals = db.scalars(
+        select(IepGoalCard).where(
+            IepGoalCard.case_id == report.case_id,
+            IepGoalCard.status.in_(("active", "approved")),
+        )
+    ).all()
+    if active_goals and not goal_lines:
+        goal_html = "<ul>" + "".join(f"<li>{_esc(g.label)}</li>" for g in active_goals) + "</ul>"
+
+    child_name = ""
+    if report.child_id:
+        child = db.get(Child, report.child_id)
+        child_name = child.full_name if child else ""
+
+    sections_data = {
+        "child_summary": f"<p>Monthly summary for {_esc(child_name) or 'client'} — {month_key}.</p>",
+        "sessions_summary": session_html,
+        "goals_progress": goal_html,
+        "strategies_used": strat_html,
+        "strengths_observed": "<p><em>Add strengths observed this month.</em></p>",
+        "support_needs": "<p><em>Add support needs as needed.</em></p>",
+        "barriers_or_context": "<p><em>Add barriers or context as needed.</em></p>",
+        "next_month_focus": f"<p>{_esc(report_compile_service.collect_follow_ups(logs)) or '—'}</p>",
+        "therapist_notes": "<p><em>Therapist notes (clinical team).</em></p>",
+        "internal_notes": "<p><em>Internal CM notes only.</em></p>",
+        "parent_summary": "<p><em>Draft parent-facing summary — review before publish.</em></p>",
+    }
+
+    for key, html in sections_data.items():
+        try:
+            patch_section(db, report, key, narrative_text=html)
+        except ValueError:
+            continue
+
+    if report.status == ClinicalReportStatus.DRAFT.value:
+        report.status = ClinicalReportStatus.IN_PROGRESS.value
+    db.flush()
+    return {"report_id": report.id, "sections_populated": list(sections_data.keys()), "log_count": len(logs)}
 
 
 def get_or_create_observation_report(db: Session, case: Case, user: User) -> ClinicalReport:
@@ -247,6 +441,8 @@ def missing_iep_required(db: Session, report: ClinicalReport) -> list[str]:
 def _section_catalog(report_type: str) -> list[dict]:
     if report_type == ClinicalReportType.IEP.value:
         return IEP_REPORT_SECTIONS
+    if report_type == ClinicalReportType.MONTHLY.value:
+        return MONTHLY_REPORT_SECTIONS
     return OBSERVATION_REPORT_SECTIONS
 
 
@@ -283,6 +479,10 @@ def serialize_report_workspace(db: Session, report: ClinicalReport, case: Case) 
         ready = required_iep_sections_complete(db, report)
         missing = missing_iep_required(db, report)
         catalog = IEP_REPORT_SECTIONS
+    elif report.report_type == ClinicalReportType.MONTHLY.value:
+        ready = required_monthly_sections_complete(sections)
+        missing = missing_monthly_required_keys(sections)
+        catalog = MONTHLY_REPORT_SECTIONS
     else:
         ready = required_sections_complete(sections)
         missing = missing_required_keys(sections)
@@ -326,11 +526,15 @@ def serialize_report_workspace(db: Session, report: ClinicalReport, case: Case) 
         ),
         "type_hooks": REPORT_TYPE_HOOKS,
     }
+    if report.report_type == ClinicalReportType.MONTHLY.value:
+        payload["month"] = _report_month_from_metadata(report)
     if report.report_type == ClinicalReportType.IEP.value:
         from app.services import iep_approval_service
+        from app.services.iep_input_aggregation_service import aggregate_case_inputs
 
         payload["iep_approval"] = iep_approval_service.serialize_iep_approval(report)
         payload["review_thread"] = iep_approval_service.list_review_thread(db, report.id)
+        payload["aggregated_inputs"] = aggregate_case_inputs(db, report.case_id)
     return payload
 
 
@@ -564,6 +768,122 @@ def serialize_parent_safe_observation(db: Session, report: ClinicalReport, case:
         "submitted_at": ws["submitted_at"],
         "approved_at": ws["approved_at"],
         "preview_note": "Parent-safe preview — internal notes excluded.",
+    }
+
+
+def monthly_summary(db: Session, case: Case, user: User, month: str) -> dict:
+    month_key = _normalize_month_key(month)
+    report = get_monthly_report_for_case_month(db, case.id, month_key)
+    if not report:
+        return {
+            "has_report": False,
+            "report_id": None,
+            "month": month_key,
+            "status": None,
+            "status_label": "Not started",
+            "can_start_new": True,
+            "can_edit": False,
+            "can_submit": False,
+            "can_preview": False,
+            "can_populate": False,
+            "completion_pct": 0,
+            "submitted_at": None,
+            "approved_at": None,
+            "locked_at": None,
+        }
+
+    sections = list(
+        db.scalars(select(ClinicalReportSection).where(ClinicalReportSection.report_id == report.id)).all()
+    )
+    pct = completion_pct(sections)
+    ready = required_monthly_sections_complete(sections)
+    editable = report.status in (
+        ClinicalReportStatus.DRAFT.value,
+        ClinicalReportStatus.IN_PROGRESS.value,
+        ClinicalReportStatus.RETURNED_FOR_CHANGES.value,
+    )
+    status_labels = {
+        ClinicalReportStatus.DRAFT.value: "Draft",
+        ClinicalReportStatus.IN_PROGRESS.value: "Draft",
+        ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value: "Submitted for CM review",
+        ClinicalReportStatus.RETURNED_FOR_CHANGES.value: "Returned with comments",
+        ClinicalReportStatus.APPROVED.value: "Approved",
+        ClinicalReportStatus.LOCKED.value: "Visible to parent",
+    }
+    roles = {r.name for r in getattr(user, "roles", []) or []}
+    is_cm = bool(roles & {"ADMIN", "SUPER_ADMIN", "CASE_MANAGER"}) or report.case_manager_id == user.id
+    return {
+        "has_report": True,
+        "report_id": report.id,
+        "month": month_key,
+        "status": report.status,
+        "status_label": status_labels.get(report.status, report.status),
+        "can_start_new": False,
+        "can_edit": editable and (report.assigned_therapist_id == user.id or is_cm),
+        "can_submit": ready and editable and (report.assigned_therapist_id == user.id or is_cm),
+        "can_preview": True,
+        "can_populate": editable and (report.assigned_therapist_id == user.id or is_cm),
+        "completion_pct": pct,
+        "submitted_at": report.submitted_at.isoformat() if report.submitted_at else None,
+        "approved_at": report.approved_at.isoformat() if report.approved_at else None,
+        "locked_at": report.locked_at.isoformat() if report.locked_at else None,
+        "missing_required": missing_monthly_required_keys(sections),
+        "parent_visible_at": report.parent_visible_at.isoformat() if report.parent_visible_at else None,
+    }
+
+
+def parent_can_see_clinical_report(report: ClinicalReport) -> bool:
+    """Whether a clinical report may be exposed to parents."""
+    return report.status in (
+        ClinicalReportStatus.APPROVED.value,
+        ClinicalReportStatus.LOCKED.value,
+    ) and bool(report.parent_visible_at or report.status == ClinicalReportStatus.LOCKED.value)
+
+
+def serialize_parent_safe_monthly(db: Session, report: ClinicalReport, case: Case) -> dict:
+    if not parent_can_see_clinical_report(report):
+        raise ValueError("Report is not parent-visible")
+    ws = serialize_report_workspace(db, report, case)
+    safe_sections = []
+    for sec in ws["sections"]:
+        if sec["key"] in ("internal_notes", "therapist_notes"):
+            continue
+        if sec.get("visibility") == SectionVisibility.INTERNAL_ONLY.value:
+            continue
+        if sec.get("visibility") != SectionVisibility.PARENT_VISIBLE.value and sec["key"] != "parent_summary":
+            # Include parent_summary always; other sections only if parent_visible or general clinical team content
+            if sec["key"] not in (
+                "child_summary",
+                "sessions_summary",
+                "goals_progress",
+                "strategies_used",
+                "strengths_observed",
+                "support_needs",
+                "barriers_or_context",
+                "next_month_focus",
+                "parent_summary",
+            ):
+                continue
+        safe_sections.append({
+            "key": sec["key"],
+            "label": sec["label"],
+            "narrative_text": sec.get("narrative_text") or "",
+            "structured_data": sec.get("structured_data") or {},
+        })
+    return {
+        "report_id": report.id,
+        "case_id": case.id,
+        "case_code": case.case_code,
+        "child_name": case.child.full_name if case.child else "",
+        "month": _report_month_from_metadata(report),
+        "status": report.status,
+        "title": report.title,
+        "sections": safe_sections,
+        "completion_pct": ws["completion_pct"],
+        "submitted_at": ws["submitted_at"],
+        "approved_at": ws["approved_at"],
+        "preview_note": "Parent-safe monthly report — internal and draft content excluded.",
+        "source": "clinical_reports",
     }
 
 

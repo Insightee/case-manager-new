@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, getTokens } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
+import { isReportsModuleEnabled } from '../../lib/productFeatureFlags.js'
 import {
   IEP_CATEGORY_ID,
   REPORT_KIND_OPTIONS,
@@ -145,6 +147,13 @@ function kpiFilterIsActive(searchParams, tab, apply) {
 }
 
 export function AdminReportsPage() {
+  if (!isReportsModuleEnabled()) {
+    return <PortalComingSoon variant="adminReports" />
+  }
+  return <AdminReportsPageContent />
+}
+
+function AdminReportsPageContent() {
   const { canReviewReports } = useModuleWrite()
   const { can } = useAuth()
   const seesAllCases = can('case.read.all')

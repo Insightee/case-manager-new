@@ -87,6 +87,7 @@ function EnvironmentFields({ envId, envData, readOnly, sections, onPatchSection 
 export function IepBuilderSections({
   sections,
   goals,
+  caseId,
   childName,
   readOnly,
   suggestedGoals = [],
@@ -97,6 +98,8 @@ export function IepBuilderSections({
   onMarkAchieved,
   onAddGoal,
   onImportSuggestedGoal,
+  onPatchGoal,
+  aggregatedInputs,
 }) {
   const [domainTab, setDomainTab] = useState(IEP_DOMAIN_TABS[0].id)
   const [envTab, setEnvTab] = useState(IEP_LEARNING_ENVIRONMENTS[0].id)
@@ -109,6 +112,25 @@ export function IepBuilderSections({
   const talent = structured(sections, 'talent_development')
   const service = structured(sections, 'review_parent_plan')
   const reviewSec = sectionData(sections, 'review_parent_plan')
+  const aggregates = aggregatedInputs || {}
+
+  function importTherapistSummary(summary) {
+    if (!summary || readOnly) return
+    const existing = (service.therapist_input || '').trim()
+    const merged = existing ? `${existing}\n\n${summary}` : summary
+    onPatchSection('review_parent_plan', {
+      structured_data: { ...service, therapist_input: merged },
+    })
+  }
+
+  function importParentSummary(summary) {
+    if (!summary || readOnly) return
+    const existing = (service.parent_input_draft || '').trim()
+    const merged = existing ? `${existing}\n\n${summary}` : summary
+    onPatchSection('review_parent_plan', {
+      structured_data: { ...service, parent_input_draft: merged },
+    })
+  }
 
   const importedStrengths = useMemo(
     () => talent.imported_strengths || (talent.imported_strengths === undefined && talent.strengths ? [] : []),
@@ -266,11 +288,18 @@ export function IepBuilderSections({
             <IepGoalCard
               key={g.iep_goal_id}
               goal={g}
+              caseId={caseId}
               readOnly={readOnly}
               onEdit={onEditGoal}
               onRemove={onRemoveGoal}
               onLinkStrategy={onLinkStrategy}
               onMarkAchieved={onMarkAchieved}
+              onReviewDecision={(goal, decision) =>
+                onPatchGoal?.(goal.iep_goal_id, { review_decision: decision })
+              }
+              onStrategyStatusChange={(goal, status) =>
+                onPatchGoal?.(goal.iep_goal_id, { strategy_status: status })
+              }
             />
           ))
         )}
@@ -353,7 +382,26 @@ export function IepBuilderSections({
           }
         />
         <label className="block text-xs font-bold uppercase text-outline mb-1">Therapist input</label>
+        {(aggregates.therapist_snippets || []).length > 0 && !readOnly ? (
+          <div className="mb-2 p-3 rounded-lg bg-lush-mint/10 border border-lush-forest/20">
+            <p className="text-xs font-semibold text-lush-forest m-0 mb-2">From session internal notes</p>
+            <ul className="m-0 p-0 list-none space-y-1 max-h-32 overflow-y-auto">
+              {(aggregates.therapist_snippets || []).slice(0, 6).map((row) => (
+                <li key={`th-${row.daily_log_id}-${row.label}`} className="text-xs text-on-surface-variant">
+                  <span className="font-medium">{row.label}</span>
+                  {row.date ? ` · ${row.date}` : ''}: {row.text}
+                </li>
+              ))}
+            </ul>
+            {aggregates.therapist_summary ? (
+              <button type="button" className="cr-btn cr-btn--forest text-xs mt-2" onClick={() => importTherapistSummary(aggregates.therapist_summary)}>
+                Add session notes to therapist input
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <textarea
+          key={`therapist-input-${(service.therapist_input || '').length}`}
           className="w-full min-h-[72px] rounded-xl border p-3 text-sm mb-3"
           disabled={readOnly}
           placeholder="Clinical notes for the care team…"
@@ -365,7 +413,26 @@ export function IepBuilderSections({
           }
         />
         <label className="block text-xs font-bold uppercase text-outline mb-1">Parent / family input</label>
+        {(aggregates.parent_snippets || []).length > 0 && !readOnly ? (
+          <div className="mb-2 p-3 rounded-lg bg-secondary-container/30 border border-outline-variant/20">
+            <p className="text-xs font-semibold m-0 mb-2">From sessions, goals & meetings</p>
+            <ul className="m-0 p-0 list-none space-y-1 max-h-32 overflow-y-auto">
+              {(aggregates.parent_snippets || []).slice(0, 6).map((row, idx) => (
+                <li key={`pa-${row.source}-${idx}`} className="text-xs text-on-surface-variant">
+                  <span className="font-medium">{row.label}</span>
+                  {row.date ? ` · ${row.date}` : ''}: {row.text}
+                </li>
+              ))}
+            </ul>
+            {aggregates.parent_summary ? (
+              <button type="button" className="cr-btn text-xs mt-2" onClick={() => importParentSummary(aggregates.parent_summary)}>
+                Add family notes to parent input
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <textarea
+          key={`parent-input-${(service.parent_input_draft || '').length}`}
           className="w-full min-h-[72px] rounded-xl border p-3 text-sm mb-3"
           disabled={readOnly}
           placeholder="Family priorities and observations…"

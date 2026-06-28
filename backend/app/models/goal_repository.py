@@ -42,6 +42,8 @@ class GoalRepositoryItem(Base):
     source: Mapped[Optional[str]] = mapped_column(String(32))
     scope: Mapped[Optional[str]] = mapped_column(String(32))
     source_clinical_report_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clinical_reports.id"), nullable=True)
+    metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -71,6 +73,32 @@ class StrategyRepositoryItem(Base):
     source: Mapped[Optional[str]] = mapped_column(String(32))
     scope: Mapped[Optional[str]] = mapped_column(String(32))
     source_clinical_report_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clinical_reports.id"), nullable=True)
+    metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StrategyRepositoryStats(Base):
+    __tablename__ = "strategy_repository_stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    strategy_repository_item_id: Mapped[int] = mapped_column(
+        ForeignKey("strategy_repository_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    goal_domain: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    support_need: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    environment_context: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    support_level_tier: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    total_uses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    helpful_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    partly_helpful_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    not_helpful_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    child_rejected_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    needs_adaptation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    adapted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    evidence_strength: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

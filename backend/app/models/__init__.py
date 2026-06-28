@@ -36,7 +36,11 @@ from app.models.clinical_evidence import (
     SessionGoalEntry,
     StrategyUseEvent,
 )
-from app.models.goal_repository import GoalRepositoryItem, StrategyRepositoryItem
+from app.models.goal_repository import GoalRepositoryItem, StrategyRepositoryItem, StrategyRepositoryStats
+from app.models.strategy_recommendation_feedback import StrategyRecommendationFeedback
+from app.models.clinical_review_queue import ClinicalReviewQueueItem, ClinicalReviewQueueEvent
+from app.models.parent_goal_input import ParentGoalInput
+from app.models.monthly_report_evidence_snapshot import MonthlyReportEvidenceSnapshot
 from app.models.ai_generation import AiDraftOutput, AiGenerationLog
 from app.models.clinical_snapshot import ClinicalSnapshot, ClinicalSnapshotFeedback
 from app.models.clinical_reference import (

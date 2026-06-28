@@ -95,6 +95,21 @@ const AdminGoalStrategyRepositoryPage = lazy(() =>
     default: m.AdminGoalStrategyRepositoryPage,
   })),
 )
+const AdminGoalBankPage = lazy(() =>
+  import('../components/admin-portal/AdminGoalBankPage.jsx').then((m) => ({
+    default: m.AdminGoalBankPage,
+  })),
+)
+const AdminStrategyPoolPage = lazy(() =>
+  import('../components/admin-portal/AdminStrategyPoolPage.jsx').then((m) => ({
+    default: m.AdminStrategyPoolPage,
+  })),
+)
+const ClinicalBrainReviewQueuePage = lazy(() =>
+  import('../components/admin-portal/ClinicalBrainReviewQueuePage.jsx').then((m) => ({
+    default: m.ClinicalBrainReviewQueuePage,
+  })),
+)
 const AdminClinicalReferencesPage = lazy(() =>
   import('../components/admin-portal/AdminClinicalReferencesPage.jsx').then((m) => ({
     default: m.AdminClinicalReferencesPage,
@@ -465,6 +480,30 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminGoalStrategyRepositoryPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="goal-bank"
+          element={
+            <Lazy>
+              <AdminGoalBankPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="strategy-pool"
+          element={
+            <Lazy>
+              <AdminStrategyPoolPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="clinical-review-queue"
+          element={
+            <Lazy>
+              <ClinicalBrainReviewQueuePage />
             </Lazy>
           }
         />

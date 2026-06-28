@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://insightecase.com/schemas/clinical_evidence_event_contract.json",
+  "title": "ClinicalEvidenceEventContract",
+  "description": "Logical contract materialized from SessionGoalEntry + StrategyUseEvent. See docs/CLINICAL_EVIDENCE_EVENT_CONTRACT.md.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "contract_status",
+    "identity",
+    "goal_linkage",
+    "strategy_linkage",
+    "context",
+    "support_and_response",
+    "therapist_view",
+    "quality",
+    "visibility_and_governance",
+    "provenance"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.1.0"
+    },
+    "contract_status": {
+      "type": "string",
+      "enum": ["draft", "active", "deprecated", "archived"],
+      "default": "active"
+    },
+    "contract_migration_notes": {
+      "type": ["string", "null"]
+    },
+    "identity": {
+      "type": "object",
+      "required": [
+        "evidence_event_id",
+        "case_id",
+        "daily_log_id",
+        "occurred_at"
+      ],
+      "properties": {
+        "evidence_event_id": { "type": "string", "format": "uuid" },
+        "case_id": { "type": "integer" },
+        "child_id": { "type": ["integer", "null"] },
+        "daily_log_id": { "type": "integer" },
+        "session_id": { "type": ["integer", "null"] },
+        "goal_entry_id": { "type": ["integer", "null"] },
+        "strategy_use_event_id": { "type": ["integer", "null"] },
+        "goal_concept_id": { "type": ["string", "null"] },
+        "occurred_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "goal_linkage": {
+      "type": "object",
+      "properties": {
+        "goal_id": { "type": ["integer", "null"], "description": "iep_goal_cards.id or goal_repository_items.id" },
+        "goal_card_id": { "type": ["integer", "null"] },
+        "goal_repository_item_id": { "type": ["integer", "null"] },
+        "goal_title": { "type": ["string", "null"] },
+        "domain_key": { "type": ["string", "null"] },
+        "goal_status_participation": { "type": ["string", "null"] },
+        "goal_status_independence": { "type": ["string", "null"] },
+        "goal_status_achievement": { "type": ["string", "null"] },
+        "participation_score": { "type": ["integer", "null"], "minimum": 0, "maximum": 4 },
+        "independence_score": { "type": ["integer", "null"], "minimum": 0, "maximum": 4 },
+        "goal_achievement_score": { "type": ["integer", "null"], "minimum": 0, "maximum": 4 }
+      }
+    },
+    "strategy_linkage": {
+      "type": "object",
+      "properties": {
+        "strategy_id": { "type": ["integer", "null"] },
+        "strategy_title": { "type": ["string", "null"] },
+        "strategy_use_status": { "type": ["string", "null"], "description": "Derived from strategy_feedback presence" },
+        "strategy_feedback": {
+          "type": ["string", "null"],
+          "enum": ["HELPFUL", "PARTLY_HELPFUL", "NOT_HELPFUL", "CHILD_REJECTED", "NEEDS_ADAPTATION", null]
+        },
+        "is_custom_strategy": { "type": "boolean", "default": false },
+        "adaptation_type": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "choice_added",
+              "time_extended",
+              "demand_reduced",
+              "sensory_support_added",
+              "communication_mode_changed",
+              "visual_changed",
+              "adult_position_changed",
+              "environment_modified",
+              "peer_support_added",
+              "routine_adjusted",
+              "not_applicable",
+              "other"
+            ]
+          },
+          "capture_status": "v2_ui"
+        },
+        "adaptation_note": {
+          "type": ["string", "null"],
+          "maxLength": 500,
+          "capture_status": "v2_ui"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "environment": { "type": ["string", "null"] },
+        "activity": { "type": ["string", "null"] },
+        "support_level": { "type": ["string", "null"], "enum": ["MINIMUM", "MODERATE", "MAXIMUM", null] },
+        "environment_fit": {
+          "type": ["string", "null"],
+          "enum": [
+            "supportive",
+            "partially_supportive",
+            "barrier_present",
+            "overwhelming",
+            "unpredictable",
+            "not_observed",
+            null
+          ],
+          "capture_status": "v2_ui"
+        },
+        "barrier_type": {
+          "type": "array",
+          "items": { "type": "string" },
+          "capture_status": "v2_ui"
+        }
+      }
+    },
+    "support_and_response": {
+      "type": "object",
+      "properties": {
+        "participation_signal": {
+          "type": ["string", "null"],
+          "enum": [
+            "not_observed",
+            "minimal",
+            "partial",
+            "active_with_support",
+            "sustained",
+            "initiated_by_child",
+            null
+          ]
+        },
+        "child_response": {
+          "type": ["string", "null"],
+          "capture_status": "v2_ui",
+          "description": "Pass 1: null unless explicitly captured in structured fields (never inferred from notes)."
+        },
+        "regulation_signal": {
+          "type": ["string", "null"],
+          "capture_status": "v2_ui"
+        },
+        "child_agency_signal": {
+          "type": ["string", "null"],
+          "enum": [
+            "not_observed",
+            "accepted",
+            "accepted_with_choice",
+            "requested_more_time",
+            "requested_break",
+            "requested_help",
+            "requested_change",
+            "refused_or_declined",
+            "showed_preference",
+            "self_advocated",
+            "distress_signal_observed",
+            null
+          ],
+          "capture_status": "v2_ui"
+        },
+        "participation_quality": {
+          "type": ["string", "null"],
+          "enum": [
+            "not_observed",
+            "present_but_not_engaged",
+            "engaged_briefly",
+            "meaningful_with_support",
+            "meaningful_independent",
+            "initiated_by_child",
+            "shared_engagement",
+            "variable",
+            null
+          ],
+          "capture_status": "v2_ui",
+          "description": "Pass 1: may be system_derived from structured participation enum only."
+        },
+        "child_preference_signal": {
+          "type": ["string", "null"],
+          "capture_status": "v2_ui"
+        }
+      }
+    },
+    "therapist_view": {
+      "type": "object",
+      "properties": {
+        "therapist_interpretation": {
+          "type": ["string", "null"],
+          "enum": ["continue", "continue_with_adaptation", "try_elsewhere", "pause", "cm_review", null]
+        },
+        "therapist_note": {
+          "type": ["string", "null"],
+          "description": "Structured note fields only; session_notes prose is not materialized."
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "properties": {
+        "evidence_strength": {
+          "type": "string",
+          "enum": ["weak", "moderate", "strong"],
+          "description": "Data completeness/recurrence signal only — not a clinical conclusion. Internal use; never parent-visible."
+        },
+        "evidence_strength_internal_only": {
+          "type": "boolean",
+          "const": true,
+          "description": "evidence_strength must never drive parent-facing language or goal achievement by itself."
+        },
+        "evidence_gaps": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "visibility_and_governance": {
+      "type": "object",
+      "properties": {
+        "parent_visible": { "type": "boolean", "default": false },
+        "ai_learning_allowed": { "type": "boolean", "default": false },
+        "sensitivity_level": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "sensitive_family_context",
+            "sensitive_school_context",
+            "safeguarding_related",
+            "staff_supervision_related",
+            "do_not_use_for_ai"
+          ],
+          "default": "normal",
+          "capture_status": "v2_ui"
+        },
+        "learning_eligibility": {
+          "type": "string",
+          "enum": [
+            "not_eligible",
+            "eligible_after_review",
+            "eligible_now",
+            "case_specific_only",
+            "deidentified_research_candidate"
+          ],
+          "default": "eligible_after_review"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_type": { "type": "string", "const": "session_goal_entry_strategy_use_event" },
+        "source_record_ids": { "type": "object" },
+        "captured_by_user_id": { "type": ["integer", "null"] },
+        "captured_at": { "type": ["string", "null"], "format": "date-time" },
+        "materialized_at": { "type": "string", "format": "date-time" },
+        "field_provenance": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "human_selected",
+              "human_written",
+              "system_derived",
+              "ai_suggested",
+              "ai_extracted",
+              "cm_edited",
+              "system_computed",
+              "unknown"
+            ]
+          },
+          "capture_status": "v2_ui"
+        }
+      }
+    },
+    "recommendation_feedback": {
+      "type": "object",
+      "capture_status": "pass4_learning_loop",
+      "properties": {
+        "was_brain_recommended": { "type": "boolean", "default": false },
+        "recommendation_id": { "type": ["string", "null"] },
+        "therapist_action": {
+          "type": ["string", "null"],
+          "enum": [
+            "accepted",
+            "accepted_with_adaptation",
+            "dismissed_not_relevant",
+            "dismissed_already_tried",
+            "dismissed_child_preference",
+            "dismissed_environment_not_fit",
+            "needs_cm_review",
+            null
+          ]
+        },
+        "dismiss_reason": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

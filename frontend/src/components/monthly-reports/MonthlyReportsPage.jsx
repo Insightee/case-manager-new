@@ -2,9 +2,11 @@ import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTherapistHome } from '../../hooks/useTherapistHome.js'
 import { TherapistReportsHomeView } from './TherapistReportsHomeView.jsx'
+import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
+import { isReportsModuleEnabled } from '../../lib/productFeatureFlags.js'
 import '../../styles/case-profile-v2.css'
 
-export function MonthlyReportsPage() {
+function MonthlyReportsPageContent() {
   const [searchParams, setSearchParams] = useSearchParams()
   const caseFilterId = searchParams.get('case_id')
   const openCreate = searchParams.get('create') === '1'
@@ -44,4 +46,11 @@ export function MonthlyReportsPage() {
       onClearCaseFilter={() => setSearchParams({}, { replace: true })}
     />
   )
+}
+
+export function MonthlyReportsPage() {
+  if (!isReportsModuleEnabled()) {
+    return <PortalComingSoon variant="therapistReports" />
+  }
+  return <MonthlyReportsPageContent />
 }

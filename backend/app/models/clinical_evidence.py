@@ -43,6 +43,7 @@ class SessionGoalEntry(Base):
     core_environments_json: Mapped[Optional[str]] = mapped_column(Text)
     goal_repository_item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("goal_repository_items.id"), nullable=True)
     evidence_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    clinical_extension_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -71,6 +72,7 @@ class StrategyUseEvent(Base):
     strategy_feedback: Mapped[Optional[str]] = mapped_column(String(32))
     short_note: Mapped[Optional[str]] = mapped_column(Text)
     custom_strategy_id: Mapped[Optional[int]] = mapped_column(ForeignKey("strategy_repository_items.id"), nullable=True)
+    clinical_extension_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

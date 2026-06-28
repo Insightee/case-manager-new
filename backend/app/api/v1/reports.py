@@ -1,3 +1,11 @@
+"""COMPAT: Legacy monthly and observation report routes.
+
+Active compatibility path until engine monthly is production-verified.
+New monthly report creation should eventually route through clinical_reports;
+this module remains for existing UI, PDF, and parent approval flows.
+See docs/REPORT_ARCHITECTURE.md.
+"""
+
 from __future__ import annotations
 
 from typing import Optional
@@ -492,6 +500,9 @@ def approve_report(
             raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve", entity_type="monthly_report", entity_id=report.id, **meta)
+    from app.services.monthly_report_sync_service import sync_legacy_monthly_best_effort
+
+    sync_legacy_monthly_best_effort(db, report, reviewer=user)
     db.commit()
     return {"status": "approved"}
 

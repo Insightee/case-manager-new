@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
+import { apiFetch } from '../../../lib/apiClient.js'
 import { useObservationReport } from '../hooks/useObservationReport.js'
 import { StudentGoalCreateModal } from '../../clinical/goals-strategy/StudentGoalCreateModal.jsx'
 import { ObservationEvidenceUpload } from './ObservationEvidenceUpload.jsx'
+import { ObservationEvidenceCard } from './ObservationEvidenceCard.jsx'
+import { ObservationBrainDraftsPanel } from './ObservationBrainDraftsPanel.jsx'
 import {
   StitchBuilderFooter,
   StitchBuilderRail,
@@ -42,6 +45,19 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
     saveDraft,
     AUTO_SAVE_MS,
   } = useObservationReport(caseId)
+
+  async function addStrategyCandidateFromEvidence(payload) {
+    if (!workspace?.report_id) return
+    await apiFetch(`/api/v1/reports/${workspace.report_id}/observation/strategy-candidates`, {
+      method: 'POST',
+      body: JSON.stringify({
+        label: payload.label,
+        description: payload.activity_context || '',
+        domain_key: payload.domain_key || 'general',
+      }),
+    })
+    await refreshCandidates()
+  }
 
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false)
   const [draftSavedFlash, setDraftSavedFlash] = useState(false)
@@ -209,6 +225,20 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
             )}
           />
 
+          <ObservationEvidenceCard
+            readOnly={readOnly}
+            onKeepObservation={() => {}}
+            onAddGoalCandidate={async (payload) => {
+              await addGoalCandidate(payload.label, payload.domain_key)
+              await refreshCandidates()
+            }}
+            onAddStrategyCandidate={addStrategyCandidateFromEvidence}
+            onNeedsMoreEvidence={() => {}}
+            onSendToCmReview={async (payload) => {
+              await addGoalCandidate(`${payload.label} — CM review`, payload.domain_key)
+            }}
+          />
+
           <StitchEnvironmentsSection
             environments={envData.environments || []}
             readOnly={readOnly}
@@ -291,23 +321,26 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
         </div>
 
         {aiAssistantOpen ? (
-          <StitchBuilderRail
-            completionPct={workspace?.completion_pct ?? 0}
-            updatedAt={workspace?.updated_at}
-            sectionChecklist={sectionChecklist}
-            insights={insights}
-            smartAction={smartAction}
-            readOnly={readOnly}
-            generatingInsights={generatingInsights || saving}
-            onGenerateInsights={handleGenerateInsights}
-            onApplyInsights={applyInsights}
-            applyingInsights={saving}
-            onSaveDraft={handleSaveDraft}
-            savingDraft={saving}
-            draftSavedFlash={draftSavedFlash}
-            onPreview={() => navigate(`${basePath}?tab=reports&section=observation&view=preview`)}
-            onClose={() => setAiAssistantOpen(false)}
-          />
+          <div className="ob-builder-rail-stack w-full lg:w-80 shrink-0 space-y-4">
+            <StitchBuilderRail
+              completionPct={workspace?.completion_pct ?? 0}
+              updatedAt={workspace?.updated_at}
+              sectionChecklist={sectionChecklist}
+              insights={insights}
+              smartAction={smartAction}
+              readOnly={readOnly}
+              generatingInsights={generatingInsights || saving}
+              onGenerateInsights={handleGenerateInsights}
+              onApplyInsights={applyInsights}
+              applyingInsights={saving}
+              onSaveDraft={handleSaveDraft}
+              savingDraft={saving}
+              draftSavedFlash={draftSavedFlash}
+              onPreview={() => navigate(`${basePath}?tab=reports&section=observation&view=preview`)}
+              onClose={() => setAiAssistantOpen(false)}
+            />
+            <ObservationBrainDraftsPanel reportId={workspace?.report_id} readOnly={readOnly} />
+          </div>
         ) : null}
       </div>
 

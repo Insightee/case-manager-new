@@ -4,6 +4,12 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
 import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
 import { CLINICAL_QUALITY_DASHBOARD, isReportsRevampActive } from '../lib/reportsRevampFlags.js'
+import {
+  isBillingModuleEnabled,
+  isClinicalBrainEnabled,
+  isReportBuilderEnabled,
+  isReportsModuleEnabled,
+} from '../lib/productFeatureFlags.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
 import { useNotifications } from '../hooks/useNotifications.js'
 import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
@@ -71,11 +77,40 @@ function caseManagerNav(clinicalModuleIds) {
     { to: '/admin/cases', label: 'Cases', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases' },
     { to: '/admin/workbench', label: 'Review queues', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench' },
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid' },
-    { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports' },
-    { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep' },
+  ]
+  if (isReportsModuleEnabled()) {
+    items.push({
+      to: '/admin/reports',
+      label: 'Reports',
+      perm: 'monthly_report.approve',
+      feature: 'reports',
+      moduleIds: clinicalModuleIds,
+      icon: 'reports',
+    })
+  }
+  if (isReportBuilderEnabled()) {
+    items.push({
+      to: '/admin/iep',
+      label: 'IEP',
+      perm: 'iep.read',
+      feature: 'iep',
+      moduleIds: clinicalModuleIds,
+      icon: 'iep',
+    })
+  }
+  if (isClinicalBrainEnabled()) {
+    items.push({
+      to: '/admin/clinical-review-queue',
+      label: 'Clinical review',
+      perm: 'case.read.team',
+      moduleIds: clinicalModuleIds,
+      icon: 'workbench',
+    })
+  }
+  items.push(
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail' },
-  ]
+  )
   if (CLINICAL_QUALITY_DASHBOARD) {
     items.splice(3, 0, {
       to: '/admin/clinical-dashboard',
@@ -94,8 +129,18 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/workbench', label: 'Workbench', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench', section: 'Operations' },
     { to: '/admin/cases', label: 'Cases', perm: 'case.read.all', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'Operations' },
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid', section: 'Operations' },
-    { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports', section: 'Operations' },
   ]
+  if (isReportsModuleEnabled()) {
+    ops.push({
+      to: '/admin/reports',
+      label: 'Reports',
+      perm: 'monthly_report.approve',
+      feature: 'reports',
+      moduleIds: clinicalModuleIds,
+      icon: 'reports',
+      section: 'Operations',
+    })
+  }
   if (CLINICAL_QUALITY_DASHBOARD) {
     ops.splice(2, 0, {
       to: '/admin/clinical-dashboard',
@@ -106,13 +151,85 @@ function adminNav(clinicalModuleIds) {
       section: 'Operations',
     })
   }
+  const clinicalLibrary = []
+  if (isReportBuilderEnabled()) {
+    clinicalLibrary.push({
+      to: '/admin/iep',
+      label: 'IEP',
+      perm: 'iep.read',
+      feature: 'iep',
+      moduleIds: clinicalModuleIds,
+      icon: 'iep',
+      section: 'Operations',
+    })
+  }
+  if (isClinicalBrainEnabled()) {
+    clinicalLibrary.push(
+      {
+        to: '/admin/goal-bank',
+        label: 'Goal Bank',
+        perm: 'case.read.all',
+        moduleIds: clinicalModuleIds,
+        icon: 'reports',
+        section: 'Clinical library',
+      },
+      {
+        to: '/admin/strategy-pool',
+        label: 'Strategy Pool',
+        perm: 'case.read.all',
+        moduleIds: clinicalModuleIds,
+        icon: 'reports',
+        section: 'Clinical library',
+      },
+      {
+        to: '/admin/clinical-review-queue',
+        label: 'Clinical review',
+        perm: 'case.read.team',
+        moduleIds: clinicalModuleIds,
+        icon: 'workbench',
+        section: 'Clinical library',
+      },
+    )
+  }
+  clinicalLibrary.push({
+    to: '/admin/goal-strategy-repository',
+    label: 'Repository (legacy)',
+    perm: 'case.read.all',
+    moduleIds: clinicalModuleIds,
+    icon: 'reports',
+    section: 'Clinical library',
+  })
+
+  const finance = []
+  if (isBillingModuleEnabled()) {
+    finance.push(
+      {
+        to: '/admin/invoices',
+        label: 'Invoices & payments',
+        perm: 'invoice.approve',
+        feature: 'invoices',
+        moduleIds: ['billing'],
+        icon: 'invoices',
+        section: 'Finance',
+      },
+      {
+        to: '/admin/therapist-payouts',
+        label: 'Therapist payouts',
+        perm: 'invoice.approve',
+        feature: 'invoices',
+        moduleIds: ['billing'],
+        icon: 'wallet',
+        section: 'Finance',
+      },
+    )
+  }
+
   return [
     ...ops,
-    { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep', section: 'Operations' },
+    ...clinicalLibrary,
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail', section: 'Operations' },
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },
-    { to: '/admin/invoices', label: 'Invoices & payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices', section: 'Finance' },
-    { to: '/admin/therapist-payouts', label: 'Therapist payouts', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'wallet', section: 'Finance' },
+    ...finance,
     { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },
     { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope', section: 'People & HR' },
     { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave', section: 'People & HR' },

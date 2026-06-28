@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { CLINICAL_QUALITY_DASHBOARD } from '../../lib/reportsRevampFlags.js'
+import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
+import { isClinicalBrainEnabled } from '../../lib/productFeatureFlags.js'
 import { ClinicalMetricCard } from '../clinical-ui/ClinicalMetricCard.jsx'
 import { ClinicalCard } from '../clinical-ui/ClinicalCard.jsx'
 import { ClinicalStatusBadge } from '../clinical-ui/ClinicalStatusBadge.jsx'
@@ -10,6 +12,13 @@ import '../../styles/case-profile-v2.css'
 const RISK_COLOR = { high: 'var(--clinical-red)', medium: 'var(--clinical-amber)', low: 'var(--clinical-green)' }
 
 export function AdminClinicalDashboardPage() {
+  if (!isClinicalBrainEnabled()) {
+    return <PortalComingSoon variant="clinicalBrain" />
+  }
+  return <AdminClinicalDashboardPageContent />
+}
+
+function AdminClinicalDashboardPageContent() {
   const [data, setData] = useState(null)
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)

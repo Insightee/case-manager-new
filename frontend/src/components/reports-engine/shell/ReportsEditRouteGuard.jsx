@@ -1,5 +1,7 @@
 import { Navigate, useLocation, useParams } from 'react-router-dom'
 import { isReportsEngineActive } from '../../../lib/reportsRevampFlags.js'
+import { isReportBuilderEnabled } from '../../../lib/productFeatureFlags.js'
+import { PortalComingSoon } from '../../shared/PortalComingSoon.jsx'
 import { ReportEditPage } from '../../reports/ReportEditPage.jsx'
 
 /**
@@ -11,6 +13,10 @@ export function ReportsEditRouteGuard() {
   const location = useLocation()
   const engineOn = isReportsEngineActive()
   const isAdmin = location.pathname.startsWith('/admin')
+
+  if (!isReportBuilderEnabled()) {
+    return <PortalComingSoon variant={isAdmin ? 'adminReports' : 'therapistReports'} />
+  }
 
   if (engineOn) {
     if (caseId) {

@@ -3,6 +3,7 @@ import { InternalVsFamilyBanner } from './InternalVsFamilyBanner.jsx'
 import { AiPreviewButton } from './AiPreviewButton.jsx'
 import { MONTHLY_EVIDENCE_V2 } from '../../lib/reportsRevampFlags.js'
 import { apiFetch } from '../../lib/apiClient.js'
+import { compileMonthlyEvidence, fetchMonthlyEvidenceSnapshot } from '../../lib/monthlyReportApi.js'
 import { ParentMonthlyPreview } from './parent/ParentMonthlyPreview.jsx'
 import { ParentSafeContentBadge } from './parent/ParentSafeContentBadge.jsx'
 import { ClinicalSectionRail } from '../clinical-ui/ClinicalSectionRail.jsx'
@@ -30,15 +31,27 @@ export function MonthlyReportBuilderSections({ caseId, childName, reportId, onIn
   const [compileMsg, setCompileMsg] = useState('')
   const [preview, setPreview] = useState(null)
   const [confidence, setConfidence] = useState({})
+  const [evidenceSnapshot, setEvidenceSnapshot] = useState(null)
 
   async function compileFromEvidence() {
-    if (!reportId || !MONTHLY_EVIDENCE_V2) return
+    if (!reportId) return
     setCompileMsg('')
     try {
-      await apiFetch(`/api/v1/reports/monthly/${reportId}/compile-evidence-v2`, { method: 'POST' })
-      setCompileMsg('Sections compiled from session evidence (draft only).')
+      const snap = await compileMonthlyEvidence(reportId)
+      setEvidenceSnapshot(snap)
+      setCompileMsg('Evidence summary compiled — review before drafting narrative.')
     } catch (err) {
-      setCompileMsg(err.message || 'Compile failed')
+      setCompileMsg(err.message || 'Could not compile evidence right now.')
+    }
+  }
+
+  async function refreshEvidenceSnapshot() {
+    if (!reportId) return
+    try {
+      const snap = await fetchMonthlyEvidenceSnapshot(reportId)
+      setEvidenceSnapshot(snap)
+    } catch {
+      setEvidenceSnapshot(null)
     }
   }
 
@@ -71,15 +84,30 @@ export function MonthlyReportBuilderSections({ caseId, childName, reportId, onIn
             onDraft={(text) => onInsertDraft?.(text)}
             label="Preview summary (mock AI)"
           />
-          {MONTHLY_EVIDENCE_V2 && reportId ? (
+          {reportId ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.75rem' }}>
               <ClinicalActionButton variant="secondary" onClick={compileFromEvidence}>
-                Generate from Logs
+                {MONTHLY_EVIDENCE_V2 ? 'Generate from Logs' : 'Compile evidence summary'}
+              </ClinicalActionButton>
+              <ClinicalActionButton variant="ghost" onClick={refreshEvidenceSnapshot}>
+                Refresh evidence
               </ClinicalActionButton>
               <ClinicalActionButton variant="ghost" onClick={loadParentPreview}>
                 Preview Parent Version
               </ClinicalActionButton>
               {compileMsg ? <p className="clinical-quality-card__stat-label" style={{ width: '100%' }}>{compileMsg}</p> : null}
+              {evidenceSnapshot ? (
+                <div className="clinical-quality-card" style={{ width: '100%', marginTop: '0.5rem' }}>
+                  <p className="clinical-quality-card__stat-label">Compiled evidence</p>
+                  <p className="gs-muted text-sm">
+                    Sessions: {evidenceSnapshot.sessions?.completed_count ?? 0} completed ·{' '}
+                    {evidenceSnapshot.goals?.length ?? 0} goals with evidence
+                  </p>
+                  {(evidenceSnapshot.quality_flags || []).map((f) => (
+                    <p key={f.code} className="gs-muted text-sm">{f.message}</p>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
           {DEFAULT_SECTIONS.find((s) => s.key === 'goal_progress') ? (

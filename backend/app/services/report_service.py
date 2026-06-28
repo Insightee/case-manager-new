@@ -144,6 +144,9 @@ def publish_monthly_to_parent(
         comment=review_note,
     )
     db.flush()
+    from app.services.monthly_report_sync_service import sync_legacy_monthly_best_effort
+
+    sync_legacy_monthly_best_effort(db, report, reviewer=user)
     return report
 
 

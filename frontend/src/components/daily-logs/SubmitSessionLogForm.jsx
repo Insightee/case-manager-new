@@ -19,6 +19,7 @@ import {
   buildActivitiesDoneFromEvidence,
   prepareEvidenceForSubmit,
 } from '../clinical/session-log/SessionLogEvidencePanel.jsx'
+import { validateSessionEvidenceQuickFields } from '../../lib/clinicalScoring.js'
 import { SessionLogV2Chrome } from '../clinical/session-log/SessionLogV2Chrome.jsx'
 import { SessionLogNotesDual } from '../clinical/session-log/SessionLogNotesDual.jsx'
 import { SessionLogParentPreview } from '../clinical/session-log/SessionLogParentPreview.jsx'
@@ -92,6 +93,7 @@ export function SubmitSessionLogForm({
   const [sessionSnapshot, setSessionSnapshot] = useState(session)
   const [evidenceUploads, setEvidenceUploads] = useState([])
   const [parentVoiceAttachment, setParentVoiceAttachment] = useState(null)
+  const [showEvidenceNudges, setShowEvidenceNudges] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -231,6 +233,14 @@ export function SubmitSessionLogForm({
       setError(validationError)
       return
     }
+    if (useV2EvidenceEngine) {
+      const evidenceMsg = validateSessionEvidenceQuickFields(sessionEvidence)
+      if (evidenceMsg) {
+        setShowEvidenceNudges(true)
+        setError(evidenceMsg)
+        return
+      }
+    }
     setSubmitting(true)
     setError('')
     try {
@@ -350,6 +360,14 @@ export function SubmitSessionLogForm({
       setError(validationError)
       return
     }
+    if (useV2EvidenceEngine) {
+      const evidenceMsg = validateSessionEvidenceQuickFields(sessionEvidence)
+      if (evidenceMsg) {
+        setShowEvidenceNudges(true)
+        setError(evidenceMsg)
+        return
+      }
+    }
     setSubmitting(true)
     setError('')
     try {
@@ -442,6 +460,7 @@ export function SubmitSessionLogForm({
               value={sessionEvidence}
               onChange={setSessionEvidence}
               readOnly={isEdit && !pendingEdit}
+              showNudges={showEvidenceNudges}
             />
 
             <SessionLogNotesDual
@@ -662,6 +681,7 @@ export function SubmitSessionLogForm({
             value={sessionEvidence}
             onChange={setSessionEvidence}
             readOnly={isEdit && !pendingEdit}
+            showNudges={showEvidenceNudges}
           />
         ) : null}
 
