@@ -1,0 +1,491 @@
+/**
+ * Unified clinical report UI — IEP + observation + goal modal.
+ * Visual source: Stitch mockups (Forest Light). Do not add parallel namespaces.
+ */
+
+.clinical-report-ui,
+.iep-workspace.clinical-report-ui,
+.observation-workspace.clinical-report-ui {
+  min-width: 0;
+  color: #1a1c1c;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.clinical-report-ui .cr-section {
+  background: #fff;
+  border: 1px solid rgba(194, 200, 195, 0.45);
+  border-radius: 12px;
+  padding: 1.5rem 1.75rem;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1.5rem;
+}
+
+.clinical-report-ui .cr-section__label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #737875;
+  font-family: ui-monospace, monospace;
+  margin: 0 0 0.75rem;
+}
+
+.clinical-report-ui .cr-section__title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0b1c16;
+  margin: 0 0 1rem;
+}
+
+.clinical-report-ui .cr-builder-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(194, 200, 195, 0.4);
+}
+
+.clinical-report-ui .cr-builder-header__title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #0b1c16;
+  margin: 0;
+}
+
+.clinical-report-ui .cr-badge-draft {
+  display: inline-block;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background: #eeeeee;
+  color: #424845;
+  margin-top: 0.35rem;
+}
+
+.clinical-report-ui .cr-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.clinical-report-ui .cr-btn {
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid rgba(194, 200, 195, 0.6);
+  background: #fff;
+  cursor: pointer;
+}
+
+.clinical-report-ui .cr-btn--primary {
+  background: #0b1c16;
+  color: #fff;
+  border-color: #0b1c16;
+}
+
+.clinical-report-ui .cr-btn--forest {
+  background: #2d5a47;
+  color: #fff;
+  border-color: #2d5a47;
+}
+
+.clinical-report-ui .cr-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.clinical-report-ui .cr-insight-card {
+  border-radius: 12px;
+  padding: 1.25rem;
+  min-height: 120px;
+}
+
+.clinical-report-ui .cr-insight-card--positive {
+  background: linear-gradient(135deg, #0b1c16 0%, #1a3a30 100%);
+  color: #fff;
+}
+
+.clinical-report-ui .cr-insight-card--barrier {
+  background: #fff;
+  border: 1px solid #fecaca;
+  color: #1a1c1c;
+}
+
+.clinical-report-ui .cr-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgba(194, 200, 195, 0.4);
+  padding-bottom: 0.5rem;
+}
+
+.clinical-report-ui .cr-tab {
+  min-height: 40px;
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #737875;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.clinical-report-ui .cr-tab--active {
+  color: #0b1c16;
+  border-bottom-color: #2d5a47;
+}
+
+.clinical-report-ui .cr-goal-card-dark {
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+}
+
+.clinical-report-ui .cr-goal-card-dark__head {
+  background: linear-gradient(135deg, #0b1c16 0%, #1a3a30 100%);
+  color: #fff;
+  padding: 1rem 1.25rem;
+}
+
+.clinical-report-ui .cr-goal-card-dark__body {
+  background: #fff;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(194, 200, 195, 0.35);
+  border-top: none;
+}
+
+/* —— Student Goal Create Modal —— */
+.sg-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.sg-modal {
+  width: 100%;
+  max-width: 960px;
+  max-height: 92vh;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sg-modal__head {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e8e8e8;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.sg-modal__title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 0;
+  color: #0b1c16;
+}
+
+.sg-modal__subtitle {
+  font-size: 0.8125rem;
+  color: #737875;
+  margin: 0.25rem 0 0;
+}
+
+.sg-modal__close {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: #f3f3f4;
+  border-radius: 10px;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.sg-modal__body {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .sg-modal__body {
+    grid-template-columns: 1fr 280px;
+  }
+}
+
+.sg-modal__main {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+}
+
+.sg-modal__rail {
+  background: #f9f9f9;
+  border-left: 1px solid #e8e8e8;
+  padding: 1.25rem;
+  overflow-y: auto;
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .sg-modal__rail {
+    display: block;
+  }
+}
+
+.sg-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.sg-tab {
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid #e2e2e2;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sg-tab--active {
+  background: #0b1c16;
+  color: #fff;
+  border-color: #0b1c16;
+}
+
+.sg-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  align-items: center;
+}
+
+.sg-search-input {
+  flex: 1;
+  min-width: 160px;
+  min-height: 44px;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+}
+
+.sg-kind-toggle {
+  display: flex;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #e2e2e2;
+}
+
+.sg-kind-toggle button {
+  min-height: 44px;
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: none;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sg-kind-toggle button.is-active {
+  background: #0b1c16;
+  color: #fff;
+}
+
+.sg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 1rem;
+}
+
+.sg-chip {
+  min-height: 36px;
+  padding: 0 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid #e2e2e2;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sg-chip--active {
+  background: #0b1c16;
+  color: #fff;
+  border-color: #0b1c16;
+}
+
+.sg-template-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.sg-template-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  margin-bottom: 0.5rem;
+}
+
+.sg-template-item__title {
+  font-weight: 700;
+  font-size: 0.875rem;
+  margin: 0 0 0.25rem;
+}
+
+.sg-template-item__desc {
+  font-size: 0.75rem;
+  color: #737875;
+  margin: 0;
+}
+
+.sg-domain-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 640px) {
+  .sg-domain-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.sg-domain-tile {
+  min-height: 72px;
+  padding: 0.75rem;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sg-domain-tile--active {
+  border-color: #2d5a47;
+  background: #e8f5ef;
+  color: #0b1c16;
+}
+
+.sg-field {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.sg-field__label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #737875;
+  margin-bottom: 0.35rem;
+}
+
+.sg-field input,
+.sg-field textarea,
+.sg-field select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.sg-rail__badge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #2d5a47;
+  margin-bottom: 0.75rem;
+}
+
+.sg-rail__summary {
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: #424845;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+.sg-rail__block {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.sg-rail__block-title {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #737875;
+  margin: 0 0 0.5rem;
+}
+
+.sg-strategy-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  margin-bottom: 0.35rem;
+}
+
+.sg-modal__foot {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e8e8e8;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.sg-hint {
+  font-size: 0.75rem;
+  color: #737875;
+  margin: 0 0 1rem;
+}
+
+.sg-error {
+  color: #ba1a1a;
+  font-size: 0.8125rem;
+  margin: 0 0 0.75rem;
+}

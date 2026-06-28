@@ -121,14 +121,41 @@ def _serialize_observation_list_item(report: ObservationReport, case: Case | Non
 
 
 def list_observation_for_case(db: Session, user: User, case_id: int) -> list[dict]:
+    from app.services import parent_canonical_report_service as canonical
+
     case = parent_service.get_parent_case(db, user, case_id)
     if not case:
         raise ValueError("Case not found")
+    engine_rows = canonical.list_parent_visible_clinical_observation(db, [case_id])
+    engine_items = [
+        {
+            "kind": "observation",
+            "id": str(r.id),
+            "source": "clinical_reports",
+            "caseId": case.case_code,
+            "caseDbId": case_id,
+            "childName": case.child.full_name if case.child else "",
+            "title": r.title,
+            "label": r.title,
+            "reportDate": r.approved_at.isoformat() if r.approved_at else None,
+            "status": "approved",
+            "summaryPreview": (r.title or "")[:120],
+            "category": "OBSERVATION",
+        }
+        for r in engine_rows
+    ]
+    if engine_items:
+        return engine_items
     rows = db.scalars(select(ObservationReport).where(ObservationReport.case_id == case_id)).all()
     return [_serialize_observation_list_item(r, case) for r in rows if parent_can_see_observation(r)]
 
 
 def get_observation_detail(db: Session, user: User, report_id: int) -> dict:
+    from app.services import parent_canonical_report_service as canonical
+
+    clinical = canonical.get_clinical_observation_for_parent(db, user, report_id)
+    if clinical:
+        return clinical
     report = db.get(ObservationReport, report_id)
     if not report or not parent_can_see_observation(report):
         raise ValueError("Report not found")
@@ -180,17 +207,26 @@ def case_reports_summary(db: Session, user: User, case_id: int) -> dict:
 
 
 def list_hub(db: Session, user_id: int) -> dict:
+    from app.services import parent_canonical_report_service as canonical
+
     case_ids = _parent_case_ids(db, user_id)
     if not case_ids:
         return {"monthly": [], "iep": [], "items": []}
 
     cases = {c.id: c for c in db.scalars(select(Case).where(Case.id.in_(case_ids))).all()}
     monthly_rows = db.scalars(select(MonthlyReport).where(MonthlyReport.case_id.in_(case_ids))).all()
-    monthly = [
+    legacy_monthly = [
         _serialize_monthly_list_item(r, cases.get(r.case_id))
         for r in monthly_rows
         if parent_can_see_monthly(r)
     ]
+    engine_monthly_rows = canonical.list_parent_visible_clinical_monthly(db, case_ids)
+    engine_monthly = [
+        canonical.serialize_clinical_monthly_list_item_light(r, cases.get(r.case_id))
+        for r in engine_monthly_rows
+    ]
+    monthly = canonical.merge_monthly_hub_items(engine_monthly, legacy_monthly)
+
     attachments = db.scalars(
         select(Attachment).where(
             Attachment.case_id.in_(case_ids),
@@ -198,7 +234,28 @@ def list_hub(db: Session, user_id: int) -> dict:
             Attachment.visibility_status.in_(PARENT_VISIBLE),
         )
     ).all()
-    iep = [_serialize_iep_list_item(db, a, cases.get(a.case_id)) for a in attachments]
+    legacy_iep = [_serialize_iep_list_item(db, a, cases.get(a.case_id)) for a in attachments]
+    engine_iep_rows = canonical.list_parent_visible_clinical_iep(db, case_ids)
+    engine_iep_keys = {r.case_id for r in engine_iep_rows}
+    legacy_iep_filtered = [i for i in legacy_iep if i.get("caseDbId") not in engine_iep_keys]
+    iep = [
+        {
+            "kind": "iep",
+            "id": str(r.id),
+            "source": "clinical_reports",
+            "clinicalReportId": r.id,
+            "caseId": cases[r.case_id].case_code if r.case_id in cases else "",
+            "caseDbId": r.case_id,
+            "childName": cases[r.case_id].child.full_name if r.case_id in cases and cases[r.case_id].child else "",
+            "version": "engine",
+            "label": r.title,
+            "fileName": r.title,
+            "status": "acknowledged",
+            "planId": None,
+            "issuedAt": r.approved_at.isoformat() if r.approved_at else None,
+        }
+        for r in engine_iep_rows
+    ] + legacy_iep_filtered
     items = sorted(
         monthly + iep,
         key=lambda x: x.get("issuedAt") or x.get("month") or "",
@@ -249,6 +306,11 @@ def _parent_visible_iep_plan(db: Session, att: Attachment) -> "IepPlan | None":
 
 
 def get_monthly_detail(db: Session, user: User, report_id: int) -> dict:
+    from app.services import parent_canonical_report_service as canonical
+
+    clinical = canonical.get_clinical_monthly_for_parent(db, user, report_id)
+    if clinical:
+        return clinical
     report = db.get(MonthlyReport, report_id)
     if not report or not parent_can_see_monthly(report):
         raise ValueError("Report not found")
@@ -277,6 +339,11 @@ def get_monthly_detail(db: Session, user: User, report_id: int) -> dict:
 
 
 def get_iep_detail(db: Session, user: User, attachment_id: int) -> dict:
+    from app.services import parent_canonical_report_service as canonical
+
+    clinical = canonical.get_clinical_iep_for_parent(db, user, attachment_id)
+    if clinical:
+        return clinical
     att = db.get(Attachment, attachment_id)
     if not att or att.entity_type != "iep" or att.visibility_status not in PARENT_VISIBLE:
         raise ValueError("IEP document not found")

@@ -1,9 +1,9 @@
 import { Route, Routes } from 'react-router-dom'
 import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
-import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
+import { CaseDetailRoute } from '../components/cases/CaseDetailRoute.jsx'
 import { DailyLogsPage } from '../components/daily-logs/DailyLogsPage.jsx'
 import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReportsPage.jsx'
-import { ReportEditPage } from '../components/reports/ReportEditPage.jsx'
+import { ReportsEditRouteGuard } from '../components/reports-engine/shell/ReportsEditRouteGuard.jsx'
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
 import { TherapistDashboardPage } from '../pages/TherapistDashboardPage.jsx'
 import { TherapistProfilePage } from '../components/therapist/TherapistProfilePage.jsx'
@@ -17,10 +17,10 @@ export function TherapistRoutes() {
     <Routes>
       <Route index element={<TherapistDashboardPage />} />
       <Route path="cases" element={<MyCasesPage />} />
-      <Route path="cases/:caseId" element={<CaseDetailPage />} />
+      <Route path="cases/:caseId" element={<CaseDetailRoute />} />
       <Route path="logs" element={<DailyLogsPage />} />
       <Route path="reports" element={<MonthlyReportsPage />} />
-      <Route path="reports/edit/:reportId" element={<ReportEditPage />} />
+      <Route path="reports/edit/:reportId" element={<ReportsEditRouteGuard />} />
       <Route path="invoices" element={<InvoicesPage />} />
       <Route path="tickets" element={<TherapistTicketsPage />} />
       <Route path="incidents" element={<TherapistIncidentsPage />} />

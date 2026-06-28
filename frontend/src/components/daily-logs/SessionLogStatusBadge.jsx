@@ -23,7 +23,7 @@ const ATTENDANCE_LABELS = {
   ABSENT: 'Absent',
 }
 
-export function SessionLogStatusBadge({ approvalStatus, attendanceStatus, isAbsenceRecord = false }) {
+export function SessionLogStatusBadge({ approvalStatus, attendanceStatus, isAbsenceRecord = false, compact = false }) {
   const approval = APPROVAL_STYLES[approvalStatus] || {
     label: approvalStatus || 'Unknown',
     className: 'ic-log-badge',
@@ -36,6 +36,15 @@ export function SessionLogStatusBadge({ approvalStatus, attendanceStatus, isAbse
     return (
       <div className="ic-log-badge-row">
         <span className={attClass}>{attendanceLabel}</span>
+        <span className={approval.className}>{approval.label}</span>
+      </div>
+    )
+  }
+
+  if (compact) {
+    return (
+      <div className="ic-log-badge-row ic-log-badge-row--compact">
+        <span className={attClass}>{attendanceStatus || '—'}</span>
         <span className={approval.className}>{approval.label}</span>
       </div>
     )

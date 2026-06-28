@@ -1,12 +1,11 @@
 @import "tailwindcss";
+@import "./styles/forest-light-theme.css";
+@import "./styles/forest-light-observation.css";
+@import "./styles/forest-light-iep.css";
+@import "./styles/clinical-report-ui.css";
 @import "./styles/admin-portal.css";
 @import "./components/admin-portal/admin-portal-mobile.css";
 @import "./styles/ux-foundations.css";
-
-@theme {
-  --font-sans:
-    'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-}
 
 /* InsighteCase — management portal theme (slate + indigo + healthcare green) */
 :root {
@@ -109,18 +108,12 @@ input {
 }
 
 .app-sidebar__logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.15),
-    0 8px 20px rgba(0, 0, 0, 0.2);
-  flex-shrink: 0;
+  display: none;
 }
 
 .app-sidebar__title {
   margin: 0;
+  font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
   font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -142,6 +135,91 @@ input {
   gap: 4px;
 }
 
+.app-sidebar__nav-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.app-sidebar__nav-row > .app-sidebar__link {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-sidebar__nav-expand {
+  flex-shrink: 0;
+  width: 32px;
+  min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.app-sidebar__nav-expand:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.app-sidebar__nav-expand.is-expanded {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.app-sidebar__case-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 6px;
+  padding: 4px 0 6px 14px;
+  border-left: 2px solid rgba(255, 255, 255, 0.14);
+  margin-left: 14px;
+}
+
+.app-sidebar__case-subnav-label {
+  margin: 0 0 6px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.app-sidebar__case-subnav-link {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.68);
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.app-sidebar__case-subnav-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.app-sidebar__case-subnav-link.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-weight: 600;
+}
+
+.app-sidebar__case-subnav-hint {
+  margin: 0 0 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.48);
+}
 
 .app-sidebar__link {
   position: relative;

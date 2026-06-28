@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Observation Builder - Manan Sarda</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@600;700;800&family=JetBrains+Mono:wght@500&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..900&family=Manrope:wght@100..900&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary-container": "#75887f",
+                    "background": "#f9f9f9",
+                    "surface-tint": "#50625a",
+                    "secondary-container": "#c3ecd7",
+                    "surface": "#f9f9f9",
+                    "on-secondary-container": "#476c5b",
+                    "surface-container-high": "#e8e8e8",
+                    "surface-container-low": "#f3f3f4",
+                    "secondary-fixed-dim": "#a8cfbc",
+                    "on-tertiary-fixed": "#002114",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary": "#ffffff",
+                    "inverse-primary": "#b7cbc1",
+                    "on-tertiary-fixed-variant": "#005137",
+                    "on-background": "#1a1c1c",
+                    "tertiary-fixed-dim": "#68dba9",
+                    "surface-container-lowest": "#ffffff",
+                    "outline": "#737875",
+                    "on-error": "#ffffff",
+                    "on-primary": "#ffffff",
+                    "surface-variant": "#e2e2e2",
+                    "surface-bright": "#f9f9f9",
+                    "on-tertiary-container": "#069669",
+                    "tertiary-container": "#002114",
+                    "on-secondary-fixed-variant": "#294e3f",
+                    "error": "#ba1a1a",
+                    "primary-fixed-dim": "#b7cbc1",
+                    "tertiary-fixed": "#85f8c4",
+                    "on-primary-fixed-variant": "#394a43",
+                    "on-error-container": "#93000a",
+                    "inverse-surface": "#2f3131",
+                    "primary-container": "#0e1f19",
+                    "error-container": "#ffdad6",
+                    "secondary": "#416656",
+                    "primary": "#000000",
+                    "inverse-on-surface": "#f0f1f1",
+                    "on-secondary-fixed": "#002115",
+                    "primary-fixed": "#d3e7dd",
+                    "surface-container": "#eeeeee",
+                    "on-primary-fixed": "#0e1f19",
+                    "surface-dim": "#dadada",
+                    "on-surface": "#1a1c1c",
+                    "surface-container-highest": "#e2e2e2",
+                    "on-surface-variant": "#424845",
+                    "outline-variant": "#c2c8c3",
+                    "tertiary": "#000000",
+                    "secondary-fixed": "#c3ecd7"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "gutter": "24px",
+                    "sidebar-width": "280px",
+                    "base": "8px",
+                    "margin-desktop": "40px",
+                    "margin-mobile": "16px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Manrope"],
+                    "label-sm": ["JetBrains Mono"],
+                    "headline-lg-mobile": ["Manrope"],
+                    "body-lg": ["Inter"],
+                    "headline-lg": ["Manrope"],
+                    "body-md": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["30px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "headline-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .glass-overlay { backdrop-filter: blur(8px); background: rgba(255,255,255,0.8); }
+        .active-pill { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md min-h-screen pb-32">
+<!-- TopNavBar -->
+<header class="bg-surface sticky top-0 z-50 flex justify-between items-center px-4 py-3 w-full shadow-sm max-w-container-max mx-auto md:px-lg">
+<div class="flex items-center gap-3">
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined text-primary">menu</span>
+</button>
+<div class="flex flex-col">
+<h1 class="font-headline-md text-[18px] leading-tight text-primary">Observation Builder</h1>
+<span class="font-label-sm text-[10px] text-on-surface-variant uppercase tracking-widest">Case #420-MS</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a clinical practitioner with a friendly smile, wearing business casual attire, set against a soft-focus minimalist medical office background. The lighting is bright and clean, emphasizing a high-end professional healthcare aesthetic with muted forest greens and clinical whites." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDNVcN9p7uuHN4dua8LVoFsBtqhXviTSzd6l2TEluD7_XDdEOIvVDwhXLdZCWrkmcyO4Hf5mXz0FHkX0-CN3K6s6JCNcL6J3jcA3QpvH0HylmJh0SEw0coyiX7y0puxtX7nM2gFdL6UZAwJZ6DNdES7Y7a09KMHKIncFaLI_wxPAbPVr2mbqNVb4fqhIEC9kKAadcZrVUdkaIXeZCTDUkGp7xrUM9HUfwAkjIGNW8vdUMkP33p0FaoF7wgtSzBfKo5aoXfSM7-uQcE"/>
+</div>
+</div>
+</header>
+<main class="px-4 py-6 space-y-6 max-w-md mx-auto">
+<!-- Patient Header -->
+<section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 flex gap-4 items-center">
+<div class="relative">
+<div class="w-16 h-16 rounded-full overflow-hidden bg-secondary-container border-2 border-secondary-fixed">
+<img class="w-full h-full object-cover" data-alt="A high-quality clinical profile photograph of a young boy named Manan, approximately 6.5 years old, with a gentle and curious expression. The lighting is warm and natural, set in a brightly lit therapy room with soft mint and forest green accents. The style is professional, clean, and empathetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB97hAU12wk6rwDE4tua3JW5AXHId84bOKBcv_RE8BKMqBDH6xjmVYlhre2Km0wCxJz7DxXeUuin81WhUksi1uNohMmNPhcTyMD4t3EsEmDtPWztKuDlCnvy21aF7QbotAJ-v_d2RigjO5-zFwI0-9aTWVz9EDrRMC-CEMzs2KlV8AUbwmyU3J4OzDP2ItkYIpeHazOBSy5hO2sq53OhBCDUUqWOVWnTEl5optK0xksfIKgr2lzMDg5cGi8VIaw3u7oxr-WLWiOb00"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-primary text-on-primary rounded-full p-1 border-2 border-white">
+<span class="material-symbols-outlined text-[14px]">verified</span>
+</div>
+</div>
+<div class="flex-1">
+<h2 class="font-headline-md text-primary leading-none mb-1">Manan Sarda</h2>
+<div class="flex flex-wrap gap-x-2 gap-y-1">
+<span class="font-label-sm bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full">Age 6.5y</span>
+<span class="font-label-sm bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full">ASD Level 1</span>
+</div>
+<p class="text-[12px] text-on-surface-variant mt-2">
+<span class="font-semibold text-secondary">Assessor:</span> Dr. Sarah Thompson
+                </p>
+</div>
+</section>
+<!-- Case Summary -->
+<section class="space-y-2">
+<label class="font-label-sm text-on-surface-variant uppercase ml-1">Clinical Case Summary</label>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4">
+<p class="text-body-md text-on-surface leading-relaxed">
+                    Manan presents with strengths in visual pattern recognition and hyper-focus on specific interests. Primary challenges involve social communication reciprocity and sensory processing sensitivities in high-frequency environments.
+                </p>
+</div>
+</section>
+<!-- Metric Cards -->
+<section class="grid grid-cols-1 gap-4">
+<!-- Strengths -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 space-y-3">
+<div class="flex justify-between items-center">
+<h3 class="font-headline-md text-[16px] flex items-center gap-2">
+<span class="material-symbols-outlined text-on-tertiary-container">star</span>
+                        Strengths
+                    </h3>
+<button class="text-primary hover:bg-secondary-container/30 p-1 rounded-full">
+<span class="material-symbols-outlined">add_circle</span>
+</button>
+</div>
+<div class="flex flex-wrap gap-2">
+<span class="bg-secondary-container text-on-secondary-container text-[12px] px-3 py-1 rounded-full font-medium">Visual Logic</span>
+<span class="bg-secondary-container text-on-secondary-container text-[12px] px-3 py-1 rounded-full font-medium">Pattern Memory</span>
+<span class="bg-secondary-container text-on-secondary-container text-[12px] px-3 py-1 rounded-full font-medium">Rhythmic Precision</span>
+</div>
+</div>
+<!-- Interests -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 space-y-3">
+<div class="flex justify-between items-center">
+<h3 class="font-headline-md text-[16px] flex items-center gap-2">
+<span class="material-symbols-outlined text-on-secondary-container">psychology</span>
+                        Interests
+                    </h3>
+<button class="text-primary hover:bg-secondary-container/30 p-1 rounded-full">
+<span class="material-symbols-outlined">add_circle</span>
+</button>
+</div>
+<div class="flex flex-wrap gap-2">
+<span class="bg-secondary-container text-on-secondary-container text-[12px] px-3 py-1 rounded-full font-medium">Mechanical Puzzles</span>
+<span class="bg-secondary-container text-on-secondary-container text-[12px] px-3 py-1 rounded-full font-medium">Transit Maps</span>
+</div>
+</div>
+<!-- Support Needs & Barriers -->
+<div class="grid grid-cols-2 gap-3">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-3 space-y-2">
+<h4 class="font-label-sm text-on-surface-variant">Support Needs</h4>
+<div class="flex flex-col gap-1.5">
+<span class="text-[11px] font-semibold text-secondary-fixed-dim bg-primary-container px-2 py-1 rounded">Transitions</span>
+<span class="text-[11px] font-semibold text-secondary-fixed-dim bg-primary-container px-2 py-1 rounded">Emotional Reg.</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-3 space-y-2">
+<h4 class="font-label-sm text-on-surface-variant">Access Barriers</h4>
+<div class="flex flex-col gap-1.5">
+<span class="text-[11px] font-semibold text-error/80 bg-error-container/20 px-2 py-1 rounded border border-error-container">Sensory Noise</span>
+<span class="text-[11px] font-semibold text-error/80 bg-error-container/20 px-2 py-1 rounded border border-error-container">Crowds</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Evidence & AI Insights -->
+<section class="space-y-4">
+<div class="bg-primary text-on-primary rounded-xl p-5 shadow-lg relative overflow-hidden">
+<div class="relative z-10 flex flex-col items-center text-center space-y-3">
+<div class="bg-secondary-container/20 px-4 py-1 rounded-full border border-secondary-container/30">
+<span class="font-label-sm text-secondary-fixed">12 Sessions / 48 Logs Analyzed</span>
+</div>
+<p class="font-body-md text-white/90">AI detected 3 new behavioral trends in social initiation during the last 2 weeks.</p>
+<button class="w-full bg-secondary-container text-primary font-bold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform">
+<span class="material-symbols-outlined">auto_awesome</span>
+                        Generate Session Insights
+                    </button>
+</div>
+<!-- Subtle background glow -->
+<div class="absolute -top-12 -right-12 w-32 h-32 bg-secondary/20 blur-3xl rounded-full"></div>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between items-end px-1">
+<label class="font-label-sm text-on-surface-variant uppercase">Evidence Drive</label>
+<button class="text-primary text-[12px] font-semibold">View All</button>
+</div>
+<div class="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
+<div class="min-w-[120px] h-32 bg-surface-container rounded-lg border border-outline-variant overflow-hidden relative group">
+<img class="w-full h-full object-cover opacity-60" data-alt="A professional architectural photograph of a high-end clinical diagnosis document on heavy cream-colored paper, featuring official medical stamps and clean forest-green typography. The setting is a minimalist wooden desk with soft natural sunlight streaming from the side, creating a grounded and authoritative atmosphere." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCiXwZC9rvlNoq66KYdLM6BLdiipj2qt8Upn0F1W2IRo6sRgG8JvUzFPvUeUjWI4bcGkYAk2gIWHvYv0AMPFy86ajpznKcB2O66BwJ0p87sHDqrKlgJCrbKr9j9Q5LZLZTBf3t0pxLYTnPPv_OxiSkKX2QAS7Yf02vi6R2s7a0XmjcPjRHxSQ-9oSvfbxrkm_X4DM_zKXdJBcRJaHzS0XXl8zforK-BWVI_lqTmC_UI8lgP8ELUCvX2v3YamxZRbQ2MkdDLAR5QH6Y"/>
+<div class="absolute inset-0 flex flex-col justify-end p-2 bg-gradient-to-t from-black/60 to-transparent">
+<span class="text-white text-[10px] font-bold">Diagnosis.pdf</span>
+</div>
+</div>
+<div class="min-w-[120px] h-32 bg-surface-container rounded-lg border border-outline-variant overflow-hidden relative">
+<img class="w-full h-full object-cover" data-alt="A cinematic still showing a therapist's hand gently guiding a child's hand using a mechanical wooden puzzle. The focus is sharp on the interaction, with a shallow depth of field blurring the bright, minimalist therapy room. The color palette is dominated by soft whites and natural wood tones, reflecting a calm and professional environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSLnmIj9pH0vsE0dXsJWGIMuOzaNsFfi_Hmj6WSh10Osd1Iz1i2jM7CrNMbi3A22zIRouVt-jXPuOdtHzz7_1qPnY2MrLemtz7M9fmvv0j7Uu8hMc6wArdYzkLRHtiZ-ayPhjjWvV_1NMYxlEb6kNg6KbGsF6XGjmtLeWfr48EleVA-3plx_XK1jg4oMFsJ72Qm0uBLTUX_so92oz89LwWyEcjOeuhvT1mSz3rC0KPMu36vU-h4Ef-WhSB7WGNTcDYwYN9LuqxF1Q"/>
+<div class="absolute top-1 right-1 bg-primary/80 p-1 rounded-full">
+<span class="material-symbols-outlined text-white text-[16px]">play_arrow</span>
+</div>
+<div class="absolute inset-0 flex flex-col justify-end p-2 bg-gradient-to-t from-black/60 to-transparent">
+<span class="text-white text-[10px] font-bold">Session_04.mp4</span>
+</div>
+</div>
+<div class="min-w-[120px] h-32 bg-surface-container rounded-lg border border-outline-variant overflow-hidden relative">
+<img class="w-full h-full object-cover" data-alt="A macro photograph of a colorful rhythmic precision chart used in occupational therapy. The chart has clean grid lines and vibrant color-coded markers. The lighting is crisp and overhead, emphasizing the structural order and legibility of the data. The aesthetic is modern, scientific, and professional." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBFbfs_S55mq3eXuTBQgxqI04cNBkpWIGu-NockBo5eWJodUOF5CkV0mFRpW_hvlEcmvnrFXEWqaSb3d8pVEZW7g0ZXsOHrQz3IfIIUglz25mX9Xb94oRr4EcyKjmukDTbyJTt23jcdIArWvYIWud7lv_1tY1Ca7CCqnC3lXIoEvi6bvS4FEtJxwP0Q6Sq0nUT3rGq7TLlcNHf4AeOiNX25rlM5xz_prJrzTPytfxmVdELRznMU00wq-2_PmHgUbKQugBZFjRRFAus"/>
+<div class="absolute inset-0 flex flex-col justify-end p-2 bg-gradient-to-t from-black/60 to-transparent">
+<span class="text-white text-[10px] font-bold">Metrics.jpg</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Environments Workspace -->
+<section class="space-y-3">
+<h3 class="font-headline-md text-[18px] text-primary">Environments Workspace</h3>
+<div class="flex gap-2 mb-2 overflow-x-auto hide-scrollbar">
+<button class="active-pill flex-none px-4 py-1.5 rounded-full bg-primary text-on-primary text-[13px] font-semibold">Home</button>
+<button class="active-pill flex-none px-4 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant text-[13px] font-semibold">Classroom</button>
+<button class="active-pill flex-none px-4 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant text-[13px] font-semibold">Playground</button>
+<button class="flex-none px-2 py-1.5 rounded-full border border-dashed border-outline text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]">add</span>
+</button>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 space-y-3">
+<div class="flex items-center gap-2 text-on-secondary-container">
+<span class="material-symbols-outlined">home</span>
+<span class="font-semibold text-[14px]">Home Observation</span>
+</div>
+<p class="text-[14px] text-on-surface-variant italic">"Manan appears most relaxed in the living room with familiar tactile stimuli. Avoidance behaviors increase during dinner preparation due to olfactory sensitivities."</p>
+<div class="pt-2 border-t border-outline-variant">
+<button class="text-primary text-[13px] font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[18px]">edit_note</span>
+                        Update Description
+                    </button>
+</div>
+</div>
+</section>
+<!-- Suggested Goals & Strategies -->
+<section class="space-y-4">
+<div class="flex justify-between items-center px-1">
+<h3 class="font-headline-md text-[18px] text-primary">Goals & Strategies</h3>
+<button class="text-primary text-[13px] font-bold">+ New Goal</button>
+</div>
+<!-- Goal Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 space-y-3 shadow-sm">
+<div class="flex justify-between items-start">
+<div>
+<span class="font-label-sm text-[10px] bg-secondary-fixed text-on-secondary-fixed px-2 py-0.5 rounded-full">Social Communication</span>
+<h4 class="font-headline-md text-[16px] mt-1">Initiate 2 peer interactions per day</h4>
+</div>
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary">track_changes</span>
+</div>
+</div>
+<div class="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+<div class="bg-on-tertiary-container h-full w-3/4"></div>
+</div>
+<p class="text-[11px] text-on-surface-variant">Currently tracked in 4 sessions. Target: 80% success rate.</p>
+</div>
+<!-- Strategies Workspace -->
+<div class="bg-secondary-container/30 border border-secondary-container rounded-xl p-4 space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-secondary-container">auto_fix_high</span>
+<h4 class="font-headline-md text-[15px] text-on-secondary-container">Active Strategies</h4>
+</div>
+<div class="space-y-2">
+<div class="bg-white p-3 rounded-lg flex justify-between items-center shadow-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">timer</span>
+<span class="text-[13px] font-medium">Visual Countdown Timer</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">drag_indicator</span>
+</div>
+<div class="bg-white p-3 rounded-lg flex justify-between items-center shadow-sm opacity-60">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">map</span>
+<span class="text-[13px] font-medium">Step-by-Step Transition Map</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">drag_indicator</span>
+</div>
+</div>
+<div class="pt-2">
+<p class="text-[11px] font-bold text-on-tertiary-container uppercase tracking-tight">AI Recommended</p>
+<div class="mt-2 flex gap-2 overflow-x-auto hide-scrollbar">
+<div class="bg-tertiary-fixed text-on-tertiary-fixed text-[11px] font-bold px-3 py-1.5 rounded-lg border border-on-tertiary-fixed-variant/20 whitespace-nowrap">Proprioceptive Input (Heavy Work)</div>
+<div class="bg-tertiary-fixed text-on-tertiary-fixed text-[11px] font-bold px-3 py-1.5 rounded-lg border border-on-tertiary-fixed-variant/20 whitespace-nowrap">Social Scripts</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Stakeholder Inputs -->
+<section class="space-y-3">
+<h3 class="font-headline-md text-[18px] text-primary">Stakeholder Feedback</h3>
+<div class="space-y-2">
+<!-- Parent -->
+<div class="border border-outline-variant rounded-xl overflow-hidden">
+<button class="w-full flex justify-between items-center p-4 bg-surface-container-lowest" onclick="this.nextElementSibling.classList.toggle('hidden');">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-secondary-container">family_restroom</span>
+<span class="font-headline-md text-[15px]">Parent Observations</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">expand_more</span>
+</button>
+<div class="p-4 bg-white border-t border-outline-variant text-[14px] text-on-surface-variant leading-relaxed">
+                        Parents noted improved sleep cycles but increased repetitive vocalizations during high-demand task periods at home.
+                    </div>
+</div>
+<!-- School -->
+<div class="border border-outline-variant rounded-xl overflow-hidden">
+<button class="w-full flex justify-between items-center p-4 bg-surface-container-lowest" onclick="this.nextElementSibling.classList.toggle('hidden');">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-secondary-container">school</span>
+<span class="font-headline-md text-[15px]">School / Educator</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">expand_less</span>
+</button>
+<div class="hidden p-4 bg-white border-t border-outline-variant text-[14px] text-on-surface-variant">
+                        Waiting for input from Class Teacher (Ms. Gupta).
+                    </div>
+</div>
+<!-- Therapist -->
+<div class="border border-outline-variant rounded-xl overflow-hidden">
+<button class="w-full flex justify-between items-center p-4 bg-surface-container-lowest">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-secondary-container">medical_services</span>
+<span class="font-headline-md text-[15px]">Therapist Concerns</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">expand_more</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar & Actions (Sticky Bottom) -->
+<footer class="fixed bottom-0 left-0 w-full bg-white border-t border-outline-variant z-50">
+<div class="p-4 max-w-md mx-auto grid grid-cols-2 gap-3">
+<button class="flex items-center justify-center gap-2 bg-secondary-container text-primary font-bold py-3.5 rounded-xl text-[14px] active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]">visibility</span>
+                Preview Report
+            </button>
+<button class="flex items-center justify-center gap-2 bg-primary text-on-primary font-bold py-3.5 rounded-xl text-[14px] shadow-lg active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]">task_alt</span>
+                Finalize & Submit
+            </button>
+</div>
+<!-- Bottom Navigation Shell -->
+<nav class="md:hidden flex justify-around items-center px-4 pb-4 pt-1">
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined">person</span>
+<span class="text-[10px] font-label-sm">Profile</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined">event_note</span>
+<span class="text-[10px] font-label-sm">Sessions</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-4 py-1">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">psychology</span>
+<span class="text-[10px] font-label-sm">Observe</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined">ads_click</span>
+<span class="text-[10px] font-label-sm">Goals</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined">analytics</span>
+<span class="text-[10px] font-label-sm">Reports</span>
+</div>
+</nav>
+</footer>
+<script>
+        // Micro-interactions for chips
+        document.querySelectorAll('.active-pill').forEach(pill => {
+            pill.addEventListener('click', () => {
+                const parent = pill.parentElement;
+                parent.querySelectorAll('.active-pill').forEach(p => {
+                    p.classList.remove('bg-primary', 'text-on-primary');
+                    p.classList.add('bg-surface-container-high', 'text-on-surface-variant');
+                });
+                pill.classList.remove('bg-surface-container-high', 'text-on-surface-variant');
+                pill.classList.add('bg-primary', 'text-on-primary');
+            });
+        });
+    </script>
+</body></html>

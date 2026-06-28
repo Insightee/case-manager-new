@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import invoiceData from '../../data/invoices.json'
+import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
+import { isBillingModuleEnabled } from '../../lib/productFeatureFlags.js'
 import { ChecklistPanel } from './ChecklistPanel.jsx'
 import { EarningsTrendChart } from './EarningsTrendChart.jsx'
 import { GenerateInvoiceModal } from './GenerateInvoiceModal.jsx'
@@ -59,6 +61,13 @@ function SectionBlock({ id, title, subtitle, dotClass, children }) {
 }
 
 export function InvoicesPage() {
+  if (!isBillingModuleEnabled()) {
+    return <PortalComingSoon variant="therapistBilling" />
+  }
+  return <InvoicesPageContent />
+}
+
+function InvoicesPageContent() {
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [previewMonth, setPreviewMonth] = useState(null)

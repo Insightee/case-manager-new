@@ -1,0 +1,410 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Observation Report - Manan Sarda</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@600;700;800&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;family=JetBrains+Mono:wght@100..900&amp;family=Manrope:wght@100..900&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#c3ecd7",
+                        "on-secondary-fixed": "#002115",
+                        "on-secondary-fixed-variant": "#294e3f",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-bright": "#f9f9f9",
+                        "on-tertiary-fixed": "#002114",
+                        "secondary": "#416656",
+                        "tertiary-fixed-dim": "#68dba9",
+                        "secondary-container": "#c3ecd7",
+                        "surface-container": "#eeeeee",
+                        "inverse-surface": "#2f3131",
+                        "outline-variant": "#c2c8c3",
+                        "tertiary-container": "#002114",
+                        "outline": "#737875",
+                        "on-tertiary-fixed-variant": "#005137",
+                        "on-error-container": "#93000a",
+                        "on-background": "#1a1c1c",
+                        "on-tertiary-container": "#069669",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed": "#0e1f19",
+                        "on-error": "#ffffff",
+                        "inverse-on-surface": "#f0f1f1",
+                        "on-primary-container": "#75887f",
+                        "on-surface": "#1a1c1c",
+                        "background": "#f9f9f9",
+                        "on-primary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "primary-fixed-dim": "#b7cbc1",
+                        "primary-container": "#0e1f19",
+                        "on-primary-fixed-variant": "#394a43",
+                        "surface": "#f9f9f9",
+                        "on-surface-variant": "#424845",
+                        "surface-tint": "#50625a",
+                        "surface-container-low": "#f3f3f4",
+                        "primary-fixed": "#d3e7dd",
+                        "surface-variant": "#e2e2e2",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed": "#85f8c4",
+                        "surface-dim": "#dadada",
+                        "primary": "#000000",
+                        "inverse-primary": "#b7cbc1",
+                        "tertiary": "#000000",
+                        "surface-container-highest": "#e2e2e2",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed-dim": "#a8cfbc",
+                        "surface-container-high": "#e8e8e8",
+                        "on-secondary-container": "#476c5b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-desktop": "40px",
+                        "base": "8px",
+                        "margin-mobile": "16px",
+                        "sidebar-width": "280px",
+                        "gutter": "24px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Inter"],
+                        "headline-lg": ["Manrope"],
+                        "body-md": ["Inter"],
+                        "headline-md": ["Manrope"],
+                        "label-sm": ["JetBrains Mono"],
+                        "headline-lg-mobile": ["Manrope"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        @media print {
+            .no-print { display: none !important; }
+            body { background-color: white !important; }
+            .report-container { box-shadow: none !important; margin: 0 !important; width: 100% !important; }
+            .page-break { page-break-before: always; }
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .forest-gradient {
+            background: linear-gradient(135deg, #0b1c16 0%, #1a3a30 100%);
+        }
+    </style>
+</head>
+<body class="bg-surface-container-low min-h-screen py-12 px-4 flex flex-col items-center">
+<!-- Print Action Trigger -->
+<div class="no-print fixed top-6 right-6 z-50">
+<button class="bg-secondary-fixed text-on-secondary-fixed flex items-center gap-2 px-6 py-3 rounded-xl shadow-lg hover:bg-secondary transition-all active:scale-95 font-body-md font-semibold" onclick="window.print()">
+<span class="material-symbols-outlined">print</span>
+            Download PDF Report
+        </button>
+</div>
+<!-- Main Report Document Content -->
+<main class="report-container w-full max-w-5xl bg-white shadow-2xl p-10 md:p-16 border border-outline-variant relative overflow-hidden flex flex-col gap-12">
+<!-- Header Section -->
+<header class="flex flex-col md:flex-row justify-between items-start border-b border-outline pb-10 gap-8">
+<div class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 forest-gradient rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-white" style="font-variation-settings: 'FILL' 1;">analytics</span>
+</div>
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-widest">Clinical Documentation</span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface">Observation Report</h1>
+<div class="flex flex-col gap-1">
+<p class="font-body-md text-body-md text-on-surface-variant">Case ID: <span class="font-bold text-on-surface">882-MS</span></p>
+<p class="font-body-md text-body-md text-on-surface-variant">Date of Finalization: <span class="font-bold text-on-surface">October 24, 2023</span></p>
+</div>
+</div>
+<div class="text-right flex flex-col gap-4 md:items-end">
+<div class="bg-surface-container-high px-4 py-3 rounded-xl border border-outline-variant max-w-xs text-left md:text-right">
+<p class="font-label-sm text-label-sm text-on-surface-variant">Lead Clinician</p>
+<p class="font-headline-md text-headline-md text-on-secondary-fixed-variant">Dr. Alistair Vaughn</p>
+<p class="font-body-md text-body-md text-on-surface-variant">Board Certified Clinical Psychologist</p>
+</div>
+<div class="flex items-center gap-2 md:justify-end text-on-surface-variant">
+<span class="material-symbols-outlined text-sm">verified_user</span>
+<span class="font-label-sm text-label-sm">InsighteCase Verified Report</span>
+</div>
+</div>
+</header>
+<!-- Section 1: Child Profile -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-gutter bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant">
+<div class="flex flex-col gap-2">
+<span class="font-label-sm text-label-sm text-outline uppercase">Patient Name</span>
+<p class="font-headline-md text-headline-md text-on-surface">Manan Sarda</p>
+</div>
+<div class="flex flex-col gap-2">
+<span class="font-label-sm text-label-sm text-outline uppercase">Age &amp; Diagnosis</span>
+<p class="font-headline-md text-headline-md text-on-surface">7 Years, ASD Level 1</p>
+</div>
+<div class="flex flex-col gap-2">
+<span class="font-label-sm text-label-sm text-outline uppercase">Date of Birth</span>
+<p class="font-headline-md text-headline-md text-on-surface">June 12, 2016</p>
+</div>
+</section>
+<!-- Section 2: Clinical Summary -->
+<section class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">history_edu</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Clinical Summary</h2>
+</div>
+<div class="bg-white border-l-4 border-secondary p-6">
+<p class="font-body-lg text-body-lg text-on-surface leading-relaxed">
+                    Manan presents as a highly inquisitive and observant 7-year-old child diagnosed with Autism Spectrum Disorder (Level 1). Over the observation period, Manan demonstrated exceptional cognitive abilities in specific domains, particularly pattern recognition and complex mechanical logic. While his expressive language is advanced, social-pragmatic communication remains a primary area for intervention. He exhibits notable sensory sensitivity to high-frequency environmental noise, which directly impacts his emotional regulation in classroom settings. The clinical findings suggest that with tailored visual supports and sensory-aware environments, Manan’s ability to navigate transitions and social interactions improves significantly.
+                </p>
+</div>
+</section>
+<!-- Section 3: Behavioral Insights & Trends (Bento Style) -->
+<section class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">insights</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Behavioral Insights &amp; Trends</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Stat 1 -->
+<div class="bg-surface-container-low p-6 rounded-2xl border border-outline-variant flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<span class="material-symbols-outlined text-on-error-container">warning</span>
+<span class="font-headline-lg text-headline-lg text-on-surface">58%</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md font-bold text-on-surface">Transition Difficulty</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Observed frequency across sessions</span>
+</div>
+<div class="w-full bg-surface-container-high h-2 rounded-full overflow-hidden">
+<div class="bg-error h-full" style="width: 58%"></div>
+</div>
+</div>
+<!-- Stat 2 -->
+<div class="bg-secondary-fixed p-6 rounded-2xl border border-outline-variant flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<span class="material-symbols-outlined text-on-tertiary-container">verified</span>
+<span class="font-headline-lg text-headline-lg text-on-surface">85%</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md font-bold text-on-surface">Visual Support Efficacy</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Success rate of icon-based schedules</span>
+</div>
+<div class="w-full bg-on-secondary-fixed-variant/20 h-2 rounded-full overflow-hidden">
+<div class="bg-on-tertiary-container h-full" style="width: 85%"></div>
+</div>
+</div>
+<!-- Stat 3 -->
+<div class="bg-surface-container-low p-6 rounded-2xl border border-outline-variant flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<span class="material-symbols-outlined text-on-secondary-fixed-variant">psychology_alt</span>
+<span class="font-headline-lg text-headline-lg text-on-surface">-22%</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md font-bold text-on-surface">Sensory Regulation</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Reduction in dysregulation events</span>
+</div>
+<div class="w-full bg-surface-container-high h-2 rounded-full overflow-hidden">
+<div class="bg-secondary h-full" style="width: 22%"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 4 & 5: Strengths & Needs -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-gutter">
+<!-- Strengths -->
+<div class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">workspace_premium</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Core Strengths &amp; Interests</h2>
+</div>
+<div class="flex flex-wrap gap-2">
+<span class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded-full font-label-sm text-label-sm flex items-center gap-2 border border-outline-variant">
+<span class="material-symbols-outlined text-base">extension</span> Pattern Recognition
+                    </span>
+<span class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded-full font-label-sm text-label-sm flex items-center gap-2 border border-outline-variant">
+<span class="material-symbols-outlined text-base">lightbulb</span> High Curiosity
+                    </span>
+<span class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded-full font-label-sm text-label-sm flex items-center gap-2 border border-outline-variant">
+<span class="material-symbols-outlined text-base">settings</span> Lego Technic
+                    </span>
+<span class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded-full font-label-sm text-label-sm flex items-center gap-2 border border-outline-variant">
+<span class="material-symbols-outlined text-base">water_drop</span> Marine Biology
+                    </span>
+</div>
+</div>
+<!-- Support Needs -->
+<div class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-error">priority_high</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Support Needs &amp; Barriers</h2>
+</div>
+<ul class="space-y-3">
+<li class="flex items-center gap-3 font-body-md text-on-surface">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+                        Deciphering complex non-verbal social cues
+                    </li>
+<li class="flex items-center gap-3 font-body-md text-on-surface">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+                        Requirement for scheduled sensory breaks (15 min intervals)
+                    </li>
+<li class="flex items-center gap-3 font-body-md text-on-surface">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+                        Auditory processing barriers in high-noise environments
+                    </li>
+</ul>
+</div>
+</section>
+<!-- Section 6: Environments -->
+<section class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">location_on</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Environments Workspace</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="border border-outline-variant p-6 rounded-2xl flex flex-col gap-4 bg-surface-bright">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">home</span>
+<h3 class="font-body-md font-bold text-on-surface">Home Setting</h3>
+</div>
+<p class="font-body-md text-on-surface-variant leading-relaxed">
+                        In the home environment, Manan shows increased social initiation with family members. He uses his Lego Technic models as a primary communicative bridge. Stability in the domestic routine minimizes anxiety spikes.
+                    </p>
+</div>
+<div class="border border-outline-variant p-6 rounded-2xl flex flex-col gap-4 bg-surface-bright">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">school</span>
+<h3 class="font-body-md font-bold text-on-surface">Classroom Setting</h3>
+</div>
+<p class="font-body-md text-on-surface-variant leading-relaxed">
+                        The classroom environment presents more challenges due to unpredictable auditory stimuli. Manan benefits from a designated 'quiet corner' and pre-warning of changes in the daily timetable.
+                    </p>
+</div>
+</div>
+</section>
+<div class="page-break"></div>
+<!-- Section 7: Suggested Goals -->
+<section class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">track_changes</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Suggested Clinical Goals</h2>
+</div>
+<div class="space-y-4">
+<div class="p-6 border border-outline-variant rounded-xl flex items-center justify-between gap-6 hover:bg-surface-container-low transition-colors">
+<div class="flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-tertiary-container uppercase">Goal 1: Social Communication</span>
+<h4 class="font-body-lg font-bold text-on-surface">Improve Social Initiation</h4>
+<p class="font-body-md text-on-surface-variant">Manan will initiate a play-based interaction with a peer at least 3 times per week using verbal or visual prompts.</p>
+</div>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<div class="p-6 border border-outline-variant rounded-xl flex items-center justify-between gap-6 hover:bg-surface-container-low transition-colors">
+<div class="flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-tertiary-container uppercase">Goal 2: Self-Regulation</span>
+<h4 class="font-body-lg font-bold text-on-surface">Sensory Regulation Mastery</h4>
+<p class="font-body-md text-on-surface-variant">Manan will use a noise-canceling headphone or 'break card' independently when environmental decibels exceed his comfort threshold.</p>
+</div>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+</div>
+</section>
+<!-- Section 8: Stakeholder Inputs -->
+<section class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">forum</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Consolidated Stakeholder Inputs</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="p-4 border-t-2 border-secondary bg-surface-container-low">
+<p class="font-label-sm text-label-sm text-secondary font-bold mb-2">Parental Observation</p>
+<p class="font-body-md italic text-on-surface-variant">"Manan is much calmer when we follow the visual schedule Dr. Vaughn provided. He's starting to share his LEGO creations more."</p>
+</div>
+<div class="p-4 border-t-2 border-secondary bg-surface-container-low">
+<p class="font-label-sm text-label-sm text-secondary font-bold mb-2">School Report</p>
+<p class="font-body-md italic text-on-surface-variant">"He is excelling in mathematics but struggles during recess. We are working on peer-mediated interventions."</p>
+</div>
+<div class="p-4 border-t-2 border-secondary bg-surface-container-low">
+<p class="font-label-sm text-label-sm text-secondary font-bold mb-2">Case Manager Note</p>
+<p class="font-body-md italic text-on-surface-variant">"Consistency across both settings is key. Transitioning between activities still requires the most active support."</p>
+</div>
+</div>
+</section>
+<!-- Section 9: Evidence Summary -->
+<section class="bg-on-primary-container p-8 rounded-2xl text-white flex flex-col md:flex-row items-center justify-around gap-8">
+<div class="text-center">
+<p class="font-headline-lg text-headline-lg">12</p>
+<p class="font-label-sm text-label-sm uppercase tracking-widest opacity-80">Total Sessions</p>
+</div>
+<div class="w-px h-12 bg-white/20 hidden md:block"></div>
+<div class="text-center">
+<p class="font-headline-lg text-headline-lg">48</p>
+<p class="font-label-sm text-label-sm uppercase tracking-widest opacity-80">Behavioral Logs</p>
+</div>
+<div class="w-px h-12 bg-white/20 hidden md:block"></div>
+<div class="text-center">
+<p class="font-headline-lg text-headline-lg">14</p>
+<p class="font-label-sm text-label-sm uppercase tracking-widest opacity-80">Weeks Observed</p>
+</div>
+</section>
+<!-- Footer / Signature -->
+<footer class="mt-auto border-t border-outline-variant pt-12 flex flex-col md:flex-row justify-between items-end gap-10">
+<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<p class="font-label-sm text-label-sm text-outline">Digital Signature &amp; Verification</p>
+<div class="flex items-center gap-4">
+<img class="h-16 mix-blend-multiply opacity-80" data-alt="A professional handwritten digital signature of Dr. Alistair Vaughn, rendered in elegant dark forest green ink on a clean white background. The signature is slightly expressive but maintains clinical professionality. Beside it is a small, circular official medical seal with 'IEP Clinical Suite Verified' text around the perimeter in a modern, minimalist font." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCjftM4Rkzr5sP1sw9Sdk38gV_cs-HYYdOlNCvNB1xzxy5fa5gEoTNFk5gGsu9Qmq8b5BSYHYv5TYeqX5qBARu6C1t9oMw_H51fLJANyOGyp-sTaesTjUYvlbkhMUgczdNXbqbtvDa7LD0riuhVBuMZrlPzFu5Yx4soBRu5OJQDz-CWn5-4-NsSczrnk3T0__7sjdlVqEtFpdI-oeqIFTDWFV7dzV_4cW4aTLmNAR2ICPyLXSmNhd75-OFCtW-qN25vXO02lDdShgY">
+<div class="flex flex-col">
+<p class="font-body-md font-bold text-on-surface">Alistair Vaughn, PhD</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">License ID: 992-B-4402</p>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-full bg-secondary"></span>
+<p class="font-label-sm text-label-sm text-on-surface-variant">InsighteCase Clinical Suite - Version 4.2.0</p>
+</div>
+</div>
+<div class="text-right flex flex-col gap-2">
+<p class="font-label-sm text-label-sm text-on-surface-variant">Page <span class="font-bold">1</span> of 1</p>
+<div class="bg-surface-container-low px-4 py-2 rounded-lg border border-outline-variant inline-flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">qr_code_2</span>
+<span class="font-label-sm text-label-sm uppercase">Verify Report Authenticity</span>
+</div>
+</div>
+</footer>
+<!-- Atmospheric Watermark -->
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none select-none">
+<span class="font-headline-lg text-[180px] font-extrabold rotate-45 whitespace-nowrap">IEP CLINICAL</span>
+</div>
+</main>
+<div class="mt-8 text-on-surface-variant font-body-md flex items-center gap-2 no-print">
+<span class="material-symbols-outlined text-sm">lock</span>
+<span>Secure Clinical Document • HIPAA Compliant Environment</span>
+</div>
+<script>
+        // Micro-interaction for clicking sections to highlight
+        document.querySelectorAll('section').forEach(section => {
+            section.addEventListener('mouseenter', () => {
+                section.style.transition = 'background-color 0.3s ease';
+            });
+        });
+
+        // Current Date auto-filler
+        const dateSpan = document.querySelector('p:contains("Date of Finalization") span');
+        if(!dateSpan) {
+            // Find by text content as fallback
+            const spans = document.getElementsByTagName('span');
+            for (let span of spans) {
+              if (span.textContent.includes("October 24, 2023")) {
+                  // Keep as specified in prompt, but we could dynamic it:
+                  // span.textContent = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+              }
+            }
+        }
+    </script>
+</body></html>

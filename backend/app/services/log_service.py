@@ -153,7 +153,16 @@ def update_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwarg
 
 
 def _apply_log_field_updates(log: DailyLog, kwargs: dict) -> None:
-    for field in ("session_notes", "activities_done", "goals_addressed", "observations", "follow_ups", "parent_notes", "late_reason"):
+    for field in (
+        "session_notes",
+        "activities_done",
+        "goals_addressed",
+        "observations",
+        "follow_ups",
+        "parent_notes",
+        "late_reason",
+        "parent_voice_attachment_id",
+    ):
         if field in kwargs and kwargs[field] is not None:
             setattr(log, field, kwargs[field])
     if kwargs.get("attendance_status") is not None:
@@ -264,6 +273,9 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
         "late_addition": bool(log.late_addition),
         "late_reason": log.late_reason,
         "review_note": log.review_note,
+        "parent_session_rating": log.parent_session_rating,
+        "parent_feedback": log.parent_feedback,
+        "parent_feedback_at": ensure_utc_aware(log.parent_feedback_at),
         "can_edit": can_therapist_edit_log(log),
         "can_resubmit": is_log_resubmittable(log),
         "resubmitted_at": ensure_utc_aware(log.resubmitted_at),

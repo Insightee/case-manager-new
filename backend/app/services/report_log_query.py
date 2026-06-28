@@ -79,6 +79,34 @@ def submitted_logs_for_report_month(
     return list(db.scalars(stmt).all())
 
 
+def submitted_logs_for_case_month(
+    db: Session,
+    case_id: int,
+    month_str: str,
+    *,
+    approval_statuses: tuple[LogApprovalStatus, ...] = _COMPILE_STATUSES,
+) -> list[DailyLog]:
+    """Submitted session logs for a case and month (YYYY-MM or legacy month label)."""
+    ym = parse_report_month(month_str)
+    if not ym:
+        return []
+    year, month = ym
+    stmt = (
+        select(DailyLog)
+        .join(TherapySession)
+        .where(
+            TherapySession.case_id == case_id,
+            extract("year", TherapySession.scheduled_date) == year,
+            extract("month", TherapySession.scheduled_date) == month,
+            DailyLog.submitted_at.isnot(None),
+            DailyLog.approval_status.in_(approval_statuses),
+        )
+        .options(selectinload(DailyLog.session))
+        .order_by(TherapySession.scheduled_date.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
 def attendance_timeline_for_report_month(
     db: Session,
     report: MonthlyReport,

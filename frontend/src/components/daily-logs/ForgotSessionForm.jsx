@@ -229,24 +229,26 @@ export function ForgotSessionForm({
             Pick the visit date, then enter when the session started and ended. No live timer needed.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onCancel}
-          aria-label="Close"
-          style={{
-            border: 'none',
-            background: '#f1f5f9',
-            borderRadius: 8,
-            width: 32,
-            height: 32,
-            cursor: 'pointer',
-            color: '#64748b',
-            fontSize: '1.1rem',
-            flexShrink: 0,
-          }}
-        >
-          ×
-        </button>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            style={{
+              border: 'none',
+              background: '#f1f5f9',
+              borderRadius: 8,
+              width: 32,
+              height: 32,
+              cursor: 'pointer',
+              color: '#64748b',
+              fontSize: '1.1rem',
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
+        ) : null}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -447,21 +449,23 @@ export function ForgotSessionForm({
           >
             {submitting ? 'Adding…' : 'Add session & write log'}
           </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              padding: '12px 16px',
-              borderRadius: 10,
-              border: '1px solid #d1d5db',
-              background: '#fff',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
+          {onCancel ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              style={{
+                padding: '12px 16px',
+                borderRadius: 10,
+                border: '1px solid #d1d5db',
+                background: '#fff',
+                fontWeight: 600,
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          ) : null}
         </div>
       </div>
     </form>

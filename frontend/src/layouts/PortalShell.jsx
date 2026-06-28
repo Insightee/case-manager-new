@@ -3,6 +3,13 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
 import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
+import { CLINICAL_QUALITY_DASHBOARD, isReportsRevampActive } from '../lib/reportsRevampFlags.js'
+import {
+  isBillingModuleEnabled,
+  isClinicalBrainEnabled,
+  isReportBuilderEnabled,
+  isReportsModuleEnabled,
+} from '../lib/productFeatureFlags.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
 import { useNotifications } from '../hooks/useNotifications.js'
 import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
@@ -11,13 +18,20 @@ import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
+import { CaseProfileSidebarNav } from '../components/case-profile/CaseProfileSidebarNav.jsx'
+import { CaseReportsSidebarNav } from '../components/case-profile/CaseReportsSidebarNav.jsx'
+import { normalizeReportsSection } from '../components/case-profile/reportsHubSections.js'
+import { TherapistActiveCaseProvider, useTherapistActiveCase } from '../context/TherapistActiveCaseContext.jsx'
 import '../components/shared/notification-bell.css'
+
+const THERAPIST_MY_CASES_PATH = '/therapist/cases'
+const THERAPIST_REPORTS_PATH = '/therapist/reports'
 
 const THERAPIST_NAV = [
   { to: '/therapist', label: 'Dashboard', end: true },
   { to: '/therapist/cases', label: 'My Cases' },
   { to: '/therapist/logs', label: 'Session Logs' },
-  { to: '/therapist/reports', label: 'Monthly Reports' },
+  { to: '/therapist/reports', label: 'Reports' },
   { to: '/therapist/invoices', label: 'Invoices' },
   { to: '/therapist/support', label: 'Support & Incidents' },
   { to: '/therapist/meetings', label: 'Meetings' },
@@ -58,30 +72,164 @@ const ADMIN_CM_MOBILE_NAV = [
 
 /** Nav for users whose only operational role is Case Manager (not module admin / finance / HR). */
 function caseManagerNav(clinicalModuleIds) {
-  return [
+  const items = [
     { to: '/admin/cm', label: 'My caseload', end: true, perm: null, feature: null, icon: 'dashboard' },
     { to: '/admin/cases', label: 'Cases', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases' },
     { to: '/admin/workbench', label: 'Review queues', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench' },
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid' },
-    { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports' },
-    { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep' },
+  ]
+  if (isReportsModuleEnabled()) {
+    items.push({
+      to: '/admin/reports',
+      label: 'Reports',
+      perm: 'monthly_report.approve',
+      feature: 'reports',
+      moduleIds: clinicalModuleIds,
+      icon: 'reports',
+    })
+  }
+  if (isReportBuilderEnabled()) {
+    items.push({
+      to: '/admin/iep',
+      label: 'IEP',
+      perm: 'iep.read',
+      feature: 'iep',
+      moduleIds: clinicalModuleIds,
+      icon: 'iep',
+    })
+  }
+  if (isClinicalBrainEnabled()) {
+    items.push({
+      to: '/admin/clinical-review-queue',
+      label: 'Clinical review',
+      perm: 'case.read.team',
+      moduleIds: clinicalModuleIds,
+      icon: 'workbench',
+    })
+  }
+  items.push(
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'meetings' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail' },
-  ]
+  )
+  if (CLINICAL_QUALITY_DASHBOARD) {
+    items.splice(3, 0, {
+      to: '/admin/clinical-dashboard',
+      label: 'Clinical dashboard',
+      perm: 'case.read.team',
+      moduleIds: clinicalModuleIds,
+      icon: 'workbench',
+    })
+  }
+  return items
 }
 
 function adminNav(clinicalModuleIds) {
-  return [
+  const ops = [
     { to: '/admin', label: 'Dashboard', end: true, perm: null, feature: null, icon: 'dashboard', section: 'Operations' },
     { to: '/admin/workbench', label: 'Workbench', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench', section: 'Operations' },
     { to: '/admin/cases', label: 'Cases', perm: 'case.read.all', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases', section: 'Operations' },
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid', section: 'Operations' },
-    { to: '/admin/reports', label: 'Reports', perm: 'monthly_report.approve', feature: 'reports', moduleIds: clinicalModuleIds, icon: 'reports', section: 'Operations' },
-    { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep', section: 'Operations' },
+  ]
+  if (isReportsModuleEnabled()) {
+    ops.push({
+      to: '/admin/reports',
+      label: 'Reports',
+      perm: 'monthly_report.approve',
+      feature: 'reports',
+      moduleIds: clinicalModuleIds,
+      icon: 'reports',
+      section: 'Operations',
+    })
+  }
+  if (CLINICAL_QUALITY_DASHBOARD) {
+    ops.splice(2, 0, {
+      to: '/admin/clinical-dashboard',
+      label: 'Clinical dashboard',
+      perm: 'case.read.team',
+      moduleIds: clinicalModuleIds,
+      icon: 'workbench',
+      section: 'Operations',
+    })
+  }
+  const clinicalLibrary = []
+  if (isReportBuilderEnabled()) {
+    clinicalLibrary.push({
+      to: '/admin/iep',
+      label: 'IEP',
+      perm: 'iep.read',
+      feature: 'iep',
+      moduleIds: clinicalModuleIds,
+      icon: 'iep',
+      section: 'Operations',
+    })
+  }
+  if (isClinicalBrainEnabled()) {
+    clinicalLibrary.push(
+      {
+        to: '/admin/goal-bank',
+        label: 'Goal Bank',
+        perm: 'case.read.all',
+        moduleIds: clinicalModuleIds,
+        icon: 'reports',
+        section: 'Clinical library',
+      },
+      {
+        to: '/admin/strategy-pool',
+        label: 'Strategy Pool',
+        perm: 'case.read.all',
+        moduleIds: clinicalModuleIds,
+        icon: 'reports',
+        section: 'Clinical library',
+      },
+      {
+        to: '/admin/clinical-review-queue',
+        label: 'Clinical review',
+        perm: 'case.read.team',
+        moduleIds: clinicalModuleIds,
+        icon: 'workbench',
+        section: 'Clinical library',
+      },
+    )
+  }
+  clinicalLibrary.push({
+    to: '/admin/goal-strategy-repository',
+    label: 'Repository (legacy)',
+    perm: 'case.read.all',
+    moduleIds: clinicalModuleIds,
+    icon: 'reports',
+    section: 'Clinical library',
+  })
+
+  const finance = []
+  if (isBillingModuleEnabled()) {
+    finance.push(
+      {
+        to: '/admin/invoices',
+        label: 'Invoices & payments',
+        perm: 'invoice.approve',
+        feature: 'invoices',
+        moduleIds: ['billing'],
+        icon: 'invoices',
+        section: 'Finance',
+      },
+      {
+        to: '/admin/therapist-payouts',
+        label: 'Therapist payouts',
+        perm: 'invoice.approve',
+        feature: 'invoices',
+        moduleIds: ['billing'],
+        icon: 'wallet',
+        section: 'Finance',
+      },
+    )
+  }
+
+  return [
+    ...ops,
+    ...clinicalLibrary,
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail', section: 'Operations' },
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },
-    { to: '/admin/invoices', label: 'Invoices & payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices', section: 'Finance' },
-    { to: '/admin/therapist-payouts', label: 'Therapist payouts', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'wallet', section: 'Finance' },
+    ...finance,
     { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },
     { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope', section: 'People & HR' },
     { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave', section: 'People & HR' },
@@ -98,7 +246,16 @@ const PORTAL_LABELS = {
   therapist: 'Therapist Portal',
 }
 
-function NavLinks({ items, className, linkClassName, onNavigate, showIcons }) {
+function NavLinks({
+  items,
+  className,
+  linkClassName,
+  onNavigate,
+  showIcons,
+  caseSubNav,
+  reportsSubNav,
+  therapistExpandable,
+}) {
   let lastSection = null
   return (
     <nav className={className} aria-label="Portal navigation">
@@ -113,20 +270,82 @@ function NavLinks({ items, className, linkClassName, onNavigate, showIcons }) {
             </p>
           ) : null
         if (item.section) lastSection = item.section
+
+        const isMyCases = therapistExpandable && item.to === THERAPIST_MY_CASES_PATH
+        const isReports = therapistExpandable && item.to === THERAPIST_REPORTS_PATH
+        const showCaseSubNav = isMyCases && therapistExpandable.casesExpanded && caseSubNav
+        const showReportsSubNav = isReports && therapistExpandable.reportsExpanded && reportsSubNav
+        const parentActive =
+          (isMyCases && caseSubNav?.isContextActive) || (isReports && reportsSubNav?.isContextActive)
+
         return (
           <span key={item.to} className="app-sidebar__nav-item-wrap">
             {sectionHeader}
-            <NavLink
-              to={item.to}
-              end={item.end}
-              onClick={onNavigate}
-              className={({ isActive }) =>
-                `${linkClassName}${isActive ? ' is-active' : ''}`
-              }
-            >
-              {showIcons && item.icon ? <NavIcon name={item.icon} /> : null}
-              <span>{item.label}</span>
-            </NavLink>
+            <div className="app-sidebar__nav-row">
+              <NavLink
+                to={item.to}
+                end={item.end}
+                onClick={onNavigate}
+                className={({ isActive }) =>
+                  `${linkClassName}${isActive || parentActive ? ' is-active' : ''}`
+                }
+              >
+                {showIcons && item.icon ? <NavIcon name={item.icon} /> : null}
+                <span>{item.label}</span>
+              </NavLink>
+              {isMyCases ? (
+                <button
+                  type="button"
+                  className={`app-sidebar__nav-expand${therapistExpandable.casesExpanded ? ' is-expanded' : ''}`}
+                  aria-expanded={therapistExpandable.casesExpanded}
+                  aria-label={
+                    therapistExpandable.casesExpanded
+                      ? 'Collapse My Cases sections'
+                      : 'Expand My Cases sections'
+                  }
+                  onClick={(e) => {
+                    e.preventDefault()
+                    therapistExpandable.toggleCases()
+                  }}
+                >
+                  {therapistExpandable.casesExpanded ? '−' : '+'}
+                </button>
+              ) : null}
+              {isReports ? (
+                <button
+                  type="button"
+                  className={`app-sidebar__nav-expand${therapistExpandable.reportsExpanded ? ' is-expanded' : ''}`}
+                  aria-expanded={therapistExpandable.reportsExpanded}
+                  aria-label={
+                    therapistExpandable.reportsExpanded
+                      ? 'Collapse Reports sections'
+                      : 'Expand Reports sections'
+                  }
+                  onClick={(e) => {
+                    e.preventDefault()
+                    therapistExpandable.toggleReports()
+                  }}
+                >
+                  {therapistExpandable.reportsExpanded ? '−' : '+'}
+                </button>
+              ) : null}
+            </div>
+            {showCaseSubNav ? (
+              <CaseProfileSidebarNav
+                caseId={caseSubNav.caseId}
+                activeTab={caseSubNav.activeTab}
+                onNavigate={onNavigate}
+                nested
+              />
+            ) : null}
+            {showReportsSubNav ? (
+              <CaseReportsSidebarNav
+                caseId={reportsSubNav.caseId}
+                activeSection={reportsSubNav.activeSection}
+                onNavigate={onNavigate}
+                nested
+              />
+            ) : null}
           </span>
         )
       })}
@@ -217,6 +436,17 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
 }
 
 export function PortalShell({ portal }) {
+  if (portal === 'therapist' && isReportsRevampActive('therapist')) {
+    return (
+      <TherapistActiveCaseProvider>
+        <PortalShellInner portal={portal} />
+      </TherapistActiveCaseProvider>
+    )
+  }
+  return <PortalShellInner portal={portal} />
+}
+
+function PortalShellInner({ portal }) {
   const { user, logout, can, hasFeature, isViewOnly, navVisible } = useAuth()
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
@@ -282,6 +512,66 @@ export function PortalShell({ portal }) {
     () => buildMobileTabs(nav, portal, { cmFocused }),
     [nav, portal, cmFocused],
   )
+
+  const therapistRevamp = portal === 'therapist' && isReportsRevampActive('therapist')
+  const therapistCaseMatch = therapistRevamp
+    ? location.pathname.match(/^\/therapist\/cases\/([^/]+)$/)
+    : null
+  const therapistCaseId = therapistCaseMatch?.[1] ?? null
+  const therapistCaseTab = new URLSearchParams(location.search).get('tab') || 'overview'
+  const therapistReportsSection = new URLSearchParams(location.search).get('section') || 'dashboard'
+  const onCasesList = location.pathname === THERAPIST_MY_CASES_PATH
+  const reportsCaseId =
+    therapistCaseId && therapistCaseTab === 'reports' ? therapistCaseId : null
+
+  const [casesNavExpanded, setCasesNavExpanded] = useState(false)
+  const [reportsNavExpanded, setReportsNavExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!therapistRevamp) return
+    if (therapistCaseMatch || onCasesList) setCasesNavExpanded(true)
+    if (therapistCaseTab === 'reports' || location.pathname === THERAPIST_REPORTS_PATH) {
+      setReportsNavExpanded(true)
+    }
+  }, [therapistRevamp, therapistCaseMatch, therapistCaseTab, location.pathname, onCasesList])
+
+  const therapistCaseSubNav =
+    therapistRevamp && casesNavExpanded
+      ? {
+          caseId: therapistCaseId,
+          activeTab: therapistCaseId ? therapistCaseTab : onCasesList ? 'overview' : null,
+          myCasesPath: THERAPIST_MY_CASES_PATH,
+          isContextActive: Boolean(therapistCaseMatch) || onCasesList,
+        }
+      : null
+
+  const reportsSectionFromUrl = normalizeReportsSection(
+    new URLSearchParams(location.search).get('section'),
+  )
+  const therapistReportsSubNav =
+    therapistRevamp && reportsNavExpanded
+      ? {
+          caseId: reportsCaseId,
+          activeSection:
+            reportsCaseId
+              ? normalizeReportsSection(therapistReportsSection)
+              : location.pathname === THERAPIST_REPORTS_PATH
+                ? reportsSectionFromUrl
+                : 'dashboard',
+          reportsPath: THERAPIST_REPORTS_PATH,
+          isContextActive:
+            Boolean(reportsCaseId) || location.pathname === THERAPIST_REPORTS_PATH,
+        }
+      : null
+
+  const therapistExpandable = therapistRevamp
+    ? {
+        casesExpanded: casesNavExpanded,
+        reportsExpanded: reportsNavExpanded,
+        toggleCases: () => setCasesNavExpanded((open) => !open),
+        toggleReports: () => setReportsNavExpanded((open) => !open),
+      }
+    : null
 
   /** Full sidebar in drawer: therapist + parent always; admin when nav is large or CM shortcuts. */
   const showMobileDrawer =
@@ -448,6 +738,9 @@ export function PortalShell({ portal }) {
               linkClassName="app-sidebar__link"
               showIcons={showNavIcons}
               onNavigate={() => setMobileNavOpen(false)}
+              caseSubNav={therapistCaseSubNav}
+              reportsSubNav={therapistReportsSubNav}
+              therapistExpandable={therapistExpandable}
             />
             <div className="app-sidebar__footer app-sidebar__footer--drawer">
               <NavLink
@@ -502,6 +795,9 @@ export function PortalShell({ portal }) {
           className="app-sidebar__nav"
           linkClassName="app-sidebar__link"
           showIcons={showNavIcons}
+          caseSubNav={therapistCaseSubNav}
+          reportsSubNav={therapistReportsSubNav}
+          therapistExpandable={therapistExpandable}
         />
         <div className="app-sidebar__footer">
           {portal === 'admin' ? (

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Observation Report - Manan Sarda</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .fill-icon {
+            font-variation-settings: 'FILL' 1;
+        }
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-variant": "#e2e2e2",
+                      "on-error": "#ffffff",
+                      "tertiary-fixed": "#85f8c4",
+                      "error": "#ba1a1a",
+                      "surface-container-highest": "#e2e2e2",
+                      "surface-tint": "#50625a",
+                      "on-surface-variant": "#424845",
+                      "inverse-surface": "#2f3131",
+                      "on-tertiary": "#ffffff",
+                      "on-secondary": "#ffffff",
+                      "on-primary-fixed": "#0e1f19",
+                      "on-tertiary-container": "#069669",
+                      "secondary-fixed": "#c3ecd7",
+                      "outline-variant": "#c2c8c3",
+                      "error-container": "#ffdad6",
+                      "on-secondary-fixed-variant": "#294e3f",
+                      "tertiary-fixed-dim": "#68dba9",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary": "#000000",
+                      "primary": "#000000",
+                      "on-secondary-container": "#476c5b",
+                      "surface-container-low": "#f3f3f4",
+                      "on-primary": "#ffffff",
+                      "inverse-primary": "#b7cbc1",
+                      "surface-dim": "#dadada",
+                      "primary-fixed-dim": "#b7cbc1",
+                      "primary-fixed": "#d3e7dd",
+                      "on-tertiary-fixed-variant": "#005137",
+                      "on-surface": "#1a1c1c",
+                      "surface": "#f9f9f9",
+                      "on-error-container": "#93000a",
+                      "surface-container": "#eeeeee",
+                      "secondary-fixed-dim": "#a8cfbc",
+                      "secondary-container": "#c3ecd7",
+                      "on-tertiary-fixed": "#002114",
+                      "inverse-on-surface": "#f0f1f1",
+                      "outline": "#737875",
+                      "on-primary-fixed-variant": "#394a43",
+                      "surface-container-high": "#e8e8e8",
+                      "secondary": "#416656",
+                      "background": "#f9f9f9",
+                      "tertiary-container": "#002114",
+                      "surface-bright": "#f9f9f9",
+                      "primary-container": "#0e1f19",
+                      "on-primary-container": "#75887f",
+                      "on-background": "#1a1c1c",
+                      "on-secondary-fixed": "#002115"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "margin-desktop": "40px",
+                      "gutter": "24px",
+                      "base": "8px",
+                      "sidebar-width": "280px",
+                      "margin-mobile": "16px"
+              },
+              "fontFamily": {
+                      "headline-lg-mobile": ["Manrope"],
+                      "body-lg": ["Inter"],
+                      "label-sm": ["JetBrains Mono"],
+                      "headline-lg": ["Manrope"],
+                      "headline-md": ["Manrope"],
+                      "body-md": ["Inter"]
+              },
+              "fontSize": {
+                      "headline-lg-mobile": ["30px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                      "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                      "headline-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body-md antialiased pb-24">
+<!-- Top AppBar (Mobile Sticky) -->
+<header class="fixed top-0 w-full z-40 flex justify-between items-center px-margin-mobile h-16 bg-surface border-b border-outline-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary" data-icon="description">description</span>
+<h1 class="font-headline-md text-headline-md-mobile font-bold text-primary">InsighteCase</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined" data-icon="picture_as_pdf">picture_as_pdf</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+</button>
+</div>
+</header>
+<main class="pt-20 px-margin-mobile max-w-lg mx-auto">
+<!-- Report Header Section -->
+<section class="mb-8">
+<div class="flex justify-between items-start mb-2">
+<div>
+<p class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Case ID: 882-MS</p>
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile text-primary mt-1">Observation Report</h2>
+</div>
+<div class="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full font-label-sm text-label-sm">
+                    FINALIZED
+                </div>
+</div>
+<p class="font-body-md text-on-surface-variant">Report issued: October 24, 2023</p>
+</section>
+<!-- Patient Info Card -->
+<section class="mb-8 bg-white border border-outline-variant p-5 rounded-xl shadow-sm">
+<div class="flex items-center gap-4 mb-4">
+<div class="w-16 h-16 rounded-full overflow-hidden border-2 border-secondary-container bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A warm, professional headshot of a young boy with dark hair and a curious expression, Manan Sarda, set against a soft, out-of-focus park background. The lighting is bright and natural, reflecting the high-key light-mode aesthetic of a modern clinical dashboard. The child's clothing is simple and professional, adhering to the minimalist and clean forest-green themed design system." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAyC5Jv5km6KIR9HdmwJ8Ph3Wa1E5SUlpNucDk8irjcr5bu6cj76vY42klWc22-eyw5_cc_5Ei9-OsJm7dmM3QHzRkKTqls3Ert8UIE94FhrL34NFrR01_g6reHVEpTbJPmcWW9WEfoZPuApL6KHONNSIbLnDKpO_u-NyL14t666Nx3GT8q8Cu-D0qqJ2o4fZmG_YR5khpzAVTj22s5TUVIaOHXHFr_ubyAuKy5YzXklxMhzeSVBWZ6IVsBb1bSSHeU7pJ6J4Amc7g"/>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-primary">Manan Sarda</h3>
+<p class="font-body-md text-on-surface-variant">7 Years • ASD Level 1</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4 pt-4 border-t border-outline-variant">
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase">Date of Birth</p>
+<p class="font-body-md font-semibold">June 12, 2016</p>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase">Case Manager</p>
+<p class="font-body-md font-semibold">Dr. A. Vaughn</p>
+</div>
+</div>
+</section>
+<!-- Clinical Summary -->
+<section class="mb-8">
+<h4 class="font-headline-md text-headline-md-mobile text-primary mb-3">Clinical Summary</h4>
+<div class="bg-secondary-container/20 border-l-4 border-secondary p-4 rounded-r-lg">
+<p class="font-body-md text-on-surface leading-relaxed">
+                    Manan demonstrates high cognitive potential with a particular affinity for systematic logic and visual-spatial tasks. His neuro-affirmative profile indicates a preference for structured environments where transitions are signaled via visual aids. While he exhibits challenges with auditory filtering in high-stimulus environments, his capacity for deep focus on preferred topics is an exceptional asset.
+                </p>
+</div>
+</section>
+<!-- Behavioral Insights Grid (Bento Style) -->
+<section class="mb-8">
+<h4 class="font-headline-md text-headline-md-mobile text-primary mb-4">Behavioral Insights</h4>
+<div class="grid grid-cols-2 gap-3">
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between">
+<div class="flex justify-between items-start">
+<span class="material-symbols-outlined text-secondary" data-icon="trending_down">trending_down</span>
+<span class="font-label-sm text-label-sm text-error">-22%</span>
+</div>
+<div class="mt-4">
+<p class="text-3xl font-bold text-primary">58%</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Transition Difficulty</p>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between">
+<div class="flex justify-between items-start">
+<span class="material-symbols-outlined text-on-tertiary-container" data-icon="visibility">visibility</span>
+<span class="font-label-sm text-label-sm text-on-tertiary-container">+15%</span>
+</div>
+<div class="mt-4">
+<p class="text-3xl font-bold text-primary">85%</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Visual Support Efficacy</p>
+</div>
+</div>
+<div class="col-span-2 bg-primary-container p-4 rounded-xl text-white">
+<div class="flex items-center gap-3 mb-2">
+<span class="material-symbols-outlined text-tertiary-fixed" data-icon="psychology">psychology</span>
+<p class="font-label-sm text-label-sm uppercase text-primary-fixed">Sensory Regulation</p>
+</div>
+<p class="text-3xl font-bold">-22% <span class="text-sm font-normal text-primary-fixed opacity-80">vs Last Quarter</span></p>
+<div class="w-full bg-white/20 h-1 rounded-full mt-3 overflow-hidden">
+<div class="bg-tertiary-fixed h-full w-2/3"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Strengths & Interests -->
+<section class="mb-8">
+<h4 class="font-headline-md text-headline-md-mobile text-primary mb-3">Strengths &amp; Interests</h4>
+<div class="flex flex-wrap gap-2">
+<span class="bg-secondary-container text-on-secondary-container px-3 py-1.5 rounded-full font-body-md text-sm">Pattern Recognition</span>
+<span class="bg-secondary-container text-on-secondary-container px-3 py-1.5 rounded-full font-body-md text-sm">High Curiosity</span>
+<span class="bg-secondary-container text-on-secondary-container px-3 py-1.5 rounded-full font-body-md text-sm">Lego Technic</span>
+<span class="bg-secondary-container text-on-secondary-container px-3 py-1.5 rounded-full font-body-md text-sm">Marine Biology</span>
+</div>
+</section>
+<!-- Support Needs -->
+<section class="mb-8">
+<h4 class="font-headline-md text-headline-md-mobile text-primary mb-3">Support Needs &amp; Barriers</h4>
+<ul class="space-y-3">
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-error mt-0.5" data-icon="error_outline">error_outline</span>
+<p class="font-body-md text-on-surface">Difficulty with unannounced changes to school routine.</p>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-error mt-0.5" data-icon="error_outline">error_outline</span>
+<p class="font-body-md text-on-surface">Auditory overload during high-traffic hall times.</p>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-error mt-0.5" data-icon="error_outline">error_outline</span>
+<p class="font-body-md text-on-surface">Executive function fatigue in late-afternoon sessions.</p>
+</li>
+</ul>
+</section>
+<!-- Environments Workspace -->
+<section class="mb-8">
+<h4 class="font-headline-md text-headline-md-mobile text-primary mb-4">Environments Workspace</h4>
+<div class="space-y-4">
+<div class="bg-white border border-outline-variant overflow-hidden rounded-xl">
+<div class="bg-surface-container p-3 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="home">home</span>
+<span class="font-body-md font-semibold">Home Setting</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Observer: Parent</span>
+</div>
+<div class="p-4">
+<p class="font-body-md text-on-surface italic">"Manan thrives in the living room area when using his desk. He requires minimal prompting for self-care if the visual checklist is visible."</p>
+</div>
+</div>
+<div class="bg-white border border-outline-variant overflow-hidden rounded-xl">
+<div class="bg-surface-container p-3 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="school">school</span>
+<span class="font-body-md font-semibold">Classroom Setting</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Observer: Case Manager</span>
+</div>
+<div class="p-4">
+<p class="font-body-md text-on-surface italic">"Observed stimming behaviors increased during group activities. Engagement peaks during solo STEM projects."</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Suggested Goals -->
+<section class="mb-8">
+<h4 class="font-headline-md text-headline-md-mobile text-primary mb-4">Suggested Clinical Goals</h4>
+<div class="space-y-3">
+<div class="bg-white border-2 border-tertiary-fixed/30 p-4 rounded-xl relative overflow-hidden">
+<div class="absolute top-0 right-0 w-24 h-24 bg-tertiary-fixed/10 -mr-8 -mt-8 rounded-full"></div>
+<p class="font-label-sm text-label-sm text-on-tertiary-container uppercase mb-1">Goal 1: Social Communication</p>
+<p class="font-body-md font-semibold mb-2">Initiating interaction with peers during structured play.</p>
+<div class="flex items-center gap-2">
+<div class="flex-1 bg-surface-container h-1.5 rounded-full overflow-hidden">
+<div class="bg-on-tertiary-container h-full w-1/3"></div>
+</div>
+<span class="font-label-sm text-label-sm">33%</span>
+</div>
+</div>
+<div class="bg-white border-2 border-tertiary-fixed/30 p-4 rounded-xl relative overflow-hidden">
+<div class="absolute top-0 right-0 w-24 h-24 bg-tertiary-fixed/10 -mr-8 -mt-8 rounded-full"></div>
+<p class="font-label-sm text-label-sm text-on-tertiary-container uppercase mb-1">Goal 2: Self-Regulation</p>
+<p class="font-body-md font-semibold mb-2">Utilizing 'Cool Down' zone independently when overwhelmed.</p>
+<div class="flex items-center gap-2">
+<div class="flex-1 bg-surface-container h-1.5 rounded-full overflow-hidden">
+<div class="bg-on-tertiary-container h-full w-[65%]"></div>
+</div>
+<span class="font-label-sm text-label-sm">65%</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Stakeholder Inputs -->
+<section class="mb-8">
+<h4 class="font-headline-md text-headline-md-mobile text-primary mb-4">Stakeholder Inputs</h4>
+<div class="flex flex-col gap-3">
+<div class="flex gap-4 items-center bg-white p-3 rounded-xl border border-outline-variant">
+<div class="bg-primary-container text-white p-2 rounded-lg">
+<span class="material-symbols-outlined" data-icon="family_history">family_history</span>
+</div>
+<div class="flex-1">
+<p class="font-body-md font-semibold">Parental Observation</p>
+<p class="text-xs text-on-surface-variant">Submitted 2 days ago</p>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="chevron_right">chevron_right</span>
+</div>
+<div class="flex gap-4 items-center bg-white p-3 rounded-xl border border-outline-variant">
+<div class="bg-secondary text-white p-2 rounded-lg">
+<span class="material-symbols-outlined" data-icon="assignment_ind">assignment_ind</span>
+</div>
+<div class="flex-1">
+<p class="font-body-md font-semibold">Case Manager Note</p>
+<p class="text-xs text-on-surface-variant">Update pending review</p>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+</section>
+<!-- Verification -->
+<section class="mt-12 pt-8 border-t border-outline-variant text-center">
+<div class="flex flex-col items-center">
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-4">Certified Digitally By</p>
+<div class="mb-2 italic font-serif text-2xl text-primary opacity-80">Dr. Alistair Vaughn</div>
+<p class="font-body-md font-semibold">Senior Behavioral Consultant</p>
+<p class="text-xs text-on-surface-variant mt-1">Reg No: 9942-BA-CLIN</p>
+<button class="mt-6 flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-full font-headline-md text-sm transition-all hover:scale-105 active:scale-95">
+<span class="material-symbols-outlined text-sm" data-icon="verified">verified</span>
+                    Verify Report Authenticity
+                </button>
+</div>
+</section>
+</main>
+<!-- Footer Metrics -->
+<footer class="fixed bottom-0 left-0 w-full z-50 bg-white border-t border-outline-variant px-4 py-4 flex justify-around items-center">
+<div class="text-center">
+<p class="font-headline-md text-lg font-bold text-primary">12</p>
+<p class="font-label-sm text-[10px] text-on-surface-variant">SESSIONS</p>
+</div>
+<div class="w-px h-8 bg-outline-variant"></div>
+<div class="text-center">
+<p class="font-headline-md text-lg font-bold text-primary">48</p>
+<p class="font-label-sm text-[10px] text-on-surface-variant">LOGS</p>
+</div>
+<div class="w-px h-8 bg-outline-variant"></div>
+<div class="text-center">
+<p class="font-headline-md text-lg font-bold text-primary">14</p>
+<p class="font-label-sm text-[10px] text-on-surface-variant">WEEKS</p>
+</div>
+</footer>
+<script>
+        // Micro-interaction for verifying button
+        const verifyBtn = document.querySelector('button[data-icon="verified"]');
+        if (verifyBtn) {
+            verifyBtn.addEventListener('click', () => {
+                const originalContent = verifyBtn.innerHTML;
+                verifyBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" data-icon="sync">sync</span> Verifying...';
+                setTimeout(() => {
+                    verifyBtn.innerHTML = '<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span> Authenticated';
+                    verifyBtn.classList.remove('bg-primary');
+                    verifyBtn.classList.add('bg-on-tertiary-container');
+                }, 1500);
+            });
+        }
+
+        // Simple scroll behavior for top bar shadow
+        window.addEventListener('scroll', () => {
+            const header = document.querySelector('header');
+            if (window.scrollY > 10) {
+                header.classList.add('shadow-md');
+            } else {
+                header.classList.remove('shadow-md');
+            }
+        });
+    </script>
+</body></html>

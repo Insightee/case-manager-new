@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.v1 import (
     finance_ops,
@@ -37,6 +37,19 @@ from app.api.v1 import (
     case_services,
     session_absence,
     memos,
+    clinical,
+    ai_routes,
+    insights_routes,
+    clinical_reports,
+    clinical_evidence_events,
+    clinical_brain,
+    clinical_ai,
+)
+from app.core.feature_flags import (
+    require_billing,
+    require_clinical_brain,
+    require_report_generation,
+    require_reports,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -52,15 +65,27 @@ api_router.include_router(sessions.router)
 api_router.include_router(session_absence.router)
 api_router.include_router(daily_logs.router)
 api_router.include_router(reports.router)
-api_router.include_router(invoices.router)
+api_router.include_router(
+    invoices.router,
+    dependencies=[Depends(require_billing)],
+)
 api_router.include_router(admin.router)
 api_router.include_router(finance_ops.router)
 api_router.include_router(hr_ops.router)
 api_router.include_router(admin_support.router)
 api_router.include_router(parent.router)
-api_router.include_router(client_billing.parent_router)
-api_router.include_router(client_billing.admin_router)
-api_router.include_router(ledger_billing.router)
+api_router.include_router(
+    client_billing.parent_router,
+    dependencies=[Depends(require_billing)],
+)
+api_router.include_router(
+    client_billing.admin_router,
+    dependencies=[Depends(require_billing)],
+)
+api_router.include_router(
+    ledger_billing.router,
+    dependencies=[Depends(require_billing)],
+)
 api_router.include_router(tickets.router)
 api_router.include_router(support.router)
 api_router.include_router(attachments.router)
@@ -77,3 +102,22 @@ api_router.include_router(files.router)
 api_router.include_router(case_documents.router)
 api_router.include_router(case_documents.documents_router)
 api_router.include_router(memos.router)
+api_router.include_router(clinical.router)
+api_router.include_router(ai_routes.router)
+api_router.include_router(insights_routes.router)
+api_router.include_router(
+    clinical_reports.router,
+    dependencies=[Depends(require_reports)],
+)
+api_router.include_router(
+    clinical_evidence_events.router,
+    dependencies=[Depends(require_clinical_brain)],
+)
+api_router.include_router(
+    clinical_brain.router,
+    dependencies=[Depends(require_clinical_brain)],
+)
+api_router.include_router(
+    clinical_ai.router,
+    dependencies=[Depends(require_clinical_brain), Depends(require_report_generation)],
+)

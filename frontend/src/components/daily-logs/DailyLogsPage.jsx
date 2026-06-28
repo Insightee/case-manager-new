@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
-import { clearLogDraft } from '../../lib/logDraftStore.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { queryKeys } from '../../lib/queryClient.js'
@@ -22,30 +21,38 @@ import {
   formatSessionActualRange,
   formatTimeIST,
   isStartedLateOnSchedule,
+  parseApiDatetime,
 } from '../../lib/datetime.js'
-import { isLogEditable, isLogResubmittable } from '../../lib/sessionLogUtils.js'
-import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
+import { isLogEditable } from '../../lib/sessionLogUtils.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
-import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
+import { SessionLogRecentRow } from './SessionLogRecentRow.jsx'
 import { SessionVisitPanel } from './SessionVisitPanel.jsx'
 import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
-import { existingVisitForDay, sessionToLogShape } from '../../lib/sessionDayConflict.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { canStartSessionToday } from '../../lib/sessionStartRules.js'
-import { EditActualTimesModal } from './EditActualTimesModal.jsx'
-import { ActiveSessionCard } from './ActiveSessionCard.jsx'
-import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
+import { canStartSessionToday, logsPathForSession } from '../../lib/sessionStartRules.js'
 import {
   filterSessionsWithoutAbsence,
   isChildAbsentLog,
   isLeaveLog,
   sortLogsBySessionDate,
 } from '../../lib/sessionLogFilters.js'
-import { formatLogCommentCount, enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
-import { LogCommentCountPill } from '../shared/LogCommentCountBadge.jsx'
+import { enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
+import { SameDaySessionDialog } from './SameDaySessionDialog.jsx'
+import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import '../cases/my-cases.css'
+import '../../styles/goals-strategies-engine.css'
+import '../../styles/session-logs-dashboard.css'
+
+function logRecencyMs(log) {
+  const ts = log?.resubmitted_at || log?.submitted_at
+  return ts ? new Date(ts).getTime() : 0
+}
+
+function sortLogsByRecency(list) {
+  return [...list].sort((a, b) => logRecencyMs(b) - logRecencyMs(a))
+}
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -67,6 +74,22 @@ const LOG_TABS = [
   { id: 'approved', label: 'Approved' },
   { id: 'rejected', label: 'Rejected' },
 ]
+
+function formatTime(t) {
+  if (!t) return '—'
+  return String(t).slice(0, 5)
+}
+
+function formatDuration(startIso, tick) {
+  if (!startIso) return '00:00:00'
+  const start = parseApiDatetime(startIso)?.getTime()
+  if (start == null) return '00:00:00'
+  const secs = Math.max(0, Math.floor((tick - start) / 1000))
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
 
 export function DailyLogsPage() {
   const navigate = useNavigate()
@@ -93,8 +116,6 @@ export function DailyLogsPage() {
   })
   const upcomingRaw = workspace?.upcoming || []
   const active = workspace?.active_session || null
-  const activeInProgress = active?.status === 'IN_PROGRESS' ? active : null
-  const stalePrevious = workspace?.stale_previous_sessions || []
   const needsLogRaw = workspace?.needs_log || []
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
   const needsLog = useMemo(
@@ -105,6 +126,21 @@ export function DailyLogsPage() {
     () => filterSessionsWithoutAbsence(upcomingRaw, logs),
     [upcomingRaw, logs],
   )
+  const caseFilterId = searchParams.get('case_id')
+  const scopedToCase = Boolean(caseFilterId)
+
+  const displayLogs = useMemo(() => {
+    if (!caseFilterId) return logs
+    const id = Number(caseFilterId)
+    return logs.filter((l) => l.case_id === id)
+  }, [logs, caseFilterId])
+
+  const displayNeedsLog = useMemo(() => {
+    if (!caseFilterId) return needsLog
+    const id = Number(caseFilterId)
+    return needsLog.filter((s) => s.case_id === id)
+  }, [needsLog, caseFilterId])
+
   const loading = wsLoading || logsQuery.isLoading
   const logsReady = !wsLoading && !logsQuery.isLoading
   const [tick, setTick] = useState(Date.now())
@@ -112,30 +148,19 @@ export function DailyLogsPage() {
   const [logSession, setLogSession] = useState(null)
   const [visitSession, setVisitSession] = useState(null)
   const [visitBusy, setVisitBusy] = useState(false)
-  const [endBusy, setEndBusy] = useState(false)
   const [cancelBusy, setCancelBusy] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
   const [logRequired, setLogRequired] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const handleRetry = () => {
-    setError('')
-    queryClient.invalidateQueries({ queryKey: queryKeys.therapistWorkspace })
-    if (therapistId) {
-      queryClient.invalidateQueries({ queryKey: queryKeys.therapistDailyLogs(therapistId) })
-    }
-  }
   const [logTab, setLogTab] = useState('all')
-  const [viewingLog, setViewingLog] = useState(null)
+  const [expandedLogId, setExpandedLogId] = useState(null)
+  const [sameDayConflict, setSameDayConflict] = useState(null)
+  const [sameDayPending, setSameDayPending] = useState(null)
   const [editTimesSession, setEditTimesSession] = useState(null)
   const [composerCaseId, setComposerCaseId] = useState(null)
-  const [existingSessionConflict, setExistingSessionConflict] = useState(null)
-  const [walkInConflict, setWalkInConflict] = useState(null)
-  const [scheduledSessionHint, setScheduledSessionHint] = useState('')
   const logPanelRef = useRef(null)
-  const activeSessionCardRef = useRef(null)
-  const upcomingSectionRef = useRef(null)
   const deepLinkResolvedRef = useRef(null)
   const logDeepLinkResolvedRef = useRef(null)
 
@@ -154,34 +179,22 @@ export function DailyLogsPage() {
         )
       })
     }
-    setViewingLog((prev) =>
-      prev && prev.log?.id === logId
-        ? {
-            ...prev,
-            log: {
-              ...prev.log,
-              comment_count: commentCount,
-              open_parent_comment_count: openParentCommentCount,
-            },
-          }
-        : prev,
-    )
   }
 
   const pendingLogs = useMemo(
-    () => sortLogsBySessionDate(logs.filter((l) => l.approval_status === 'PENDING')),
-    [logs],
+    () => sortLogsByRecency(displayLogs.filter((l) => l.approval_status === 'PENDING')),
+    [displayLogs],
   )
   const approvedLogs = useMemo(
-    () => sortLogsBySessionDate(logs.filter((l) => l.approval_status === 'APPROVED')),
-    [logs],
+    () => displayLogs.filter((l) => l.approval_status === 'APPROVED'),
+    [displayLogs],
   )
   const rejectedLogs = useMemo(
-    () => sortLogsBySessionDate(logs.filter((l) => l.approval_status === 'REJECTED')),
-    [logs],
+    () => displayLogs.filter((l) => l.approval_status === 'REJECTED'),
+    [displayLogs],
   )
-  const childAbsentLogs = useMemo(() => logs.filter(isChildAbsentLog), [logs])
-  const leaveLogs = useMemo(() => logs.filter(isLeaveLog), [logs])
+  const childAbsentLogs = useMemo(() => displayLogs.filter(isChildAbsentLog), [displayLogs])
+  const leaveLogs = useMemo(() => displayLogs.filter(isLeaveLog), [displayLogs])
 
   const filterByMonth = useCallback(
     (list) => list.filter((l) => logMatchesMonth(l, logYear, logMonth)),
@@ -191,6 +204,10 @@ export function DailyLogsPage() {
   const filteredPending = useMemo(() => filterByMonth(pendingLogs), [filterByMonth, pendingLogs])
   const filteredApproved = useMemo(() => filterByMonth(approvedLogs), [filterByMonth, approvedLogs])
   const filteredRejected = useMemo(() => filterByMonth(rejectedLogs), [filterByMonth, rejectedLogs])
+  const filteredAll = useMemo(
+    () => sortLogsBySessionDate(filterByMonth(displayLogs)),
+    [filterByMonth, displayLogs],
+  )
   const filteredChildAbsent = useMemo(
     () => sortLogsBySessionDate(filterByMonth(childAbsentLogs)),
     [filterByMonth, childAbsentLogs],
@@ -199,50 +216,42 @@ export function DailyLogsPage() {
     () => sortLogsBySessionDate(filterByMonth(leaveLogs)),
     [filterByMonth, leaveLogs],
   )
-  const filteredAll = useMemo(
-    () => sortLogsBySessionDate(filterByMonth(logs)),
-    [filterByMonth, logs],
-  )
 
   const displayUpcoming = useMemo(() => {
-    if (!composerCaseId) return upcoming
-    return upcoming.filter((s) => s.case_id === composerCaseId)
-  }, [upcoming, composerCaseId])
+    const caseId = composerCaseId || (caseFilterId ? Number(caseFilterId) : null)
+    if (!caseId) return upcoming
+    return upcoming.filter((s) => s.case_id === caseId)
+  }, [upcoming, composerCaseId, caseFilterId])
 
-  useEffect(() => {
-    setScheduledSessionHint('')
-  }, [composerCaseId])
-
-  function scrollToUpcomingSessions() {
-    requestAnimationFrame(() => {
-      upcomingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-  }
-
-  function handleScheduledSessionExists(info) {
-    setWalkInConflict(null)
-    setScheduledSessionHint(
-      info?.message || 'A scheduled session already exists for this client today.',
-    )
-    void loadAll({ silent: true }).then(() => scrollToUpcomingSessions())
-  }
-
-  function handleWalkInSessionConflict(detail) {
-    setScheduledSessionHint('')
-    setWalkInConflict(detail)
-  }
-
-  function dismissWalkInConflict() {
-    setWalkInConflict(null)
-  }
+  const scopedCaseLabel = useMemo(() => {
+    if (!caseFilterId) return ''
+    const id = Number(caseFilterId)
+    const fromLog = logs.find((l) => l.case_id === id)
+    if (fromLog?.child_name || fromLog?.case_code) {
+      return fromLog.child_name || fromLog.case_code
+    }
+    const fromNeed = needsLog.find((s) => s.case_id === id)
+    if (fromNeed?.child_name || fromNeed?.case_code) {
+      return fromNeed.child_name || fromNeed.case_code
+    }
+    const fromUpcoming = upcoming.find((s) => s.case_id === id)
+    if (fromUpcoming?.child_name || fromUpcoming?.case_code) {
+      return fromUpcoming.child_name || fromUpcoming.case_code
+    }
+    return `Case #${caseFilterId}`
+  }, [caseFilterId, logs, needsLog, upcoming])
 
   const logYears = useMemo(() => {
     const years = new Set([now.getFullYear()])
-    logs.forEach((l) => {
+    displayLogs.forEach((l) => {
       if (l.scheduled_date) years.add(Number(l.scheduled_date.slice(0, 4)))
     })
     return [...years].filter(Number.isFinite).sort((a, b) => b - a)
-  }, [logs, now])
+  }, [displayLogs, now])
+
+  useEffect(() => {
+    if (caseFilterId) setComposerCaseId(Number(caseFilterId))
+  }, [caseFilterId])
 
   const syncDraftIds = useCallback(async () => {
     const ids = await refreshTherapistLogDraftIds()
@@ -267,10 +276,10 @@ export function DailyLogsPage() {
   }, [loadAll])
 
   useEffect(() => {
-    if (!activeInProgress?.actual_start_at) return undefined
+    if (!active?.actual_start_at) return undefined
     const id = setInterval(() => setTick(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [activeInProgress?.actual_start_at, activeInProgress?.id])
+  }, [active?.actual_start_at, active?.id])
 
   useEffect(() => {
     if ((logSession || visitSession) && logPanelRef.current) {
@@ -290,39 +299,15 @@ export function DailyLogsPage() {
     )
   }
 
-  const deepLinkContext = useMemo(
-    () => ({ active: activeInProgress, needsLog, logs }),
-    [activeInProgress, needsLog, logs],
-  )
-
   function openSessionFromDeepLink(session) {
     setError('')
-    const action = resolveSessionDeepLink(session, logs, deepLinkContext)
+    const action = resolveSessionDeepLink(session, logs)
     if (action.type === 'error') {
       setError(action.message || 'Could not open session')
       return
     }
     if (action.type === 'log') {
       setVisitSession(null)
-      if (action.fetchLog && action.session?.has_daily_log) {
-        void (async () => {
-          try {
-            const match = logs.find((l) => Number(l.session_id) === Number(action.session.id) && l.id > 0)
-            if (match) {
-              openLogForm(action.session, { required: action.required, log: match })
-              return
-            }
-            await loadAll({ silent: true })
-            const refreshed = queryClient.getQueryData(queryKeys.therapistDailyLogs(therapistId))
-            const list = Array.isArray(refreshed) ? refreshed : []
-            const found = list.find((l) => Number(l.session_id) === Number(action.session.id) && l.id > 0)
-            openLogForm(action.session, { required: action.required, log: found || null })
-          } catch (err) {
-            setError(err.message || 'Could not open session log')
-          }
-        })()
-        return
-      }
       openLogForm(action.session, { required: action.required, log: action.log || null })
       return
     }
@@ -334,22 +319,81 @@ export function DailyLogsPage() {
     setLogSession(null)
     setEditingLog(null)
     setLogRequired(false)
-    setViewingLog(null)
+    setExpandedLogId(null)
     setVisitSession(action.session)
+  }
+
+  function openViewLog(log) {
+    setVisitSession(null)
+    setLogSession(null)
+    setEditingLog(null)
+    setLogRequired(false)
+    setError('')
+    setSuccess('')
+    setExpandedLogId(log.id)
+  }
+
+  function logSessionPayload(log) {
+    return {
+      id: log.session_id,
+      scheduled_date: log.scheduled_date,
+      actual_start_at: log.actual_start_at,
+      actual_end_at: log.actual_end_at,
+      edited_start_at: log.edited_start_at,
+      edited_end_at: log.edited_end_at,
+      actual_times_edited: log.actual_times_edited,
+      case_code: log.case_code,
+      child_name: log.child_name,
+      status: 'COMPLETED',
+    }
+  }
+
+  function openResubmitFromRow(log) {
+    setExpandedLogId(null)
+    openLogForm(logSessionPayload(log), { log })
+  }
+
+  function openEditLogFromRow(log) {
+    setExpandedLogId(null)
+    openLogForm(logSessionPayload(log), { log })
+  }
+
+  function openEditTimesFromRow(log) {
+    setEditTimesSession({
+      id: log.session_id,
+      actual_start_at: log.actual_start_at,
+      actual_end_at: log.actual_end_at,
+      edited_start_at: log.edited_start_at,
+      edited_end_at: log.edited_end_at,
+      child_name: log.child_name,
+      case_code: log.case_code,
+      status: 'COMPLETED',
+    })
+  }
+
+  function renderLogRow(l, options = {}) {
+    return (
+      <SessionLogRecentRow
+        key={l.id}
+        log={l}
+        expanded={expandedLogId === l.id}
+        onToggleExpand={(id) => setExpandedLogId(id)}
+        onEditLog={openEditLogFromRow}
+        onResubmitLog={openResubmitFromRow}
+        onEditTimes={openEditTimesFromRow}
+        {...options}
+      />
+    )
   }
 
   function openLogForm(session, { required = false, log = null, readOnly = false } = {}) {
     setVisitSession(null)
     setError('')
-    setViewingLog(null)
     if (readOnly && log) {
-      setLogSession(null)
-      setEditingLog(null)
-      setLogRequired(false)
-      setViewingLog({ log, session })
-      setSuccess('')
+      openViewLog(log)
       return
     }
+    setExpandedLogId(null)
     setLogSession(session)
     setEditingLog(log)
     setLogRequired(required)
@@ -366,7 +410,7 @@ export function DailyLogsPage() {
     const match =
       needsLog.find((s) => s.id === sid) ||
       upcoming.find((s) => s.id === sid) ||
-      (activeInProgress?.id === sid ? activeInProgress : null)
+      (active?.id === sid ? active : null)
 
     if (match) {
       deepLinkResolvedRef.current = sid
@@ -391,7 +435,7 @@ export function DailyLogsPage() {
     return () => {
       cancelled = true
     }
-  }, [searchParams, logsReady, needsLog, upcoming, activeInProgress, logs])
+  }, [searchParams, logsReady, needsLog, upcoming, active, logs])
 
   useEffect(() => {
     if (!searchParams.get('session')) {
@@ -450,7 +494,7 @@ export function DailyLogsPage() {
     setLogSession(null)
     setEditingLog(null)
     setLogRequired(false)
-    setViewingLog(null)
+    setExpandedLogId(null)
     clearSessionQueryParam()
   }
 
@@ -480,192 +524,6 @@ export function DailyLogsPage() {
     }
   }
 
-  function renderLogRow(l, { allowEdit = false, allowResubmit = false, allowView = false } = {}) {
-    const isVirtual = l.id < 0
-    const isAbsenceRecord =
-      isVirtual ||
-      l.attendance_status === 'THERAPIST_LEAVE' ||
-      l.attendance_status === 'CLIENT_ABSENT' ||
-      l.attendance_status === 'CLIENT_LEAVE'
-    const isTherapistLeave = l.attendance_status === 'THERAPIST_LEAVE'
-    const canEdit = !isVirtual && allowEdit && isLogEditable(l)
-    const canResubmit = !isVirtual && allowResubmit && isLogResubmittable(l)
-    const clockRange = isVirtual ? null : formatClockRange(l)
-    const editedRange = !isVirtual && l.actual_times_edited ? formatEditedRange(l) : null
-    return (
-      <div key={l.id} className="ic-session-log-recent__row">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="ic-session-log-recent__title">
-            {l.child_name || l.case_code}
-            {l.scheduled_date ? <> · {formatDisplayDate(l.scheduled_date)}</> : null}
-            {formatLogCommentCount(l.comment_count) ? (
-              <span className="ic-session-log-recent__comment-count"> · {formatLogCommentCount(l.comment_count)}</span>
-            ) : null}
-          </p>
-          {clockRange ? <p className="ic-session-log-recent__times">Clock: {clockRange}</p> : null}
-          {editedRange ? (
-            <p className="ic-session-log-recent__times" style={{ color: '#6d28d9' }}>
-              Corrected: {editedRange}
-            </p>
-          ) : null}
-          {!isTherapistLeave ? (
-            <div className="ic-log-badge-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-              <SessionLogStatusBadge
-                approvalStatus={l.approval_status}
-                attendanceStatus={l.attendance_status}
-                isAbsenceRecord={isAbsenceRecord}
-              />
-              {formatLogCommentCount(l.comment_count) ? (
-                <LogCommentCountPill count={l.comment_count} className="log-comment-count-pill--inline" />
-              ) : null}
-            </div>
-          ) : (
-            <div className="ic-log-badge-row">
-              <span className="ic-badge ic-badge--neutral" style={{ background: '#f3f4f6', color: '#374151' }}>
-                Therapist Leave
-              </span>
-              <span className={`ic-log-badge ${l.approval_status === 'PENDING' ? 'ic-log-badge--pending' : 'ic-log-badge--approved'}`}>
-                {l.approval_status === 'PENDING' ? 'Pending review' : 'Approved'}
-              </span>
-            </div>
-          )}
-          {!isVirtual && l.actual_times_edited ? (
-            <span className="ic-session-log-recent__meta" style={{ color: '#7c3aed', fontWeight: 600 }}>
-              Times edited
-            </span>
-          ) : null}
-          {!isVirtual && l.duplicate_day_session ? (
-            <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
-              Same-day duplicate
-            </span>
-          ) : null}
-          {!isVirtual && l.review_note && l.approval_status === 'REJECTED' ? (
-            <p className="ic-session-log-recent__meta" style={{ color: '#b91c1c' }}>
-              Rejection: {l.review_note}
-            </p>
-          ) : null}
-          {l.status_label && !isAbsenceRecord ? (
-            <span className="ic-session-log-recent__meta" style={{ color: '#b45309', fontWeight: 600 }}>
-              {l.status_label}
-            </span>
-          ) : (!isVirtual && l.late_addition) ? (
-            <span className="ic-session-log-recent__meta">Late submission</span>
-          ) : null}
-          {isVirtual && l.absence_reason ? (
-            <p className="ic-session-log-recent__meta" style={{ color: '#4b5563', fontStyle: 'italic' }}>
-              Reason: {l.absence_reason}
-            </p>
-          ) : null}
-          {l.case_id ? (
-            <span className="ic-session-log-recent__meta">
-              <Link to={`/therapist/cases/${l.case_id}`}>Open case</Link>
-            </span>
-          ) : null}
-        </div>
-        {isTherapistLeave ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
-            onClick={() => navigate('/therapist/leave')}
-          >
-            View leave
-          </button>
-        ) : null}
-        {!isVirtual && canEditSessionTimes({ ...l, id: l.session_id, status: 'COMPLETED' }, l) && !canResubmit ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
-            onClick={() =>
-              setEditTimesSession({
-                id: l.session_id,
-                actual_start_at: l.actual_start_at,
-                actual_end_at: l.actual_end_at,
-                edited_start_at: l.edited_start_at,
-                edited_end_at: l.edited_end_at,
-                child_name: l.child_name,
-                case_code: l.case_code,
-                status: 'COMPLETED',
-              })
-            }
-          >
-            Edit times
-          </button>
-        ) : null}
-        {canResubmit ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--primary ic-session-log-recent__edit"
-            onClick={() =>
-              openLogForm(
-                {
-                  id: l.session_id,
-                  scheduled_date: l.scheduled_date,
-                  actual_start_at: l.actual_start_at,
-                  actual_end_at: l.actual_end_at,
-                  edited_start_at: l.edited_start_at,
-                  edited_end_at: l.edited_end_at,
-                  actual_times_edited: l.actual_times_edited,
-                  case_code: l.case_code,
-                  child_name: l.child_name,
-                  status: 'COMPLETED',
-                },
-                { log: l },
-              )
-            }
-          >
-            Edit & resubmit
-          </button>
-        ) : null}
-        {canEdit ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
-            onClick={() =>
-              openLogForm(
-                {
-                  id: l.session_id,
-                  scheduled_date: l.scheduled_date,
-                  actual_start_at: l.actual_start_at,
-                  actual_end_at: l.actual_end_at,
-                  case_code: l.case_code,
-                  child_name: l.child_name,
-                },
-                { log: l },
-              )
-            }
-          >
-            {(() => {
-              if (!l.editable_until) return 'Edit log'
-              const hoursLeft = Math.max(0, Math.ceil((new Date(l.editable_until) - Date.now()) / 3600000))
-              return hoursLeft > 0 ? `Edit log (${hoursLeft}h left)` : 'Edit log'
-            })()}
-          </button>
-        ) : null}
-        {allowView && !canEdit && !canResubmit && !isVirtual ? (
-          <button
-            type="button"
-            className="ic-btn ic-btn--ghost ic-session-log-recent__edit"
-            onClick={() =>
-              openLogForm(
-                {
-                  id: l.session_id,
-                  scheduled_date: l.scheduled_date,
-                  actual_start_at: l.actual_start_at,
-                  actual_end_at: l.actual_end_at,
-                  case_code: l.case_code,
-                  child_name: l.child_name,
-                },
-                { log: l, readOnly: true },
-              )
-            }
-          >
-            View log
-          </button>
-        ) : null}
-      </div>
-    )
-  }
-
   async function handleStart(sessionId, sessionMeta = null, { allowDuplicate = false } = {}) {
     setError('')
     setSuccess('')
@@ -687,24 +545,18 @@ export function DailyLogsPage() {
         allowDuplicate ? { allow_duplicate: true } : {},
       )
       if (!result.ok) {
-        if (result.conflict?.recommendedAction === 'CONTINUE_SESSION') {
-          setSuccess('A session is in progress — end it above to start another visit.')
-          activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          return
-        }
-        if (result.conflict?.existingSessionId) {
-          redirectForSessionConflict(result.conflict, navigate)
+        if (result.conflict?.recommendedAction === 'DUPLICATE_SAME_DAY') {
+          setSameDayConflict(result.conflict)
+          setSameDayPending({ sessionId, meta })
           return
         }
         setSuccess(result.message)
+        redirectForSessionConflict(result.conflict, navigate)
         return
       }
+      setSameDayConflict(null)
+      setSameDayPending(null)
       const started = result.session
-      if (started?.status !== 'IN_PROGRESS') {
-        setError('Could not start session — please refresh and try again.')
-        void loadAll({ silent: true })
-        return
-      }
       patchCachesAfterSessionStart(started)
       if (started?.invite_sent && started?.invite_email) {
         setSuccess(`Invite sent to ${started.invite_email} — they will join the Client portal.`)
@@ -712,6 +564,24 @@ export function DailyLogsPage() {
     } catch (err) {
       setError(err.message || 'Could not start session')
     }
+  }
+
+  async function handleSameDayStartAnother() {
+    if (!sameDayPending) return
+    setVisitBusy(true)
+    try {
+      await handleStart(sameDayPending.sessionId, sameDayPending.meta, { allowDuplicate: true })
+      setSameDayConflict(null)
+      setSameDayPending(null)
+    } finally {
+      setVisitBusy(false)
+    }
+  }
+
+  function handleEditExistingSession(existingId) {
+    setSameDayConflict(null)
+    setSameDayPending(null)
+    navigate(logsPathForSession(existingId))
   }
 
   function handleActualTimesSaved(updated) {
@@ -740,7 +610,6 @@ export function DailyLogsPage() {
   }
 
   async function handleEnd(sessionId) {
-    setEndBusy(true)
     setError('')
     try {
       const ended = await apiFetch(`/api/v1/sessions/${sessionId}/end`, {
@@ -751,34 +620,21 @@ export function DailyLogsPage() {
       openLogForm(ended, { required: true })
     } catch (err) {
       setError(err.message || 'Could not end session')
-    } finally {
-      setEndBusy(false)
     }
   }
 
-  async function handleCancel(sessionId, sessionStatus) {
+  async function handleCancel(sessionId) {
+    if (!window.confirm('Cancel this session? The timer will stop and no log will be created.')) return
     setCancelBusy(true)
     setError('')
-    const endpoint =
-      sessionStatus === 'COMPLETED'
-        ? `/api/v1/sessions/${sessionId}/void-before-log`
-        : `/api/v1/sessions/${sessionId}/cancel`
     try {
-      const cancelled = await apiFetch(endpoint, {
+      const cancelled = await apiFetch(`/api/v1/sessions/${sessionId}/cancel`, {
         method: 'POST',
         body: JSON.stringify({}),
       })
       patchCachesAfterSessionCancel(cancelled)
       if (visitSession?.id === sessionId) setVisitSession(null)
-      if (logSession?.id === sessionId) {
-        void clearLogDraft(sessionId)
-        closeLogForm()
-      }
-      setSuccess(
-        sessionStatus === 'COMPLETED'
-          ? 'Session removed — you can start again, mark absent, or update the schedule.'
-          : 'Session cancelled — you can start again when ready.',
-      )
+      setSuccess('Session cancelled — you can start again when ready.')
     } catch (err) {
       setError(err.message || 'Could not cancel session')
     } finally {
@@ -789,7 +645,6 @@ export function DailyLogsPage() {
   async function handleManualSession(payload) {
     setSubmitting(true)
     setError('')
-    setExistingSessionConflict(null)
     try {
       let session
       if (payload.walkIn) {
@@ -831,131 +686,105 @@ export function DailyLogsPage() {
       openLogForm(session, { required: true })
       void loadAll({ silent: true })
     } catch (err) {
-      if (err?.status === 409 && err.detail?.code === 'EXISTING_SESSION_FOR_DATE') {
-        setExistingSessionConflict(err.detail)
-        return
-      }
       setError(err.message || 'Could not add session')
     } finally {
       setSubmitting(false)
     }
   }
 
-  async function handleExistingSessionAction(conflict) {
-    setExistingSessionConflict(null)
-    setWalkInConflict(null)
-    setScheduledSessionHint('')
-    setError('')
-    try {
-      if (conflict.recommended_action === 'resume_session') {
-        void loadAll({ silent: true })
-        setVisitSession(null)
-        closeLogForm()
-        setSuccess('Session in progress — end it above when you are finished.')
-        activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        return
-      }
+  const showComposer = !logSession && !visitSession && !active
 
-      const session = await apiFetch(`/api/v1/sessions/${conflict.existing_session_id}`)
-      const sessionShape = sessionToLogShape(session)
-
-      if (conflict.daily_log_id) {
-        let log = logs.find((l) => Number(l.id) === Number(conflict.daily_log_id))
-        if (!log) {
-          log = await apiFetch(`/api/v1/daily-logs/${conflict.daily_log_id}`)
-        }
-        const readOnly = conflict.recommended_action === 'view_log' && log?.approval_status === 'APPROVED'
-        openLogForm(sessionShape, { log, required: false, readOnly })
-        return
-      }
-
-      if (conflict.recommended_action === 'edit_log' || session.status === 'COMPLETED') {
-        const log = logs.find((l) => Number(l.session_id) === Number(session.id) && l.id > 0)
-        openLogForm(sessionShape, { log: log || null, required: !session.has_daily_log })
-        return
-      }
-
-      openSessionFromDeepLink(session)
-    } catch (err) {
-      setError(err.message || 'Could not open existing session')
-    }
-  }
-
-  const showComposerShell = !logSession && !viewingLog && !visitSession
-  const handleComposerError = (msg) => {
-    if (!error) setError(msg)
-  }
-
-  if (loading && !logSession) {
+  if (loading && !logSession && !visitSession) {
     return <p style={{ padding: 24, color: '#6b7280' }}>Loading session logs…</p>
   }
 
   return (
-    <div className="daily-logs-page ic-my-cases">
-      <header className="ic-page-head">
+    <div className="daily-logs-page session-logs-page forest-light ic-my-cases">
+      <header className="session-logs-header">
         <div>
-          <h1 className="ic-page-head__title">Session Logs</h1>
-          <p className="ic-page-head__sub">
+          <h1 className="session-logs-header__title">Session Logs</h1>
+          <p className="session-logs-header__subtitle">
             End each visit with a log so admin can review and families get timely updates. Edit pending logs for 24 hours.
           </p>
         </div>
       </header>
 
-      {error && String(error).includes('Connection unstable') ? (
-        <div className="ic-alert ic-alert--warn" style={{ borderLeft: '4px solid #f59e0b', backgroundColor: '#fffbeb', color: '#b45309', padding: '12px', marginBottom: 20, borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <strong>Connection Unstable</strong> — You are still logged in, but we cannot reach the server. Your drafts are saved on this device.
-          </div>
-          <button type="button" className="ic-btn ic-btn--secondary" onClick={handleRetry} style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
-            Retry now
+      {scopedToCase ? (
+        <div className="session-logs-scope-banner">
+          <p style={{ margin: 0 }}>
+            Showing logs for <strong>{scopedCaseLabel}</strong>
+          </p>
+          <button
+            type="button"
+            className="reports-hub-btn reports-hub-btn--secondary"
+            onClick={() => setSearchParams({}, { replace: true })}
+          >
+            All clients
           </button>
         </div>
-      ) : error && String(error).toLowerCase().includes('offline') ? (
-        <div className="ic-alert ic-alert--warn" style={{ marginBottom: 20 }}>
-          {error}
-        </div>
-      ) : error ? (
+      ) : null}
+
+      {error ? (
         <div className="ic-alert ic-alert--error">{error}</div>
       ) : null}
       {success ? (
         <div className="ic-alert ic-alert--success">{success}</div>
       ) : null}
 
-      {activeInProgress ? (
-        <ActiveSessionCard
-          ref={activeSessionCardRef}
-          session={activeInProgress}
-          tick={tick}
-          endBusy={endBusy}
-          onEnd={handleEnd}
-        />
-      ) : null}
-
-      {stalePrevious.length > 0 ? (
-        <section
-          className="ic-case-stale"
-          style={{
-            marginBottom: 24,
-            border: '1px solid #fbbf24',
-            backgroundColor: '#fffbeb',
-            borderRadius: '8px',
-            padding: '16px',
-          }}
-        >
-          <p style={{ color: '#b45309', fontWeight: 600, margin: '0 0 8px' }}>
-            Previous session was not closed
+      {active ? (
+        <section className="session-logs-active-card">
+          <p className="session-logs-active-card__title">Session in progress</p>
+          <p style={{ margin: '0 0 4px', fontSize: '0.875rem' }}>
+            {active.child_name || active.case_code} · {formatDisplayDate(active.scheduled_date)}
+            {active.auto_end_label ? (
+              <span style={{ display: 'block', marginTop: 4, fontSize: '0.8125rem', fontWeight: 600, color: '#b45309' }}>
+                {active.auto_end_label}
+              </span>
+            ) : active.auto_ended ? (
+              <span style={{ color: '#b45309' }}> (auto-ended)</span>
+            ) : null}
+            {active.case_id ? (
+              <>
+                {' · '}
+                <Link to={`/therapist/cases/${active.case_id}`}>Open case</Link>
+              </>
+            ) : null}
           </p>
-          {stalePrevious.map((s) => (
-            <p key={s.id} style={{ margin: '0 0 6px', fontSize: '0.875rem' }}>
-              <strong>{s.child_name || s.case_code}</strong> · {formatDisplayDate(s.scheduled_date)}
-              {s.actual_start_at ? (
-                <span style={{ color: '#6b7280' }}> · started {formatTimeIST(s.actual_start_at)}</span>
+          {active.start_time ? (
+            <p style={{ margin: '0 0 10px', fontSize: '0.78rem', color: '#6b7280' }}>
+              Scheduled: {formatTime(active.start_time)}–{formatTime(active.end_time)}
+              {active.actual_start_at ? (
+                <>
+                  {isStartedLateOnSchedule(active.actual_start_at, active.scheduled_date, active.start_time) ? (
+                    <span style={{ color: '#b45309', fontWeight: 600 }}> · Started late at {formatTimeIST(active.actual_start_at)} IST</span>
+                  ) : (
+                    <span> · Started at {formatTimeIST(active.actual_start_at)} IST</span>
+                  )}
+                </>
               ) : null}
             </p>
-          ))}
-          <p style={{ margin: 0, fontSize: '0.8125rem', color: '#92400e' }}>
-            Open sessions auto-close at 10 PM IST. You can still start today&apos;s visits and log child absence.
+          ) : null}
+          <p className="attendance-timer" style={{ fontSize: '2rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: '0 0 16px' }}>
+            {formatDuration(active.actual_start_at, tick)}
           </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            <button
+              type="button"
+              className="ic-btn ic-btn--primary"
+              style={{ background: '#dc2626', borderColor: '#dc2626' }}
+              onClick={() => handleEnd(active.id)}
+            >
+              End session & write log
+            </button>
+            <button
+              type="button"
+              className="ic-btn ic-btn--ghost"
+              disabled={cancelBusy}
+              onClick={() => handleCancel(active.id)}
+            >
+              {cancelBusy ? 'Cancelling…' : 'Cancel session'}
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -963,26 +792,12 @@ export function DailyLogsPage() {
         <section ref={logPanelRef} className="ic-session-log-panel-wrap" style={{ marginBottom: 24 }}>
           <SessionVisitPanel
             session={visitSession}
-            activeSessionId={activeInProgress?.id}
-            busy={visitBusy || endBusy}
-            dayBlocker={existingVisitForDay(visitSession, deepLinkContext)}
+            activeSessionId={active?.id}
+            busy={visitBusy}
             onStart={handleVisitStart}
             onEnd={handleVisitEnd}
-            onOpenExisting={openSessionFromDeepLink}
+            onCancel={handleCancel}
             onClose={closeVisitFocus}
-          />
-        </section>
-      ) : null}
-
-      {viewingLog ? (
-        <section ref={logPanelRef} style={{ marginBottom: 24 }}>
-          <SessionLogReadOnly
-            log={viewingLog.log}
-            session={viewingLog.session}
-            childName={viewingLog.log.child_name}
-            caseCode={viewingLog.log.case_code}
-            onClose={closeLogForm}
-            onCommentCountChange={handleLogCommentCountChange}
           />
         </section>
       ) : null}
@@ -996,12 +811,6 @@ export function DailyLogsPage() {
             childName={logSession.child_name}
             required={logRequired && !editingLog}
             onEditTimes={() => openEditTimesForSession(logSession)}
-            onCancelSession={
-              logRequired && !editingLog && logSession?.id
-                ? () => handleCancel(logSession.id, logSession.status)
-                : undefined
-            }
-            cancelSessionBusy={cancelBusy}
             onSuccess={(savedLog) => {
               const wasResubmit = editingLog?.approval_status === 'REJECTED' && savedLog?.approval_status === 'PENDING'
               setSuccess(
@@ -1025,41 +834,35 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
-      {showComposerShell ? (
+      {showComposer ? (
         <TherapistSessionComposer
+          lockCaseId={caseFilterId ? Number(caseFilterId) : null}
+          lockCaseLabel={scopedCaseLabel}
+          caseProfileMode={false}
           upcomingSessions={upcoming}
-          liveBlocked={!!activeInProgress}
+          disabled={!!active}
           onSelectedCaseChange={setComposerCaseId}
-          existingSessionConflict={existingSessionConflict}
-          walkInConflict={walkInConflict}
-          onExistingSessionAction={handleExistingSessionAction}
-          onDismissExistingSessionConflict={() => setExistingSessionConflict(null)}
-          onDismissWalkInConflict={dismissWalkInConflict}
-          onScheduledSessionExists={handleScheduledSessionExists}
-          onWalkInSessionConflict={handleWalkInSessionConflict}
           onSessionStarted={(info) => {
-            setWalkInConflict(null)
-            setScheduledSessionHint('')
             if (info?.message) setSuccess(info.message)
             void loadAll({ silent: true })
           }}
           onManualSession={handleManualSession}
-          onError={handleComposerError}
+          onError={setError}
         />
       ) : null}
 
-      {!activeInProgress && needsLog.length > 0 && !logSession ? (
-        <section className="ic-session-log-needs" style={{ marginBottom: 24 }}>
-          <h3 className="ic-section-head__title">Needs log</h3>
-          <p className="ic-session-log-needs__sub">
+      {!active && displayNeedsLog.length > 0 && !logSession ? (
+        <section className="session-logs-needs">
+          <h3 className="session-logs-needs__title">Needs log</h3>
+          <p className="session-logs-needs__sub">
             These visits ended without a log. Submit now so billing and family updates are not delayed.
           </p>
-          <div className="ic-session-log-needs__list">
-            {needsLog.map((s) => (
+          <div className="session-logs-needs__list">
+            {displayNeedsLog.map((s) => (
               <button
                 key={s.id}
                 type="button"
-                className="ic-session-log-needs__item"
+                className="session-logs-needs__item"
                 onClick={() => openSessionFromDeepLink(s)}
               >
                 <span>
@@ -1068,7 +871,7 @@ export function DailyLogsPage() {
                     <span className="ic-session-log-needs__draft"> · Draft saved</span>
                   ) : null}
                 </span>
-                <span className="ic-session-log-needs__cta">{draftIds.has(s.id) ? 'Continue log' : 'Edit session log'}</span>
+                <span className="session-logs-needs__cta">{draftIds.has(s.id) ? 'Continue log' : 'Complete log'}</span>
               </button>
             ))}
           </div>
@@ -1076,48 +879,27 @@ export function DailyLogsPage() {
       ) : null}
 
       {!logSession ? (
-        <section ref={upcomingSectionRef} style={{ marginBottom: 24 }}>
-          {scheduledSessionHint ? (
-            <p
-              className="ic-alert ic-alert--success"
-              role="status"
-              style={{ marginBottom: 12 }}
-            >
-              {scheduledSessionHint}
-            </p>
-          ) : null}
-          <h3 className="ic-section-head__title" style={{ marginBottom: 12 }}>
-            Upcoming sessions
-          </h3>
+        <section className="session-logs-upcoming">
+          <h3 className="session-logs-upcoming__title">Upcoming sessions</h3>
           {displayUpcoming.length === 0 ? (
-            <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>
-              {composerCaseId
+            <p className="session-logs-upcoming__empty">
+              {caseFilterId || composerCaseId
                 ? 'No upcoming sessions for this client.'
                 : 'No scheduled sessions in the next two weeks.'}
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="session-logs-upcoming__list">
               {displayUpcoming.map((s) => {
                 const startedLate = isStartedLateOnSchedule(s.actual_start_at, s.scheduled_date, s.start_time)
                 const actualStart = formatTimeIST(s.actual_start_at)
                 const actualEnd = formatTimeIST(s.actual_end_at)
                 const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
                 const isInProgress = s.status === 'IN_PROGRESS'
-                const dayExisting = existingVisitForDay(s, deepLinkContext)
-                const canStartFresh = !activeInProgress && !dayExisting && canStartSessionToday(s).ok
+                const isCompleted = s.status === 'COMPLETED'
                 return (
                   <article
                     key={s.id}
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'flex-start',
-                      gap: 12,
-                      padding: 14,
-                      background: isInProgress ? '#fffbeb' : '#fff',
-                      border: `1px solid ${isInProgress ? '#fcd34d' : '#e5e7eb'}`,
-                      borderRadius: 12,
-                    }}
+                    className={`session-logs-upcoming__card${isInProgress ? ' session-logs-upcoming__card--live' : ''}`}
                   >
                     <div style={{ flex: 1, minWidth: 160 }}>
                       <strong>
@@ -1183,15 +965,7 @@ export function DailyLogsPage() {
                         </p>
                       ) : null}
                     </div>
-                    {!activeInProgress && dayExisting ? (
-                      <button
-                        type="button"
-                        onClick={() => openSessionFromDeepLink(dayExisting)}
-                        className="ic-btn ic-btn--primary"
-                      >
-                        {dayExisting.status === 'IN_PROGRESS' ? 'Go to active session' : 'Edit session log'}
-                      </button>
-                    ) : canStartFresh ? (
+                    {!active && canStartSessionToday(s).ok ? (
                       <button
                         type="button"
                         onClick={() => handleStart(s.id, s)}
@@ -1199,7 +973,7 @@ export function DailyLogsPage() {
                       >
                         Start session
                       </button>
-                    ) : !activeInProgress && s.scheduled_date > todayIsoIST() ? (
+                    ) : !active && s.scheduled_date > todayIsoIST() ? (
                       <span className="ic-session-log-recent__meta">Opens on visit day</span>
                     ) : null}
                   </article>
@@ -1210,8 +984,8 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
-      <section className="ic-session-log-tabs-section">
-        <div className="ic-case-history-filters" style={{ marginBottom: 12 }}>
+      <section className="session-logs-history">
+        <div className="session-logs-history__filters">
           <label>
             <span className="sr-only">Month</span>
             <select
@@ -1243,28 +1017,28 @@ export function DailyLogsPage() {
             </select>
           </label>
         </div>
-        <div className="ic-session-log-tabs" role="tablist" aria-label="Session log lists">
+        <div className="session-logs-tabs" role="tablist" aria-label="Session log lists">
           {LOG_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               role="tab"
               aria-selected={logTab === t.id}
-              className={`ic-session-log-tabs__btn${logTab === t.id ? ' is-active' : ''}`}
+              className={`session-logs-tabs__btn${logTab === t.id ? ' is-active' : ''}`}
               onClick={() => setLogTab(t.id)}
             >
               {t.label}
-              {t.id === 'needs' && needsLog.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{needsLog.length}</span>
+              {t.id === 'needs' && displayNeedsLog.length > 0 ? (
+                <span className="session-logs-tabs__count">{displayNeedsLog.length}</span>
               ) : null}
               {t.id === 'child_absent' && childAbsentLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{childAbsentLogs.length}</span>
+                <span className="session-logs-tabs__count">{childAbsentLogs.length}</span>
               ) : null}
               {t.id === 'leave' && leaveLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{leaveLogs.length}</span>
+                <span className="session-logs-tabs__count">{leaveLogs.length}</span>
               ) : null}
               {t.id === 'pending' && pendingLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{pendingLogs.length}</span>
+                <span className="session-logs-tabs__count session-logs-tabs__count--amber">{pendingLogs.length}</span>
               ) : null}
             </button>
           ))}
@@ -1272,11 +1046,11 @@ export function DailyLogsPage() {
 
         <div className="ic-session-log-tab-panel" role="tabpanel">
           {logTab === 'needs' ? (
-            needsLog.length === 0 ? (
+            displayNeedsLog.length === 0 ? (
               <p className="ic-empty-hint">No sessions waiting for a log.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {needsLog.map((s) => (
+                {displayNeedsLog.map((s) => (
                   <div key={s.id} className="ic-session-log-recent__row">
                     <div style={{ flex: 1 }}>
                       <p className="ic-session-log-recent__title">
@@ -1327,7 +1101,12 @@ export function DailyLogsPage() {
               <p className="ic-empty-hint">No logs pending admin review for {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {filteredPending.map((l) => renderLogRow(l, { allowEdit: true }))}
+                {filteredPending.map((l) =>
+                  renderLogRow(l, {
+                    allowEdit: isLogEditable(l),
+                    allowView: !isLogEditable(l),
+                  }),
+                )}
               </div>
             )
           ) : null}
@@ -1370,6 +1149,17 @@ export function DailyLogsPage() {
         </div>
       </section>
 
+      <SameDaySessionDialog
+        open={Boolean(sameDayConflict)}
+        conflict={sameDayConflict}
+        busy={visitBusy}
+        onEditExisting={handleEditExistingSession}
+        onStartAnother={handleSameDayStartAnother}
+        onClose={() => {
+          setSameDayConflict(null)
+          setSameDayPending(null)
+        }}
+      />
       <EditActualTimesModal
         open={Boolean(editTimesSession)}
         session={editTimesSession}

@@ -40,6 +40,34 @@ export async function openChildAbsenceForm(page) {
 }
 
 /** @param {import('@playwright/test').APIRequestContext} request */
+export async function findNeedsLogSessionId(request, token, apiURL = 'http://127.0.0.1:8000') {
+  const headers = { Authorization: `Bearer ${token}` }
+  const res = await request.get(`${apiURL}/api/v1/therapist/sessions/workspace`, { headers })
+  if (!res.ok()) return null
+  const body = await res.json()
+  return body.needs_log?.[0]?.id ?? null
+}
+
+/** End active sessions, then start+end a scheduled visit so it lands in Needs log. */
+export async function ensureNeedsLogSession(request, token, apiURL = 'http://127.0.0.1:8000') {
+  const headers = { Authorization: `Bearer ${token}` }
+  await endInProgressSessions(request, token, apiURL)
+
+  let needsId = await findNeedsLogSessionId(request, token, apiURL)
+  if (needsId) return needsId
+
+  const sessionId = await findTodayScheduledSessionId(request, token, apiURL)
+  if (!sessionId) return null
+
+  const start = await request.post(`${apiURL}/api/v1/sessions/${sessionId}/start`, { headers, data: {} })
+  if (!start.ok()) return null
+  const end = await request.post(`${apiURL}/api/v1/sessions/${sessionId}/end`, { headers, data: {} })
+  if (!end.ok()) return null
+
+  return findNeedsLogSessionId(request, token, apiURL)
+}
+
+/** @param {import('@playwright/test').APIRequestContext} request */
 export async function endInProgressSessions(request, token, apiURL = 'http://127.0.0.1:8000') {
   const headers = { Authorization: `Bearer ${token}` }
   const ws = await request.get(`${apiURL}/api/v1/therapist/sessions/workspace`, { headers })

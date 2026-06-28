@@ -19,6 +19,7 @@ class DailyLogCreate(BaseModel):
     follow_ups: Optional[str] = None
     parent_notes: Optional[str] = None
     late_reason: Optional[str] = None
+    session_evidence: Optional[dict] = None
 
 
 class DailyLogUpdate(BaseModel):
@@ -30,6 +31,8 @@ class DailyLogUpdate(BaseModel):
     follow_ups: Optional[str] = None
     parent_notes: Optional[str] = None
     late_reason: Optional[str] = None
+    session_evidence: Optional[dict] = None
+    parent_voice_attachment_id: Optional[int] = None
 
 
 class DailyLogRead(BaseModel):
@@ -60,6 +63,9 @@ class DailyLogRead(BaseModel):
     late_reason: Optional[str] = None
     review_note: Optional[str] = None
     resubmitted_at: Optional[datetime] = None
+    parent_session_rating: Optional[int] = None
+    parent_feedback: Optional[str] = None
+    parent_feedback_at: Optional[datetime] = None
     can_edit: bool = False
     can_resubmit: bool = False
     editable_until: Optional[datetime] = None

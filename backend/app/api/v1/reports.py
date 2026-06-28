@@ -1,9 +1,18 @@
+"""COMPAT: Legacy monthly and observation report routes.
+
+Active compatibility path until engine monthly is production-verified.
+New monthly report creation should eventually route through clinical_reports;
+this module remains for existing UI, PDF, and parent approval flows.
+See docs/REPORT_ARCHITECTURE.md.
+"""
+
 from __future__ import annotations
 
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -308,6 +317,45 @@ def generate_monthly_report_from_logs(
     return _report_read(db, report)
 
 
+@router.post("/monthly/{report_id}/compile-evidence-v2")
+def compile_monthly_evidence_v2(
+    report_id: int,
+    user: User = Depends(require_any_permission("monthly_report.create", "monthly_report.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.services import monthly_report_evidence_compiler as compiler
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    result = compiler.compile_evidence_v2(db, user, report)
+    commit_or_http(db)
+    db.refresh(report)
+    return result
+
+
+@router.get("/monthly/{report_id}/parent-preview")
+def monthly_report_parent_preview(
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import parent_safe_report_serializer as parent_safe
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    return parent_safe.serialize_parent_safe_monthly(
+        db,
+        report,
+        case_code=case.case_code,
+        child_name=getattr(case, "child_name", "") or "",
+    )
+
+
 @router.get("/monthly/{report_id}/session-context", response_model=list[SessionLogContextItem])
 def monthly_report_session_context(
     report_id: int,
@@ -452,6 +500,9 @@ def approve_report(
             raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve", entity_type="monthly_report", entity_id=report.id, **meta)
+    from app.services.monthly_report_sync_service import sync_legacy_monthly_best_effort
+
+    sync_legacy_monthly_best_effort(db, report, reviewer=user)
     db.commit()
     return {"status": "approved"}
 
@@ -683,3 +734,78 @@ def submit_observation_report(
     report.status = ReportStatus.UNDER_REVIEW
     db.commit()
     return {"status": "under_review"}
+
+
+class InsertSnapshotSectionRequest(BaseModel):
+    snapshot_id: int
+    section: str = Field(pattern=r"^(goal_summary|strategy_summary|parent_safe_summary|evidence_gaps)$")
+
+
+@router.post("/monthly/{report_id}/insights/insert-snapshot-section")
+def insert_snapshot_section(
+    report_id: int,
+    payload: InsertSnapshotSectionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.clinical_evidence import MonthlyReportSection
+    from app.services import clinical_snapshot_service as snap_svc
+
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    case = case_service.get_case(db, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Report not found")
+    guard_clinical_case(user, case, db)
+
+    snap = snap_svc.get_snapshot(db, payload.snapshot_id, report.case_id)
+    import json
+
+    ai = None
+    if snap.ai_output_json:
+        try:
+            ai = json.loads(snap.ai_output_json)
+        except json.JSONDecodeError:
+            ai = None
+    elif snap.ai_output_text:
+        ai = {"snapshot_summary": snap.ai_output_text}
+
+    section_text = ""
+    visibility = "INTERNAL_ONLY"
+    if payload.section == "goal_summary":
+        recs = (ai or {}).get("goal_recommendations") or []
+        section_text = "\n".join(f"- {r.get('goal_title')}: {r.get('why')}" for r in recs)
+    elif payload.section == "strategy_summary":
+        signals = (ai or {}).get("strategy_signals") or []
+        section_text = "\n".join(f"- {s.get('strategy')}: {s.get('recommendation')}" for s in signals)
+    elif payload.section == "parent_safe_summary":
+        section_text = (ai or {}).get("parent_safe_draft") or ""
+        visibility = "APPROVED_FOR_PARENT" if snap.status == "approved" else "INTERNAL_ONLY"
+    elif payload.section == "evidence_gaps":
+        gaps = (ai or {}).get("evidence_gaps") or []
+        section_text = "\n".join(f"- {g}" for g in gaps)
+
+    if not section_text.strip():
+        section_text = (ai or {}).get("snapshot_summary") or snap.ai_output_text or ""
+
+    html = f"<p>{section_text.replace(chr(10), '</p><p>')}</p>"
+    if snap.status != "approved" and payload.section == "parent_safe_summary":
+        html = f'<p><em>AI-assisted draft. Requires review.</em></p>{html}'
+
+    row = MonthlyReportSection(
+        report_id=report.id,
+        section_key=payload.section,
+        content_html=html,
+        visibility=visibility,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "section_id": row.id,
+        "section_key": row.section_key,
+        "visibility": row.visibility,
+        "source_snapshot_id": snap.id,
+        "parent_visible": visibility == "APPROVED_FOR_PARENT",
+    }

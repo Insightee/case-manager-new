@@ -19,8 +19,19 @@ import { AdminCaseDetailFab } from './AdminCaseDetailFab.jsx'
 import { CaseActivityPanel } from './CaseActivityPanel.jsx'
 import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { IepBuilderPanel } from './IepBuilderPanel.jsx'
+import { IepSupportPlanBuilder } from '../clinical/IepSupportPlanBuilder.jsx'
+import { ReportTypePlaceholder } from '../reports-engine/shell/ReportTypePlaceholder.jsx'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
 import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
+import { isReportsRevampActive, isReportsEngineActive } from '../../lib/reportsRevampFlags.js'
+import { CaseProfileShell } from '../case-profile/CaseProfileShell.jsx'
+import { CaseReportsHub } from '../case-profile/CaseReportsHub.jsx'
+import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
+import { ADMIN_CASE_TABS_REVAMP } from '../case-profile/caseProfileTabs.js'
+import { resolveLegacyReportsSection } from '../case-profile/reportsHubSections.js'
+import { CaseManagerSupervisionPanel } from '../clinical/cm/CaseManagerSupervisionPanel.jsx'
+import { GoalStrategyEnginePage } from '../clinical/goals-strategy/GoalStrategyEnginePage.jsx'
+import { EvidenceDrivePanel } from '../case-profile/sections/EvidenceDrivePanel.jsx'
 import './admin-case-detail-mobile.css'
 
 const TABS = [
@@ -113,6 +124,9 @@ export function AdminCaseDetailPage() {
     if (id === 'logs' && highlightSessionId) {
       next.session_id = highlightSessionId
     }
+    if (id !== 'reports') {
+      // section param only applies under reports hub
+    }
     setSearchParams(next, { replace: true })
   }
 
@@ -143,7 +157,16 @@ export function AdminCaseDetailPage() {
     caseRow && can('daily_log.review') && canReviewLogs(caseRow.product_module),
   )
   const visibleTabs = TABS.filter((t) => !t.perm || can(t.perm))
-  const visibleTabIds = visibleTabs.map((t) => t.id)
+  const revampActive = isReportsRevampActive('admin')
+  const revampTabs = ADMIN_CASE_TABS_REVAMP.filter((t) => !t.perm || can(t.perm))
+  const tabsForShell = revampActive ? revampTabs : visibleTabs
+  const visibleTabIds = tabsForShell.map((t) => t.id)
+
+  useEffect(() => {
+    if (!revampActive) return
+    const legacy = resolveLegacyReportsSection(searchParams)
+    if (legacy) setSearchParams(legacy, { replace: true })
+  }, [searchParams, setSearchParams, revampActive])
 
   function openScheduleTab() {
     if (visibleTabIds.includes('scheduling')) setTab('scheduling')
@@ -201,7 +224,7 @@ export function AdminCaseDetailPage() {
         ariaLabel="Case sections"
         activeId={tab}
         onChange={setTab}
-        tabs={visibleTabs.map((t) => ({ id: t.id, label: t.label }))}
+        tabs={tabsForShell.map((t) => ({ id: t.id, label: t.label }))}
       />
 
       <AdminCaseDetailMobileNav activeId={tab} onChange={setTab} visibleTabIds={visibleTabIds} />
@@ -259,13 +282,36 @@ export function AdminCaseDetailPage() {
         </section>
       )}
 
-      {tab === 'reports' && (
+      {tab === 'reports' && revampActive ? (
+        <CaseReportsHub
+          caseId={caseRow?.id || caseId}
+          caseCode={caseRow.case_code}
+          childName={caseRow.child_name}
+          variant="admin"
+          canManageIep={can('iep.read')}
+          onUpdated={load}
+        />
+      ) : null}
+
+      {tab === 'reports' && !revampActive ? (
         <AdminCaseReportsPanel
           caseId={caseRow?.id || caseId}
           highlightReportId={searchParams.get('reportId')}
           highlightType={searchParams.get('type')}
         />
-      )}
+      ) : null}
+
+      {(tab === 'goals' || tab === 'strategies') && revampActive ? (
+        <GoalStrategyEnginePage
+          caseId={caseRow?.id || caseId}
+          variant="admin"
+          canModerate={can('iep.manage')}
+        />
+      ) : null}
+
+      {tab === 'insights' && revampActive ? (
+        <CaseManagerSupervisionPanel caseId={caseRow?.id || caseId} caseCode={caseRow?.case_code} />
+      ) : null}
 
       {tab === 'incidents' && can('incident.read_sensitive') && (
         <AdminCaseIncidentsPanel
@@ -274,11 +320,32 @@ export function AdminCaseDetailPage() {
         />
       )}
 
-      {tab === 'iep' && can('iep.read') && <IepBuilderPanel caseId={caseRow?.id || caseId} />}
-
-      {tab === 'documents' && (
-        <CaseDocumentsPanel caseId={Number(caseRow?.id || caseId)} variant="admin" />
+      {tab === 'iep' && can('iep.read') && isReportsEngineActive() && (
+        <div className="cp-reports-hub forest-light">
+          <IepReportRoute
+            caseId={caseRow?.id || caseId}
+            caseCode={caseRow?.case_code}
+            childName={caseRow?.child_name}
+            variant="admin"
+          />
+        </div>
       )}
+
+      {tab === 'iep' && can('iep.read') && !isReportsEngineActive() && !revampActive && (
+        <IepBuilderPanel caseId={caseRow?.id || caseId} />
+      )}
+
+      {tab === 'iep' && can('iep.read') && !isReportsEngineActive() && revampActive && (
+        <IepSupportPlanBuilder caseId={caseRow?.id || caseId} activeSection="goals" onSectionChange={() => {}} />
+      )}
+
+      {tab === 'documents' && revampActive ? (
+        <EvidenceDrivePanel caseId={Number(caseRow?.id || caseId)} variant="admin" />
+      ) : null}
+
+      {tab === 'documents' && !revampActive ? (
+        <CaseDocumentsPanel caseId={Number(caseRow?.id || caseId)} variant="admin" />
+      ) : null}
 
       {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
 

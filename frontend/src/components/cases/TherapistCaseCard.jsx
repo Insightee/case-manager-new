@@ -40,8 +40,8 @@ function IconInfo() {
 export function TherapistCaseCard({ data }) {
   const accent = data.borderAccent || 'blue'
   const detailTo = `/therapist/cases/${data.id}`
-  const logTo = `/therapist/cases/${data.id}?tab=sessions`
-  const reportTo = `/therapist/reports?case_id=${data.id}`
+  const logTo = '/therapist/logs'
+  const reportTo = `/therapist/cases/${data.id}?tab=reports&section=dashboard`
   const bookingTo = `/therapist/cases/${data.id}?tab=overview`
   const bookingWhen = data.nextBooking
     ? formatScheduleWhen({

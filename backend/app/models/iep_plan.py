@@ -21,7 +21,12 @@ class IepPlanStatus(str, enum.Enum):
 
 
 class IepPlan(Base):
-    """Structured IEP document built by case manager; may link to uploaded PDF attachment."""
+    """Structured active IEP plan (goals, strategies, domains).
+
+    Plan data editor — not the report lifecycle. Report approval, versioning,
+    and parent-facing document live on clinical_reports(type='iep').
+    See docs/REPORT_ARCHITECTURE.md.
+    """
 
     __tablename__ = "iep_plans"
 

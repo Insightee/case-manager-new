@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
-import { formatDisplayDate } from '../../lib/datetime.js'
+import { formatDisplayDate, formatDateTimeIN } from '../../lib/datetime.js'
 import {
   formatClockRange,
   formatEditedRange,
@@ -248,13 +248,18 @@ export function SessionLogReadOnly({
   onClose,
   variant = 'therapist',
   hideHeader = false,
+  embed = false,
   className = '',
   onCommentCountChange,
 }) {
   const isAdmin = variant === 'admin'
   const displayName = childName || log?.child_name || caseCode || log?.case_code || 'Client'
   const timeRange = formatSessionTimeRange(session || log)
-  const rootClass = [isAdmin ? 'admin-session-log-detail' : 'ic-session-log-readonly', className]
+  const rootClass = [
+    isAdmin ? 'admin-session-log-detail' : 'ic-session-log-readonly',
+    embed ? 'ic-session-log-readonly--embed' : '',
+    className,
+  ]
     .filter(Boolean)
     .join(' ')
   const dlClass = isAdmin ? 'admin-session-log-detail__dl' : 'ic-session-log-readonly__dl'
@@ -286,12 +291,41 @@ export function SessionLogReadOnly({
           ) : null}
         </div>
       ) : null}
-      {!isAdmin && log?.approval_status === 'APPROVED' ? (
+      {!embed && !isAdmin && log?.approval_status === 'APPROVED' ? (
         <p className="ic-session-log-readonly__notice" role="status">
           Approved logs cannot be edited. Contact your case manager if something needs to change.
         </p>
       ) : null}
-      {!isAdmin && log?.approval_status === 'REJECTED' ? (
+      {embed && !isAdmin && log?.approval_status === 'REJECTED' ? (
+        <p className="ic-session-log-readonly__notice ic-session-log-readonly__notice--warn" role="status">
+          This log was rejected. Update the details below and resubmit for approval.
+        </p>
+      ) : null}
+      {embed && !isAdmin && log?.review_note ? (
+        <div className="ic-session-log-readonly__feedback ic-session-log-readonly__feedback--cm">
+          <p className="ic-session-log-readonly__feedback-label">Case manager note</p>
+          <p className="ic-session-log-readonly__feedback-body">{log.review_note}</p>
+        </div>
+      ) : null}
+      {embed && !isAdmin && (log?.parent_feedback || log?.parent_session_rating) ? (
+        <div className="ic-session-log-readonly__feedback ic-session-log-readonly__feedback--parent">
+          <p className="ic-session-log-readonly__feedback-label">Parent feedback</p>
+          {log.parent_session_rating ? (
+            <p className="ic-session-log-readonly__feedback-rating">
+              Session rating: {log.parent_session_rating}/5
+            </p>
+          ) : null}
+          {log.parent_feedback ? (
+            <p className="ic-session-log-readonly__feedback-body">{log.parent_feedback}</p>
+          ) : null}
+          {log.parent_feedback_at ? (
+            <p className="ic-session-log-readonly__feedback-meta">
+              {formatDateTimeIN(log.parent_feedback_at)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {!embed && !isAdmin && log?.approval_status === 'REJECTED' ? (
         <p className="ic-session-log-readonly__notice ic-session-log-readonly__notice--warn" role="status">
           This log was rejected.
           {log.review_note ? ` Note: ${log.review_note}` : ' Contact your case manager to discuss next steps.'}

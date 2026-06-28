@@ -37,6 +37,7 @@ class DailyLog(Base):
     observations: Mapped[Optional[str ]] = mapped_column(Text)
     follow_ups: Mapped[Optional[str]] = mapped_column(Text)
     parent_notes: Mapped[Optional[str ]] = mapped_column(Text)
+    parent_voice_attachment_id: Mapped[Optional[int]] = mapped_column(ForeignKey("attachments.id"), nullable=True)
     parent_session_rating: Mapped[Optional[int]] = mapped_column(Integer)
     parent_feedback: Mapped[Optional[str]] = mapped_column(Text)
     parent_feedback_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

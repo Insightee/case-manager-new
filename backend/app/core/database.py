@@ -12,6 +12,8 @@ _engine_kwargs: dict = {"pool_pre_ping": True, "connect_args": _connect_args}
 if not settings.is_sqlite:
     _engine_kwargs["pool_size"] = settings.db_pool_size
     _engine_kwargs["max_overflow"] = settings.db_max_overflow
+    # Fail fast when local Postgres/Docker is not running (avoids 30s login hangs).
+    _engine_kwargs["connect_args"] = {"connect_timeout": 5}
 
 engine = create_engine(settings.database_url, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -166,6 +168,8 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_backfill_updated_by_user_id INTEGER"))
             if "leave_year_snapshots" not in tp_cols:
                 conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN leave_year_snapshots JSON"))
+            if "approved_snapshot" not in tp_cols:
+                conn.execute(text("ALTER TABLE therapist_profiles ADD COLUMN approved_snapshot JSON"))
 
     if insp.has_table("therapist_leaves"):
         tl_cols = {c["name"] for c in insp.get_columns("therapist_leaves")}
@@ -205,6 +209,8 @@ def ensure_sqlite_schema_patches() -> None:
             "is_additional_visit": "BOOLEAN NOT NULL DEFAULT 0",
             "additional_visit_reason": "VARCHAR(64)",
             "resumed_count": "INTEGER NOT NULL DEFAULT 0",
+            "cancellation_reason": "VARCHAR(64)",
+            "data_quality_flag": "VARCHAR(64)",
         }
         for col, typedef in _session_integrity_cols.items():
             if col not in sess_cols:
@@ -367,6 +373,407 @@ def ensure_sqlite_schema_patches() -> None:
                         "ALTER TABLE daily_logs ADD COLUMN visibility_status VARCHAR(32) NOT NULL DEFAULT 'INTERNAL_ONLY'"
                     )
                 )
+            if "parent_voice_attachment_id" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN parent_voice_attachment_id INTEGER"))
+
+    if insp.has_table("session_goal_entries"):
+        sge_cols = {c["name"] for c in insp.get_columns("session_goal_entries")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("session_id", "INTEGER"),
+                ("case_id", "INTEGER"),
+                ("child_id", "INTEGER"),
+                ("created_by_user_id", "INTEGER"),
+                ("participation_score", "INTEGER"),
+                ("independence_score", "INTEGER"),
+                ("goal_achievement_score", "INTEGER"),
+                ("participation", "VARCHAR(64)"),
+                ("independence_support_needed", "VARCHAR(64)"),
+                ("goal_achievement", "VARCHAR(64)"),
+                ("activity_used", "TEXT"),
+                ("measurement_note", "TEXT"),
+                ("core_domains_json", "TEXT"),
+                ("core_environments_json", "TEXT"),
+                ("goal_repository_item_id", "INTEGER"),
+                ("evidence_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("clinical_extension_json", "TEXT"),
+            ):
+                if col not in sge_cols:
+                    conn.execute(text(f"ALTER TABLE session_goal_entries ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("strategy_use_events"):
+        sue_cols = {c["name"] for c in insp.get_columns("strategy_use_events")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("session_id", "INTEGER"),
+                ("case_id", "INTEGER"),
+                ("child_id", "INTEGER"),
+                ("goal_card_id", "INTEGER"),
+                ("goal_entry_id", "INTEGER"),
+                ("created_by_user_id", "INTEGER"),
+                ("environment", "VARCHAR(32)"),
+                ("activity_used", "TEXT"),
+                ("participation_score", "INTEGER"),
+                ("independence_score", "INTEGER"),
+                ("goal_achievement_score", "INTEGER"),
+                ("participation", "VARCHAR(64)"),
+                ("independence_support_needed", "VARCHAR(64)"),
+                ("goal_achievement", "VARCHAR(64)"),
+                ("strategy_feedback", "VARCHAR(32)"),
+                ("short_note", "TEXT"),
+                ("custom_strategy_id", "INTEGER"),
+                ("clinical_extension_json", "TEXT"),
+            ):
+                if col not in sue_cols:
+                    conn.execute(text(f"ALTER TABLE strategy_use_events ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("observation_checklists"):
+        oc_cols = {c["name"] for c in insp.get_columns("observation_checklists")}
+        if "clinical_report_id" not in oc_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE observation_checklists ADD COLUMN clinical_report_id INTEGER"))
+
+    if insp.has_table("goal_repository_items"):
+        gri_cols = {c["name"] for c in insp.get_columns("goal_repository_items")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("source_daily_log_id", "INTEGER"),
+                ("source_session_id", "INTEGER"),
+                ("review_note", "TEXT"),
+                ("core_domains_json", "TEXT"),
+                ("core_environments_json", "TEXT"),
+                ("baseline_state", "TEXT"),
+                ("desired_state", "TEXT"),
+                ("goal_statement", "TEXT"),
+                ("lifecycle_status", "VARCHAR(32)"),
+                ("source", "VARCHAR(32)"),
+                ("scope", "VARCHAR(32)"),
+                ("source_clinical_report_id", "INTEGER"),
+                ("metadata_json", "TEXT"),
+                ("last_reviewed_at", "DATETIME"),
+            ):
+                if col not in gri_cols:
+                    conn.execute(text(f"ALTER TABLE goal_repository_items ADD COLUMN {col} {ddl}"))
+
+    if insp.has_table("strategy_repository_items"):
+        sri_cols = {c["name"] for c in insp.get_columns("strategy_repository_items")}
+        with engine.begin() as conn:
+            for col, ddl in (
+                ("domain_key", "VARCHAR(64)"),
+                ("environment_context", "VARCHAR(32)"),
+                ("linked_goal_card_id", "INTEGER"),
+                ("source_daily_log_id", "INTEGER"),
+                ("review_note", "TEXT"),
+                ("core_domains_json", "TEXT"),
+                ("core_environments_json", "TEXT"),
+                ("strategy_steps_json", "TEXT"),
+                ("expected_outcome", "TEXT"),
+                ("source", "VARCHAR(32)"),
+                ("scope", "VARCHAR(32)"),
+                ("source_clinical_report_id", "INTEGER"),
+                ("metadata_json", "TEXT"),
+                ("last_reviewed_at", "DATETIME"),
+            ):
+                if col not in sri_cols:
+                    conn.execute(text(f"ALTER TABLE strategy_repository_items ADD COLUMN {col} {ddl}"))
+
+    if not insp.has_table("clinical_reports"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_reports (
+                        id INTEGER PRIMARY KEY,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        child_id INTEGER REFERENCES children(id),
+                        report_type VARCHAR(32) NOT NULL,
+                        title VARCHAR(255) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'draft',
+                        current_version_id INTEGER,
+                        created_by_id INTEGER NOT NULL REFERENCES users(id),
+                        assigned_therapist_id INTEGER REFERENCES users(id),
+                        case_manager_id INTEGER REFERENCES users(id),
+                        due_date DATE,
+                        submitted_at DATETIME,
+                        approved_at DATETIME,
+                        returned_at DATETIME,
+                        approved_by_id INTEGER REFERENCES users(id),
+                        parent_visible_at DATETIME,
+                        locked_at DATETIME,
+                        metadata_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        archived_at DATETIME
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_clinical_reports_case_id ON clinical_reports (case_id)"))
+
+    if not insp.has_table("clinical_report_sections"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_report_sections (
+                        id INTEGER PRIMARY KEY,
+                        report_id INTEGER NOT NULL REFERENCES clinical_reports(id),
+                        section_key VARCHAR(64) NOT NULL,
+                        section_title VARCHAR(255) NOT NULL,
+                        section_order INTEGER NOT NULL DEFAULT 0,
+                        structured_data_json TEXT,
+                        narrative_text TEXT,
+                        internal_notes TEXT,
+                        completion_status VARCHAR(32) NOT NULL DEFAULT 'not_started',
+                        visibility VARCHAR(32) NOT NULL DEFAULT 'clinical_team',
+                        evidence_refs_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_clinical_report_sections_report_id ON clinical_report_sections (report_id)")
+            )
+
+    if not insp.has_table("clinical_report_evidence"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_report_evidence (
+                        id INTEGER PRIMARY KEY,
+                        report_id INTEGER NOT NULL REFERENCES clinical_reports(id),
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        source_type VARCHAR(64) NOT NULL,
+                        source_id INTEGER,
+                        section_key VARCHAR(64),
+                        evidence_label VARCHAR(255),
+                        visibility VARCHAR(32) NOT NULL DEFAULT 'clinical_team',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("clinical_report_review_events"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_report_review_events (
+                        id INTEGER PRIMARY KEY,
+                        report_id INTEGER NOT NULL REFERENCES clinical_reports(id),
+                        actor_id INTEGER NOT NULL REFERENCES users(id),
+                        actor_role VARCHAR(64),
+                        event_type VARCHAR(32) NOT NULL,
+                        comment TEXT,
+                        metadata_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("clinical_report_versions"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_report_versions (
+                        id INTEGER PRIMARY KEY,
+                        report_id INTEGER NOT NULL REFERENCES clinical_reports(id),
+                        version_number INTEGER NOT NULL DEFAULT 1,
+                        created_by_id INTEGER NOT NULL REFERENCES users(id),
+                        status VARCHAR(32) NOT NULL,
+                        snapshot_json TEXT,
+                        change_reason TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("repository_review_events"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE repository_review_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        item_type VARCHAR(16) NOT NULL,
+                        item_id INTEGER NOT NULL,
+                        action VARCHAR(32) NOT NULL,
+                        actor_user_id INTEGER NOT NULL REFERENCES users(id),
+                        note TEXT,
+                        merged_into_id INTEGER,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_repository_review_events_item "
+                    "ON repository_review_events (item_type, item_id)"
+                )
+            )
+
+    if not insp.has_table("strategy_repository_stats"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE strategy_repository_stats (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        strategy_repository_item_id INTEGER NOT NULL REFERENCES strategy_repository_items(id),
+                        goal_domain VARCHAR(64),
+                        support_need VARCHAR(64),
+                        environment_context VARCHAR(32),
+                        support_level_tier VARCHAR(32),
+                        total_uses INTEGER NOT NULL DEFAULT 0,
+                        helpful_count INTEGER NOT NULL DEFAULT 0,
+                        partly_helpful_count INTEGER NOT NULL DEFAULT 0,
+                        not_helpful_count INTEGER NOT NULL DEFAULT 0,
+                        child_rejected_count INTEGER NOT NULL DEFAULT 0,
+                        needs_adaptation_count INTEGER NOT NULL DEFAULT 0,
+                        adapted_count INTEGER NOT NULL DEFAULT 0,
+                        last_used_at DATETIME,
+                        evidence_strength VARCHAR(32),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_strategy_repository_stats_item_facets "
+                    "ON strategy_repository_stats (strategy_repository_item_id, goal_domain, support_need, environment_context, support_level_tier)"
+                )
+            )
+
+    if not insp.has_table("strategy_recommendation_feedback"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE strategy_recommendation_feedback (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        child_id INTEGER REFERENCES children(id),
+                        goal_repository_item_id INTEGER REFERENCES goal_repository_items(id),
+                        goal_card_id INTEGER REFERENCES iep_goal_cards(id),
+                        strategy_repository_item_id INTEGER REFERENCES strategy_repository_items(id),
+                        recommendation_source VARCHAR(32) NOT NULL DEFAULT 'library_match',
+                        feedback_status VARCHAR(32) NOT NULL,
+                        adaptation_text TEXT,
+                        dismissal_reason TEXT,
+                        created_by_user_id INTEGER NOT NULL REFERENCES users(id),
+                        created_by_role VARCHAR(32),
+                        source_context_json TEXT,
+                        parent_visible INTEGER NOT NULL DEFAULT 0,
+                        review_status VARCHAR(32),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("clinical_review_queue_items"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_review_queue_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        item_type VARCHAR(64) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                        priority VARCHAR(16) NOT NULL DEFAULT 'normal',
+                        source_case_id INTEGER NOT NULL REFERENCES cases(id),
+                        source_goal_id INTEGER,
+                        source_strategy_id INTEGER,
+                        linked_library_goal_id INTEGER,
+                        linked_library_strategy_id INTEGER,
+                        source_entity_kind VARCHAR(32),
+                        source_entity_id INTEGER,
+                        assigned_to_user_id INTEGER REFERENCES users(id),
+                        reviewer_user_id INTEGER REFERENCES users(id),
+                        reviewer_note TEXT,
+                        action_payload_json TEXT,
+                        title VARCHAR(255),
+                        summary TEXT,
+                        parent_safe INTEGER NOT NULL DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        resolved_at DATETIME
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("clinical_review_queue_events"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE clinical_review_queue_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        queue_item_id INTEGER NOT NULL REFERENCES clinical_review_queue_items(id),
+                        actor_user_id INTEGER NOT NULL REFERENCES users(id),
+                        old_status VARCHAR(32),
+                        new_status VARCHAR(32) NOT NULL,
+                        action VARCHAR(32) NOT NULL,
+                        note TEXT,
+                        payload_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("parent_goal_inputs"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE parent_goal_inputs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        goal_ref VARCHAR(64) NOT NULL,
+                        input_type VARCHAR(64) NOT NULL,
+                        comment TEXT,
+                        parent_user_id INTEGER NOT NULL REFERENCES users(id),
+                        review_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("monthly_report_evidence_snapshots"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE monthly_report_evidence_snapshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        report_id INTEGER,
+                        clinical_report_id INTEGER REFERENCES clinical_reports(id),
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        month VARCHAR(7) NOT NULL,
+                        evidence_json TEXT NOT NULL,
+                        source_hash VARCHAR(64) NOT NULL,
+                        compiler_version VARCHAR(16) NOT NULL DEFAULT '1.0.0',
+                        generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        generated_by_user_id INTEGER REFERENCES users(id)
+                    )
+                    """
+                )
+            )
 
     if insp.has_table("support_tickets"):
         t_cols = {c["name"] for c in insp.get_columns("support_tickets")}

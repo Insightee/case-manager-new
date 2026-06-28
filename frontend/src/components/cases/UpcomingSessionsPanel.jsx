@@ -41,7 +41,7 @@ export function UpcomingSessionsPanel({ items = [], loading = false }) {
           {preview.map((item) => (
             <li key={item.key}>
               <Link
-                to={`/therapist/cases/${item.caseId}?tab=sessions`}
+                to="/therapist/logs"
                 className={`ic-upcoming__card${isToday(item.date) ? ' ic-upcoming__card--today' : ''}`}
               >
                 <div className="ic-upcoming__card-top">

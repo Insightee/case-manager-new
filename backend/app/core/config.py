@@ -23,7 +23,11 @@ def _normalize_database_url(url: str) -> str:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", ".env.local"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_env: str = "development"
     expose_db_errors: bool = False
@@ -38,6 +42,20 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = 7
     jwt_refresh_remember_days: int = 90
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    AI_ENABLED: bool = False
+    AI_PROVIDER: str = "mock"
+    AI_DEFAULT_MODEL: str = "mock-v1"
+    INSIGHTS_MODEL: str = ""
+    SESSION_LOG_MODEL: str = ""
+    REPORT_MODEL: str = ""
+    OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    EMBEDDING_PROVIDER: str = "none"
+    EMBEDDING_MODEL: str = ""
+    AI_MONTHLY_BUDGET_INR: float = 0
+    AI_DAILY_BUDGET_INR: float = 0
+    GOALS_STRATEGIES_ENGINE_V2: bool = True
+    MONTHLY_EVIDENCE_V2: bool = False
     # Optional regex for extra browser origins (Vercel preview URLs). In production, a safe
     # default for insightes-projects frontend previews is applied when this is unset.
     cors_origin_regex: str = ""
@@ -51,6 +69,11 @@ class Settings(BaseSettings):
     ticket_attachment_max_files: int = 3
     case_document_max_bytes: int = 5 * 1024 * 1024
     billing_ledger_drafts: bool = True
+    # Staged module rollout — default off for production safety
+    enable_reports: bool = False
+    enable_billing: bool = False
+    enable_clinical_brain: bool = False
+    enable_report_generation: bool = False
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).

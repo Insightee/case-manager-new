@@ -13,4 +13,6 @@ PROGRESS_SUB_CATEGORIES = [
     ("TERMINATION", "Termination report"),
     ("ANNUAL", "Annual progress report"),
     ("MILESTONE", "Milestone review"),
+    ("SIX_MONTH", "6-month review"),
+    ("HANDOVER", "Handover report"),
 ]

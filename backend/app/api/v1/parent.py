@@ -39,6 +39,7 @@ from app.core.config import settings
 from app.schemas.parent_home import ParentHomeResponse
 from app.schemas.session_absence import SessionAbsenceListResponse
 from app.schemas.iep_plan import IepPlanSuggestionCreate
+from app.schemas.clinical_brain import ParentGoalInputCreate
 from app.services import (
     address_service,
     appointment_booking_service as appt_booking,
@@ -288,6 +289,36 @@ def parent_case_detail(case_id: int, user: User = Depends(get_current_user), db:
     if not case.child:
         db.refresh(case, ["child"])
     return parent_service.parent_case_payload(db, case)
+
+
+@router.get("/cases/{case_id}/parent-safe-goals")
+def parent_safe_goals(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.services import parent_safe_goals_service as psg_svc
+
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    return {"items": psg_svc.list_parent_safe_goals(db, case_id)}
+
+
+@router.post("/cases/{case_id}/goal-inputs", status_code=201)
+def parent_goal_input(
+    case_id: int,
+    payload: ParentGoalInputCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import parent_goal_input_service as pgi_svc
+
+    _require_parent(user)
+    case = _parent_case_or_404(db, user, case_id)
+    return pgi_svc.create_parent_goal_input(
+        db,
+        case=case,
+        user=user,
+        goal_ref=payload.goal_ref,
+        input_type=payload.input_type,
+        comment=payload.comment,
+    )
 
 
 @router.patch("/cases/{case_id}/service-address")
@@ -1183,6 +1214,36 @@ def parent_iep_plan_suggestion(
         raise HTTPException(status_code=400, detail=str(e))
     db.commit()
     return {"status": plan.status, "suggestions": iep_svc.plan_to_dict(db, plan, user, include_context=False)["suggestions"]}
+
+
+@router.post("/cases/{case_id}/iep-inputs")
+def parent_clinical_iep_input(
+    case_id: int,
+    payload: IepPlanSuggestionCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.clinical_report import ClinicalReportStatus
+    from app.services import iep_report_service as iep_svc
+    from app.services import report_engine_service as re_svc
+
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    report = re_svc.get_active_iep_report(db, case_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="IEP plan not available")
+    if report.status not in (
+        ClinicalReportStatus.APPROVED.value,
+        ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value,
+        ClinicalReportStatus.LOCKED.value,
+    ):
+        raise HTTPException(status_code=404, detail="IEP plan not available for input")
+    try:
+        entry = iep_svc.submit_parent_input(db, report, user, payload.body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return entry
 
 
 @router.get("/reports")

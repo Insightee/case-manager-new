@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>IEP Clinical Suite - Aarav M. Logs</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@600;700;800&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;family=JetBrains+Mono:wght@100..900&amp;family=Manrope:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-surface": "#1a1c1c",
+                    "background": "#f9f9f9",
+                    "surface-container-lowest": "#ffffff",
+                    "secondary-fixed": "#c3ecd7",
+                    "surface-tint": "#50625a",
+                    "primary-fixed-dim": "#b7cbc1",
+                    "tertiary-container": "#002114",
+                    "primary": "#000000",
+                    "secondary-fixed-dim": "#a8cfbc",
+                    "inverse-surface": "#2f3131",
+                    "on-surface-variant": "#424845",
+                    "on-error-container": "#93000a",
+                    "secondary": "#416656",
+                    "error": "#ba1a1a",
+                    "surface-bright": "#f9f9f9",
+                    "on-secondary-fixed-variant": "#294e3f",
+                    "on-primary-container": "#75887f",
+                    "surface-container-highest": "#e2e2e2",
+                    "on-secondary-fixed": "#002115",
+                    "tertiary-fixed-dim": "#68dba9",
+                    "surface-variant": "#e2e2e2",
+                    "secondary-container": "#c3ecd7",
+                    "inverse-primary": "#b7cbc1",
+                    "on-tertiary-fixed": "#002114",
+                    "on-error": "#ffffff",
+                    "surface-dim": "#dadada",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "on-primary-fixed-variant": "#394a43",
+                    "surface": "#f9f9f9",
+                    "outline": "#737875",
+                    "tertiary": "#000000",
+                    "on-secondary-container": "#476c5b",
+                    "error-container": "#ffdad6",
+                    "on-tertiary-container": "#069669",
+                    "surface-container-low": "#f3f3f4",
+                    "on-tertiary-fixed-variant": "#005137",
+                    "on-primary": "#ffffff",
+                    "on-background": "#1a1c1c",
+                    "on-primary-fixed": "#0e1f19",
+                    "tertiary-fixed": "#85f8c4",
+                    "surface-container-high": "#e8e8e8",
+                    "surface-container": "#eeeeee",
+                    "outline-variant": "#c2c8c3",
+                    "primary-fixed": "#d3e7dd",
+                    "primary-container": "#0e1f19",
+                    "inverse-on-surface": "#f0f1f1"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "margin-mobile": "16px",
+                    "gutter": "24px",
+                    "sidebar-width": "280px",
+                    "margin-desktop": "40px",
+                    "base": "8px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Manrope"],
+                    "headline-lg": ["Manrope"],
+                    "body-md": ["Inter"],
+                    "headline-lg-mobile": ["Manrope"],
+                    "label-sm": ["JetBrains Mono"],
+                    "body-lg": ["Inter"]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #f9f9f9; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .forest-sidebar { background-color: #0b1c16; }
+        .glass-overlay { backdrop-filter: blur(8px); background: rgba(255, 255, 255, 0.7); }
+        .tab-active { border-bottom: 2px solid #000000; color: #000000; font-weight: 600; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="text-on-surface">
+<!-- Top Navigation -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-8 h-16 bg-surface-container-lowest shadow-sm">
+<div class="flex items-center gap-4">
+<span class="text-headline-md font-headline-md font-bold text-primary">IEP Clinical Suite</span>
+<div class="h-8 w-[1px] bg-outline-variant mx-2"></div>
+<div class="flex items-center bg-surface-container-low px-4 py-2 rounded-full border border-outline-variant">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px] mr-2">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body-md w-64" placeholder="Search patient or record..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-body-md font-body-md text-on-surface-variant">Patient: Aarav M.</span>
+<button class="p-2 rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined">help</span>
+</button>
+<div class="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center border border-outline-variant">
+<span class="text-on-secondary-fixed font-bold">JD</span>
+</div>
+</div>
+</header>
+<!-- Side Navigation -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] w-64 forest-sidebar flex flex-col py-6">
+<div class="px-6 mb-8">
+<div class="text-label-sm uppercase tracking-wider text-primary-fixed-dim opacity-60 mb-2">Clinical Portal</div>
+<div class="flex items-center gap-3 p-3 bg-white/10 rounded-xl border border-white/5">
+<div class="w-10 h-10 rounded-lg bg-secondary-fixed-dim flex items-center justify-center">
+<span class="material-symbols-outlined text-on-secondary-fixed">clinical_notes</span>
+</div>
+<div>
+<div class="text-white text-body-md font-semibold">Case Manager</div>
+<div class="text-primary-fixed-dim text-[12px]">IEP Progress 65%</div>
+</div>
+</div>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-white/70 hover:bg-white/10 transition-all" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-body-md">Overview</span>
+</a>
+<!-- ACTIVE TAB -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl bg-white text-on-surface font-semibold shadow-md transform scale-[0.98]" href="#">
+<span class="material-symbols-outlined">folder_shared</span>
+<span class="text-body-md">My Cases</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-white/70 hover:bg-white/10 transition-all" href="#">
+<span class="material-symbols-outlined">visibility</span>
+<span class="text-body-md">Observations</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-white/70 hover:bg-white/10 transition-all" href="#">
+<span class="material-symbols-outlined">assignment</span>
+<span class="text-body-md">Goals &amp; Metrics</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-white/70 hover:bg-white/10 transition-all" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="text-body-md">Session Logs</span>
+</a>
+</nav>
+<div class="px-4 mt-auto border-t border-white/10 pt-6 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/10" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-body-md">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:bg-white/10" href="#">
+<span class="material-symbols-outlined">support</span>
+<span class="text-body-md">Support</span>
+</a>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="ml-64 mt-16 p-8 min-h-screen">
+<!-- Client Header -->
+<div class="flex flex-col gap-6 mb-8">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-4">
+<div class="w-16 h-16 rounded-2xl bg-secondary-container flex items-center justify-center text-secondary font-bold text-headline-md border border-outline-variant">AM</div>
+<div>
+<div class="flex items-center gap-3">
+<h1 class="text-headline-lg font-headline-lg text-primary">Aarav M.</h1>
+<span class="px-3 py-1 bg-secondary-fixed text-on-secondary-fixed-variant text-label-sm rounded-full font-bold">ACTIVE</span>
+</div>
+<p class="text-body-md text-on-surface-variant">ID: IC-2026-041 • <span class="font-medium">Shadow Support</span></p>
+</div>
+</div>
+<div class="flex gap-3">
+<button class="flex items-center gap-2 px-6 py-2.5 rounded-full border border-outline text-on-surface hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+<span class="font-medium">Request change</span>
+</button>
+<button class="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary text-on-primary hover:opacity-90 transition-all shadow-md">
+<span class="material-symbols-outlined text-[18px]">add</span>
+<span class="font-medium">New Session Log</span>
+</button>
+</div>
+</div>
+<!-- Case Tabs -->
+<div class="flex border-b border-outline-variant overflow-x-auto hide-scrollbar">
+<button class="px-6 py-3 text-on-surface-variant hover:text-primary transition-all">Overview</button>
+<button class="px-6 py-3 text-on-surface-variant hover:text-primary transition-all">Reports</button>
+<button class="px-6 py-3 text-on-surface-variant hover:text-primary transition-all">Goals</button>
+<button class="px-6 py-3 text-on-surface-variant hover:text-primary transition-all">Strategies</button>
+<button class="px-6 py-3 tab-active">Logs</button>
+<button class="px-6 py-3 text-on-surface-variant hover:text-primary transition-all">Insights</button>
+<button class="px-6 py-3 text-on-surface-variant hover:text-primary transition-all">Documents</button>
+<button class="px-6 py-3 text-on-surface-variant hover:text-primary transition-all">Contact Support</button>
+</div>
+</div>
+<!-- Sub-header & Action Bar -->
+<div class="mb-8">
+<h2 class="text-headline-md font-headline-md text-primary">Client Logs</h2>
+<p class="text-body-md text-on-surface-variant mt-1">Review session notes, goal evidence, strategy use and patterns for Aarav M.</p>
+<!-- Filter Chips -->
+</div>
+<!-- Main Grid -->
+<div class="grid grid-cols-12 gap-8 items-start">
+<!-- Left Column: Wide -->
+<div class="col-span-12 space-y-8">
+<!-- Month Summary Card -->
+<section class="bg-surface-container-lowest rounded-[24px] border border-outline-variant p-6 shadow-sm cursor-pointer">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-body-lg font-bold">Month Summary: June</h3>
+<span class="text-label-sm text-on-surface-variant">June 1 - June 24</span>
+<button class="text-label-sm font-bold text-secondary hover:underline ml-4">View Details</button></div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<div class="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/50">
+<div class="text-label-sm text-on-surface-variant mb-1 uppercase tracking-tighter">Total Sessions</div>
+<div class="text-headline-md font-bold text-primary">18</div>
+</div>
+<div class="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/50">
+<div class="text-label-sm text-on-surface-variant mb-1 uppercase tracking-tighter">Logs Submitted</div>
+<div class="text-headline-md font-bold text-on-tertiary-container">16</div>
+</div>
+<div class="p-4 bg-error-container rounded-2xl border border-error/20">
+<div class="text-label-sm text-on-error-container mb-1 uppercase tracking-tighter">Missing Logs</div>
+<div class="text-headline-md font-bold text-error">2</div>
+</div>
+<div class="p-4 bg-secondary-container rounded-2xl border border-secondary/20">
+<div class="text-label-sm text-on-secondary-container mb-1 uppercase tracking-tighter">Avg Progress</div>
+<div class="text-headline-md font-bold text-secondary">82%</div>
+</div>
+</div>
+</section><div class="flex flex-wrap items-center justify-between gap-4 mt-8 mb-4"><div class="flex items-center gap-4 flex-1 min-w-[300px]"><div class="flex items-center bg-surface-container-lowest border border-outline-variant px-4 py-2 rounded-xl"><span class="font-medium">June 2026</span><span class="material-symbols-outlined ml-2 text-on-surface-variant">keyboard_arrow_down</span></div><div class="flex-1 flex items-center bg-surface-container-lowest border border-outline-variant px-4 py-2 rounded-xl"><span class="material-symbols-outlined text-on-surface-variant text-[20px] mr-2">search</span><input class="bg-transparent border-none focus:ring-0 text-body-md w-full" placeholder="Search logs..." type="text"/></div></div><div class="flex gap-2"><button class="px-4 py-1.5 bg-primary text-white rounded-full text-label-sm">All</button><button class="px-4 py-1.5 bg-surface-container-lowest border border-outline-variant text-on-surface-variant rounded-full text-label-sm hover:border-primary">Missing</button><button class="px-4 py-1.5 bg-surface-container-lowest border border-outline-variant text-on-surface-variant rounded-full text-label-sm hover:border-primary">Needs Review</button></div></div><section class="bg-[#0b1c16] text-white rounded-[32px] p-8 shadow-xl mb-8"><div class="flex items-center justify-between mb-4"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-secondary-fixed">auto_awesome</span><h3 class="text-body-lg font-bold">Clinical Insights</h3></div><div class="flex gap-2"><button class="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20" title="Download PDF"><span class="material-symbols-outlined">picture_as_pdf</span></button><button class="flex items-center gap-2 px-4 py-2 bg-secondary-fixed text-on-secondary-fixed-variant rounded-xl text-[12px] font-bold hover:opacity-90"><span class="material-symbols-outlined text-[18px]">auto_awesome</span>Generate Insights</button></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div class="bg-white/10 rounded-2xl p-4 border border-white/10"><div class="text-[11px] uppercase font-bold text-primary-fixed-dim opacity-70 mb-1">Key Pattern</div><p class="text-body-md text-secondary-fixed">Visual preparation appears helpful during transition cycles. Aarav is 40% more likely to transition smoothly.</p></div><div class="flex items-center justify-center border border-dashed border-white/20 rounded-2xl p-4"><p class="text-white/40 text-label-sm italic">Click 'Generate' for updated clinical analysis</p></div></div></section>
+<!-- Goal Evidence Snapshot -->
+<section>
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-body-lg font-bold">Goal Evidence Snapshot</h3>
+<button class="text-label-sm font-bold text-secondary hover:underline">View goal tracking details</button>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<div class="bg-white p-5 rounded-2xl border border-outline-variant flex justify-between items-center group hover:shadow-md transition-all">
+<div>
+<div class="text-body-md font-semibold text-primary">Functional Communication</div>
+<div class="text-label-sm text-on-surface-variant mt-1">12 instances recorded</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-on-tertiary-container font-bold text-body-md">+14%</span>
+<div class="w-12 h-1.5 bg-surface-container rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-on-tertiary-container w-[75%]"></div>
+</div>
+</div>
+</div>
+<div class="bg-white p-5 rounded-2xl border border-outline-variant flex justify-between items-center group hover:shadow-md transition-all">
+<div>
+<div class="text-body-md font-semibold text-primary">Transition Participation</div>
+<div class="text-label-sm text-on-surface-variant mt-1">8 instances recorded</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-on-tertiary-container font-bold text-body-md">+5%</span>
+<div class="w-12 h-1.5 bg-surface-container rounded-full mt-1 overflow-hidden">
+<div class="h-full bg-on-tertiary-container w-[60%]"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Log Timeline -->
+<section class="space-y-6"><div class="flex items-center justify-between mb-6">
+<h3 class="text-body-lg font-bold">Recent Logs</h3>
+<div class="flex gap-2">
+<button class="p-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high">
+<span class="material-symbols-outlined">grid_view</span>
+</button>
+<button class="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-low">
+<span class="material-symbols-outlined">view_list</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+<!-- Expanded Day Tile -->
+<div class="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-2 bg-white rounded-[32px] border-2 border-secondary p-6 shadow-md relative">
+<div class="flex justify-between items-start mb-6"><div class="absolute top-6 right-12 flex items-center gap-1.5 px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded text-[10px] font-bold uppercase tracking-wider"><div class="w-1.5 h-1.5 rounded-full bg-secondary"></div>Submitted</div>
+<div class="flex items-center gap-4">
+<div class="w-14 h-14 rounded-2xl bg-secondary-container flex flex-col items-center justify-center border border-secondary/20">
+<span class="text-headline-md font-bold leading-none text-secondary">21</span>
+<span class="text-[11px] uppercase font-bold text-secondary">Jun</span>
+</div>
+<div>
+<h4 class="text-body-lg font-bold text-primary">Sunday Sessions</h4>
+<p class="text-label-sm text-on-surface-variant">1 Log Completed • Sarah Jenkins</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary">expand_more</span>
+</div>
+<div class="space-y-4 bg-surface-container-low/30 p-4 rounded-2xl border border-outline-variant/30">
+<div class="flex justify-between items-center">
+<span class="text-label-sm font-bold text-secondary uppercase tracking-wider">Afternoon Session</span>
+<span class="text-[11px] text-on-surface-variant">1:30 PM - 3:30 PM</span>
+</div>
+<p class="text-body-md text-on-surface leading-relaxed">Aarav demonstrated significant improvement in transitioning from the play area to the math circle today. Used visual schedule independently.</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-white border border-outline-variant/50 text-[11px] rounded-md">Goals: Comm, Social</span>
+<span class="px-2 py-1 bg-white border border-outline-variant/50 text-[11px] rounded-md">Strategies: Visuals</span>
+</div>
+<div class="pt-3 border-t border-outline-variant/30 flex justify-between items-center">
+<div class="flex -space-x-2">
+<div class="w-6 h-6 rounded-full border border-white bg-surface-dim overflow-hidden"><img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCMfOZT3vu-YDvjppBEGgvSV-PP9UN-Au3obuWUNKl8LLSaTH77e1a98tVtPAAogaKAz9hVlg6hBCkZGBhQXnUehf2ZcvQoqNCW5OOO5PmumNsY1WKj6LTopGLC0OLpLM4OZ0iU1ioXieetkctAExevwVw7ynRSQSwpm10SPCow8GSm8CmObuWcnYdTjoJO2BStO0yfz7domMdYoVWRI7SgB24-KmHDyQDNnrbBMniJfhtYmCbU_p_2n_ncFyJeuo4W_67I-FOKS4w"/></div>
+<div class="w-6 h-6 rounded-full border border-white bg-surface-dim overflow-hidden"><img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBlnJUs4j7WWy9U_XupdubELpbaUHpzL6tiSbN9Y8ACSJYdX-7ux0NVf7uEANjfpvSqxeW4I1tydCKm6T8Gu2nVtBrxSOrSzxA7-6NAxcsjzPDLyINIZNh9ImLBHx3jTEaI6_BN_8q6OUvlhmkL-RCzVHiw8woFM6PqS3HioQcoqDuoI-GHia27pks0pFRSNDITRly9p_oW-50NmYxWnXc9DjKQM8-0sv105MiFVKIIL-bjPg6IMfMnT_5WbacGIWpkj9cSv4BQr4c"/></div>
+</div>
+<button class="text-secondary font-bold text-[11px] hover:underline">Full Details</button>
+</div>
+</div>
+</div>
+<!-- Missing Log Tile -->
+<div class="bg-error-container/10 rounded-[32px] border-2 border-dashed border-error/30 p-6 flex flex-col items-center justify-center text-center hover:bg-error-container/20 transition-all cursor-pointer">
+<div class="w-14 h-14 rounded-2xl bg-error-container flex flex-col items-center justify-center mb-4">
+<span class="text-headline-md font-bold leading-none text-on-error-container">19</span>
+<span class="text-[11px] uppercase font-bold text-on-error-container">Jun</span>
+</div>
+<h4 class="text-body-md font-bold text-error mb-1">Missing Log</h4>
+<p class="text-[12px] text-on-error-container/70 mb-4">Morning Session</p>
+<button class="w-full py-2 bg-error text-white rounded-xl text-[11px] font-bold">LOG NOW</button>
+</div>
+<!-- Regular Day Tiles -->
+<div class="bg-white rounded-[32px] border border-outline-variant p-6 hover:shadow-md transition-all cursor-pointer">
+<div class="w-14 h-14 rounded-2xl bg-surface-container-low flex flex-col items-center justify-center mb-4 border border-outline-variant">
+<span class="text-headline-md font-bold leading-none">18</span>
+<span class="text-[11px] uppercase font-bold text-on-surface-variant">Jun</span>
+</div>
+<h4 class="text-body-md font-bold text-primary mb-1">Thursday</h4>
+<p class="text-[12px] text-on-surface-variant">2 Logs Completed</p>
+<div class="mt-2 flex items-center gap-1.5 px-2 py-0.5 bg-surface-container text-on-surface-variant rounded text-[10px] font-bold uppercase tracking-wider w-fit"><div class="w-1.5 h-1.5 rounded-full bg-outline"></div>Approved</div></div>
+<div class="bg-white rounded-[32px] border border-outline-variant p-6 hover:shadow-md transition-all cursor-pointer">
+<div class="w-14 h-14 rounded-2xl bg-surface-container-low flex flex-col items-center justify-center mb-4 border border-outline-variant">
+<span class="text-headline-md font-bold leading-none">17</span>
+<span class="text-[11px] uppercase font-bold text-on-surface-variant">Jun</span>
+</div>
+<h4 class="text-body-md font-bold text-primary mb-1">Wednesday</h4>
+<p class="text-[12px] text-on-surface-variant">1 Log Completed</p>
+<div class="mt-2 flex items-center gap-1.5 px-2 py-0.5 bg-error-container text-on-error-container rounded text-[10px] font-bold uppercase tracking-wider w-fit"><div class="w-1.5 h-1.5 rounded-full bg-error"></div>Needs Review</div></div>
+</div></section>
+</div>
+<!-- Right Column: Sticky Clinical Insights -->
+</div>
+</main>
+<!-- Micro-interaction Scripts -->
+<script>
+        document.querySelectorAll('button, a').forEach(el => {
+            el.addEventListener('mousedown', () => {
+                el.style.transform = 'scale(0.96)';
+            });
+            el.addEventListener('mouseup', () => {
+                el.style.transform = 'scale(1)';
+            });
+            el.addEventListener('mouseleave', () => {
+                el.style.transform = 'scale(1)';
+            });
+        });
+
+        // Simple mock for "Refreshing Insights"
+        const refreshBtn = document.querySelector('button:contains("Refresh")');
+        if(refreshBtn) {
+            refreshBtn.onclick = () => {
+                refreshBtn.innerHTML = '<span class="material-symbols-outlined animate-spin text-[16px]">sync</span>';
+                setTimeout(() => {
+                    refreshBtn.innerHTML = 'Refresh insights';
+                }, 1500);
+            };
+        }
+    </script>
+</body></html>

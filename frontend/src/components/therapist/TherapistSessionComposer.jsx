@@ -3,8 +3,8 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
 import { todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
-import { ExistingSessionForDateCard } from '../daily-logs/ExistingSessionForDateCard.jsx'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
+import { ClinicalSubTabs } from '../clinical-ui/ClinicalSubTabBar.jsx'
 // TODO: re-enable when therapist self-onboarding is allowed again
 // import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
 import { SessionAbsenceSheet } from './SessionAbsenceSheet.jsx'
@@ -40,21 +40,14 @@ export function TherapistSessionComposer({
   lockCaseLabel = '',
   upcomingSessions = [],
   disabled = false,
-  liveBlocked = false,
-  existingSessionConflict = null,
-  walkInConflict = null,
-  onExistingSessionAction,
-  onDismissExistingSessionConflict,
-  onDismissWalkInConflict,
-  onScheduledSessionExists,
-  onWalkInSessionConflict,
+  caseProfileMode = false,
   onSessionStarted,
   onManualSession,
   onError,
   onSelectedCaseChange,
 }) {
   const { user } = useAuth()
-  const [mode, setMode] = useState('live')
+  const [mode, setMode] = useState(caseProfileMode ? 'past' : 'live')
   const [cases, setCases] = useState([])
   const [caseId, setCaseId] = useState(lockCaseId ? String(lockCaseId) : '')
   const [walkInStart, setWalkInStart] = useState(nowTimeInput)
@@ -62,7 +55,6 @@ export function TherapistSessionComposer({
   const [walkInMode, setWalkInMode] = useState('HOME')
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState('')
-  const [composerSuccess, setComposerSuccess] = useState('')
   const [absenceSessionId, setAbsenceSessionId] = useState(null)
 
   useEffect(() => {
@@ -99,16 +91,11 @@ export function TherapistSessionComposer({
     onSelectedCaseChange?.(selectedCaseId)
   }, [selectedCaseId, onSelectedCaseChange])
 
-  const blockLive = liveBlocked || disabled
-  const absenceAllowedStatuses = new Set(['SCHEDULED', 'IN_PROGRESS'])
   const todaySessionsForCase = useMemo(() => {
     if (!selectedCaseId) return []
     const today = todayIsoIST()
     return upcomingSessions.filter(
-      (s) =>
-        s.case_id === selectedCaseId &&
-        s.scheduled_date === today &&
-        absenceAllowedStatuses.has(s.status),
+      (s) => s.case_id === selectedCaseId && s.scheduled_date === today && s.status === 'SCHEDULED',
     )
   }, [upcomingSessions, selectedCaseId])
 
@@ -118,54 +105,23 @@ export function TherapistSessionComposer({
       setLocalError('Choose a client first.')
       return
     }
-    if (busy) return
     setBusy(true)
     setLocalError('')
-    onDismissWalkInConflict?.()
     const today = todayIsoIST()
-    const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
-
     try {
-      let created
-      try {
-        created = await apiFetch('/api/v1/sessions', {
-          method: 'POST',
-          headers: { 'Idempotency-Key': idempotencyKey },
-          body: JSON.stringify({
-            case_id: selectedCaseId,
-            therapist_user_id: user?.id ?? 0,
-            scheduled_date: today,
-            start_time: walkInStart,
-            end_time: walkInEnd,
-            mode: walkInMode,
-            status: 'SCHEDULED',
-          }),
-        })
-      } catch (err) {
-        if (err?.status === 409 && err?.detail?.code === 'EXISTING_SESSION_FOR_DATE') {
-          const detail = err.detail
-          const status = detail.session_status || detail.status
-          if (status === 'SCHEDULED') {
-            onScheduledSessionExists?.({
-              sessionId: detail.existing_session_id || detail.session_id,
-              caseId: detail.case_id,
-              message:
-                detail.message ||
-                'A scheduled session already exists for this client today.',
-            })
-          } else {
-            onWalkInSessionConflict?.(detail)
-          }
-          return
-        }
-        throw err
-      }
-      const started = await apiFetch(`/api/v1/sessions/${created.id}/start`, {
+      const created = await apiFetch('/api/v1/sessions', {
         method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({
+          case_id: selectedCaseId,
+          therapist_user_id: user?.id ?? 0,
+          scheduled_date: today,
+          start_time: walkInStart,
+          end_time: walkInEnd,
+          mode: walkInMode,
+          status: 'SCHEDULED',
+        }),
       })
+      const started = await apiFetch(`/api/v1/sessions/${created.id}/start`, { method: 'POST' })
       if (started?.invite_sent && started?.invite_email) {
         onSessionStarted?.({
           inviteSent: true,
@@ -177,46 +133,71 @@ export function TherapistSessionComposer({
     } catch (err) {
       const msg = err.message || 'Could not start walk-in session'
       setLocalError(msg)
+      onError?.(msg)
     } finally {
       setBusy(false)
     }
   }
 
+  if (disabled) {
+    return (
+      <div className={`ic-session-composer ic-session-composer--muted${caseProfileMode ? ' ic-session-composer--case-profile' : ''}`}>
+        <p>End your current session before logging another visit for this case.</p>
+      </div>
+    )
+  }
+
+  const caseProfileTabs = [
+    { id: 'past', label: 'Log past session' },
+    { id: 'absence', label: 'Child absence' },
+  ]
+
   return (
-    <section className="ic-session-composer" aria-label="Add or start session">
+    <section
+      className={`ic-session-composer${caseProfileMode ? ' ic-session-composer--case-profile' : ''}`}
+      aria-label={caseProfileMode ? 'Log session for this case' : 'Add or start session'}
+    >
       <div className="ic-session-composer__head">
-        <h2 className="ic-session-composer__title">Session</h2>
-        <div className="ic-segment ic-segment--primary" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'live'}
-            className={mode === 'live' ? 'active' : ''}
-            onClick={() => setMode('live')}
-            disabled={blockLive}
-          >
-            Start now
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'past'}
-            className={mode === 'past' ? 'active' : ''}
-            onClick={() => setMode('past')}
-            disabled={blockLive}
-          >
-            Forgot to log
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'absence'}
-            className={mode === 'absence' ? 'active' : ''}
-            onClick={() => setMode('absence')}
-          >
-            Child absence
-          </button>
-        </div>
+        {!caseProfileMode ? <h2 className="ic-session-composer__title">Session</h2> : null}
+        {caseProfileMode ? (
+          <ClinicalSubTabs
+            tabs={caseProfileTabs}
+            activeTab={mode}
+            onTabChange={setMode}
+            ariaLabel="Session log type"
+            className="clinical-logs-composer__tabs"
+          />
+        ) : (
+          <div className="ic-segment ic-segment--primary" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'live'}
+              className={mode === 'live' ? 'active' : ''}
+              onClick={() => setMode('live')}
+            >
+              Start now
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'past'}
+              className={mode === 'past' ? 'active' : ''}
+              onClick={() => setMode('past')}
+            >
+              Forgot to log
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'absence'}
+              className={mode === 'absence' ? 'active' : ''}
+              onClick={() => setMode('absence')}
+            >
+              Child absence
+            </button>
+          </div>
+        )}
       </div>
 
       {localError ? <p className="ic-session-composer__error">{localError}</p> : null}
@@ -246,20 +227,11 @@ export function TherapistSessionComposer({
       ) : null}
       */}
 
-      {blockLive ? (
-        <p className="ic-session-composer__live-blocked" role="status">
-          A session is in progress — end it above to start another visit.
-        </p>
-      ) : null}
-
-      {mode === 'past' && !blockLive ? (
+      {mode === 'past' ? (
         <ForgotSessionForm
           fallbackCases={caseOptions}
           initialCaseId={lockCaseId ? String(lockCaseId) : caseId}
           submitting={busy}
-          existingSessionConflict={existingSessionConflict}
-          onExistingSessionAction={onExistingSessionAction}
-          onDismissExistingSessionConflict={onDismissExistingSessionConflict}
           onSubmit={async (payload) => {
             setBusy(true)
             try {
@@ -268,7 +240,7 @@ export function TherapistSessionComposer({
               setBusy(false)
             }
           }}
-          onCancel={() => setMode('live')}
+          onCancel={caseProfileMode ? undefined : () => setMode('live')}
         />
       ) : mode === 'absence' ? (
         <div className="ic-session-composer__body">
@@ -304,21 +276,15 @@ export function TherapistSessionComposer({
             disabled={busy}
             onSuccess={(msg) => {
               setLocalError('')
-              setComposerSuccess(msg || 'Child absent logged — parent or admin will review.')
               onSessionStarted?.({ message: msg })
             }}
             onError={(msg) => {
               setLocalError(msg)
-              setComposerSuccess('')
+              onError?.(msg)
             }}
           />
-          {composerSuccess ? (
-            <p className="ic-composer-inline-success" role="status">
-              {composerSuccess}
-            </p>
-          ) : null}
         </div>
-      ) : mode === 'live' && !blockLive ? (
+      ) : !caseProfileMode && mode === 'live' ? (
         <div className="ic-session-composer__body">
           {lockCaseId && lockCaseLabel ? (
             <p className="ic-session-composer__locked-client">
@@ -355,13 +321,7 @@ export function TherapistSessionComposer({
             </div>
           )}
 
-          {walkInConflict ? (
-            <ExistingSessionForDateCard
-              conflict={walkInConflict}
-              onAction={onExistingSessionAction}
-              onDismiss={onDismissWalkInConflict}
-            />
-          ) : selectedCaseId ? (
+          {selectedCaseId ? (
             <>
               <form className="ic-session-composer__walkin" onSubmit={handleWalkIn}>
                 <p className="ic-session-composer__walkin-title">

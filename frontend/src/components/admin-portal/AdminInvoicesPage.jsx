@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAdminHome } from '../../hooks/useAdminHome.js'
+import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
+import { isBillingModuleEnabled } from '../../lib/productFeatureFlags.js'
 import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
 import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
 import { AdminClientInvoicesTab } from './AdminClientInvoicesTab.jsx'
@@ -46,6 +48,13 @@ function financeWidgetFooter(widget) {
 }
 
 export function AdminInvoicesPage() {
+  if (!isBillingModuleEnabled()) {
+    return <PortalComingSoon variant="adminBilling" />
+  }
+  return <AdminInvoicesPageContent />
+}
+
+function AdminInvoicesPageContent() {
   const location = useLocation()
   const navigate = useNavigate()
   const { data: roleHome, isLoading: roleHomeLoading } = useAdminHome()

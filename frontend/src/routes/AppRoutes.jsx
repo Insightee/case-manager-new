@@ -16,7 +16,7 @@ import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.jsx'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage.jsx'
 import { TherapistDashboardPage } from '../pages/TherapistDashboardPage.jsx'
 import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
-import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
+import { CaseDetailRoute } from '../components/cases/CaseDetailRoute.jsx'
 import { DailyLogsPage } from '../components/daily-logs/DailyLogsPage.jsx'
 import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReportsPage.jsx'
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
@@ -28,8 +28,10 @@ import { NotificationCenterPage } from '../components/shared/NotificationCenterP
 import { RouteLoading } from '../components/shared/RouteLoading.jsx'
 import { PortalRouteError } from '../components/shared/PortalRouteError.jsx'
 
-const ReportEditPage = lazy(() =>
-  import('../components/reports/ReportEditPage.jsx').then((m) => ({ default: m.ReportEditPage }))
+const ReportsEditRouteGuard = lazy(() =>
+  import('../components/reports-engine/shell/ReportsEditRouteGuard.jsx').then((m) => ({
+    default: m.ReportsEditRouteGuard,
+  }))
 )
 const ParentPortalLayout = lazy(() =>
   import('./ParentPortalLayout.jsx').then((m) => ({ default: m.ParentPortalLayout }))
@@ -82,6 +84,41 @@ const AdminSessionLogsPage = lazy(() =>
 )
 const AdminReportsPage = lazy(() =>
   import('../components/admin-portal/AdminReportsPage.jsx').then((m) => ({ default: m.AdminReportsPage }))
+)
+const AdminClinicalDashboardPage = lazy(() =>
+  import('../components/admin-portal/AdminClinicalDashboardPage.jsx').then((m) => ({
+    default: m.AdminClinicalDashboardPage,
+  }))
+)
+const AdminGoalStrategyRepositoryPage = lazy(() =>
+  import('../components/admin-portal/AdminGoalStrategyRepositoryPage.jsx').then((m) => ({
+    default: m.AdminGoalStrategyRepositoryPage,
+  })),
+)
+const AdminGoalBankPage = lazy(() =>
+  import('../components/admin-portal/AdminGoalBankPage.jsx').then((m) => ({
+    default: m.AdminGoalBankPage,
+  })),
+)
+const AdminStrategyPoolPage = lazy(() =>
+  import('../components/admin-portal/AdminStrategyPoolPage.jsx').then((m) => ({
+    default: m.AdminStrategyPoolPage,
+  })),
+)
+const ClinicalBrainReviewQueuePage = lazy(() =>
+  import('../components/admin-portal/ClinicalBrainReviewQueuePage.jsx').then((m) => ({
+    default: m.ClinicalBrainReviewQueuePage,
+  })),
+)
+const AdminClinicalReferencesPage = lazy(() =>
+  import('../components/admin-portal/AdminClinicalReferencesPage.jsx').then((m) => ({
+    default: m.AdminClinicalReferencesPage,
+  }))
+)
+const AdminAiSettingsPage = lazy(() =>
+  import('../components/admin-portal/AdminAiSettingsPage.jsx').then((m) => ({
+    default: m.AdminAiSettingsPage,
+  }))
 )
 const AdminReportViewPage = lazy(() =>
   import('../components/admin-portal/AdminReportViewPage.jsx').then((m) => ({ default: m.AdminReportViewPage }))
@@ -233,14 +270,22 @@ export function AppRoutes() {
       >
         <Route index element={<TherapistDashboardPage />} />
         <Route path="cases" element={<MyCasesPage />} />
-        <Route path="cases/:caseId" element={<CaseDetailPage />} />
+        <Route path="cases/:caseId" element={<CaseDetailRoute />} />
+        <Route
+          path="cases/:caseId/reports/monthly/:reportId"
+          element={
+            <Lazy>
+              <ReportsEditRouteGuard />
+            </Lazy>
+          }
+        />
         <Route path="logs" element={<DailyLogsPage />} />
         <Route path="reports" element={<MonthlyReportsPage />} />
         <Route
           path="reports/edit/:reportId"
           element={
             <Lazy>
-              <ReportEditPage />
+              <ReportsEditRouteGuard />
             </Lazy>
           }
         />
@@ -423,6 +468,62 @@ export function AppRoutes() {
           }
         />
         <Route
+          path="clinical-dashboard"
+          element={
+            <Lazy>
+              <AdminClinicalDashboardPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="goal-strategy-repository"
+          element={
+            <Lazy>
+              <AdminGoalStrategyRepositoryPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="goal-bank"
+          element={
+            <Lazy>
+              <AdminGoalBankPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="strategy-pool"
+          element={
+            <Lazy>
+              <AdminStrategyPoolPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="clinical-review-queue"
+          element={
+            <Lazy>
+              <ClinicalBrainReviewQueuePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="clinical-references"
+          element={
+            <Lazy>
+              <AdminClinicalReferencesPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="ai-settings"
+          element={
+            <Lazy>
+              <AdminAiSettingsPage />
+            </Lazy>
+          }
+        />
+        <Route
           path="reports/view/:reportId"
           element={
             <Lazy>
@@ -434,7 +535,7 @@ export function AppRoutes() {
           path="reports/edit/:reportId"
           element={
             <Lazy>
-              <ReportEditPage />
+              <ReportsEditRouteGuard />
             </Lazy>
           }
         />

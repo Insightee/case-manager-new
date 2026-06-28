@@ -13,6 +13,7 @@ from app.models.report import ReportCategory
 from app.core.pagination import normalize_pagination, paginated_response
 from app.models.case import Case
 from app.models.child import Child
+from app.models.clinical_report import ClinicalReport, ClinicalReportType
 from app.models.report import MonthlyReport, ObservationReport, ParentReviewStatus, ReportStatus
 from app.models.review import Review, ReviewDecision
 from app.models.user import User
@@ -1012,3 +1013,59 @@ def staff_update_observation(
         report.status = ReportStatus.UNDER_REVIEW
     db.flush()
     return get_observation_detail(db, user, report_id)
+
+
+def list_clinical_iep_admin(
+    db: Session,
+    user: User,
+    *,
+    status: str | None = None,
+    case_id: int | None = None,
+    search: str | None = None,
+    queue_only: bool = False,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[AdminReportListItem], dict]:
+    """Clinical engine IEP reports (clinical_reports table)."""
+    stmt = (
+        select(ClinicalReport, Case, Child, User)
+        .join(Case, ClinicalReport.case_id == Case.id)
+        .outerjoin(Child, Case.child_id == Child.id)
+        .outerjoin(User, ClinicalReport.assigned_therapist_id == User.id)
+        .where(
+            ClinicalReport.report_type == ClinicalReportType.IEP.value,
+            ClinicalReport.archived_at.is_(None),
+        )
+    )
+    stmt = apply_case_scope(stmt, user)
+    if case_id is not None:
+        stmt = stmt.where(ClinicalReport.case_id == case_id)
+    if status:
+        stmt = stmt.where(ClinicalReport.status == status)
+    if queue_only:
+        stmt = stmt.where(ClinicalReport.status.in_(["submitted_for_review", "returned_for_changes"]))
+    if search:
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(or_(Case.case_code.ilike(like), Case.child_name.ilike(like), ClinicalReport.title.ilike(like)))
+    stmt = stmt.order_by(ClinicalReport.updated_at.desc())
+    rows, total = _paginate_joined(db, stmt, page=page, page_size=page_size)
+    items = [
+        AdminReportListItem(
+            report_type="iep",
+            id=report.id,
+            case_id=report.case_id,
+            case_code=case.case_code,
+            child_name=_child_name(case, child),
+            product_module=case.product_module,
+            therapist_user_id=report.assigned_therapist_id,
+            therapist_name=_therapist_name(therapist),
+            label=report.title or "IEP Support Plan",
+            status=report.status,
+            visibility_status=None,
+            content_preview=_preview(report.title),
+            category=None,
+            updated_at=report.updated_at or report.created_at,
+        )
+        for report, case, child, therapist in rows
+    ]
+    return items, paginated_response(items, total, page, page_size)

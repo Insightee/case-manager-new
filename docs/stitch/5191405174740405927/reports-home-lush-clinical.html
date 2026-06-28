@@ -1,0 +1,450 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>InsighteCase - Reports Home</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface": "#f9f9f9",
+            "secondary-fixed": "#c3ecd7",
+            "on-surface-variant": "#424845",
+            "on-primary-fixed-variant": "#394a43",
+            "secondary-fixed-dim": "#a8cfbc",
+            "tertiary": "#000000",
+            "surface-tint": "#50625a",
+            "surface-container": "#eeeeee",
+            "outline": "#737875",
+            "surface-bright": "#f9f9f9",
+            "inverse-surface": "#2f3131",
+            "inverse-primary": "#b7cbc1",
+            "primary-fixed": "#d3e7dd",
+            "on-secondary-container": "#476c5b",
+            "on-error": "#ffffff",
+            "background": "#f9f9f9",
+            "on-primary-container": "#75887f",
+            "inverse-on-surface": "#f0f1f1",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-high": "#e8e8e8",
+            "error": "#ba1a1a",
+            "on-error-container": "#93000a",
+            "on-tertiary-fixed-variant": "#005137",
+            "on-tertiary": "#ffffff",
+            "surface-variant": "#e2e2e2",
+            "on-secondary-fixed-variant": "#294e3f",
+            "primary": "#000000",
+            "on-primary": "#ffffff",
+            "error-container": "#ffdad6",
+            "on-secondary-fixed": "#002115",
+            "surface-container-highest": "#e2e2e2",
+            "surface-container-low": "#f3f3f4",
+            "on-tertiary-fixed": "#002114",
+            "secondary-container": "#c3ecd7",
+            "on-tertiary-container": "#069669",
+            "primary-fixed-dim": "#b7cbc1",
+            "primary-container": "#0e1f19",
+            "surface-dim": "#dadada",
+            "on-secondary": "#ffffff",
+            "outline-variant": "#c2c8c3",
+            "on-surface": "#1a1c1c",
+            "tertiary-container": "#002114",
+            "secondary": "#416656",
+            "tertiary-fixed": "#85f8c4",
+            "on-background": "#1a1c1c",
+            "tertiary-fixed-dim": "#68dba9",
+            "on-primary-fixed": "#0e1f19",
+            "indigo-primary": "#4f46e5", /* High-contrast primary for actions */
+            "forest-deep": "#0b1c16"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem",
+            "round-four": "1rem"
+          },
+          "spacing": {
+            "sidebar-width": "280px",
+            "margin-mobile": "16px",
+            "gutter": "24px",
+            "base": "8px",
+            "margin-desktop": "40px"
+          },
+          "fontFamily": {
+            "headline-lg-mobile": ["Manrope"],
+            "body-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-md": ["Manrope"],
+            "headline-lg": ["Manrope"],
+            "label-sm": ["JetBrains Mono"]
+          },
+          "fontSize": {
+            "headline-lg-mobile": ["30px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+            "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+            "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+            "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+            "headline-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .active-indicator {
+      position: relative;
+    }
+    .active-indicator::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 4px;
+      height: 24px;
+      background-color: #c3ecd7;
+      border-radius: 0 4px 4px 0;
+    }
+    body {
+      background-color: #f9f9f9;
+      color: #1a1c1c;
+      font-family: 'Inter', sans-serif;
+    }
+    .sidebar-bg {
+      background-color: #0b1c16;
+    }
+    .glass-overlay {
+      backdrop-filter: blur(8px);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .card-shadow {
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    }
+  </style>
+</head>
+<body class="flex min-h-screen">
+<!-- SideNavBar Component -->
+<aside class="sidebar-bg w-sidebar-width fixed inset-y-0 left-0 z-50 flex flex-col text-on-primary overflow-y-auto">
+<div class="px-6 py-8">
+<div class="flex items-center gap-3 mb-10">
+<div class="w-10 h-10 rounded-lg bg-secondary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-forest-deep" style="font-variation-settings: &quot;FILL&quot; 1;">medical_services</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md text-white tracking-tight">InsighteCase</h1>
+<p class="text-[10px] font-label-sm uppercase tracking-[0.2em] text-secondary-fixed-dim opacity-70">Clinical Portal</p>
+</div>
+</div>
+<nav class="space-y-1">
+<!-- Labels mapped from JSON instructions -->
+<a class="flex items-center gap-3 bg-secondary-container text-on-secondary-container rounded-lg px-4 py-3 active-indicator" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-medium">Reports Home</span>
+</a>
+<a class="flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/5 px-4 py-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">history_edu</span>
+<span class="">Session Logs</span>
+</a>
+<a class="flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/5 px-4 py-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">visibility</span>
+<span class="">Observations</span>
+</a>
+<a class="flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/5 px-4 py-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">track_changes</span>
+<span class="">Goals and Strategies</span>
+</a>
+<div class="pt-6 pb-2 px-4">
+<p class="text-[10px] font-label-sm uppercase tracking-[0.2em] text-white/40">Reports &amp; Docs</p>
+</div>
+<a class="flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/5 px-4 py-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">assignment</span>
+<span class="">Observation Report</span>
+</a>
+<a class="flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/5 px-4 py-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="">IEP</span>
+</a>
+<a class="flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/5 px-4 py-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">calendar_month</span>
+<span class="">Monthly Report</span>
+</a>
+<a class="flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/5 px-4 py-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">trending_up</span>
+<span class="">Progress Reports</span>
+</a>
+<a class="flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/5 px-4 py-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+<span class="">Documents</span>
+</a>
+</nav>
+</div>
+<div class="mt-auto p-6">
+<div class="bg-white/5 rounded-xl p-4 flex items-center gap-3">
+<img class="w-10 h-10 rounded-full object-cover" data-alt="A professional headshot of a female clinical director with a warm smile, wearing a professional dark blazer. She is in a bright, modern clinical office with soft lighting and minimalist decor. High-end, clean, and trustworthy aesthetic for a healthcare SaaS platform." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCg3MWUbhjaanun1d3cnWQKymyPK2gJDwGxEaDeTCzuynudWzlQK7osvLkEAUF-fJdy2qYdE5Z0Qx9Q0jf_3CwfJP8HVmUmJEbT23Cc6fzctefcoNSYdNxl6yjRhtghgNAhoY34FcsqIwXZ_uM8NZl5yctltMdUWnQfLPRLdmDBqY0rS_aDch11ahd6svUYxafRMyJHxcWejssgKt8bxOKeNiYfyrCzAlDfCAZQBc8shSTMOnqj6QyvHY5I8E8u8Du5euqpA4mQCH4">
+<div class="overflow-hidden">
+<p class="text-white text-sm font-semibold truncate">Dr. Sarah Chen</p>
+<p class="text-white/50 text-xs truncate">Clinical Director</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-sidebar-width flex-1 flex flex-col min-h-screen">
+<!-- TopNavBar Component -->
+<header class="h-16 bg-white border-b border-outline-variant flex items-center justify-between px-margin-desktop sticky top-0 z-40">
+<div class="flex items-center gap-6 flex-1">
+<h2 class="font-headline-md text-headline-sm text-on-surface">Reports Home</h2>
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-xl">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-full py-2 pl-10 pr-4 text-body-sm focus:ring-2 focus:ring-indigo-primary/20 transition-all outline-none" placeholder="Search cases, therapists, or IDs..." type="text">
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 pr-4 border-r border-outline-variant">
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+<button class="bg-indigo-primary text-white px-5 py-2.5 rounded-full font-semibold text-sm flex items-center gap-2 hover:bg-indigo-700 transition-all active:scale-95 shadow-sm" style="transform: scale(1);">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: &quot;FILL&quot; 1;">add</span>
+          Create New Case
+        </button>
+</div>
+</header>
+<div class="flex-1 p-margin-desktop space-y-gutter">
+<!-- Metrics Row (Reference Image 38) -->
+<section class="grid grid-cols-1 md:grid-cols-4 gap-6">
+<div class="bg-white p-6 rounded-round-four card-shadow border border-outline-variant flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-indigo-primary">
+<span class="material-symbols-outlined">edit_note</span>
+</div>
+<div>
+<p class="text-label-sm font-label-sm text-on-surface-variant uppercase">Drafts</p>
+<p class="text-headline-md font-headline-md">12</p>
+</div>
+</div>
+<div class="bg-white p-6 rounded-round-four card-shadow border border-outline-variant flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined">rate_review</span>
+</div>
+<div>
+<p class="text-label-sm font-label-sm text-on-surface-variant uppercase">Under Review</p>
+<p class="text-headline-md font-headline-md">08</p>
+</div>
+</div>
+<div class="bg-white p-6 rounded-round-four card-shadow border border-outline-variant flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-on-tertiary-container">
+<span class="material-symbols-outlined">check_circle</span>
+</div>
+<div>
+<p class="text-label-sm font-label-sm text-on-surface-variant uppercase">Published</p>
+<p class="text-headline-md font-headline-md">45</p>
+</div>
+</div>
+<div class="bg-white p-6 rounded-round-four card-shadow border border-outline-variant flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-error">
+<span class="material-symbols-outlined">warning</span>
+</div>
+<div>
+<p class="text-label-sm font-label-sm text-on-surface-variant uppercase">Overdue</p>
+<p class="text-headline-md font-headline-md text-error">03</p>
+</div>
+</div>
+</section>
+<!-- Case Grid Section -->
+<section>
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-headline-md text-headline-md text-on-surface">Active Cases</h3>
+<div class="flex gap-2">
+<button class="px-4 py-2 text-sm font-medium border border-outline-variant rounded-lg bg-white hover:bg-surface transition-colors">Filters</button>
+<button class="px-4 py-2 text-sm font-medium border border-outline-variant rounded-lg bg-white hover:bg-surface transition-colors">Sort: Recent</button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<!-- Empty State Slot -->
+
+<!-- Case Card: Aarav M. -->
+<article class="bg-white rounded-round-four card-shadow border border-outline-variant flex flex-col p-6 hover:shadow-lg transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div>
+<h4 class="font-headline-md text-lg text-on-surface">Aarav M.</h4>
+<p class="text-label-sm font-label-sm text-on-surface-variant">ID: #CL-2024-001</p>
+</div>
+<span class="bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded">Active</span>
+</div>
+<div class="space-y-3 mb-6 flex-grow">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">medical_information</span>
+<span class="text-body-md text-on-surface">Shadow Support</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">person</span>
+<span class="text-body-md text-on-surface-variant text-sm"><span class="font-semibold text-on-surface">Therapist:</span> Rohan J.</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">badge</span>
+<span class="text-body-md text-on-surface-variant text-sm"><span class="font-semibold text-on-surface">Manager:</span> Dr. Sarah Chen</span>
+</div>
+</div>
+<div class="space-y-4 pt-4 border-t border-outline-variant">
+<div>
+<div class="flex justify-between text-xs mb-1.5">
+<span class="font-medium text-on-surface">Observation / IEP Active</span>
+<span class="text-on-surface-variant">65%</span>
+</div>
+<div class="h-2 bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[65%] rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-error animate-pulse"></span>
+<span class="text-xs font-semibold text-error">Session log pending</span>
+</div>
+</div>
+<button class="mt-6 w-full py-3 bg-forest-deep text-white rounded-xl font-semibold hover:bg-opacity-90 transition-all flex items-center justify-center gap-2">
+              Open Case
+              <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</article>
+<!-- Case Card: Meera K. -->
+<article class="bg-white rounded-round-four card-shadow border border-outline-variant flex flex-col p-6 hover:shadow-lg transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div>
+<h4 class="font-headline-md text-lg text-on-surface">Meera K.</h4>
+<p class="text-label-sm font-label-sm text-on-surface-variant">ID: #CL-2024-042</p>
+</div>
+<span class="bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded">Active</span>
+</div>
+<div class="space-y-3 mb-6 flex-grow">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">hearing</span>
+<span class="text-body-md text-on-surface">Speech Therapy</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">person</span>
+<span class="text-body-md text-on-surface-variant text-sm"><span class="font-semibold text-on-surface">Therapist:</span> Ananya P.</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">badge</span>
+<span class="text-body-md text-on-surface-variant text-sm"><span class="font-semibold text-on-surface">Manager:</span> Dr. Sarah Chen</span>
+</div>
+</div>
+<div class="space-y-4 pt-4 border-t border-outline-variant">
+<div>
+<div class="flex justify-between text-xs mb-1.5">
+<span class="font-medium text-on-surface">Monthly Reporting</span>
+<span class="text-on-surface-variant">20%</span>
+</div>
+<div class="h-2 bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[20%] rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm text-on-surface-variant">calendar_today</span>
+<span class="text-xs font-semibold text-on-surface-variant">Monthly due: Jun 30</span>
+</div>
+</div>
+<button class="mt-6 w-full py-3 bg-forest-deep text-white rounded-xl font-semibold hover:bg-opacity-90 transition-all flex items-center justify-center gap-2" style="transform: scale(1);">
+              Open Case
+              <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</article>
+<!-- Case Card: Vivaan S. -->
+<article class="bg-white rounded-round-four card-shadow border border-outline-variant flex flex-col p-6 hover:shadow-lg transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<div>
+<h4 class="font-headline-md text-lg text-on-surface">Vivaan S.</h4>
+<p class="text-label-sm font-label-sm text-on-surface-variant">ID: #CL-2023-118</p>
+</div>
+<span class="bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded">Active</span>
+</div>
+<div class="space-y-3 mb-6 flex-grow">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">psychology</span>
+<span class="text-body-md text-on-surface">Counseling</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">person</span>
+<span class="text-body-md text-on-surface-variant text-sm"><span class="font-semibold text-on-surface">Therapist:</span> Vikram M.</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">badge</span>
+<span class="text-body-md text-on-surface-variant text-sm"><span class="font-semibold text-on-surface">Manager:</span> Dr. Sarah Chen</span>
+</div>
+</div>
+<div class="space-y-4 pt-4 border-t border-outline-variant">
+<div>
+<div class="flex justify-between text-xs mb-1.5">
+<span class="font-medium text-on-surface">Progress Review</span>
+<span class="text-on-surface-variant">95%</span>
+</div>
+<div class="h-2 bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[95%] rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm text-on-tertiary-container">task_alt</span>
+<span class="text-xs font-semibold text-on-tertiary-container">Review completed</span>
+</div>
+</div>
+<button class="mt-6 w-full py-3 bg-forest-deep text-white rounded-xl font-semibold hover:bg-opacity-90 transition-all flex items-center justify-center gap-2" style="transform: scale(1);">
+              Open Case
+              <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</article>
+</div>
+</section>
+<!-- Visual Context Placeholder for Session Logs (Ref Image 38) -->
+<section class="mt-12">
+<div class="bg-white rounded-round-four card-shadow border border-outline-variant overflow-hidden">
+
+
+</div>
+</section>
+</div>
+</main>
+<script>
+    // Micro-interactions for buttons
+    document.querySelectorAll('button').forEach(button => {
+      button.addEventListener('mousedown', () => {
+        button.style.transform = 'scale(0.97)';
+      });
+      button.addEventListener('mouseup', () => {
+        button.style.transform = 'scale(1)';
+      });
+      button.addEventListener('mouseleave', () => {
+        button.style.transform = 'scale(1)';
+      });
+    });
+
+    // Sidebar navigation hover effect
+    const navItems = document.querySelectorAll('nav a');
+    navItems.forEach(item => {
+      if(!item.classList.contains('active-indicator')) {
+        item.addEventListener('mouseenter', () => {
+          item.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+        });
+        item.addEventListener('mouseleave', () => {
+          item.style.backgroundColor = 'transparent';
+        });
+      }
+    });
+  </script>
+
+
+</body></html>

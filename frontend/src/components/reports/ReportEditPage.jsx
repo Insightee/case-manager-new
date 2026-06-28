@@ -6,11 +6,19 @@ import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../..
 import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
 import { ReportEditor } from './ReportEditor.jsx'
 import { ReportReferenceDocsPanel } from './ReportReferenceDocsPanel.jsx'
+import { MonthlyReportBuilderSections } from '../clinical/MonthlyReportBuilderSections.jsx'
+import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 import { ReportSaveMenu } from './ReportSaveMenu.jsx'
 import { SessionLogContextPanel } from './SessionLogContextPanel.jsx'
+import { ClinicalSnapshotReportPanel } from '../clinical/ClinicalSnapshotReportPanel.jsx'
 import './report-editor.css'
+import '../../styles/case-profile-v2.css'
 
 function reportsBase(pathname) {
+  const caseMatch = pathname.match(/\/therapist\/cases\/(\d+)\/reports\/monthly/)
+  if (caseMatch) {
+    return `/therapist/cases/${caseMatch[1]}?tab=reports&section=monthly`
+  }
   if (pathname.startsWith('/therapist')) return '/therapist/reports'
   return '/reports'
 }
@@ -400,7 +408,7 @@ export function ReportEditPage() {
       ) : (
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <Link to={base} className="text-sm font-semibold text-indigo-600 hover:underline">
+            <Link to={base} style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--clinical-purple)', textDecoration: 'none' }} onMouseOver={(e) => { e.currentTarget.style.textDecoration = 'underline' }} onMouseOut={(e) => { e.currentTarget.style.textDecoration = 'none' }}>
               ← Reports
             </Link>
             <h1 className="mt-2 text-xl font-bold text-slate-900">
@@ -426,39 +434,36 @@ export function ReportEditPage() {
       )}
 
       {report.reviewer_comment ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="cp-hint cp-hint--warn" style={{ borderRadius: '10px', marginBottom: '0.5rem' }}>
           <strong>Reviewer note:</strong> {report.reviewer_comment}
         </div>
       ) : null}
 
       {localDraft ? (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
-          Local draft from {localDraft.savedAt ? new Date(localDraft.savedAt).toLocaleString() : 'this device'}.
+        <div className="cp-hint" style={{ background: 'var(--clinical-purple-soft)', border: '1px solid #c4b5fd', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '0.5rem' }}>
+          <p style={{ margin: 0, fontSize: '0.875rem' }}>
+            Local draft from {localDraft.savedAt ? new Date(localDraft.savedAt).toLocaleString() : 'this device'}.
+          </p>
           {serverVersionChanged ? (
-            <p className="mt-2 text-amber-700">
-              Newer server version detected. Restoring draft will merge locally and will not overwrite server content
-              silently.
+            <p style={{ marginTop: '0.375rem', fontSize: '0.8125rem', color: 'var(--clinical-amber)' }}>
+              Newer server version detected. Restoring draft will merge locally.
             </p>
           ) : null}
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" className="text-sm font-semibold underline" onClick={restoreLocalDraft}>
-              Restore draft
-            </button>
-            <button type="button" className="text-sm font-semibold underline" onClick={clearLocalDraft}>
-              Dismiss
-            </button>
+          <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button type="button" className="clinical-btn-ghost" style={{ fontSize: '0.8125rem', minHeight: '32px' }} onClick={restoreLocalDraft}>Restore draft</button>
+            <button type="button" className="clinical-btn-ghost" style={{ fontSize: '0.8125rem', minHeight: '32px' }} onClick={clearLocalDraft}>Dismiss</button>
           </div>
         </div>
       ) : null}
-      {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {message ? <p style={{ fontSize: '0.875rem', color: 'var(--clinical-green)', marginBottom: '0.25rem' }}>{message}</p> : null}
+      {error ? <p style={{ fontSize: '0.875rem', color: 'var(--clinical-red)', marginBottom: '0.25rem' }}>{error}</p> : null}
       {!isMobile && editable ? <SaveStatusLine /> : null}
 
       <div
         className={
           isMobile
             ? 'report-edit-layout report-edit-layout--mobile'
-            : 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]'
+            : 'clinical-builder-layout report-edit-layout'
         }
       >
         <div className="report-edit-main space-y-4">
@@ -487,7 +492,19 @@ export function ReportEditPage() {
         </div>
 
         <div className="space-y-4">
+          {isReportsRevampActive(isAdminEditor ? 'admin' : 'therapist') ? (
+            <MonthlyReportBuilderSections
+              caseId={report.case_id}
+              childName={report.child_name}
+              reportId={report.id}
+              onInsertDraft={(text) => {
+                setBodyHtml((prev) => `${prev || ''}<p>${text}</p>`)
+                setDocumentVersion((v) => v + 1)
+              }}
+            />
+          ) : null}
           <ReportReferenceDocsPanel caseId={report.case_id} month={month} />
+          <ClinicalSnapshotReportPanel caseId={report.case_id} reportId={report.id} month={month} />
           <SessionLogContextPanel
             reportId={Number(reportId)}
             caseId={report.case_id}

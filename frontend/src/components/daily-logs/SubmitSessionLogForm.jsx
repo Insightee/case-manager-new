@@ -12,7 +12,25 @@ import {
 } from '../../lib/sessionLogUtils.js'
 import { formatDisplayDate, formatTimeIST } from '../../lib/datetime.js'
 import { SessionBrief } from './SessionBrief.jsx'
+import { SessionLogGoalTracker } from '../clinical/SessionLogGoalTracker.jsx'
+import {
+  SessionLogEvidencePanel,
+  sessionEvidenceHasPayload,
+  buildActivitiesDoneFromEvidence,
+  prepareEvidenceForSubmit,
+} from '../clinical/session-log/SessionLogEvidencePanel.jsx'
+import { validateSessionEvidenceQuickFields } from '../../lib/clinicalScoring.js'
+import { SessionLogV2Chrome } from '../clinical/session-log/SessionLogV2Chrome.jsx'
+import { SessionLogNotesDual } from '../clinical/session-log/SessionLogNotesDual.jsx'
+import { SessionLogParentPreview } from '../clinical/session-log/SessionLogParentPreview.jsx'
+import { SessionLogEvidenceUpload } from '../clinical/session-log/SessionLogEvidenceUpload.jsx'
+import { SessionLogAiAssist } from '../clinical/SessionLogAiAssist.jsx'
+import { GOALS_STRATEGIES_ENGINE_V2, STRUCTURED_SESSION_EVIDENCE } from '../../lib/reportsRevampFlags.js'
+import { goalHasSessionWork } from '../../lib/clinicalScoring.js'
+import { ClinicalVisibilityBadge } from '../clinical-ui/ClinicalVisibilityBadge.jsx'
 import { SessionCancelConfirmDialog } from './SessionCancelConfirmDialog.jsx'
+import '../../styles/goals-strategies-engine.css'
+import '../../styles/session-log-v2.css'
 
 const ATTENDANCE = [
   { value: 'PRESENT', label: 'Present' },
@@ -70,6 +88,44 @@ export function SubmitSessionLogForm({
   const serverAutosaveTimer = useRef(null)
   const [serverAutosaveState, setServerAutosaveState] = useState('idle')
   const [dirtySinceServerSave, setDirtySinceServerSave] = useState(false)
+  const [sessionEvidence, setSessionEvidence] = useState(null)
+  const [legacyEvidenceSchema, setLegacyEvidenceSchema] = useState(null)
+  const [sessionSnapshot, setSessionSnapshot] = useState(session)
+  const [evidenceUploads, setEvidenceUploads] = useState([])
+  const [parentVoiceAttachment, setParentVoiceAttachment] = useState(null)
+  const [showEvidenceNudges, setShowEvidenceNudges] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadEvidenceSchema() {
+      if (!GOALS_STRATEGIES_ENGINE_V2 || !existingLog?.id) {
+        setLegacyEvidenceSchema(null)
+        return
+      }
+      try {
+        const evidence = await apiFetch(`/api/v1/daily-logs/${existingLog.id}/session-evidence`)
+        if (cancelled) return
+        setLegacyEvidenceSchema(evidence?.schema_version ?? null)
+        if (evidence?.schema_version === 2) {
+          setSessionEvidence({
+            schema_version: 2,
+            goals: evidence.goals || [],
+            strategies: evidence.strategies || [],
+          })
+        }
+      } catch {
+        if (!cancelled) setLegacyEvidenceSchema(null)
+      }
+    }
+    loadEvidenceSchema()
+    return () => {
+      cancelled = true
+    }
+  }, [existingLog?.id])
+
+  useEffect(() => {
+    setSessionSnapshot(session)
+  }, [session?.id, session?.actual_start_at, session?.actual_end_at, session?.edited_start_at, session?.edited_end_at])
 
   useEffect(() => {
     let cancelled = false
@@ -169,18 +225,28 @@ export function SubmitSessionLogForm({
   async function handleResubmit(e) {
     e.preventDefault()
     if (!existingLog?.id) return
-    const validationError = validateSessionLogForm(form, { isLateSession })
+    const validationError = validateSessionLogForm(
+      useV2EvidenceEngine ? formBodyForSubmit() : form,
+      { isLateSession },
+    )
     if (validationError) {
       setError(validationError)
       return
     }
+    if (useV2EvidenceEngine) {
+      const evidenceMsg = validateSessionEvidenceQuickFields(sessionEvidence)
+      if (evidenceMsg) {
+        setShowEvidenceNudges(true)
+        setError(evidenceMsg)
+        return
+      }
+    }
     setSubmitting(true)
     setError('')
     try {
-      const body = {
-        ...form,
-        late_reason: form.late_reason || undefined,
-      }
+      const body = formBodyForSubmit()
+      const evidencePayload = evidencePayloadForSubmit()
+      if (evidencePayload) body.session_evidence = evidencePayload
       const saved = await apiFetch(`/api/v1/daily-logs/${existingLog.id}/resubmit`, {
         method: 'POST',
         body: JSON.stringify(body),
@@ -220,6 +286,47 @@ export function SubmitSessionLogForm({
   const displayName = childName || session?.child_name || caseCode || session?.case_code || 'Client'
   const showBrief = Boolean(session?.actual_end_at || session?.status === 'COMPLETED')
 
+  const useV2EvidenceEngine =
+    GOALS_STRATEGIES_ENGINE_V2 && session?.case_id && legacyEvidenceSchema !== 1
+  const showLegacyGoalTracker =
+    STRUCTURED_SESSION_EVIDENCE &&
+    existingLog?.id &&
+    session?.case_id &&
+    (!GOALS_STRATEGIES_ENGINE_V2 || legacyEvidenceSchema === 1)
+
+  function evidencePayloadForSubmit() {
+    if (!useV2EvidenceEngine || !sessionEvidenceHasPayload(sessionEvidence)) return undefined
+    const prepared = prepareEvidenceForSubmit(sessionEvidence)
+    return {
+      goals: (prepared.goals || []).map(({ id: _id, schema_version: _sv, activity_phases: _ap, ...g }) => ({
+        ...g,
+        schema_version: 2,
+      })),
+      strategies: prepared.strategies || [],
+    }
+  }
+
+  function formBodyForSubmit() {
+    const body = {
+      ...form,
+      late_reason: form.late_reason || undefined,
+    }
+    if (useV2EvidenceEngine) {
+      const autoActivities = buildActivitiesDoneFromEvidence(sessionEvidence)
+      if (autoActivities && (!body.activities_done || body.activities_done.trim().length < 3)) {
+        body.activities_done = autoActivities
+      }
+      if (!body.goals_addressed?.trim() && sessionEvidence?.goals?.length) {
+        body.goals_addressed = sessionEvidence.goals
+          .filter(goalHasSessionWork)
+          .map((g) => g.goal_label)
+          .filter(Boolean)
+          .join('; ')
+      }
+    }
+    return body
+  }
+
   async function persistLocalDraft(syncStatus = 'local') {
     if (!session?.id || isEdit) return
     await saveLogDraft(session.id, { ...form, sync_status: syncStatus })
@@ -245,18 +352,28 @@ export function SubmitSessionLogForm({
       setError('End the session before submitting a log.')
       return
     }
-    const validationError = validateSessionLogForm(form, { isLateSession })
+    const validationError = validateSessionLogForm(
+      useV2EvidenceEngine ? formBodyForSubmit() : form,
+      { isLateSession },
+    )
     if (validationError) {
       setError(validationError)
       return
     }
+    if (useV2EvidenceEngine) {
+      const evidenceMsg = validateSessionEvidenceQuickFields(sessionEvidence)
+      if (evidenceMsg) {
+        setShowEvidenceNudges(true)
+        setError(evidenceMsg)
+        return
+      }
+    }
     setSubmitting(true)
     setError('')
     try {
-      const body = {
-        ...form,
-        late_reason: form.late_reason || undefined,
-      }
+      const body = formBodyForSubmit()
+      const evidencePayload = evidencePayloadForSubmit()
+      if (evidencePayload) body.session_evidence = evidencePayload
       let saved
       if (isEdit) {
         saved = await apiFetch(`/api/v1/daily-logs/${existingLog.id}`, {
@@ -287,6 +404,11 @@ export function SubmitSessionLogForm({
     }
   }
 
+  function handleNotesChange(partial) {
+    setForm((prev) => ({ ...prev, ...partial }))
+    setDirtySinceServerSave(true)
+  }
+
   if (isEdit && !editable) {
     return (
       <div className="ic-session-log-panel ic-session-log-panel--locked">
@@ -300,6 +422,120 @@ export function SubmitSessionLogForm({
             Close
           </button>
         ) : null}
+      </div>
+    )
+  }
+
+  if (useV2EvidenceEngine) {
+    return (
+      <div className={`gs-engine ic-session-log-panel ic-session-log-panel--v2${required ? ' ic-session-log-panel--required' : ''}`}>
+        <SessionLogV2Chrome
+          session={sessionSnapshot}
+          caseCode={caseCode}
+          childName={childName}
+          sessionEvidence={sessionEvidence}
+          log={existingLog}
+          onTimesUpdated={(updated) => setSessionSnapshot((prev) => ({ ...prev, ...updated }))}
+        />
+
+        {isResubmit && existingLog?.review_note ? (
+          <div className="ic-session-log-panel__banner ic-session-log-panel__banner--warn sl-v2-body" style={{ paddingTop: 0 }}>
+            <strong>Rejection feedback:</strong> {existingLog.review_note}
+          </div>
+        ) : null}
+
+        {error ? (
+          <p className="ic-session-log-panel__error sl-v2-body" style={{ paddingTop: 0, margin: 0 }}>
+            {error}
+          </p>
+        ) : null}
+
+        <form className="ic-session-log-form" onSubmit={isResubmit ? handleResubmit : handleSubmit}>
+          <div className="sl-v2-body">
+            <SessionLogEvidencePanel
+              caseId={session.case_id}
+              logId={existingLog?.id}
+              sessionId={session?.id}
+              environment={session?.mode}
+              value={sessionEvidence}
+              onChange={setSessionEvidence}
+              readOnly={isEdit && !pendingEdit}
+              showNudges={showEvidenceNudges}
+            />
+
+            <SessionLogNotesDual
+              form={form}
+              onChange={handleNotesChange}
+              readOnly={isEdit && !pendingEdit}
+              caseId={session?.case_id}
+              sessionDate={session?.scheduled_date}
+              voiceAttachment={parentVoiceAttachment}
+              onVoiceAttachmentChange={setParentVoiceAttachment}
+            />
+
+            <SessionLogEvidenceUpload
+              caseId={session?.case_id}
+              sessionDate={session?.scheduled_date}
+              readOnly={isEdit && !pendingEdit}
+              uploads={evidenceUploads}
+              onChange={setEvidenceUploads}
+            />
+
+            {isLateSession ? (
+              <div className="sl-late-reason-block">
+                <p className="sl-late-banner" role="status">
+                  Past-day visit: add a late reason before submitting.
+                </p>
+                <label className="gs-field ic-session-log-field--warn">
+                  <span className="gs-field__label">
+                    Late reason
+                    <span className="ic-session-log-field__req">Required</span>
+                  </span>
+                  <textarea
+                    required
+                    value={form.late_reason}
+                    onChange={(e) => {
+                      setForm({ ...form, late_reason: e.target.value })
+                      setDirtySinceServerSave(true)
+                    }}
+                    rows={3}
+                    placeholder="e.g. Session completed offline; submitting after travel."
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}
+          </div>
+
+          <div className="sl-v2-footer-preview">
+            <SessionLogParentPreview sessionEvidence={sessionEvidence} parentNotes={form.parent_notes} />
+          </div>
+
+          <div className="sl-v2-footer">
+            {!isEdit && session?.id ? (
+              <button type="button" className="gs-btn gs-btn--ghost" disabled={submitting} onClick={handleSaveDraft}>
+                Save Draft
+              </button>
+            ) : isEdit && pendingEdit ? (
+              <button type="button" className="gs-btn gs-btn--ghost" disabled={submitting} onClick={handleSaveProgress}>
+                Save Draft
+              </button>
+            ) : null}
+            {!required && onCancel ? (
+              <button type="button" className="gs-btn gs-btn--ghost" disabled={submitting} onClick={onCancel}>
+                Cancel
+              </button>
+            ) : null}
+            <button type="submit" className="gs-btn gs-btn--primary sl-v2-footer__submit" disabled={submitting}>
+              {submitting
+                ? 'Saving…'
+                : isResubmit
+                  ? 'Resubmit for review'
+                  : 'Submit log'}
+            </button>
+          </div>
+        </form>
       </div>
     )
   }
@@ -405,63 +641,88 @@ export function SubmitSessionLogForm({
 
       {error ? <p className="ic-session-log-panel__error">{error}</p> : null}
 
-      {isLateSession && (!isEdit || isResubmit) ? (
-        <p className="ic-session-log-panel__late-banner">
-          This visit is from a past day. You must add a <strong>late reason</strong> below before admin can approve
-          the log.
-        </p>
-      ) : null}
-
       <form className="ic-session-log-form" onSubmit={isResubmit ? handleResubmit : handleSubmit}>
         <div className="ic-session-log-form__grid">
-          {FIELDS.map(({ key, label, hint, rows, highlight, required: fieldRequired }) => (
-            <label
-              key={key}
-              className={`ic-session-log-field${highlight ? ' ic-session-log-field--highlight' : ''}`}
-            >
-              <span className="ic-session-log-field__label">
-                {label}
-                {fieldRequired ? <span className="ic-session-log-field__req">Required</span> : null}
-              </span>
-              <span className="ic-session-log-field__hint">{hint}</span>
-              <textarea
-                value={form[key]}
-                onChange={(e) => {
-                  setForm({ ...form, [key]: e.target.value })
-                  setDirtySinceServerSave(true)
-                }}
-                rows={rows}
-                required={fieldRequired}
-              />
-            </label>
-          ))}
+          {FIELDS.map(({ key, label, hint, rows, highlight, required: fieldRequired }) => {
+            const isParentField   = key === 'parent_notes'
+            const isInternalField = key === 'session_notes' || key === 'observations'
+            return (
+              <label
+                key={key}
+                className={`ic-session-log-field${highlight ? ' ic-session-log-field--highlight' : ''}`}
+              >
+                <span className="ic-session-log-field__label" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
+                  {label}
+                  {fieldRequired ? <span className="ic-session-log-field__req">Required</span> : null}
+                  {isParentField   ? <ClinicalVisibilityBadge visibility="parent"   /> : null}
+                  {isInternalField ? <ClinicalVisibilityBadge visibility="internal" /> : null}
+                </span>
+                <span className="ic-session-log-field__hint">{hint}</span>
+                <textarea
+                  value={form[key]}
+                  onChange={(e) => {
+                    setForm({ ...form, [key]: e.target.value })
+                    setDirtySinceServerSave(true)
+                  }}
+                  rows={rows}
+                  required={fieldRequired}
+                />
+              </label>
+            )
+          })}
         </div>
 
+        {useV2EvidenceEngine ? (
+          <SessionLogEvidencePanel
+            caseId={session.case_id}
+            logId={existingLog?.id}
+            sessionId={session?.id}
+            environment={session?.mode}
+            value={sessionEvidence}
+            onChange={setSessionEvidence}
+            readOnly={isEdit && !pendingEdit}
+            showNudges={showEvidenceNudges}
+          />
+        ) : null}
+
+        {isEdit && existingLog?.id ? (
+          <SessionLogAiAssist
+            logId={existingLog.id}
+            note={form.session_notes}
+            onImprovedNote={(text) => setForm((prev) => ({ ...prev, session_notes: text }))}
+          />
+        ) : null}
+
         {isLateSession ? (
-          <label className="ic-session-log-field ic-session-log-field--warn">
-            <span className="ic-session-log-field__label">
-              Late reason
-              <span className="ic-session-log-field__req">Required</span>
-            </span>
-            <span className="ic-session-log-field__hint">
-              Scheduled {formatDisplayDate(session?.scheduled_date)} — explain why the log is late (required to save).
-            </span>
-            <textarea
-              required
-              value={form.late_reason}
-              onChange={(e) => {
-                setForm({ ...form, late_reason: e.target.value })
-                setDirtySinceServerSave(true)
-              }}
-              rows={3}
-              placeholder="e.g. Session completed offline; submitting after travel."
-            />
-          </label>
+          <div className="sl-late-reason-block">
+            <p className="sl-late-banner" role="status">
+              Past-day visit: add a late reason before submitting.
+            </p>
+            <label className="ic-session-log-field ic-session-log-field--warn">
+              <span className="ic-session-log-field__label">
+                Late reason
+                <span className="ic-session-log-field__req">Required</span>
+              </span>
+              <span className="ic-session-log-field__hint">
+                Scheduled {formatDisplayDate(session?.scheduled_date)} — explain why the log is late.
+              </span>
+              <textarea
+                required
+                value={form.late_reason}
+                onChange={(e) => {
+                  setForm({ ...form, late_reason: e.target.value })
+                  setDirtySinceServerSave(true)
+                }}
+                rows={3}
+                placeholder="e.g. Session completed offline; submitting after travel."
+              />
+            </label>
+          </div>
         ) : null}
 
         {draftNote ? <p className="ic-draft-badge">{draftNote}</p> : null}
 
-        <div className="ic-session-log-form__actions">
+        <div className="ic-session-log-form__actions cp-builder-sticky-actions">
           {isResubmit ? (
             <>
               <button type="submit" className="ic-btn ic-btn--primary ic-session-log-form__submit" disabled={submitting}>
@@ -534,6 +795,9 @@ export function SubmitSessionLogForm({
           </p>
         ) : null}
       </form>
+      {showLegacyGoalTracker ? (
+        <SessionLogGoalTracker logId={existingLog.id} caseId={session.case_id} />
+      ) : null}
     </div>
   )
 }

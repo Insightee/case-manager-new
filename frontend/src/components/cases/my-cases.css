@@ -1980,16 +1980,18 @@
 
 .ic-case-tabs__btn {
   flex-shrink: 0;
-  padding: 10px 16px;
+  padding: 0.625rem 1rem;
   border: none;
-  border-radius: 10px;
-  background: #f1f5f9;
+  border-radius: 0;
+  background: transparent;
   font-weight: 600;
   font-size: 0.875rem;
-  color: #475569;
+  color: var(--text-muted, #64748b);
   cursor: pointer;
-  min-height: 44px;
+  min-height: 40px;
   white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
 }
 
 .ic-case-tabs__label-short {
@@ -1997,8 +1999,9 @@
 }
 
 .ic-case-tabs__btn.is-active {
-  background: var(--ic-primary);
-  color: #fff;
+  background: transparent;
+  color: var(--ic-primary, var(--primary, #4f46e5));
+  border-bottom-color: var(--ic-primary, var(--primary, #4f46e5));
 }
 
 .ic-case-tabs__support {
@@ -2792,6 +2795,11 @@
   margin-top: 8px;
 }
 
+.ic-log-badge-row--compact {
+  margin-top: 0;
+  gap: 4px;
+}
+
 .ic-log-badge {
   display: inline-flex;
   align-items: center;
@@ -3252,4 +3260,197 @@
   border: 1px solid #99f6e4;
   border-radius: 12px;
   padding: 14px 16px;
+}
+
+/* Case picker — sidebar sub-tab without selected client */
+.therapist-case-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--clinical-border, #e2e8f0);
+  border-radius: var(--clinical-radius-card, 14px);
+  background: #fff;
+  box-shadow: var(--clinical-shadow-panel, 0 8px 24px rgba(15, 23, 42, 0.06));
+}
+
+.therapist-case-picker__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.therapist-case-picker__title {
+  margin: 0 0 0.25rem;
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.therapist-case-picker__subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--clinical-muted, #64748b);
+}
+
+.therapist-case-picker__search input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--clinical-border, #e2e8f0);
+  border-radius: 10px;
+  font-size: 0.9375rem;
+}
+
+.therapist-case-picker__section-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.therapist-case-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.therapist-case-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 52px;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--clinical-border, #e2e8f0);
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.therapist-case-picker__row:hover {
+  border-color: #c4b5fd;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.08);
+}
+
+.therapist-case-picker__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--clinical-green-soft, #dcfce7);
+  color: var(--clinical-green, #166534);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.therapist-case-picker__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.therapist-case-picker__meta strong {
+  font-size: 0.9375rem;
+  color: #0f172a;
+}
+
+.therapist-case-picker__meta span {
+  font-size: 0.75rem;
+  color: var(--clinical-muted, #64748b);
+}
+
+.therapist-case-picker__badge {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.therapist-case-picker__badge--warn {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.therapist-case-picker__empty {
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--clinical-muted, #64748b);
+}
+
+.change-case-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+
+.change-case-sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(15, 23, 42, 0.45);
+  cursor: pointer;
+}
+
+.change-case-sheet__panel {
+  position: relative;
+  z-index: 1;
+  width: min(640px, 100%);
+  max-height: min(88vh, 720px);
+  overflow: auto;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  border-radius: 16px 16px 0 0;
+  background: var(--clinical-bg, #f8fafc);
+  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.18);
+}
+
+.change-case-sheet__view-all {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #2d4a3e;
+  cursor: pointer;
+  text-align: left;
+}
+
+.change-case-sheet__view-all:hover {
+  background: #f8fafc;
+}
+
+@media (min-width: 640px) {
+  .change-case-sheet {
+    align-items: center;
+    padding: 1rem;
+  }
+
+  .change-case-sheet__panel {
+    border-radius: 16px;
+    max-height: min(80vh, 720px);
+  }
 }

@@ -302,6 +302,12 @@ async def create_document(
     db.add(doc)
     db.flush()
     st = (source_type or "").strip().upper()
+    if st == "FILE_UPLOAD":
+        st = CaseDocumentSourceType.UPLOAD.value
+    if not st and file:
+        st = CaseDocumentSourceType.UPLOAD.value
+    if not st and external_url:
+        st = CaseDocumentSourceType.EXTERNAL_LINK.value
     allow_images = cat == CaseDocumentCategory.INCIDENT_REPORT.value
     if st == CaseDocumentSourceType.UPLOAD.value:
         if not file:
@@ -316,7 +322,10 @@ async def create_document(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
     else:
-        raise HTTPException(status_code=400, detail="source_type must be UPLOAD or EXTERNAL_LINK")
+        raise HTTPException(
+            status_code=400,
+            detail="source_type must be UPLOAD or EXTERNAL_LINK (received empty or invalid value)",
+        )
 
     if share_with_parents:
         doc.visibility = CaseDocumentVisibility.CLIENT_VISIBLE_AFTER_APPROVAL.value
