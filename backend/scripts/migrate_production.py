@@ -170,38 +170,65 @@ def _next_revisions(script: ScriptDirectory, current: str | None) -> list[str]:
     return [nextrev]
 
 
-def _upgrade_with_drift_tolerance(cfg: Config, script: ScriptDirectory, head: str) -> None:
-    """Step migrations forward; stamp past revisions whose objects already exist."""
-    max_steps = 500
-    for _ in range(max_steps):
-        current = current_revision(engine, script)
-        if current == head:
-            return
-        before = current
-        try:
-            command.upgrade(cfg, "+1")
-        except Exception as exc:
-            err = str(exc).lower()
-            if "duplicate" not in err and "already exists" not in err:
-                raise
-            after = current_revision(engine, script)
-            if after != before:
-                print(f"Partial migration applied ({before} -> {after}); continuing...")
-                continue
-            targets = _next_revisions(script, before)
-            if len(targets) != 1:
-                raise RuntimeError(
-                    f"Cannot auto-stamp past drift at {before!r} "
-                    f"(ambiguous next revisions {targets}): {exc}"
-                ) from exc
-            target = targets[0]
+def _is_drift_error(exc: Exception) -> bool:
+    err = str(exc).lower()
+    return "duplicate" in err or "already exists" in err
+
+
+def _is_ambiguous_walk(exc: Exception) -> bool:
+    return "ambiguous walk" in str(exc).lower()
+
+
+def _stamp_or_upgrade_branch(cfg: Config, script: ScriptDirectory, before: str | None, target: str) -> None:
+    try:
+        command.upgrade(cfg, target)
+    except Exception as exc:
+        if not _is_drift_error(exc):
+            raise
+        after = current_revision(engine, script)
+        if after == before:
             print(
                 f"Schema drift at {target} (objects already exist); "
                 f"stamping {before or '(none)'} -> {target}..."
             )
             command.stamp(cfg, target)
-            continue
-    raise RuntimeError(f"Migration loop exceeded {max_steps} steps without reaching {head}")
+
+
+def _upgrade_with_drift_tolerance(cfg: Config, script: ScriptDirectory, head: str) -> None:
+    """Advance toward head; stamp past revisions whose objects already exist."""
+    max_attempts = 500
+    for _ in range(max_attempts):
+        current = current_revision(engine, script)
+        if current == head:
+            return
+        before = current
+        try:
+            command.upgrade(cfg, head)
+        except Exception as exc:
+            if _is_drift_error(exc):
+                after = current_revision(engine, script)
+                if after != before:
+                    continue
+                next_revs = _next_revisions(script, before)
+                if len(next_revs) == 1:
+                    _stamp_or_upgrade_branch(cfg, script, before, next_revs[0])
+                    continue
+                if len(next_revs) > 1:
+                    for rev in next_revs:
+                        _stamp_or_upgrade_branch(cfg, script, before, rev)
+                    continue
+                raise RuntimeError(
+                    f"Drift at {before!r} with no next revision toward {head}: {exc}"
+                ) from exc
+            if _is_ambiguous_walk(exc):
+                next_revs = _next_revisions(script, before)
+                if not next_revs:
+                    raise
+                for rev in next_revs:
+                    _stamp_or_upgrade_branch(cfg, script, before, rev)
+                continue
+            raise
+    raise RuntimeError(f"Migration loop exceeded {max_attempts} attempts without reaching {head}")
 
 
 def main() -> None:
