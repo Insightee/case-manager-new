@@ -77,8 +77,9 @@ def upgrade() -> None:
             else:
                 conn.execute(
                     sa.text(
-                        "INSERT INTO service_categories (id, label, sort_order, is_active, access_group, product_modules) "
-                        "VALUES (:id, :label, :order, :active, 'Clinical', :pm)"
+                        "INSERT INTO service_categories "
+                        "(id, label, description, sort_order, is_active, access_group, product_modules) "
+                        "VALUES (:id, :label, '', :order, :active, 'Clinical', :pm)"
                     ),
                     {"id": sid, "label": label, "order": order, "pm": pm, "active": True},
                 )
