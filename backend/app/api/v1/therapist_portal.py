@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.feature_flags import require_reports
 from app.core.db_errors import commit_or_http
 from app.core.permissions import require_permission, user_has_permission
 from app.models.user import User
@@ -108,7 +109,11 @@ def therapist_sessions_workspace(
     return therapist_home_service.build_sessions_workspace(db, user)
 
 
-@router.get("/reports/pipeline", response_model=TherapistReportsPipelineResponse)
+@router.get(
+    "/reports/pipeline",
+    response_model=TherapistReportsPipelineResponse,
+    dependencies=[Depends(require_reports)],
+)
 def therapist_reports_pipeline(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

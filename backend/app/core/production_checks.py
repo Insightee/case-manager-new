@@ -22,7 +22,12 @@ def validate_production_settings() -> None:
 
     errors: list[str] = []
 
-    if settings.seed_demo_data:
+    railway_env = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "").strip().lower()
+    is_staging = railway_env in ("staging", "testing") or settings.app_env.lower() in (
+        "staging",
+        "testing",
+    )
+    if settings.seed_demo_data and not is_staging:
         errors.append("SEED_DEMO_DATA must be false in production (demo seed is for local/staging only)")
 
     if settings.jwt_secret_key.strip() in _INSECURE_JWT_SECRETS:

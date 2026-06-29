@@ -36,8 +36,16 @@ def test_production_rejects_default_jwt(monkeypatch):
 def test_production_rejects_seed_demo_data(monkeypatch):
     _prod_baseline(monkeypatch)
     monkeypatch.setattr(settings, "seed_demo_data", True)
+    monkeypatch.delenv("RAILWAY_ENVIRONMENT_NAME", raising=False)
     with pytest.raises(RuntimeError, match="SEED_DEMO_DATA"):
         validate_production_settings()
+
+
+def test_staging_railway_allows_seed_demo_data(monkeypatch):
+    _prod_baseline(monkeypatch)
+    monkeypatch.setattr(settings, "seed_demo_data", True)
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "staging")
+    validate_production_settings()
 
 
 def test_production_rejects_sqlite(monkeypatch):

@@ -40,3 +40,14 @@ def test_therapist_home_works_when_reports_disabled(monkeypatch):
     r = client.get("/api/v1/therapist/home", headers=headers)
     assert r.status_code == 200
     assert "cases_board" in r.json()
+
+
+def test_reports_gated_when_disabled(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "enable_reports", False)
+    headers = _login("therapist@demo.com")
+    r = client.get("/api/v1/reports/monthly", headers=headers)
+    assert r.status_code == 404
+    r2 = client.get("/api/v1/therapist/reports/pipeline", headers=headers)
+    assert r2.status_code == 404

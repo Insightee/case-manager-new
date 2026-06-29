@@ -64,7 +64,10 @@ api_router.include_router(assignment_acceptance.router)
 api_router.include_router(sessions.router)
 api_router.include_router(session_absence.router)
 api_router.include_router(daily_logs.router)
-api_router.include_router(reports.router)
+api_router.include_router(
+    reports.router,
+    dependencies=[Depends(require_reports)],
+)
 api_router.include_router(
     invoices.router,
     dependencies=[Depends(require_billing)],
