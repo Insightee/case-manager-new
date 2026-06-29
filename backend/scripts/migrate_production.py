@@ -116,6 +116,107 @@ def _repair_daily_logs_columns() -> list[str]:
     return added
 
 
+_CLINICAL_TABLE_REPAIRS: dict[str, tuple[tuple[str, str], ...]] = {
+    "session_goal_entries": (
+        ("session_id", "INTEGER"),
+        ("case_id", "INTEGER"),
+        ("child_id", "INTEGER"),
+        ("created_by_user_id", "INTEGER"),
+        ("participation_score", "INTEGER"),
+        ("independence_score", "INTEGER"),
+        ("goal_achievement_score", "INTEGER"),
+        ("participation", "VARCHAR(64)"),
+        ("independence_support_needed", "VARCHAR(64)"),
+        ("goal_achievement", "VARCHAR(64)"),
+        ("activity_used", "TEXT"),
+        ("measurement_note", "TEXT"),
+        ("core_domains_json", "TEXT"),
+        ("core_environments_json", "TEXT"),
+        ("goal_repository_item_id", "INTEGER"),
+        ("evidence_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("clinical_extension_json", "TEXT"),
+    ),
+    "strategy_use_events": (
+        ("session_id", "INTEGER"),
+        ("case_id", "INTEGER"),
+        ("child_id", "INTEGER"),
+        ("goal_card_id", "INTEGER"),
+        ("goal_entry_id", "INTEGER"),
+        ("created_by_user_id", "INTEGER"),
+        ("environment", "VARCHAR(32)"),
+        ("activity_used", "TEXT"),
+        ("participation_score", "INTEGER"),
+        ("independence_score", "INTEGER"),
+        ("goal_achievement_score", "INTEGER"),
+        ("participation", "VARCHAR(64)"),
+        ("independence_support_needed", "VARCHAR(64)"),
+        ("goal_achievement", "VARCHAR(64)"),
+        ("strategy_feedback", "VARCHAR(32)"),
+        ("short_note", "TEXT"),
+        ("custom_strategy_id", "INTEGER"),
+        ("strategy_steps_json", "TEXT"),
+        ("expected_outcome", "TEXT"),
+        ("effectiveness_rating", "SMALLINT"),
+        ("clinical_extension_json", "TEXT"),
+    ),
+    "goal_repository_items": (
+        ("source_daily_log_id", "INTEGER"),
+        ("source_session_id", "INTEGER"),
+        ("review_note", "TEXT"),
+        ("core_domains_json", "TEXT"),
+        ("core_environments_json", "TEXT"),
+        ("baseline_state", "TEXT"),
+        ("desired_state", "TEXT"),
+        ("goal_statement", "TEXT"),
+        ("lifecycle_status", "VARCHAR(32)"),
+        ("source", "VARCHAR(32)"),
+        ("scope", "VARCHAR(32)"),
+        ("source_clinical_report_id", "INTEGER"),
+        ("metadata_json", "TEXT"),
+        ("last_reviewed_at", "TIMESTAMPTZ"),
+    ),
+    "strategy_repository_items": (
+        ("domain_key", "VARCHAR(64)"),
+        ("environment_context", "VARCHAR(32)"),
+        ("linked_goal_card_id", "INTEGER"),
+        ("source_daily_log_id", "INTEGER"),
+        ("review_note", "TEXT"),
+        ("core_domains_json", "TEXT"),
+        ("core_environments_json", "TEXT"),
+        ("strategy_steps_json", "TEXT"),
+        ("expected_outcome", "TEXT"),
+        ("source", "VARCHAR(32)"),
+        ("scope", "VARCHAR(32)"),
+        ("source_clinical_report_id", "INTEGER"),
+        ("metadata_json", "TEXT"),
+        ("last_reviewed_at", "TIMESTAMPTZ"),
+    ),
+    "observation_checklists": (("clinical_report_id", "INTEGER"),),
+    "daily_logs": (("parent_voice_attachment_id", "INTEGER"),),
+}
+
+
+def _repair_clinical_schema_columns() -> list[str]:
+    """Idempotent Postgres repairs when Alembic stamped past partial clinical migrations."""
+    if settings.is_sqlite:
+        return []
+    insp = inspect(engine)
+    added: list[str] = []
+    with engine.begin() as conn:
+        for table, columns in _CLINICAL_TABLE_REPAIRS.items():
+            if not insp.has_table(table):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for col, ddl in columns:
+                if col in existing:
+                    continue
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ddl}"))
+                added.append(f"{table}.{col}")
+    if added:
+        print(f"Repaired clinical schema columns: {added}")
+    return added
+
+
 def _reconcile_heads_literal(cfg: Config, script: ScriptDirectory) -> None:
     """Replace alembic_version='heads' so incremental migrations actually run.
 
@@ -246,6 +347,7 @@ def main() -> None:
     compact_stale_version_rows(engine, script)
     _reconcile_heads_literal(cfg, script)
     _repair_daily_logs_columns()
+    _repair_clinical_schema_columns()
     current = current_revision(engine, script)
     missing = _missing_required_columns(insp)
     if current == head and not missing:
@@ -258,10 +360,9 @@ def main() -> None:
     print(f"Migrating {current or '(none)'} -> {head}...")
     _upgrade_with_drift_tolerance(cfg, script, head)
 
+    _repair_daily_logs_columns()
+    _repair_clinical_schema_columns()
     missing_after = _missing_required_columns(inspect(engine))
-    if missing_after:
-        _repair_daily_logs_columns()
-        missing_after = _missing_required_columns(inspect(engine))
     if missing_after:
         raise RuntimeError(
             f"Migration finished but required columns still missing: {missing_after}. "
