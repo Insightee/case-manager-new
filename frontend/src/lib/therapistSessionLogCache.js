@@ -112,6 +112,24 @@ export function patchCachesAfterSessionCancel(cancelled) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.therapistHome })
 }
 
+/** Remove session from upcoming/needs queues after child absence is filed. */
+export function patchCachesAfterAbsenceSubmit(sessionId, userId) {
+  const sid = Number(sessionId)
+  queryClient.setQueryData(queryKeys.therapistWorkspace, (old) => {
+    if (!old) return old
+    return {
+      ...old,
+      upcoming: (old.upcoming || []).filter((s) => Number(s.id) !== sid),
+      needs_log: (old.needs_log || []).filter((s) => Number(s.id) !== sid),
+    }
+  })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.therapistHome })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.therapistWorkspace })
+  if (userId != null) {
+    void queryClient.invalidateQueries({ queryKey: therapistDailyLogsKey(userId) })
+  }
+}
+
 /** Immediate UI after save; background refetch reconciles with server. */
 export function patchCachesAfterLogSave({ userId, sessionId, savedLog, isEdit = false }) {
   const sid = sessionId ?? savedLog?.session_id

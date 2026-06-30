@@ -1,4 +1,5 @@
 import { formatDisplayDate, formatTimeIST } from '../../lib/datetime.js'
+import { isAbsenceConflict } from '../../lib/sessionStartRules.js'
 
 function formatClock(t) {
   if (!t) return null
@@ -28,6 +29,7 @@ function logStatusLabel(status) {
 export function ExistingSessionForDateCard({ conflict, onAction, onDismiss }) {
   if (!conflict) return null
 
+  const absenceBlocked = isAbsenceConflict(conflict)
   const scheduled =
     conflict.start_time && conflict.end_time
       ? `${formatClock(conflict.start_time)}–${formatClock(conflict.end_time)}`
@@ -46,36 +48,46 @@ export function ExistingSessionForDateCard({ conflict, onAction, onDismiss }) {
 
   return (
     <section className="ic-existing-session-card" aria-label="Existing session for this day">
-      <h3 className="ic-existing-session-card__title">Existing session found for this day</h3>
+      <h3 className="ic-existing-session-card__title">
+        {absenceBlocked ? 'Child absence on this day' : 'Existing session found for this day'}
+      </h3>
       <p className="ic-existing-session-card__name">
         <strong>{conflict.child_name || conflict.case_code}</strong>
         {conflict.scheduled_date ? <> · {formatDisplayDate(conflict.scheduled_date)}</> : null}
       </p>
-      {scheduled ? <p className="ic-existing-session-card__meta">Scheduled: {scheduled}</p> : null}
-      {actual ? (
+      {!absenceBlocked && scheduled ? (
+        <p className="ic-existing-session-card__meta">Scheduled: {scheduled}</p>
+      ) : null}
+      {!absenceBlocked && actual ? (
         <p className="ic-existing-session-card__meta">
           Session time: <strong>{actual}</strong>
         </p>
-      ) : scheduled ? (
+      ) : !absenceBlocked && scheduled ? (
         <p className="ic-existing-session-card__meta">Session time not recorded yet</p>
       ) : null}
-      <p className="ic-existing-session-card__meta">
-        Status: <strong>{conflict.session_status?.replace(/_/g, ' ')}</strong>
-        {conflict.log_status ? (
-          <>
-            {' '}
-            · Log: <strong>{logStatusLabel(conflict.log_status)}</strong>
-          </>
-        ) : null}
-      </p>
+      {!absenceBlocked ? (
+        <p className="ic-existing-session-card__meta">
+          Status: <strong>{conflict.session_status?.replace(/_/g, ' ')}</strong>
+          {conflict.log_status ? (
+            <>
+              {' '}
+              · Log: <strong>{logStatusLabel(conflict.log_status)}</strong>
+            </>
+          ) : null}
+        </p>
+      ) : null}
       <p className="ic-existing-session-card__hint">
-        A session already exists for this child on this date. Please update the existing session log instead of
-        creating another one.
+        {conflict.message ||
+          (absenceBlocked
+            ? 'This day is recorded as child absent — a session log cannot be added.'
+            : 'A session already exists for this child on this date. Please update the existing session log instead of creating another one.')}
       </p>
       <div className="ic-existing-session-card__actions">
-        <button type="button" className="ic-btn ic-btn--primary" onClick={() => onAction?.(conflict)}>
-          {primaryLabel(conflict)}
-        </button>
+        {!absenceBlocked ? (
+          <button type="button" className="ic-btn ic-btn--primary" onClick={() => onAction?.(conflict)}>
+            {primaryLabel(conflict)}
+          </button>
+        ) : null}
         {onDismiss ? (
           <button type="button" className="ic-btn ic-btn--ghost" onClick={onDismiss}>
             Back

@@ -362,17 +362,27 @@ def _slot_to_dict(slot: TherapistSlot, case: Case | None = None) -> dict[str, An
     }
 
 
+def _enrich_calendar_child_absence(db: Session, item: dict[str, Any]) -> dict[str, Any]:
+    from app.services.session_absence_service import child_absence_calendar_status
+
+    absence = child_absence_calendar_status(db, item.get("session_id"))
+    if absence:
+        return {**item, "child_absence_status": absence}
+    return item
+
+
 def _session_to_calendar_dict(session: TherapySession) -> dict[str, Any]:
     case = session.case
     child_name = case.child.full_name if case and case.child else None
     case_code = case.case_code if case else None
     start = session.start_time.strftime("%H:%M") if session.start_time else "09:00"
     end = session.end_time.strftime("%H:%M") if session.end_time else start
-    status = (
-        "IN_PROGRESS"
-        if session.status == SessionStatus.IN_PROGRESS
-        else "SESSION"
-    )
+    if session.status == SessionStatus.CLIENT_ABSENT:
+        status = "CLIENT_ABSENT"
+    elif session.status == SessionStatus.IN_PROGRESS:
+        status = "IN_PROGRESS"
+    else:
+        status = "SESSION"
     case_status = case.status.value if case and case.status else None
     return {
         "event_type": "session",
@@ -413,11 +423,32 @@ def get_calendar_view(
     session_rows = fetch_calendar_sessions(
         db, therapist_user_id, from_date, to_date, case_id=case_id
     )
+    absent_rows = list(
+        db.scalars(
+            select(TherapySession)
+            .where(
+                TherapySession.therapist_user_id == therapist_user_id,
+                TherapySession.scheduled_date >= from_date,
+                TherapySession.scheduled_date <= to_date,
+                TherapySession.status == SessionStatus.CLIENT_ABSENT,
+            )
+            .options(selectinload(TherapySession.case).selectinload(Case.child))
+        ).all()
+    )
+    seen_session_ids = {s.id for s in session_rows}
     sessions = [
-        _session_to_calendar_dict(sess)
+        _enrich_calendar_child_absence(db, _session_to_calendar_dict(sess))
         for sess in session_rows
         if not (sess.slot_id and sess.slot_id in linked_slot_ids)
     ]
+    for sess in absent_rows:
+        if sess.id in seen_session_ids:
+            continue
+        if case_id is not None and sess.case_id != case_id:
+            continue
+        if sess.slot_id and sess.slot_id in linked_slot_ids:
+            continue
+        sessions.append(_enrich_calendar_child_absence(db, _session_to_calendar_dict(sess)))
     template = get_or_create_template(db, therapist_user_id)
     return {
         "therapist_user_id": therapist_user_id,
@@ -425,7 +456,7 @@ def get_calendar_view(
         "to_date": to_date.isoformat(),
         "template": template.get_config(),
         "day_overlays": _leave_dates(db, therapist_user_id, from_date, to_date),
-        "slots": [_slot_to_dict(s) for s in slots],
+        "slots": [_enrich_calendar_child_absence(db, _slot_to_dict(s)) for s in slots],
         "sessions": sessions,
     }
 

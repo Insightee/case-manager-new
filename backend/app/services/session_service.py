@@ -154,6 +154,14 @@ def start_session(
         return session
 
     if session.status != SessionStatus.SCHEDULED:
+        if session.status in (SessionStatus.CLIENT_ABSENT, SessionStatus.THERAPIST_LEAVE):
+            from app.services.session_absence_service import (
+                APPROVED_CHILD_ABSENCE_MESSAGE,
+                ChildAbsenceBlockError,
+            )
+
+            if session.status == SessionStatus.CLIENT_ABSENT:
+                raise ChildAbsenceBlockError("CHILD_MARKED_ABSENT", APPROVED_CHILD_ABSENCE_MESSAGE)
         if session.status == SessionStatus.COMPLETED:
             log = session.daily_log
             if log is None:
@@ -173,7 +181,9 @@ def start_session(
         raise ValueError("Session is not scheduled")
 
     from app.services.assignment_acceptance_service import assert_therapist_may_start_session
+    from app.services.session_absence_service import assert_may_start_session
 
+    assert_may_start_session(db, session)
     assert_therapist_may_start_session(db, session.case_id)
     start_svc.resolve_start_conflict(db, session, therapist_user_id, allow_duplicate=allow_duplicate)
 

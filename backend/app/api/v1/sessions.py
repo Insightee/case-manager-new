@@ -31,6 +31,7 @@ from app.core.session_start import SessionStartConflict
 from app.core.timezone import ensure_utc_aware
 from app.services import case_service, session_service, therapist_intake_service
 from app.services import manual_session_conflict_service as manual_conflict
+from app.services.session_absence_service import ChildAbsenceBlockError
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -182,7 +183,7 @@ def create_session(
             scheduled_date=today,
         )
         if existing:
-            conflict = manual_conflict.build_existing_session_conflict(existing)
+            conflict = manual_conflict.build_existing_session_conflict(db, existing)
             if existing.status == SessionStatus.SCHEDULED:
                 conflict["message"] = (
                     "A scheduled session already exists for this client today."
@@ -242,7 +243,7 @@ def create_manual_session(
     if existing:
         raise HTTPException(
             status_code=409,
-            detail=manual_conflict.build_existing_session_conflict(existing),
+            detail=manual_conflict.build_existing_session_conflict(db, existing),
         )
     try:
         session = session_service.create_manual_session(
@@ -490,6 +491,8 @@ def start_session(
         )
     except SessionStartConflict as e:
         raise HTTPException(status_code=409, detail=e.as_dict())
+    except ChildAbsenceBlockError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     invite_sent, invite_email = (False, None)

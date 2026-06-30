@@ -72,6 +72,28 @@ export function logsPathForSession(sessionId) {
 }
 
 /** @param {import('./apiClient.js').ApiErrorDetail | string | undefined} detail */
+export function parseChildAbsenceBlock(detail) {
+  if (!detail || typeof detail === 'string') return null
+  if (detail.code === 'PENDING_CHILD_ABSENCE' || detail.code === 'CHILD_MARKED_ABSENT') {
+    return {
+      code: detail.code,
+      message: detail.message || 'Session cannot be started because of child absence.',
+    }
+  }
+  return null
+}
+
+/** @param {import('./apiClient.js').ApiErrorDetail | string | undefined} detail */
+export function isAbsenceConflict(detail) {
+  if (!detail || typeof detail === 'string') return false
+  return (
+    detail.code === 'PENDING_CHILD_ABSENCE' ||
+    detail.code === 'CHILD_MARKED_ABSENT' ||
+    detail.recommended_action === 'blocked_absence'
+  )
+}
+
+/** @param {import('./apiClient.js').ApiErrorDetail | string | undefined} detail */
 export function isSameDayDuplicateConflict(detail) {
   const conflict = parseSessionStartConflict(detail)
   return conflict?.recommendedAction === 'DUPLICATE_SAME_DAY'

@@ -305,3 +305,62 @@ def test_pending_absence_excludes_session_from_workspace_queues():
     virtual = [l for l in items if l.get("session_id") == session_id and l.get("id", 0) < 0]
     assert virtual
     assert virtual[0]["attendance_status"] == "CLIENT_ABSENT"
+
+
+def test_cannot_start_session_with_pending_child_absence():
+    therapist_headers = _login("therapist@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Unwell"},
+    )
+    assert create.status_code == 201, create.text
+
+    start = client.post(f"/api/v1/sessions/{session_id}/start", headers=therapist_headers, json={})
+    assert start.status_code == 400, start.text
+    detail = start.json()["detail"]
+    assert detail["code"] == "PENDING_CHILD_ABSENCE"
+    assert "child absence" in detail["message"].lower()
+
+
+def test_manual_log_blocked_when_child_marked_absent():
+    therapist_headers = _login("therapist@demo.com")
+    admin_headers = _login("superadmin@demo.com")
+    session_id = _fresh_scheduled_session(therapist_headers)
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Unwell"},
+    )
+    assert create.status_code == 201, create.text
+    req_id = create.json()["id"]
+    approve = client.post(
+        f"/api/v1/sessions/absence/{req_id}/approve",
+        headers=admin_headers,
+        json={},
+    )
+    assert approve.status_code == 200, approve.text
+
+    sess = client.get(f"/api/v1/sessions/{session_id}", headers=therapist_headers)
+    assert sess.status_code == 200
+    body = sess.json()
+    scheduled_date = body["scheduled_date"]
+    case_id = body["case_id"]
+
+    manual = client.post(
+        "/api/v1/sessions/manual",
+        headers=therapist_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": scheduled_date,
+            "actual_start_at": f"{scheduled_date}T10:00:00Z",
+            "actual_end_at": f"{scheduled_date}T11:00:00Z",
+            "mode": "HOME",
+        },
+    )
+    assert manual.status_code == 409, manual.text
+    detail = manual.json()["detail"]
+    assert detail["code"] == "CHILD_MARKED_ABSENT"
+    assert detail["recommended_action"] == "blocked_absence"
+    assert "marked absent" in detail["message"].lower()

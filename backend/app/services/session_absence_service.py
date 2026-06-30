@@ -17,6 +17,21 @@ from app.models.user import User
 from app.services import billing_ledger_service, notification_service, parent_service
 from app.services import leave_notification_service as leave_notify
 
+PENDING_CHILD_ABSENCE_MESSAGE = (
+    "You have applied for child absence — session cannot be started."
+)
+APPROVED_CHILD_ABSENCE_MESSAGE = "The child was marked absent on this day."
+PENDING_CHILD_ABSENCE_LOG_MESSAGE = (
+    "You have applied for child absence — a session log cannot be added for this day."
+)
+
+
+class ChildAbsenceBlockError(ValueError):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
 
 def _user_name(db: Session, user_id: int | None) -> str | None:
     if not user_id:
@@ -67,6 +82,55 @@ def has_blocking_absence_for_session(db: Session, session_id: int) -> bool:
         )
     ).first()
     return row is not None
+
+
+def get_child_absence_block(db: Session, session_id: int, *, for_manual_log: bool = False) -> dict | None:
+    """Return {code, message} when child absence should block start or manual log, else None."""
+    session = db.get(TherapySession, session_id)
+    if not session:
+        return None
+    if session.status == SessionStatus.CLIENT_ABSENT:
+        return {"code": "CHILD_MARKED_ABSENT", "message": APPROVED_CHILD_ABSENCE_MESSAGE}
+
+    row = db.scalars(
+        select(SessionAbsenceRequest)
+        .where(
+            SessionAbsenceRequest.session_id == session_id,
+            SessionAbsenceRequest.absence_type == SessionAbsenceType.CLIENT_ABSENT,
+            SessionAbsenceRequest.status.in_(
+                (SessionAbsenceStatus.PENDING_APPROVAL, SessionAbsenceStatus.APPROVED)
+            ),
+        )
+        .order_by(SessionAbsenceRequest.created_at.desc())
+    ).first()
+    if not row:
+        return None
+    if row.status == SessionAbsenceStatus.APPROVED:
+        return {"code": "CHILD_MARKED_ABSENT", "message": APPROVED_CHILD_ABSENCE_MESSAGE}
+    message = (
+        PENDING_CHILD_ABSENCE_LOG_MESSAGE
+        if for_manual_log
+        else PENDING_CHILD_ABSENCE_MESSAGE
+    )
+    return {"code": "PENDING_CHILD_ABSENCE", "message": message}
+
+
+def assert_may_start_session(db: Session, session: TherapySession) -> None:
+    block = get_child_absence_block(db, session.id)
+    if block:
+        raise ChildAbsenceBlockError(block["code"], block["message"])
+
+
+def child_absence_calendar_status(db: Session, session_id: int | None) -> str | None:
+    """Calendar flag: 'pending' | 'approved' for child absence, else None."""
+    if not session_id:
+        return None
+    block = get_child_absence_block(db, session_id)
+    if not block:
+        return None
+    if block["code"] == "CHILD_MARKED_ABSENT":
+        return "approved"
+    return "pending"
 
 
 def _admin_can_review(user: User) -> bool:

@@ -97,11 +97,11 @@ export function SessionAbsenceSheet({
         }),
       })
       setReason('')
-      onSuccess?.('Child absent logged — parent or admin will review.')
+      onSuccess?.('Child absent logged — parent or admin will review.', sessionId)
     } catch (err) {
       if (err.status === 409 && err.detail?.existing && err.detail?.absence_request) {
         setPendingRequest(err.detail.absence_request)
-        onSuccess?.(err.detail.message || 'Child absence already submitted for this session.')
+        onSuccess?.(err.detail.message || 'Child absence already submitted for this session.', sessionId)
         return
       }
       const msg = err.message || 'Could not submit child absent'

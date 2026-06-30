@@ -2,6 +2,7 @@ import { apiFetch } from './apiClient.js'
 import {
   labelForSessionAction,
   logsPathForSession,
+  parseChildAbsenceBlock,
   parseSessionStartConflict,
   sessionStartIdempotencyKey,
 } from './sessionStartRules.js'
@@ -20,6 +21,12 @@ export async function startClinicalSession(sessionId, session, therapistId, body
     })
     return { ok: true, session: started }
   } catch (err) {
+    if (err?.status === 400) {
+      const block = parseChildAbsenceBlock(err.detail)
+      if (block) {
+        return { ok: false, absenceBlock: block, message: block.message }
+      }
+    }
     if (err?.status === 409) {
       const conflict = parseSessionStartConflict(err.detail)
       if (conflict) {

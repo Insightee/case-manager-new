@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { patchCachesAfterAbsenceSubmit } from '../../lib/therapistSessionLogCache.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
@@ -302,10 +303,14 @@ export function TherapistSessionComposer({
             selectedSessionId={absenceSessionId || todaySessionsForCase[0]?.id}
             onSessionChange={setAbsenceSessionId}
             disabled={busy}
-            onSuccess={(msg) => {
+            onSuccess={(msg, submittedSessionId) => {
               setLocalError('')
               setComposerSuccess(msg || 'Child absent logged — parent or admin will review.')
-              onSessionStarted?.({ message: msg })
+              const sid = submittedSessionId || absenceSessionId || todaySessionsForCase[0]?.id
+              if (sid && user?.id) {
+                patchCachesAfterAbsenceSubmit(sid, user.id)
+              }
+              onSessionStarted?.({ message: msg, sessionId: sid })
             }}
             onError={(msg) => {
               setLocalError(msg)

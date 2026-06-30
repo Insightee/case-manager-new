@@ -67,6 +67,8 @@ export const THERAPIST_STATUS_STYLES = {
   RESCHEDULED: 'bg-purple-50 text-purple-800 border-purple-200',
   SESSION: 'bg-violet-100 text-violet-900 border-violet-200',
   IN_PROGRESS: 'bg-amber-100 text-amber-900 border-amber-300',
+  CLIENT_ABSENT: 'bg-orange-100 text-orange-900 border-orange-200 line-through',
+  CHILD_ABSENT_PENDING: 'bg-amber-50 text-amber-900 border-amber-300',
 }
 
 export function isCaseUnderReview(caseStatus) {
@@ -89,6 +91,12 @@ export function calendarEventLabel(s, mode = 'therapist') {
     if (s.on_leave) {
       return `Leave · ${who}`
     }
+    if (s.status === 'CLIENT_ABSENT' || s.child_absence_status === 'approved') {
+      return `Child absent · ${who}`
+    }
+    if (s.child_absence_status === 'pending') {
+      return `Absence pending · ${who}`
+    }
     const prefix =
       s.status === 'IN_PROGRESS' ? 'In progress · ' : underReview ? 'Under review · ' : 'Session · '
     return `${prefix}${who}`
@@ -97,6 +105,12 @@ export function calendarEventLabel(s, mode = 'therapist') {
     const who = s.child_name || s.case_code || 'Booked'
     if (s.on_leave) {
       return `Leave · ${who}`
+    }
+    if (s.child_absence_status === 'approved') {
+      return `Child absent · ${who}`
+    }
+    if (s.child_absence_status === 'pending') {
+      return `Absence pending · ${who}`
     }
     if (isCaseUnderReview(s.case_status)) {
       return `Under review · ${who}`
@@ -121,10 +135,24 @@ export function calendarEventStyle(s, mode = 'therapist') {
     return THERAPIST_STATUS_STYLES.HOLIDAY
   }
   if (s.event_type === 'session') {
+    if (s.status === 'CLIENT_ABSENT' || s.child_absence_status === 'approved') {
+      return THERAPIST_STATUS_STYLES.CLIENT_ABSENT
+    }
+    if (s.child_absence_status === 'pending') {
+      return THERAPIST_STATUS_STYLES.CHILD_ABSENT_PENDING
+    }
     return THERAPIST_STATUS_STYLES[s.status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'SESSION']
   }
-  if (s.status === 'BOOKED' && isCaseUnderReview(s.case_status)) {
-    return THERAPIST_STATUS_STYLES.BOOKED_UNDER_REVIEW
+  if (s.status === 'BOOKED') {
+    if (s.child_absence_status === 'approved') {
+      return THERAPIST_STATUS_STYLES.CLIENT_ABSENT
+    }
+    if (s.child_absence_status === 'pending') {
+      return THERAPIST_STATUS_STYLES.CHILD_ABSENT_PENDING
+    }
+    if (isCaseUnderReview(s.case_status)) {
+      return THERAPIST_STATUS_STYLES.BOOKED_UNDER_REVIEW
+    }
   }
   return THERAPIST_STATUS_STYLES[s.status] || ''
 }

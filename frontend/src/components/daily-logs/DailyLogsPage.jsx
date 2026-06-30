@@ -33,7 +33,7 @@ import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
 import { existingVisitForDay, sessionToLogShape } from '../../lib/sessionDayConflict.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { canStartSessionToday } from '../../lib/sessionStartRules.js'
+import { canStartSessionToday, isAbsenceConflict } from '../../lib/sessionStartRules.js'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import { ActiveSessionCard } from './ActiveSessionCard.jsx'
 import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
@@ -687,6 +687,10 @@ export function DailyLogsPage() {
         allowDuplicate ? { allow_duplicate: true } : {},
       )
       if (!result.ok) {
+        if (result.absenceBlock?.message) {
+          setError(result.absenceBlock.message)
+          return
+        }
         if (result.conflict?.recommendedAction === 'CONTINUE_SESSION') {
           setSuccess('A session is in progress — end it above to start another visit.')
           activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -831,6 +835,10 @@ export function DailyLogsPage() {
       openLogForm(session, { required: true })
       void loadAll({ silent: true })
     } catch (err) {
+      if (err?.status === 409 && isAbsenceConflict(err.detail)) {
+        setExistingSessionConflict(err.detail)
+        return
+      }
       if (err?.status === 409 && err.detail?.code === 'EXISTING_SESSION_FOR_DATE') {
         setExistingSessionConflict(err.detail)
         return
@@ -842,6 +850,11 @@ export function DailyLogsPage() {
   }
 
   async function handleExistingSessionAction(conflict) {
+    if (conflict?.recommended_action === 'blocked_absence' || conflict?.code === 'PENDING_CHILD_ABSENCE' || conflict?.code === 'CHILD_MARKED_ABSENT') {
+      setExistingSessionConflict(null)
+      setError(conflict.message || 'This day is recorded as child absent.')
+      return
+    }
     setExistingSessionConflict(null)
     setWalkInConflict(null)
     setScheduledSessionHint('')

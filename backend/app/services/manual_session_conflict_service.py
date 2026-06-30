@@ -81,9 +81,32 @@ def _recommended_action(session: TherapySession, log_status: str) -> str:
     return "edit_log"
 
 
-def build_existing_session_conflict(session: TherapySession) -> dict:
+def build_existing_session_conflict(db: Session, session: TherapySession) -> dict:
+    from app.services import session_absence_service as absence_svc
+
+    block = absence_svc.get_child_absence_block(db, session.id, for_manual_log=True)
     case = session.case
     child_name = case.child.full_name if case and case.child else (case.case_code if case else None)
+    if block:
+        return {
+            "code": block["code"],
+            "existing_session_id": session.id,
+            "daily_log_id": None,
+            "has_daily_log": False,
+            "child_name": child_name,
+            "case_id": session.case_id,
+            "case_code": case.case_code if case else None,
+            "scheduled_date": session.scheduled_date.isoformat(),
+            "start_time": str(session.start_time) if session.start_time else None,
+            "end_time": str(session.end_time) if session.end_time else None,
+            "actual_start_at": session.actual_start_at.isoformat() if session.actual_start_at else None,
+            "actual_end_at": session.actual_end_at.isoformat() if session.actual_end_at else None,
+            "session_status": session.status.value,
+            "log_status": None,
+            "recommended_action": "blocked_absence",
+            "message": block["message"],
+        }
+
     log_status = _log_status(session)
     recommended_action = _recommended_action(session, log_status)
     daily_log = session.daily_log

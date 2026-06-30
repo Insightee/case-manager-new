@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { parseChildAbsenceBlock } from '../../lib/sessionStartRules.js'
 import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
 import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
@@ -71,6 +72,8 @@ export function SlotDetailSheet({ open, slot, onClose, onBook, onChanged }) {
   if (!open || !slot) return null
 
   const pendingTherapist = slot.status === 'BOOKED' && slot.approval_status === 'PENDING_THERAPIST'
+  const childAbsenceStatus = slot.child_absence_status || null
+  const startBlockedByAbsence = childAbsenceStatus === 'pending' || childAbsenceStatus === 'approved'
   const durMins = diffMins(slot.start_time, slot.end_time)
   const serviceModule = slot.product_module || slot.service_type || caseDetail?.product_module
   const moduleLabel = serviceModule ? (MODULE_LABELS[serviceModule] || serviceModule) : null
@@ -127,7 +130,8 @@ export function SlotDetailSheet({ open, slot, onClose, onBook, onChanged }) {
       onClose()
       navigate('/therapist/logs')
     } catch (err) {
-      setError(err.message || 'Could not start session')
+      const block = parseChildAbsenceBlock(err.detail)
+      setError(block?.message || err.message || 'Could not start session')
       setBusy(false)
     }
   }
@@ -295,7 +299,7 @@ export function SlotDetailSheet({ open, slot, onClose, onBook, onChanged }) {
               ) : (
                 <>
                   {/* Primary: Start Session */}
-                  {slot.session_id ? (
+                  {slot.session_id && !startBlockedByAbsence ? (
                     <button
                       type="button"
                       disabled={busy}
@@ -304,6 +308,13 @@ export function SlotDetailSheet({ open, slot, onClose, onBook, onChanged }) {
                     >
                       Start session
                     </button>
+                  ) : null}
+                  {startBlockedByAbsence ? (
+                    <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                      {childAbsenceStatus === 'approved'
+                        ? 'The child was marked absent on this day.'
+                        : 'You have applied for child absence — session cannot be started.'}
+                    </p>
                   ) : null}
 
                   {/* Secondary: More actions dropdown */}
