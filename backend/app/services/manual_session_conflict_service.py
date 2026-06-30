@@ -78,6 +78,8 @@ def _recommended_action(session: TherapySession, log_status: str) -> str:
         return "view_log"
     if log_status == "submitted":
         return "view_log"
+    if session.status == SessionStatus.SCHEDULED and session.daily_log is None:
+        return "complete_forgotten"
     return "edit_log"
 
 

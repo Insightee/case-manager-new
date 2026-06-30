@@ -35,6 +35,14 @@ class ManualSessionCreate(BaseModel):
     mode: SessionMode = SessionMode.HOME
 
 
+class CompleteForgottenSessionCreate(BaseModel):
+    """Record actual visit times on an existing scheduled session (forgot-to-log path)."""
+
+    actual_start_at: datetime
+    actual_end_at: datetime
+    mode: Optional[SessionMode] = None
+
+
 class ManualWalkInSessionCreate(BaseModel):
     client_name: str = Field(..., min_length=1, max_length=255)
     client_email: EmailStr

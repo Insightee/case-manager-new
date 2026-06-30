@@ -438,6 +438,44 @@ def list_upcoming_sessions(
     return list(sessions)
 
 
+def complete_forgotten_session(
+    db: Session,
+    session: TherapySession,
+    therapist_user_id: int,
+    *,
+    actual_start_at: datetime,
+    actual_end_at: datetime,
+    mode: SessionMode | None = None,
+) -> TherapySession:
+    """Mark an existing scheduled visit completed with retroactive clock times."""
+    if session.therapist_user_id != therapist_user_id:
+        raise ValueError("Not your session")
+    if session.daily_log is not None:
+        raise ValueError("This session already has a log")
+    if session.status != SessionStatus.SCHEDULED:
+        raise ValueError("Only scheduled visits can be completed from Forgot to log")
+    today = today_ist()
+    if session.scheduled_date > today:
+        raise ValueError("Cannot complete future visits this way")
+    start = _aware(actual_start_at)
+    end = _aware(actual_end_at)
+    if end <= start:
+        raise ValueError("End time must be after start time")
+    if start.astimezone(IST).date() != session.scheduled_date:
+        raise ValueError("Visit times must fall on the scheduled date")
+    validate_session_duration_minutes(duration_minutes_between(start, end))
+    session.status = SessionStatus.COMPLETED
+    session.actual_start_at = start
+    session.actual_end_at = end
+    session.start_time = wall_clock_time_ist(start)
+    session.end_time = wall_clock_time_ist(end)
+    if mode is not None:
+        session.mode = mode
+    start_svc.clear_idempotency_for_session(db, session.id)
+    db.flush()
+    return session
+
+
 def create_manual_session(
     db: Session,
     *,
@@ -480,6 +518,7 @@ def validate_manual_duration(actual_start_at: datetime, actual_end_at: datetime)
 
 __all__ = [
     "MIN_SESSION_DURATION_ERROR",
+    "complete_forgotten_session",
     "create_manual_session",
     "session_audit_snapshot",
     "void_session_before_log",

@@ -836,11 +836,11 @@ export function DailyLogsPage() {
       void loadAll({ silent: true })
     } catch (err) {
       if (err?.status === 409 && isAbsenceConflict(err.detail)) {
-        setExistingSessionConflict(err.detail)
+        setExistingSessionConflict({ ...err.detail, pending_payload: payload })
         return
       }
       if (err?.status === 409 && err.detail?.code === 'EXISTING_SESSION_FOR_DATE') {
-        setExistingSessionConflict(err.detail)
+        setExistingSessionConflict({ ...err.detail, pending_payload: payload })
         return
       }
       setError(err.message || 'Could not add session')
@@ -869,6 +869,35 @@ export function DailyLogsPage() {
         return
       }
 
+      if (conflict.recommended_action === 'complete_forgotten') {
+        const pending = conflict.pending_payload
+        if (!pending?.actual_start_at || !pending?.actual_end_at) {
+          setExistingSessionConflict(conflict)
+          setError('Enter when the visit happened in Forgot to log, then tap Record visit & write log.')
+          return
+        }
+        const completed = await apiFetch(
+          `/api/v1/sessions/${conflict.existing_session_id}/complete-forgotten`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              actual_start_at: pending.actual_start_at,
+              actual_end_at: pending.actual_end_at,
+              mode: pending.mode,
+            }),
+          },
+        )
+        patchCachesAfterSessionEnd(completed)
+        openLogForm(sessionToLogShape(completed), { required: true })
+        setSuccess(
+          pending.isPastDay
+            ? 'Visit recorded — submit the log and include a late reason for admin review.'
+            : 'Visit recorded — complete the session log below.',
+        )
+        void loadAll({ silent: true })
+        return
+      }
+
       const session = await apiFetch(`/api/v1/sessions/${conflict.existing_session_id}`)
       const sessionShape = sessionToLogShape(session)
 
@@ -883,6 +912,10 @@ export function DailyLogsPage() {
       }
 
       if (conflict.recommended_action === 'edit_log' || session.status === 'COMPLETED') {
+        if (session.status !== 'COMPLETED') {
+          openSessionFromDeepLink(session)
+          return
+        }
         const log = logs.find((l) => Number(l.session_id) === Number(session.id) && l.id > 0)
         openLogForm(sessionShape, { log: log || null, required: !session.has_daily_log })
         return

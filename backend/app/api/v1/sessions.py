@@ -17,6 +17,7 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.user import User
 from app.schemas.session import (
+    CompleteForgottenSessionCreate,
     ManualSessionCreate,
     ManualWalkInSessionCreate,
     ManualWalkInSessionResponse,
@@ -310,6 +311,52 @@ def create_manual_walk_in_session(
         invite_url=result.get("invite_url"),
         invite_sent=result.get("invite_sent", False),
     )
+
+
+@router.post("/{session_id}/complete-forgotten", response_model=SessionRead)
+def complete_forgotten_session_route(
+    session_id: int,
+    payload: CompleteForgottenSessionCreate,
+    request: Request,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    """Apply retroactive visit times to an existing scheduled session (forgot-to-log)."""
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == session_id)
+        .options(selectinload(TherapySession.case).selectinload(Case.child), selectinload(TherapySession.daily_log))
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if session.therapist_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Can only complete your own sessions")
+    try:
+        session = session_service.complete_forgotten_session(
+            db,
+            session,
+            user.id,
+            actual_start_at=payload.actual_start_at,
+            actual_end_at=payload.actual_end_at,
+            mode=payload.mode,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="complete_forgotten",
+        entity_type="session",
+        entity_id=session.id,
+        **meta,
+    )
+    db.commit()
+    db.refresh(session)
+    return _session_read(session, case)
 
 
 @router.get("/{session_id}", response_model=SessionRead)

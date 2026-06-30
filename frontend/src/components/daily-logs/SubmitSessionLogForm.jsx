@@ -242,7 +242,15 @@ export function SubmitSessionLogForm({
       return
     }
     if (!isEdit && session?.status && session.status !== 'COMPLETED') {
-      setError('End the session before submitting a log.')
+      if (session.status === 'SCHEDULED') {
+        setError(
+          'This visit still needs its session times recorded. Use Forgot to log, enter when the visit happened, then tap Record visit & write log.',
+        )
+      } else if (session.status === 'IN_PROGRESS') {
+        setError('End the live session first — use End session above — then submit this log.')
+      } else {
+        setError('This visit is not marked finished yet — complete the session before submitting the log.')
+      }
       return
     }
     const validationError = validateSessionLogForm(form, { isLateSession })

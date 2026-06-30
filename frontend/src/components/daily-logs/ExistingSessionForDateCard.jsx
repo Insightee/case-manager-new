@@ -9,6 +9,7 @@ function formatClock(t) {
 function primaryLabel(conflict) {
   const action = conflict?.recommended_action
   if (action === 'resume_session') return 'Go to active session'
+  if (action === 'complete_forgotten') return 'Record visit & write log'
   if (action === 'view_log' && conflict?.log_status === 'approved') return 'View approved log'
   if (action === 'edit_log' || action === 'view_log') return 'Edit session log'
   return 'Edit session log'

@@ -81,7 +81,59 @@ def test_manual_session_blocks_duplicate_same_day():
     detail = res.json()["detail"]
     assert detail["code"] == "EXISTING_SESSION_FOR_DATE"
     assert detail["existing_session_id"] == session_id
-    assert detail["recommended_action"] in {"resume_session", "edit_log", "view_log"}
+    assert detail["recommended_action"] == "complete_forgotten"
+
+
+def test_complete_forgotten_on_scheduled_session_then_log():
+    headers = _login("therapist@demo.com")
+    db = SessionLocal()
+    isolated_date = date(2020, 3, 18)
+    try:
+        case_id = _active_case_id(db)
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        existing = TherapySession(
+            case_id=case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=isolated_date,
+            start_time=time(10, 0),
+            end_time=time(11, 0),
+            mode=SessionMode.HOME,
+            status=SessionStatus.SCHEDULED,
+        )
+        db.add(existing)
+        db.commit()
+        session_id = existing.id
+    finally:
+        db.close()
+
+    start = datetime.combine(isolated_date, time(14, 0), tzinfo=timezone.utc)
+    end = start + timedelta(hours=1)
+    completed = client.post(
+        f"/api/v1/sessions/{session_id}/complete-forgotten",
+        headers=headers,
+        json={
+            "actual_start_at": start.isoformat().replace("+00:00", "Z"),
+            "actual_end_at": end.isoformat().replace("+00:00", "Z"),
+            "mode": "HOME",
+        },
+    )
+    assert completed.status_code == 200, completed.text
+    body = completed.json()
+    assert body["status"] == "COMPLETED"
+    assert body["actual_start_at"] is not None
+    assert body["actual_end_at"] is not None
+
+    log_res = client.post(
+        "/api/v1/daily-logs",
+        headers=headers,
+        json={
+            "session_id": session_id,
+            "attendance_status": "PRESENT",
+            "activities_done": "Retroactive visit logged after schedule",
+            "late_reason": "Forgot to clock in on visit day",
+        },
+    )
+    assert log_res.status_code in (200, 201), log_res.text
 
 
 def test_manual_session_prefers_completed_over_scheduled_same_day():
