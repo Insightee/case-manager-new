@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { patchCachesAfterAbsenceSubmit } from '../../lib/therapistSessionLogCache.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { todayIsoIST } from '../../lib/datetime.js'
+import { isAbsenceConflict } from '../../lib/sessionStartRules.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { ExistingSessionForDateCard } from '../daily-logs/ExistingSessionForDateCard.jsx'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
@@ -145,6 +146,10 @@ export function TherapistSessionComposer({
           }),
         })
       } catch (err) {
+        if (err?.status === 409 && isAbsenceConflict(err.detail)) {
+          setLocalError(err.detail.message || 'Session cannot be started because of child absence.')
+          return
+        }
         if (err?.status === 409 && err?.detail?.code === 'EXISTING_SESSION_FOR_DATE') {
           const detail = err.detail
           const status = detail.session_status || detail.status

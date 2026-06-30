@@ -185,7 +185,10 @@ def create_session(
         )
         if existing:
             conflict = manual_conflict.build_existing_session_conflict(db, existing)
-            if existing.status == SessionStatus.SCHEDULED:
+            if (
+                existing.status == SessionStatus.SCHEDULED
+                and conflict.get("recommended_action") != "blocked_absence"
+            ):
                 conflict["message"] = (
                     "A scheduled session already exists for this client today."
                 )

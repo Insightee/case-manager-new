@@ -324,6 +324,74 @@ def test_cannot_start_session_with_pending_child_absence():
     assert "child absence" in detail["message"].lower()
 
 
+def test_walk_in_create_blocked_with_pending_child_absence_message():
+    from app.core.timezone import today_ist
+
+    therapist_headers = _login("therapist@demo.com")
+    today = today_ist().isoformat()
+    cases = client.get("/api/v1/cases?assigned=true&page_size=20", headers=therapist_headers).json()
+    case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
+    session_id = None
+    case_id = None
+    for idx, case in enumerate(case_items):
+        case_id = int(case["id"])
+        listed = client.get(
+            f"/api/v1/sessions?assigned=true&case_id={case_id}&page_size=50",
+            headers=therapist_headers,
+        ).json()
+        items = listed.get("items", listed) if isinstance(listed, dict) else listed
+        for s in items:
+            if s.get("scheduled_date") == today and s.get("status") == "SCHEDULED":
+                session_id = int(s["id"])
+                break
+        if session_id:
+            break
+        created = client.post(
+            "/api/v1/sessions",
+            headers=therapist_headers,
+            json={
+                "case_id": case_id,
+                "therapist_user_id": 0,
+                "scheduled_date": today,
+                "start_time": f"{18 + (idx % 2):02d}:{10 + idx:02d}",
+                "end_time": f"{19 + (idx % 2):02d}:{10 + idx:02d}",
+                "mode": "HOME",
+                "status": "SCHEDULED",
+            },
+        )
+        if created.status_code == 201:
+            session_id = int(created.json()["id"])
+            break
+    assert session_id and case_id
+
+    create = client.post(
+        f"/api/v1/sessions/{session_id}/absence",
+        headers=therapist_headers,
+        json={"absence_type": "CLIENT_ABSENT", "reason": "Unwell"},
+    )
+    assert create.status_code == 201, create.text
+
+    walk_in = client.post(
+        "/api/v1/sessions",
+        headers=therapist_headers,
+        json={
+            "case_id": case_id,
+            "therapist_user_id": 0,
+            "scheduled_date": today,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "mode": "HOME",
+            "status": "SCHEDULED",
+        },
+    )
+    assert walk_in.status_code == 409, walk_in.text
+    detail = walk_in.json()["detail"]
+    assert detail["code"] == "PENDING_CHILD_ABSENCE"
+    assert detail["recommended_action"] == "blocked_absence"
+    assert "scheduled session already exists" not in detail["message"].lower()
+    assert "child absence" in detail["message"].lower()
+
+
 def test_manual_log_blocked_when_child_marked_absent():
     therapist_headers = _login("therapist@demo.com")
     admin_headers = _login("superadmin@demo.com")
