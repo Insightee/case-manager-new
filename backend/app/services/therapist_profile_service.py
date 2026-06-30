@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import RoleName
@@ -19,9 +19,7 @@ def _normalize_certs(certs: list[str] | None) -> list[str]:
     return [c.strip() for c in certs if c and c.strip()]
 
 
-# Therapist-editable fields that are reviewed/approved. The approved snapshot
-# captures exactly these so the admin review screen can diff pending edits
-# against the last approved version.
+# Therapist-editable listing fields reviewed before publish.
 SNAPSHOT_FIELDS = (
     "display_name",
     "short_bio",
@@ -42,9 +40,48 @@ def build_profile_snapshot(profile: TherapistProfile) -> dict:
     }
 
 
+def build_submission_snapshot(data: dict, db: Session | None = None) -> dict:
+    services = data.get("services_offered") or []
+    if db is not None and services:
+        try:
+            services = validate_service_ids(services, db)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    return {
+        "display_name": (data.get("display_name") or "").strip() or None,
+        "short_bio": (data.get("short_bio") or "").strip() or None,
+        "academic_qualifications": (data.get("academic_qualifications") or "").strip() or None,
+        "professional_certificates": _normalize_certs(data.get("professional_certificates")),
+        "services_offered": list(services),
+    }
+
+
 def capture_approved_snapshot(profile: TherapistProfile) -> None:
     """Store the current editable fields as the new approved baseline."""
     profile.approved_snapshot = build_profile_snapshot(profile)
+
+
+def has_pending_submission(profile: TherapistProfile) -> bool:
+    return bool(profile.pending_submission)
+
+
+def apply_snapshot_to_profile(profile: TherapistProfile, snapshot: dict) -> None:
+    for key in SNAPSHOT_FIELDS:
+        if key not in snapshot:
+            continue
+        value = snapshot[key]
+        if key in ("professional_certificates", "services_offered"):
+            profile.__setattr__(key, list(value or []))
+        else:
+            profile.__setattr__(key, value)
+
+
+def apply_pending_submission(profile: TherapistProfile) -> None:
+    pending = profile.pending_submission
+    if not pending:
+        return
+    apply_snapshot_to_profile(profile, pending)
+    profile.pending_submission = None
 
 
 def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict:
@@ -83,6 +120,8 @@ def profile_to_dict(profile: TherapistProfile, user: User | None = None) -> dict
         "leave_carry_forward_days_backfill": int(profile.leave_carry_forward_days_backfill or 0),
         "leave_backfill_note": profile.leave_backfill_note,
         "approved_snapshot": profile.approved_snapshot,
+        "pending_submission": profile.pending_submission,
+        "has_pending_changes": has_pending_submission(profile),
     }
 
 
@@ -167,39 +206,80 @@ def apply_leave_backfill(
     profile.leave_backfill_updated_by_user_id = actor_user_id
 
 
-def therapist_save_profile(db: Session, user: User, data: dict) -> TherapistProfile:
+def _validate_submission_payload(data: dict, user: User, db: Session) -> dict:
+    submission = build_submission_snapshot(data, db)
+    if not submission["services_offered"]:
+        raise HTTPException(status_code=400, detail="Select at least one service you offer")
+    if not (submission["display_name"] or user.full_name):
+        raise HTTPException(status_code=400, detail="Display name is required")
+    return submission
+
+
+def therapist_submit_profile(db: Session, user: User, data: dict) -> TherapistProfile:
     if RoleName.THERAPIST.value not in user.role_names:
         raise HTTPException(status_code=403, detail="Therapist access only")
     profile = get_or_create_profile(db, user.id)
     if profile.status == TherapistProfileStatus.PAUSED:
-        raise HTTPException(status_code=400, detail="Profile is paused. Contact admin to resume.")
-    apply_profile_fields(profile, data, db)
-    if profile.status == TherapistProfileStatus.APPROVED:
-        profile.status = TherapistProfileStatus.DRAFT
-    db.flush()
-    return profile
-
-
-def therapist_submit_profile(db: Session, user: User) -> TherapistProfile:
-    profile = get_or_create_profile(db, user.id)
-    if profile.status == TherapistProfileStatus.PAUSED:
         raise HTTPException(status_code=400, detail="Profile is paused")
-    if not (profile.services_offered or []):
-        raise HTTPException(status_code=400, detail="Select at least one service you offer")
-    if not (profile.display_name or user.full_name):
-        raise HTTPException(status_code=400, detail="Display name is required")
-    profile.status = TherapistProfileStatus.PENDING
+
+    submission = _validate_submission_payload(data, user, db)
+    if not submission["display_name"]:
+        submission["display_name"] = user.full_name
+
+    operational = {}
+    if "employment_start_date" in data:
+        operational["employment_start_date"] = data["employment_start_date"] or None
+
+    if profile.approved_snapshot:
+        profile.pending_submission = submission
+        apply_snapshot_to_profile(profile, profile.approved_snapshot)
+        if operational:
+            apply_profile_fields(profile, operational, db)
+        profile.status = TherapistProfileStatus.APPROVED
+    else:
+        apply_profile_fields(profile, {**submission, **operational}, db)
+        profile.status = TherapistProfileStatus.PENDING
+        profile.pending_submission = None
+
     profile.submitted_at = datetime.now(timezone.utc)
     profile.admin_note = None
     db.flush()
     return profile
 
 
+def admin_approve_profile(profile: TherapistProfile, admin_note: str | None = None) -> None:
+    if profile.pending_submission:
+        apply_pending_submission(profile)
+    profile.status = TherapistProfileStatus.APPROVED
+    if admin_note:
+        profile.admin_note = admin_note
+    capture_approved_snapshot(profile)
+
+
 def list_profiles(db: Session, status: TherapistProfileStatus | None = None) -> list[TherapistProfile]:
     stmt = select(TherapistProfile).order_by(TherapistProfile.updated_at.desc())
-    if status:
+    if status == TherapistProfileStatus.PENDING:
+        stmt = stmt.where(
+            or_(
+                TherapistProfile.status == TherapistProfileStatus.PENDING,
+                TherapistProfile.pending_submission.isnot(None),
+            )
+        )
+    elif status:
         stmt = stmt.where(TherapistProfile.status == status)
     return list(db.scalars(stmt).all())
+
+
+def profile_summary_counts(profiles: list[TherapistProfile]) -> dict[str, int]:
+    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0}
+    for profile in profiles:
+        if has_pending_submission(profile):
+            counts["PENDING"] += 1
+            continue
+        key = profile.status.value if hasattr(profile.status, "value") else str(profile.status)
+        if key in counts:
+            counts[key] += 1
+    return counts
 
 
 def service_categories(db: Session) -> list[dict[str, str]]:

@@ -373,6 +373,10 @@ def run():
                 leave_balance_year=date.today().year,
             )
             db.add(tp)
+            db.flush()
+            from app.services.therapist_profile_service import capture_approved_snapshot
+
+            capture_approved_snapshot(tp)
         elif tp.employment_start_date is None:
             tp.employment_start_date = date(2019, 6, 1)
             if tp.leave_balance_year is None:

@@ -42,17 +42,17 @@ def get_my_profile(user: User = Depends(get_current_user), db: Session = Depends
     return TherapistProfileRead(**svc.profile_to_dict(profile, user))
 
 
-@router.put("/profile", response_model=TherapistProfileRead)
-def save_my_profile(
+@router.post("/profile/submit", response_model=TherapistProfileRead)
+def submit_my_profile(
     payload: TherapistProfileUpdate,
     request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_therapist(user)
-    profile = svc.therapist_save_profile(db, user, payload.model_dump(exclude_unset=True))
+    profile = svc.therapist_submit_profile(db, user, payload.model_dump(exclude_unset=True))
     meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="save_profile", entity_type="therapist_profile", entity_id=profile.id, **meta)
+    log_audit(db, actor_user_id=user.id, action="submit_profile", entity_type="therapist_profile", entity_id=profile.id, **meta)
     db.commit()
     db.refresh(profile)
     return TherapistProfileRead(**svc.profile_to_dict(profile, user))
@@ -67,18 +67,3 @@ def list_my_reviews(user: User = Depends(get_current_user), db: Session = Depend
         summary=TherapistReviewSummary(**summary),
         reviews=[TherapistSessionReviewRead(**r) for r in rows],
     )
-
-
-@router.post("/profile/submit", response_model=TherapistProfileRead)
-def submit_my_profile(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    _require_therapist(user)
-    profile = svc.therapist_submit_profile(db, user)
-    meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="submit_profile", entity_type="therapist_profile", entity_id=profile.id, **meta)
-    db.commit()
-    db.refresh(profile)
-    return TherapistProfileRead(**svc.profile_to_dict(profile, user))

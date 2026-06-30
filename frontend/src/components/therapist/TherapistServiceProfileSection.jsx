@@ -14,6 +14,30 @@ function serviceLabels(categories, ids) {
   return (ids || []).map((id) => map[id] || id.replace(/_/g, ' '))
 }
 
+function profileFormFromRecord(prof) {
+  const pending = prof?.pending_submission
+  const source = pending || prof || {}
+  return {
+    display_name: source.display_name || prof?.full_name || '',
+    short_bio: source.short_bio || '',
+    academic_qualifications: source.academic_qualifications || '',
+    professional_certificates: (source.professional_certificates || []).join('\n'),
+    services_offered: source.services_offered || [],
+    employment_start_date: prof?.employment_start_date || '',
+  }
+}
+
+function publishedFormFromRecord(prof) {
+  return {
+    display_name: prof?.display_name || prof?.full_name || '',
+    short_bio: prof?.short_bio || '',
+    academic_qualifications: prof?.academic_qualifications || '',
+    professional_certificates: (prof?.professional_certificates || []).join('\n'),
+    services_offered: prof?.services_offered || [],
+    employment_start_date: prof?.employment_start_date || '',
+  }
+}
+
 export function TherapistServiceProfileSection() {
   const [editing, setEditing] = useState(false)
   const [categories, setCategories] = useState([])
@@ -37,14 +61,7 @@ export function TherapistServiceProfileSection() {
     ])
     setCategories(cats)
     setProfile(prof)
-    setForm({
-      display_name: prof.display_name || prof.full_name || '',
-      short_bio: prof.short_bio || '',
-      academic_qualifications: prof.academic_qualifications || '',
-      professional_certificates: (prof.professional_certificates || []).join('\n'),
-      services_offered: prof.services_offered || [],
-      employment_start_date: prof.employment_start_date || '',
-    })
+    setForm(publishedFormFromRecord(prof))
   }
 
   useEffect(() => {
@@ -52,53 +69,53 @@ export function TherapistServiceProfileSection() {
   }, [])
 
   const paused = profile?.status === 'PAUSED'
-  const st = PROFILE_STATUS[profile?.status] || PROFILE_STATUS.DRAFT
+  const awaitingFirstApproval = profile?.status === 'PENDING' && !profile?.approved_snapshot
+  const hasPendingChanges = Boolean(profile?.has_pending_changes)
+  const statusKey = hasPendingChanges ? 'PENDING' : profile?.status
+  const st = PROFILE_STATUS[statusKey] || PROFILE_STATUS.DRAFT
 
-  async function persistDraft() {
-    const certs = form.professional_certificates
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    const updated = await apiFetch('/api/v1/therapist/profile', {
-      method: 'PUT',
-      body: JSON.stringify({
-        display_name: form.display_name.trim(),
-        short_bio: form.short_bio.trim() || null,
-        academic_qualifications: form.academic_qualifications.trim() || null,
-        professional_certificates: certs,
-        services_offered: form.services_offered,
-        employment_start_date: form.employment_start_date || null,
-      }),
-    })
-    setProfile(updated)
-    return updated
+  function openEdit() {
+    setForm(profileFormFromRecord(profile))
+    setEditing(true)
+    setError('')
+    setSuccess('')
   }
 
-  async function saveDraft(e) {
+  function cancelEdit() {
+    setForm(publishedFormFromRecord(profile))
+    setEditing(false)
+    setError('')
+  }
+
+  async function submitForApproval(e) {
     e.preventDefault()
     setSaving(true)
     setError('')
     setSuccess('')
     try {
-      await persistDraft()
-      setSuccess('Draft saved. Submit when ready for admin review.')
-      setEditing(false)
-    } catch (err) {
-      setError(err.message || 'Could not save')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function submitForApproval() {
-    setSaving(true)
-    setError('')
-    setSuccess('')
-    try {
-      await persistDraft()
-      const updated = await apiFetch('/api/v1/therapist/profile/submit', { method: 'POST' })
+      const certs = form.professional_certificates
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const updated = await apiFetch('/api/v1/therapist/profile/submit', {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: form.display_name.trim(),
+          short_bio: form.short_bio.trim() || null,
+          academic_qualifications: form.academic_qualifications.trim() || null,
+          professional_certificates: certs,
+          services_offered: form.services_offered,
+          employment_start_date: form.employment_start_date || null,
+        }),
+      })
       setProfile(updated)
-      setSuccess('Submitted for admin approval.')
+      setForm(publishedFormFromRecord(updated))
+      setEditing(false)
+      setSuccess(
+        updated.has_pending_changes || updated.status === 'PENDING'
+          ? 'Submitted for admin approval. Your live listing stays unchanged until approved.'
+          : 'Profile updated.',
+      )
     } catch (err) {
       setError(err.message || 'Could not submit')
     } finally {
@@ -106,7 +123,8 @@ export function TherapistServiceProfileSection() {
     }
   }
 
-  const serviceNames = serviceLabels(categories, form.services_offered)
+  const viewForm = publishedFormFromRecord(profile)
+  const serviceNames = serviceLabels(categories, viewForm.services_offered)
 
   return (
     <section className="therapist-profile__card">
@@ -114,7 +132,7 @@ export function TherapistServiceProfileSection() {
         <div>
           <h2>Service profile</h2>
           <p className="therapist-profile__card-hint" style={{ marginTop: 4, marginBottom: 0 }}>
-            Public-facing listing for families — admin approves before it goes live.
+            Public-facing listing for families — admin approves before updates go live.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -130,11 +148,11 @@ export function TherapistServiceProfileSection() {
                 whiteSpace: 'nowrap',
               }}
             >
-              {st.label}
+              {hasPendingChanges ? 'Changes pending approval' : st.label}
             </span>
           ) : null}
-          {!editing && !paused ? (
-            <button type="button" className="therapist-profile__edit-btn" onClick={() => setEditing(true)}>
+          {!editing && !paused && !awaitingFirstApproval ? (
+            <button type="button" className="therapist-profile__edit-btn" onClick={openEdit}>
               Edit
             </button>
           ) : null}
@@ -147,6 +165,12 @@ export function TherapistServiceProfileSection() {
         </p>
       ) : null}
 
+      {hasPendingChanges ? (
+        <p style={{ fontSize: '0.8rem', color: '#b45309', marginBottom: 12, padding: '8px 12px', background: '#fffbeb', borderRadius: 8 }}>
+          You have updates waiting for admin review. Your current listing below is still what families see.
+        </p>
+      ) : null}
+
       {!editing ? (
         <div className="therapist-profile__fields">
           <div className="therapist-profile__field">
@@ -156,8 +180,8 @@ export function TherapistServiceProfileSection() {
           <div className="therapist-profile__field">
             <span className="therapist-profile__field-label">Start date</span>
             <span className="therapist-profile__field-value">
-              {profile?.employment_start_date
-                ? new Date(profile.employment_start_date).toLocaleDateString('en-IN', {
+              {viewForm.employment_start_date
+                ? new Date(viewForm.employment_start_date).toLocaleDateString('en-IN', {
                     day: 'numeric',
                     month: 'short',
                     year: 'numeric',
@@ -167,27 +191,27 @@ export function TherapistServiceProfileSection() {
           </div>
           <div className="therapist-profile__field">
             <span className="therapist-profile__field-label">Display name</span>
-            <span className="therapist-profile__field-value">{form.display_name || '—'}</span>
+            <span className="therapist-profile__field-value">{viewForm.display_name || '—'}</span>
           </div>
           <div className="therapist-profile__field">
             <span className="therapist-profile__field-label">Bio</span>
-            <span className={`therapist-profile__field-value ${!form.short_bio ? 'therapist-profile__field-value--empty' : ''}`}>
-              {form.short_bio || 'Add a short bio'}
+            <span className={`therapist-profile__field-value ${!viewForm.short_bio ? 'therapist-profile__field-value--empty' : ''}`}>
+              {viewForm.short_bio || 'Add a short bio'}
             </span>
           </div>
           <div className="therapist-profile__field">
             <span className="therapist-profile__field-label">Qualifications</span>
             <span
-              className={`therapist-profile__field-value ${!form.academic_qualifications ? 'therapist-profile__field-value--empty' : ''}`}
+              className={`therapist-profile__field-value ${!viewForm.academic_qualifications ? 'therapist-profile__field-value--empty' : ''}`}
             >
-              {form.academic_qualifications || 'Not added'}
+              {viewForm.academic_qualifications || 'Not added'}
             </span>
           </div>
-          {(form.professional_certificates || '').trim() ? (
+          {(viewForm.professional_certificates || '').trim() ? (
             <div className="therapist-profile__field">
               <span className="therapist-profile__field-label">Certificates</span>
               <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: '0.875rem' }}>
-                {form.professional_certificates.split('\n').filter(Boolean).map((c) => (
+                {viewForm.professional_certificates.split('\n').filter(Boolean).map((c) => (
                   <li key={c}>{c}</li>
                 ))}
               </ul>
@@ -209,7 +233,7 @@ export function TherapistServiceProfileSection() {
           </div>
         </div>
       ) : (
-      <form onSubmit={saveDraft} className="therapist-profile__form" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <form onSubmit={submitForApproval} className="therapist-profile__form" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.875rem', fontWeight: 500 }}>
           Display name
           <input
@@ -280,27 +304,16 @@ export function TherapistServiceProfileSection() {
         </div>
 
         <div className="therapist-profile__form-actions">
-          <button type="submit" className="therapist-profile__save" disabled={saving || paused}>
-            {saving ? 'Saving…' : 'Save draft'}
+          <button type="submit" className="therapist-profile__edit-btn" disabled={saving || paused}>
+            {saving ? 'Submitting…' : 'Submit for approval'}
           </button>
           <button
             type="button"
             className="therapist-profile__cancel"
             disabled={saving}
-            onClick={() => {
-              setEditing(false)
-              setError('')
-            }}
+            onClick={cancelEdit}
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            className="therapist-profile__edit-btn"
-            disabled={saving || paused || profile?.status === 'PENDING'}
-            onClick={submitForApproval}
-          >
-            Submit for approval
           </button>
         </div>
       </form>

@@ -34,6 +34,9 @@ class TherapistProfile(Base):
     # Lets the review screen show a before/after diff of pending edits without a
     # separate change-request table. Null until a profile is first approved.
     approved_snapshot: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Staged listing edits from approved therapists. Live fields stay on the last
+    # approved snapshot until admin approves pending_submission.
+    pending_submission: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     license_number: Mapped[Optional[str]] = mapped_column(String(128))
     admin_note: Mapped[Optional[str]] = mapped_column(Text)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

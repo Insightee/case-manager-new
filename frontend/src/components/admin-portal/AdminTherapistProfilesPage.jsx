@@ -57,11 +57,13 @@ function valuesEqual(a, b, type) {
 // otherwise an array of changed fields with old/new values.
 function computeProfileChanges(profile) {
   const snap = profile?.approved_snapshot
+  const pending = profile?.pending_submission
+  const candidate = pending || profile
   if (!snap) return null
   const changes = []
   for (const field of DIFF_FIELDS) {
     const oldVal = normalizeForDiff(snap[field.key], field.type)
-    const newVal = normalizeForDiff(profile[field.key], field.type)
+    const newVal = normalizeForDiff(candidate[field.key], field.type)
     if (!valuesEqual(oldVal, newVal, field.type)) {
       changes.push({ ...field, oldVal, newVal })
     }
@@ -81,8 +83,10 @@ function formatDiffValue(value, type, categories) {
 }
 
 function ProfileChangesSection({ profile, categories }) {
-  // Only meaningful while edits are awaiting (or being prepared for) review.
-  if (!profile || !['PENDING', 'DRAFT'].includes(profile.status)) return null
+  const needsReview =
+    profile &&
+    (profile.status === 'PENDING' || profile.has_pending_changes || profile.status === 'DRAFT')
+  if (!needsReview) return null
 
   const changes = computeProfileChanges(profile)
 
@@ -771,7 +775,7 @@ export function AdminTherapistProfilesPage() {
               </label>
 
               <div className="therapist-profile-drawer__footer">
-                {canEditProfiles && selected.status === 'PENDING' ? (
+                {canEditProfiles && (selected.status === 'PENDING' || selected.has_pending_changes) ? (
                   <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => act('approve', selected.id)}>
                     Approve
                   </button>

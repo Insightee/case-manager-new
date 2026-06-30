@@ -2164,11 +2164,7 @@ def therapist_profiles_summary(
     ).all()
     therapist_ids = {t.id for t in therapists}
     profile_user_ids = {p.user_id for p in profiles}
-    counts = {"PENDING": 0, "DRAFT": 0, "APPROVED": 0, "PAUSED": 0}
-    for p in profiles:
-        key = p.status.value if hasattr(p.status, "value") else str(p.status)
-        if key in counts:
-            counts[key] += 1
+    counts = profile_svc.profile_summary_counts(profiles)
     no_profile = len(therapist_ids - profile_user_ids)
     return {**counts, "no_profile": no_profile, "total": len(profiles)}
 
@@ -2280,12 +2276,9 @@ def admin_approve_profile(
     profile = db.get(TherapistProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    profile.status = TherapistProfileStatus.APPROVED
+    profile_svc.admin_approve_profile(profile, payload.admin_note)
     profile.reviewed_by_user_id = user.id
     profile.reviewed_at = datetime.now(timezone.utc)
-    if payload.admin_note:
-        profile.admin_note = payload.admin_note
-    profile_svc.capture_approved_snapshot(profile)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="approve_profile", entity_type="therapist_profile", entity_id=profile_id, **meta)
     db.commit()

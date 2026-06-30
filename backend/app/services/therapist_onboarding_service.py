@@ -65,6 +65,9 @@ def _create_therapist_profile(
     profile.status = TherapistProfileStatus.APPROVED
     profile.reviewed_by_user_id = reviewed_by_user_id
     profile.reviewed_at = datetime.now(timezone.utc)
+    from app.services.therapist_profile_service import capture_approved_snapshot
+
+    capture_approved_snapshot(profile)
     if primary_case_manager_user_id:
         profile.supervisor_user_id = primary_case_manager_user_id
     if mentor_user_id is not None:

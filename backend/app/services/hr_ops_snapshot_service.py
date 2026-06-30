@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.module_access import user_has_feature
@@ -53,7 +53,12 @@ def build_hr_ops_snapshot(db: Session, user: User) -> dict:
         pending_prof_stmt = (
             select(func.count())
             .select_from(TherapistProfile)
-            .where(TherapistProfile.status == TherapistProfileStatus.PENDING)
+            .where(
+                or_(
+                    TherapistProfile.status == TherapistProfileStatus.PENDING,
+                    TherapistProfile.pending_submission.isnot(None),
+                )
+            )
         )
         therapists_pending_profile = int(db.scalar(pending_prof_stmt) or 0)
 
