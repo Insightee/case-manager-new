@@ -58,6 +58,10 @@ export function resolveNotificationLink(entityType, entityId, portal) {
       return '/admin/iep'
     case 'leave':
     case 'therapist_leave':
+      if (portal === 'parent') {
+        if (entityId != null) return `/parent/session-logs?leave_id=${entityId}`
+        return '/parent/session-logs'
+      }
       if (portal === 'therapist') return '/therapist/leave'
       if (portal === 'admin') return '/admin/leave'
       return '/hr/leave'

@@ -56,13 +56,36 @@ function shouldShowTherapistLeaveDays(attendanceFilter) {
   return !attendanceFilter || attendanceFilter === 'THERAPIST_LEAVE'
 }
 
+function isUnderReviewTherapistLeaveLog(log) {
+  return (
+    normalizedAttendance(log) === 'THERAPIST_LEAVE' && log.parent_display_status === 'Under Review'
+  )
+}
+
 function therapistLeaveCoverageKeys(logs) {
   const keys = new Set()
   for (const log of logs || []) {
     if (normalizedAttendance(log) !== 'THERAPIST_LEAVE') continue
+    if (isUnderReviewTherapistLeaveLog(log)) continue
     keys.add(`${log.case_id}:${sessionDateIso(log.scheduled_date)}`)
   }
   return keys
+}
+
+function isPendingLeaveEntry(entry) {
+  return (entry?.status || '').toUpperCase() === 'PENDING'
+}
+
+function therapistLeaveBodyMessage(entry, today) {
+  const dateLabel = formatLeaveDateLabel(entry)
+  const dateIso = sessionDateIso(entry.scheduled_date)
+  if (isPendingLeaveEntry(entry)) {
+    if (dateIso > today) {
+      return 'Your therapist will be unavailable.'
+    }
+    return `Your therapist was unavailable on ${dateLabel.toLowerCase()}.`
+  }
+  return `Your therapist was on leave on ${dateLabel.toLowerCase()}.`
 }
 
 function formatLeaveDateLabel(entry) {
@@ -148,11 +171,42 @@ function CmMeetingCard({ meeting }) {
   )
 }
 
-function TherapistLeaveCard({ entry }) {
+function TherapistLeaveCard({ entry, highlighted = false }) {
   const dateLabel = formatLeaveDateLabel(entry)
+  const pending = isPendingLeaveEntry(entry)
+  const today = todayIsoIST()
+  const message = therapistLeaveBodyMessage(entry, today)
+  const statusBadge = pending ? 'Under review' : entry.status_label || 'On leave'
 
   return (
-    <article className="session-card" style={{ borderLeft: '3px solid #94a3b8' }}>
+    <article
+      className="session-card"
+      style={{
+        borderLeft: '3px solid #94a3b8',
+        ...(highlighted ? { boxShadow: '0 0 0 2px #6366f1' } : {}),
+      }}
+    >
+      {pending ? (
+        <div
+          style={{
+            padding: '10px 14px',
+            background: '#fffbeb',
+            borderBottom: '1px solid #fde68a',
+            fontSize: '0.8125rem',
+            color: '#b45309',
+            display: 'flex',
+            gap: 6,
+            alignItems: 'flex-start',
+          }}
+        >
+          <span style={{ fontSize: '1.1rem', lineHeight: 1 }} aria-hidden>
+            💡
+          </span>
+          <span>
+            This leave is under review. Scheduled sessions are not cancelled until the leave is approved.
+          </span>
+        </div>
+      ) : null}
       <header className="session-card__head">
         <div>
           <h3 className="session-card__title">Therapist unavailable</h3>
@@ -162,11 +216,20 @@ function TherapistLeaveCard({ entry }) {
             {entry.therapist_name ? ` · ${entry.therapist_name}` : ''}
           </p>
         </div>
-        <span className="session-card__badge session-card__badge--neutral">{entry.status_label || 'On leave'}</span>
+        <span
+          className="session-card__badge session-card__badge--neutral"
+          style={
+            pending
+              ? { background: '#fef3c7', color: '#d97706', borderColor: '#fde68a' }
+              : undefined
+          }
+        >
+          {statusBadge}
+        </span>
       </header>
       <div className="session-card__body">
         <p className="session-card__section-text" style={{ color: '#475569', margin: 0 }}>
-          Your therapist was on leave on {dateLabel.toLowerCase()}.
+          {message}
         </p>
       </div>
     </article>
@@ -178,7 +241,9 @@ export function ClientSessionLogsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const highlightLogId = searchParams.get('log_id')
+  const highlightLeaveId = searchParams.get('leave_id')
   const logCardRefs = useRef(new Map())
+  const leaveCardRefs = useRef(new Map())
   const today = todayIsoIST()
   const [viewMode, setViewMode] = useState('month')
   const [selectedMonth, setSelectedMonth] = useState(today.slice(0, 7))
@@ -259,6 +324,34 @@ export function ClientSessionLogsPage() {
   }, [highlightLogId])
 
   useEffect(() => {
+    if (!highlightLeaveId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const allLeaves = await apiFetch('/api/v1/parent/therapist-leaves')
+        if (cancelled) return
+        const matches = (allLeaves || []).filter(
+          (entry) => String(entry.leave_id) === String(highlightLeaveId),
+        )
+        if (!matches.length) return
+        matches.sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)))
+        const match = matches[0]
+        const dateValue = sessionDateIso(match.scheduled_date)
+        if (!dateValue) return
+        setViewMode('day')
+        setSelectedDate(dateValue)
+        setSelectedMonth(dateValue.slice(0, 7))
+        setAttendanceFilter('THERAPIST_LEAVE')
+      } catch {
+        /* keep default view */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [highlightLeaveId])
+
+  useEffect(() => {
     load()
   }, [caseId, fetchScopeKey])
 
@@ -295,7 +388,9 @@ export function ClientSessionLogsPage() {
 
   const filteredLogs = useMemo(() => {
     if (attendanceFilter === 'MEETINGS') return []
-    return periodFilteredLogs.filter((l) => matchesAttendanceFilter(l, attendanceFilter))
+    return periodFilteredLogs
+      .filter((l) => matchesAttendanceFilter(l, attendanceFilter))
+      .filter((l) => !isUnderReviewTherapistLeaveLog(l))
   }, [periodFilteredLogs, attendanceFilter])
 
   const filteredMeetings = useMemo(() => {
@@ -320,6 +415,18 @@ export function ClientSessionLogsPage() {
     attendanceFilter,
     periodFilteredLogs,
   ])
+
+  useEffect(() => {
+    if (!highlightLeaveId || loading) return
+    const match = filteredLeaveDays.find((entry) => String(entry.leave_id) === String(highlightLeaveId))
+    if (!match) return
+    const node = leaveCardRefs.current.get(match.id)
+    if (!node) return
+    const t = setTimeout(() => {
+      node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 120)
+    return () => clearTimeout(t)
+  }, [highlightLeaveId, loading, filteredLeaveDays])
 
   function handleViewModeChange(nextMode) {
     setViewMode(nextMode)
@@ -455,7 +562,18 @@ export function ClientSessionLogsPage() {
               )
             }
             if (item.type === 'leave') {
-              return <TherapistLeaveCard key={item.data.id} entry={item.data} />
+              const isHighlighted =
+                highlightLeaveId && String(item.data.leave_id) === String(highlightLeaveId)
+              return (
+                <div
+                  key={item.data.id}
+                  ref={(node) => {
+                    if (node) leaveCardRefs.current.set(item.data.id, node)
+                  }}
+                >
+                  <TherapistLeaveCard entry={item.data} highlighted={isHighlighted} />
+                </div>
+              )
             }
             return <CmMeetingCard key={`cm-${item.data.id}`} meeting={item.data} />
           })
