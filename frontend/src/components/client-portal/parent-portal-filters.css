@@ -94,6 +94,12 @@
   background-color: #f1f5f9;
 }
 
+.parent-portal-filters__control--date {
+  padding: 10px 14px;
+  background-image: none;
+  cursor: text;
+}
+
 .parent-portal-filters__actions {
   display: flex;
   flex-wrap: wrap;

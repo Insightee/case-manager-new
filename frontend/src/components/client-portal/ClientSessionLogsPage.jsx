@@ -5,8 +5,22 @@ import { useParentPortal } from '../../hooks/useParentPortal.js'
 import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 import { buildSessionDisputeState, SessionCard } from './SessionCard.jsx'
-import { formatDisplayDateLabel, formatDisplayDateTime } from '../../lib/datetime.js'
+import { formatDisplayDateLabel, formatDisplayDateTime, todayIsoIST } from '../../lib/datetime.js'
+import { isAbsenceAttendanceLog, isChildAbsentLog, isLeaveLog } from '../../lib/sessionLogFilters.js'
 import './parent-session-updates.css'
+
+function sessionDateIso(value) {
+  if (!value) return ''
+  return String(value).slice(0, 10)
+}
+
+function matchesAttendanceFilter(log, filter) {
+  if (!filter) return true
+  if (filter === 'COMPLETED') return !isAbsenceAttendanceLog(log)
+  if (filter === 'CHILD_LEAVE') return isChildAbsentLog(log)
+  if (filter === 'THERAPIST_LEAVE') return isLeaveLog(log)
+  return true
+}
 
 function CmMeetingCard({ meeting }) {
   const dateLabel = meeting.scheduled_date ? formatDisplayDateLabel(meeting.scheduled_date) : ''
@@ -65,30 +79,11 @@ function CmMeetingCard({ meeting }) {
   )
 }
 
-function buildMonthOptions() {
-  const opts = []
-  const now = new Date()
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    opts.push({
-      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-      label: d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
-      year: d.getFullYear(),
-      month: d.getMonth() + 1,
-    })
-  }
-  return opts
-}
-
 const ATTENDANCE_FILTERS = [
   { value: '', label: 'All attendance' },
   { value: 'COMPLETED', label: 'Completed' },
-  { value: 'PARTIAL', label: 'Partial' },
-  { value: 'NO_SHOW', label: 'No show' },
-  { value: 'CANCELLED', label: 'Cancelled' },
-  { value: 'CLIENT_ABSENT', label: 'Child on leave' },
-  { value: 'CLIENT_LEAVE', label: 'Child on leave' },
-  { value: 'THERAPIST_LEAVE', label: 'Therapist unavailable' },
+  { value: 'CHILD_LEAVE', label: 'Child on leave' },
+  { value: 'THERAPIST_LEAVE', label: 'Therapist on leave' },
 ]
 
 export function ClientSessionLogsPage() {
@@ -97,27 +92,26 @@ export function ClientSessionLogsPage() {
   const [searchParams] = useSearchParams()
   const highlightLogId = searchParams.get('log_id')
   const logCardRefs = useRef(new Map())
-  const monthOptions = useMemo(() => buildMonthOptions(), [])
-  const [selectedMonth, setSelectedMonth] = useState(monthOptions[0].value)
+  const [selectedDate, setSelectedDate] = useState(todayIsoIST)
   const [logs, setLogs] = useState([])
   const [meetings, setMeetings] = useState([])
   const [caseId, setCaseId] = useState('')
   const [attendanceFilter, setAttendanceFilter] = useState('')
   const [loading, setLoading] = useState(true)
 
-  const selectedMeta = useMemo(
-    () => monthOptions.find((o) => o.value === selectedMonth) || monthOptions[0],
-    [selectedMonth, monthOptions],
-  )
+  const fetchPeriod = useMemo(() => {
+    const [year, month] = selectedDate.split('-').map(Number)
+    return { year, month }
+  }, [selectedDate])
 
   function load() {
     setLoading(true)
     const caseQ = caseId ? `&case_id=${caseId}` : ''
     Promise.all([
-      apiFetch(`/api/v1/parent/session-logs?year=${selectedMeta.year}&month=${selectedMeta.month}${caseQ}`).catch(
+      apiFetch(`/api/v1/parent/session-logs?year=${fetchPeriod.year}&month=${fetchPeriod.month}${caseQ}`).catch(
         () => [],
       ),
-      apiFetch(`/api/v1/parent/cm-meetings?year=${selectedMeta.year}&month=${selectedMeta.month}`).catch(() => []),
+      apiFetch(`/api/v1/parent/cm-meetings?year=${fetchPeriod.year}&month=${fetchPeriod.month}`).catch(() => []),
     ])
       .then(([logsData, meetingsData]) => {
         setLogs(logsData || [])
@@ -135,12 +129,11 @@ export function ClientSessionLogsPage() {
         if (cancelled) return
         const match = (allLogs || []).find((l) => String(l.id) === String(highlightLogId))
         if (!match?.scheduled_date) return
-        const d = new Date(match.scheduled_date)
-        if (Number.isNaN(d.getTime())) return
-        const monthValue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-        setSelectedMonth((prev) => (prev === monthValue ? prev : monthValue))
+        const dateValue = sessionDateIso(match.scheduled_date)
+        if (!dateValue) return
+        setSelectedDate((prev) => (prev === dateValue ? prev : dateValue))
       } catch {
-        /* keep default month */
+        /* keep default date */
       }
     })()
     return () => {
@@ -150,7 +143,7 @@ export function ClientSessionLogsPage() {
 
   useEffect(() => {
     load()
-  }, [caseId, selectedMonth])
+  }, [caseId, fetchPeriod.year, fetchPeriod.month])
 
   useEffect(() => {
     if (!highlightLogId || loading) return
@@ -170,16 +163,26 @@ export function ClientSessionLogsPage() {
     return [...byChild.values()]
   }, [cases])
 
-  const filteredLogs = useMemo(() => {
-    if (!attendanceFilter) return logs
-    return logs.filter((l) => (l.attendance_status || '').toUpperCase() === attendanceFilter)
-  }, [logs, attendanceFilter])
+  const dateFilteredLogs = useMemo(
+    () => logs.filter((l) => sessionDateIso(l.scheduled_date) === selectedDate),
+    [logs, selectedDate],
+  )
+
+  const dateFilteredMeetings = useMemo(
+    () => meetings.filter((m) => sessionDateIso(m.scheduled_date) === selectedDate),
+    [meetings, selectedDate],
+  )
+
+  const filteredLogs = useMemo(
+    () => dateFilteredLogs.filter((l) => matchesAttendanceFilter(l, attendanceFilter)),
+    [dateFilteredLogs, attendanceFilter],
+  )
 
   function handleDispute(log) {
     navigate('/parent/support?tab=support', { state: buildSessionDisputeState(log) })
   }
 
-  const monthLabel = selectedMeta.label
+  const dateLabel = formatDisplayDateLabel(selectedDate)
 
   return (
     <ClientPortalLayout title="Session updates" subtitle="">
@@ -206,14 +209,14 @@ export function ClientSessionLogsPage() {
           </ParentFilterField>
         ) : null}
 
-        <ParentFilterField label="Month">
-          <ParentFilterSelect value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
-            {monthOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </ParentFilterSelect>
+        <ParentFilterField label="Date">
+          <input
+            type="date"
+            className="parent-portal-filters__control parent-portal-filters__control--date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            aria-label="Session date"
+          />
         </ParentFilterField>
 
         <ParentFilterField label="Attendance">
@@ -229,15 +232,15 @@ export function ClientSessionLogsPage() {
 
       {loading ? (
         <p style={{ color: '#94a3b8' }}>Loading session updates…</p>
-      ) : filteredLogs.length === 0 && meetings.length === 0 ? (
+      ) : filteredLogs.length === 0 && dateFilteredMeetings.length === 0 ? (
         <p style={{ color: '#94a3b8' }}>
-          No session updates for {monthLabel}. Your therapist will share approved updates after each visit.
+          No session updates for {dateLabel}. Your therapist will share approved updates after each visit.
         </p>
       ) : (
         (() => {
           const combined = [
             ...filteredLogs.map((l) => ({ type: 'log', date: l.scheduled_date, data: l })),
-            ...meetings.map((m) => ({ type: 'meeting', date: m.scheduled_date, data: m })),
+            ...dateFilteredMeetings.map((m) => ({ type: 'meeting', date: m.scheduled_date, data: m })),
           ].sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0))
 
           let firstLogSeen = false
