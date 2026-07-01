@@ -126,6 +126,10 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .parent-portal-filters__grid--desktop-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .parent-portal-filters__actions--desktop-inline {
     margin-top: 0;
     padding-top: 0;
