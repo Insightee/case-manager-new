@@ -170,7 +170,7 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
     setDisputeBusy(true)
     setDisputeError('')
     try {
-      const session_id = Math.abs(localLog.id)
+      const session_id = localLog.id < 0 ? Math.abs(localLog.id) : localLog.id
       await apiFetch(`/api/v1/parent/session-logs/${session_id}/dispute`, {
         method: 'POST',
         body: JSON.stringify({ comment: disputeComment }),
@@ -184,6 +184,12 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
     } finally {
       setDisputeBusy(false)
     }
+  }
+
+  function openDisputeForm() {
+    setShowDisputeForm(true)
+    setDisputeComment('')
+    setDisputeError('')
   }
 
   let badgeLabel = localLog.attendance_label || localLog.attendance_status
@@ -283,24 +289,26 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
                 <span style={{ color: '#dc2626', fontWeight: 600, fontSize: '0.8125rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   ⚠️ Disputed
                 </span>
-              ) : isClientAbsentOrLeave ? (
+              ) : isClientAbsentOrLeave && !showDisputeForm ? (
                 <button
                   type="button"
                   className="ic-btn ic-btn--primary"
                   style={{ background: '#dc2626', borderColor: '#dc2626', padding: '6px 12px', fontSize: '0.8125rem' }}
-                  onClick={() => setShowDisputeForm(true)}
+                  onClick={openDisputeForm}
                 >
                   Dispute
                 </button>
               ) : null}
             </div>
 
-            {showDisputeForm && (
+            {showDisputeForm && isClientAbsentOrLeave ? (
               <div className="session-card__dispute-form" style={{ marginTop: 12, padding: 12, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8 }}>
-                <p style={{ margin: '0 0 8px', fontSize: '0.875rem', fontWeight: 600, color: '#991b1b' }}>Dispute Attendance Status</p>
+                <p style={{ margin: '0 0 8px', fontSize: '0.875rem', fontWeight: 600, color: '#991b1b' }}>
+                  Raise a concern
+                </p>
                 <textarea
                   style={{ width: '100%', padding: 8, fontSize: '0.875rem', borderRadius: 6, border: '1px solid #d1d5db', marginBottom: 8, background: '#fff' }}
-                  placeholder="Describe why you dispute this status..."
+                  placeholder="Tell us why your child was not absent…"
                   value={disputeComment}
                   onChange={(e) => setDisputeComment(e.target.value)}
                   rows={3}
@@ -314,12 +322,13 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
                     onClick={submitDispute}
                     disabled={disputeBusy || !disputeComment.trim()}
                   >
-                    {disputeBusy ? 'Submitting...' : 'Submit Dispute'}
+                    {disputeBusy ? 'Submitting…' : 'Submit ticket'}
                   </button>
                   <button
                     type="button"
                     className="ic-btn ic-btn--ghost"
                     style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                    disabled={disputeBusy}
                     onClick={() => {
                       setShowDisputeForm(false)
                       setDisputeComment('')
@@ -330,12 +339,14 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
                   </button>
                 </div>
               </div>
-            )}
+            ) : null}
 
-            <LogCommentsSection
-              logId={localLog.id}
-              onCountChange={(count) => setLocalLog((prev) => ({ ...prev, comment_count: count }))}
-            />
+            {!isClientAbsentOrLeave ? (
+              <LogCommentsSection
+                logId={localLog.id}
+                onCountChange={(count) => setLocalLog((prev) => ({ ...prev, comment_count: count }))}
+              />
+            ) : null}
           </div>
 
           <div className="session-card__collapse-bar session-card__collapse-bar--bottom">

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permissions import case_scope_check, user_has_permission
@@ -24,6 +24,7 @@ APPROVED_CHILD_ABSENCE_MESSAGE = "The child was marked absent on this day."
 PENDING_CHILD_ABSENCE_LOG_MESSAGE = (
     "You have applied for child absence — a session log cannot be added for this day."
 )
+PARENT_ABSENCE_DASHBOARD_DAYS = 7
 
 
 class ChildAbsenceBlockError(ValueError):
@@ -403,15 +404,28 @@ def _dispute_status_for_session(db: Session, session_id: int) -> str | None:
 
 
 def list_approved_absence_notifications_for_parent(db: Session, user: User) -> list[dict]:
+    """Approved child absences for the parent dashboard (recent window + open disputes)."""
+    from app.models.support_ticket import SupportTicket, TicketStatus
+
     case_ids = [c["id"] for c in parent_service.list_parent_cases(db, user)]
     if not case_ids:
         return []
+    cutoff = date.today() - timedelta(days=PARENT_ABSENCE_DASHBOARD_DAYS)
+    disputed_session_ids = select(SupportTicket.disputed_session_id).where(
+        SupportTicket.disputed_session_id.is_not(None),
+        SupportTicket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS]),
+    )
     rows = db.scalars(
         select(SessionAbsenceRequest)
+        .join(TherapySession, SessionAbsenceRequest.session_id == TherapySession.id)
         .where(
             SessionAbsenceRequest.case_id.in_(case_ids),
             SessionAbsenceRequest.status == SessionAbsenceStatus.APPROVED,
             SessionAbsenceRequest.absence_type == SessionAbsenceType.CLIENT_ABSENT,
+            or_(
+                TherapySession.scheduled_date >= cutoff,
+                SessionAbsenceRequest.session_id.in_(disputed_session_ids),
+            ),
         )
         .options(
             selectinload(SessionAbsenceRequest.session),
