@@ -166,14 +166,8 @@ function TherapistLeaveCard({ entry }) {
       </header>
       <div className="session-card__body">
         <p className="session-card__section-text" style={{ color: '#475569', margin: 0 }}>
-          Your therapist was unavailable on {dateLabel.toLowerCase()}.
+          Your therapist was on leave on {dateLabel.toLowerCase()}.
         </p>
-        {entry.reason ? (
-          <section className="session-card__section" style={{ marginTop: 12 }}>
-            <h4 className="session-card__section-label">Reason shared with family</h4>
-            <p className="session-card__section-text">{entry.reason}</p>
-          </section>
-        ) : null}
       </div>
     </article>
   )
