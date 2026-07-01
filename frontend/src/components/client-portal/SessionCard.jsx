@@ -251,8 +251,8 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
           ) : (
             <div className="session-card__body">
               <p className="session-card__section-text" style={{ color: '#475569' }}>
-                {isTherapistLeave 
-                  ? 'Therapist was on leave.' 
+                {isTherapistLeave
+                  ? 'Your therapist was unavailable on this date.'
                   : `Session was marked as ${localLog.attendance_status === 'CLIENT_LEAVE' ? 'Client Leave' : 'Client Absent'}.`
                 }
               </p>
@@ -260,7 +260,7 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
           )}
 
           <div className="session-card__feedback" style={{ borderTop: 'none', paddingTop: 0 }}>
-            {isClientAbsentOrLeave && localLog.absence_reason ? (
+            {(isClientAbsentOrLeave || isTherapistLeave) && localLog.absence_reason ? (
               <div style={{ marginTop: 8, marginBottom: 8 }}>
                 <button
                   type="button"

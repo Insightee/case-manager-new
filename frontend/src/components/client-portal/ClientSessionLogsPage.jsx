@@ -52,6 +52,27 @@ function shouldShowMeetings(attendanceFilter) {
   return !attendanceFilter || attendanceFilter === 'MEETINGS'
 }
 
+function shouldShowTherapistLeaveDays(attendanceFilter) {
+  return !attendanceFilter || attendanceFilter === 'THERAPIST_LEAVE'
+}
+
+function therapistLeaveCoverageKeys(logs) {
+  const keys = new Set()
+  for (const log of logs || []) {
+    if (normalizedAttendance(log) !== 'THERAPIST_LEAVE') continue
+    keys.add(`${log.case_id}:${sessionDateIso(log.scheduled_date)}`)
+  }
+  return keys
+}
+
+function formatLeaveDateLabel(entry) {
+  const start = formatDisplayDateLabel(entry.scheduled_date)
+  if (entry.leave_end_date && entry.leave_end_date !== entry.scheduled_date) {
+    return `${start} – ${formatDisplayDateLabel(entry.leave_end_date)}`
+  }
+  return start
+}
+
 function filterLogsByViewMode(logs, viewMode, selectedDate, selectedMonth) {
   if (viewMode === 'all') return logs
   if (viewMode === 'month') {
@@ -127,6 +148,37 @@ function CmMeetingCard({ meeting }) {
   )
 }
 
+function TherapistLeaveCard({ entry }) {
+  const dateLabel = formatLeaveDateLabel(entry)
+
+  return (
+    <article className="session-card" style={{ borderLeft: '3px solid #94a3b8' }}>
+      <header className="session-card__head">
+        <div>
+          <h3 className="session-card__title">Therapist unavailable</h3>
+          <p className="session-card__meta">
+            {dateLabel}
+            {entry.child_name ? ` · ${entry.child_name}` : ''}
+            {entry.therapist_name ? ` · ${entry.therapist_name}` : ''}
+          </p>
+        </div>
+        <span className="session-card__badge session-card__badge--neutral">{entry.status_label || 'On leave'}</span>
+      </header>
+      <div className="session-card__body">
+        <p className="session-card__section-text" style={{ color: '#475569', margin: 0 }}>
+          Your therapist was unavailable on {dateLabel.toLowerCase()}.
+        </p>
+        {entry.reason ? (
+          <section className="session-card__section" style={{ marginTop: 12 }}>
+            <h4 className="session-card__section-label">Reason shared with family</h4>
+            <p className="session-card__section-text">{entry.reason}</p>
+          </section>
+        ) : null}
+      </div>
+    </article>
+  )
+}
+
 export function ClientSessionLogsPage() {
   const { cases } = useParentPortal()
   const navigate = useNavigate()
@@ -139,6 +191,7 @@ export function ClientSessionLogsPage() {
   const [selectedDate, setSelectedDate] = useState(today)
   const [logs, setLogs] = useState([])
   const [meetings, setMeetings] = useState([])
+  const [therapistLeaveDays, setTherapistLeaveDays] = useState([])
   const [caseId, setCaseId] = useState('')
   const [attendanceFilter, setAttendanceFilter] = useState('')
   const [loading, setLoading] = useState(true)
@@ -167,10 +220,23 @@ export function ClientSessionLogsPage() {
             return `/api/v1/parent/cm-meetings?year=${year}&month=${month}`
           })()
 
-    Promise.all([apiFetch(logsUrl).catch(() => []), apiFetch(meetingsUrl).catch(() => [])])
-      .then(([logsData, meetingsData]) => {
+    const leaveUrl =
+      fetchScopeKey === 'all'
+        ? `/api/v1/parent/therapist-leaves${caseId ? `?case_id=${caseId}` : ''}`
+        : (() => {
+            const [year, month] = fetchScopeKey.split('-').map(Number)
+            return `/api/v1/parent/therapist-leaves?year=${year}&month=${month}${caseQ}`
+          })()
+
+    Promise.all([
+      apiFetch(logsUrl).catch(() => []),
+      apiFetch(meetingsUrl).catch(() => []),
+      apiFetch(leaveUrl).catch(() => []),
+    ])
+      .then(([logsData, meetingsData, leaveData]) => {
         setLogs(logsData || [])
         setMeetings(meetingsData || [])
+        setTherapistLeaveDays(leaveData || [])
       })
       .finally(() => setLoading(false))
   }
@@ -242,6 +308,24 @@ export function ClientSessionLogsPage() {
     if (!shouldShowMeetings(attendanceFilter)) return []
     return periodFilteredMeetings
   }, [periodFilteredMeetings, attendanceFilter])
+
+  const filteredLeaveDays = useMemo(() => {
+    if (!shouldShowTherapistLeaveDays(attendanceFilter)) return []
+    let list = filterLogsByViewMode(therapistLeaveDays, viewMode, selectedDate, selectedMonth)
+    if (caseId) {
+      list = list.filter((entry) => String(entry.case_id) === String(caseId))
+    }
+    const covered = therapistLeaveCoverageKeys(periodFilteredLogs)
+    return list.filter((entry) => !covered.has(`${entry.case_id}:${sessionDateIso(entry.scheduled_date)}`))
+  }, [
+    therapistLeaveDays,
+    viewMode,
+    selectedDate,
+    selectedMonth,
+    caseId,
+    attendanceFilter,
+    periodFilteredLogs,
+  ])
 
   function handleViewModeChange(nextMode) {
     setViewMode(nextMode)
@@ -344,12 +428,13 @@ export function ClientSessionLogsPage() {
 
       {loading ? (
         <p style={{ color: '#94a3b8' }}>Loading session updates…</p>
-      ) : filteredLogs.length === 0 && filteredMeetings.length === 0 ? (
+      ) : filteredLogs.length === 0 && filteredMeetings.length === 0 && filteredLeaveDays.length === 0 ? (
         <p style={{ color: '#94a3b8' }}>{emptyStateMessage(viewMode, selectedDate, selectedMonth)}</p>
       ) : (
         (() => {
           const combined = [
             ...filteredLogs.map((l) => ({ type: 'log', date: l.scheduled_date, data: l })),
+            ...filteredLeaveDays.map((entry) => ({ type: 'leave', date: entry.scheduled_date, data: entry })),
             ...filteredMeetings.map((m) => ({ type: 'meeting', date: m.scheduled_date, data: m })),
           ].sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0))
 
@@ -374,6 +459,9 @@ export function ClientSessionLogsPage() {
                   />
                 </div>
               )
+            }
+            if (item.type === 'leave') {
+              return <TherapistLeaveCard key={item.data.id} entry={item.data} />
             }
             return <CmMeetingCard key={`cm-${item.data.id}`} meeting={item.data} />
           })

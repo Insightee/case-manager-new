@@ -36,6 +36,7 @@ from app.schemas.parent_profile import ParentChildCreate, ParentProfileRead, Par
 from app.schemas.notification import NotificationRead
 from app.schemas.parent_reports import ParentMonthlyFeedback, ParentReportCommentCreate
 from app.core.config import settings
+from app.schemas.parent_therapist_leave import ParentTherapistLeaveDayRead
 from app.schemas.parent_home import ParentHomeResponse
 from app.schemas.session_absence import SessionAbsenceListResponse
 from app.schemas.iep_plan import IepPlanSuggestionCreate
@@ -50,6 +51,7 @@ from app.services import (
     parent_reports_service,
     parent_service,
     parent_ticket_service,
+    parent_therapist_leave_service,
     slot_calendar_service,
     ticket_attachment_service as att_svc,
     ticket_escalation_service as ticket_esc,
@@ -516,6 +518,27 @@ def parent_session_logs(
     combined = result + virtual_logs_out
     combined.sort(key=lambda x: x.scheduled_date, reverse=True)
     return combined
+
+
+@router.get("/therapist-leaves", response_model=list[ParentTherapistLeaveDayRead])
+def parent_therapist_leaves(
+    case_id: Optional[int] = None,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    if case_id is not None:
+        _parent_case_or_404(db, user, case_id)
+    rows = parent_therapist_leave_service.list_parent_therapist_leave_days(
+        db,
+        user,
+        case_id=case_id,
+        year=year,
+        month=month,
+    )
+    return [ParentTherapistLeaveDayRead.model_validate(r) for r in rows]
 
 
 @router.patch("/session-logs/{log_id}/feedback", response_model=ParentSessionLogRead)
