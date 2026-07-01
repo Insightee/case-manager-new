@@ -128,7 +128,7 @@ class ConsumptionDetail:
 
 
 def computed_consumption_detail(
-    db: Session, therapist_user_id: int, year: int
+    db: Session, therapist_user_id: int, year: int, *, as_of: date | None = None
 ) -> ConsumptionDetail:
     """Allocate credits chronologically and split unpaid days by cause.
 
@@ -141,8 +141,14 @@ def computed_consumption_detail(
         select(TherapistProfile).where(TherapistProfile.user_id == therapist_user_id)
     ).first()
     employment_start = profile.employment_start_date if profile else None
-    as_of = date(year, 12, 31) if year < date.today().year else date.today()
-    credits_pool = credits_earned_in_year(employment_start, year, as_of=as_of)
+    today = as_of or date.today()
+    if year < today.year:
+        accrual_as_of = date(year, 12, 31)
+    elif year > today.year:
+        accrual_as_of = date(year, 1, 1)
+    else:
+        accrual_as_of = today
+    credits_pool = credits_earned_in_year(employment_start, year, as_of=accrual_as_of)
 
     leaves = db.scalars(
         select(TherapistLeave).where(
@@ -214,7 +220,7 @@ def get_leave_balance(
         ).first()
 
     employment_start = profile.employment_start_date if profile else None
-    today = date.today()
+    today = as_of or date.today()
     if year > today.year:
         credits_earned = 0
     elif year < today.year:
@@ -231,7 +237,7 @@ def get_leave_balance(
         credits_remaining = max(credits_earned - paid_used, 0)
         usage_snapshot_applied = True
     else:
-        detail = computed_consumption_detail(db, user.id, year)
+        detail = computed_consumption_detail(db, user.id, year, as_of=as_of)
         paid_used = detail.paid
         unpaid_used = detail.unpaid_total
         unpaid_homecare = detail.unpaid_homecare

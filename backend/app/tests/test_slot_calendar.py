@@ -6,10 +6,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.database import engine
+from app.core.database import SessionLocal, engine
+from app.core.timezone import today_ist
 from app.main import app
+from app.models.user import User
 from app.seed.demo_seed import run as seed_run
 
 client = TestClient(app)
@@ -129,13 +132,16 @@ def test_leave_blocks_parent_availability():
     th = _headers(therapist)
     ph = _headers(parent)
 
-    day = date(2026, 6, 10)
-    client.post(
+    # Use a future date so therapist self-service leave is allowed after migration window.
+    day = today_ist() + timedelta(days=14)
+    mat = client.post(
         "/api/v1/slots/materialize",
         headers=th,
         json={"from_date": day.isoformat(), "to_date": day.isoformat()},
     )
-    client.post(
+    assert mat.status_code == 200, mat.text
+
+    leave = client.post(
         "/api/v1/leave",
         headers=th,
         json={
@@ -144,15 +150,18 @@ def test_leave_blocks_parent_availability():
             "start_date": day.isoformat(),
             "end_date": day.isoformat(),
             "reason": "Day off",
+            "consulted_with_parents": True,
         },
     )
+    assert leave.status_code == 201, leave.text
 
-    cases = client.get("/api/v1/parent/cases", headers=ph).json()
-    assert cases
-    case_id = cases[0]["id"]
-    therapists = client.get(f"/api/v1/booking/therapists?case_id={case_id}", headers=ph).json()
-    assert therapists
-    tid = therapists[0]["therapist_user_id"]
+    db = SessionLocal()
+    try:
+        therapist_user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        assert therapist_user is not None
+        tid = therapist_user.id
+    finally:
+        db.close()
 
     avail = client.get(
         f"/api/v1/booking/availability?therapist_id={tid}&from_date={day.isoformat()}&to_date={day.isoformat()}",

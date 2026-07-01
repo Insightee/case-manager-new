@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.core.database import SessionLocal
 from app.core.timezone import IST, ensure_utc_aware, today_ist
 from app.main import app
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
@@ -59,32 +60,43 @@ def _create_in_progress(
 
 def test_same_day_in_progress_blocks_new_session():
     headers = _therapist_headers()
-    ids = ensure_scheduled_sessions_for_therapist(min_count=2)
     today = today_ist()
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
-        case = db.scalars(select(Case).limit(1)).first()
+        assignments = db.scalars(
+            select(CaseAssignment).where(
+                CaseAssignment.therapist_user_id == therapist.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).all()
+        if len(assignments) < 2:
+            pytest.skip("Need two active case assignments")
+        active_case_id = assignments[0].case_id
+        scheduled_case_id = assignments[1].case_id
         _create_in_progress(
             db,
             therapist_id=therapist.id,
-            case_id=case.id,
+            case_id=active_case_id,
             session_day=today,
             started_at=datetime.now(timezone.utc) - timedelta(minutes=30),
         )
+        scheduled = TherapySession(
+            case_id=scheduled_case_id,
+            therapist_user_id=therapist.id,
+            scheduled_date=today,
+            start_time=time(15, 0),
+            end_time=time(16, 0),
+            mode=SessionMode.HOME,
+            status=SessionStatus.SCHEDULED,
+        )
+        db.add(scheduled)
         db.commit()
-        sid = None
-        for i in ids:
-            s = db.get(TherapySession, i)
-            if s and s.scheduled_date == today and s.status == SessionStatus.SCHEDULED:
-                sid = i
-                break
+        sid = scheduled.id
     finally:
         db.close()
-    if not sid:
-        pytest.skip("Need two today sessions")
     r = client.post(f"/api/v1/sessions/{sid}/start", headers=headers, json={})
-    assert r.status_code == 409
+    assert r.status_code == 409, r.text
 
 
 def test_previous_day_in_progress_does_not_block_today():

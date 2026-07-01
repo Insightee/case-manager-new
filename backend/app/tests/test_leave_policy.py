@@ -19,6 +19,9 @@ from app.seed.demo_seed import run as seed_run
 
 client = TestClient(app)
 
+# Stable accrual anchor — Nov 2025 start earns 6 credits through 18 Jun 2026.
+LEAVE_POLICY_AS_OF = date(2026, 6, 18)
+
 
 def _reset_sqlite_db() -> None:
     url = settings.database_url
@@ -74,9 +77,9 @@ def test_monthly_credits_and_consumption():
         user = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
         assert user
         _ensure_therapist_profile(db, user.id, employment_start=date(2025, 11, 1))
-        earned = policy.credits_earned_in_year(date(2025, 11, 1), 2026, as_of=date(2026, 6, 18))
+        earned = policy.credits_earned_in_year(date(2025, 11, 1), 2026, as_of=LEAVE_POLICY_AS_OF)
         assert earned == 6
-        before = policy.get_leave_balance(db, user, year=2026)
+        before = policy.get_leave_balance(db, user, year=2026, as_of=LEAVE_POLICY_AS_OF)
 
         db.add(
             TherapistLeave(
@@ -92,7 +95,7 @@ def test_monthly_credits_and_consumption():
         )
         db.commit()
 
-        bal = policy.get_leave_balance(db, user, year=2026)
+        bal = policy.get_leave_balance(db, user, year=2026, as_of=LEAVE_POLICY_AS_OF)
         assert bal["credits_earned"] == earned
         assert bal["paid_leaves_taken"] == before["paid_leaves_taken"] + 6
         assert bal["unpaid_leaves_taken"] == before["unpaid_leaves_taken"] + 1

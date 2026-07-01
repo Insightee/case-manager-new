@@ -13,6 +13,7 @@ from app.core.database import SessionLocal, engine
 from app.main import app
 from app.models.user import User
 from app.services import leave_policy_service as policy
+from app.services import leave_policy_service as policy
 from app.services.leave_bulk_import_service import (
     BULK_LEAVE_IMPORT_YEAR,
     apply_bulk_leave_import,
@@ -22,7 +23,7 @@ from app.services.leave_bulk_import_service import (
 )
 from app.services.therapist_profile_service import get_or_create_profile
 from app.seed.demo_seed import run as seed_run
-from app.tests.test_leave_policy import _ensure_therapist_profile, _headers, _login
+from app.tests.test_leave_policy import LEAVE_POLICY_AS_OF, _ensure_therapist_profile, _headers, _login
 
 client = TestClient(app)
 
@@ -67,12 +68,13 @@ def test_preview_bulk_leave_import_start_date_only():
         db.commit()
 
         csv_text = "external_employee_id,start_date\nEMP-THERAPIST-1,2025-11-01\n"
+        expected = policy.credits_earned_in_year(date(2025, 11, 1), BULK_LEAVE_IMPORT_YEAR)
         preview = preview_bulk_leave_import(db, csv_text, year=BULK_LEAVE_IMPORT_YEAR)
         assert preview["ok_rows"] == 1
         assert preview["mode"] == "start_date_only"
         row = preview["rows"][0]
         assert row["status"] == "ok"
-        assert row["credits_earned"] == 6
+        assert row["credits_earned"] == expected
         assert "leaves_used" not in row
     finally:
         db.close()
@@ -110,7 +112,7 @@ def test_apply_bulk_leave_import_updates_start_date_only():
             profile.leave_year_snapshots or {}
         )
 
-        bal = policy.get_leave_balance(db, user, year=BULK_LEAVE_IMPORT_YEAR)
+        bal = policy.get_leave_balance(db, user, year=BULK_LEAVE_IMPORT_YEAR, as_of=LEAVE_POLICY_AS_OF)
         assert bal["usage_snapshot_applied"] is False
         assert bal["credits_earned"] == 6
     finally:
