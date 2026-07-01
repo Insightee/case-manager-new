@@ -22,12 +22,6 @@ function dedupeChildren(list) {
   return [...byId.values()]
 }
 
-function splitFullName(name) {
-  const parts = name.trim().split(/\s+/)
-  if (parts.length === 1) return { first: parts[0], last: '' }
-  return { first: parts[0], last: parts.slice(1).join(' ') }
-}
-
 // ── Child row ──────────────────────────────────────────────────────────────
 function ChildRow({ child, caseService, onEditSave }) {
   const [editing, setEditing] = useState(false)
@@ -126,55 +120,6 @@ function ChildRow({ child, caseService, onEditSave }) {
   )
 }
 
-// ── Add child inline form ──────────────────────────────────────────────────
-function AddChildForm({ onAdd, onCancel }) {
-  const [fullName, setFullName] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState('')
-
-  async function submit(e) {
-    e.preventDefault()
-    if (!fullName.trim()) { setErr('Name is required'); return }
-    setSaving(true)
-    setErr('')
-    try {
-      await onAdd(fullName.trim())
-    } catch (ex) {
-      setErr(ex.message || 'Could not add child')
-      setSaving(false)
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="parent-profile__add-child-form">
-      <input
-        autoFocus
-        value={fullName}
-        onChange={(e) => setFullName(e.target.value)}
-        placeholder="Child's full name"
-        style={{ flex: 1, border: '1px solid #cbd5e1', borderRadius: 8, padding: '8px 12px', fontSize: '0.875rem' }}
-      />
-      {err ? <p style={{ fontSize: '0.78rem', color: '#b91c1c', marginTop: 4, width: '100%' }}>{err}</p> : null}
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <button
-          type="submit"
-          disabled={saving}
-          style={{ background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 18px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
-        >
-          {saving ? 'Adding…' : 'Add'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: '0.85rem', cursor: 'pointer' }}
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
-  )
-}
-
 function ProfileLoadingSkeleton() {
   return (
     <div className="parent-profile parent-profile--loading" aria-busy="true" aria-label="Loading profile">
@@ -206,7 +151,6 @@ export function ParentProfilePage() {
   const [billingSame, setBillingSame] = useState(true)
   const [billingAddr, setBillingAddr] = useState(emptyAddress())
   const [homecareCases, setHomecareCases] = useState([])
-  const [showAddChild, setShowAddChild] = useState(false)
 
   const loadProfile = useCallback(async () => {
     setLoading(true)
@@ -295,16 +239,6 @@ export function ParentProfilePage() {
       c.id === childId ? { ...c, first_name: firstName, last_name: lastName } : c,
     )
     await patchChildren(updated)
-  }
-
-  async function handleAddChild(nameFull) {
-    const { first, last } = splitFullName(nameFull)
-    await apiFetch('/api/v1/parent/children', {
-      method: 'POST',
-      body: JSON.stringify({ first_name: first, last_name: last }),
-    })
-    await loadProfile()
-    setShowAddChild(false)
   }
 
   async function handleSave(e) {
@@ -445,7 +379,7 @@ export function ParentProfilePage() {
         </section>
 
         {/* ── Children ── */}
-        {children.length > 0 || showAddChild ? (
+        {children.length > 0 ? (
           <section className="parent-profile__card">
             <div className="parent-profile__card-head">
               <div>
@@ -466,34 +400,17 @@ export function ParentProfilePage() {
                 />
               ))}
             </div>
-
-            {showAddChild ? (
-              <AddChildForm onAdd={handleAddChild} onCancel={() => setShowAddChild(false)} />
-            ) : (
-              <button
-                type="button"
-                className="parent-profile__add-child-btn"
-                onClick={() => setShowAddChild(true)}
-              >
-                + Add another child
-              </button>
-            )}
           </section>
         ) : (
           <section className="parent-profile__card">
             <div className="parent-profile__card-head">
               <div>
                 <h3>Children</h3>
-                <p className="parent-profile__hint" style={{ marginBottom: 0 }}>No children on record yet — add one below or contact your care team.</p>
+                <p className="parent-profile__hint" style={{ marginBottom: 0 }}>
+                  No children on record yet — contact your care team to get started.
+                </p>
               </div>
             </div>
-            {showAddChild ? (
-              <AddChildForm onAdd={handleAddChild} onCancel={() => setShowAddChild(false)} />
-            ) : (
-              <button type="button" className="parent-profile__add-child-btn" onClick={() => setShowAddChild(true)}>
-                + Add child
-              </button>
-            )}
           </section>
         )}
 
