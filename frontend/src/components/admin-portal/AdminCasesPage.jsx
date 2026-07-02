@@ -1,10 +1,30 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
 import { AdminCaseAllotmentWizard } from './AdminCaseAllotmentWizard.jsx'
 import { AdminCasesPipelineTable } from './AdminCasesPipelineTable.jsx'
 import { caseStateFromLegacyStatus, defaultPipelineFilters } from '../../lib/adminCasePipeline.js'
+
+async function downloadCaseRecordsExport() {
+  const { access } = getTokens()
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/admin/cases/export/records.csv`, {
+    headers: access ? { Authorization: `Bearer ${access}` } : {},
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(detail || 'Could not export case records.')
+  }
+  const blob = await res.blob()
+  const stamp = new Date().toISOString().slice(0, 10)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `case-records-${stamp}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
 
 export function AdminCasesPage() {
   const [searchParams] = useSearchParams()
@@ -13,6 +33,8 @@ export function AdminCasesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [wizardKey, setWizardKey] = useState(0)
   const [initialFilters, setInitialFilters] = useState(() => defaultPipelineFilters())
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
 
   const canCreateCase = can('case.create') && !isViewOnly
 
@@ -66,7 +88,32 @@ export function AdminCasesPage() {
         />
       ) : null}
 
-      <AdminPanel title="Case board" className="admin-panel--case-board" padded={false}>
+      <AdminPanel
+        title="Case board"
+        className="admin-panel--case-board"
+        padded={false}
+        actions={
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            disabled={exporting}
+            onClick={() => {
+              setExportError('')
+              setExporting(true)
+              downloadCaseRecordsExport()
+                .catch((err) => setExportError(err.message || 'Could not export case records.'))
+                .finally(() => setExporting(false))
+            }}
+          >
+            {exporting ? 'Exporting…' : 'Export records'}
+          </button>
+        }
+      >
+        {exportError ? (
+          <p className="admin-alert admin-alert--warning" style={{ margin: '12px 16px 0' }}>
+            {exportError}
+          </p>
+        ) : null}
         <div className="admin-panel__body admin-panel__body--case-board">
           <AdminCasesPipelineTable initialFilters={initialFilters} />
         </div>

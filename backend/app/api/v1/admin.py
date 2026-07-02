@@ -84,6 +84,7 @@ from app.schemas.therapist_profile import (
     TherapistProfileUpdate,
 )
 from app.services import admin_case_pipeline_service as case_pipeline_svc
+from app.services import admin_case_records_export_service as case_records_export_svc
 from app.services import admin_iep_service as admin_iep_svc
 from app.services import therapist_onboarding_service as therapist_onboard_svc
 from app.services import therapist_primary_cm_bulk_service as therapist_cm_bulk_svc
@@ -2371,6 +2372,24 @@ def admin_cases_pipeline_board(
     if linked_any:
         db.commit()
     return AdminCasePipelineBoard(**data)
+
+
+@router.get("/cases/export/records.csv")
+def admin_cases_records_export(
+    user: User = Depends(_admin_dashboard_user),
+    db: Session = Depends(get_db),
+):
+    """All-case CSV snapshot for the Cases board (session logs, leaves, absences)."""
+    try:
+        csv_text = case_records_export_svc.export_case_records_csv(db, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="case-records-{stamp}.csv"'},
+    )
 
 
 def _iep_reader(user: User = Depends(get_current_user)) -> User:
