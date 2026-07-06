@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { fetchAllPages } from '../../lib/listApi.js'
 import {
-  paginateList,
-  sortTherapists,
-  sortClientsAlphabetical,
-  filterTherapistDirectory,
-  filterClientDirectory,
+  PEOPLE_PAGE_SIZE,
   THERAPIST_SORT_OPTIONS,
 } from '../../lib/peopleDirectoryList.js'
+import {
+  fetchStaffPage,
+  fetchTherapistsPage,
+  fetchClientsPage,
+  fetchStaffMeta,
+  fetchTabInvites,
+  fetchParentsAwaitingLogin,
+  fetchTherapistProfiles,
+  fetchAllTherapists,
+  fetchAllClients,
+} from '../../lib/peopleDirectoryApi.js'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
 import { AdminStaffDirectoryReadOnly } from './AdminStaffDirectoryReadOnly.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminClientOnboardPanel } from './AdminClientOnboardPanel.jsx'
@@ -46,33 +53,49 @@ export function AdminPeoplePage() {
   const canReadTherapists = canManageUsers || canReadStaffDirectory || can('therapist.read')
   const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState(() => searchParams.get('tab') || 'staff')
-  const [users, setUsers] = useState([])
-  const [profiles, setProfiles] = useState([])
+  const [staff, setStaff] = useState([])
+  const [staffTotal, setStaffTotal] = useState(0)
+  const [staffPage, setStaffPage] = useState(1)
+  const [staffSearch, setStaffSearch] = useState('')
+  const [staffLoading, setStaffLoading] = useState(false)
+  const [therapists, setTherapists] = useState([])
+  const [therapistsTotal, setTherapistsTotal] = useState(0)
+  const [therapistsPages, setTherapistsPages] = useState(1)
+  const [therapistsLoading, setTherapistsLoading] = useState(false)
   const [clients, setClients] = useState([])
+  const [clientsTotal, setClientsTotal] = useState(0)
+  const [clientsPages, setClientsPages] = useState(1)
+  const [clientsLoading, setClientsLoading] = useState(false)
+  const [profiles, setProfiles] = useState([])
   const [invites, setInvites] = useState([])
   const [parentsAwaitingLogin, setParentsAwaitingLogin] = useState({ count: 0, items: [] })
   const [catalog, setCatalog] = useState([])
   const [roleDefaults, setRoleDefaults] = useState({})
   const [assignableRoles, setAssignableRoles] = useState([])
   const [deprecatedRoles, setDeprecatedRoles] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [metaLoading, setMetaLoading] = useState(false)
+  const [reloadToken, setReloadToken] = useState(0)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
-  const [familySearchDebounced, setFamilySearchDebounced] = useState('')
   const [showFamilyWizard, setShowFamilyWizard] = useState(false)
   const [rowBusy, setRowBusy] = useState(null)
   const [lastProvision, setLastProvision] = useState(null)
   const [selectedTherapistIds, setSelectedTherapistIds] = useState(() => new Set())
   const [selectedClientUserIds, setSelectedClientUserIds] = useState(() => new Set())
   const [clientAccessFamily, setClientAccessFamily] = useState(null)
-  const [usersTotal, setUsersTotal] = useState(0)
   const [pendingInvitesView, setPendingInvitesView] = useState(false)
   const [therapistSort, setTherapistSort] = useState('id_asc')
   const [therapistSearch, setTherapistSearch] = useState('')
   const [clientSearch, setClientSearch] = useState('')
   const [therapistPage, setTherapistPage] = useState(1)
   const [clientPage, setClientPage] = useState(1)
+
+  const staffSearchDebounced = useDebouncedValue(staffSearch)
+  const therapistSearchDebounced = useDebouncedValue(therapistSearch)
+  const clientSearchDebounced = useDebouncedValue(clientSearch)
+
+  const reload = useCallback(() => setReloadToken((t) => t + 1), [])
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -83,96 +106,169 @@ export function AdminPeoplePage() {
     setPendingInvitesView(false)
     setTherapistPage(1)
     setClientPage(1)
+    setStaffPage(1)
     setTherapistSearch('')
     setClientSearch('')
+    setStaffSearch('')
   }, [tab])
 
   useEffect(() => {
     if (tab === 'therapists') setTherapistPage(1)
-  }, [therapistSearch, therapistSort, tab])
+  }, [therapistSearchDebounced, therapistSort, tab])
 
   useEffect(() => {
     if (tab === 'clients') setClientPage(1)
-  }, [clientSearch, tab])
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      async function loadDirectoryUsers() {
-        const buildQs = (page, pageSize) => {
-          const p = new URLSearchParams({
-            page: String(page),
-            page_size: String(pageSize),
-            sort: 'created_at_desc',
-          })
-          return p.toString()
-        }
-        return fetchAllPages((page, pageSize) =>
-          apiFetch(`/api/v1/admin/users?${buildQs(page, pageSize)}`),
-        )
-      }
-
-      const userFetch = canReadStaffDirectory
-        ? loadDirectoryUsers()
-        : canReadTherapists
-          ? apiFetch('/api/v1/admin/users/directory?roles=THERAPIST&active_only=false')
-          : Promise.resolve({ items: [], total: 0 })
-      const modulesFetch = canManageUsers ? apiFetch('/api/v1/admin/modules') : Promise.resolve({ modules: [], role_defaults: {} })
-      const rbacFetch = canManageUsers
-        ? apiFetch('/api/v1/admin/rbac/catalog').catch(() => null)
-        : Promise.resolve(null)
-      const awaitingFetch = canManageUsers
-        ? apiFetch('/api/v1/admin/families/parents-awaiting-login').catch(() => ({ count: 0, items: [] }))
-        : Promise.resolve({ count: 0, items: [] })
-      const [userResult, moduleMeta, rbacMeta, profileRows, clientRows, inviteRows, awaitingRows] =
-        await Promise.all([
-        userFetch,
-        modulesFetch,
-        rbacFetch,
-        canReadTherapists ? apiFetch('/api/v1/admin/therapist-profiles') : Promise.resolve([]),
-        apiFetch('/api/v1/admin/families'),
-        canManageUsers ? apiFetch('/api/v1/admin/invites').catch(() => []) : Promise.resolve([]),
-        awaitingFetch,
-      ])
-      const normalizedUsers = canReadStaffDirectory
-        ? userResult.items
-        : (Array.isArray(userResult) ? userResult : userResult.items || []).map((u) => ({
-            id: u.id,
-            external_employee_id: u.external_employee_id ?? null,
-            email: u.email,
-            full_name: u.full_name,
-            roles: u.roles || ['THERAPIST'],
-            is_active: u.is_active ?? true,
-            module_assignments: u.module_assignments || [],
-          }))
-      setUsers(normalizedUsers)
-      setUsersTotal(canReadStaffDirectory ? userResult.total : normalizedUsers.length)
-      setCatalog(
-        rbacMeta ?? {
-          modules: moduleMeta.modules ?? [],
-          service_categories: moduleMeta.modules ?? [],
-          org_capabilities: [],
-          role_defaults: moduleMeta.role_defaults ?? {},
-        },
-      )
-      setRoleDefaults(rbacMeta?.role_defaults ?? moduleMeta.role_defaults ?? {})
-      setAssignableRoles(rbacMeta?.assignable_roles ?? [])
-      setDeprecatedRoles(rbacMeta?.deprecated_roles ?? [])
-      setProfiles(profileRows)
-      setClients(clientRows)
-      setInvites(Array.isArray(inviteRows) ? inviteRows : [])
-      setParentsAwaitingLogin(awaitingRows?.count != null ? awaitingRows : { count: 0, items: [] })
-    } catch (err) {
-      setError(err.message || 'Could not load people data')
-    } finally {
-      setLoading(false)
-    }
-  }, [canManageUsers, canReadStaffDirectory, canReadTherapists])
+  }, [clientSearchDebounced, tab])
 
   useEffect(() => {
-    load()
-  }, [load])
+    if (tab === 'staff') setStaffPage(1)
+  }, [staffSearchDebounced, tab])
+
+  useEffect(() => {
+    if (tab !== 'staff' || !canReadStaffDirectory) return undefined
+    let cancelled = false
+    setStaffLoading(true)
+    setError('')
+    fetchStaffPage({ page: staffPage, search: staffSearchDebounced })
+      .then((data) => {
+        if (cancelled) return
+        setStaff(data.items || [])
+        setStaffTotal(data.total || 0)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || 'Could not load staff')
+      })
+      .finally(() => {
+        if (!cancelled) setStaffLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, staffPage, staffSearchDebounced, canReadStaffDirectory, reloadToken])
+
+  useEffect(() => {
+    if (tab !== 'therapists' || !canReadTherapists) return undefined
+    let cancelled = false
+    setTherapistsLoading(true)
+    setError('')
+    fetchTherapistsPage({
+      page: therapistPage,
+      search: therapistSearchDebounced,
+      sort: therapistSort,
+    })
+      .then((data) => {
+        if (cancelled) return
+        setTherapists(data.items || [])
+        setTherapistsTotal(data.total || 0)
+        setTherapistsPages(data.pages || 1)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || 'Could not load therapists')
+      })
+      .finally(() => {
+        if (!cancelled) setTherapistsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    tab,
+    therapistPage,
+    therapistSearchDebounced,
+    therapistSort,
+    canReadTherapists,
+    reloadToken,
+  ])
+
+  useEffect(() => {
+    if (tab !== 'clients') return undefined
+    let cancelled = false
+    setClientsLoading(true)
+    setError('')
+    fetchClientsPage({ page: clientPage, search: clientSearchDebounced })
+      .then((data) => {
+        if (cancelled) return
+        setClients(data.items || [])
+        setClientsTotal(data.total || 0)
+        setClientsPages(data.pages || 1)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || 'Could not load clients')
+      })
+      .finally(() => {
+        if (!cancelled) setClientsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, clientPage, clientSearchDebounced, reloadToken])
+
+  useEffect(() => {
+    if (tab !== 'staff' || !canManageUsers) return undefined
+    let cancelled = false
+    setMetaLoading(true)
+    fetchStaffMeta()
+      .then((meta) => {
+        if (cancelled) return
+        setCatalog(meta.catalog)
+        setRoleDefaults(meta.roleDefaults)
+        setAssignableRoles(meta.assignableRoles)
+        setDeprecatedRoles(meta.deprecatedRoles)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setMetaLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, canManageUsers, reloadToken])
+
+  useEffect(() => {
+    if (!canManageUsers) return undefined
+    if (tab !== 'staff' && tab !== 'therapists' && tab !== 'clients') return undefined
+    let cancelled = false
+    fetchTabInvites()
+      .then((rows) => {
+        if (!cancelled) setInvites(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setInvites([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, canManageUsers, reloadToken])
+
+  useEffect(() => {
+    if (tab !== 'therapists' || !canReadTherapists) return undefined
+    let cancelled = false
+    fetchTherapistProfiles()
+      .then((rows) => {
+        if (!cancelled) setProfiles(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setProfiles([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, canReadTherapists, reloadToken])
+
+  useEffect(() => {
+    if (tab !== 'clients' || !canManageUsers) return undefined
+    let cancelled = false
+    fetchParentsAwaitingLogin()
+      .then((data) => {
+        if (!cancelled) setParentsAwaitingLogin(data?.count != null ? data : { count: 0, items: [] })
+      })
+      .catch(() => {
+        if (!cancelled) setParentsAwaitingLogin({ count: 0, items: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, canManageUsers, reloadToken])
 
   const profileByUser = useMemo(() => {
     const m = new Map()
@@ -180,23 +276,11 @@ export function AdminPeoplePage() {
     return m
   }, [profiles])
 
-  const staff = useMemo(
-    () => users.filter((u) => !u.roles?.includes('THERAPIST') && !u.roles?.includes('PARENT')),
-    [users],
-  )
+  const therapistRangeStart = therapistsTotal ? (therapistPage - 1) * PEOPLE_PAGE_SIZE + 1 : 0
+  const therapistRangeEnd = Math.min(therapistPage * PEOPLE_PAGE_SIZE, therapistsTotal)
+  const clientRangeStart = clientsTotal ? (clientPage - 1) * PEOPLE_PAGE_SIZE + 1 : 0
+  const clientRangeEnd = Math.min(clientPage * PEOPLE_PAGE_SIZE, clientsTotal)
 
-  const therapists = useMemo(() => users.filter((u) => u.roles?.includes('THERAPIST')), [users])
-
-  const usersTruncated = canReadStaffDirectory && users.length < usersTotal
-
-  const filteredTherapists = useMemo(
-    () => filterTherapistDirectory(therapists, therapistSearch),
-    [therapists, therapistSearch],
-  )
-  const filteredClients = useMemo(
-    () => filterClientDirectory(clients, clientSearch),
-    [clients, clientSearch],
-  )
   const parentPendingInvites = useMemo(
     () => invites.filter((i) => i.role_name === 'PARENT'),
     [invites],
@@ -210,20 +294,27 @@ export function AdminPeoplePage() {
     [invites],
   )
 
-  const sortedTherapists = useMemo(
-    () => sortTherapists(filteredTherapists, therapistSort),
-    [filteredTherapists, therapistSort],
-  )
-  const paginatedTherapists = useMemo(
-    () => paginateList(sortedTherapists, therapistPage),
-    [sortedTherapists, therapistPage],
-  )
+  async function exportTherapistsCsv() {
+    try {
+      const [userResult, profileRows] = await Promise.all([
+        fetchAllTherapists({ search: therapistSearchDebounced, sort: therapistSort }),
+        fetchTherapistProfiles(),
+      ])
+      const map = new Map(profileRows.map((p) => [p.user_id, p]))
+      exportTherapistCsv(userResult.items, map)
+    } catch (err) {
+      setError(err.message || 'Could not export therapist CSV')
+    }
+  }
 
-  const sortedClients = useMemo(() => sortClientsAlphabetical(filteredClients), [filteredClients])
-  const paginatedClients = useMemo(
-    () => paginateList(sortedClients, clientPage),
-    [sortedClients, clientPage],
-  )
+  async function exportClientsCsv() {
+    try {
+      const result = await fetchAllClients({ search: clientSearchDebounced })
+      exportClientCsv(result.items)
+    } catch (err) {
+      setError(err.message || 'Could not export client CSV')
+    }
+  }
 
   async function inviteParent(userId, childId, parentEmail) {
     setError('')
@@ -288,7 +379,7 @@ export function AdminPeoplePage() {
         })
         if (res.invite_url) setInviteUrl(res.invite_url)
         setSuccess(`Fresh invite link sent to ${f.pendingInvite.pendingEmail}.`)
-        load()
+        reload()
       } catch (err) {
         setError(err.message || 'Could not resend invite')
       }
@@ -319,7 +410,7 @@ export function AdminPeoplePage() {
       })
       const skippedNote = res.skipped ? ` ${res.skipped} skipped.` : ''
       setSuccess(`Invite emails queued for ${res.sent} of ${res.total} parent(s).${skippedNote}`)
-      load()
+      reload()
     } catch (err) {
       setError(err.message || 'Bulk invite failed')
     }
@@ -370,7 +461,7 @@ export function AdminPeoplePage() {
             user={clientUser}
             rowBusy={rowBusy}
             setRowBusy={setRowBusy}
-            onReload={load}
+            onReload={reload}
             onSuccess={setSuccess}
             onError={setError}
             lastProvision={lastProvision}
@@ -413,7 +504,7 @@ export function AdminPeoplePage() {
             user={u}
             rowBusy={rowBusy}
             setRowBusy={setRowBusy}
-            onReload={load}
+            onReload={reload}
             onSuccess={setSuccess}
             onError={setError}
             lastProvision={lastProvision}
@@ -487,11 +578,6 @@ export function AdminPeoplePage() {
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
       {success ? <p className="admin-alert admin-alert--success">{success}</p> : null}
-      {usersTruncated ? (
-        <p className="admin-alert admin-alert--warn">
-          Showing {users.length} of {usersTotal} users. Contact Super Admin if the directory looks incomplete.
-        </p>
-      ) : null}
       {inviteUrl ? (
         <p className="admin-alert" style={{ wordBreak: 'break-all', fontSize: '0.875rem' }}>
           Invite link: <CopyLinkButton url={inviteUrl} label="Copy" copiedLabel="Copied" /> {inviteUrl}
@@ -520,26 +606,36 @@ export function AdminPeoplePage() {
         ))}
       </nav>
 
-      {loading ? (
-        <p className="admin-muted">Loading…</p>
-      ) : (
-        <>
-          {tab === 'staff' && canManageUsers ? (
+      {tab === 'staff' && canManageUsers ? (
             <AdminStaffManageSection
               catalog={catalog}
               roleDefaults={roleDefaults}
               assignableRoles={assignableRoles}
               deprecatedRoles={deprecatedRoles}
               staff={staff}
+              staffTotal={staffTotal}
+              staffPage={staffPage}
+              onStaffPageChange={setStaffPage}
+              staffSearch={staffSearch}
+              onStaffSearchChange={setStaffSearch}
+              staffLoading={staffLoading || metaLoading}
               pendingInvites={staffPendingInvites}
-              onReload={load}
+              onReload={reload}
               onSuccess={setSuccess}
               onError={setError}
             />
           ) : null}
 
           {tab === 'staff' && canReadStaffDirectory && !canManageUsers ? (
-            <AdminStaffDirectoryReadOnly staff={staff} />
+            <AdminStaffDirectoryReadOnly
+              staff={staff}
+              staffTotal={staffTotal}
+              staffPage={staffPage}
+              onStaffPageChange={setStaffPage}
+              staffSearch={staffSearch}
+              onStaffSearchChange={setStaffSearch}
+              staffLoading={staffLoading}
+            />
           ) : null}
 
           {tab === 'staff' && !canReadStaffDirectory ? (
@@ -561,7 +657,7 @@ export function AdminPeoplePage() {
                   onInvitesViewChange={setPendingInvitesView}
                   onSuccess={setSuccess}
                   onError={setError}
-                  onReload={load}
+                  onReload={reload}
                 />
               ) : (
                 <AdminPanel title="Therapists">
@@ -573,14 +669,14 @@ export function AdminPeoplePage() {
               )}
               {!pendingInvitesView ? (
               <AdminPanel
-                title={`Therapists (${filteredTherapists.length})`}
+                title={`Therapists (${therapistsTotal})`}
                 padded={false}
                 actions={
                   <div className="admin-btn-group admin-btn-group--wrap">
                     <button
                       type="button"
                       className="admin-btn admin-btn--ghost admin-btn--sm"
-                      onClick={() => exportTherapistCsv(therapists, profileByUser)}
+                      onClick={exportTherapistsCsv}
                     >
                       Download CSV
                     </button>
@@ -596,9 +692,13 @@ export function AdminPeoplePage() {
                   </div>
                 }
               >
-                {therapists.length === 0 ? (
+                {therapistsLoading ? (
+                  <div className="admin-panel__body">
+                    <p className="admin-muted">Loading therapists…</p>
+                  </div>
+                ) : therapistsTotal === 0 ? (
                   <AdminEmptyState title="No therapists yet" description="Use Add therapist or Bulk upload above." />
-                ) : filteredTherapists.length === 0 ? (
+                ) : therapists.length === 0 ? (
                   <div className="admin-panel__body">
                     <AdminToolbar>
                       <AdminSearchInput
@@ -631,7 +731,7 @@ export function AdminPeoplePage() {
                         selectedUserIds={[...selectedTherapistIds]}
                         onReload={() => {
                           setSelectedTherapistIds(new Set())
-                          load()
+                          reload()
                         }}
                         onSuccess={setSuccess}
                         onError={setError}
@@ -656,7 +756,7 @@ export function AdminPeoplePage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {paginatedTherapists.items.map((u) => {
+                            {therapists.map((u) => {
                               const prof = profileByUser.get(u.id)
                               return (
                                 <tr key={u.id}>
@@ -676,7 +776,7 @@ export function AdminPeoplePage() {
                                       canEdit={canManageUsers}
                                       onSaved={(updated) => {
                                         const therapistId = updated?.external_employee_id ?? null
-                                        setUsers((prev) =>
+                                        setTherapists((prev) =>
                                           prev.map((row) =>
                                             row.id === updated.id
                                               ? { ...row, external_employee_id: therapistId }
@@ -686,7 +786,7 @@ export function AdminPeoplePage() {
                                         setSuccess('Therapist ID updated.')
                                       }}
                                       onError={setError}
-                                      onReload={load}
+                                      onReload={reload}
                                     />
                                   </td>
                                   <td>
@@ -726,7 +826,7 @@ export function AdminPeoplePage() {
                     }
                     mobile={
                       <ul className="admin-data-list__cards">
-                        {paginatedTherapists.items.map((u) => {
+                        {therapists.map((u) => {
                           const prof = profileByUser.get(u.id)
                           const profileHref = `/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : prof?.status ? `&status=${prof.status}` : ''}`
                           return (
@@ -774,7 +874,7 @@ export function AdminPeoplePage() {
                                       canEdit={canManageUsers}
                                       onSaved={(updated) => {
                                         const therapistId = updated?.external_employee_id ?? null
-                                        setUsers((prev) =>
+                                        setTherapists((prev) =>
                                           prev.map((row) =>
                                             row.id === updated.id
                                               ? { ...row, external_employee_id: therapistId }
@@ -784,7 +884,7 @@ export function AdminPeoplePage() {
                                         setSuccess('Therapist ID updated.')
                                       }}
                                       onError={setError}
-                                      onReload={load}
+                                      onReload={reload}
                                     />
                                   </p>
                                 ) : null}
@@ -801,11 +901,11 @@ export function AdminPeoplePage() {
                     }
                   />
                     <PeopleListPagination
-                      page={paginatedTherapists.page}
-                      totalPages={paginatedTherapists.totalPages}
-                      total={paginatedTherapists.total}
-                      rangeStart={paginatedTherapists.rangeStart}
-                      rangeEnd={paginatedTherapists.rangeEnd}
+                      page={therapistPage}
+                      totalPages={therapistsPages}
+                      total={therapistsTotal}
+                      rangeStart={therapistRangeStart}
+                      rangeEnd={therapistRangeEnd}
                       onPageChange={setTherapistPage}
                     />
                   </div>
@@ -829,18 +929,18 @@ export function AdminPeoplePage() {
                 onAddFamily={() => setShowFamilyWizard(true)}
                 onSuccess={setSuccess}
                 onError={setError}
-                onReload={load}
+                onReload={reload}
               />
               {!pendingInvitesView ? (
               <AdminPanel
-                title={`Clients (${filteredClients.length})`}
+                title={`Clients (${clientsTotal})`}
                 padded={false}
                 actions={
                   <div className="admin-btn-group admin-btn-group--wrap">
                     <button
                       type="button"
                       className="admin-btn admin-btn--ghost admin-btn--sm"
-                      onClick={() => exportClientCsv(clients)}
+                      onClick={exportClientsCsv}
                     >
                       Download CSV
                     </button>
@@ -852,12 +952,16 @@ export function AdminPeoplePage() {
                   </div>
                 }
               >
-                {clients.length === 0 ? (
+                {clientsLoading ? (
+                  <div className="admin-panel__body">
+                    <p className="admin-muted">Loading clients…</p>
+                  </div>
+                ) : clientsTotal === 0 ? (
                   <AdminEmptyState
                     title="No clients yet"
                     description="Use Add client & case or Bulk import above."
                   />
-                ) : filteredClients.length === 0 ? (
+                ) : clients.length === 0 ? (
                   <div className="admin-panel__body">
                     <AdminToolbar>
                       <AdminSearchInput
@@ -882,7 +986,7 @@ export function AdminPeoplePage() {
                         selectedUserIds={[...selectedClientUserIds]}
                         onReload={() => {
                           setSelectedClientUserIds(new Set())
-                          load()
+                          reload()
                         }}
                         onSuccess={setSuccess}
                         onError={setError}
@@ -906,7 +1010,7 @@ export function AdminPeoplePage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {paginatedClients.items.map((f) => {
+                            {clients.map((f) => {
                               const primary = f.parents?.[0]
                               const clientUser = clientUserFromFamily(f)
                               const firstCase = clientCases(f)[0]
@@ -963,7 +1067,7 @@ export function AdminPeoplePage() {
                     }
                     mobile={
                       <ul className="admin-data-list__cards">
-                        {paginatedClients.items.map((f) => {
+                        {clients.map((f) => {
                         const primary = f.parents?.[0]
                         const firstCase = clientCases(f)[0]
                         const childHref = firstCase?.caseId
@@ -1005,11 +1109,11 @@ export function AdminPeoplePage() {
                     }
                   />
                     <PeopleListPagination
-                      page={paginatedClients.page}
-                      totalPages={paginatedClients.totalPages}
-                      total={paginatedClients.total}
-                      rangeStart={paginatedClients.rangeStart}
-                      rangeEnd={paginatedClients.rangeEnd}
+                      page={clientPage}
+                      totalPages={clientsPages}
+                      total={clientsTotal}
+                      rangeStart={clientRangeStart}
+                      rangeEnd={clientRangeEnd}
                       onPageChange={setClientPage}
                     />
                   </div>
@@ -1018,9 +1122,6 @@ export function AdminPeoplePage() {
               ) : null}
             </>
           )}
-
-        </>
-      )}
 
       <ClientCaseAccessModal
         family={clientAccessFamily}
@@ -1057,7 +1158,7 @@ export function AdminPeoplePage() {
                 onComplete={() => {
                   setShowFamilyWizard(false)
                   setSuccess('Family saved.')
-                  load()
+                  reload()
                 }}
                 onCancel={() => setShowFamilyWizard(false)}
               />

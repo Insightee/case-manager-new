@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -396,17 +396,87 @@ def backfill_parent_from_invite(db: Session, invite: InviteToken) -> User | None
     return user
 
 
-def list_families(db: Session, search: str | None = None) -> list[dict]:
-    children = db.scalars(select(Child).order_by(Child.first_name, Child.last_name)).all()
-    parent_rows = db.scalars(
-        select(ParentGuardian).options(
-            selectinload(ParentGuardian.children),
-            selectinload(ParentGuardian.user),
+def _build_family_row(
+    child: Child,
+    *,
+    parents: list[dict],
+    child_cases: list[dict],
+    pending: dict | None,
+) -> dict:
+    label = child.full_name
+    case_codes = [c["caseCode"] for c in child_cases if c.get("caseCode")]
+    has_cases = len(child_cases) > 0
+    closed_val = CaseStatus.CLOSED.value
+    all_cases_closed = has_cases and all(c.get("status") == closed_val for c in child_cases)
+    has_open_case = any(c.get("status") != closed_val for c in child_cases)
+    primary_case_id = None
+    for c in child_cases:
+        if c.get("status") != closed_val:
+            primary_case_id = c["caseId"]
+            break
+    if primary_case_id is None and child_cases:
+        primary_case_id = child_cases[0]["caseId"]
+    return {
+        "childId": child.id,
+        "childName": label,
+        "firstName": child.first_name,
+        "lastName": child.last_name,
+        "dateOfBirth": child.date_of_birth.isoformat() if child.date_of_birth else None,
+        "parents": parents,
+        "cases": child_cases,
+        "caseCodes": case_codes,
+        "allCasesClosed": all_cases_closed,
+        "hasOpenCase": has_open_case,
+        "primaryCaseId": primary_case_id,
+        "hasParent": bool(parents),
+        "pendingInvite": pending,
+    }
+
+
+def _family_support_maps(
+    db: Session,
+    *,
+    child_ids: list[int] | None = None,
+) -> tuple[dict[int, list[dict]], dict[int, list[dict]], dict[int, dict]]:
+    """Parents, cases, and pending invites keyed by child id."""
+    child_id_set = set(child_ids) if child_ids else None
+    parent_stmt = select(ParentGuardian).options(
+        selectinload(ParentGuardian.children),
+        selectinload(ParentGuardian.user),
+    )
+    parent_rows = db.scalars(parent_stmt).all()
+    if child_id_set is not None:
+        parent_rows = [
+            pg
+            for pg in parent_rows
+            if any(c.id in child_id_set for c in (pg.children or []))
+        ]
+    parent_users = [pg.user for pg in parent_rows if pg.user]
+    portal_session_ids = set()
+    if parent_users:
+        from app.services.user_provision_service import _parent_portal_session_user_ids
+
+        portal_session_ids = _parent_portal_session_user_ids(
+            db, [u.id for u in parent_users if u.is_active]
         )
-    ).all()
+    pending_by_email = {}
+    if parent_users:
+        from app.services.user_provision_service import _pending_invites_by_email
+
+        pending_by_email = _pending_invites_by_email(db, [u.email for u in parent_users])
+
     child_parents: dict[int, list[dict]] = {}
     for pg in parent_rows:
         u = pg.user
+        if not u:
+            continue
+        email_key = u.email.lower().strip()
+        login_ready_flag = bool(
+            u.is_active
+            and u.password_hash
+            and pending_by_email.get(email_key) is None
+            and (u.id in portal_session_ids or "PARENT" not in (u.role_names or []))
+        )
         info = {
             "parentId": pg.id,
             "userId": u.id,
@@ -414,10 +484,12 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
             "parentEmail": u.email,
             "parentPhone": u.phone,
             "parentIsActive": bool(u.is_active),
-            "parentLoginReady": login_ready(u, db),
+            "parentLoginReady": login_ready_flag,
         }
         seen_child: set[int] = set()
         for c in pg.children:
+            if child_id_set is not None and c.id not in child_id_set:
+                continue
             if c.id in seen_child:
                 continue
             seen_child.add(c.id)
@@ -426,7 +498,10 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
                 parents.append(info)
 
     cases_by_child: dict[int, list[dict]] = {}
-    for case in db.scalars(select(Case).order_by(Case.id.desc())).all():
+    case_stmt = select(Case).order_by(Case.id.desc())
+    if child_id_set is not None:
+        case_stmt = case_stmt.where(Case.child_id.in_(child_id_set))
+    for case in db.scalars(case_stmt).all():
         status_val = case.status.value if case.status else None
         cases_by_child.setdefault(case.child_id, []).append(
             {
@@ -449,6 +524,8 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
         .order_by(InviteToken.id.desc())
     ).all():
         if inv.linked_child_id and inv.linked_child_id not in pending_by_child:
+            if child_id_set is not None and inv.linked_child_id not in child_id_set:
+                continue
             from app.core.timezone import ensure_utc_aware
 
             expired = ensure_utc_aware(inv.expires_at) <= now
@@ -464,45 +541,91 @@ def list_families(db: Session, search: str | None = None) -> list[dict]:
                 )
             pending_by_child[inv.linked_child_id] = pending_entry
 
-    result = []
+    return child_parents, cases_by_child, pending_by_child
+
+
+def _family_child_search_stmt(search: str | None):
+    from app.models.user import User
+
     q = (search or "").strip().lower()
+    stmt = select(Child.id).distinct()
+    if not q:
+        return stmt.order_by(Child.first_name.asc(), Child.last_name.asc(), Child.id.asc())
+    pattern = f"%{q}%"
+    stmt = (
+        stmt.outerjoin(parent_child_link, parent_child_link.c.child_id == Child.id)
+        .outerjoin(ParentGuardian, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
+        .outerjoin(User, User.id == ParentGuardian.user_id)
+        .outerjoin(Case, Case.child_id == Child.id)
+        .where(
+            or_(
+                func.lower(Child.first_name).like(pattern),
+                func.lower(Child.last_name).like(pattern),
+                func.lower(func.concat(Child.first_name, " ", Child.last_name)).like(pattern),
+                func.lower(User.email).like(pattern),
+                func.lower(User.full_name).like(pattern),
+                func.lower(Case.case_code).like(pattern),
+            )
+        )
+    )
+    return stmt.order_by(Child.first_name.asc(), Child.last_name.asc(), Child.id.asc())
+
+
+def list_families_paginated(
+    db: Session,
+    *,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 15,
+) -> dict:
+    from app.core.pagination import paginate_query, paginated_response
+
+    id_stmt = _family_child_search_stmt(search)
+    id_rows, total = paginate_query(db, id_stmt, page=page, page_size=page_size)
+    child_ids = [int(row[0] if isinstance(row, tuple) else row) for row in id_rows]
+    if not child_ids:
+        return paginated_response([], total, page, page_size)
+
+    children = list(
+        db.scalars(
+            select(Child)
+            .where(Child.id.in_(child_ids))
+            .order_by(Child.first_name.asc(), Child.last_name.asc(), Child.id.asc())
+        ).all()
+    )
+    child_parents, cases_by_child, pending_by_child = _family_support_maps(db, child_ids=child_ids)
+    items = [
+        _build_family_row(
+            child,
+            parents=child_parents.get(child.id, []),
+            child_cases=cases_by_child.get(child.id, []),
+            pending=pending_by_child.get(child.id),
+        )
+        for child in children
+    ]
+    return paginated_response(items, total, page, page_size)
+
+
+def list_families(db: Session, search: str | None = None) -> list[dict]:
+    child_parents, cases_by_child, pending_by_child = _family_support_maps(db)
+    children = db.scalars(select(Child).order_by(Child.first_name, Child.last_name)).all()
+    q = (search or "").strip().lower()
+    result = []
     for child in children:
         parents = child_parents.get(child.id, [])
-        label = child.full_name
         child_cases = cases_by_child.get(child.id, [])
         case_codes = [c["caseCode"] for c in child_cases if c.get("caseCode")]
-        has_cases = len(child_cases) > 0
-        closed_val = CaseStatus.CLOSED.value
-        all_cases_closed = has_cases and all(c.get("status") == closed_val for c in child_cases)
-        has_open_case = any(c.get("status") != closed_val for c in child_cases)
-        primary_case_id = None
-        for c in child_cases:
-            if c.get("status") != closed_val:
-                primary_case_id = c["caseId"]
-                break
-        if primary_case_id is None and child_cases:
-            primary_case_id = child_cases[0]["caseId"]
         if q:
-            hay = f"{label} {' '.join(p['parentEmail'] for p in parents)} {' '.join(case_codes)}".lower()
+            hay = f"{child.full_name} {' '.join(p['parentEmail'] for p in parents)} {' '.join(case_codes)}".lower()
             if q not in hay:
                 continue
-        pending = pending_by_child.get(child.id)
         result.append(
-            {
-                "childId": child.id,
-                "childName": label,
-                "firstName": child.first_name,
-                "lastName": child.last_name,
-                "dateOfBirth": child.date_of_birth.isoformat() if child.date_of_birth else None,
-                "parents": parents,
-                "cases": child_cases,
-                "caseCodes": case_codes,
-                "allCasesClosed": all_cases_closed,
-                "hasOpenCase": has_open_case,
-                "primaryCaseId": primary_case_id,
-                "hasParent": bool(parents),
-                "pendingInvite": pending,
-            }
+            _build_family_row(
+                child,
+                parents=parents,
+                child_cases=child_cases,
+                pending=pending_by_child.get(child.id),
+            )
         )
     return result
 

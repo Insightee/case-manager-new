@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { filterStaffDirectory, paginateList, sortStaffAlphabetical } from '../../lib/peopleDirectoryList.js'
+import { fetchAllStaff } from '../../lib/peopleDirectoryApi.js'
+import { PEOPLE_PAGE_SIZE } from '../../lib/peopleDirectoryList.js'
 import { exportStaffCsv } from '../../lib/peopleDirectoryExport.js'
 import {
   AdminDataList,
@@ -45,6 +46,12 @@ export function AdminStaffManageSection({
   assignableRoles = [],
   deprecatedRoles = [],
   staff,
+  staffTotal = 0,
+  staffPage = 1,
+  onStaffPageChange,
+  staffSearch = '',
+  onStaffSearchChange,
+  staffLoading = false,
   pendingInvites = [],
   onReload,
   onSuccess,
@@ -53,7 +60,6 @@ export function AdminStaffManageSection({
   const [mode, setMode] = useState('invite')
   const [form, setForm] = useState(EMPTY_FORM)
   const [inviteUrl, setInviteUrl] = useState('')
-  const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editGrants, setEditGrants] = useState({})
   const [editOverrides, setEditOverrides] = useState({})
@@ -66,7 +72,11 @@ export function AdminStaffManageSection({
   const [selectedStaffIds, setSelectedStaffIds] = useState(() => new Set())
   const [invitesViewOpen, setInvitesViewOpen] = useState(false)
   const [addStaffViewOpen, setAddStaffViewOpen] = useState(false)
-  const [staffPage, setStaffPage] = useState(1)
+
+  const staffPages = Math.max(1, Math.ceil(staffTotal / PEOPLE_PAGE_SIZE))
+  const safeStaffPage = Math.min(Math.max(1, staffPage), staffPages)
+  const staffRangeStart = staffTotal ? (safeStaffPage - 1) * PEOPLE_PAGE_SIZE + 1 : 0
+  const staffRangeEnd = Math.min(safeStaffPage * PEOPLE_PAGE_SIZE, staffTotal)
 
   const deprecatedSet = useMemo(
     () => new Set((deprecatedRoles || []).map((r) => String(r).toUpperCase())),
@@ -75,17 +85,18 @@ export function AdminStaffManageSection({
 
   const landingHint = useMemo(() => primaryLandingHint(form.role_names), [form.role_names])
 
-  const filtered = useMemo(() => filterStaffDirectory(staff, search), [staff, search])
-
-  const sortedStaff = useMemo(() => sortStaffAlphabetical(filtered), [filtered])
-  const paginatedStaff = useMemo(
-    () => paginateList(sortedStaff, staffPage),
-    [sortedStaff, staffPage],
-  )
-
-  useEffect(() => {
-    setStaffPage(1)
-  }, [search])
+  async function handleExportCsv() {
+    try {
+      const result = await fetchAllStaff({ search: staffSearch })
+      exportStaffCsv(result.items, {
+        catalog,
+        grantsFromAssignments,
+        includeAccess: true,
+      })
+    } catch (err) {
+      onError?.(err.message || 'Could not export staff CSV')
+    }
+  }
 
   function setRoles(roles) {
     const finalRoles = roles.length ? roles : form.role_names
@@ -393,19 +404,13 @@ export function AdminStaffManageSection({
         </AdminPanel>
       ) : (
         <AdminPanel
-          title={`Staff directory (${filtered.length})`}
+          title={`Staff directory (${staffTotal})`}
           padded={false}
           actions={
             <button
               type="button"
               className="admin-btn admin-btn--ghost admin-btn--sm"
-              onClick={() =>
-                exportStaffCsv(staff, {
-                  catalog,
-                  grantsFromAssignments,
-                  includeAccess: true,
-                })
-              }
+              onClick={handleExportCsv}
             >
               Download CSV
             </button>
@@ -413,10 +418,18 @@ export function AdminStaffManageSection({
         >
         <div className="admin-panel__body">
           <AdminToolbar>
-            <AdminSearchInput value={search} onChange={setSearch} placeholder="Search staff by name or email…" />
+            <AdminSearchInput
+              value={staffSearch}
+              onChange={onStaffSearchChange}
+              placeholder="Search staff by name or email…"
+            />
           </AdminToolbar>
-          {filtered.length === 0 ? (
+          {staffLoading ? (
+            <p className="admin-muted">Loading staff…</p>
+          ) : staffTotal === 0 ? (
             <AdminEmptyState title="No staff users" description="Use Add staff or adjust search." />
+          ) : staff.length === 0 ? (
+            <AdminEmptyState title="No staff match" description="Try adjusting search." />
           ) : (
             <>
             <PeopleBulkToolbar
@@ -444,7 +457,7 @@ export function AdminStaffManageSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedStaff.items.map((u) => (
+                  {staff.map((u) => (
                     <Fragment key={u.id}>
                       <tr>
                         <td>
@@ -586,7 +599,7 @@ export function AdminStaffManageSection({
               }
               mobile={
                 <ul className="admin-data-list__cards">
-                  {paginatedStaff.items.map((u) => (
+                  {staff.map((u) => (
                     <li key={u.id}>
                       <AdminTaskCard
                         title={u.full_name}
@@ -705,12 +718,12 @@ export function AdminStaffManageSection({
               }
             />
             <PeopleListPagination
-              page={paginatedStaff.page}
-              totalPages={paginatedStaff.totalPages}
-              total={paginatedStaff.total}
-              rangeStart={paginatedStaff.rangeStart}
-              rangeEnd={paginatedStaff.rangeEnd}
-              onPageChange={setStaffPage}
+              page={safeStaffPage}
+              totalPages={staffPages}
+              total={staffTotal}
+              rangeStart={staffRangeStart}
+              rangeEnd={staffRangeEnd}
+              onPageChange={onStaffPageChange}
             />
             </>
           )}

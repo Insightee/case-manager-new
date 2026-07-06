@@ -144,12 +144,12 @@ def list_product_modules(
     return payload
 
 
-def _user_to_read(u: User, *, db: Session | None = None) -> UserRead:
-    login_meta: dict = {}
-    if db is not None:
+def _user_to_read(u: User, *, db: Session | None = None, login_meta: dict | None = None) -> UserRead:
+    meta: dict = login_meta or {}
+    if db is not None and not meta:
         from app.services import user_provision_service
 
-        login_meta = user_provision_service.login_metadata_for_user(db, u)
+        meta = user_provision_service.login_metadata_for_user(db, u)
     return UserRead(
         id=u.id,
         external_employee_id=u.external_employee_id,
@@ -165,19 +165,19 @@ def _user_to_read(u: User, *, db: Session | None = None) -> UserRead:
         service_access_grants=getattr(u, "service_access_grants", None) or {},
         org_capability_grants=getattr(u, "org_capability_grants", None) or {},
         feature_overrides=getattr(u, "feature_overrides", None) or {},
-        login_ready=login_meta.get("login_ready", bool(u.is_active)),
-        invite_status=login_meta.get("invite_status"),
-        last_invite_sent_at=login_meta.get("last_invite_sent_at"),
-        pending_invite_url=login_meta.get("pending_invite_url"),
-        email_delivery_status=login_meta.get("email_delivery_status"),
-        email_attempt_count=login_meta.get("email_attempt_count"),
-        last_email_status=login_meta.get("last_email_status"),
-        last_email_sent_at=login_meta.get("last_email_sent_at"),
-        next_retry_at=login_meta.get("next_retry_at"),
-        resend_allowed_at=login_meta.get("resend_allowed_at"),
-        is_email_suppressed=login_meta.get("is_email_suppressed", False),
-        suppression_reason=login_meta.get("suppression_reason"),
-        delivery_message=login_meta.get("delivery_message"),
+        login_ready=meta.get("login_ready", bool(u.is_active)),
+        invite_status=meta.get("invite_status"),
+        last_invite_sent_at=meta.get("last_invite_sent_at"),
+        pending_invite_url=meta.get("pending_invite_url"),
+        email_delivery_status=meta.get("email_delivery_status"),
+        email_attempt_count=meta.get("email_attempt_count"),
+        last_email_status=meta.get("last_email_status"),
+        last_email_sent_at=meta.get("last_email_sent_at"),
+        next_retry_at=meta.get("next_retry_at"),
+        resend_allowed_at=meta.get("resend_allowed_at"),
+        is_email_suppressed=meta.get("is_email_suppressed", False),
+        suppression_reason=meta.get("suppression_reason"),
+        delivery_message=meta.get("delivery_message"),
     )
 
 
@@ -1547,7 +1547,10 @@ def list_users(
 ):
     stmt = _users_list_stmt(search=search, exclude_roles=exclude_roles, sort=sort)
     users, total = paginate_query(db, stmt, page=page, page_size=page_size)
-    items = [_user_to_read(u, db=db) for u in users]
+    from app.services import user_provision_service
+
+    meta_by_id = user_provision_service.login_metadata_batch(db, users, include_delivery=True)
+    items = [_user_to_read(u, login_meta=meta_by_id.get(u.id, {})) for u in users]
     return PaginatedList[UserRead](
         items=items,
         total=total,
@@ -1557,42 +1560,108 @@ def list_users(
     )
 
 
-@router.get("/users/directory", response_model=list)
+def _users_directory_stmt(
+    *,
+    roles: str | None,
+    search: str | None,
+    active_only: bool,
+    sort: str,
+):
+    from app.models.role import Role, user_roles
+
+    role_set = {r.strip().upper() for r in (roles or "").split(",") if r.strip()}
+    stmt = select(User)
+    if active_only:
+        stmt = stmt.where(User.is_active.is_(True))
+    if role_set:
+        stmt = (
+            stmt.join(user_roles, user_roles.c.user_id == User.id)
+            .join(Role, Role.id == user_roles.c.role_id)
+            .where(Role.name.in_(role_set))
+            .distinct()
+        )
+    q = (search or "").strip().lower()
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(User.email).like(pattern),
+                func.lower(User.full_name).like(pattern),
+                func.lower(User.external_employee_id).like(pattern),
+                func.lower(User.phone).like(pattern),
+            )
+        )
+    if sort == "id_desc":
+        stmt = stmt.order_by(User.external_employee_id.desc().nulls_last(), User.full_name.desc(), User.email.asc())
+    elif sort == "name_desc":
+        stmt = stmt.order_by(User.full_name.desc(), User.email.asc())
+    elif sort == "name_asc":
+        stmt = stmt.order_by(User.full_name.asc(), User.email.asc())
+    elif sort == "id_asc":
+        stmt = stmt.order_by(User.external_employee_id.asc().nulls_first(), User.full_name.asc(), User.email.asc())
+    else:
+        stmt = stmt.order_by(User.full_name.asc(), User.email.asc())
+    return stmt
+
+
+def _directory_item_from_user(u: User, meta: dict) -> "UserDirectoryItem":
+    from app.schemas.user import UserDirectoryItem
+
+    return UserDirectoryItem(
+        id=u.id,
+        external_employee_id=u.external_employee_id,
+        email=u.email,
+        full_name=u.full_name or u.email,
+        roles=[str(r).upper() for r in (u.role_names or [])],
+        phone=u.phone,
+        is_active=bool(u.is_active),
+        module_assignments=u.module_assignments or [],
+        login_ready=meta.get("login_ready", bool(u.is_active)),
+        invite_status=meta.get("invite_status"),
+        pending_invite_url=meta.get("pending_invite_url"),
+        last_invite_sent_at=meta.get("last_invite_sent_at"),
+        email_delivery_status=meta.get("email_delivery_status"),
+        email_attempt_count=meta.get("email_attempt_count"),
+        last_email_status=meta.get("last_email_status"),
+        last_email_sent_at=meta.get("last_email_sent_at"),
+        next_retry_at=meta.get("next_retry_at"),
+        resend_allowed_at=meta.get("resend_allowed_at"),
+        is_email_suppressed=meta.get("is_email_suppressed", False),
+        suppression_reason=meta.get("suppression_reason"),
+        delivery_message=meta.get("delivery_message"),
+    )
+
+
+@router.get("/users/directory")
 def users_directory(
     roles: Optional[str] = Query(None, description="Comma-separated role names e.g. THERAPIST,CASE_MANAGER"),
     search: Optional[str] = None,
     active_only: bool = True,
     limit: int = Query(500, ge=1, le=500),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: int = Query(15, ge=1, le=100),
+    sort: str = Query("id_asc", pattern="^(id_asc|id_desc|name_asc|name_desc)$"),
     user: User = Depends(require_user_directory_read),
     db: Session = Depends(get_db),
 ):
-    from app.schemas.user import UserDirectoryItem
+    from app.services import user_provision_service
 
-    role_set = {r.strip().upper() for r in (roles or "").split(",") if r.strip()}
-    stmt = select(User).order_by(User.full_name, User.email)
-    if active_only:
-        stmt = stmt.where(User.is_active.is_(True))
-    rows = list(db.scalars(stmt.limit(limit)).all())
-    out: list[UserDirectoryItem] = []
-    q = (search or "").strip().lower()
-    for u in rows:
-        user_roles = [str(r).upper() for r in (u.role_names or [])]
-        if role_set and not role_set.intersection(user_roles):
-            continue
-        if q:
-            hay = f"{u.full_name} {u.email}".lower()
-            if q not in hay:
-                continue
-        out.append(
-            UserDirectoryItem(
-                id=u.id,
-                external_employee_id=u.external_employee_id,
-                email=u.email,
-                full_name=u.full_name or u.email,
-                roles=user_roles,
-            )
+    stmt = _users_directory_stmt(roles=roles, search=search, active_only=active_only, sort=sort)
+    if page is not None:
+        rows, total = paginate_query(db, stmt, page=page, page_size=page_size)
+        meta_by_id = user_provision_service.login_metadata_batch(db, rows, include_delivery=True)
+        items = [_directory_item_from_user(u, meta_by_id.get(u.id, {})) for u in rows]
+        return PaginatedList(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            pages=max(1, (total + page_size - 1) // page_size),
         )
-    return out
+
+    rows = list(db.scalars(stmt.limit(limit)).all())
+    meta_by_id = user_provision_service.login_metadata_batch(db, rows, include_delivery=False)
+    return [_directory_item_from_user(u, meta_by_id.get(u.id, {})) for u in rows]
 
 
 @router.get("/users/{user_id}")
@@ -2461,11 +2530,17 @@ def _require_family_read(user: User = Depends(get_current_user)) -> User:
 @router.get("/families")
 def admin_list_families(
     search: Optional[str] = None,
+    page: Optional[int] = Query(None, ge=1),
+    page_size: int = Query(15, ge=1, le=100),
     user: User = Depends(_require_family_read),
     db: Session = Depends(get_db),
 ):
     from app.services import family_admin_service
 
+    if page is not None:
+        return family_admin_service.list_families_paginated(
+            db, search=search, page=page, page_size=page_size
+        )
     return family_admin_service.list_families(db, search)
 
 

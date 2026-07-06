@@ -90,21 +90,184 @@ def last_login_email_sent_at(db: Session, email: str) -> datetime | None:
     return row.sent_at or row.created_at
 
 
+def _pending_invites_by_email(db: Session, emails: list[str]) -> dict[str, InviteToken]:
+    """Latest unused, non-expired invite per email (batch)."""
+    if not emails:
+        return {}
+    now = datetime.now(timezone.utc)
+    normalized = [e.lower().strip() for e in emails if e]
+    if not normalized:
+        return {}
+    rows = list(
+        db.scalars(
+            select(InviteToken)
+            .where(
+                InviteToken.email.in_(normalized),
+                InviteToken.used_at.is_(None),
+                InviteToken.expires_at > now,
+                InviteToken.expired_due_to_delivery_failure.is_(False),
+            )
+            .order_by(InviteToken.email.asc(), InviteToken.id.desc())
+        ).all()
+    )
+    out: dict[str, InviteToken] = {}
+    for inv in rows:
+        key = inv.email.lower().strip()
+        if key not in out:
+            out[key] = inv
+    return out
+
+
+def _invite_status_from_rows(rows: list[InviteToken]) -> str:
+    if not rows:
+        return "none"
+    latest = rows[0]
+    if latest.used_at is not None:
+        return "used"
+    if latest.expired_due_to_delivery_failure:
+        return "delivery_failed"
+    if ensure_utc_aware(latest.expires_at) <= datetime.now(timezone.utc):
+        return "expired"
+    return "pending"
+
+
+def _invite_statuses_by_email(db: Session, emails: list[str]) -> dict[str, str]:
+    if not emails:
+        return {}
+    normalized = [e.lower().strip() for e in emails if e]
+    if not normalized:
+        return {}
+    rows = list(
+        db.scalars(
+            select(InviteToken)
+            .where(InviteToken.email.in_(normalized))
+            .order_by(InviteToken.email.asc(), InviteToken.id.desc())
+        ).all()
+    )
+    grouped: dict[str, list[InviteToken]] = {}
+    for inv in rows:
+        key = inv.email.lower().strip()
+        bucket = grouped.setdefault(key, [])
+        if len(bucket) < 5:
+            bucket.append(inv)
+    return {email: _invite_status_from_rows(grouped.get(email, [])) for email in normalized}
+
+
+def _last_login_email_by_email(db: Session, emails: list[str]) -> dict[str, datetime]:
+    if not emails:
+        return {}
+    normalized = [e.lower().strip() for e in emails if e]
+    if not normalized:
+        return {}
+    rows = list(
+        db.scalars(
+            select(EmailLog)
+            .where(
+                EmailLog.recipient_email.in_(normalized),
+                EmailLog.template_key.in_(("portal_invite", "password_reset")),
+            )
+            .order_by(EmailLog.recipient_email.asc(), EmailLog.created_at.desc())
+        ).all()
+    )
+    out: dict[str, datetime] = {}
+    for row in rows:
+        key = row.recipient_email.lower().strip()
+        if key not in out:
+            sent = row.sent_at or row.created_at
+            if sent:
+                out[key] = sent
+    return out
+
+
+def _parent_portal_session_user_ids(db: Session, user_ids: list[int]) -> set[int]:
+    if not user_ids:
+        return set()
+    from app.models.audit_event import AuditEvent
+
+    rows = db.scalars(
+        select(AuditEvent.actor_user_id)
+        .where(
+            AuditEvent.actor_user_id.in_(user_ids),
+            AuditEvent.action.in_(("login", "accept_invite")),
+        )
+        .distinct()
+    ).all()
+    return {int(uid) for uid in rows}
+
+
+def _login_ready_from_batch(
+    user: User,
+    *,
+    pending_by_email: dict[str, InviteToken],
+    portal_session_ids: set[int],
+) -> bool:
+    if not user.is_active or not user.password_hash:
+        return False
+    email_key = user.email.lower().strip()
+    if pending_by_email.get(email_key) is not None:
+        return False
+    if "PARENT" in (user.role_names or []) and user.id not in portal_session_ids:
+        return False
+    return True
+
+
+def login_metadata_batch(
+    db: Session,
+    users: list[User],
+    *,
+    include_delivery: bool = True,
+) -> dict[int, dict]:
+    """Batch login/invite metadata for a page of users (avoids per-row query storms)."""
+    if not users:
+        return {}
+    emails = [u.email for u in users]
+    pending_by_email = _pending_invites_by_email(db, emails)
+    invite_status_by_email = _invite_statuses_by_email(db, emails)
+    last_email_by_email = _last_login_email_by_email(db, emails)
+    parent_ids = [u.id for u in users if "PARENT" in (u.role_names or [])]
+    portal_session_ids = _parent_portal_session_user_ids(db, parent_ids)
+
+    delivery_by_email: dict[str, dict] = {}
+    if include_delivery:
+        for user in users:
+            delivery_by_email[user.email.lower().strip()] = delivery_metadata_for_email(
+                db, user.email, user
+            )
+
+    out: dict[int, dict] = {}
+    for user in users:
+        email_key = user.email.lower().strip()
+        pending = pending_by_email.get(email_key)
+        invite_url = (
+            f"{settings.frontend_url.rstrip('/')}/invite/{pending.token}" if pending else None
+        )
+        last_at = last_email_by_email.get(email_key)
+        meta = {
+            "login_ready": _login_ready_from_batch(
+                user,
+                pending_by_email=pending_by_email,
+                portal_session_ids=portal_session_ids,
+            ),
+            "invite_status": invite_status_by_email.get(email_key, "none"),
+            "last_invite_sent_at": last_at.isoformat() if last_at else None,
+            "pending_invite_url": invite_url,
+            "primary_role": _primary_role(user),
+        }
+        if include_delivery:
+            meta.update(delivery_by_email.get(email_key, {}))
+        out[user.id] = meta
+    return out
+
+
 def login_metadata_for_user(db: Session, user: User) -> dict:
-    pending = _pending_invite(db, user.email)
-    status = invite_status_for_email(db, user.email)
-    last_at = last_login_email_sent_at(db, user.email)
-    invite_url = None
-    if pending:
-        invite_url = f"{settings.frontend_url.rstrip('/')}/invite/{pending.token}"
-    meta = delivery_metadata_for_email(db, user.email, user)
-    return {
+    batch = login_metadata_batch(db, [user], include_delivery=True)
+    return batch.get(user.id) or {
         "login_ready": login_ready(user, db),
-        "invite_status": status,
-        "last_invite_sent_at": last_at.isoformat() if last_at else None,
-        "pending_invite_url": invite_url,
+        "invite_status": invite_status_for_email(db, user.email),
+        "last_invite_sent_at": None,
+        "pending_invite_url": None,
         "primary_role": _primary_role(user),
-        **meta,
+        **delivery_metadata_for_email(db, user.email, user),
     }
 
 
