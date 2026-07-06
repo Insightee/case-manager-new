@@ -396,6 +396,10 @@ def review_leave(
             leave_notify.notify_leave_approved(db, leave, therapist)
         elif payload.status == LeaveStatus.REJECTED:
             leave_notify.notify_leave_rejected(db, leave, therapist)
+        elif payload.status == LeaveStatus.CANCELLED:
+            leave_notify.notify_leave_withdrawn(db, leave, therapist)
+    elif therapist and payload.status == LeaveStatus.CANCELLED and previous_status == LeaveStatus.APPROVED:
+        leave_notify.notify_leave_cancelled_after_approval(db, leave, therapist)
 
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="review_leave", entity_type="leave", entity_id=leave_id, **meta)
@@ -417,6 +421,9 @@ def delete_leave(
         raise HTTPException(status_code=403, detail="Access denied")
     if leave.status != LeaveStatus.PENDING:
         raise HTTPException(status_code=400, detail="Only pending leave can be deleted")
+    therapist = db.get(User, leave.therapist_user_id)
+    if therapist:
+        leave_notify.notify_leave_withdrawn(db, leave, therapist)
     leave_notify.unblock_slots_for_leave(db, leave.id)
     db.delete(leave)
     db.commit()

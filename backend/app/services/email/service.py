@@ -741,6 +741,60 @@ def leave_admin_summary_email(
     send_email(to=to, subject=f"[Admin] Leave approved — {therapist_name}", body_text=body, db=db)
 
 
+def leave_pending_parent_email(
+    *,
+    to: str,
+    therapist_name: str,
+    date_range: str,
+    body_text: str,
+    portal_url: str,
+    parent_name: str = "there",
+    db: Session | None = None,
+) -> None:
+    body = (
+        f"Hi {parent_name},\n\n"
+        f"{body_text}\n\n"
+        f"View your schedule: {portal_url}\n"
+    )
+    send_email(to=to, subject=f"Therapist leave under review — {therapist_name}", body_text=body, db=db)
+
+
+def leave_cancelled_after_approval_email(
+    *,
+    to: str,
+    therapist_name: str,
+    date_range: str,
+    case_codes: str,
+    lines: list[str],
+    portal_url: str,
+    parent_name: str = "there",
+    db: Session | None = None,
+) -> None:
+    if lines:
+        session_detail = (
+            "The following session(s) that were cancelled due to this leave are being reinstated:\n"
+            + "\n".join(f"• {ln}" for ln in lines)
+        )
+    else:
+        session_detail = (
+            "Any sessions that were cancelled due to this leave are being reinstated. "
+            "Your schedule will remain as planned."
+        )
+    body = (
+        f"Hi {parent_name},\n\n"
+        f"The approved leave for {therapist_name} ({date_range}) has been cancelled.\n"
+        f"{session_detail}\n\n"
+        f"Case(s): {case_codes}\n"
+        f"Review your schedule: {portal_url}\n"
+    )
+    send_email(
+        to=to,
+        subject=f"Leave cancelled — sessions reinstated ({therapist_name})",
+        body_text=body,
+        db=db,
+    )
+
+
 def leave_pending_hr_email(
     *,
     to: str,

@@ -76,7 +76,7 @@ def test_tentative_notification_on_leave_submit():
     notes = _parent_notifications(parent)
     assert any(n["title"] == "Therapist leave requested" for n in notes)
     tentative = next(n for n in notes if n["title"] == "Therapist leave requested")
-    assert "not cancelled" in tentative["body"].lower() or "until" in tentative["body"].lower()
+    assert "under review" in tentative["body"].lower() or "not cancelled" in tentative["body"].lower()
 
 
 def test_approve_cancels_slot_and_confirms_parent():
@@ -204,9 +204,10 @@ def _staff_notifications(token: str) -> list[dict]:
     return r.json().get("notifications", r.json())
 
 
-def test_hr_notified_on_leave_submit():
+def test_cm_notified_on_leave_submit_hr_not_notified():
     therapist = _login("therapist@demo.com")
     hr = _login("hr@demo.com")
+    cm = _login("shadowcm@demo.com")
     day = date(2026, 8, 5)
     leave = client.post(
         "/api/v1/leave",
@@ -222,11 +223,14 @@ def test_hr_notified_on_leave_submit():
     assert leave.status_code == 201
     leave_id = leave.json()["id"]
 
-    notes = _staff_notifications(hr)
+    cm_notes = _staff_notifications(cm)
     assert any(
         n.get("entity_id") == leave_id and "pending" in n["title"].lower()
-        for n in notes
+        for n in cm_notes
     )
+
+    hr_notes = _staff_notifications(hr)
+    assert not any(n.get("entity_id") == leave_id for n in hr_notes)
 
 
 def test_therapist_notified_on_reject_with_note():
