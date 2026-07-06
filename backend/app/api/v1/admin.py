@@ -1567,6 +1567,8 @@ def _users_directory_stmt(
     active_only: bool,
     sort: str,
 ):
+    from sqlalchemy import case
+
     from app.models.role import Role, user_roles
 
     role_set = {r.strip().upper() for r in (roles or "").split(",") if r.strip()}
@@ -1574,12 +1576,13 @@ def _users_directory_stmt(
     if active_only:
         stmt = stmt.where(User.is_active.is_(True))
     if role_set:
-        stmt = (
-            stmt.join(user_roles, user_roles.c.user_id == User.id)
+        role_user_ids = (
+            select(user_roles.c.user_id)
             .join(Role, Role.id == user_roles.c.role_id)
             .where(Role.name.in_(role_set))
             .distinct()
         )
+        stmt = stmt.where(User.id.in_(role_user_ids))
     q = (search or "").strip().lower()
     if q:
         pattern = f"%{q}%"
@@ -1591,14 +1594,25 @@ def _users_directory_stmt(
                 func.lower(User.phone).like(pattern),
             )
         )
+    id_sort_key = case((User.external_employee_id.is_(None), 0), else_=1)
     if sort == "id_desc":
-        stmt = stmt.order_by(User.external_employee_id.desc().nulls_last(), User.full_name.desc(), User.email.asc())
+        stmt = stmt.order_by(
+            id_sort_key.desc(),
+            User.external_employee_id.desc(),
+            User.full_name.desc(),
+            User.email.asc(),
+        )
     elif sort == "name_desc":
         stmt = stmt.order_by(User.full_name.desc(), User.email.asc())
     elif sort == "name_asc":
         stmt = stmt.order_by(User.full_name.asc(), User.email.asc())
     elif sort == "id_asc":
-        stmt = stmt.order_by(User.external_employee_id.asc().nulls_first(), User.full_name.asc(), User.email.asc())
+        stmt = stmt.order_by(
+            id_sort_key.asc(),
+            User.external_employee_id.asc(),
+            User.full_name.asc(),
+            User.email.asc(),
+        )
     else:
         stmt = stmt.order_by(User.full_name.asc(), User.email.asc())
     return stmt

@@ -548,7 +548,7 @@ def _family_child_search_stmt(search: str | None):
     from app.models.user import User
 
     q = (search or "").strip().lower()
-    stmt = select(Child.id).distinct()
+    stmt = select(Child)
     if not q:
         return stmt.order_by(Child.first_name.asc(), Child.last_name.asc(), Child.id.asc())
     pattern = f"%{q}%"
@@ -567,6 +567,7 @@ def _family_child_search_stmt(search: str | None):
                 func.lower(Case.case_code).like(pattern),
             )
         )
+        .distinct()
     )
     return stmt.order_by(Child.first_name.asc(), Child.last_name.asc(), Child.id.asc())
 
@@ -580,19 +581,12 @@ def list_families_paginated(
 ) -> dict:
     from app.core.pagination import paginate_query, paginated_response
 
-    id_stmt = _family_child_search_stmt(search)
-    id_rows, total = paginate_query(db, id_stmt, page=page, page_size=page_size)
-    child_ids = [int(row[0] if isinstance(row, tuple) else row) for row in id_rows]
-    if not child_ids:
+    child_stmt = _family_child_search_stmt(search)
+    children, total = paginate_query(db, child_stmt, page=page, page_size=page_size)
+    if not children:
         return paginated_response([], total, page, page_size)
 
-    children = list(
-        db.scalars(
-            select(Child)
-            .where(Child.id.in_(child_ids))
-            .order_by(Child.first_name.asc(), Child.last_name.asc(), Child.id.asc())
-        ).all()
-    )
+    child_ids = [child.id for child in children]
     child_parents, cases_by_child, pending_by_child = _family_support_maps(db, child_ids=child_ids)
     items = [
         _build_family_row(
