@@ -10,6 +10,7 @@ import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions
 import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { PortalInstallButton } from '../components/shared/PortalInstallButton.jsx'
+import { PortalInstallBanner } from '../components/shared/PortalInstallBanner.jsx'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import '../components/shared/notification-bell.css'
@@ -607,6 +608,7 @@ export function PortalShell({ portal }) {
         ) : null}
         <Outlet />
       </main>
+      <PortalInstallBanner key={portal} portal={portal} />
     </div>
   )
 }

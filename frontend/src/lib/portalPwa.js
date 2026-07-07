@@ -1,24 +1,53 @@
 /** Portal-specific PWA install metadata (one home-screen app per portal). */
 
+export const INSTALL_BANNER_DISMISS_MS = 30 * 24 * 60 * 60 * 1000
+
 export const PORTAL_PWA = {
   admin: {
     manifestHref: '/manifest-admin.webmanifest',
     appleTouchIcon: '/branding/portal-admin.png',
     installLabel: 'Add Admin Portal to home screen',
     appName: 'InsighteCase Admin',
+    bannerTitle: 'Open InsighteCase faster next time',
+    bannerSubtitle: 'Add the Admin portal to your home screen — one tap from your phone.',
+    bannerIcon: '/branding/portal-admin.png',
   },
   therapist: {
     manifestHref: '/manifest-therapist.webmanifest',
     appleTouchIcon: '/branding/portal-therapist.png',
     installLabel: 'Add Therapist Portal to home screen',
     appName: 'InsighteCase Therapist',
+    bannerTitle: 'Open InsighteCase faster next time',
+    bannerSubtitle: 'Add the Therapist portal to your home screen — quick access from the field.',
+    bannerIcon: '/branding/portal-therapist.png',
   },
   parent: {
     manifestHref: '/manifest-parent.webmanifest',
     appleTouchIcon: '/branding/portal-parent.png',
     installLabel: 'Add Client Portal to home screen',
     appName: 'InsighteCase Client',
+    bannerTitle: 'Open InsighteCase faster next time',
+    bannerSubtitle: 'Add the Client portal to your home screen — session updates at your fingertips.',
+    bannerIcon: '/branding/portal-parent.png',
   },
+}
+
+function installBannerDismissKey(portal) {
+  return `insightcase:install-banner-dismissed:${portal}`
+}
+
+export function isInstallBannerDismissed(portal) {
+  if (typeof localStorage === 'undefined') return false
+  const raw = localStorage.getItem(installBannerDismissKey(portal))
+  if (!raw) return false
+  const dismissedAt = Number(raw)
+  if (!Number.isFinite(dismissedAt)) return false
+  return Date.now() - dismissedAt < INSTALL_BANNER_DISMISS_MS
+}
+
+export function dismissInstallBanner(portal) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(installBannerDismissKey(portal), String(Date.now()))
 }
 
 export function isStandaloneDisplay() {

@@ -1,6 +1,5 @@
-import { useState } from 'react'
-import { createPortal } from 'react-dom'
-import { usePortalPwa } from '../../hooks/usePortalPwa.js'
+import { usePortalInstallActions } from '../../hooks/usePortalInstallActions.js'
+import { PortalInstallSheets } from './PortalInstallSheets.jsx'
 import './portal-install.css'
 
 function DownloadIcon() {
@@ -17,94 +16,13 @@ function DownloadIcon() {
   )
 }
 
-function InstallSheet({ appName, title, children, onClose }) {
-  return createPortal(
-    <div className="portal-install-overlay" role="presentation" onClick={onClose}>
-      <div
-        className="portal-install-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="portal-install-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 id="portal-install-title">{title || `Add ${appName} to your home screen`}</h2>
-        <p>This opens the portal directly from an app icon — same login and features as the website.</p>
-        {children}
-        <div className="portal-install-sheet__actions">
-          <button type="button" className="portal-install-sheet__close" onClick={onClose}>
-            Got it
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
-function IosInstallSheet({ appName, onClose }) {
-  return (
-    <InstallSheet appName={appName} onClose={onClose}>
-      <ol>
-        <li>Tap the Share button in Safari (square with an arrow).</li>
-        <li>Scroll down and choose <strong>Add to Home Screen</strong>.</li>
-        <li>Tap <strong>Add</strong> in the top corner.</li>
-      </ol>
-    </InstallSheet>
-  )
-}
-
-function MacInstallSheet({ appName, onClose }) {
-  return (
-    <InstallSheet appName={appName} title={`Add ${appName} to your Dock`} onClose={onClose}>
-      <ol>
-        <li>In Safari, open the menu bar and choose <strong>File → Add to Dock…</strong></li>
-        <li>
-          Or click <strong>Share</strong> in the toolbar, then choose <strong>Add to Dock</strong>.
-        </li>
-        <li>
-          Confirm with <strong>Add</strong> — {appName} will appear in your Dock like an app.
-        </li>
-      </ol>
-    </InstallSheet>
-  )
-}
-
-function GenericInstallSheet({ appName, onClose }) {
-  return (
-    <InstallSheet appName={appName} onClose={onClose}>
-      <ol>
-        <li>Open your browser menu (three dots or lines).</li>
-        <li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
-        <li>Confirm to add the {appName} shortcut.</li>
-      </ol>
-    </InstallSheet>
-  )
-}
-
 export function PortalInstallButton({ portal, variant = 'topbar' }) {
-  const { config, canShowInstall, iosSafari, macSafari, canNativeInstall, promptInstall } = usePortalPwa(portal, {
+  const { config, canShowInstall, runInstall, sheet, closeSheet } = usePortalInstallActions(portal, {
     surface: variant,
   })
-  const [sheet, setSheet] = useState(null)
 
   if (!canShowInstall || !config) {
     return null
-  }
-
-  async function handleClick() {
-    if (canNativeInstall) {
-      await promptInstall()
-      return
-    }
-    if (iosSafari) {
-      setSheet('ios')
-      return
-    }
-    if (macSafari) {
-      setSheet('mac')
-      return
-    }
-    setSheet('generic')
   }
 
   const className =
@@ -119,19 +37,11 @@ export function PortalInstallButton({ portal, variant = 'topbar' }) {
         className={className}
         aria-label={config.installLabel}
         title={config.installLabel}
-        onClick={handleClick}
+        onClick={() => void runInstall()}
       >
         <DownloadIcon />
       </button>
-      {sheet === 'ios' ? (
-        <IosInstallSheet appName={config.appName} onClose={() => setSheet(null)} />
-      ) : null}
-      {sheet === 'mac' ? (
-        <MacInstallSheet appName={config.appName} onClose={() => setSheet(null)} />
-      ) : null}
-      {sheet === 'generic' ? (
-        <GenericInstallSheet appName={config.appName} onClose={() => setSheet(null)} />
-      ) : null}
+      <PortalInstallSheets sheet={sheet} appName={config.appName} onClose={closeSheet} />
     </>
   )
 }

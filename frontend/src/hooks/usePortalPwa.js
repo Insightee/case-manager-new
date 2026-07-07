@@ -51,9 +51,11 @@ export function usePortalPwa(portal, options = {}) {
   const canShowInstall =
     Boolean(config) &&
     !installed &&
-    (surface === 'sidebar'
-      ? canNativeInstall || iosSafari || macSafari
-      : isMobilePortal || canNativeInstall || iosSafari || macSafari)
+    (surface === 'banner'
+      ? isMobilePortal
+      : surface === 'sidebar'
+        ? canNativeInstall || iosSafari || macSafari
+        : isMobilePortal || canNativeInstall || iosSafari || macSafari)
 
   const promptInstall = useCallback(async () => {
     if (!deferredPrompt) return { outcome: 'unavailable' }
