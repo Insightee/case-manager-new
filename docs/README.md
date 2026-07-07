@@ -79,6 +79,8 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | Doc | Purpose |
 |-----|---------|
 | [PARENT_CLIENT_PORTAL_GUIDE.md](./PARENT_CLIENT_PORTAL_GUIDE.md) | **Parent / guardian guide** — client portal navigation and features |
+| [THERAPIST_PORTAL_GUIDE.md](./THERAPIST_PORTAL_GUIDE.md) | **Therapist guide** (Markdown source) — portal navigation and daily workflows |
+| [THERAPIST_PORTAL_GUIDE.pdf](./THERAPIST_PORTAL_GUIDE.pdf) | **Therapist guide (PDF)** — share with therapists; regenerate via `scripts/generate-therapist-guide-pdf.sh` |
 | [../frontend/docs/admin-mobile-ux.md](../frontend/docs/admin-mobile-ux.md) | Admin portal mobile UX rules |
 
 ## Agent memory
