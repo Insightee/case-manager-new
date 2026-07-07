@@ -1,5 +1,9 @@
 /** Production UI hosts that proxy /api on the same origin (see vercel.json rewrites). */
-const SAME_ORIGIN_API_HOSTS = /^((www\.)?insighte\.org|[a-z0-9-]+\.vercel\.app)$/i
+const PRODUCTION_UI_HOSTS = /^((www\.)?insighte\.org|frontend-omega-eight-92\.vercel\.app)$/i
+
+function isProductionUiHost(hostname) {
+  return PRODUCTION_UI_HOSTS.test(hostname)
+}
 
 const getEnv = (key) => {
   if (typeof import.meta !== 'undefined' && import.meta.env) {
@@ -37,7 +41,7 @@ function resolveApiBaseUrl() {
   if (host === 'insighte.org') {
     return 'https://www.insighte.org'
   }
-  if (SAME_ORIGIN_API_HOSTS.test(host)) {
+  if (isProductionUiHost(host)) {
     return ''
   }
   return configured
@@ -267,14 +271,13 @@ export async function apiFetch(path, options = {}) {
       throw offlineErr
     }
     const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
-    const onVercel = /\.vercel\.app$/i.test(hostname)
-    const onInsighte = SAME_ORIGIN_API_HOSTS.test(hostname)
+    const onProductionUi = isProductionUiHost(hostname)
     const localDev = hostname === 'localhost' || hostname === '127.0.0.1'
     let hint
     if (!getApiBaseUrl() && localDev) {
       hint =
         'Cannot reach the API. Start the backend: cd backend && python3 -m uvicorn app.main:app --reload --port 8000 — then refresh this page.'
-    } else if (onInsighte || onVercel) {
+    } else if (onProductionUi) {
       const origin =
         typeof window !== 'undefined' && window.location?.origin ? window.location.origin : hostname
       hint =
