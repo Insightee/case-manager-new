@@ -1,0 +1,25 @@
+{
+  "name": "InsighteCase Admin",
+  "short_name": "Admin",
+  "description": "InsighteCase admin and operations portal",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "background_color": "#0f3d2e",
+  "theme_color": "#0f3d2e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/branding/portal-admin.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/portal-admin.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

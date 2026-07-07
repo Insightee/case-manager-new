@@ -1,0 +1,25 @@
+{
+  "name": "InsighteCase Client",
+  "short_name": "Client",
+  "description": "InsighteCase client portal for families and caregivers",
+  "start_url": "/parent",
+  "scope": "/parent",
+  "display": "standalone",
+  "background_color": "#0f3d2e",
+  "theme_color": "#0f3d2e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/branding/portal-parent.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/portal-parent.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

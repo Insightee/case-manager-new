@@ -1,7 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.jsx'
+
+registerSW({ immediate: true })
 
 // Canonical host: apex insighte.org 308-redirects and breaks credentialed /api PATCH preflights.
 if (typeof window !== 'undefined' && window.location.hostname === 'insighte.org') {
