@@ -1,0 +1,25 @@
+{
+  "name": "InsighteCase Therapist",
+  "short_name": "Therapist",
+  "description": "InsighteCase therapist portal for session logs and casework",
+  "start_url": "/therapist",
+  "scope": "/therapist",
+  "display": "standalone",
+  "background_color": "#0f3d2e",
+  "theme_color": "#0f3d2e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/branding/portal-therapist.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/portal-therapist.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

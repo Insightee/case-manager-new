@@ -9,6 +9,7 @@ import { useAppUsageTracker } from '../hooks/useAppUsageTracker.js'
 import { actionIdFromPath, recordTherapistAction } from '../lib/therapistActions.js'
 import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
+import { PortalInstallButton } from '../components/shared/PortalInstallButton.jsx'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
 import '../components/shared/notification-bell.css'
@@ -347,48 +348,51 @@ export function PortalShell({ portal }) {
             </div>
           </div>
         </div>
-        {!showMobileDrawer ? (
-          <div className="app-mobile-topbar__account">
-            <NotificationBell portal={portal} />
-            <button
-              type="button"
-              className="app-mobile-topbar__profile"
-              aria-expanded={accountOpen}
-              aria-controls="mobile-account-menu"
-              aria-haspopup="menu"
-              onClick={() => setAccountOpen((o) => !o)}
-            >
-              <AuthenticatedAvatar user={user} className="app-mobile-topbar__avatar" size={36} />
-              <span className="app-mobile-topbar__name">{firstName}</span>
-              <span className="app-mobile-topbar__chevron" aria-hidden>
-                {accountOpen ? '▲' : '▼'}
-              </span>
-            </button>
-            {accountOpen ? (
-              <div id="mobile-account-menu" className="app-mobile-account-menu" role="menu">
-                <p className="app-mobile-account-menu__name">{user?.full_name}</p>
-                {profilePath ? (
-                  <NavLink
-                    to={profilePath}
-                    className="app-mobile-account-menu__link"
+        <div className="app-mobile-topbar__end">
+          <PortalInstallButton portal={portal} />
+          {!showMobileDrawer ? (
+            <div className="app-mobile-topbar__account">
+              <NotificationBell portal={portal} />
+              <button
+                type="button"
+                className="app-mobile-topbar__profile"
+                aria-expanded={accountOpen}
+                aria-controls="mobile-account-menu"
+                aria-haspopup="menu"
+                onClick={() => setAccountOpen((o) => !o)}
+              >
+                <AuthenticatedAvatar user={user} className="app-mobile-topbar__avatar" size={36} />
+                <span className="app-mobile-topbar__name">{firstName}</span>
+                <span className="app-mobile-topbar__chevron" aria-hidden>
+                  {accountOpen ? '▲' : '▼'}
+                </span>
+              </button>
+              {accountOpen ? (
+                <div id="mobile-account-menu" className="app-mobile-account-menu" role="menu">
+                  <p className="app-mobile-account-menu__name">{user?.full_name}</p>
+                  {profilePath ? (
+                    <NavLink
+                      to={profilePath}
+                      className="app-mobile-account-menu__link"
+                      role="menuitem"
+                      onClick={() => setAccountOpen(false)}
+                    >
+                      My profile
+                    </NavLink>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="app-mobile-account-menu__logout"
                     role="menuitem"
-                    onClick={() => setAccountOpen(false)}
+                    onClick={logout}
                   >
-                    My profile
-                  </NavLink>
-                ) : null}
-                <button
-                  type="button"
-                  className="app-mobile-account-menu__logout"
-                  role="menuitem"
-                  onClick={logout}
-                >
-                  Logout
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+                    Logout
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </header>
 
       <nav
@@ -495,7 +499,10 @@ export function PortalShell({ portal }) {
               <p className="app-sidebar__sub">{subtitle}</p>
             </div>
           </div>
-          <NotificationBell portal={portal} />
+          <div className="app-sidebar__brand-actions">
+            <PortalInstallButton portal={portal} variant="sidebar" />
+            <NotificationBell portal={portal} />
+          </div>
         </div>
         <NavLinks
           items={nav}
