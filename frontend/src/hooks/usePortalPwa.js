@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { applyPortalPwaMeta, isIosSafari, isStandaloneDisplay, PORTAL_PWA } from '../lib/portalPwa.js'
+import {
+  applyPortalPwaMeta,
+  isIosSafari,
+  isMacSafari,
+  isStandaloneDisplay,
+  PORTAL_PWA,
+} from '../lib/portalPwa.js'
 import { useIsMobilePortal } from './useMediaQuery.js'
 
 export function usePortalPwa(portal, options = {}) {
@@ -7,6 +13,7 @@ export function usePortalPwa(portal, options = {}) {
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [installed, setInstalled] = useState(() => isStandaloneDisplay())
   const [iosSafari] = useState(() => isIosSafari())
+  const [macSafari] = useState(() => isMacSafari())
   const isMobilePortal = useIsMobilePortal()
 
   useEffect(() => {
@@ -45,8 +52,8 @@ export function usePortalPwa(portal, options = {}) {
     Boolean(config) &&
     !installed &&
     (surface === 'sidebar'
-      ? canNativeInstall || iosSafari
-      : isMobilePortal || canNativeInstall || iosSafari)
+      ? canNativeInstall || iosSafari || macSafari
+      : isMobilePortal || canNativeInstall || iosSafari || macSafari)
 
   const promptInstall = useCallback(async () => {
     if (!deferredPrompt) return { outcome: 'unavailable' }
@@ -63,6 +70,7 @@ export function usePortalPwa(portal, options = {}) {
     config,
     installed,
     iosSafari,
+    macSafari,
     canNativeInstall,
     canShowInstall,
     promptInstall,

@@ -30,12 +30,26 @@ export function isStandaloneDisplay() {
   )
 }
 
+function isSafariBrowser() {
+  const ua = navigator.userAgent || ''
+  return /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|EdgiOS|FxiOS|Firefox|OPR|OPiOS/.test(ua)
+}
+
 export function isIosSafari() {
   if (typeof navigator === 'undefined') return false
   const ua = navigator.userAgent || ''
   const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)
-  return isIos && isSafari
+  return isIos && isSafariBrowser()
+}
+
+/** Desktop Safari on macOS (Add to Dock — no beforeinstallprompt). */
+export function isMacSafari() {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  if (isIos) return false
+  const isMac = /Mac/.test(navigator.platform || '') || /Macintosh/.test(ua)
+  return isMac && isSafariBrowser()
 }
 
 function upsertLink(rel, href, extra = {}) {

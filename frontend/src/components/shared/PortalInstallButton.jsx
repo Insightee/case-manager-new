@@ -53,6 +53,22 @@ function IosInstallSheet({ appName, onClose }) {
   )
 }
 
+function MacInstallSheet({ appName, onClose }) {
+  return (
+    <InstallSheet appName={appName} title={`Add ${appName} to your Dock`} onClose={onClose}>
+      <ol>
+        <li>In Safari, open the menu bar and choose <strong>File → Add to Dock…</strong></li>
+        <li>
+          Or click <strong>Share</strong> in the toolbar, then choose <strong>Add to Dock</strong>.
+        </li>
+        <li>
+          Confirm with <strong>Add</strong> — {appName} will appear in your Dock like an app.
+        </li>
+      </ol>
+    </InstallSheet>
+  )
+}
+
 function GenericInstallSheet({ appName, onClose }) {
   return (
     <InstallSheet appName={appName} onClose={onClose}>
@@ -66,7 +82,7 @@ function GenericInstallSheet({ appName, onClose }) {
 }
 
 export function PortalInstallButton({ portal, variant = 'topbar' }) {
-  const { config, canShowInstall, iosSafari, canNativeInstall, promptInstall } = usePortalPwa(portal, {
+  const { config, canShowInstall, iosSafari, macSafari, canNativeInstall, promptInstall } = usePortalPwa(portal, {
     surface: variant,
   })
   const [sheet, setSheet] = useState(null)
@@ -82,6 +98,10 @@ export function PortalInstallButton({ portal, variant = 'topbar' }) {
     }
     if (iosSafari) {
       setSheet('ios')
+      return
+    }
+    if (macSafari) {
+      setSheet('mac')
       return
     }
     setSheet('generic')
@@ -105,6 +125,9 @@ export function PortalInstallButton({ portal, variant = 'topbar' }) {
       </button>
       {sheet === 'ios' ? (
         <IosInstallSheet appName={config.appName} onClose={() => setSheet(null)} />
+      ) : null}
+      {sheet === 'mac' ? (
+        <MacInstallSheet appName={config.appName} onClose={() => setSheet(null)} />
       ) : null}
       {sheet === 'generic' ? (
         <GenericInstallSheet appName={config.appName} onClose={() => setSheet(null)} />
