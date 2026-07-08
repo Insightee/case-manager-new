@@ -1,8 +1,11 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  accessTokenNeedsRefresh,
   apiFetch,
+  ensureAccessToken,
   getTokens,
+  isPublicAuthPath,
   setTokens,
 } from './apiClient.js'
 
@@ -15,10 +18,44 @@ globalThis.localStorage = {
   clear: () => { for (const k in storage) delete storage[k] }
 }
 
+/** Minimal JWT whose access token expired in 1970. */
+const EXPIRED_ACCESS = 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.expired'
+
+describe('apiClient auth helpers', () => {
+  it('accessTokenNeedsRefresh detects expired access tokens', () => {
+    assert.equal(accessTokenNeedsRefresh(EXPIRED_ACCESS), true)
+    assert.equal(accessTokenNeedsRefresh(null), true)
+  })
+
+  it('isPublicAuthPath excludes login and refresh only', () => {
+    assert.equal(isPublicAuthPath('/api/v1/auth/login'), true)
+    assert.equal(isPublicAuthPath('/api/v1/auth/refresh'), true)
+    assert.equal(isPublicAuthPath('/api/v1/auth/me'), false)
+  })
+})
+
 describe('apiClient interceptor', () => {
   beforeEach(() => {
     localStorage.clear()
     setTokens('initial_access', 'initial_refresh')
+  })
+
+  it('ensureAccessToken refreshes expired access tokens', async () => {
+    setTokens(EXPIRED_ACCESS, 'initial_refresh')
+    globalThis.fetch = async (url) => {
+      if (url.includes('/auth/refresh')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: 'fresh_access', refresh_token: 'fresh_refresh' }),
+        }
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }
+
+    const access = await ensureAccessToken()
+    assert.equal(access, 'fresh_access')
+    assert.equal(getTokens().access, 'fresh_access')
   })
 
   it('refresh 200 retries original request', async () => {
@@ -56,6 +93,40 @@ describe('apiClient interceptor', () => {
     assert.deepEqual(res, { success: true })
     assert.equal(getTokens().access, 'new_access')
     assert.equal(getTokens().refresh, 'new_refresh')
+  })
+
+  it('refresh 200 retries /auth/me on 401', async () => {
+    let callCount = 0
+    globalThis.fetch = async (url, options) => {
+      callCount++
+      if (url.includes('/auth/refresh')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ access_token: 'new_access', refresh_token: 'new_refresh' }),
+        }
+      }
+      if (callCount === 1) {
+        return {
+          ok: false,
+          status: 401,
+          statusText: 'Unauthorized',
+          json: async () => ({ detail: 'Invalid token' }),
+          headers: new Map(),
+        }
+      }
+      assert.equal(options.headers.Authorization, 'Bearer new_access')
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 1, email: 'user@demo.com' }),
+        headers: new Map(),
+      }
+    }
+
+    const me = await apiFetch('/api/v1/auth/me')
+    assert.equal(me.email, 'user@demo.com')
+    assert.equal(getTokens().access, 'new_access')
   })
 
   it('refresh 401 clears tokens', async () => {

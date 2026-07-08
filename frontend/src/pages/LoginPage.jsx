@@ -13,6 +13,7 @@ import {
 } from '../lib/portalLogin.js'
 
 const DEMO_PASSWORD = 'demo123'
+const REMEMBER_ME_KEY = 'insightcase_remember_me'
 
 /** @typedef {{ email: string, label: string, hint?: string }} DemoAccount */
 /** @typedef {{ title: string, accounts: DemoAccount[] }} DemoGroup */
@@ -119,9 +120,12 @@ export function LoginPage({ portalType }) {
   const gateRunRef = useRef(0)
 
   const [portalGateReady, setPortalGateReady] = useState(false)
-  const [rememberMe, setRememberMe] = useState(
-    () => portalType === 'parent' || portalType === 'therapist',
-  )
+  const [rememberMe, setRememberMe] = useState(() => {
+    const saved = localStorage.getItem(REMEMBER_ME_KEY)
+    if (saved === '1') return true
+    if (saved === '0') return false
+    return portalType === 'parent' || portalType === 'therapist'
+  })
 
   const queryParams = useMemo(() => {
     return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
@@ -436,7 +440,11 @@ export function LoginPage({ portalType }) {
                   <input
                     type="checkbox"
                     checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setRememberMe(checked)
+                      localStorage.setItem(REMEMBER_ME_KEY, checked ? '1' : '0')
+                    }}
                   />
                   Keep me signed in
                 </label>

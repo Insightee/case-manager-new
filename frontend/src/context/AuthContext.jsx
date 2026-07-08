@@ -6,6 +6,8 @@ import {
   getTokens,
   isAuthSessionError,
   setTokens,
+  startSessionKeepAlive,
+  stopSessionKeepAlive,
   tryRefreshSession,
 } from '../lib/apiClient.js'
 import {
@@ -77,6 +79,15 @@ export function AuthProvider({ children }) {
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
+
+  useEffect(() => {
+    if (!user) {
+      stopSessionKeepAlive()
+      return undefined
+    }
+    startSessionKeepAlive()
+    return () => stopSessionKeepAlive()
+  }, [user])
 
   const clearSessionForPortalRetry = useCallback(() => {
     clearTokens()

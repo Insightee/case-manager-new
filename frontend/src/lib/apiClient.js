@@ -102,7 +102,83 @@ export function getApiMetricsSnapshot() {
   }
 }
 
+const ACCESS_REFRESH_BUFFER_MS = 2 * 60 * 1000
+const SESSION_KEEPALIVE_MS = 25 * 60 * 1000
+const REFRESH_LOCK_NAME = 'insightcase-token-refresh'
+
+/** Auth routes that must not trigger a refresh retry on 401 (unauthenticated endpoints). */
+const PUBLIC_AUTH_PATHS = [
+  '/auth/login',
+  '/auth/refresh',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/accept-invite',
+]
+
+const tokenSyncListeners = new Set()
+let keepAliveTimer = null
+let storageListenerBound = false
+
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== 'string') return null
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+export function accessTokenNeedsRefresh(access, bufferMs = ACCESS_REFRESH_BUFFER_MS) {
+  if (!access) return true
+  const payload = decodeJwtPayload(access)
+  if (!payload?.exp) return false
+  return Date.now() >= payload.exp * 1000 - bufferMs
+}
+
+export function isPublicAuthPath(path) {
+  if (!path) return false
+  if (PUBLIC_AUTH_PATHS.some((segment) => path.includes(segment))) return true
+  if (/\/auth\/invite\//.test(path)) return true
+  if (/\/auth\/reset-password\//.test(path)) return true
+  return false
+}
+
+function shouldRetryWithRefresh(path, status) {
+  return status === 401 && !isPublicAuthPath(path)
+}
+
+function notifyTokenSync() {
+  const tokens = getTokens()
+  tokenSyncListeners.forEach((listener) => {
+    try {
+      listener(tokens)
+    } catch {
+      // ignore listener errors
+    }
+  })
+}
+
+function bindStorageSyncListener() {
+  if (storageListenerBound || typeof window === 'undefined') return
+  storageListenerBound = true
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'access_token' || event.key === 'refresh_token') {
+      notifyTokenSync()
+    }
+  })
+}
+
+export function onTokenSync(listener) {
+  bindStorageSyncListener()
+  tokenSyncListeners.add(listener)
+  return () => tokenSyncListeners.delete(listener)
+}
+
 export function getTokens() {
+  bindStorageSyncListener()
   return {
     access: localStorage.getItem('access_token'),
     refresh: localStorage.getItem('refresh_token'),
@@ -112,11 +188,20 @@ export function getTokens() {
 export function setTokens(access, refresh) {
   localStorage.setItem('access_token', access)
   if (refresh) localStorage.setItem('refresh_token', refresh)
+  notifyTokenSync()
 }
 
 export function clearTokens() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
+  notifyTokenSync()
+}
+
+async function withRefreshLock(fn) {
+  if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+    return navigator.locks.request(REFRESH_LOCK_NAME, fn)
+  }
+  return fn()
 }
 
 function timeoutErrorMessage(timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -155,7 +240,7 @@ let refreshInFlight = null
 async function refreshAccess() {
   if (refreshInFlight) return refreshInFlight
 
-  refreshInFlight = (async () => {
+  refreshInFlight = withRefreshLock(async () => {
     const { refresh } = getTokens()
     if (!refresh) {
       const err = new Error('No refresh token')
@@ -189,10 +274,10 @@ async function refreshAccess() {
       }
       err.isNetworkOrServerError = true
       throw err
-    } finally {
-      refreshInFlight = null
     }
-  })()
+  }).finally(() => {
+    refreshInFlight = null
+  })
 
   return refreshInFlight
 }
@@ -209,11 +294,11 @@ export function isAuthSessionError(err) {
   )
 }
 
-/** Refresh access token when missing; returns current or new access token, or null. */
+/** Refresh access token when missing or expired; returns current or new access token, or null. */
 export async function ensureAccessToken() {
   const { access, refresh } = getTokens()
-  if (access) return access
-  if (!refresh) return null
+  if (access && !accessTokenNeedsRefresh(access)) return access
+  if (!refresh) return access || null
   try {
     return await refreshAccess()
   } catch {
@@ -221,14 +306,30 @@ export async function ensureAccessToken() {
   }
 }
 
-/** Silently rotate access token when a refresh token exists (e.g. tab refocus). */
+/** Silently rotate access token when needed (tab refocus, keep-alive). */
 export async function tryRefreshSession() {
-  const { refresh } = getTokens()
+  const { access, refresh } = getTokens()
   if (!refresh) return null
+  if (access && !accessTokenNeedsRefresh(access)) return access
   try {
     return await refreshAccess()
   } catch {
     return null
+  }
+}
+
+export function startSessionKeepAlive() {
+  stopSessionKeepAlive()
+  keepAliveTimer = setInterval(() => {
+    if (!getTokens().refresh) return
+    void tryRefreshSession()
+  }, SESSION_KEEPALIVE_MS)
+}
+
+export function stopSessionKeepAlive() {
+  if (keepAliveTimer) {
+    clearInterval(keepAliveTimer)
+    keepAliveTimer = null
   }
 }
 
@@ -291,7 +392,7 @@ export async function apiFetch(path, options = {}) {
     throw new Error(hint)
   }
 
-  if (res.status === 401 && !path.includes('/auth/')) {
+  if (shouldRetryWithRefresh(path, res.status)) {
     try {
       const newAccess = await refreshAccess()
       if (newAccess) {
@@ -427,7 +528,7 @@ export async function apiUpload(path, formData, { timeoutMs = 60000 } = {}) {
   } finally {
     if (timer) clearTimeout(timer)
   }
-  if (res.status === 401 && !path.includes('/auth/login') && !path.includes('/auth/refresh')) {
+  if (shouldRetryWithRefresh(path, res.status)) {
     const newAccess = await refreshAccess()
     if (newAccess) {
       headers.Authorization = `Bearer ${newAccess}`
