@@ -754,6 +754,32 @@ def ensure_sqlite_schema_patches() -> None:
                 )
             )
 
+    if not insp.has_table("case_insight_actions"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE case_insight_actions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        case_id INTEGER NOT NULL REFERENCES cases(id),
+                        insight_id VARCHAR(128) NOT NULL,
+                        insight_snapshot_json TEXT NOT NULL,
+                        destination VARCHAR(32) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'pending_review',
+                        created_by_user_id INTEGER NOT NULL REFERENCES users(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_case_insight_actions_case_id ON case_insight_actions (case_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_case_insight_actions_insight_id ON case_insight_actions (insight_id)")
+            )
+
     if not insp.has_table("monthly_report_evidence_snapshots"):
         with engine.begin() as conn:
             conn.execute(

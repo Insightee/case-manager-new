@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from collections import Counter
 from statistics import mean
 
 from sqlalchemy import func, select
@@ -44,6 +46,21 @@ def _strength(session_count: int, with_notes: int, strategy_links: int) -> str:
     if session_count >= 2 or with_notes >= 1:
         return "moderate"
     return "weak"
+
+
+def _json_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return [str(x) for x in data if x]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+
+
+def _most_common_label(values: list[str | None], limit: int = 1) -> list[str]:
+    counts = Counter(v for v in values if v)
+    return [label for label, _ in counts.most_common(limit)]
 
 
 def _load_goals(db: Session, case_id: int) -> list[dict]:
@@ -117,14 +134,25 @@ def build_goals_evidence_summary(db: Session, case_id: int) -> dict:
             ) or 0
 
         feedback_dist: dict[str, int] = {}
+        linked_strategy_events: list[StrategyUseEvent] = []
         if entries:
-            for ev in db.scalars(
-                select(StrategyUseEvent).where(
-                    StrategyUseEvent.daily_log_id.in_([e.daily_log_id for e in entries])
-                )
-            ).all():
+            linked_strategy_events = list(
+                db.scalars(
+                    select(StrategyUseEvent).where(
+                        StrategyUseEvent.daily_log_id.in_([e.daily_log_id for e in entries])
+                    )
+                ).all()
+            )
+            for ev in linked_strategy_events:
                 if ev.strategy_feedback:
                     feedback_dist[ev.strategy_feedback] = feedback_dist.get(ev.strategy_feedback, 0) + 1
+
+        environments: set[str] = set()
+        for e in entries:
+            environments.update(_json_list(e.core_environments_json))
+        for ev in linked_strategy_events:
+            if ev.environment:
+                environments.add(ev.environment)
 
         items.append(
             {
@@ -147,6 +175,8 @@ def build_goals_evidence_summary(db: Session, case_id: int) -> dict:
                 "evidence_count": sum(e.evidence_count or 0 for e in entries),
                 "custom_pending_count": pending_custom if len(items) == 0 else 0,
                 "legacy_entry_count": len(legacy_entries),
+                "support_level_pattern": _most_common_label([e.support_level for e in entries]),
+                "environments": sorted(environments),
             }
         )
     if items and pending_custom:
@@ -177,16 +207,27 @@ def build_strategies_evidence_summary(db: Session, case_id: int) -> dict:
         feedback: dict[str, int] = {}
         environments: set[str] = set()
         goal_ids: set[int] = set()
-        for e in evs:
+        where_helped = ""
+        where_needs_adapting = ""
+        strategy_id = None
+        for e in sorted(evs, key=lambda x: x.id, reverse=True):
             if e.strategy_feedback:
                 feedback[e.strategy_feedback] = feedback.get(e.strategy_feedback, 0) + 1
             if e.environment:
                 environments.add(e.environment)
             if e.goal_card_id:
                 goal_ids.add(e.goal_card_id)
+            if strategy_id is None:
+                strategy_id = e.strategy_id or e.custom_strategy_id
+            note = (e.outcome_note or e.short_note or "").strip()
+            if note and not where_helped and e.strategy_feedback == "HELPFUL":
+                where_helped = note
+            if note and not where_needs_adapting and e.strategy_feedback in ("NEEDS_ADAPTATION", "CHILD_REJECTED", "NOT_HELPFUL"):
+                where_needs_adapting = note
         with_outcome = sum(1 for e in evs if (e.outcome_note or e.short_note or "").strip())
         items.append(
             {
+                "strategy_id": strategy_id,
                 "label": label,
                 "use_count": len(evs),
                 "usage_count": len(evs),
@@ -199,6 +240,8 @@ def build_strategies_evidence_summary(db: Session, case_id: int) -> dict:
                 "linked_goal_ids": sorted(goal_ids),
                 "environments": sorted(environments),
                 "evidence_strength": _strength(len(evs), with_outcome, 1 if with_outcome else 0),
+                "where_helped": where_helped,
+                "where_needs_adapting": where_needs_adapting,
             }
         )
     for s in repo:

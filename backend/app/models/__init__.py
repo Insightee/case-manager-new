@@ -40,6 +40,7 @@ from app.models.goal_repository import GoalRepositoryItem, StrategyRepositoryIte
 from app.models.strategy_recommendation_feedback import StrategyRecommendationFeedback
 from app.models.clinical_review_queue import ClinicalReviewQueueItem, ClinicalReviewQueueEvent
 from app.models.parent_goal_input import ParentGoalInput
+from app.models.case_insight_action import CaseInsightAction, InsightActionDestination, InsightActionStatus
 from app.models.monthly_report_evidence_snapshot import MonthlyReportEvidenceSnapshot
 from app.models.ai_generation import AiDraftOutput, AiGenerationLog
 from app.models.clinical_snapshot import ClinicalSnapshot, ClinicalSnapshotFeedback
@@ -180,4 +181,7 @@ __all__ = [
     "MemoAuditLog",
     "TherapistProfile",
     "TherapistProfileStatus",
+    "CaseInsightAction",
+    "InsightActionDestination",
+    "InsightActionStatus",
 ]

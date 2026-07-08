@@ -134,6 +134,28 @@ def get_document(
     return doc_svc._serialize_detail(db, user, doc)
 
 
+@documents_router.delete("/{document_id}", status_code=204)
+def delete_document(
+    document_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    doc = _load_doc(db, document_id)
+    doc_svc.delete_document(db, user, doc)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="delete",
+        entity_type="case_document",
+        entity_id=document_id,
+        case_id=doc.case_id,
+        **meta,
+    )
+    db.commit()
+
+
 @documents_router.patch("/{document_id}", response_model=CaseDocumentDetail)
 def patch_document(
     document_id: int,

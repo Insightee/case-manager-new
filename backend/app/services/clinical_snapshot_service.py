@@ -26,6 +26,7 @@ VALID_INSIGHT_TYPES = frozenset(
         "report_support",
         "session_log_support",
         "iep_support",
+        "case_insight_refresh",
     }
 )
 VALID_FEEDBACK = frozenset(

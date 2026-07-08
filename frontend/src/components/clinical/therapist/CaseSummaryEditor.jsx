@@ -3,8 +3,16 @@ import { apiFetch } from '../../../lib/apiClient.js'
 import { ClinicalCard } from '../../clinical-ui/ClinicalCard.jsx'
 import { ClinicalActionButton } from '../../clinical-ui/ClinicalActionButton.jsx'
 
-export function CaseSummaryEditor({ caseId, clinicalProfile, onProfileUpdated }) {
+export function CaseSummaryEditor({
+  caseId,
+  clinicalProfile,
+  onProfileUpdated,
+  title = 'Case summary',
+  composedFallback = null,
+  emptyMessage = 'Add a brief summary of participation, supports in use, and recent focus for this case.',
+}) {
   const savedHistory = clinicalProfile?.history?.trim() || ''
+  const readOnlyFallback = !savedHistory && composedFallback?.trim() ? composedFallback.trim() : ''
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(savedHistory)
   const [saving, setSaving] = useState(false)
@@ -68,8 +76,8 @@ export function CaseSummaryEditor({ caseId, clinicalProfile, onProfileUpdated })
 
   return (
     <ClinicalCard
-      title="Case summary"
-      subtitle={updatedLabel ? `Last updated ${updatedLabel}` : 'Clinical overview'}
+      title={title}
+      subtitle={updatedLabel ? `Last updated ${updatedLabel}` : readOnlyFallback ? 'From intake, observation, or IEP' : 'Clinical overview'}
       className="clinical-overview-summary-card"
       headerActions={
         editing ? null : (
@@ -107,9 +115,11 @@ export function CaseSummaryEditor({ caseId, clinicalProfile, onProfileUpdated })
         <>
           {savedHistory ? (
             <p className="clinical-overview-summary">{savedHistory}</p>
+          ) : readOnlyFallback ? (
+            <p className="clinical-overview-summary">{readOnlyFallback}</p>
           ) : (
             <p className="clinical-overview-summary clinical-overview-summary--empty">
-              Add a brief summary of participation, supports in use, and recent focus for this case.
+              {emptyMessage}
             </p>
           )}
           {message ? <p className="clinical-summary-editor__msg" role="status">{message}</p> : null}

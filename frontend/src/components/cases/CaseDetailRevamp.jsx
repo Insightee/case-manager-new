@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
-import { mergeUpcomingSchedule } from '../../lib/therapistSchedule.js'
-import { therapistTicketsUrl } from '../../lib/therapistTicketOptions.js'
 import { caseServiceLine } from '../../lib/moduleLabels.js'
 import { useTherapistActiveCase } from '../../context/TherapistActiveCaseContext.jsx'
 import { CaseProfileShell } from '../case-profile/CaseProfileShell.jsx'
 import { CaseReportsHub } from '../case-profile/CaseReportsHub.jsx'
 import { THERAPIST_CASE_TABS } from '../case-profile/caseProfileTabs.js'
 import { resolveLegacyReportsSection } from '../case-profile/reportsHubSections.js'
-import { ClinicalInsightsPanel } from '../clinical/ClinicalInsightsPanel.jsx'
+import { CaseInsightsTab } from '../clinical/insights-v2/CaseInsightsTab.jsx'
 import { GoalStrategyEnginePage } from '../clinical/goals-strategy/GoalStrategyEnginePage.jsx'
 import { EvidenceDrivePanel } from '../case-profile/sections/EvidenceDrivePanel.jsx'
 import { TherapistCaseOverviewDashboard } from '../clinical/therapist/TherapistCaseOverviewDashboard.jsx'
+import { CaseSessionsPanel } from './CaseSessionsPanel.jsx'
 import './my-cases.css'
 import '../../styles/case-profile-v2.css'
 
@@ -53,12 +51,10 @@ function StatusChangeModal({ open, onClose, statusTo, setStatusTo, statusReason,
 
 export function CaseDetailRevamp() {
   const { caseId } = useParams()
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
   const { setActiveCase, touchRecentCase } = useTherapistActiveCase()
   const [caseRow, setCaseRow] = useState(null)
-  const [scheduleItems, setScheduleItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [statusTo, setStatusTo] = useState('SUSPENDED')
@@ -75,16 +71,8 @@ export function CaseDetailRevamp() {
     setLoading(true)
     setError('')
     try {
-      const today = new Date()
-      const from = today.toISOString().slice(0, 10)
-      const toDate = new Date(today)
-      toDate.setDate(toDate.getDate() + 90)
-      const to = toDate.toISOString().slice(0, 10)
-
-      const [c, upcoming, slots, profile, statusReqs, quality] = await Promise.all([
+      const [c, profile, statusReqs, quality] = await Promise.all([
         apiFetch(`/api/v1/cases/${caseId}`),
-        apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
-        apiFetch(`/api/v1/slots?from_date=${from}&to_date=${to}`).catch(() => []),
         apiFetch(`/api/v1/cases/${caseId}/clinical-profile`).catch(() => null),
         apiFetch(`/api/v1/cases/${caseId}/status-requests`).catch(() => ({ pending: null, history: [] })),
         apiFetch(`/api/v1/cases/${caseId}/clinical-quality-summary`).catch(() => null),
@@ -94,11 +82,6 @@ export function CaseDetailRevamp() {
       setStatusPending(statusReqs?.pending || null)
       setStatusHistory(statusReqs?.history || [])
       setQualitySummary(quality)
-      const upcomingList = Array.isArray(upcoming) ? upcoming : unwrapList(upcoming)
-      const slotList = unwrapList(slots)
-      setScheduleItems(
-        mergeUpcomingSchedule({ sessions: upcomingList, slots: slotList }).filter((i) => i.caseId === Number(caseId)),
-      )
     } catch (err) {
       setError(err.message || 'Case not found')
       setCaseRow(null)
@@ -131,24 +114,14 @@ export function CaseDetailRevamp() {
       const next = new URLSearchParams(searchParams)
       next.set('tab', 'logs')
       setSearchParams(next, { replace: true })
-      return
     }
-    if (searchParams.get('tab') === 'logs') {
-      const sessionId = searchParams.get('session_id') || searchParams.get('session')
-      const target = sessionId ? `/therapist/logs?session=${sessionId}` : '/therapist/logs'
-      navigate(target, { replace: true })
-    }
-  }, [searchParams, setSearchParams, navigate])
+  }, [searchParams, setSearchParams])
 
-  function setTab(id) {
-    if (id === 'logs') {
-      navigate('/therapist/logs')
-      return
-    }
+  function setTab(id, options = {}) {
     const next = new URLSearchParams(searchParams)
     next.set('tab', id)
     if (id === 'reports') {
-      if (!next.get('section')) next.set('section', 'dashboard')
+      next.set('section', options.section || next.get('section') || 'dashboard')
     } else {
       next.delete('section')
       next.delete('sub')
@@ -196,9 +169,15 @@ export function CaseDetailRevamp() {
         caseCode={caseRow.case_code}
         childName={caseRow.child_name}
         status={caseRow.status}
+        statusPending={statusPending}
         serviceType={focusLine}
-        onRequestChange={() => { setStatusMsg(''); setStatusModalOpen(true) }}
-        supportHref={therapistTicketsUrl({ topic: 'CASE_MANAGER', caseId, openForm: true })}
+        service={caseRow.service_type}
+        productModule={caseRow.product_module}
+        onStatusRequest={(toStatus) => {
+          setStatusTo(toStatus)
+          setStatusMsg('')
+          setStatusModalOpen(true)
+        }}
         tabs={THERAPIST_CASE_TABS}
         activeTab={tab}
         onTabChange={setTab}
@@ -214,7 +193,6 @@ export function CaseDetailRevamp() {
             caseId={caseId}
             caseRow={caseRow}
             clinicalProfile={clinicalProfile}
-            scheduleItems={scheduleItems}
             qualitySummary={qualitySummary}
             onOpenTab={setTab}
             onClinicalProfileUpdated={setClinicalProfile}
@@ -235,12 +213,29 @@ export function CaseDetailRevamp() {
           <GoalStrategyEnginePage caseId={caseId} variant="therapist" />
         ) : null}
 
+        {tab === 'logs' ? (
+          <CaseSessionsPanel
+            caseId={Number(caseId)}
+            caseCode={caseRow.case_code}
+            childName={caseRow.child_name}
+            childLabel={childLabel}
+            initialSessionId={searchParams.get('session_id') || searchParams.get('session')}
+            initialLogId={searchParams.get('log_id')}
+            onScheduleChange={load}
+          />
+        ) : null}
+
         {tab === 'insights' ? (
-          <ClinicalInsightsPanel caseId={caseId} variant="therapist" />
+          <CaseInsightsTab caseId={caseId} variant="therapist" />
         ) : null}
 
         {tab === 'documents' ? (
-          <EvidenceDrivePanel caseId={Number(caseId)} variant="therapist" />
+          <EvidenceDrivePanel
+            caseId={Number(caseId)}
+            variant="therapist"
+            childName={caseRow.child_name}
+            caseCode={caseRow.case_code}
+          />
         ) : null}
       </CaseProfileShell>
 

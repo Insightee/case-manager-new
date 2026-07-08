@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -13,8 +12,6 @@ import {
 import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import { SessionLogStatusBadge } from '../daily-logs/SessionLogStatusBadge.jsx'
-import { AiPreviewButton } from '../clinical/AiPreviewButton.jsx'
-import { AI_ENABLED } from '../../lib/reportsRevampFlags.js'
 import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
 import { enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
 
@@ -58,12 +55,19 @@ function sessionPeriodLabel(session) {
 function logStatusKind(log) {
   if (!log) return null
   if (log.approval_status === 'APPROVED') return 'approved'
-  if (log.approval_status === 'PENDING' || log.approval_status === 'REJECTED') return 'needs_review'
+  if (log.approval_status === 'REJECTED') return 'rejected'
+  if (log.approval_status === 'PENDING') return 'submitted'
   return 'submitted'
 }
 
-function goalProgressPct(sessionCount) {
-  return Math.min(100, Math.round(((sessionCount || 0) / 4) * 100))
+function logMatchesStatusFilter(log, filter) {
+  if (!log || filter === 'all') return true
+  if (filter === 'missing') return false
+  if (filter === 'submitted') return Boolean(log.submitted_at || log.approval_status)
+  if (filter === 'pending') return log.approval_status === 'PENDING'
+  if (filter === 'approved') return log.approval_status === 'APPROVED'
+  if (filter === 'rejected') return log.approval_status === 'REJECTED'
+  return true
 }
 
 function buildMonthOptions(sessions) {
@@ -82,6 +86,14 @@ function buildMonthOptions(sessions) {
     })
     .sort((a, b) => b.year - a.year || b.month - a.month)
 }
+
+const LOG_STATUS_FILTERS = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'pending', label: 'Pending review' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
+]
 
 function monthRangeLabel(month, year) {
   const today = new Date()
@@ -120,15 +132,16 @@ export function CaseSessionsPanel({
   childName,
   childLabel = '',
   onScheduleChange,
+  initialSessionId = null,
+  initialLogId = null,
 }) {
   const timelineRef = useRef(null)
-  const goalSnapshotRef = useRef(null)
   const suppressAutoExpandRef = useRef(false)
+  const deepLinkResolvedRef = useRef(null)
   const { user } = useAuth()
   const therapistId = user?.id
   const [sessions, setSessions] = useState([])
   const [logs, setLogs] = useState([])
-  const [upcomingAll, setUpcomingAll] = useState([])
   const [active, setActive] = useState(null)
   const [loading, setLoading] = useState(true)
   const [logSession, setLogSession] = useState(null)
@@ -141,12 +154,9 @@ export function CaseSessionsPanel({
     return `${n.getFullYear()}-${n.getMonth()}`
   })
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterChip, setFilterChip] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [viewMode, setViewMode] = useState('grid')
   const [expandedDate, setExpandedDate] = useState(null)
-  const [evidenceGoals, setEvidenceGoals] = useState([])
-  const [qualitySummary, setQualitySummary] = useState(null)
-  const [insightDraft, setInsightDraft] = useState('')
   const [expandedLogCache, setExpandedLogCache] = useState({})
   const [expandedLogLoading, setExpandedLogLoading] = useState(false)
   const [pdfBusy, setPdfBusy] = useState(false)
@@ -159,20 +169,14 @@ export function CaseSessionsPanel({
     try {
       const logParams = new URLSearchParams({ case_id: String(caseId) })
       if (therapistId) logParams.set('therapist_user_id', String(therapistId))
-      const [sess, caseLogs, act, upcoming, evidence, quality] = await Promise.all([
+      const [sess, caseLogs, act] = await Promise.all([
         apiFetch(`/api/v1/sessions?case_id=${caseId}&page_size=100`),
         apiFetch(`/api/v1/daily-logs?${logParams}`),
         apiFetch('/api/v1/sessions/active').catch(() => null),
-        apiFetch('/api/v1/sessions/upcoming?days=90').catch(() => []),
-        apiFetch(`/api/v1/cases/${caseId}/goals/evidence-summary`).catch(() => ({ goals: [] })),
-        apiFetch(`/api/v1/cases/${caseId}/clinical-quality-summary`).catch(() => null),
       ])
       setSessions(unwrapList(sess))
       const rawLogs = Array.isArray(caseLogs) ? caseLogs : unwrapList(caseLogs)
       setLogs(await enrichLogsWithCommentCounts(rawLogs, apiFetch))
-      setUpcomingAll(Array.isArray(upcoming) ? upcoming : unwrapList(upcoming))
-      setEvidenceGoals(evidence?.goals || [])
-      setQualitySummary(quality)
       if (act?.case_id === Number(caseId)) setActive(act)
       else setActive(null)
     } catch (err) {
@@ -185,6 +189,47 @@ export function CaseSessionsPanel({
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (loading || logSession) return
+
+    const lid = initialLogId ? Number(initialLogId) : null
+    if (lid && Number.isFinite(lid) && deepLinkResolvedRef.current !== `log-${lid}`) {
+      const log = logs.find((entry) => Number(entry.id) === lid)
+      if (log) {
+        const session = sessions.find((s) => s.id === log.session_id)
+        if (session) {
+          deepLinkResolvedRef.current = `log-${lid}`
+          if (session.scheduled_date) {
+            const d = new Date(`${session.scheduled_date}T00:00:00`)
+            setSelectedMonthKey(`${d.getFullYear()}-${d.getMonth()}`)
+          }
+          setExpandedDate(session.scheduled_date)
+          openLogForm(session, { log })
+        }
+      }
+      return
+    }
+
+    const sid = initialSessionId ? Number(initialSessionId) : null
+    if (!sid || !Number.isFinite(sid) || deepLinkResolvedRef.current === `session-${sid}`) return
+
+    const session = sessions.find((s) => s.id === sid)
+    if (!session) return
+
+    deepLinkResolvedRef.current = `session-${sid}`
+    if (session.scheduled_date) {
+      const d = new Date(`${session.scheduled_date}T00:00:00`)
+      setSelectedMonthKey(`${d.getFullYear()}-${d.getMonth()}`)
+      setExpandedDate(session.scheduled_date)
+    }
+    const existingLog = logs.find((l) => l.session_id === session.id)
+    if (existingLog) {
+      openLogForm(session, { log: existingLog })
+    } else if (session.status === 'COMPLETED') {
+      openLogForm(session, { required: true })
+    }
+  }, [loading, logSession, initialSessionId, initialLogId, logs, sessions])
 
   const monthOptions = useMemo(() => buildMonthOptions(sessions), [sessions])
   const selectedMonth = useMemo(() => {
@@ -206,15 +251,8 @@ export function CaseSessionsPanel({
     const completed = monthSessions.filter((s) => s.status === 'COMPLETED')
     const submitted = completed.filter((s) => logs.some((l) => l.session_id === s.id)).length
     const missing = completed.filter((s) => !logs.some((l) => l.session_id === s.id)).length
-    const avgProgress = evidenceGoals.length
-      ? Math.round(
-          evidenceGoals.reduce((sum, g) => sum + goalProgressPct(g.session_count), 0) / evidenceGoals.length,
-        )
-      : total > 0
-        ? Math.round((submitted / Math.max(completed.length, 1)) * 100)
-        : 0
-    return { total, submitted, missing, avgProgress }
-  }, [monthSessions, logs, evidenceGoals])
+    return { total, submitted, missing }
+  }, [monthSessions, logs])
 
   const dayGroups = useMemo(() => {
     const { year, month } = selectedMonth
@@ -237,24 +275,25 @@ export function CaseSessionsPanel({
       const completed = entry.sessions.filter((s) => s.status === 'COMPLETED')
       const missingSessions = completed.filter((s) => !entry.logs.some((l) => l.session.id === s.id))
       const hasMissing = missingSessions.length > 0
-      const needsReview = entry.logs.some(
-        (l) => l.log.approval_status === 'PENDING' || l.log.approval_status === 'REJECTED',
-      )
       const primaryStatus = hasMissing
         ? 'missing'
-        : needsReview
-          ? 'needs_review'
-          : entry.logs.some((l) => l.log.approval_status === 'APPROVED')
-            ? 'approved'
-            : entry.logs.length
-              ? 'submitted'
-              : 'scheduled'
-      return { ...entry, missingSessions, hasMissing, needsReview, primaryStatus }
+        : entry.logs.some((l) => l.log.approval_status === 'REJECTED')
+          ? 'rejected'
+          : entry.logs.some((l) => l.log.approval_status === 'PENDING')
+            ? 'submitted'
+            : entry.logs.some((l) => l.log.approval_status === 'APPROVED')
+              ? 'approved'
+              : entry.logs.length
+                ? 'submitted'
+                : 'scheduled'
+      return { ...entry, missingSessions, hasMissing, primaryStatus }
     })
 
-    if (filterChip === 'missing') entries = entries.filter((e) => e.hasMissing)
-    if (filterChip === 'submitted') entries = entries.filter((e) => e.logs.length > 0)
-    if (filterChip === 'needs_review') entries = entries.filter((e) => e.needsReview)
+    if (statusFilter === 'missing') entries = entries.filter((e) => e.hasMissing)
+    if (statusFilter === 'submitted') entries = entries.filter((e) => e.logs.length > 0)
+    if (statusFilter !== 'all' && statusFilter !== 'missing' && statusFilter !== 'submitted') {
+      entries = entries.filter((e) => e.logs.some(({ log }) => logMatchesStatusFilter(log, statusFilter)))
+    }
 
     const q = searchQuery.trim().toLowerCase()
     if (q) {
@@ -270,7 +309,7 @@ export function CaseSessionsPanel({
     }
 
     return entries
-  }, [monthSessions, logs, selectedMonth, filterChip, searchQuery])
+  }, [monthSessions, logs, selectedMonth, statusFilter, searchQuery])
 
   useEffect(() => {
     suppressAutoExpandRef.current = false
@@ -321,32 +360,13 @@ export function CaseSessionsPanel({
     }
   }, [expandedDate, dayGroups])
 
-  const topGoals = useMemo(
-    () => [...evidenceGoals].sort((a, b) => (b.session_count || 0) - (a.session_count || 0)).slice(0, 2),
-    [evidenceGoals],
-  )
-
-  const ruleInsight = useMemo(() => {
-    const action = qualitySummary?.recommended_next_actions?.[0]
-    if (action) return action
-    const stale = (qualitySummary?.goal_coverage || []).filter((g) => g.stale)
-    if (stale.length) {
-      return `${stale[0].label} could use fresh session evidence this month.`
-    }
-    return null
-  }, [qualitySummary])
-
   function scrollToTimeline() {
     timelineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  function scrollToGoalSnapshot() {
-    goalSnapshotRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
-  function applySummaryFilter(chip) {
-    setFilterChip(chip)
-    if (viewMode === 'grid' && chip !== 'all') setViewMode('list')
+  function applySummaryFilter(next) {
+    setStatusFilter(next)
+    if (viewMode === 'grid' && next !== 'all') setViewMode('list')
     scrollToTimeline()
   }
 
@@ -447,11 +467,19 @@ export function CaseSessionsPanel({
         </span>
       )
     }
-    if (kind === 'needs_review') {
+    if (kind === 'rejected') {
       return (
-        <span className="clinical-logs-tile__chip clinical-logs-tile__chip--review">
+        <span className="clinical-logs-tile__chip clinical-logs-tile__chip--rejected">
           <span className="clinical-logs-tile__chip-dot" aria-hidden="true" />
-          Needs Review
+          Rejected
+        </span>
+      )
+    }
+    if (kind === 'pending') {
+      return (
+        <span className="clinical-logs-tile__chip clinical-logs-tile__chip--pending">
+          <span className="clinical-logs-tile__chip-dot" aria-hidden="true" />
+          Pending review
         </span>
       )
     }
@@ -481,7 +509,7 @@ export function CaseSessionsPanel({
             <div>
               <h4 className="clinical-logs-tile__title">{weekdayLong(entry.date)} Sessions</h4>
               <p className="clinical-logs-tile__meta">
-                {entry.logs.length} Log{entry.logs.length === 1 ? '' : 's'} Completed · {therapistName}
+                {entry.logs.length} Log{entry.logs.length === 1 ? '' : 's'} Submitted · {therapistName}
               </p>
             </div>
           </div>
@@ -595,7 +623,7 @@ export function CaseSessionsPanel({
         </div>
         <h4 className="clinical-logs-tile__compact-title">{title}</h4>
         <p className="clinical-logs-tile__compact-sub">
-          {logCount} Log{logCount === 1 ? '' : 's'} Completed
+          {logCount} Log{logCount === 1 ? '' : 's'} Submitted
         </p>
         {renderStatusChip(entry.primaryStatus === 'missing' ? null : entry.primaryStatus)}
       </button>
@@ -610,13 +638,6 @@ export function CaseSessionsPanel({
 
   return (
     <div className="clinical-logs-panel ic-case-sessions">
-      <div className="clinical-page-header">
-        <h2 className="clinical-section-heading">Client Logs</h2>
-        <p className="clinical-section-subtitle">
-          Review session notes, goal evidence, strategy use and patterns for {childName}.
-        </p>
-      </div>
-
       {error ? <p className="clinical-logs-panel__alert clinical-logs-panel__alert--error" role="alert">{error}</p> : null}
       {success ? <p className="clinical-logs-panel__alert clinical-logs-panel__alert--success" role="status">{success}</p> : null}
 
@@ -643,7 +664,7 @@ export function CaseSessionsPanel({
         <div className="clinical-logs-month-summary__grid">
           <button
             type="button"
-            className={`clinical-logs-stat${filterChip === 'all' ? ' clinical-logs-stat--active' : ''}`}
+            className={`clinical-logs-stat${statusFilter === 'all' ? ' clinical-logs-stat--active' : ''}`}
             onClick={() => applySummaryFilter('all')}
           >
             <span className="clinical-logs-stat__label">Total Sessions</span>
@@ -651,7 +672,7 @@ export function CaseSessionsPanel({
           </button>
           <button
             type="button"
-            className={`clinical-logs-stat clinical-logs-stat--success${filterChip === 'submitted' ? ' clinical-logs-stat--active' : ''}`}
+            className={`clinical-logs-stat clinical-logs-stat--success${statusFilter === 'submitted' ? ' clinical-logs-stat--active' : ''}`}
             onClick={() => applySummaryFilter('submitted')}
           >
             <span className="clinical-logs-stat__label">Logs Submitted</span>
@@ -659,19 +680,11 @@ export function CaseSessionsPanel({
           </button>
           <button
             type="button"
-            className={`clinical-logs-stat clinical-logs-stat--danger${filterChip === 'missing' ? ' clinical-logs-stat--active' : ''}`}
+            className={`clinical-logs-stat clinical-logs-stat--danger${statusFilter === 'missing' ? ' clinical-logs-stat--active' : ''}`}
             onClick={() => applySummaryFilter('missing')}
           >
             <span className="clinical-logs-stat__label">Missing Logs</span>
             <span className="clinical-logs-stat__value">{monthSummary.missing}</span>
-          </button>
-          <button
-            type="button"
-            className="clinical-logs-stat clinical-logs-stat--accent"
-            onClick={scrollToGoalSnapshot}
-          >
-            <span className="clinical-logs-stat__label">Avg Progress</span>
-            <span className="clinical-logs-stat__value">{monthSummary.avgProgress}%</span>
           </button>
         </div>
       </section>
@@ -692,6 +705,20 @@ export function CaseSessionsPanel({
               ))}
             </select>
           </label>
+          <label className="clinical-logs-toolbar__status">
+            <span className="sr-only">Status</span>
+            <select
+              value={LOG_STATUS_FILTERS.some((f) => f.value === statusFilter) ? statusFilter : 'all'}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="clinical-logs-toolbar__status-select"
+            >
+              {LOG_STATUS_FILTERS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="clinical-logs-toolbar__search">
             <span className="clinical-logs-toolbar__search-icon" aria-hidden="true">⌕</span>
             <input
@@ -703,88 +730,7 @@ export function CaseSessionsPanel({
             />
           </label>
         </div>
-        <div className="clinical-logs-toolbar__chips" role="group" aria-label="Log filters">
-          {[
-            { id: 'all', label: 'All' },
-            { id: 'missing', label: 'Missing' },
-            { id: 'needs_review', label: 'Needs Review' },
-          ].map((chip) => (
-            <button
-              key={chip.id}
-              type="button"
-              className={`clinical-logs-chip${filterChip === chip.id ? ' clinical-logs-chip--active' : ''}`}
-              onClick={() => setFilterChip(chip.id)}
-            >
-              {chip.label}
-            </button>
-          ))}
-        </div>
       </div>
-
-      <section className="clinical-logs-insights" aria-label="Clinical insights">
-        <div className="clinical-logs-insights__head">
-          <div className="clinical-logs-insights__title-row">
-            <span className="clinical-logs-insights__spark" aria-hidden="true">✦</span>
-            <h3>Clinical Insights</h3>
-          </div>
-          <Link
-            to={`/therapist/cases/${caseId}?tab=insights`}
-            className="clinical-logs-insights__generate"
-          >
-            Open Insights tab
-          </Link>
-        </div>
-        <div className="clinical-logs-insights__grid">
-          {(insightDraft || ruleInsight) ? (
-            <div className="clinical-logs-insights__pattern">
-              <span className="clinical-logs-insights__pattern-label">Key Pattern</span>
-              <p>{insightDraft || ruleInsight}</p>
-            </div>
-          ) : (
-            <div className="clinical-logs-insights__pattern">
-              <span className="clinical-logs-insights__pattern-label">Key Pattern</span>
-              <p className="clinical-logs-insights__empty">Patterns appear after more session evidence is logged.</p>
-            </div>
-          )}
-          <div className="clinical-logs-insights__placeholder">
-            <p>Generate monthly snapshots on the Insights tab when you need AI-assisted review.</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="clinical-logs-goal-snapshot" aria-label="Goal evidence snapshot" ref={goalSnapshotRef}>
-        <div className="clinical-logs-goal-snapshot__head">
-          <h3>Goal Evidence Snapshot</h3>
-          <Link to={`/therapist/cases/${caseId}?tab=goals`} className="clinical-logs-goal-snapshot__link">
-            View goal tracking details
-          </Link>
-        </div>
-        {topGoals.length === 0 ? (
-          <p className="clinical-logs-panel__empty">Log sessions with goal evidence to see snapshots here.</p>
-        ) : (
-          <div className="clinical-logs-goal-snapshot__grid">
-            {topGoals.map((goal) => {
-              const pct = goalProgressPct(goal.session_count)
-              return (
-                <div key={goal.label} className="clinical-logs-goal-card">
-                  <div>
-                    <div className="clinical-logs-goal-card__title">{goal.label}</div>
-                    <div className="clinical-logs-goal-card__meta">
-                      {goal.session_count || 0} instance{(goal.session_count || 0) === 1 ? '' : 's'} recorded
-                    </div>
-                  </div>
-                  <div className="clinical-logs-goal-card__progress">
-                    <span className="clinical-logs-goal-card__pct">+{pct}%</span>
-                    <div className="clinical-logs-goal-card__bar" aria-hidden="true">
-                      <div className="clinical-logs-goal-card__bar-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
 
       <section className="clinical-logs-timeline" aria-label="Recent logs" ref={timelineRef}>
         <div className="clinical-logs-timeline__head">

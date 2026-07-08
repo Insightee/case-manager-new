@@ -1,0 +1,32 @@
+/* Shared service-line badge — used on case cards, headers, and reports. */
+
+.service-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  background: var(--service-bg, #f1f5f9);
+  color: var(--service-text, #475569);
+  border: 1px solid var(--service-border, #cbd5e1);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.service-badge--homecare { --service-bg: #dcfce7; --service-text: #166534; --service-border: #86efac; }
+.service-badge--shadow { --service-bg: #ede9fe; --service-text: #5b21b6; --service-border: #c4b5fd; }
+.service-badge--counselling { --service-bg: #e0f2fe; --service-text: #0369a1; --service-border: #7dd3fc; }
+.service-badge--special-ed { --service-bg: #fef3c7; --service-text: #b45309; --service-border: #fcd34d; }
+.service-badge--behaviour { --service-bg: #ffe4e6; --service-text: #be123c; --service-border: #fda4af; }
+.service-badge--tutoring { --service-bg: #f0fdfa; --service-text: #0f766e; --service-border: #5eead4; }
+.service-badge--other { --service-bg: #f1f5f9; --service-text: #475569; --service-border: #cbd5e1; }
+
+.clinical-case-header__service-badge {
+  margin-top: 0.35rem;
+}

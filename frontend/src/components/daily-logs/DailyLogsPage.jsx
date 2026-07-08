@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
@@ -93,8 +93,10 @@ function formatDuration(startIso, tick) {
 
 export function DailyLogsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
+  const upcomingSectionRef = useRef(null)
   const now = new Date()
   const [logYear, setLogYear] = useState(now.getFullYear())
   const [logMonth, setLogMonth] = useState(now.getMonth())
@@ -286,6 +288,14 @@ export function DailyLogsPage() {
       logPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [logSession?.id, editingLog?.id, visitSession?.id])
+
+  useEffect(() => {
+    if (location.hash !== '#upcoming' || logSession || visitSession) return undefined
+    const id = window.setTimeout(() => {
+      upcomingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+    return () => window.clearTimeout(id)
+  }, [location.hash, logSession, visitSession, upcoming.length])
 
   function clearSessionQueryParam() {
     setSearchParams(
@@ -879,7 +889,11 @@ export function DailyLogsPage() {
       ) : null}
 
       {!logSession ? (
-        <section className="session-logs-upcoming">
+        <section
+          id="upcoming"
+          ref={upcomingSectionRef}
+          className="session-logs-upcoming"
+        >
           <h3 className="session-logs-upcoming__title">Upcoming sessions</h3>
           {displayUpcoming.length === 0 ? (
             <p className="session-logs-upcoming__empty">

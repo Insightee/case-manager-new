@@ -1,113 +1,310 @@
-import { Link, useNavigate } from 'react-router-dom'
-import { ClinicalCard } from '../../clinical-ui/ClinicalCard.jsx'
-import { ClinicalMetricCard } from '../../clinical-ui/ClinicalMetricCard.jsx'
-import { ClinicalProgressBar } from '../../clinical-ui/ClinicalProgressBar.jsx'
-import { ClinicalGuidanceCard } from '../../clinical-ui/ClinicalGuidanceCard.jsx'
-import { ClinicalEmptyState } from '../../clinical-ui/ClinicalEmptyState.jsx'
-import { ClinicalStatusBadge } from '../../clinical-ui/ClinicalStatusBadge.jsx'
+import { useEffect, useMemo, useState } from 'react'
+import { apiFetch } from '../../../lib/apiClient.js'
+import { composeCaseOverview } from '../../../lib/caseOverviewCompose.js'
+import { CaseOverviewSummaryCard } from './CaseOverviewSummaryCard.jsx'
+import '../../../styles/case-overview-v2.css'
 
-import { CaseSummaryEditor } from './CaseSummaryEditor.jsx'
-
-function iepHealthMetric(summary) {
-  const status = summary?.documentation_status
-  if (status === 'complete') return { label: 'Stable', tone: 'success' }
-  if (status === 'needs_revision') return { label: 'Needs review', tone: 'attention' }
-  return { label: 'In progress', tone: 'default' }
+function OverviewSection({ icon, title, children, className = '', headActions = null }) {
+  return (
+    <section className={`cov-card ${className}`.trim()}>
+      <div className="cov-card__head">
+        <span className="material-symbols-outlined cov-card__icon" aria-hidden="true">
+          {icon}
+        </span>
+        <h3 className="cov-card__title">{title}</h3>
+        {headActions}
+      </div>
+      {children}
+    </section>
+  )
 }
 
-function pendingReportCount(rs) {
-  let count = (rs.pending_review_count || 0) + (rs.rejected_count || 0)
-  if (rs.current_month_status === 'draft') count += 1
-  if (!rs.current_month_status && rs.current_month) count += 1
-  return count
-}
+function SnapshotCard({ snapshot, ageLabel }) {
+  const rows = [
+    { label: 'Age', value: ageLabel },
+    { label: 'Client since', value: snapshot.clientSince },
+    { label: 'Therapist started', value: snapshot.therapistStarted },
+    { label: 'Primary setting', value: snapshot.primarySetting },
+    { label: 'Service type', value: snapshot.serviceLine },
+  ].filter((r) => r.value)
 
-function goalProgressPct(sessionsAddressed) {
-  return Math.min(100, Math.round(((sessionsAddressed || 0) / 4) * 100))
-}
-
-function buildReportActivity(summary) {
-  return (summary?.report_timeline || []).slice(0, 6).map((row) => ({
-    id: `${row.type}-${row.id}`,
-    month: row.month,
-    status: row.status,
-    reportId: row.id,
-  }))
-}
-
-function buildStakeholders(caseRow) {
-  const rows = []
-  rows.push({
-    key: 'parent',
-    name: caseRow?.parent_name || 'Primary caregiver',
-    role: 'Parent',
-  })
-  if (caseRow?.case_manager_name) {
-    rows.push({ key: 'cm', name: caseRow.case_manager_name, role: 'Case manager' })
+  if (!rows.length) {
+    return (
+      <OverviewSection icon="person" title="Profile snapshot">
+        <p className="cov-empty">Case dates and setting will appear once the profile is set up.</p>
+      </OverviewSection>
+    )
   }
-  if (caseRow?.therapist_name) {
-    rows.push({ key: 'therapist', name: caseRow.therapist_name, role: 'Therapist' })
-  }
-  return rows
-}
-
-function guidanceFromSummary(summary, scheduleItems) {
-  const action = summary?.recommended_next_actions?.[0]
-  const next = scheduleItems?.find((s) => s.status !== 'COMPLETED') || scheduleItems?.[0]
-  const nextLine = next
-    ? `Next session: ${next.date || next.scheduled_date || 'TBD'}${next.startTime || next.start_time ? ` · ${next.startTime || next.start_time}` : ''}.`
-    : null
-
-  if (action) {
-    return { variant: 'guidance', title: 'Suggested next step', body: [action, nextLine].filter(Boolean).join(' ') }
-  }
-  if (summary?.documentation_status === 'complete') {
-    return {
-      variant: 'success',
-      title: 'Documentation on track',
-      body: [nextLine, 'Session evidence and reports are flowing. Review insights for patterns across goals.'].filter(Boolean).join(' '),
-    }
-  }
-  return {
-    variant: 'guidance',
-    title: 'Review case signals',
-    body: [nextLine, 'Open Insights to see goal coverage and documentation status for this case.'].filter(Boolean).join(' '),
-  }
-}
-
-function ReportActivityList({ items, basePath, onViewAll }) {
-  if (!items.length) return null
 
   return (
-    <div className="clinical-report-activity">
-      <ul className="clinical-report-activity__list">
-        {items.map((item) => (
-          <li key={item.id} className="clinical-report-activity__item">
-            <div className="clinical-report-activity__leading" aria-hidden="true">
-              <span className="clinical-report-activity__doc-icon" />
-            </div>
-            <div className="clinical-report-activity__main">
-              <p className="clinical-report-activity__month">{item.month || '—'}</p>
-              <p className="clinical-report-activity__type">Monthly report</p>
-            </div>
-            <div className="clinical-report-activity__status">
-              <ClinicalStatusBadge status={item.status} />
-            </div>
-            <Link
-              to={`${basePath}?tab=reports`}
-              className="clinical-report-activity__link"
+    <OverviewSection icon="person" title="Profile snapshot">
+      <dl className="cov-kv-list">
+        {rows.map((row) => (
+          <div key={row.label} className="cov-kv">
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </OverviewSection>
+  )
+}
+
+function StrengthsBlock({ strengths }) {
+  if (!strengths.length) {
+    return <p className="cov-empty">Strengths not added yet</p>
+  }
+  return (
+    <ul className="cov-check-list">
+      {strengths.map((item) => (
+        <li key={item}>
+          <span className="material-symbols-outlined" aria-hidden="true">
+            check_circle
+          </span>
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function InterestsBlock({ interests }) {
+  if (!interests.length) {
+    return <p className="cov-empty">Interests not added yet</p>
+  }
+  return (
+    <div className="cov-tag-row">
+      {interests.map((item) => (
+        <span key={item} className="cov-tag">
+          {item}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function StrengthsInterestsSection({ strengths, interests }) {
+  return (
+    <>
+      <div className="cov-strengths-combined">
+        <OverviewSection icon="star" title="Strengths & interests">
+          <StrengthsBlock strengths={strengths} />
+          <div className="cov-interests-divider">
+            <InterestsBlock interests={interests} />
+          </div>
+        </OverviewSection>
+      </div>
+      <div className="cov-strengths-split cov-strengths-grid">
+        <OverviewSection icon="verified" title="Strengths">
+          <StrengthsBlock strengths={strengths} />
+        </OverviewSection>
+        <OverviewSection icon="auto_awesome" title="Interests">
+          <InterestsBlock interests={interests} />
+        </OverviewSection>
+      </div>
+    </>
+  )
+}
+
+function SupportContextCard({ supportContext }) {
+  const { diagnosisProfile, therapyAreas, communicationSupports, primarySetting } = supportContext
+  const hasContent =
+    diagnosisProfile ||
+    therapyAreas.length ||
+    communicationSupports.length ||
+    primarySetting
+
+  if (!hasContent) {
+    return (
+      <OverviewSection icon="clinical_notes" title="Support context">
+        <p className="cov-empty">Support context will appear from intake, observation, or IEP.</p>
+      </OverviewSection>
+    )
+  }
+
+  const therapyText = therapyAreas.join(', ')
+
+  return (
+    <OverviewSection icon="clinical_notes" title="Support context">
+      {diagnosisProfile ? (
+        <div className="cov-context-row">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            psychology
+          </span>
+          <div>
+            <span className="cov-context-row__label">Diagnosis / profile</span>
+            <p className="cov-context-row__value">{diagnosisProfile}</p>
+          </div>
+        </div>
+      ) : null}
+      {therapyText ? (
+        <div className="cov-context-row">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            medical_services
+          </span>
+          <div>
+            <span className="cov-context-row__label">Therapy areas</span>
+            <p className="cov-context-row__value">{therapyText}</p>
+          </div>
+        </div>
+      ) : null}
+      {communicationSupports.length ? (
+        <div className="cov-context-row">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            record_voice_over
+          </span>
+          <div>
+            <span className="cov-context-row__label">Communication supports</span>
+            <ul className="cov-check-list">
+              {communicationSupports.map((item) => (
+                <li key={item}>
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    check_circle
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+      {primarySetting ? (
+        <div className="cov-context-row">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            location_on
+          </span>
+          <div>
+            <span className="cov-context-row__label">Primary setting</span>
+            <p className="cov-context-row__value">{primarySetting}</p>
+          </div>
+        </div>
+      ) : null}
+    </OverviewSection>
+  )
+}
+
+function SupportNeedsCard({ supportNeeds }) {
+  return (
+    <OverviewSection icon="report_problem" title="Concerns / support needs">
+      {supportNeeds.length ? (
+        <ul className="cov-needs-list">
+          {supportNeeds.map((item) => (
+            <li key={item}>
+              <span className="material-symbols-outlined" aria-hidden="true">
+                warning
+              </span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="cov-empty">Support needs will appear from intake or observation notes.</p>
+      )}
+    </OverviewSection>
+  )
+}
+
+function GoalsCard({ goals, onOpenGoals }) {
+  return (
+    <OverviewSection
+      icon="target"
+      title="Current goals"
+      headActions={
+        goals.length ? (
+          <button type="button" className="cov-text-action" onClick={onOpenGoals}>
+            Open
+          </button>
+        ) : null
+      }
+    >
+      {goals.length ? (
+        <ul className="cov-goal-list">
+          {goals.slice(0, 6).map((goal) => (
+            <li key={goal.id} className="cov-goal-row">
+              <span className="cov-goal-row__bar" aria-hidden="true" />
+              <div className="cov-goal-row__body">
+                <p className="cov-goal-row__title">{goal.title}</p>
+                {goal.meta ? <p className="cov-goal-row__meta">{goal.meta}</p> : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="cov-empty cov-empty--plain">No current goals added yet.</p>
+      )}
+    </OverviewSection>
+  )
+}
+
+function PendingWorkCard({ items, onAction, className = '' }) {
+  if (!items.length) {
+    return (
+      <OverviewSection icon="pending_actions" title="Pending work" className={className}>
+        <p className="cov-empty cov-empty--plain">You are caught up on documentation for this case.</p>
+      </OverviewSection>
+    )
+  }
+
+  return (
+    <OverviewSection icon="pending_actions" title="Pending work" className={className}>
+      <ul className="cov-pending-list">
+        {items.map((item) => {
+          const urgent = item.id === 'session_logs'
+          return (
+            <li
+              key={item.id}
+              className={`cov-pending-row${urgent ? ' cov-pending-row--urgent' : ''}`}
             >
-              Open
-            </Link>
+              <div>
+                <p className="cov-pending-row__title">{item.title}</p>
+                {item.subtitle ? <p className="cov-pending-row__sub">{item.subtitle}</p> : null}
+              </div>
+              <button type="button" className="cov-pending-link" onClick={() => onAction(item)}>
+                {item.action}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </OverviewSection>
+  )
+}
+
+function CareTeamCard({ careTeam }) {
+  return (
+    <OverviewSection icon="groups" title="Care team">
+      {careTeam.length ? (
+        <ul className="cov-team-list">
+          {careTeam.map((person) => (
+            <li key={person.key} className="cov-team-row">
+              <span className="cov-team-row__role">{person.role}</span>
+              <span className="cov-team-row__name">{person.name}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="cov-empty">Care team assignments will appear here.</p>
+      )}
+    </OverviewSection>
+  )
+}
+
+function MissingInfoCard({ missingInfo }) {
+  if (!missingInfo.length) return null
+
+  return (
+    <OverviewSection icon="info" title="Missing information">
+      <ul className="cov-missing-list">
+        {missingInfo.map((item) => (
+          <li key={item.id}>
+            <span className="material-symbols-outlined" aria-hidden="true">
+              error_outline
+            </span>
+            <span>{item.label}</span>
           </li>
         ))}
       </ul>
-      {onViewAll ? (
-        <button type="button" className="clinical-text-action clinical-report-activity__view-all" onClick={onViewAll}>
-          View all reports
-        </button>
-      ) : null}
-    </div>
+    </OverviewSection>
   )
 }
 
@@ -115,163 +312,92 @@ export function TherapistCaseOverviewDashboard({
   caseId,
   caseRow,
   clinicalProfile,
-  scheduleItems,
   qualitySummary,
   onOpenTab,
   onClinicalProfileUpdated,
 }) {
-  const navigate = useNavigate()
-  const basePath = `/therapist/cases/${caseId}`
-  const goals = qualitySummary?.goal_coverage || []
-  const evidenceCount = qualitySummary?.evidence_summary?.total_evidence_events ?? 0
-  const pendingReports = pendingReportCount(qualitySummary?.report_statuses || {})
-  const iepHealth = iepHealthMetric(qualitySummary || {})
-  const reportActivity = buildReportActivity(qualitySummary || {})
-  const stakeholders = buildStakeholders(caseRow)
-  const guidance = guidanceFromSummary(qualitySummary || {}, scheduleItems)
+  const [assignments, setAssignments] = useState([])
+  const [iepPlan, setIepPlan] = useState(null)
+  const [observation, setObservation] = useState(null)
+  const [extrasLoading, setExtrasLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setExtrasLoading(true)
+    Promise.all([
+      apiFetch(`/api/v1/cases/${caseId}/assignments`).catch(() => []),
+      apiFetch(`/api/v1/cases/${caseId}/iep-plan`).catch(() => null),
+      apiFetch(`/api/v1/cases/${caseId}/observation-checklist`).catch(() => null),
+    ]).then(([asg, iep, obs]) => {
+      if (cancelled) return
+      setAssignments(Array.isArray(asg) ? asg : [])
+      setIepPlan(iep)
+      setObservation(obs)
+      setExtrasLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [caseId])
+
+  const overview = useMemo(
+    () =>
+      composeCaseOverview({
+        caseId,
+        caseRow,
+        clinicalProfile,
+        qualitySummary,
+        assignments,
+        iepPlan,
+        observation,
+      }),
+    [caseId, caseRow, clinicalProfile, qualitySummary, assignments, iepPlan, observation],
+  )
+
+  function handlePendingAction(item) {
+    if (!item.tab) return
+    onOpenTab(item.tab, item.section ? { section: item.section } : undefined)
+  }
+
+  const { snapshot, strengths, interests, supportContext, supportNeeds, goals, careTeam, pendingWork, missingInfo } =
+    overview
 
   return (
-    <div className="cp-therapist-overview clinical-overview">
-      <CaseSummaryEditor
-        caseId={caseId}
-        clinicalProfile={clinicalProfile}
-        onProfileUpdated={onClinicalProfileUpdated}
-      />
+    <div className="cov-page forest-light cp-therapist-overview">
+      {extrasLoading ? <p className="cov-empty">Loading case context…</p> : null}
 
-      <div className="clinical-metric-grid">
-        <ClinicalMetricCard
-          value={evidenceCount}
-          label="Evidence events"
-          icon="evidence"
-          onClick={() => onOpenTab('documents')}
-        />
-        <ClinicalMetricCard
-          value={goals.length}
-          label="Active goals"
-          icon="goals"
-          onClick={() => onOpenTab('goals')}
-        />
-        <ClinicalMetricCard
-          value={pendingReports}
-          label="Pending reports"
-          icon="reports"
-          valueTone={pendingReports > 0 ? 'attention' : 'default'}
-          onClick={() => onOpenTab('reports')}
-        />
-        <ClinicalMetricCard
-          value={iepHealth.label}
-          label="Documentation"
-          icon="documentation"
-          valueTone={iepHealth.tone}
-          onClick={() => onOpenTab('insights')}
-        />
-      </div>
+      <div className="cov-columns">
+        <div className="cov-main">
+          <SnapshotCard snapshot={snapshot} ageLabel={overview.header.ageLabel} />
 
-      <div className="clinical-two-col">
-        <div className="clinical-overview-main">
-          <section className="clinical-overview-section" aria-labelledby="active-goals-heading">
-            <div className="clinical-overview-section__head">
-              <h3 id="active-goals-heading" className="clinical-overview-section__title">
-                Active goals progress
-              </h3>
-              {goals.length ? (
-                <Link to={`${basePath}?tab=goals`} className="clinical-text-action">
-                  View all
-                </Link>
-              ) : null}
-            </div>
-            {goals.length ? (
-              <div className="clinical-overview-goal-grid">
-                {goals.slice(0, 4).map((goal) => {
-                  const pct = goalProgressPct(goal.sessions_addressed)
-                  const variant = goal.stale ? 'amber' : pct >= 70 ? 'green' : 'default'
-                  return (
-                    <article
-                      key={goal.label}
-                      className={`clinical-overview-goal-card${goal.stale ? ' is-stale' : ''}`}
-                    >
-                      <ClinicalProgressBar label={goal.label} pct={pct} variant={variant} showPct />
-                      <p className="clinical-overview-goal-card__meta">
-                        {goal.sessions_addressed ?? 0} session(s) with evidence
-                        {goal.stale ? ' · Needs fresh evidence' : ' · On track'}
-                      </p>
-                    </article>
-                  )
-                })}
-              </div>
-            ) : (
-              <ClinicalEmptyState
-                title="No active goals yet"
-                body="Goals appear once an active IEP is in place."
-                actionLabel="Open IEP"
-                actionHref={`${basePath}?tab=reports&section=iep`}
-              />
-            )}
-          </section>
-
-          <ClinicalCard title="Recent activity">
-            {reportActivity.length ? (
-              <ReportActivityList
-                items={reportActivity}
-                basePath={basePath}
-                onViewAll={() => onOpenTab('reports')}
-              />
-            ) : (
-              <ClinicalEmptyState
-                title="No recent report activity"
-                body="Monthly reports and observation milestones will appear here."
-                actionLabel="Open reports"
-                onAction={() => onOpenTab('reports')}
-              />
-            )}
-          </ClinicalCard>
-        </div>
-
-        <aside className="clinical-overview-side">
-          <ClinicalGuidanceCard
-            variant={guidance.variant}
-            title={guidance.title}
-            body={guidance.body}
-            actionLabel="Open insights →"
-            onAction={() => onOpenTab('insights')}
+          <CaseOverviewSummaryCard
+            caseId={caseId}
+            clinicalProfile={clinicalProfile}
+            onProfileUpdated={onClinicalProfileUpdated}
+            composedFallback={overview.summary}
+            emptyMessage="Not enough case information has been added yet."
           />
 
-          <ClinicalCard title="Stakeholders">
-            <ul className="clinical-overview-stakeholders">
-              {stakeholders.map((person) => (
-                <li key={person.key} className="clinical-overview-stakeholder">
-                  <span className="clinical-overview-stakeholder__avatar" aria-hidden="true">
-                    {person.name.slice(0, 2).toUpperCase()}
-                  </span>
-                  <div className="clinical-overview-stakeholder__info">
-                    <p className="clinical-overview-stakeholder__name">{person.name}</p>
-                    <p className="clinical-overview-stakeholder__role">{person.role}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </ClinicalCard>
+          <PendingWorkCard
+            className="cov-pending--mobile"
+            items={pendingWork}
+            onAction={handlePendingAction}
+          />
 
-          <ClinicalCard title="Quick actions">
-            <div className="clinical-overview-quick-actions">
-              <button
-                type="button"
-                className="clinical-overview-quick-action"
-                onClick={() => navigate('/therapist/logs')}
-              >
-                <span className="clinical-overview-quick-action__icon clinical-overview-quick-action__icon--logs" aria-hidden="true" />
-                <span>Open session logs</span>
-              </button>
-              <button type="button" className="clinical-overview-quick-action" onClick={() => onOpenTab('reports')}>
-                <span className="clinical-overview-quick-action__icon clinical-overview-quick-action__icon--reports" aria-hidden="true" />
-                <span>Open reports</span>
-              </button>
-              <button type="button" className="clinical-overview-quick-action" onClick={() => onOpenTab('documents')}>
-                <span className="clinical-overview-quick-action__icon clinical-overview-quick-action__icon--upload" aria-hidden="true" />
-                <span>Upload evidence</span>
-              </button>
-            </div>
-          </ClinicalCard>
+          <StrengthsInterestsSection strengths={strengths} interests={interests} />
+          <SupportContextCard supportContext={supportContext} />
+          <SupportNeedsCard supportNeeds={supportNeeds} />
+          <GoalsCard goals={goals} onOpenGoals={() => onOpenTab('goals')} />
+        </div>
+
+        <aside className="cov-rail">
+          <PendingWorkCard
+            className="cov-pending--desktop"
+            items={pendingWork}
+            onAction={handlePendingAction}
+          />
+          <CareTeamCard careTeam={careTeam} />
+          <MissingInfoCard missingInfo={missingInfo} />
         </aside>
       </div>
     </div>

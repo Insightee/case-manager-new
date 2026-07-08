@@ -6,6 +6,7 @@ from app.models.case import Case
 from app.models.case_document import (
     CLINICAL_CATEGORIES,
     CaseDocument,
+    CaseDocumentCategory,
     CaseDocumentStatus,
     CaseDocumentVisibility,
     normalize_case_document_status,
@@ -126,6 +127,28 @@ def can_edit_metadata(user: User, doc: CaseDocument) -> bool:
     if doc.submitted_by_user_id == user.id:
         return True
     return user_has_permission(user, "case_document.review")
+
+
+def can_delete_upload(db, user: User, doc: CaseDocument, case: Case | None = None) -> bool:
+    """Therapists may remove their own session evidence / misc uploads — not clinical reports."""
+    if doc.category in CLINICAL_CATEGORIES:
+        return False
+    if doc.category not in (
+        CaseDocumentCategory.SESSION_EVIDENCE.value,
+        CaseDocumentCategory.OTHER.value,
+    ):
+        return False
+    if doc.submitted_by_user_id != user.id:
+        return False
+    if doc.status not in (
+        CaseDocumentStatus.DRAFT.value,
+        CaseDocumentStatus.CHANGES_REQUESTED.value,
+    ):
+        return False
+    case = case or case_service.get_case(db, doc.case_id)
+    if not case:
+        return False
+    return case_scope_check(db, user, case)
 
 
 def allowed_actions(db, user: User, doc: CaseDocument, case: Case | None = None) -> list[str]:

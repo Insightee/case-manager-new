@@ -245,12 +245,13 @@ export function TherapistReportsHomeView({
   function goToCaseReports(item) {
     const caseDbId = item.caseDbId
     if (!caseDbId) return
+    // Open the case report workspace (monthly) — not another Coming Soon / legacy screen.
     if (embedded && String(caseDbId) === String(caseFilterId)) {
       setSearchParams({ tab: 'reports', section: 'monthly' }, { replace: false })
       return
     }
     if (isReportsRevampActive('therapist')) {
-      navigate(`/therapist/cases/${caseDbId}?tab=reports&section=dashboard`)
+      navigate(`/therapist/cases/${caseDbId}?tab=reports&section=monthly`)
       return
     }
     navigate(`/therapist/reports?case_id=${caseDbId}`)
@@ -328,6 +329,8 @@ export function TherapistReportsHomeView({
                 ? displayService
                 : 'Pick a client to focus reports — or browse all cases below.'
             }
+            service={scopedToCase ? selectedCase?.service : null}
+            productModule={scopedToCase ? selectedCase?.productModule : null}
             status={scopedToCase ? displayStatus : null}
             onChangeCase={() => setChangeCaseOpen(true)}
             changeCaseLabel={scopedToCase ? 'Change case' : 'Pick client'}

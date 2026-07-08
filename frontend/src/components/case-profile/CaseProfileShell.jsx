@@ -16,10 +16,14 @@ export function CaseProfileShell({
   childName,
   focusLine,
   serviceType,
+  service,
+  productModule,
   status,
+  statusPending = null,
   statusPill,
   headerActions,
   onRequestChange,
+  onStatusRequest,
   supportHref,
   tabs,
   activeTab,
@@ -62,8 +66,12 @@ export function CaseProfileShell({
         childName={childName}
         caseCode={caseCode}
         serviceType={serviceLine}
+        service={service}
+        productModule={productModule}
         status={status}
-        onStatusClick={onRequestChange}
+        statusPending={statusPending}
+        onStatusRequest={onStatusRequest}
+        onStatusClick={!onStatusRequest && onRequestChange ? onRequestChange : undefined}
         onChangeCase={enableChangeCase ? () => setChangeCaseOpen(true) : undefined}
         supportHref={supportHref}
         headerActions={headerActions}

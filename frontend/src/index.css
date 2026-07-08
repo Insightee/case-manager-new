@@ -6,6 +6,7 @@
 @import "./styles/admin-portal.css";
 @import "./components/admin-portal/admin-portal-mobile.css";
 @import "./styles/ux-foundations.css";
+@import "./styles/service-badge.css";
 
 /* InsighteCase — management portal theme (slate + indigo + healthcare green) */
 :root {
@@ -367,6 +368,13 @@ input {
 
 .app-sidebar__user-card--static {
   cursor: default;
+}
+
+/* Profile card pinned under the brand (Stitch dashboard direction) */
+.app-sidebar__user-card--top {
+  margin: 10px 0 4px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .app-sidebar__user-card--static:hover {

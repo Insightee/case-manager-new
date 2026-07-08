@@ -20,6 +20,7 @@ ALLOWED_ACTIONS = frozenset(
         "iep_goal_suggest",
         "observation_summary",
         "progress_summary",
+        "case_insight_refresh",
     }
 )
 
@@ -65,4 +66,6 @@ def mock_draft(action: str, context: dict[str, Any]) -> str:
         return f"Try visual schedules and sensory breaks to support {child} during transitions."
     if action == "clinical_review_note":
         return f"Clinical review note for {child}: document strengths-first observations and next steps."
+    if action == "case_insight_refresh":
+        return f"Updated insight wording for {child}, based on the latest session logs and structured evidence."
     return "Draft preview — edit before saving. (Mock AI provider)"

@@ -732,6 +732,20 @@ function PortalShellInner({ portal }) {
                 <p className="app-sidebar__sub">{subtitle}</p>
               </div>
             </div>
+            {profilePath ? (
+              <NavLink
+                to={profilePath}
+                className="app-sidebar__user-card app-sidebar__user-card--top"
+                onClick={() => setMobileNavOpen(false)}
+                title="Go to profile"
+              >
+                <AuthenticatedAvatar user={user} className="app-sidebar__user-avatar" size={40} />
+                <div className="app-sidebar__user-info">
+                  <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
+                  <span className="app-sidebar__user-role">{subtitle}</span>
+                </div>
+              </NavLink>
+            ) : null}
             <NavLinks
               items={nav}
               className="app-sidebar__nav"
@@ -790,6 +804,26 @@ function PortalShellInner({ portal }) {
           </div>
           <NotificationBell portal={portal} />
         </div>
+        {profilePath ? (
+          <NavLink to={profilePath} className="app-sidebar__user-card app-sidebar__user-card--top" title="Go to profile">
+            <AuthenticatedAvatar user={user} className="app-sidebar__user-avatar" size={40} />
+            <div className="app-sidebar__user-info">
+              <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
+              <span className="app-sidebar__user-role">{subtitle}</span>
+            </div>
+            <span className="app-sidebar__user-chevron" aria-hidden>
+              ›
+            </span>
+          </NavLink>
+        ) : (
+          <div className="app-sidebar__user-card app-sidebar__user-card--static app-sidebar__user-card--top">
+            <AuthenticatedAvatar user={user} className="app-sidebar__user-avatar" size={40} />
+            <div className="app-sidebar__user-info">
+              <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
+              <span className="app-sidebar__user-role">{subtitle}</span>
+            </div>
+          </div>
+        )}
         <NavLinks
           items={nav}
           className="app-sidebar__nav"
@@ -808,27 +842,6 @@ function PortalShellInner({ portal }) {
               {syncState === 'retry_pending' ? <small className="app-sidebar__usage-label">Retry pending</small> : null}
             </div>
           ) : null}
-          {profilePath ? (
-            <NavLink to={profilePath} className="app-sidebar__user-card" title="Go to profile">
-              <AuthenticatedAvatar user={user} className="app-sidebar__user-avatar" size={40} />
-              <div className="app-sidebar__user-info">
-                <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
-                <span className="app-sidebar__user-role">{subtitle}</span>
-              </div>
-              <span className="app-sidebar__user-chevron" aria-hidden>
-                ›
-              </span>
-            </NavLink>
-          ) : (
-            <div className="app-sidebar__user-card app-sidebar__user-card--static">
-              <AuthenticatedAvatar user={user} className="app-sidebar__user-avatar" size={40} />
-              <div className="app-sidebar__user-info">
-                <span className="app-sidebar__user-name">{user?.full_name || 'Account'}</span>
-                <span className="app-sidebar__user-role">{subtitle}</span>
-              </div>
-            </div>
-          )}
-
           <button type="button" className="app-sidebar__logout" onClick={logout}>
             <svg
               className="app-sidebar__logout-icon"

@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { isReportsEngineActive } from '../../lib/reportsRevampFlags.js'
 
 export function CreateDraftModal({ open, onClose, onCreated, defaultMonth, defaultCaseId = null }) {
   const navigate = useNavigate()
-  const reportsBase = window.location.pathname.startsWith('/therapist') ? '/therapist/reports' : '/reports'
+  const isTherapist = window.location.pathname.startsWith('/therapist')
+  const reportsBase = isTherapist ? '/therapist/reports' : '/reports'
   const [cases, setCases] = useState([])
   const [caseId, setCaseId] = useState(defaultCaseId ? String(defaultCaseId) : '')
   const [month, setMonth] = useState(defaultMonth || '')
@@ -42,6 +44,12 @@ export function CreateDraftModal({ open, onClose, onCreated, defaultMonth, defau
       onCreated?.(created)
       onClose()
       setCaseId('')
+      // Prefer new case reports hub when engine is on; avoid legacy edit URL → Coming Soon.
+      if (isReportsEngineActive() && created?.case_id) {
+        const base = isTherapist ? '/therapist/cases' : '/admin/cases'
+        navigate(`${base}/${created.case_id}?tab=reports&section=monthly`)
+        return
+      }
       navigate(`${reportsBase}/edit/${created.id}`)
     } catch (err) {
       setError(err.message || 'Could not create draft')

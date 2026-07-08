@@ -97,5 +97,13 @@ export function useCaseDocumentMutations(caseId) {
       }),
   })
 
-  return { create, patch, workflow, addVersion, addComment, invalidateCase }
+  const remove = useMutation({
+    mutationFn: (documentId) =>
+      apiFetch(`/api/v1/documents/${documentId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      invalidateCase()
+    },
+  })
+
+  return { create, patch, workflow, addVersion, addComment, remove, invalidateCase }
 }

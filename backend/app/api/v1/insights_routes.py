@@ -19,6 +19,10 @@ from app.services import clinical_insight_summary_service as summary_svc
 from app.services import clinical_insights_preview_service as preview_svc
 from app.services import clinical_snapshot_service as snap_svc
 from app.services import reference_retrieval_service as ref_svc
+from app.services.insights import ai_insight_refresh_service as refresh_svc
+from app.services.insights import insight_action_service as action_svc
+from app.services.insights import weekly_insight_usage_limiter as usage_limiter
+from app.services.insights.case_insight_aggregator import build_case_insight_payload
 
 router = APIRouter(prefix="/cases/{case_id}/insights", tags=["insights"])
 
@@ -48,9 +52,9 @@ class GenerateSnapshotRequest(BaseModel):
     force_regenerate: bool = False
 
 
-class FollowupRequest(BaseModel):
-    question: str = Field(min_length=3, max_length=500)
-    snapshot_id: int
+class SelectForReportRequest(BaseModel):
+    insight_ids: list[str] = Field(min_length=1)
+    destination: str = Field(pattern=r"^(monthly_report|iep_review)$")
 
 
 class FeedbackRequest(BaseModel):
@@ -146,34 +150,72 @@ def generate_snapshot(
     return result
 
 
-@router.post("/followup")
-def snapshot_followup(
+@router.get("/case-summary")
+def get_case_summary(
     case_id: int,
-    payload: FollowupRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Always-available, no-AI Insights tab payload — Layer 1 (Structured Insight Engine)."""
+    _case_for_user(db, user, case_id)
+    try:
+        return build_case_insight_payload(db, case_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/usage")
+def get_refresh_usage(
+    case_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _case_for_user(db, user, case_id)
-    snap = snap_svc.get_snapshot(db, payload.snapshot_id, case_id)
-    text = snap.ai_output_text or ""
-    if not text and snap.ai_output_json:
-        import json
+    return usage_limiter.get_usage(db, case_id=case_id, user_id=user.id)
 
-        try:
-            text = json.loads(snap.ai_output_json).get("snapshot_summary") or ""
-        except json.JSONDecodeError:
-            text = ""
-    if not text:
-        raise HTTPException(status_code=400, detail="Snapshot has no content for follow-up")
 
-    answer = ai_svc.AIGatewayService.answer_snapshot_followup(
-        db,
-        user_id=user.id,
-        case_id=case_id,
-        question=payload.question,
-        snapshot_text=text,
-    )
-    return answer
+@router.post("/refresh")
+def refresh_insights(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Refresh Insights — Layer 2/3 AI wording polish, capped at 2/week per case/therapist."""
+    _case_write(db, user, case_id)
+    try:
+        return refresh_svc.refresh_insights(db, case_id=case_id, user=user)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/select-for-report")
+def select_insights_for_report(
+    case_id: int,
+    payload: SelectForReportRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Stages selected insight cards into `case_insight_actions` (pending_review) — never writes report text directly."""
+    _case_write(db, user, case_id)
+    try:
+        current = build_case_insight_payload(db, case_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    insights_by_id = {i["id"]: i for i in current["insights"]}
+    try:
+        rows = action_svc.stage_insights_for_review(
+            db,
+            case_id=case_id,
+            user_id=user.id,
+            insight_ids=payload.insight_ids,
+            destination=payload.destination,
+            insights_by_id=insights_by_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {"staged": [action_svc.action_to_dict(r) for r in rows]}
 
 
 @router.get("/snapshots")

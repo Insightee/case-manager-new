@@ -42,7 +42,16 @@ function fileIconName(file) {
   return 'attach_file'
 }
 
-export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'create', showShareOptions = false }) {
+export function CaseDocumentModal({
+  open,
+  onClose,
+  onSave,
+  initial,
+  mode = 'create',
+  showShareOptions = false,
+  defaultCategory = 'SESSION_EVIDENCE',
+  defaultSourceType = 'UPLOAD',
+}) {
   const [form, setForm] = useState(EMPTY)
   const [useLink, setUseLink] = useState(false)
   const [file, setFile] = useState(null)
@@ -76,8 +85,8 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
       })
       setUseLink(initial.current_version?.source_type === 'EXTERNAL_LINK')
     } else {
-      setForm(EMPTY)
-      setUseLink(false)
+      setForm({ ...EMPTY, category: defaultCategory })
+      setUseLink(defaultSourceType === 'EXTERNAL_LINK')
     }
     setFile(null)
     setUploadedPreview(null)
@@ -85,7 +94,7 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
     setShareWithParents(false)
     setError('')
     setSizeWarning('')
-  }, [open, initial])
+  }, [open, initial, defaultCategory, defaultSourceType])
 
   if (!open) return null
 
@@ -197,10 +206,12 @@ export function CaseDocumentModal({ open, onClose, onSave, initial, mode = 'crea
         <header className="case-docs-modal__head">
           <div>
             <h2 id="case-doc-modal-title" className="case-docs-modal__title">
-              {mode === 'edit' ? 'Edit document' : 'Upload document'}
+              {mode === 'edit' ? 'Edit document' : useLink ? 'Add link' : 'Upload document'}
             </h2>
             <p className="case-docs-modal__subtitle">
-              PDF or Word up to 5 MB. Rich-text monthly reports live in Monthly Reports.
+              {useLink
+                ? 'Paste a Google Docs or Drive link. It will appear in the Links section on this case.'
+                : 'PDF or Word up to 5 MB. Rich-text monthly reports live in Monthly Reports.'}
             </p>
           </div>
           <button type="button" className="case-docs-modal__close" onClick={onClose} aria-label="Close">

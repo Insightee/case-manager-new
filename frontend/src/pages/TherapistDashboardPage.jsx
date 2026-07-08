@@ -3,30 +3,45 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../lib/apiClient.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTherapistFrequentActions } from '../hooks/useTherapistFrequentActions.js'
-import { useTherapistHome } from '../hooks/useTherapistHome.js'
+import { useTherapistHome, useTherapistReportsPipeline } from '../hooks/useTherapistHome.js'
 import { QueryState } from '../components/shared/QueryState.jsx'
-import { TherapistTodaySchedule } from '../components/therapist/TherapistTodaySchedule.jsx'
 import { TherapistDashboardIcon } from '../components/therapist/TherapistDashboardIcon.jsx'
 import { formatDisplayDate, formatDisplayDateTime } from '../lib/datetime.js'
-import { THERAPIST_ACTIONS } from '../lib/therapistActions.js'
+import { isToday } from '../lib/therapistSchedule.js'
+import { isBillingModuleEnabled } from '../lib/productFeatureFlags.js'
 import '../styles/therapist-dashboard.css'
 
-const STAT_CARDS = [
-  { key: 'case_count', to: '/therapist/cases', label: 'Assigned cases', icon: 'groups', tone: 'forest' },
-  { key: 'needs_log', to: '/therapist/logs', label: 'Sessions need log', icon: 'edit_note', tone: 'amber' },
-  { key: 'pending_logs', to: '/therapist/logs', label: 'Logs pending approval', icon: 'pending_actions', tone: 'dark' },
-  { key: 'draft_reports', to: '/therapist/reports', label: 'Report drafts', icon: 'description', tone: 'mint' },
-]
+function dateBlockParts(iso) {
+  const d = iso ? new Date(`${iso}T00:00:00`) : null
+  if (!d || Number.isNaN(d.getTime())) return { month: '—', day: '—' }
+  return {
+    month: d.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
+    day: String(d.getDate()),
+  }
+}
 
-function tileTone(tone) {
-  return tone === 'primary' ? 'forest' : tone
+function durationMinutes(start, end) {
+  if (!start || !end) return null
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return null
+  const mins = eh * 60 + em - (sh * 60 + sm)
+  return mins > 0 ? mins : null
+}
+
+function scheduleTag(item) {
+  if (item.subtitle) return item.subtitle
+  if (item.kind === 'booking') {
+    return item.bookingSource === 'PARENT' ? 'Parent booking' : 'Calendar'
+  }
+  return 'Session'
 }
 
 export function TherapistDashboardPage() {
   const { user } = useAuth()
   const { data: home, isLoading, isError, error, refetch } = useTherapistHome()
-  const { actions, personalized, trackClick } = useTherapistFrequentActions(4)
-  const secondary = actions.slice(1)
+  const { data: reportsPipeline } = useTherapistReportsPipeline()
+  const { actions, trackClick } = useTherapistFrequentActions(4)
 
   const greeting = (() => {
     const h = new Date().getHours()
@@ -39,89 +54,142 @@ export function TherapistDashboardPage() {
   const active = home?.active_session
   const needsLog = home?.needs_log_sessions || []
   const schedule = home?.schedule_preview || []
-  const criticalCases = (home?.cases_board?.allCases || []).filter((c) => c.critical).slice(0, 5)
+  const todayItems = schedule.filter((s) => isToday(s.date))
+  const scheduleList = (todayItems.length > 0 ? todayItems : schedule).slice(0, 6)
+  const scheduleTitle = todayItems.length > 0 ? 'Today’s Schedule' : 'Upcoming Schedule'
+  const criticalCases = (home?.cases_board?.allCases || []).filter((c) => c.critical).slice(0, 3)
   const pendingAssignments = home?.pending_assignment_acceptance || []
   const pendingCmMeetings = home?.pending_cm_meetings || []
-  const pendingActions = [
-    ...needsLog.map((s) => ({
+  const urgentMeeting = pendingCmMeetings[0] || null
+  const reportsDue = (reportsPipeline?.attention || []).slice(0, 3)
+  const billingOn = isBillingModuleEnabled()
+
+  const attentionItems = [
+    ...needsLog.slice(0, 3).map((s) => ({
       key: `log-${s.id}`,
       to: `/therapist/logs?session=${s.id}`,
-      eyebrow: 'Session log due',
       title: s.child_name || s.case_code || 'Client',
       meta: s.scheduled_date ? `Visit · ${formatDisplayDate(s.scheduled_date)}` : 'Completed visit',
-      tone: 'primary',
-      icon: 'edit_note',
+      badge: 'Log due',
+      tone: 'danger',
     })),
-    ...pendingCmMeetings.map((m) => ({
-      key: `cm-${m.id}`,
-      to: m.case_id ? `/therapist/meetings?case_id=${m.case_id}` : '/therapist/meetings',
-      eyebrow: 'Submit meeting notes',
-      title: m.child_name || m.case_code || m.title || 'Case manager meeting',
-      meta: [formatDisplayDateTime(m.scheduled_date, m.scheduled_time), m.title]
-        .filter(Boolean)
-        .join(' · '),
-      tone: 'forest',
-      icon: 'event_note',
-      badge: 'Notes due',
+    ...criticalCases.map((c) => ({
+      key: `case-${c.id}`,
+      to: `/therapist/cases/${c.id}`,
+      title: c.child,
+      meta: c.nextDue,
+      badge: 'Attention',
+      tone: 'warn',
     })),
-  ]
+  ].slice(0, 5)
+
   const [acceptBusy, setAcceptBusy] = useState(null)
   const [acceptErr, setAcceptErr] = useState('')
 
   return (
     <div className="therapist-dashboard-page forest-light">
-      <header className="therapist-dashboard__header">
-        <div className="therapist-dashboard__intro">
-          <p className="therapist-dashboard__eyebrow">{greeting}</p>
-          <h2>
-            {user?.full_name?.split(' ')[0] || 'there'}
-            {home?.greeting_context ? ` — next: ${home.greeting_context}` : ''}
+      {/* Header */}
+      <header className="td-header">
+        <div className="td-header__intro">
+          <h2 className="td-header__title">
+            {greeting}, {user?.full_name?.split(' ')[0] || 'there'}
           </h2>
-          <p>Today’s sessions, logs due, and cases that need you.</p>
+          <p className="td-header__status">
+            <span className="td-header__status-dot" aria-hidden="true" />
+            {todayItems.length > 0
+              ? `${todayItems.length} visit${todayItems.length === 1 ? '' : 's'} today`
+              : 'No visits scheduled today'}
+            {stats?.needs_log ? ` · ${stats.needs_log} log${stats.needs_log === 1 ? '' : 's'} due` : ''}
+          </p>
         </div>
-        {active ? (
-          <Link to="/therapist/logs" className="therapist-dashboard__cta">
-            Active session — open logs
+        <div className="td-header__chips">
+          <Link to="/therapist/logs#upcoming" className="td-chip">
+            <TherapistDashboardIcon name="calendar_month" tone="forest" />
+            <span className="td-chip__body">
+              <span className="td-chip__eyebrow">Upcoming</span>
+              <span className="td-chip__value">
+                {schedule.length} Session{schedule.length === 1 ? '' : 's'}
+              </span>
+            </span>
           </Link>
-        ) : null}
+          <Link to="/therapist/logs" className="td-chip">
+            <TherapistDashboardIcon name="edit_note" tone="amber" />
+            <span className="td-chip__body">
+              <span className="td-chip__eyebrow">Tasks</span>
+              <span className="td-chip__value">{stats?.needs_log ?? 0} Logs Due</span>
+            </span>
+          </Link>
+        </div>
       </header>
 
-      <QueryState
-        isLoading={isLoading}
-        isError={isError}
-        error={error}
-        onRetry={() => refetch()}
-      >
+      <QueryState isLoading={isLoading} isError={isError} error={error} onRetry={() => refetch()}>
+        {/* Urgent banner */}
+        {urgentMeeting ? (
+          <Link
+            to={urgentMeeting.case_id ? `/therapist/meetings?case_id=${urgentMeeting.case_id}` : '/therapist/meetings'}
+            className="td-urgent"
+          >
+            <span className="td-urgent__icon" aria-hidden="true">
+              <span className="material-symbols-outlined">priority_high</span>
+            </span>
+            <span className="td-urgent__body">
+              <span className="td-urgent__head">
+                <span className="td-urgent__tag">Urgent</span>
+                <strong className="td-urgent__title">Submit meeting notes</strong>
+              </span>
+              <span className="td-urgent__meta">
+                {[
+                  urgentMeeting.child_name || urgentMeeting.case_code || urgentMeeting.title,
+                  formatDisplayDateTime(urgentMeeting.scheduled_date, urgentMeeting.scheduled_time),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </span>
+            <span className="td-urgent__cta">Review Now</span>
+          </Link>
+        ) : active ? (
+          <Link to="/therapist/logs" className="td-urgent td-urgent--active">
+            <span className="td-urgent__icon" aria-hidden="true">
+              <span className="material-symbols-outlined">play_circle</span>
+            </span>
+            <span className="td-urgent__body">
+              <span className="td-urgent__head">
+                <span className="td-urgent__tag td-urgent__tag--live">Live</span>
+                <strong className="td-urgent__title">Session in progress</strong>
+              </span>
+              <span className="td-urgent__meta">Open logs to record evidence and close the visit.</span>
+            </span>
+            <span className="td-urgent__cta">Open Logs</span>
+          </Link>
+        ) : null}
+
+        {/* New case assignments */}
         {pendingAssignments.length > 0 ? (
-          <section className="therapist-assignment-card">
-            <h3>New case assignment</h3>
-            <p className="admin-muted" style={{ margin: '0 0 12px', fontSize: '0.875rem', color: '#64748b' }}>
-              You can start sessions and logs for this case now. Please review the care plan when you can — marking
-              reviewed is optional.
+          <section className="td-card td-assignments">
+            <h3 className="td-card__title">New case assignment</h3>
+            <p className="td-card__hint">
+              You can start sessions and logs for this case now. Marking reviewed is optional.
             </p>
-            {acceptErr ? <p style={{ color: '#b91c1c', fontSize: '0.875rem' }}>{acceptErr}</p> : null}
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {acceptErr ? <p className="td-assignments__error">{acceptErr}</p> : null}
+            <ul className="td-assignments__list">
               {pendingAssignments.map((item) => (
-                <li key={item.assignment_id} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <li key={item.assignment_id}>
                   <span>
                     <strong>{item.child_name}</strong> · {item.case_code}
                     {!item.parent_accepted ? (
-                      <span style={{ marginLeft: 8, fontSize: '0.75rem', color: '#92400e' }}>
-                        Waiting for parent
-                      </span>
+                      <span className="td-assignments__wait">Waiting for parent</span>
                     ) : null}
                   </span>
                   <button
                     type="button"
-                    className="admin-btn admin-btn--primary admin-btn--sm"
+                    className="td-btn td-btn--primary"
                     disabled={acceptBusy === item.assignment_id}
                     onClick={async () => {
                       setAcceptBusy(item.assignment_id)
                       setAcceptErr('')
                       try {
-                        await apiFetch(`/api/v1/assignments/${item.assignment_id}/accept`, {
-                          method: 'POST',
-                        })
+                        await apiFetch(`/api/v1/assignments/${item.assignment_id}/accept`, { method: 'POST' })
                         refetch()
                       } catch (e) {
                         setAcceptErr(e.message || 'Could not accept')
@@ -138,132 +206,158 @@ export function TherapistDashboardPage() {
           </section>
         ) : null}
 
-        {stats ? (
-          <section className="therapist-dashboard-stats" aria-label="Work summary">
-            <ul className="therapist-dashboard-stats__grid">
-              {STAT_CARDS.map((card) => (
-                <li key={card.key}>
-                  <Link to={card.to} className="therapist-dashboard-stats__card">
-                    <TherapistDashboardIcon name={card.icon} tone={card.tone} />
-                    <div>
-                      <p className="therapist-dashboard-stats__value">{stats[card.key] ?? 0}</p>
-                      <p className="therapist-dashboard-stats__label">{card.label}</p>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        {/* Two-column body */}
+        <div className="td-columns">
+          <div className="td-main">
+            <section className="td-card td-schedule" aria-labelledby="td-schedule-title">
+              <div className="td-card__head">
+                <h3 id="td-schedule-title" className="td-card__title">{scheduleTitle}</h3>
+                <Link to="/therapist/slots" className="td-card__action">View Calendar</Link>
+              </div>
+              {scheduleList.length === 0 ? (
+                <p className="td-empty">No upcoming visits. Book slots from Scheduling.</p>
+              ) : (
+                <ul className="td-schedule__list">
+                  {scheduleList.map((item) => {
+                    const { month, day } = dateBlockParts(item.date)
+                    const mins = durationMinutes(item.startTime, item.endTime)
+                    const href = item.sessionId
+                      ? `/therapist/logs?session=${item.sessionId}`
+                      : item.caseId
+                        ? `/therapist/cases/${item.caseId}`
+                        : '/therapist/logs'
+                    return (
+                      <li key={item.key}>
+                        <Link to={href} className="td-schedule__row">
+                          <span
+                            className={`td-schedule__date${isToday(item.date) ? ' td-schedule__date--today' : ''}`}
+                            aria-hidden="true"
+                          >
+                            <span className="td-schedule__date-month">{month}</span>
+                            <span className="td-schedule__date-day">{day}</span>
+                          </span>
+                          <span className="td-schedule__info">
+                            <strong className="td-schedule__name">{item.childName || item.caseCode}</strong>
+                            <span className="td-schedule__when">
+                              <span className="material-symbols-outlined" aria-hidden="true">schedule</span>
+                              {item.startTime} – {item.endTime}
+                              {mins ? ` (${mins} min)` : ''}
+                            </span>
+                          </span>
+                          <span className="td-schedule__tag">{scheduleTag(item)}</span>
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </section>
+          </div>
 
-        {pendingActions.length > 0 ? (
-          <section className="therapist-home-panel" aria-labelledby="pending-actions-title">
-            <h3 id="pending-actions-title">Pending actions</h3>
-            <ul className="therapist-pending-actions">
-              {pendingActions.map((item) => (
-                <li key={item.key}>
-                  <Link
-                    to={item.to}
-                    className={`therapist-pending-action therapist-pending-action--${item.tone}`}
-                  >
-                    <TherapistDashboardIcon
-                      name={item.icon}
-                      tone={item.tone === 'primary' ? 'forest' : item.tone === 'forest' ? 'amber' : tileTone(item.tone)}
-                    />
-                    <span className="therapist-pending-action__body">
-                      <span className="therapist-pending-action__eyebrow">{item.eyebrow}</span>
-                      <strong className="therapist-pending-action__title">{item.title}</strong>
-                      <span className="therapist-pending-action__meta">{item.meta}</span>
-                    </span>
-                    {item.badge ? (
-                      <span className="therapist-pending-action__badge">{item.badge}</span>
-                    ) : (
-                      <span className="therapist-pending-action__chevron" aria-hidden>
-                        →
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+          <div className="td-side">
+            {/* Attention Needed */}
+            <section className="td-card" aria-labelledby="td-attention-title">
+              <div className="td-card__head">
+                <h3 id="td-attention-title" className="td-card__title">Attention Needed</h3>
+              </div>
+              {attentionItems.length === 0 ? (
+                <p className="td-empty">All caught up — nothing needs you right now.</p>
+              ) : (
+                <ul className="td-attention__list">
+                  {attentionItems.map((item) => (
+                    <li key={item.key}>
+                      <Link to={item.to} className="td-attention__row">
+                        <span className="td-attention__info">
+                          <strong className="td-attention__name">{item.title}</strong>
+                          <span className="td-attention__meta">{item.meta}</span>
+                        </span>
+                        <span className={`td-badge td-badge--${item.tone}`}>{item.badge}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Link to="/therapist/logs" className="td-card__footer-link">Manage All Tasks</Link>
+            </section>
 
-        {schedule.length > 0 ? (
-          <section className="therapist-home-panel therapist-home-panel--schedule" aria-labelledby="today-schedule-title">
-            <div className="therapist-home-panel__head">
-              <h3 id="today-schedule-title">Today’s schedule</h3>
-              <p className="therapist-home-panel__hint">Tap a visit to open logs or the case</p>
-            </div>
-            <TherapistTodaySchedule items={schedule} limit={8} />
-            <Link to="/therapist/logs" className="therapist-home-panel__link">
-              Open session logs →
-            </Link>
-          </section>
-        ) : null}
+            {/* Reports Due */}
+            <section className="td-card" aria-labelledby="td-reports-title">
+              <div className="td-card__head">
+                <h3 id="td-reports-title" className="td-card__title">Reports Due</h3>
+              </div>
+              {reportsDue.length === 0 ? (
+                <p className="td-empty">No reports waiting on you.</p>
+              ) : (
+                <ul className="td-reports__list">
+                  {reportsDue.map((r) => (
+                    <li key={r.id}>
+                      <Link
+                        to={r.caseDbId ? `/therapist/cases/${r.caseDbId}?tab=reports&section=monthly` : '/therapist/reports'}
+                        className="td-reports__row"
+                      >
+                        <span className="td-reports__info">
+                          <strong className="td-reports__name">{r.month || 'Monthly Report'}</strong>
+                          <span className="td-reports__meta">
+                            {[r.child, r.dueInfo || r.statusLabel].filter(Boolean).join(' · ')}
+                          </span>
+                        </span>
+                        <span className="material-symbols-outlined td-reports__icon" aria-hidden="true">
+                          description
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Link to="/therapist/reports" className="td-card__footer-link">Open Reports</Link>
+            </section>
 
-        {criticalCases.length > 0 ? (
-          <section className="therapist-home-panel" aria-labelledby="attention-cases-title">
-            <h3 id="attention-cases-title">Cases needing attention</h3>
-            <ul className="therapist-home-list">
-              {criticalCases.map((c) => (
-                <li key={c.id}>
-                  <Link to={`/therapist/cases/${c.id}`}>
-                    <strong>{c.child}</strong>
-                    <span>{c.nextDue}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <Link to="/therapist/cases?stage=attention" className="therapist-home-panel__link">
-              View all cases →
-            </Link>
-          </section>
-        ) : null}
-      </QueryState>
+            {/* Billing Due — module gated */}
+            {billingOn ? (
+              <section className="td-card" aria-labelledby="td-billing-title">
+                <div className="td-card__head">
+                  <h3 id="td-billing-title" className="td-card__title">Billing</h3>
+                </div>
+                <p className="td-empty">Review sessions and submit your invoice.</p>
+                <Link to="/therapist/invoices" className="td-card__footer-link">Process All Billing</Link>
+              </section>
+            ) : null}
 
-      <section className="therapist-quick-actions" aria-labelledby="therapist-shortcuts-title">
-        <div className="therapist-quick-actions__head">
-          <h3 id="therapist-shortcuts-title">Shortcuts</h3>
-          <p>
-            {personalized
-              ? 'Ranked by what you use most often'
-              : 'Popular ways to get work done'}
-          </p>
-        </div>
-        <ul className="therapist-quick-actions__grid">
-          {secondary.map((action) => (
-            <li key={action.id}>
-              <Link
-                to={action.to}
-                className={`therapist-quick-actions__tile therapist-quick-actions__tile--${tileTone(action.tone)}`}
-                onClick={() => trackClick(action.id)}
-              >
-                <TherapistDashboardIcon name={action.icon} tone={tileTone(action.tone)} />
-                <span className="therapist-quick-actions__tile-body">
-                  <strong>{action.label}</strong>
-                  <span>{action.description}</span>
+            {/* Quick Shortcuts */}
+            <section className="td-shortcuts" aria-labelledby="td-shortcuts-title">
+              <h3 id="td-shortcuts-title" className="td-shortcuts__title">Quick Shortcuts</h3>
+              <ul className="td-shortcuts__grid">
+                {actions.slice(0, 4).map((action) => (
+                  <li key={action.id}>
+                    <Link
+                      to={action.to}
+                      className="td-shortcuts__tile"
+                      onClick={() => trackClick(action.id)}
+                    >
+                      <TherapistDashboardIcon name={action.icon} tone="forest" />
+                      <span className="td-shortcuts__label">{action.label}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* Caseload summary (dark card) */}
+            <Link to="/therapist/cases" className="td-growth">
+              <span className="td-growth__body">
+                <strong className="td-growth__title">My Caseload</strong>
+                <span className="td-growth__meta">
+                  {stats?.case_count ?? 0} active case{(stats?.case_count ?? 0) === 1 ? '' : 's'}
+                  {stats?.draft_reports ? ` · ${stats.draft_reports} report draft${stats.draft_reports === 1 ? '' : 's'}` : ''}
                 </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-        <details className="therapist-quick-actions__more">
-          <summary>All actions ({THERAPIST_ACTIONS.length})</summary>
-          <ul className="therapist-quick-actions__more-list">
-            {THERAPIST_ACTIONS.map((action) => (
-              <li key={action.id}>
-                <Link to={action.to} onClick={() => trackClick(action.id)}>
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    {action.icon}
-                  </span>
-                  {action.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </details>
-      </section>
+              </span>
+              <span className="td-growth__bars" aria-hidden="true">
+                <i /><i /><i /><i /><i />
+              </span>
+            </Link>
+          </div>
+        </div>
+      </QueryState>
     </div>
   )
 }

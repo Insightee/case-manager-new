@@ -502,3 +502,9 @@ def get_download_info(db: Session, user: User, doc: CaseDocument) -> dict:
         "file_name": version.file_name,
         "mime_type": version.mime_type,
     }
+
+
+def delete_document(db: Session, user: User, doc: CaseDocument) -> None:
+    if not access.can_delete_upload(db, user, doc):
+        raise HTTPException(status_code=403, detail="This document cannot be removed")
+    db.delete(doc)

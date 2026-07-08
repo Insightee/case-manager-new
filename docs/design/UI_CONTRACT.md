@@ -1,8 +1,17 @@
 # Clinical UI Contract (mandatory)
 
-**Problem:** Agents invent layouts instead of shipping the Stitch / Forest Light mockups.
+**Problem:** Agents invent layouts or mix legacy purple `clinical-ui` with Forest Light Stitch surfaces.
 
 **Rule:** If a screen is not in this contract, do not ship it. Extend the contract first.
+
+## Design systems (do not mix)
+
+| System | Scope | Tokens / CSS | Components |
+|--------|--------|--------------|------------|
+| **Forest Light** | Therapist portal revamp (dashboard, my cases, case profile tabs, documents drive, case overview) | `forest-light-theme.css`, `docs/design/FOREST_LIGHT_TYPOGRAPHY.md`, surface `*-v2.css` | `cov-*`, `mc-*`, `td-*`, Material Symbols |
+| **Legacy clinical** | Admin clinical dashboards, older purple surfaces | `clinical-theme.css`, `clinical-components.css` | `ClinicalCard`, `ClinicalMetricCard`, `ClinicalStatusBadge` |
+
+**Conflict rule:** Forest surfaces must **not** import or render legacy `ClinicalCard` / metric grids. If a Stitch mock exists, implement with Forest tokens and the screen’s `cov-*` / `td-*` / `mc-*` prefix — not purple clinical cards.
 
 ## Shared surfaces (one implementation each)
 
@@ -12,6 +21,18 @@
 | Report builder header + footer | `ClinicalBuilderShell.jsx` | IEP, observation |
 | Section numbering + cards | `clinical-report-ui.css` + `IEP_BUILDER_SECTIONS` | IEP |
 | Observation blocks | `ObservationStitchBlocks.jsx` | Observation only |
+| **Case overview (therapist)** | `TherapistCaseOverviewDashboard.jsx` + `case-overview-v2.css` | Case profile → Overview tab |
+
+## Case overview (Forest Light — mandatory)
+
+Stitch project `2951427195113771286`. Full spec: `docs/design/stitch/case-overview/DESIGN.md`.
+
+1. Scope: `.cov-page.forest-light` inside `CaseProfileShell`
+2. Data: `caseOverviewCompose.js` only — no overview DB schema
+3. Summary: `CaseOverviewSummaryCard.jsx` — not `ClinicalCard`
+4. Status: `cov-status-pill` (secondary-container) — not `ClinicalStatusBadge`
+5. Pending work: inset rows + underline actions — not metric chips
+6. No fake progress % on goals unless backed by real session evidence counts
 
 ## Create Student Goal modal (non-negotiable)
 
