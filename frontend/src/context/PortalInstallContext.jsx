@@ -1,16 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   applyPortalPwaMeta,
+  clearPortalInstalled,
   isIosSafari,
   isMacSafari,
+  isPortalInstalled,
   isStandaloneDisplay,
+  markPortalInstalled,
   PORTAL_PWA,
 } from '../lib/portalPwa.js'
 import { PortalInstallContext } from './portalInstallContext.js'
 
+function readInstalled(portal) {
+  if (isStandaloneDisplay()) {
+    markPortalInstalled(portal)
+    return true
+  }
+  return isPortalInstalled(portal)
+}
+
 export function PortalInstallProvider({ portal, children }) {
   const [deferredPrompt, setDeferredPrompt] = useState(null)
-  const [installed, setInstalled] = useState(() => isStandaloneDisplay())
+  const [installed, setInstalled] = useState(() => readInstalled(portal))
   const iosSafari = useMemo(() => isIosSafari(), [])
   const macSafari = useMemo(() => isMacSafari(), [])
   const config = PORTAL_PWA[portal] ?? null
@@ -22,16 +33,24 @@ export function PortalInstallProvider({ portal, children }) {
   useEffect(() => {
     function onBeforeInstallPrompt(event) {
       event.preventDefault()
+      clearPortalInstalled(portal)
+      setInstalled(false)
       setDeferredPrompt(event)
     }
 
     function onAppInstalled() {
+      markPortalInstalled(portal)
       setInstalled(true)
       setDeferredPrompt(null)
     }
 
     function onDisplayModeChange() {
-      setInstalled(isStandaloneDisplay())
+      if (isStandaloneDisplay()) {
+        markPortalInstalled(portal)
+        setInstalled(true)
+        return
+      }
+      setInstalled(isPortalInstalled(portal))
     }
 
     window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
@@ -43,7 +62,7 @@ export function PortalInstallProvider({ portal, children }) {
       window.removeEventListener('appinstalled', onAppInstalled)
       window.matchMedia('(display-mode: standalone)').removeEventListener('change', onDisplayModeChange)
     }
-  }, [])
+  }, [portal])
 
   const promptInstall = useCallback(async () => {
     if (!deferredPrompt) {
@@ -53,10 +72,11 @@ export function PortalInstallProvider({ portal, children }) {
     const choice = await deferredPrompt.userChoice
     setDeferredPrompt(null)
     if (choice.outcome === 'accepted') {
+      markPortalInstalled(portal)
       setInstalled(true)
     }
     return choice
-  }, [deferredPrompt])
+  }, [deferredPrompt, portal])
 
   const value = useMemo(
     () => ({

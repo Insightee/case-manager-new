@@ -324,7 +324,7 @@ export function PortalShell({ portal }) {
   }, [activeElapsedSeconds])
 
   return (
-    <PortalInstallProvider portal={portal}>
+    <PortalInstallProvider key={portal} portal={portal}>
     <div className={shellClass}>
       <SkipLink />
       <header className={`app-mobile-topbar${showMobileDrawer ? ' app-mobile-topbar--drawer-only' : ''}`}>

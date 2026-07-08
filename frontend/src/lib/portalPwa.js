@@ -36,6 +36,31 @@ function installBannerDismissKey(portal) {
   return `insightcase:install-banner-dismissed:${portal}`
 }
 
+function portalInstalledKey(portal) {
+  return `insightcase:portal-installed:${portal}`
+}
+
+export function isPortalMarkedInstalled(portal) {
+  if (typeof localStorage === 'undefined') return false
+  return localStorage.getItem(portalInstalledKey(portal)) === '1'
+}
+
+export function markPortalInstalled(portal) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(portalInstalledKey(portal), '1')
+}
+
+export function clearPortalInstalled(portal) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.removeItem(portalInstalledKey(portal))
+}
+
+/** True when opened as installed app or user completed install for this portal. */
+export function isPortalInstalled(portal) {
+  if (isStandaloneDisplay()) return true
+  return isPortalMarkedInstalled(portal)
+}
+
 export function isInstallBannerDismissed(portal) {
   if (typeof localStorage === 'undefined') return false
   const raw = localStorage.getItem(installBannerDismissKey(portal))
