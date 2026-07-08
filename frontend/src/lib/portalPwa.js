@@ -48,6 +48,7 @@ export function isPortalMarkedInstalled(portal) {
 export function markPortalInstalled(portal) {
   if (typeof localStorage === 'undefined') return
   localStorage.setItem(portalInstalledKey(portal), '1')
+  dismissInstallCoach(portal)
 }
 
 export function clearPortalInstalled(portal) {
@@ -75,6 +76,20 @@ export function dismissInstallBanner(portal) {
   localStorage.setItem(installBannerDismissKey(portal), String(Date.now()))
 }
 
+function installCoachDismissKey(portal) {
+  return `insightcase:install-coach-dismissed:${portal}`
+}
+
+export function isInstallCoachDismissed(portal) {
+  if (typeof localStorage === 'undefined') return false
+  return localStorage.getItem(installCoachDismissKey(portal)) === '1'
+}
+
+export function dismissInstallCoach(portal) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(installCoachDismissKey(portal), '1')
+}
+
 export function isStandaloneDisplay() {
   if (typeof window === 'undefined') return false
   return (
@@ -96,14 +111,18 @@ export function isIosSafari() {
   return isIos && isSafariBrowser()
 }
 
-/** Desktop Safari on macOS (Add to Dock — no beforeinstallprompt). */
-export function isMacSafari() {
+/** Desktop macOS (excludes iPad/iPhone). */
+export function isMacDesktop() {
   if (typeof navigator === 'undefined') return false
   const ua = navigator.userAgent || ''
   const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
   if (isIos) return false
-  const isMac = /Mac/.test(navigator.platform || '') || /Macintosh/.test(ua)
-  return isMac && isSafariBrowser()
+  return /Mac/.test(navigator.platform || '') || /Macintosh/.test(ua)
+}
+
+/** Desktop Safari on macOS (Add to Dock — no beforeinstallprompt). */
+export function isMacSafari() {
+  return isMacDesktop() && isSafariBrowser()
 }
 
 function upsertLink(rel, href, extra = {}) {
