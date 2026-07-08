@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   applyPortalPwaMeta,
   isIosSafari,
@@ -6,15 +6,14 @@ import {
   isStandaloneDisplay,
   PORTAL_PWA,
 } from '../lib/portalPwa.js'
-import { useIsMobilePortal } from './useMediaQuery.js'
+import { PortalInstallContext } from './portalInstallContext.js'
 
-export function usePortalPwa(portal, options = {}) {
-  const { surface = 'topbar' } = options
+export function PortalInstallProvider({ portal, children }) {
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [installed, setInstalled] = useState(() => isStandaloneDisplay())
-  const [iosSafari] = useState(() => isIosSafari())
-  const [macSafari] = useState(() => isMacSafari())
-  const isMobilePortal = useIsMobilePortal()
+  const iosSafari = useMemo(() => isIosSafari(), [])
+  const macSafari = useMemo(() => isMacSafari(), [])
+  const config = PORTAL_PWA[portal] ?? null
 
   useEffect(() => {
     applyPortalPwaMeta(portal)
@@ -46,19 +45,10 @@ export function usePortalPwa(portal, options = {}) {
     }
   }, [])
 
-  const config = PORTAL_PWA[portal]
-  const canNativeInstall = Boolean(deferredPrompt)
-  const canShowInstall =
-    Boolean(config) &&
-    !installed &&
-    (surface === 'banner'
-      ? isMobilePortal
-      : surface === 'sidebar'
-        ? canNativeInstall || iosSafari || macSafari
-        : isMobilePortal || canNativeInstall || iosSafari || macSafari)
-
   const promptInstall = useCallback(async () => {
-    if (!deferredPrompt) return { outcome: 'unavailable' }
+    if (!deferredPrompt) {
+      return { outcome: 'unavailable' }
+    }
     deferredPrompt.prompt()
     const choice = await deferredPrompt.userChoice
     setDeferredPrompt(null)
@@ -68,13 +58,18 @@ export function usePortalPwa(portal, options = {}) {
     return choice
   }, [deferredPrompt])
 
-  return {
-    config,
-    installed,
-    iosSafari,
-    macSafari,
-    canNativeInstall,
-    canShowInstall,
-    promptInstall,
-  }
+  const value = useMemo(
+    () => ({
+      portal,
+      config,
+      installed,
+      iosSafari,
+      macSafari,
+      canNativeInstall: Boolean(deferredPrompt),
+      promptInstall,
+    }),
+    [portal, config, installed, iosSafari, macSafari, deferredPrompt, promptInstall],
+  )
+
+  return <PortalInstallContext.Provider value={value}>{children}</PortalInstallContext.Provider>
 }

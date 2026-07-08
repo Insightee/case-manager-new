@@ -16,10 +16,8 @@ function DownloadIcon() {
   )
 }
 
-export function PortalInstallButton({ portal, variant = 'topbar' }) {
-  const { config, canShowInstall, runInstall, sheet, closeSheet } = usePortalInstallActions(portal, {
-    surface: variant,
-  })
+export function PortalInstallButton({ variant = 'topbar' }) {
+  const { config, canShowInstall, runInstall, sheet, closeSheet } = usePortalInstallActions(variant)
 
   if (!canShowInstall || !config) {
     return null

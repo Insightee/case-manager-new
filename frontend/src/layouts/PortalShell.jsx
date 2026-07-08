@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { PortalInstallProvider } from '../context/PortalInstallContext.jsx'
 import { isCaseManagerOnlyRole } from '../lib/adminCasePipeline.js'
 import { clinicalProductModuleIds } from '../lib/moduleAccess.js'
 import { usePageMeta } from '../hooks/usePageMeta.js'
@@ -323,6 +324,7 @@ export function PortalShell({ portal }) {
   }, [activeElapsedSeconds])
 
   return (
+    <PortalInstallProvider portal={portal}>
     <div className={shellClass}>
       <SkipLink />
       <header className={`app-mobile-topbar${showMobileDrawer ? ' app-mobile-topbar--drawer-only' : ''}`}>
@@ -350,7 +352,7 @@ export function PortalShell({ portal }) {
           </div>
         </div>
         <div className="app-mobile-topbar__end">
-          <PortalInstallButton portal={portal} />
+          <PortalInstallButton />
           {!showMobileDrawer ? (
             <div className="app-mobile-topbar__account">
               <NotificationBell portal={portal} />
@@ -501,7 +503,7 @@ export function PortalShell({ portal }) {
             </div>
           </div>
           <div className="app-sidebar__brand-actions">
-            <PortalInstallButton portal={portal} variant="sidebar" />
+            <PortalInstallButton variant="sidebar" />
             <NotificationBell portal={portal} />
           </div>
         </div>
@@ -608,7 +610,8 @@ export function PortalShell({ portal }) {
         ) : null}
         <Outlet />
       </main>
-      <PortalInstallBanner key={portal} portal={portal} />
+      <PortalInstallBanner />
     </div>
+    </PortalInstallProvider>
   )
 }

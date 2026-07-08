@@ -1,30 +1,53 @@
 import { useCallback, useState } from 'react'
-import { usePortalPwa } from './usePortalPwa.js'
+import { usePortalInstall } from '../context/usePortalInstall.js'
+import { useIsMobilePortal } from './useMediaQuery.js'
 
-export function usePortalInstallActions(portal, options = {}) {
-  const pwa = usePortalPwa(portal, options)
+function canShowInstallSurface(surface, { installed, config, canNativeInstall, iosSafari, macSafari, isMobilePortal }) {
+  if (!config || installed) {
+    return false
+  }
+  if (surface === 'banner') {
+    return isMobilePortal
+  }
+  if (surface === 'sidebar') {
+    return canNativeInstall || iosSafari || macSafari
+  }
+  return isMobilePortal || canNativeInstall || iosSafari || macSafari
+}
+
+export function usePortalInstallActions(surface = 'topbar') {
+  const install = usePortalInstall()
+  const isMobilePortal = useIsMobilePortal()
   const [sheet, setSheet] = useState(null)
 
   const closeSheet = useCallback(() => setSheet(null), [])
 
+  const canShowInstall = canShowInstallSurface(surface, {
+    ...install,
+    isMobilePortal,
+  })
+
   const runInstall = useCallback(async () => {
-    if (pwa.canNativeInstall) {
-      await pwa.promptInstall()
-      return
+    if (install.canNativeInstall) {
+      return install.promptInstall()
     }
-    if (pwa.iosSafari) {
+    if (install.iosSafari) {
       setSheet('ios')
-      return
+      return { outcome: 'sheet' }
     }
-    if (pwa.macSafari) {
+    if (install.macSafari) {
       setSheet('mac')
-      return
+      return { outcome: 'sheet' }
     }
     setSheet('generic')
-  }, [pwa.canNativeInstall, pwa.iosSafari, pwa.macSafari, pwa.promptInstall])
+    return { outcome: 'sheet' }
+  }, [install.canNativeInstall, install.iosSafari, install.macSafari, install.promptInstall])
 
   return {
-    ...pwa,
+    config: install.config,
+    installed: install.installed,
+    canShowInstall,
+    canNativeInstall: install.canNativeInstall,
     sheet,
     closeSheet,
     runInstall,

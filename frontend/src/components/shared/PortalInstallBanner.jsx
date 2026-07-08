@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { usePortalInstall } from '../../context/usePortalInstall.js'
 import { usePortalInstallActions } from '../../hooks/usePortalInstallActions.js'
 import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
 import { dismissInstallBanner, isInstallBannerDismissed } from '../../lib/portalPwa.js'
@@ -7,14 +8,13 @@ import './portal-install.css'
 
 const BANNER_DELAY_MS = 2500
 
-export function PortalInstallBanner({ portal }) {
+export function PortalInstallBanner() {
+  const { portal } = usePortalInstall()
   const isMobilePortal = useIsMobilePortal()
   const [revealed, setRevealed] = useState(false)
   const [dismissedSession, setDismissedSession] = useState(false)
   const dismissed = dismissedSession || isInstallBannerDismissed(portal)
-  const { config, canShowInstall, installed, runInstall, sheet, closeSheet } = usePortalInstallActions(portal, {
-    surface: 'banner',
-  })
+  const { config, canShowInstall, installed, runInstall, sheet, closeSheet } = usePortalInstallActions('banner')
 
   const eligible = isMobilePortal && canShowInstall && !dismissed && !installed
 
