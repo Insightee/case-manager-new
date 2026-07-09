@@ -48,8 +48,18 @@ export default defineConfig({
         {
           command: 'npm run dev -- --host 127.0.0.1 --port 5173',
           url: baseURL,
-          reuseExistingServer: !process.env.CI,
+          reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === 'true',
           timeout: 120_000,
+          env: {
+            ...process.env,
+            VITE_ENABLE_REPORTS: 'true',
+            VITE_ENABLE_REPORT_BUILDER: 'true',
+            VITE_ENABLE_BILLING: 'true',
+            VITE_REPORTS_REVAMP: 'false',
+            VITE_CASE_REPORTS_TAB_V2: 'false',
+            VITE_STRUCTURED_SESSION_EVIDENCE: 'false',
+            VITE_GOALS_STRATEGIES_ENGINE_V2: 'false',
+          },
         },
       ],
 })

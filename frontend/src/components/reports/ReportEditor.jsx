@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { apiUpload } from '../../lib/apiClient.js'
+import { uploadMonthlyReportImage } from '../../lib/monthlyReportApi.js'
 import { compressImageFile } from '../../lib/compressImage.js'
 import { dehydrateReportImages, hydrateReportImages, registerReportImageBlobUrl } from '../../lib/reportHtml.js'
 import { ReportImageExtension } from '../../lib/reportImageExtension.js'
@@ -164,7 +164,7 @@ export function ReportEditor({
       const compressed = await compressImageFile(file)
       const fd = new FormData()
       fd.append('file', compressed)
-      const res = await apiUpload(`/api/v1/reports/monthly/${reportId}/images`, fd)
+      const res = await uploadMonthlyReportImage(reportId, fd)
       const apiPath = res.url || `/api/v1/reports/images/${res.id}`
       const blobUrl = URL.createObjectURL(compressed)
       registerReportImageBlobUrl(res.id, blobUrl)

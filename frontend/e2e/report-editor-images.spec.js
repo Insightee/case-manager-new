@@ -38,7 +38,7 @@ test.describe('Report editor images', () => {
 
     await loginTherapist(page)
     await page.goto('/therapist/reports')
-    await page.getByRole('button', { name: '+ Create Draft' }).click()
+    await page.getByRole('button', { name: '+ Create New Draft' }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
 
     const caseSelect = page.getByLabel(/case/i)

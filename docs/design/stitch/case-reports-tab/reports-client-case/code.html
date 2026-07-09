@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Child Intervention | Reports Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&amp;family=Manrope:wght@600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-tertiary": "#ffffff",
+            "surface-tint": "#50625a",
+            "surface-container-low": "#f3f3f4",
+            "on-primary-container": "#75887f",
+            "inverse-primary": "#b7cbc1",
+            "on-primary": "#ffffff",
+            "surface": "#f9f9f9",
+            "surface-dim": "#dadada",
+            "surface-container-lowest": "#ffffff",
+            "outline-variant": "#c2c8c3",
+            "surface-bright": "#f9f9f9",
+            "on-secondary-fixed": "#002115",
+            "inverse-on-surface": "#f0f1f1",
+            "on-surface-variant": "#424845",
+            "error-container": "#ffdad6",
+            "on-secondary-fixed-variant": "#294e3f",
+            "on-secondary": "#ffffff",
+            "surface-variant": "#e2e2e2",
+            "inverse-surface": "#2f3131",
+            "tertiary-fixed-dim": "#68dba9",
+            "primary-container": "#0e1f19",
+            "tertiary-container": "#002114",
+            "on-error": "#ffffff",
+            "surface-container-highest": "#e2e2e2",
+            "secondary-fixed-dim": "#a8cfbc",
+            "secondary": "#416656",
+            "on-secondary-container": "#476c5b",
+            "background": "#f9f9f9",
+            "on-tertiary-fixed-variant": "#005137",
+            "on-surface": "#1a1c1c",
+            "secondary-container": "#c3ecd7",
+            "on-primary-fixed": "#0e1f19",
+            "error": "#ba1a1a",
+            "primary": "#000000",
+            "on-background": "#1a1c1c",
+            "surface-container-high": "#e8e8e8",
+            "surface-container": "#eeeeee",
+            "on-primary-fixed-variant": "#394a43",
+            "secondary-fixed": "#c3ecd7",
+            "primary-fixed-dim": "#b7cbc1",
+            "primary-fixed": "#d3e7dd",
+            "on-tertiary-fixed": "#002114",
+            "on-tertiary-container": "#069669",
+            "outline": "#737875",
+            "on-error-container": "#93000a",
+            "tertiary-fixed": "#85f8c4",
+            "tertiary": "#000000"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "spacing": {
+            "margin-mobile": "16px",
+            "sidebar-width": "280px",
+            "gutter": "24px",
+            "margin-desktop": "40px",
+            "base": "8px"
+          },
+          "fontFamily": {
+            "headline-md": ["Manrope"],
+            "body-md": ["Inter"],
+            "label-sm": ["JetBrains Mono"],
+            "body-lg": ["Inter"],
+            "headline-lg-mobile": ["Manrope"],
+            "headline-lg": ["Manrope"]
+          },
+          "fontSize": {
+            "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+            "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+            "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+            "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+            "headline-lg-mobile": ["30px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+            "headline-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body { font-family: 'Inter', sans-serif; background-color: #f9f9f9; }
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    .sidebar-gradient { background: linear-gradient(180deg, #0b1c16 0%, #06110d 100%); }
+    .glass-effect { backdrop-filter: blur(8px); background: rgba(255, 255, 255, 0.8); }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="flex min-h-screen text-on-surface">
+<!-- Sidebar -->
+<aside class="sidebar-width hidden md:flex flex-col sidebar-gradient fixed h-screen z-50 text-white">
+<div class="px-6 py-8">
+<div class="flex items-center gap-3 mb-10">
+<div class="w-10 h-10 bg-secondary-fixed rounded-xl flex items-center justify-center">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">child_care</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md leading-none">InsiteCase</h1>
+<p class="text-[10px] opacity-60 tracking-widest uppercase mt-1">Therapist Portal</p>
+</div>
+</div>
+<div class="bg-white/10 rounded-xl p-4 mb-8 flex items-center gap-3 border border-white/5">
+<div class="w-10 h-10 rounded-full bg-tertiary-fixed flex items-center justify-center text-primary-container font-bold">T</div>
+<div class="flex-1 min-w-0">
+<p class="font-medium truncate">Therapist Neha</p>
+<p class="text-xs opacity-60">Clinical Lead</p>
+</div>
+<span class="material-symbols-outlined opacity-40 text-sm">chevron_right</span>
+</div>
+<nav class="space-y-6">
+<div>
+<p class="text-[11px] font-semibold opacity-40 uppercase tracking-widest mb-4 px-2">Dashboard</p>
+<ul class="space-y-1">
+<li>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-secondary-fixed/10 text-secondary-fixed border-l-4 border-secondary-fixed" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="text-sm font-medium">My Cases</span>
+</a>
+</li>
+<li class="pl-10 space-y-1 mt-2">
+<a class="block text-sm opacity-60 hover:opacity-100 py-1.5 transition-all" href="#">Overview</a>
+<a class="block text-sm font-semibold text-secondary-fixed py-1.5 transition-all" href="#">Reports</a>
+<a class="block text-sm opacity-60 hover:opacity-100 py-1.5 transition-all" href="#">Goals &amp; Strategies</a>
+<a class="block text-sm opacity-60 hover:opacity-100 py-1.5 transition-all" href="#">Logs</a>
+<a class="block text-sm opacity-60 hover:opacity-100 py-1.5 transition-all" href="#">Insights</a>
+</li>
+</ul>
+</div>
+<div>
+<p class="text-[11px] font-semibold opacity-40 uppercase tracking-widest mb-4 px-2">Session Logs</p>
+<ul class="space-y-1">
+<li><a class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 opacity-60 transition-all" href="#"><span class="material-symbols-outlined">description</span><span class="text-sm">Reports</span></a></li>
+</ul>
+</div>
+<div>
+<p class="text-[11px] font-semibold opacity-40 uppercase tracking-widest mb-4 px-2">Finance</p>
+<ul class="space-y-1">
+<li><a class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 opacity-60 transition-all" href="#"><span class="material-symbols-outlined">receipt_long</span><span class="text-sm">Invoices</span></a></li>
+</ul>
+</div>
+</nav>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 md:ml-[280px] min-h-screen">
+<!-- Top Bar -->
+<header class="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-surface-container h-16 flex items-center justify-between px-8">
+<div class="flex items-center gap-4">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center font-bold text-xs">AM</div>
+<div>
+<h2 class="font-semibold text-sm">Aarav M. <span class="ml-2 font-mono text-[10px] bg-surface-container px-2 py-0.5 rounded text-on-surface-variant">IC-2026-041</span></h2>
+</div>
+<div class="h-4 w-[1px] bg-outline-variant mx-2"></div>
+<div class="flex gap-1">
+<span class="px-2 py-0.5 bg-secondary-fixed/30 text-secondary text-[10px] font-bold rounded uppercase">Shadow Support</span>
+<span class="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded uppercase flex items-center gap-1">
+<span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Active
+          </span>
+</div>
+</div>
+<button class="flex items-center gap-2 px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-medium hover:bg-surface transition-colors">
+<span class="material-symbols-outlined text-sm">sync_alt</span>
+        Change case
+      </button>
+</header>
+<!-- Content Area -->
+<div class="max-w-[1200px] mx-auto p-8">
+<!-- Sub Navigation -->
+<nav class="flex border-b border-surface-container mb-10 overflow-x-auto hide-scrollbar">
+<a class="px-4 py-3 text-sm font-medium text-on-surface-variant hover:text-primary border-b-2 border-transparent" href="#">Overview</a>
+<a class="px-4 py-3 text-sm font-semibold text-primary border-b-2 border-primary" href="#">Reports</a>
+<a class="px-4 py-3 text-sm font-medium text-on-surface-variant hover:text-primary border-b-2 border-transparent" href="#">Goals &amp; Strategies</a>
+<a class="px-4 py-3 text-sm font-medium text-on-surface-variant hover:text-primary border-b-2 border-transparent" href="#">Logs</a>
+<a class="px-4 py-3 text-sm font-medium text-on-surface-variant hover:text-primary border-b-2 border-transparent" href="#">Insights</a>
+<a class="px-4 py-3 text-sm font-medium text-on-surface-variant hover:text-primary border-b-2 border-transparent" href="#">Documents</a>
+</nav>
+<!-- Page Hero -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-primary tracking-tight">Reports</h1>
+<p class="text-on-surface-variant mt-2 max-w-2xl font-body-md text-body-md">
+            View report history, complete due reports, and track IEP/progress review status with neuro-affirming evidence and longitudinal support tracking.
+          </p>
+</div>
+<div class="relative group">
+<button class="bg-primary text-on-primary px-6 py-3 rounded-xl font-semibold flex items-center gap-3 transition-transform active:scale-95 shadow-sm">
+<span class="material-symbols-outlined">add_circle</span>
+            Add / Create Report
+            <span class="material-symbols-outlined text-sm opacity-60">expand_more</span>
+</button>
+<!-- Mock Dropdown -->
+<div class="absolute right-0 mt-2 w-64 bg-white border border-outline-variant rounded-xl shadow-xl overflow-hidden opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all z-10">
+<div class="py-2">
+<button class="w-full text-left px-4 py-2 text-sm hover:bg-surface flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary opacity-70">visibility</span> Observation Report
+              </button>
+<button class="w-full text-left px-4 py-2 text-sm hover:bg-surface flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary opacity-70">calendar_month</span> Monthly Report
+              </button>
+<button class="w-full text-left px-4 py-2 text-sm hover:bg-surface flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary opacity-70">psychology</span> IEP Review
+              </button>
+<button class="w-full text-left px-4 py-2 text-sm hover:bg-surface flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary opacity-70">trending_up</span> Progress Report
+              </button>
+<div class="border-t border-surface-container my-1"></div>
+<button class="w-full text-left px-4 py-2 text-sm hover:bg-surface flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary opacity-70">groups</span> CM Meeting Note
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 1: Needs Your Attention -->
+<section class="mb-14">
+<div class="flex items-center justify-between mb-5 px-1">
+<h3 class="font-headline-md text-headline-md text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">error</span>
+            Needs Your Attention
+          </h3>
+<span class="text-xs font-label-sm text-error uppercase font-bold tracking-widest px-2 py-1 bg-error-container/40 rounded">3 Tasks</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="bg-white border-l-4 border-error p-6 rounded-r-xl shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold text-error uppercase tracking-widest px-2 py-0.5 bg-error-container/30 rounded">Due in 3 days</span>
+<span class="material-symbols-outlined text-on-surface-variant">more_vert</span>
+</div>
+<h4 class="font-bold text-lg mb-1">Monthly Report - July 2026</h4>
+<p class="text-sm text-on-surface-variant mb-5">Drafting support evidence for social engagement goals.</p>
+<div class="flex items-center justify-between">
+<div class="flex -space-x-2">
+<div class="w-7 h-7 rounded-full bg-primary-fixed border-2 border-white flex items-center justify-center text-[10px] font-bold">TN</div>
+</div>
+<button class="text-primary font-semibold text-sm hover:underline flex items-center gap-1">
+                Continue Draft <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</div>
+<div class="bg-white border-l-4 border-secondary-fixed p-6 rounded-r-xl shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold text-secondary uppercase tracking-widest px-2 py-0.5 bg-secondary-container/50 rounded">Upcoming</span>
+<span class="material-symbols-outlined text-on-surface-variant">more_vert</span>
+</div>
+<h4 class="font-bold text-lg mb-1">IEP Review</h4>
+<p class="text-sm text-on-surface-variant mb-5">Comprehensive annual review session scheduled for Aug 12.</p>
+<button class="w-full py-2 border border-outline-variant rounded-lg text-sm font-medium hover:bg-surface transition-colors">Prepare Documents</button>
+</div>
+<div class="bg-white border-l-4 border-primary-container p-6 rounded-r-xl shadow-sm hover:shadow-md transition-shadow">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold text-primary-container uppercase tracking-widest px-2 py-0.5 bg-surface-container rounded">Feedback Received</span>
+<span class="material-symbols-outlined text-on-surface-variant">more_vert</span>
+</div>
+<h4 class="font-bold text-lg mb-1">Monthly Report - June 2026</h4>
+<p class="text-sm text-on-surface-variant mb-5">CM requested additional observation data for sensory goals.</p>
+<div class="flex items-center gap-3 mt-4 px-3 py-2 bg-surface-container-low rounded-lg border border-outline-variant/30">
+<span class="material-symbols-outlined text-primary-container text-sm">comment</span>
+<span class="text-[11px] text-on-surface-variant italic truncate">"Please expand on the playground session evidence..."</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 2: Current Report Status (Bento Grid Style) -->
+<section class="mb-14">
+<h3 class="font-headline-md text-headline-md text-primary mb-6">Current Report Lifecycle</h3>
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between h-44 group hover:border-secondary transition-all">
+<div>
+<div class="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-green-600" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-tighter">Observation Report</p>
+<p class="text-xs font-semibold text-green-600">Approved</p>
+</div>
+<div class="mt-auto">
+<p class="text-[10px] text-on-surface-variant/60">Updated: Jul 15</p>
+<p class="text-[10px] text-on-surface-variant/60">Next: Sep 2026</p>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between h-44 hover:border-secondary transition-all">
+<div>
+<div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-blue-600" style="font-variation-settings: 'FILL' 1;">description</span>
+</div>
+<p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-tighter">IEP Review</p>
+<p class="text-xs font-semibold text-blue-600">Active</p>
+</div>
+<div class="mt-auto">
+<p class="text-[10px] text-on-surface-variant/60">Updated: Jun 10</p>
+<p class="text-[10px] text-on-surface-variant/60">Next: Jun 2027</p>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between h-44 hover:border-secondary transition-all">
+<div>
+<div class="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-amber-600">pending_actions</span>
+</div>
+<p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-tighter">Monthly Report</p>
+<p class="text-xs font-semibold text-amber-600">July Pending</p>
+</div>
+<div class="mt-auto">
+<p class="text-[10px] text-on-surface-variant/60">Updated: Today</p>
+<p class="text-[10px] text-error font-bold">Due: Jul 31</p>
+</div>
+</div>
+<div class="bg-surface border border-dashed border-outline-variant p-4 rounded-xl flex flex-col justify-between h-44 opacity-60">
+<div>
+<div class="w-10 h-10 rounded-full bg-white flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-on-surface-variant">hourglass_empty</span>
+</div>
+<p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-tighter">Progress Report</p>
+<p class="text-xs font-semibold">Not Due</p>
+</div>
+<div class="mt-auto">
+<p class="text-[10px] text-on-surface-variant/60">Next: Dec 2026</p>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex flex-col justify-between h-44 hover:border-secondary transition-all">
+<div>
+<div class="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-purple-600" style="font-variation-settings: 'FILL' 1;">forum</span>
+</div>
+<p class="text-[11px] font-bold text-on-surface-variant uppercase tracking-tighter">CM Meeting Notes</p>
+<p class="text-xs font-semibold text-purple-600">2 Notes</p>
+</div>
+<div class="mt-auto">
+<p class="text-[10px] text-on-surface-variant/60">Updated: Jul 20</p>
+<p class="text-[10px] text-on-surface-variant/60">Monthly cycle</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 3: Simple Filter Bar -->
+<section class="mb-8">
+<div class="bg-white p-4 rounded-2xl border border-surface-container flex flex-wrap items-center gap-4 shadow-sm">
+<div class="flex-1 min-w-[200px] relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="w-full bg-surface border-none pl-10 pr-4 py-2 rounded-lg text-sm focus:ring-1 focus:ring-secondary" placeholder="Search by report ID or keywords..." type="text"/>
+</div>
+<div class="flex items-center gap-3">
+<select class="bg-surface border-none text-xs font-medium py-2 pl-3 pr-8 rounded-lg focus:ring-1 focus:ring-secondary appearance-none">
+<option>Month: All</option>
+<option>July 2026</option>
+<option>June 2026</option>
+</select>
+<select class="bg-surface border-none text-xs font-medium py-2 pl-3 pr-8 rounded-lg focus:ring-1 focus:ring-secondary appearance-none">
+<option>Year: 2026</option>
+<option>2025</option>
+</select>
+<select class="bg-surface border-none text-xs font-medium py-2 pl-3 pr-8 rounded-lg focus:ring-1 focus:ring-secondary appearance-none">
+<option>Report Type: All</option>
+<option>Monthly</option>
+<option>IEP</option>
+</select>
+<select class="bg-surface border-none text-xs font-medium py-2 pl-3 pr-8 rounded-lg focus:ring-1 focus:ring-secondary appearance-none">
+<option>Status: All</option>
+<option>Approved</option>
+<option>Draft</option>
+</select>
+</div>
+<button class="bg-surface-container text-on-surface-variant px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-surface-variant transition-colors">Clear Filters</button>
+</div>
+</section>
+<!-- Section 4: Report History Timeline -->
+<section>
+<h3 class="font-headline-md text-headline-md text-primary mb-8">Report History</h3>
+<div class="space-y-10 relative before:absolute before:left-3.5 before:top-2 before:bottom-2 before:w-[2px] before:bg-surface-container">
+<!-- July 2026 -->
+<div>
+<div class="flex items-center gap-4 mb-6 relative">
+<div class="w-7 h-7 rounded-full bg-primary-container z-10 border-4 border-white"></div>
+<h4 class="font-bold text-primary">July 2026</h4>
+</div>
+<div class="ml-10 space-y-4">
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex items-center justify-between group hover:shadow-md transition-shadow">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-surface flex items-center justify-center text-amber-600">
+<span class="material-symbols-outlined">edit_note</span>
+</div>
+<div>
+<h5 class="font-bold text-sm">Monthly Report</h5>
+<p class="text-xs text-on-surface-variant">Client progress against social play goals. Neuro-affirming evidence focus.</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<span class="px-3 py-1 bg-amber-50 text-amber-700 text-[10px] font-bold uppercase rounded">Draft</span>
+<div class="text-right">
+<p class="text-[10px] text-on-surface-variant uppercase font-medium">Last Modified</p>
+<p class="text-xs font-bold text-primary">Today, 09:45 AM</p>
+</div>
+<button class="w-8 h-8 rounded-full border border-outline-variant flex items-center justify-center hover:bg-primary hover:text-white transition-all">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex items-center justify-between group hover:shadow-md transition-shadow">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-surface flex items-center justify-center text-purple-600">
+<span class="material-symbols-outlined">groups</span>
+</div>
+<div>
+<h5 class="font-bold text-sm">CM Meeting Note</h5>
+<p class="text-xs text-on-surface-variant">Review of support strategy for classroom engagement. 45 min session.</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<span class="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold uppercase rounded">Completed</span>
+<div class="text-right">
+<p class="text-[10px] text-on-surface-variant uppercase font-medium">Logged Date</p>
+<p class="text-xs font-bold text-primary">Jul 20, 2026</p>
+</div>
+<button class="w-8 h-8 rounded-full border border-outline-variant flex items-center justify-center hover:bg-primary hover:text-white transition-all">
+<span class="material-symbols-outlined text-sm">visibility</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- June 2026 -->
+<div>
+<div class="flex items-center gap-4 mb-6 relative">
+<div class="w-7 h-7 rounded-full bg-surface-container z-10 border-4 border-white"></div>
+<h4 class="font-bold text-on-surface-variant">June 2026</h4>
+</div>
+<div class="ml-10 space-y-4">
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex items-center justify-between group hover:shadow-md transition-shadow">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-surface flex items-center justify-center text-blue-600">
+<span class="material-symbols-outlined">psychology</span>
+</div>
+<div>
+<h5 class="font-bold text-sm">IEP (Individualized Education Program)</h5>
+<p class="text-xs text-on-surface-variant">Annual goal setting and longitudinal support mapping for 2026-27 cycle.</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<span class="px-3 py-1 bg-blue-50 text-blue-700 text-[10px] font-bold uppercase rounded">Active</span>
+<div class="text-right">
+<p class="text-[10px] text-on-surface-variant uppercase font-medium">Effective Date</p>
+<p class="text-xs font-bold text-primary">Jun 10, 2026</p>
+</div>
+<button class="w-8 h-8 rounded-full border border-outline-variant flex items-center justify-center hover:bg-primary hover:text-white transition-all">
+<span class="material-symbols-outlined text-sm">file_download</span>
+</button>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex items-center justify-between group hover:shadow-md transition-shadow">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-surface flex items-center justify-center text-green-600">
+<span class="material-symbols-outlined">search_check</span>
+</div>
+<div>
+<h5 class="font-bold text-sm">Observation Report</h5>
+<p class="text-xs text-on-surface-variant">Classroom sensory processing observation. Supporting evidence provided.</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<span class="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold uppercase rounded">Approved</span>
+<div class="text-right">
+<p class="text-[10px] text-on-surface-variant uppercase font-medium">Approved by CM</p>
+<p class="text-xs font-bold text-primary">Jun 15, 2026</p>
+</div>
+<button class="w-8 h-8 rounded-full border border-outline-variant flex items-center justify-center hover:bg-primary hover:text-white transition-all">
+<span class="material-symbols-outlined text-sm">visibility</span>
+</button>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex items-center justify-between group hover:shadow-md transition-shadow">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-surface flex items-center justify-center text-green-600">
+<span class="material-symbols-outlined">calendar_month</span>
+</div>
+<div>
+<h5 class="font-bold text-sm">Monthly Report</h5>
+<p class="text-xs text-on-surface-variant">June support cycle summary. Progress toward peer interaction goals.</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<span class="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold uppercase rounded">Approved</span>
+<div class="text-right">
+<p class="text-[10px] text-on-surface-variant uppercase font-medium">Logged Date</p>
+<p class="text-xs font-bold text-primary">Jun 30, 2026</p>
+</div>
+<button class="w-8 h-8 rounded-full border border-outline-variant flex items-center justify-center hover:bg-primary hover:text-white transition-all">
+<span class="material-symbols-outlined text-sm">visibility</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- May 2026 -->
+<div>
+<div class="flex items-center gap-4 mb-6 relative">
+<div class="w-7 h-7 rounded-full bg-surface-container z-10 border-4 border-white"></div>
+<h4 class="font-bold text-on-surface-variant">May 2026</h4>
+</div>
+<div class="ml-10 space-y-4">
+<div class="bg-white border border-outline-variant p-4 rounded-xl flex items-center justify-between group hover:shadow-md transition-shadow">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-surface flex items-center justify-center text-green-600">
+<span class="material-symbols-outlined">calendar_month</span>
+</div>
+<div>
+<h5 class="font-bold text-sm">Monthly Report</h5>
+<p class="text-xs text-on-surface-variant">May support cycle summary. Initial transition goals documentation.</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<span class="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold uppercase rounded">Approved</span>
+<div class="text-right">
+<p class="text-[10px] text-on-surface-variant uppercase font-medium">Logged Date</p>
+<p class="text-xs font-bold text-primary">May 31, 2026</p>
+</div>
+<button class="w-8 h-8 rounded-full border border-outline-variant flex items-center justify-center hover:bg-primary hover:text-white transition-all">
+<span class="material-symbols-outlined text-sm">visibility</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Padding for bottom nav on mobile if needed -->
+<div class="h-24 md:hidden"></div>
+</main>
+<!-- Mobile Bottom Nav -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-4 h-20 bg-white border-t border-surface-container md:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1.5" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-[10px] mt-1 font-medium">Dashboard</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1.5" href="#">
+<span class="material-symbols-outlined">track_changes</span>
+<span class="text-[10px] mt-1 font-medium">Goals</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-5 py-1.5" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
+<span class="text-[10px] mt-1 font-medium">Reports</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1.5" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="text-[10px] mt-1 font-medium">Profile</span>
+</a>
+</nav>
+<script>
+    // Simple micro-interaction for cards
+    document.querySelectorAll('.group').forEach(card => {
+      card.addEventListener('mouseenter', () => {
+        card.style.transform = 'translateY(-2px)';
+      });
+      card.addEventListener('mouseleave', () => {
+        card.style.transform = 'translateY(0px)';
+      });
+    });
+  </script>
+</body></html>

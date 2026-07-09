@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { monthlyParentPreviewDownloadUrl } from '../../../lib/monthlyReportApi.js'
 import { ClinicalVisibilityBadge } from '../../clinical-ui/ClinicalVisibilityBadge.jsx'
 
 /**
@@ -65,7 +66,7 @@ export function ParentMonthlyPreview({ preview, reportId, isCM = false, onBack, 
         ) : null}
         {hasPdfRoute && reportId ? (
           <a
-            href={`/api/v1/reports/monthly/${reportId}/download`}
+            href={monthlyParentPreviewDownloadUrl(reportId)}
             className="clinical-btn-ghost"
             download
             style={{ fontSize: '0.8125rem', minHeight: '36px' }}

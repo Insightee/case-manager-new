@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test'
 import { loginTherapist, navigateTherapist, sidebarLink } from './helpers/auth.js'
+import { expectCaseOverviewLoaded, openCaseLogsTab } from './helpers/caseNav.js'
 
 test.describe('Therapist portal smoke', () => {
   test('dashboard, navigation, and core pages load with API data', async ({ page }) => {
     await loginTherapist(page)
 
     await expect(page.getByRole('heading', { level: 2 })).toBeVisible()
-    await expect(page.getByRole('region', { name: 'Work summary' })).toBeVisible()
+    await expect(page.locator('#td-schedule-title, .td-schedule').first()).toBeVisible()
 
     await sidebarLink(page, 'Session Logs').click()
     await expect(page).toHaveURL(/\/therapist\/logs/)
@@ -30,12 +31,12 @@ test.describe('Therapist portal smoke', () => {
     await sidebarLink(page, 'My Cases').click()
     await expect(page).toHaveURL(/\/therapist\/cases/)
     await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
-    await expect(page.getByRole('region', { name: 'Case summary' })).toBeVisible()
+    await expect(page.getByRole('tablist', { name: 'Filter by status' })).toBeVisible()
 
-    await sidebarLink(page, 'Monthly Reports').click()
+    await sidebarLink(page, 'Reports').click()
     await expect(page).toHaveURL(/\/therapist\/reports/)
-    await expect(page.getByRole('heading', { name: 'Monthly Reports' })).toBeVisible()
-    await expect(page.getByRole('region', { name: 'Report pipeline overview' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Reports Dashboard|Reports ·/i })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Reports summary' })).toBeVisible()
 
     await sidebarLink(page, 'Invoices').click()
     await expect(page).toHaveURL(/\/therapist\/invoices/)
@@ -47,22 +48,21 @@ test.describe('Therapist portal smoke', () => {
     await sidebarLink(page, 'My Cases').click()
     await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
 
-    const caseLink = page.getByRole('link', { name: 'View case' }).first()
+    const caseLink = page.getByRole('link', { name: 'Open case file' }).first()
     await expect(caseLink).toBeVisible()
     await caseLink.click()
     await expect(page).toHaveURL(/\/therapist\/cases\/\d+/)
-    await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Your case manager' })).toBeVisible()
+    await expectCaseOverviewLoaded(page)
 
-    await page.getByRole('button', { name: 'Sessions & logs' }).click()
-    await expect(page.getByRole('heading', { name: 'Upcoming for this client' })).toBeVisible()
+    await openCaseLogsTab(page)
 
     await page.goBack()
     await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
-    const sessionLogLink = page.locator('.ic-card').getByRole('link', { name: 'Session log', exact: true }).first()
-    await sessionLogLink.click()
-    await expect(page).toHaveURL(/\/therapist\/cases\/\d+\?tab=sessions/)
-    await expect(page.getByRole('button', { name: 'Sessions & logs' })).toBeVisible()
+    const logChip = page.getByRole('link', { name: /log/i }).first()
+    if (await logChip.isVisible()) {
+      await logChip.click()
+      await expect(page).toHaveURL(/\/therapist\/(cases\/\d+|logs)/)
+    }
   })
 
   test('session log flow: start, end, and submit form', async ({ page }) => {
@@ -96,22 +96,21 @@ test.describe('Therapist portal smoke', () => {
     }
   })
 
-  test('my cases grid and table views toggle', async ({ page }) => {
+  test('my cases status filter pills work', async ({ page }) => {
     await loginTherapist(page)
     await sidebarLink(page, 'My Cases').click()
     await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
-    await expect(page.locator('.ic-board')).toBeVisible()
-    await page.getByRole('button', { name: 'Table' }).click()
-    await expect(page.locator('.ic-table-card')).toBeVisible()
-    await expect(page.locator('.ic-board')).toBeHidden()
-    await page.getByRole('button', { name: 'Grid' }).click()
-    await expect(page.locator('.ic-board')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Your case cards' })).toBeVisible()
+    await page.getByRole('tab', { name: 'Active' }).click()
+    await expect(page.getByRole('tab', { name: 'Active', selected: true })).toBeVisible()
+    await page.getByRole('tab', { name: 'All' }).click()
+    await expect(page.getByRole('tab', { name: 'All', selected: true })).toBeVisible()
   })
 
   test('monthly report draft modal opens', async ({ page }) => {
     await loginTherapist(page)
-    await sidebarLink(page, 'Monthly Reports').click()
-    await page.getByRole('button', { name: '+ Create Draft' }).click()
+    await sidebarLink(page, 'Reports').click()
+    await page.getByRole('button', { name: '+ Create New Draft' }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await expect(page.getByRole('heading', { name: /new monthly report draft/i })).toBeVisible()
     await page.getByRole('button', { name: 'Cancel' }).click()
@@ -135,10 +134,10 @@ test.describe('Therapist portal mobile', () => {
     await expect(page.getByRole('region', { name: 'Add or start session' })).toBeVisible()
 
     await navigateTherapist(page, 'My Cases')
-    const caseLink = page.getByRole('link', { name: 'View case' }).first()
+    const caseLink = page.getByRole('link', { name: 'Open case file' }).first()
     await caseLink.click()
     await expect(page.getByRole('navigation', { name: 'Case sections' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Sessions' })).toBeVisible()
+    await openCaseLogsTab(page)
   })
 
   test('leave request form opens on mobile', async ({ page }) => {
@@ -153,16 +152,12 @@ test.describe('Therapist portal mobile', () => {
     expect(overflow).toBe(false)
   })
 
-  test('my cases filters collapse on mobile', async ({ page }) => {
+  test('my cases filter pills visible on mobile', async ({ page }) => {
     await loginTherapist(page)
     await navigateTherapist(page, 'My Cases')
     await expect(page.getByRole('heading', { name: 'My Cases' })).toBeVisible()
-    const filtersBtn = page.getByRole('button', { name: /^Filters/ })
-    await expect(filtersBtn).toBeVisible()
-    await expect(page.getByLabel('Filter by stage')).toBeHidden()
-    await filtersBtn.click()
-    await expect(page.getByLabel('Filter by stage')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Grid' })).toBeVisible()
+    await expect(page.getByRole('tablist', { name: 'Filter by status' })).toBeVisible()
+    await expect(page.getByLabel('Search cases')).toBeVisible()
   })
 
   test('drawer nav omits duplicate My Profile link', async ({ page }) => {

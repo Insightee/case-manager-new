@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from sqlalchemy import select
@@ -121,11 +122,54 @@ def case_manager_contact(db: Session, case: Case) -> tuple[Optional[str], Option
     return cm.full_name, cm.email
 
 
+def _child_age_label(dob: date | None) -> str | None:
+    if not dob:
+        return None
+    today = date.today()
+    years = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    return f"{years} years old"
+
+
+def _parent_names_for_child(db: Session, child_id: int) -> str | None:
+    from app.models.parent import ParentGuardian, parent_child_link
+
+    rows = db.execute(
+        select(User.full_name)
+        .select_from(parent_child_link)
+        .join(ParentGuardian, parent_child_link.c.parent_guardian_id == ParentGuardian.id)
+        .join(User, ParentGuardian.user_id == User.id)
+        .where(parent_child_link.c.child_id == child_id)
+    ).all()
+    names = [n for (n,) in rows if n]
+    return " and ".join(names) if names else None
+
+
+def _primary_therapist_name(db: Session, case_id: int) -> str | None:
+    row = db.scalar(
+        select(User.full_name)
+        .select_from(CaseAssignment)
+        .join(User, CaseAssignment.therapist_user_id == User.id)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.start_date.desc())
+        .limit(1)
+    )
+    return row
+
+
 def case_to_read(case: Case, db: Session | None = None) -> dict:
     service_addr = case_service_address_read(case)
     cm_name, cm_email = (None, None)
+    child_dob = case.child.date_of_birth if case.child else None
+    parent_name = None
+    therapist_name = None
     if db is not None:
         cm_name, cm_email = case_manager_contact(db, case)
+        if case.child_id:
+            parent_name = _parent_names_for_child(db, case.child_id)
+        therapist_name = _primary_therapist_name(db, case.id)
     return {
         "id": case.id,
         "case_code": case.case_code,
@@ -156,5 +200,9 @@ def case_to_read(case: Case, db: Session | None = None) -> dict:
         "billing_address_state": case.billing_address_state,
         "billing_address_pincode": case.billing_address_pincode,
         "billing_address_landmark": case.billing_address_landmark,
+        "child_date_of_birth": child_dob,
+        "child_age_label": _child_age_label(child_dob),
+        "parent_name": parent_name,
+        "therapist_name": therapist_name,
         **case_billing_dict(case),
     }

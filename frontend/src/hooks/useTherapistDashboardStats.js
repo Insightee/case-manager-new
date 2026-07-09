@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/apiClient.js'
 import { unwrapList } from '../lib/listApi.js'
+import { listMonthlyReports } from '../lib/monthlyReportApi.js'
 
 export function useTherapistDashboardStats() {
   const [stats, setStats] = useState(null)
@@ -13,12 +14,12 @@ export function useTherapistDashboardStats() {
         apiFetch('/api/v1/cases?assigned=true&page_size=100'),
         apiFetch('/api/v1/sessions?page_size=100'),
         apiFetch('/api/v1/daily-logs'),
-        apiFetch('/api/v1/reports/monthly?page_size=100'),
+        listMonthlyReports({ pageSize: 100 }),
       ])
       const caseRows = unwrapList(cases)
       const sessionRows = unwrapList(sessions)
       const logRows = unwrapList(logs)
-      const reportRows = unwrapList(reports)
+      const reportRows = Array.isArray(reports) ? reports : []
       const needsLog = sessionRows.filter((s) => s.status === 'COMPLETED' && !s.has_daily_log).length
       const pendingLogs = logRows.filter((l) => l.approval_status === 'PENDING').length
       const draftReports = reportRows.filter((r) => r.status === 'DRAFT' || r.status === 'REJECTED').length

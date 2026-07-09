@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { apiDownload, apiFetch } from '../../lib/apiClient.js'
+import { apiFetch } from '../../lib/apiClient.js'
+import { downloadMonthlyReport } from '../../lib/monthlyReportApi.js'
 import { categoryLabel } from '../../lib/reportCategories.js'
 import { reportAdminEditPath } from '../../lib/reportManagementPaths.js'
 import { ReportCommentsThread } from '../reports/ReportCommentsThread.jsx'
@@ -58,7 +59,7 @@ export function AdminReportViewPage() {
                 type="button"
                 className="admin-btn admin-btn--ghost"
                 onClick={() =>
-                  apiDownload(`/api/v1/reports/monthly/${reportId}/download`, `report_${detail.label || reportId}.pdf`)
+                  downloadMonthlyReport(reportId, `report_${detail.label || reportId}.pdf`)
                 }
               >
                 PDF

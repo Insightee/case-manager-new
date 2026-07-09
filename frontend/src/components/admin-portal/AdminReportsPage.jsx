@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, getTokens } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
-import { isReportsModuleEnabled } from '../../lib/productFeatureFlags.js'
+import { isReportsModuleEnabled, isReportBuilderEnabled } from '../../lib/productFeatureFlags.js'
 import {
   IEP_CATEGORY_ID,
   REPORT_KIND_OPTIONS,
@@ -25,6 +25,7 @@ import { AdminReportsTable } from './AdminReportsTable.jsx'
 import { AdminClientStatusReportSection } from './AdminClientStatusReportSection.jsx'
 import './admin-reports.css'
 
+import { resendMonthlyToParent } from '../../lib/monthlyReportApi.js'
 import { getApiBaseUrl } from '../../lib/apiClient.js'
 
 async function downloadExport(path, filename) {
@@ -147,7 +148,7 @@ function kpiFilterIsActive(searchParams, tab, apply) {
 }
 
 export function AdminReportsPage() {
-  if (!isReportsModuleEnabled()) {
+  if (!isReportsModuleEnabled() && !isReportBuilderEnabled()) {
     return <PortalComingSoon variant="adminReports" />
   }
   return <AdminReportsPageContent />
@@ -508,7 +509,7 @@ function AdminReportsPageContent() {
     try {
       if (row.report_type === 'monthly') {
         if (row.parent_review_status === 'CHANGES_REQUESTED') {
-          await apiFetch(`/api/v1/reports/monthly/${row.id}/resend-to-parent`, { method: 'POST' })
+          await resendMonthlyToParent(row.id)
         } else {
           if (!row.can_cm_publish && !row.can_admin_override_publish) {
             const days = row.days_until_admin_override

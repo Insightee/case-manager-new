@@ -7,6 +7,13 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 
 
+def _reports_module_active() -> bool:
+    env = settings.app_env.lower()
+    if settings.enable_reports:
+        return True
+    return env in ("development", "dev", "local", "test", "staging", "testing")
+
+
 def _feature_unavailable() -> None:
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -15,7 +22,7 @@ def _feature_unavailable() -> None:
 
 
 def require_reports() -> None:
-    if not settings.enable_reports:
+    if not _reports_module_active():
         _feature_unavailable()
 
 

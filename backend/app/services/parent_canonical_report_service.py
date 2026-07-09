@@ -82,14 +82,40 @@ def serialize_clinical_monthly_list_item_light(report: ClinicalReport, case: Cas
     }
 
 
-def merge_monthly_hub_items(engine_items: list[dict], legacy_items: list[dict]) -> list[dict]:
-    """Prefer engine monthly per caseDbId+month; keep legacy when no engine match."""
+def merge_monthly_hub_items(
+    engine_items: list[dict],
+    legacy_items: list[dict],
+    document_items: list[dict] | None = None,
+) -> list[dict]:
+    """Prefer engine monthly per caseDbId+month; then uploaded PDFs; then legacy."""
     engine_keys = {(i.get("caseDbId"), i.get("month")) for i in engine_items}
-    legacy_filtered = [
-        i for i in legacy_items
+    doc_filtered = [
+        i
+        for i in (document_items or [])
         if (i.get("caseDbId"), i.get("month")) not in engine_keys
     ]
-    return engine_items + legacy_filtered
+    covered = engine_keys | {(i.get("caseDbId"), i.get("month")) for i in doc_filtered}
+    legacy_filtered = [i for i in legacy_items if (i.get("caseDbId"), i.get("month")) not in covered]
+    return engine_items + doc_filtered + legacy_filtered
+
+
+def serialize_document_monthly_list_item(doc: dict[str, Any], case: Case | None) -> dict:
+    month = doc.get("reportMonth") or doc.get("report_month") or doc.get("title") or ""
+    return {
+        "kind": "monthly",
+        "id": f"doc-{doc.get('id')}",
+        "source": "case_documents",
+        "caseDocumentId": doc.get("id"),
+        "caseId": case.case_code if case else doc.get("caseCode", ""),
+        "caseDbId": doc.get("caseDbId") or (case.id if case else None),
+        "childName": case.child.full_name if case and case.child else doc.get("childName", ""),
+        "month": month,
+        "label": month or doc.get("title", "Monthly report"),
+        "status": "approved" if doc.get("status") == "APPROVED" else str(doc.get("status", "")).lower(),
+        "summaryPreview": (doc.get("title") or "")[:120],
+        "category": "CLIENT_MONTHLY",
+        "downloadPath": f"/api/v1/case-documents/{doc.get('id')}/download",
+    }
 
 
 def get_clinical_monthly_for_parent(

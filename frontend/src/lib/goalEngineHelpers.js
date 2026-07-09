@@ -45,3 +45,46 @@ export function sessionLogPath(caseId, goalCardId, variant = 'therapist') {
   if (goalCardId) qs.set('focus_goal_card', String(goalCardId))
   return `${base}?${qs}`
 }
+
+const ACTIVE_LIFECYCLES = new Set(['active', 'approved'])
+const PAUSED_LIFECYCLES = new Set(['paused'])
+
+export function isAssignedGoal(item) {
+  if (!item || item.scope === 'organization' || item.case_id === null) return false
+  if (item.is_pending || item.status === 'local' || item.status === 'candidate') return false
+  const life = String(item.lifecycle_status || item.status || 'active').toLowerCase()
+  if (['archived', 'achieved', 'closed', 'revised'].includes(life)) return false
+  return ACTIVE_LIFECYCLES.has(life) || PAUSED_LIFECYCLES.has(life) || item.source === 'iep'
+}
+
+export function isAssignedStrategy(item) {
+  if (!item || item.scope === 'organization' || item.case_id === null) return false
+  if (item.is_pending || item.status === 'local' || item.status === 'candidate') return false
+  if (item.status === 'archived') return false
+  return item.status === 'active' || item.status === 'approved'
+}
+
+export function isPausedItem(item) {
+  const life = String(item.lifecycle_status || item.status || '').toLowerCase()
+  return life === 'paused'
+}
+
+export function splitAssignedGoals(goals = []) {
+  const active = []
+  const paused = []
+  for (const goal of goals.filter(isAssignedGoal)) {
+    if (isPausedItem(goal)) paused.push(goal)
+    else active.push(goal)
+  }
+  return { active, paused }
+}
+
+export function splitAssignedStrategies(strategies = []) {
+  const active = []
+  const paused = []
+  for (const strategy of strategies.filter(isAssignedStrategy)) {
+    if (isPausedItem(strategy)) paused.push(strategy)
+    else active.push(strategy)
+  }
+  return { active, paused }
+}

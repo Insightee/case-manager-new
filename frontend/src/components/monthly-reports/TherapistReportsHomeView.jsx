@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
+import { isCaseReportsTabV2Active } from '../../lib/reportsRevampFlags.js'
 import { useTherapistHome, useTherapistReportsPipeline } from '../../hooks/useTherapistHome.js'
 import { CreateDraftModal } from './CreateDraftModal.jsx'
 import { ReportsSectionHeader } from '../reports-hub/ReportsSectionHeader.jsx'
@@ -83,10 +83,10 @@ function Toast({ message, visible, onDismiss }) {
 }
 
 /**
- * Shared therapist reports pipeline UI (caseload or single-case).
+ * Legacy global therapist reports pipeline (caseload or single-case filter).
+ * Case-tab dashboard uses CaseReportsTab — do not embed this view in a case.
  */
 export function TherapistReportsHomeView({
-  embedded = false,
   fixedCaseId = null,
   caseCode = null,
   childName = null,
@@ -245,13 +245,8 @@ export function TherapistReportsHomeView({
   function goToCaseReports(item) {
     const caseDbId = item.caseDbId
     if (!caseDbId) return
-    // Open the case report workspace (monthly) — not another Coming Soon / legacy screen.
-    if (embedded && String(caseDbId) === String(caseFilterId)) {
-      setSearchParams({ tab: 'reports', section: 'monthly' }, { replace: false })
-      return
-    }
-    if (isReportsRevampActive('therapist')) {
-      navigate(`/therapist/cases/${caseDbId}?tab=reports&section=monthly`)
+    if (isCaseReportsTabV2Active()) {
+      navigate(`/therapist/cases/${caseDbId}?tab=reports&section=dashboard`)
       return
     }
     navigate(`/therapist/reports?case_id=${caseDbId}`)
@@ -259,7 +254,7 @@ export function TherapistReportsHomeView({
 
   function navigateToCase(caseRow) {
     if (!caseRow?.id) return
-    if (isReportsRevampActive('therapist')) {
+    if (isCaseReportsTabV2Active()) {
       navigate(`/therapist/cases/${caseRow.id}?tab=reports&section=dashboard`)
       return
     }
@@ -306,7 +301,7 @@ export function TherapistReportsHomeView({
       />
 
       <ReportsSectionHeader
-        title={scopedToCase ? (embedded ? 'Reports Dashboard' : `Reports · ${displayChild}`) : 'Reports Dashboard'}
+        title={scopedToCase ? `Reports · ${displayChild}` : 'Reports Dashboard'}
         subtitle={
           scopedToCase
             ? `Draft, submit, and track monthly progress for ${displayChild}${displayCode ? ` (${displayCode})` : ''}.`
@@ -319,32 +314,30 @@ export function TherapistReportsHomeView({
         )}
       />
 
-      {!embedded ? (
-        <div className="reports-dashboard-case-header">
-          <ClinicalCaseHeader
-            childName={scopedToCase ? displayChild : 'All clients'}
-            caseCode={scopedToCase ? displayCode : null}
-            serviceType={
-              scopedToCase
-                ? displayService
-                : 'Pick a client to focus reports — or browse all cases below.'
-            }
-            service={scopedToCase ? selectedCase?.service : null}
-            productModule={scopedToCase ? selectedCase?.productModule : null}
-            status={scopedToCase ? displayStatus : null}
-            onChangeCase={() => setChangeCaseOpen(true)}
-            changeCaseLabel={scopedToCase ? 'Change case' : 'Pick client'}
-          />
-          <ChangeCaseSheet
-            open={changeCaseOpen}
-            cases={assignedCases}
-            currentCaseId={caseFilterId}
-            onSelect={handlePickCase}
-            onClose={() => setChangeCaseOpen(false)}
-            onViewAll={scopedToCase && onClearCaseFilter ? handleViewAllClients : undefined}
-          />
-        </div>
-      ) : null}
+      <div className="reports-dashboard-case-header">
+        <ClinicalCaseHeader
+          childName={scopedToCase ? displayChild : 'All clients'}
+          caseCode={scopedToCase ? displayCode : null}
+          serviceType={
+            scopedToCase
+              ? displayService
+              : 'Pick a client to focus reports — or browse all cases below.'
+          }
+          service={scopedToCase ? selectedCase?.service : null}
+          productModule={scopedToCase ? selectedCase?.productModule : null}
+          status={scopedToCase ? displayStatus : null}
+          onChangeCase={() => setChangeCaseOpen(true)}
+          changeCaseLabel={scopedToCase ? 'Change case' : 'Pick client'}
+        />
+        <ChangeCaseSheet
+          open={changeCaseOpen}
+          cases={assignedCases}
+          currentCaseId={caseFilterId}
+          onSelect={handlePickCase}
+          onClose={() => setChangeCaseOpen(false)}
+          onViewAll={scopedToCase && onClearCaseFilter ? handleViewAllClients : undefined}
+        />
+      </div>
 
       <ReportsDashboardSummary counts={summaryCounts} embedded={scopedToCase} />
 
@@ -425,10 +418,6 @@ export function TherapistReportsHomeView({
       {!scopedToCase ? <ReportsDashboardBottomRow upcomingReports={upcomingReports} /> : null}
     </>
   )
-
-  if (embedded) {
-    return <div className="cp-reports-hub forest-light reports-dashboard-page">{content}</div>
-  }
 
   return (
     <div className="reports-home-page forest-light reports-dashboard-page">

@@ -28,6 +28,14 @@ export function ChildSnapshotSection({ child, insight, selected, onToggleSelect,
 
       <p className="ci-child-snapshot__summary">{child.summaryParagraph}</p>
 
+      {child.clinicalPointers?.length ? (
+        <ul className="ci-child-snapshot__pointers">
+          {child.clinicalPointers.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : null}
+
       <div className="ci-child-snapshot__grid">
         {CARD_DEFS.map(({ key, icon, label }) => {
           const values = child[key] || []

@@ -20,16 +20,17 @@ function CardActions({ children }) {
 
 export function ActiveIepGoalCard({ goal, caseId, variant, onViewStrategies }) {
   const domain = goal.domain_key || (goal.core_domains || [])[0]
+  const paused = (goal.lifecycle_status || goal.status) === 'paused'
   return (
     <article className="cb-card">
       <div className="cb-card__head">
         <h4 className="cb-card__title">{goal.label}</h4>
-        <ClinicalBrainStatusPill status="active_iep" />
+        <ClinicalBrainStatusPill status={paused ? 'paused' : 'active_iep'} />
       </div>
       <div className="cb-card__meta">
         <DomainChip domain={domain} />
-        <span>{goal.evidence_count ?? 0} evidence this month</span>
-        <span title="Parent visibility">Parent-safe when in approved report</span>
+        <span>{goal.evidence_count ?? goal.session_count ?? 0} session evidence</span>
+        {goal.strategy_links ? <span>{goal.strategy_links} linked strategies</span> : null}
       </div>
       {goal.goal_brief ? <p className="gs-muted">{goal.goal_brief}</p> : null}
       <CardActions>
@@ -109,7 +110,13 @@ export function StrategySuggestionCard({ strategy, caseId, variant, onUseLog, on
 }
 
 export function StrategyTrialCard({ strategy, caseId, variant, onLogUse }) {
-  const status = mapRepositoryStrategyStatus({ ...strategy, source: 'trial', lifecycle_status: 'trial' })
+  const paused = (strategy.lifecycle_status || strategy.status) === 'paused'
+  const status = mapRepositoryStrategyStatus({
+    ...strategy,
+    source: paused ? 'paused' : 'trial',
+    lifecycle_status: paused ? 'paused' : 'trial',
+  })
+  const evidenceCount = strategy.evidence_count ?? strategy.usage_count ?? 0
   return (
     <article className="cb-card">
       <div className="cb-card__head">
@@ -119,7 +126,9 @@ export function StrategyTrialCard({ strategy, caseId, variant, onLogUse }) {
       <div className="cb-card__meta">
         {strategy.linked_goal_card_id ? <span>Linked goal #{strategy.linked_goal_card_id}</span> : null}
         <DomainChip domain={strategy.domain_key} />
-        <span>{strategy.latest_outcome || 'Continue with adaptation'}</span>
+        <span>{evidenceCount} session evidence</span>
+        {strategy.helpful_count ? <span>{strategy.helpful_count} helpful</span> : null}
+        <span>{strategy.where_helped || strategy.latest_outcome || 'Continue with adaptation'}</span>
       </div>
       <CardActions>
         <Link

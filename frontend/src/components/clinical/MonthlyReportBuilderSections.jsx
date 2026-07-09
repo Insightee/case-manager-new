@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { InternalVsFamilyBanner } from './InternalVsFamilyBanner.jsx'
 import { AiPreviewButton } from './AiPreviewButton.jsx'
 import { MONTHLY_EVIDENCE_V2 } from '../../lib/reportsRevampFlags.js'
-import { apiFetch } from '../../lib/apiClient.js'
-import { compileMonthlyEvidence, fetchMonthlyEvidenceSnapshot } from '../../lib/monthlyReportApi.js'
+import { compileMonthlyEvidence, fetchMonthlyEvidenceSnapshot, fetchMonthlyParentPreview } from '../../lib/monthlyReportApi.js'
 import { ParentMonthlyPreview } from './parent/ParentMonthlyPreview.jsx'
 import { ParentSafeContentBadge } from './parent/ParentSafeContentBadge.jsx'
 import { ClinicalSectionRail } from '../clinical-ui/ClinicalSectionRail.jsx'
@@ -58,7 +57,7 @@ export function MonthlyReportBuilderSections({ caseId, childName, reportId, onIn
   async function loadParentPreview() {
     if (!reportId) return
     try {
-      const data = await apiFetch(`/api/v1/reports/monthly/${reportId}/parent-preview`)
+      const data = await fetchMonthlyParentPreview(reportId)
       setPreview(data)
     } catch {
       setPreview(null)

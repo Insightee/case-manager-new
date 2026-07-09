@@ -41,6 +41,8 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | Doc | Purpose |
 |-----|---------|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System overview, components, data flow |
+| [REPORT_ARCHITECTURE.md](./REPORT_ARCHITECTURE.md) | Canonical `clinical_reports` spine vs legacy monthly |
+| [CLINICAL_HANDOVER.md](./CLINICAL_HANDOVER.md) | **Reports, Clinical Brain, session evidence** — CTO/clinical handover |
 | [billing-architecture.md](./billing-architecture.md) | Invoices, payouts, billing modes |
 | [RBAC_SCOPE.md](./RBAC_SCOPE.md) | Roles, permissions, module access |
 | [REVIEW_ROLE_MATRIX.md](./REVIEW_ROLE_MATRIX.md) | Role review matrix |

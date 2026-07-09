@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { monthlyParentPreviewDownloadUrl, resendMonthlyToParent } from '../../lib/monthlyReportApi.js'
 import { categoryLabel } from '../../lib/reportCategories.js'
 import { reportAdminEditPath, reportViewPath } from '../../lib/reportManagementPaths.js'
 import { ReportHtmlView } from '../reports/ReportHtmlView.jsx'
@@ -113,7 +114,7 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
     try {
       if (isMonthly) {
         if (detail?.status === 'PUBLISHED' && detail?.parent_review_status === 'CHANGES_REQUESTED') {
-          await apiFetch(`/api/v1/reports/monthly/${reportId}/resend-to-parent`, { method: 'POST' })
+          await resendMonthlyToParent(reportId)
         } else if (detail?.can_cm_publish || detail?.can_admin_override_publish) {
           await apiFetch(`/api/v1/admin/reports/monthly/${reportId}/publish-to-parent`, {
             method: 'POST',
@@ -239,7 +240,7 @@ export function AdminReportDetailDrawer({ reportType, reportId, onClose, onActio
 
   const viewPath = detail && isMonthly ? reportViewPath(detail) : null
   const pdfPath = isMonthly
-    ? `/api/v1/reports/monthly/${reportId}/download`
+    ? monthlyParentPreviewDownloadUrl(reportId)
     : `/api/v1/reports/observation/${reportId}/download`
 
   return (

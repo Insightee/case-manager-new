@@ -32,6 +32,7 @@ export function sidebarLink(page, label) {
 const THERAPIST_QUICK_NAV = {
   'Session Logs': 'Today',
   'My Cases': 'Cases',
+  Reports: 'Reports',
   'Monthly Reports': 'Reports',
 }
 

@@ -1,0 +1,336 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Reports | InsighteCase</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet">
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-fixed": "#002114",
+                        "primary": "#000000",
+                        "surface-container-highest": "#e2e2e2",
+                        "background": "#f9f9f9",
+                        "surface-container-high": "#e8e8e8",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#000000",
+                        "outline-variant": "#c2c8c3",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#1a1c1c",
+                        "surface-variant": "#e2e2e2",
+                        "on-primary": "#ffffff",
+                        "tertiary-container": "#002114",
+                        "on-primary-container": "#75887f",
+                        "primary-fixed-dim": "#b7cbc1",
+                        "outline": "#737875",
+                        "on-primary-fixed-variant": "#394a43",
+                        "inverse-primary": "#b7cbc1",
+                        "on-surface-variant": "#424845",
+                        "on-error": "#ffffff",
+                        "on-surface": "#1a1c1c",
+                        "primary-container": "#0e1f19",
+                        "surface-bright": "#f9f9f9",
+                        "secondary-container": "#c3ecd7",
+                        "on-error-container": "#93000a",
+                        "surface-tint": "#50625a",
+                        "tertiary-fixed-dim": "#68dba9",
+                        "primary-fixed": "#d3e7dd",
+                        "surface-container": "#eeeeee",
+                        "on-tertiary-container": "#069669",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed": "#0e1f19",
+                        "secondary": "#416656",
+                        "secondary-fixed": "#c3ecd7",
+                        "on-secondary-container": "#476c5b",
+                        "on-tertiary-fixed-variant": "#005137",
+                        "inverse-surface": "#2f3131",
+                        "surface-dim": "#dadada",
+                        "surface": "#f9f9f9",
+                        "surface-container-low": "#f3f3f4",
+                        "inverse-on-surface": "#f0f1f1",
+                        "tertiary-fixed": "#85f8c4",
+                        "on-secondary-fixed": "#002115",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#a8cfbc",
+                        "on-secondary-fixed-variant": "#294e3f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "24px",
+                        "base": "8px",
+                        "margin-mobile": "16px",
+                        "sidebar-width": "280px",
+                        "margin-desktop": "40px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "label-sm": ["JetBrains Mono"],
+                        "headline-md": ["Manrope"],
+                        "headline-lg": ["Manrope"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "headline-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .active-nav-indicator {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        body {
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body class="flex min-h-screen">
+<!-- SideNavBar Anchor -->
+<aside class="w-sidebar-width h-screen sticky top-0 left-0 bg-primary-container flex flex-col py-gutter justify-between">
+<div class="flex flex-col gap-8">
+<!-- Brand Header -->
+<div class="px-margin-mobile">
+<h1 class="text-headline-md font-headline-md font-bold text-on-primary">InsighteCase</h1>
+<p class="text-label-sm font-label-sm text-on-primary-container uppercase tracking-widest mt-1">Therapist Portal</p>
+</div>
+<!-- Navigation Links -->
+<nav class="flex flex-col">
+<a class="flex items-center gap-base px-margin-mobile py-3 text-on-primary-container opacity-70 hover:bg-on-primary-fixed-variant/10 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-md text-body-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-base px-margin-mobile py-3 text-on-primary-container opacity-70 hover:bg-on-primary-fixed-variant/10 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-body-md text-body-md">Clients</span>
+</a>
+<!-- ACTIVE TAB: Reports -->
+<a class="flex items-center gap-base px-margin-mobile py-3 text-on-tertiary-fixed border-l-4 border-tertiary-fixed bg-on-primary-fixed-variant/20 active-nav-indicator" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="font-body-md text-body-md">Reports</span>
+</a>
+<a class="flex items-center gap-base px-margin-mobile py-3 text-on-primary-container opacity-70 hover:bg-on-primary-fixed-variant/10 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined">calendar_today</span>
+<span class="font-body-md text-body-md">Schedule</span>
+</a>
+<a class="flex items-center gap-base px-margin-mobile py-3 text-on-primary-container opacity-70 hover:bg-on-primary-fixed-variant/10 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-md text-body-md">Settings</span>
+</a>
+</nav>
+<!-- Global CTA in Sidebar -->
+<div class="px-margin-mobile mt-4">
+<button class="w-full bg-tertiary-fixed text-on-tertiary-fixed font-headline-md py-3 px-4 rounded transition-transform active:scale-[0.98] flex items-center justify-center gap-2">
+<span class="material-symbols-outlined">add</span>
+                    Create Report
+                </button>
+</div>
+</div>
+<!-- Footer Links -->
+<div class="flex flex-col">
+<a class="flex items-center gap-base px-margin-mobile py-3 text-on-primary-container opacity-70 hover:bg-on-primary-fixed-variant/10 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-body-md text-body-md">Help Center</span>
+</a>
+<a class="flex items-center gap-base px-margin-mobile py-3 text-on-primary-container opacity-70 hover:bg-on-primary-fixed-variant/10 hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-body-md text-body-md">Logout</span>
+</a>
+<div class="px-margin-mobile mt-6 flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-on-primary-fixed-variant/30 flex items-center justify-center overflow-hidden border border-on-primary-fixed-variant/20">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a female therapist in a bright, modern office setting. She has a friendly, authoritative expression, wearing a minimalist dark green blazer. High-end editorial photography with soft natural lighting and a shallow depth of field, reflecting a premium medical professional aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSlTP4j0_II3s3ca8tB8oODoRCDC8XSAfT2W_egAGS2_D-JYwnCH9MHqW9O1i-62wZoeP8ahJzR0CzIQC8jfjJqNZajsiWgI8vg3FJDzHieVdfCM4mi_iwzABMggwOn_jez3yfX_1GB0ehlfCOqTHxCB-I2hqLJ795WRUWBh922GM05XuHKmEvVPkeKS65VsNDDf5MfQNODAln1p77gEdfgzKV7KVfkzE77PujuzkQ4o7cQgX7cpWM">
+</div>
+<div class="flex flex-col">
+<span class="text-on-primary text-label-sm font-bold">Dr. Sarah Jenkins</span>
+<span class="text-on-primary-container text-label-sm opacity-60">Senior Therapist</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Shell -->
+<main class="flex-1 flex flex-col bg-surface overflow-y-auto">
+<!-- TopAppBar Anchor -->
+<header class="flex justify-between items-center w-full px-gutter h-16 bg-surface border-b border-outline-variant sticky top-0 z-10">
+<div class="flex items-center gap-8">
+<span class="text-headline-md font-headline-md font-extrabold text-primary">InsighteCase</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-on-surface-variant font-body-md hover:text-primary transition-colors" href="#">All Clients</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-1" href="#">Report Dashboard</a>
+<a class="text-on-surface-variant font-body-md hover:text-primary transition-colors" href="#">Archive</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<!-- Search Bar on Right -->
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-body-md w-64 focus:ring-2 focus:ring-secondary/20 focus:border-secondary outline-none transition-all" placeholder="Search reports..." type="text">
+</div>
+<button class="material-symbols-outlined p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors">notifications</button>
+<button class="material-symbols-outlined p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors">account_circle</button>
+</div>
+</header>
+<!-- Page Content: Reports Empty State -->
+<section class="max-w-[1440px] mx-auto w-full px-gutter py-12 flex-1 flex flex-col">
+<!-- Case Header Anchor -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+<div>
+<nav class="flex items-center gap-2 text-label-sm text-outline mb-2">
+<span class="">Clients</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="">Julian Thorne</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-on-surface">Reports</span>
+</nav>
+<h2 class="text-headline-lg font-headline-lg text-primary tracking-tight">Julian Thorne</h2>
+<p class="text-body-md text-on-surface-variant">Case ID: #THOR-2024-001 • Started: May 2024</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="flex items-center gap-2 px-6 py-2.5 border border-outline text-primary font-bold rounded-lg hover:bg-surface-container-low transition-colors active:scale-95">
+<span class="material-symbols-outlined">filter_list</span>
+                        Filters
+                    </button>
+<div class="relative group">
+  <button class="flex items-center gap-2 px-6 py-2.5 bg-primary-container text-on-primary font-bold rounded-lg hover:opacity-90 shadow-lg shadow-primary-container/10 transition-all active:scale-95">
+    <span class="material-symbols-outlined">add</span>
+    Add / Create Report
+    <span class="material-symbols-outlined">expand_more</span>
+  </button>
+  <div class="absolute right-0 mt-2 w-64 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-xl opacity-0 invisible group-focus-within:opacity-100 group-focus-within:visible transition-all z-20 py-2">
+    <button class="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low text-left transition-colors">
+      <span class="material-symbols-outlined text-secondary">visibility</span>
+      <span class="text-body-md text-on-surface">Observation Report</span>
+    </button>
+    <button class="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low text-left transition-colors">
+      <span class="material-symbols-outlined text-secondary">calendar_month</span>
+      <span class="text-body-md text-on-surface">Monthly Report</span>
+    </button>
+    <button class="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low text-left transition-colors">
+      <span class="material-symbols-outlined text-secondary">assignment</span>
+      <span class="text-body-md text-on-surface">IEP</span>
+    </button>
+    <button class="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low text-left transition-colors">
+      <span class="material-symbols-outlined text-secondary">trending_up</span>
+      <span class="text-body-md text-on-surface">Progress Report</span>
+    </button>
+    <button class="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low text-left transition-colors">
+      <span class="material-symbols-outlined text-secondary">groups</span>
+      <span class="text-body-md text-on-surface">CM Meeting Note</span>
+    </button>
+  </div>
+</div>
+</div>
+</div>
+<!-- Empty State Canvas: Centered & Minimalist -->
+<div class="flex-1 flex flex-col items-center justify-center py-12">
+<div class="max-w-xl w-full text-center space-y-8 animate-in fade-in duration-700 slide-in-from-bottom-4">
+<!-- Tactile Illustration Container -->
+<div class="relative mx-auto w-48 h-48 flex items-center justify-center">
+<div class="absolute inset-0 bg-secondary-container/30 rounded-full blur-3xl"></div>
+<div class="relative z-0 w-32 h-32 bg-surface-container-lowest border border-outline-variant rounded-2xl rotate-6 shadow-sm flex items-center justify-center">
+<span class="material-symbols-outlined text-outline-variant text-5xl">description</span>
+</div>
+<div class="absolute z-10 w-32 h-32 bg-surface-container-lowest border border-secondary/20 rounded-2xl -rotate-6 shadow-xl flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary text-5xl" style="font-variation-settings: 'FILL' 1;">description</span>
+</div>
+<div class="absolute -top-4 -right-4 w-12 h-12 bg-tertiary-fixed text-on-tertiary-fixed rounded-full flex items-center justify-center shadow-lg animate-bounce">
+<span class="material-symbols-outlined">edit_note</span>
+</div>
+</div>
+<div class="space-y-4">
+<h3 class="text-headline-md font-headline-md text-primary">No reports created yet.</h3>
+<p class="text-body-lg text-on-surface-variant max-w-md mx-auto">
+                            Start your first Observation Report or add a Monthly Report to begin tracking progress for Julian's case.
+                        </p>
+</div>
+<div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+<button class="w-full sm:w-auto px-8 py-4 bg-primary-container text-on-primary font-bold rounded-xl flex items-center justify-center gap-3 hover:opacity-90 shadow-xl shadow-primary-container/20 transition-all active:scale-[0.98]">
+<span class="material-symbols-outlined">post_add</span>
+                            Create First Report
+                        </button>
+<button class="w-full sm:w-auto px-8 py-4 bg-secondary-container text-on-secondary-container font-bold rounded-xl flex items-center justify-center gap-3 hover:bg-secondary-fixed transition-all border border-secondary/10">
+<span class="material-symbols-outlined">upload_file</span>
+                            Import Archive
+                        </button>
+</div>
+<!-- Onboarding Grid (Subtle Bento Pattern) -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-16 text-left">
+<div class="p-6 rounded-2xl border border-outline-variant hover:border-secondary/50 transition-colors group cursor-pointer bg-surface-container-lowest">
+<div class="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center mb-4 group-hover:bg-secondary-container transition-colors">
+<span class="material-symbols-outlined text-secondary">visibility</span>
+</div>
+<h4 class="font-bold text-primary mb-1">Observation Report</h4>
+<p class="text-label-sm text-on-surface-variant">Log real-time observations and behavioral cues during sessions.</p>
+</div>
+<div class="p-6 rounded-2xl border border-outline-variant hover:border-secondary/50 transition-colors group cursor-pointer bg-surface-container-lowest">
+<div class="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center mb-4 group-hover:bg-secondary-container transition-colors">
+<span class="material-symbols-outlined text-secondary">calendar_month</span>
+</div>
+<h4 class="font-bold text-primary mb-1">Monthly Progress</h4>
+<p class="text-label-sm text-on-surface-variant">Summarize month-over-month growth and objective metrics.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Footer Help -->
+<footer class="px-gutter py-8 bg-surface-container-low border-t border-outline-variant mt-auto">
+<div class="flex flex-col md:flex-row justify-between items-center gap-4">
+<p class="text-label-sm text-on-surface-variant">© 2024 InsighteCase Professional Portal</p>
+<div class="flex items-center gap-6">
+<a class="text-label-sm text-secondary font-bold hover:underline" href="#">Knowledge Base</a>
+<a class="text-label-sm text-secondary font-bold hover:underline" href="#">Request Support</a>
+</div>
+</div>
+</footer>
+</main>
+<script>
+        // Simple Interaction: Button scale effect logic
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                btn.style.transform = 'scale(0.96)';
+            });
+            btn.addEventListener('mouseup', () => {
+                btn.style.transform = '';
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.style.transform = '';
+            });
+        });
+
+        // Search Bar Focus Effect
+        const searchInput = document.querySelector('input[type="text"]');
+        if(searchInput) {
+            searchInput.addEventListener('focus', () => {
+                searchInput.parentElement.classList.add('ring-2', 'ring-secondary/20');
+            });
+            searchInput.addEventListener('blur', () => {
+                searchInput.parentElement.classList.remove('ring-2', 'ring-secondary/20');
+            });
+        }
+    </script>
+
+
+</body></html>

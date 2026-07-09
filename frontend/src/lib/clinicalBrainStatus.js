@@ -2,6 +2,7 @@
 
 export const GOAL_STATUS = {
   active_iep: { id: 'active_iep', label: 'Active IEP goal', tone: 'active' },
+  paused: { id: 'paused', label: 'Paused', tone: 'muted' },
   case_candidate: { id: 'case_candidate', label: 'Case candidate', tone: 'pending' },
   draft: { id: 'draft', label: 'Draft', tone: 'muted' },
   sent_for_review: { id: 'sent_for_review', label: 'Sent for review', tone: 'warning' },
@@ -12,6 +13,7 @@ export const GOAL_STATUS = {
 
 export const STRATEGY_STATUS = {
   pool_active: { id: 'pool_active', label: 'Pool active', tone: 'active' },
+  paused: { id: 'paused', label: 'Paused', tone: 'muted' },
   case_candidate: { id: 'case_candidate', label: 'Case candidate', tone: 'pending' },
   trial: { id: 'trial', label: 'Trial', tone: 'progress' },
   sent_for_review: { id: 'sent_for_review', label: 'Sent for review', tone: 'warning' },
@@ -41,6 +43,9 @@ export function mapRepositoryStrategyStatus(item) {
     return STRATEGY_STATUS.sent_for_review
   }
   if (item?.lifecycle_status === 'trial' || item?.source === 'trial') return STRATEGY_STATUS.trial
+  if (item?.lifecycle_status === 'paused' || item?.source === 'paused' || item?.status === 'paused') {
+    return STRATEGY_STATUS.paused
+  }
   if (item?.status === 'candidate' || item?.status === 'local') return STRATEGY_STATUS.case_candidate
   if (item?.status === 'active' || item?.status === 'approved') return STRATEGY_STATUS.approved_for_case
   return STRATEGY_STATUS.case_candidate

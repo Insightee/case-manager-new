@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { apiDownload } from '../../lib/apiClient.js'
+import { fetchMonthlyIepContext, fetchMonthlySessionContext } from '../../lib/monthlyReportApi.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 
 const MAX_CSV_EXPORT_ERROR = 'Could not export session logs.'
@@ -30,11 +31,11 @@ export function SessionLogContextPanel({
     setLoading(true)
     setError('')
     const tasks = [
-      apiFetch(`/api/v1/reports/monthly/${reportId}/session-context`).then((rows) => setLogs(rows || [])),
+      fetchMonthlySessionContext(reportId).then((rows) => setLogs(rows || [])),
     ]
     if (caseId) {
       tasks.push(
-        apiFetch(`/api/v1/reports/monthly/iep-context?case_id=${caseId}`)
+        fetchMonthlyIepContext(caseId)
           .then((ctx) => setIepContext(ctx))
           .catch(() => setIepContext(null)),
       )

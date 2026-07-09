@@ -22,6 +22,7 @@
 | Section numbering + cards | `clinical-report-ui.css` + `IEP_BUILDER_SECTIONS` | IEP |
 | Observation blocks | `ObservationStitchBlocks.jsx` | Observation only |
 | **Case overview (therapist)** | `TherapistCaseOverviewDashboard.jsx` + `case-overview-v2.css` | Case profile → Overview tab |
+| **Case reports tab (therapist)** | `CaseReportsTab.jsx` + `case-reports-tab.css` | Case profile → Reports tab (default section) |
 
 ## Case overview (Forest Light — mandatory)
 
@@ -33,6 +34,16 @@ Stitch project `2951427195113771286`. Full spec: `docs/design/stitch/case-overvi
 4. Status: `cov-status-pill` (secondary-container) — not `ClinicalStatusBadge`
 5. Pending work: inset rows + underline actions — not metric chips
 6. No fake progress % on goals unless backed by real session evidence counts
+
+## Case reports tab (Forest Light — mandatory)
+
+Stitch project `2676660861211267049`. Full spec: `docs/design/stitch/case-reports-tab/DESIGN.md`.
+
+1. Scope: `.crt-page.forest-light` inside `CaseReportsHub` (`section=dashboard`)
+2. Data: `GET /cases/{id}/reports/summary` only — no caseload pipeline on this tab
+3. CTAs: `target_url` from API → existing report editors (no inline forms)
+4. No metric dashboard cards, no "All Cases" filter
+5. Status: `ReportStatusChip` (`crt-chip`) — not legacy `ClinicalStatusBadge` on this surface
 
 ## Create Student Goal modal (non-negotiable)
 
@@ -64,6 +75,7 @@ Share, Export PDF, Duplicate plan
 | Add IEP goal | `POST /reports/{id}/iep/goals` |
 | Link strategy | `POST /reports/{id}/iep/goals/{gid}/strategies` |
 | Submit | `POST /reports/{id}/submit` |
+| Case reports tab | `GET /cases/{id}/reports/summary` |
 
 ## Verification before merge
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../../lib/apiClient.js'
 import { unwrapList } from '../../../lib/listApi.js'
+import { listMonthlyReports } from '../../../lib/monthlyReportApi.js'
 import { ClinicalStatusBadge } from '../../clinical-ui/ClinicalStatusBadge.jsx'
 import { ClinicalCard } from '../../clinical-ui/ClinicalCard.jsx'
 import { ClinicalProgressBar } from '../../clinical-ui/ClinicalProgressBar.jsx'
@@ -30,10 +31,10 @@ export function CaseProgressReportsSection({ caseId, caseCode, childName, varian
     setLoading(true)
     try {
       const [monthly, docs] = await Promise.all([
-        apiFetch('/api/v1/reports/monthly?page_size=100').catch(() => []),
+        listMonthlyReports({ caseId, pageSize: 100 }).catch(() => []),
         apiFetch(`/api/v1/cases/${caseId}/documents`).catch(() => []),
       ])
-      const all = unwrapList(monthly)
+      const all = Array.isArray(monthly) ? monthly : []
       setReports(all.filter((r) => r.case_id === Number(caseId) && r.category === 'PROGRESS'))
       const docList = unwrapList(docs)
       setDocuments(

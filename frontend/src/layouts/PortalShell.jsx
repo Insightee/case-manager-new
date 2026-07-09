@@ -448,6 +448,7 @@ export function PortalShell({ portal }) {
 
 function PortalShellInner({ portal }) {
   const { user, logout, can, hasFeature, isViewOnly, navVisible } = useAuth()
+  const { activeCase } = useTherapistActiveCase()
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -522,7 +523,11 @@ function PortalShellInner({ portal }) {
   const therapistReportsSection = new URLSearchParams(location.search).get('section') || 'dashboard'
   const onCasesList = location.pathname === THERAPIST_MY_CASES_PATH
   const reportsCaseId =
-    therapistCaseId && therapistCaseTab === 'reports' ? therapistCaseId : null
+    therapistCaseId && therapistCaseTab === 'reports'
+      ? therapistCaseId
+      : location.pathname === THERAPIST_REPORTS_PATH && activeCase?.id
+        ? String(activeCase.id)
+        : null
 
   const [casesNavExpanded, setCasesNavExpanded] = useState(false)
   const [reportsNavExpanded, setReportsNavExpanded] = useState(false)

@@ -72,7 +72,7 @@ function therapistStartedLabel(assignments = []) {
   return earliest?.start_date ? formatDisplayDate(earliest.start_date) : null
 }
 
-function careTeamFromSources(caseRow, assignments = []) {
+function careTeamFromSources(caseRow, assignments = [], iepPlan = null) {
   const team = []
   const activeAssignments = assignments.filter((a) => a.status === 'ACTIVE' || !a.end_date)
 
@@ -93,11 +93,34 @@ function careTeamFromSources(caseRow, assignments = []) {
     }
   })
 
-  if (caseRow?.parent_name) {
-    team.push({ key: 'parent', name: caseRow.parent_name, role: 'Parent' })
+  const parentLabel =
+    caseRow?.parent_name ||
+    iepPlan?.case_context?.parents_names ||
+    stripHtml(iepPlan?.sections?.header?.parents_names || '')
+  if (parentLabel) {
+    team.push({ key: 'parent', name: parentLabel, role: 'Parent / guardian' })
   }
 
   return team
+}
+
+function resolveAgeLabel(caseRow, iepPlan) {
+  return iepPlan?.case_context?.age_label || caseRow?.child_age_label || null
+}
+
+function caseBriefFromProfile({ clinicalProfile, iepPlan, observation }) {
+  const history = clinicalProfile?.history?.trim()
+  if (history) return history
+
+  const iepBrief = stripHtml(iepPlan?.sections?.header?.about_child_brief || '')
+  if (iepBrief) return iepBrief
+
+  const profileParts = [clinicalProfile?.strengths, clinicalProfile?.interests, clinicalProfile?.goals_summary]
+    .map((p) => (p || '').trim())
+    .filter(Boolean)
+  if (profileParts.length) return profileParts.join('\n\n')
+
+  return overviewSummaryText({ clinicalProfile, observation, iepPlan })
 }
 
 function currentGoalsFromSources(qualitySummary, iepPlan) {
@@ -136,8 +159,8 @@ function overviewSummaryText({ clinicalProfile, observation, iepPlan }) {
   if (history) return history
 
   const obsNarrative =
-    sectionNarrative(observation, 'referral_background') ||
-    sectionNarrative(observation, 'child_snapshot')
+    sectionNarrative(observation, 'child_snapshot') ||
+    sectionNarrative(observation, 'referral_background')
   if (obsNarrative) return obsNarrative
 
   const iepObs = stripHtml(iepPlan?.sections?.observations || '')
@@ -162,9 +185,29 @@ function interestsList({ clinicalProfile, observation }) {
   return [...new Set([...fromProfile, ...fromObs])]
 }
 
-function supportNeedsList({ observation }) {
+function observationPointers(observation) {
+  if (!observation?.sections?.length) return []
+  const labels = {
+    participation: 'Participation',
+    communication: 'Communication',
+    regulation_sensory: 'Regulation & sensory',
+    learning_access: 'Learning access',
+    environment_notes: 'Environment',
+  }
+  const pointers = []
+  for (const [key, label] of Object.entries(labels)) {
+    const text = sectionNarrative(observation, key)
+    if (!text) continue
+    const short = text.length > 120 ? `${text.slice(0, 117)}…` : text
+    pointers.push(`${label}: ${short}`)
+  }
+  return pointers.slice(0, 5)
+}
+
+function supportNeedsList({ clinicalProfile, observation }) {
   const fromObs = splitLines(sectionNarrative(observation, 'support_needs'))
-  return fromObs.slice(0, 8)
+  const fromProfile = splitLines(clinicalProfile?.support_needs || clinicalProfile?.goals_summary)
+  return [...new Set([...fromObs, ...fromProfile])].slice(0, 8)
 }
 
 export function composeCaseOverview({
@@ -181,7 +224,7 @@ export function composeCaseOverview({
     moduleLabel(caseRow?.product_module) ||
     caseRow?.service_type ||
     null
-  const ageLabel = iepPlan?.case_context?.age_label || null
+  const ageLabel = resolveAgeLabel(caseRow, iepPlan)
   const primarySetting =
     formatLocationType(caseRow?.service_location_type) ||
     (iepPlan?.sections?.learning_environments?.[0]?.environment
@@ -192,8 +235,10 @@ export function composeCaseOverview({
   const interests = interestsList({ clinicalProfile, observation })
   const supportNeeds = supportNeedsList({ clinicalProfile, observation })
   const { goals, hasActiveIep } = currentGoalsFromSources(qualitySummary, iepPlan)
-  const careTeam = careTeamFromSources(caseRow, assignments)
+  const careTeam = careTeamFromSources(caseRow, assignments, iepPlan)
   const parentPriorities = splitLines(sectionNarrative(observation, 'parent_inputs'))
+  const clinicalPointers = [...parentPriorities, ...observationPointers(observation)]
+  const caseBrief = caseBriefFromProfile({ clinicalProfile, iepPlan, observation })
 
   const diagnosisProfile =
     clinicalProfile?.diagnosis?.trim() ||
@@ -230,8 +275,11 @@ export function composeCaseOverview({
       therapistStarted: therapistStartedLabel(assignments),
       primarySetting,
       serviceLine,
+      ageLabel,
+      clinicalPointers: clinicalPointers.slice(0, 4),
     },
-    summary: overviewSummaryText({ clinicalProfile, observation, iepPlan }),
+    caseBrief,
+    summary: caseBrief,
     strengths,
     interests,
     supportContext: {
@@ -247,6 +295,7 @@ export function composeCaseOverview({
     pendingWork,
     missingInfo,
     parentPriorities,
+    clinicalPointers,
   }
 }
 

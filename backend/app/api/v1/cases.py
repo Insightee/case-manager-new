@@ -487,6 +487,18 @@ class RepositoryReviewAction(BaseModel):
     merged_into_id: Optional[int] = None
 
 
+@router.get("/{case_id}/reports/summary")
+def get_case_reports_summary(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import case_reports_summary_service as crs_svc
+
+    case = _case_for_user(db, user, case_id)
+    return crs_svc.build_case_reports_summary(db, case, user)
+
+
 @router.get("/{case_id}/reports-workbench")
 def get_reports_workbench(
     case_id: int,

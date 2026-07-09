@@ -1,7 +1,7 @@
 /** Report-type sections only — goals/strategies/documents live on case tabs. */
 
 export const REPORTS_HUB_SECTIONS = [
-  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'dashboard', label: 'Reports' },
   { id: 'observation', label: 'Observation Report' },
   { id: 'iep', label: 'IEP' },
   { id: 'monthly', label: 'Monthly Report' },

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../../lib/apiClient.js'
-import { unwrapList } from '../../../lib/listApi.js'
+import { listMonthlyReports } from '../../../lib/monthlyReportApi.js'
+import { isReportsRevampActive } from '../../../lib/reportsRevampFlags.js'
 import { ClinicalCard } from '../../clinical-ui/ClinicalCard.jsx'
 import { ClinicalStatusBadge } from '../../clinical-ui/ClinicalStatusBadge.jsx'
 
@@ -26,10 +27,25 @@ export function CaseReportHistorySection({ caseId, caseCode, childName, variant 
     try {
       const [wb, rows] = await Promise.all([
         apiFetch(`/api/v1/cases/${caseId}/reports-workbench`),
-        apiFetch('/api/v1/reports/monthly?page_size=100'),
+        isReportsRevampActive(variant)
+          ? apiFetch(`/api/v1/cases/${caseId}/reports/summary`).then((s) => s.history || [])
+          : listMonthlyReports({ caseId, pageSize: 100 }),
       ])
       setWorkbench(wb)
-      setReports(unwrapList(rows).filter((r) => r.case_id === Number(caseId)))
+      if (isReportsRevampActive(variant) && Array.isArray(rows)) {
+        const flat = rows.flatMap((group) =>
+          (group.items || []).map((item) => ({
+            id: item.id,
+            month: item.period_label || group.label,
+            category: item.type === 'progress_report' ? 'PROGRESS' : 'CLIENT_MONTHLY',
+            status: String(item.status || '').toUpperCase(),
+            summary: item.summary,
+          })),
+        )
+        setReports(flat)
+      } else {
+        setReports(Array.isArray(rows) ? rows : [])
+      }
     } catch (err) {
       setError(err.message || 'Could not load report history.')
       setWorkbench(null)

@@ -19,16 +19,18 @@ function OverviewSection({ icon, title, children, className = '', headActions = 
   )
 }
 
-function SnapshotCard({ snapshot, ageLabel }) {
+function SnapshotCard({ snapshot }) {
   const rows = [
-    { label: 'Age', value: ageLabel },
+    { label: 'Age', value: snapshot.ageLabel },
     { label: 'Client since', value: snapshot.clientSince },
     { label: 'Therapist started', value: snapshot.therapistStarted },
     { label: 'Primary setting', value: snapshot.primarySetting },
     { label: 'Service type', value: snapshot.serviceLine },
   ].filter((r) => r.value)
 
-  if (!rows.length) {
+  const pointers = snapshot.clinicalPointers || []
+
+  if (!rows.length && !pointers.length) {
     return (
       <OverviewSection icon="person" title="Profile snapshot">
         <p className="cov-empty">Case dates and setting will appear once the profile is set up.</p>
@@ -38,14 +40,33 @@ function SnapshotCard({ snapshot, ageLabel }) {
 
   return (
     <OverviewSection icon="person" title="Profile snapshot">
-      <dl className="cov-kv-list">
-        {rows.map((row) => (
-          <div key={row.label} className="cov-kv">
-            <dt>{row.label}</dt>
-            <dd>{row.value}</dd>
-          </div>
-        ))}
-      </dl>
+      {rows.length ? (
+        <div className="cov-snapshot-block">
+          <dl className="cov-kv-list">
+            {rows.map((row) => (
+              <div key={row.label} className="cov-kv">
+                <dt>{row.label}</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
+      {pointers.length ? (
+        <div className="cov-snapshot-block cov-snapshot-block--clinical">
+          <p className="cov-snapshot-block__eyebrow">From observation report</p>
+          <ul className="cov-check-list cov-snapshot-pointers">
+            {pointers.map((item) => (
+              <li key={item}>
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  arrow_right
+                </span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </OverviewSection>
   )
 }
@@ -327,7 +348,8 @@ export function TherapistCaseOverviewDashboard({
     Promise.all([
       apiFetch(`/api/v1/cases/${caseId}/assignments`).catch(() => []),
       apiFetch(`/api/v1/cases/${caseId}/iep-plan`).catch(() => null),
-      apiFetch(`/api/v1/cases/${caseId}/observation-checklist`).catch(() => null),
+      apiFetch(`/api/v1/cases/${caseId}/reports/observation`)
+        .catch(() => apiFetch(`/api/v1/cases/${caseId}/observation-checklist`).catch(() => null)),
     ]).then(([asg, iep, obs]) => {
       if (cancelled) return
       setAssignments(Array.isArray(asg) ? asg : [])
@@ -368,14 +390,14 @@ export function TherapistCaseOverviewDashboard({
 
       <div className="cov-columns">
         <div className="cov-main">
-          <SnapshotCard snapshot={snapshot} ageLabel={overview.header.ageLabel} />
+          <SnapshotCard snapshot={snapshot} />
 
           <CaseOverviewSummaryCard
             caseId={caseId}
             clinicalProfile={clinicalProfile}
             onProfileUpdated={onClinicalProfileUpdated}
-            composedFallback={overview.summary}
-            emptyMessage="Not enough case information has been added yet."
+            composedFallback={overview.caseBrief}
+            emptyMessage="Add a case brief in the client profile, or complete the observation report to pull one in."
           />
 
           <PendingWorkCard

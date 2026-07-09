@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { createMonthlyDraft } from '../../lib/monthlyReportApi.js'
 import { REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { isReportsEngineActive } from '../../lib/reportsRevampFlags.js'
@@ -33,13 +34,10 @@ export function CreateDraftModal({ open, onClose, onCreated, defaultMonth, defau
     setLoading(true)
     setError('')
     try {
-      const created = await apiFetch('/api/v1/reports/monthly', {
-        method: 'POST',
-        body: JSON.stringify({
-          case_id: Number(caseId),
-          month,
-          category,
-        }),
+      const created = await createMonthlyDraft({
+        caseId: Number(caseId),
+        month,
+        category,
       })
       onCreated?.(created)
       onClose()

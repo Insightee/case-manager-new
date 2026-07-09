@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { apiFetch, apiDownload } from '../../lib/apiClient.js'
+import { apiFetch } from '../../lib/apiClient.js'
+import {
+  fetchMonthlyReport,
+  saveMonthlyReport,
+  submitMonthlyReport,
+  downloadMonthlyReport,
+} from '../../lib/monthlyReportApi.js'
 import { generateReportFromLogs } from '../../lib/reportGenerateFromLogs.js'
 import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../../lib/reportCategories.js'
 import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
@@ -89,7 +95,7 @@ export function ReportEditPage() {
     setLoading(true)
     setError('')
     try {
-      const row = await apiFetch(`/api/v1/reports/monthly/${reportId}`)
+      const row = await fetchMonthlyReport({ reportId: Number(reportId) })
       if (isAdminEditor && !adminEditMode) {
         navigate(`/admin/reports/view/${reportId}`, { replace: true })
         return
@@ -192,19 +198,14 @@ export function ReportEditPage() {
       setSaveFailed(false)
       if (!silent) setError('')
       try {
-        const cat = categoryRef.current
-        const patchUrl = isAdminEditor
-          ? `/api/v1/admin/reports/monthly/${report.id}`
-          : `/api/v1/reports/monthly/${report.id}`
-        const updated = await apiFetch(patchUrl, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            body_html: html,
-            plan_next_month: planNextMonthRef.current,
-            category: cat,
-            sub_category: cat === 'PROGRESS' ? subCategoryRef.current || null : null,
-            month: monthRef.current,
-          }),
+        const updated = await saveMonthlyReport({
+          reportId: report.id,
+          bodyHtml: html,
+          planNextMonth: planNextMonthRef.current,
+          category: categoryRef.current,
+          subCategory: subCategoryRef.current,
+          month: monthRef.current,
+          isAdmin: isAdminEditor,
         })
         setReport(updated)
         lastPersistedHtmlRef.current = html
@@ -259,7 +260,7 @@ export function ReportEditPage() {
     await persist(false)
     if (saveFailed) return
     try {
-      await apiFetch(`/api/v1/reports/monthly/${reportId}/submit`, { method: 'POST' })
+      await submitMonthlyReport(reportId)
       setMessage('Submitted for admin review.')
       setError('')
       await load()
@@ -269,7 +270,7 @@ export function ReportEditPage() {
   }
 
   async function handleDownload() {
-    await apiDownload(`/api/v1/reports/monthly/${reportId}/download`, `report_${month || reportId}.pdf`)
+    await downloadMonthlyReport(reportId, `report_${month || reportId}.pdf`)
   }
 
   async function handleGenerateFromLogs(mode = 'replace') {

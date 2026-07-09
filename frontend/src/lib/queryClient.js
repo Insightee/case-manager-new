@@ -29,4 +29,5 @@ export const queryKeys = {
   parentDocuments: ['parent', 'documents'],
   caseInsights: (caseId) => ['case', caseId, 'insights', 'summary'],
   caseInsightsUsage: (caseId) => ['case', caseId, 'insights', 'usage'],
+  caseReportsSummary: (caseId) => ['case', caseId, 'reports', 'summary'],
 }

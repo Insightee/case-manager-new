@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 
 from sqlalchemy import select
@@ -625,6 +626,95 @@ def get_active_observation_report(db: Session, case_id: int) -> ClinicalReport |
             ClinicalReport.archived_at.is_(None),
         )
     )
+
+
+_OBS_BULLET_SPLIT = re.compile(r"[,;\n]+")
+
+
+def _split_observation_bullets(text: str | None, limit: int = 8) -> list[str]:
+    if not text:
+        return []
+    parts = [p.strip() for p in _OBS_BULLET_SPLIT.split(str(text)) if p.strip()]
+    return parts[:limit]
+
+
+def _observation_structured(sec: ClinicalReportSection | None) -> dict:
+    if not sec or not sec.structured_data_json:
+        return {}
+    try:
+        return json.loads(sec.structured_data_json)
+    except json.JSONDecodeError:
+        return {}
+
+
+def extract_observation_profile_signals(db: Session, case_id: int) -> dict:
+    """Strengths, interests, and clinical pointers from the active observation report workspace."""
+    report = get_active_observation_report(db, case_id)
+    empty = {
+        "strengths": [],
+        "interests": [],
+        "support_needs": [],
+        "parent_priorities": [],
+        "pointers": [],
+        "summary_narrative": None,
+        "has_observation": False,
+    }
+    if not report:
+        return empty
+
+    sections = list(
+        db.scalars(select(ClinicalReportSection).where(ClinicalReportSection.report_id == report.id)).all()
+    )
+    by_key = {s.section_key: s for s in sections}
+
+    si = _observation_structured(by_key.get("strengths_interests"))
+    strengths = [str(x) for x in (si.get("strengths") or []) if x]
+    if not strengths:
+        strengths = _split_observation_bullets(
+            by_key["strengths_interests"].narrative_text if by_key.get("strengths_interests") else None
+        )
+    interests = [str(x) for x in (si.get("interests") or []) if x]
+    if not interests:
+        interests = _split_observation_bullets(si.get("interests_text") or si.get("interests"))
+
+    support_sec = by_key.get("support_needs")
+    support_needs = _split_observation_bullets(support_sec.narrative_text if support_sec else None)
+
+    parent_sec = by_key.get("parent_inputs")
+    parent_priorities = _split_observation_bullets(parent_sec.narrative_text if parent_sec else None)
+
+    child_snap = by_key.get("child_snapshot")
+    summary_narrative = (child_snap.narrative_text or "").strip() if child_snap else None
+    if not summary_narrative:
+        ref = by_key.get("referral_background")
+        summary_narrative = (ref.narrative_text or "").strip() if ref else None
+
+    pointers: list[str] = []
+    for key, label in (
+        ("participation", "Participation"),
+        ("communication", "Communication"),
+        ("regulation_sensory", "Regulation & sensory"),
+        ("learning_access", "Learning access"),
+        ("environment_notes", "Environment"),
+    ):
+        sec = by_key.get(key)
+        if not sec:
+            continue
+        text = (sec.narrative_text or "").strip()
+        if not text:
+            continue
+        short = text if len(text) <= 120 else f"{text[:117]}…"
+        pointers.append(f"{label}: {short}")
+
+    return {
+        "strengths": strengths[:8],
+        "interests": interests[:8],
+        "support_needs": support_needs[:8],
+        "parent_priorities": parent_priorities[:6],
+        "pointers": pointers[:5],
+        "summary_narrative": summary_narrative,
+        "has_observation": True,
+    }
 
 
 def observation_summary(db: Session, case: Case, user: User) -> dict:

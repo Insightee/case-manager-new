@@ -76,6 +76,10 @@ class CaseRead(CaseBillingFields):
     status_effective_date: Optional[date] = None
     status_reason: Optional[str] = None
     status_changed_by_user_id: Optional[int] = None
+    child_date_of_birth: Optional[date] = None
+    child_age_label: Optional[str] = None
+    parent_name: Optional[str] = None
+    therapist_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

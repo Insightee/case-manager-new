@@ -12,6 +12,14 @@ from app.models.case import Case
 from app.models.clinical_evidence import IepGoalCard
 from app.models.goal_repository import GoalRepositoryItem, RepositoryItemStatus, StrategyRepositoryItem
 from app.models.user import User
+from app.services import goal_evidence_aggregation_service as ev_agg
+
+IEP_ASSIGNED_STATUSES = ("active", "paused")
+ASSIGNED_REPO_STATUSES = (
+    RepositoryItemStatus.ACTIVE.value,
+    RepositoryItemStatus.APPROVED.value,
+)
+EXCLUDED_LIFECYCLES = frozenset({"archived", "achieved", "closed", "revised"})
 
 
 def _json_list(raw: str | None) -> list[str]:
@@ -114,8 +122,87 @@ def _iep_goal_dict(card: IepGoalCard) -> dict[str, Any]:
         "status": card.status,
         "source": "iep",
         "scope": "case",
-        "lifecycle_status": "active",
+        "lifecycle_status": "paused" if card.status == "paused" else "active",
     }
+
+
+def _is_assigned_case_goal(row: GoalRepositoryItem) -> bool:
+    if row.case_id is None:
+        return False
+    if row.status in (RepositoryItemStatus.LOCAL.value, RepositoryItemStatus.CANDIDATE.value):
+        return False
+    if row.status == RepositoryItemStatus.ARCHIVED.value:
+        return False
+    life = (row.lifecycle_status or "active").lower()
+    if life in EXCLUDED_LIFECYCLES:
+        return False
+    if life in ("active", "paused"):
+        return True
+    return row.status in ASSIGNED_REPO_STATUSES
+
+
+def _is_assigned_case_strategy(row: StrategyRepositoryItem) -> bool:
+    if row.case_id is None:
+        return False
+    if row.status in (
+        RepositoryItemStatus.LOCAL.value,
+        RepositoryItemStatus.CANDIDATE.value,
+        RepositoryItemStatus.ARCHIVED.value,
+    ):
+        return False
+    return row.status in ASSIGNED_REPO_STATUSES
+
+
+def _goal_evidence_index(summary: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    out: dict[int, dict[str, Any]] = {}
+    for item in summary.get("goals") or []:
+        gid = item.get("goal_id")
+        if gid is not None:
+            out[int(gid)] = item
+    return out
+
+
+def _strategy_evidence_index(summary: dict[str, Any]) -> tuple[dict[int, dict[str, Any]], dict[str, dict[str, Any]]]:
+    by_id: dict[int, dict[str, Any]] = {}
+    by_label: dict[str, dict[str, Any]] = {}
+    for item in summary.get("strategies") or []:
+        sid = item.get("strategy_id")
+        if sid is not None:
+            by_id[int(sid)] = item
+        label = (item.get("label") or "").strip().lower()
+        if label:
+            by_label[label] = item
+    return by_id, by_label
+
+
+def _merge_goal_evidence(goal: dict[str, Any], ev: dict[str, Any] | None) -> dict[str, Any]:
+    if not ev:
+        goal.setdefault("evidence_count", 0)
+        goal.setdefault("session_count", 0)
+        return goal
+    goal["evidence_count"] = ev.get("evidence_count") or ev.get("session_count") or 0
+    goal["session_count"] = ev.get("session_count") or ev.get("sessions_addressed") or 0
+    goal["strategy_links"] = ev.get("strategy_links") or 0
+    goal["evidence_strength"] = ev.get("evidence_strength")
+    goal["latest_trend"] = ev.get("latest_trend")
+    return goal
+
+
+def _merge_strategy_evidence(
+    strategy: dict[str, Any],
+    ev: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not ev:
+        strategy.setdefault("evidence_count", 0)
+        strategy.setdefault("usage_count", 0)
+        return strategy
+    strategy["evidence_count"] = ev.get("usage_count") or ev.get("use_count") or 0
+    strategy["usage_count"] = ev.get("usage_count") or ev.get("use_count") or 0
+    strategy["helpful_count"] = ev.get("helpful_count") or 0
+    strategy["evidence_strength"] = ev.get("evidence_strength")
+    strategy["where_helped"] = ev.get("where_helped")
+    strategy["where_needs_adapting"] = ev.get("where_needs_adapting")
+    return strategy
 
 
 def build_goals_engine_payload(db: Session, case_id: int) -> dict[str, Any]:
@@ -123,7 +210,7 @@ def build_goals_engine_payload(db: Session, case_id: int) -> dict[str, Any]:
     case = db.get(Case, case_id)
     iep_cards = db.scalars(
         select(IepGoalCard)
-        .where(IepGoalCard.case_id == case_id, IepGoalCard.status == "active")
+        .where(IepGoalCard.case_id == case_id, IepGoalCard.status.in_(IEP_ASSIGNED_STATUSES))
         .order_by(IepGoalCard.sort_order, IepGoalCard.id)
     ).all()
 
@@ -157,13 +244,39 @@ def build_goals_engine_payload(db: Session, case_id: int) -> dict[str, Any]:
             domains.append(g.domain_key)
     domains = sorted(set(domains))
 
+    goals_evidence = ev_agg.build_goals_evidence_summary(db, case_id)
+    strategies_evidence = ev_agg.build_strategies_evidence_summary(db, case_id)
+    goal_ev_idx = _goal_evidence_index(goals_evidence)
+    strat_ev_by_id, strat_ev_by_label = _strategy_evidence_index(strategies_evidence)
+
+    case_goals = [g for g in repo_goals if g.case_id == case_id]
+    case_strategies = [s for s in repo_strategies if s.case_id == case_id]
+    assigned_goals = [g for g in case_goals if _is_assigned_case_goal(g)]
+    assigned_strategies = [s for s in case_strategies if _is_assigned_case_strategy(s)]
+
+    iep_goal_rows = [
+        _merge_goal_evidence(_iep_goal_dict(c), goal_ev_idx.get(c.id))
+        for c in iep_cards
+    ]
+    assigned_repo_goal_rows = [
+        _merge_goal_evidence(_goal_row_dict(db, g), goal_ev_idx.get(g.id))
+        for g in assigned_goals
+    ]
+    assigned_strategy_rows = []
+    for s in assigned_strategies:
+        row = _strategy_row_dict(db, s)
+        ev = strat_ev_by_id.get(s.id) or strat_ev_by_label.get((s.label or "").strip().lower())
+        assigned_strategy_rows.append(_merge_strategy_evidence(row, ev))
+
     return {
         "case_id": case_id,
         "child_name": case.child.full_name if case and case.child else None,
-        "iep_goals": [_iep_goal_dict(c) for c in iep_cards],
-        "goals": [_goal_row_dict(db, g) for g in repo_goals if g.case_id == case_id],
+        "iep_goals": iep_goal_rows,
+        "assigned_goals": iep_goal_rows + assigned_repo_goal_rows,
+        "goals": [_goal_row_dict(db, g) for g in case_goals],
         "org_pool_goals": [_goal_row_dict(db, g) for g in repo_goals if g.case_id is None],
-        "strategies": [_strategy_row_dict(db, s) for s in repo_strategies if s.case_id == case_id],
+        "assigned_strategies": assigned_strategy_rows,
+        "strategies": [_strategy_row_dict(db, s) for s in case_strategies],
         "org_pool_strategies": [_strategy_row_dict(db, s) for s in repo_strategies if s.case_id is None],
         "pending_count": len(pending_goals) + len(pending_strategies),
         "pending_goals": len(pending_goals),

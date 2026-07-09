@@ -1,13 +1,14 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { isReportsEngineActive } from '../../lib/reportsRevampFlags.js'
-import { normalizeReportsSection } from './reportsHubSections.js'
+import { isReportsEngineActive, isClinicalReportBuilderActive, isMonthlyClinicalEngineActive, isCaseReportsTabV2Active } from '../../lib/reportsRevampFlags.js'
 import { CaseReportsPanel } from '../cases/CaseReportsPanel.jsx'
+import { normalizeReportsSection } from './reportsHubSections.js'
 import { ObservationChecklistPanel } from '../cases/ObservationChecklistPanel.jsx'
 import { CaseIepSection } from './sections/CaseIepSection.jsx'
 import { CaseProgressReportsSection } from './sections/CaseProgressReportsSection.jsx'
 import { CaseReportHistorySection } from './sections/CaseReportHistorySection.jsx'
-import { TherapistReportsHomeView } from '../monthly-reports/TherapistReportsHomeView.jsx'
+import { CaseReportsTab } from '../clinical/reports-tab/CaseReportsTab.jsx'
+import { MonthlyReportRoute } from '../reports-engine/monthly/MonthlyReportRoute.jsx'
 import { ReportTypePlaceholder } from '../reports-engine/shell/ReportTypePlaceholder.jsx'
 import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
 import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
@@ -33,20 +34,27 @@ export function CaseReportsHub({
     [searchParams],
   )
   const engineOn = isReportsEngineActive()
+  const builderOn = isClinicalReportBuilderActive()
 
   if (section === 'dashboard') {
     return (
-      <TherapistReportsHomeView
-        embedded
-        fixedCaseId={caseId}
-        caseCode={caseCode}
-        childName={childName}
-        onUpdated={onUpdated}
-      />
+      <div className="cp-reports-hub forest-light">
+        {isCaseReportsTabV2Active() ? (
+          <CaseReportsTab caseId={caseId} variant={variant} />
+        ) : (
+          <CaseReportsPanel
+            caseId={Number(caseId)}
+            caseCode={caseCode}
+            childName={childName}
+            onUpdated={onUpdated}
+            editBase={variant === 'admin' ? '/admin/reports/edit' : `/therapist/cases/${caseId}/reports/monthly`}
+          />
+        )}
+      </div>
     )
   }
 
-  if (engineOn) {
+  if (builderOn) {
     if (section === 'observation') {
       return (
         <div className="cp-reports-hub forest-light">
@@ -61,7 +69,20 @@ export function CaseReportsHub({
         </div>
       )
     }
-    if (PLACEHOLDER_TITLES[section]) {
+    if (section === 'monthly' && isMonthlyClinicalEngineActive()) {
+      return (
+        <div className="cp-reports-hub forest-light">
+          <MonthlyReportRoute
+            caseId={caseId}
+            caseCode={caseCode}
+            childName={childName}
+            variant={variant}
+            onUpdated={onUpdated}
+          />
+        </div>
+      )
+    }
+    if (PLACEHOLDER_TITLES[section] && engineOn && section !== 'monthly') {
       return (
         <div className="cp-reports-hub forest-light">
           <ReportTypePlaceholder reportType={section} title={PLACEHOLDER_TITLES[section]} />
@@ -81,18 +102,13 @@ export function CaseReportsHub({
       ) : null}
 
       {section === 'monthly' ? (
-        <>
-          <p className="clinical-page-header__subtitle cp-reports-hub__section-intro">
-            Monthly progress for <strong>{childName}</strong> ({caseCode}). Submit drafts for admin review before families can read them.
-          </p>
-          <CaseReportsPanel
-            caseId={Number(caseId)}
-            caseCode={caseCode}
-            childName={childName}
-            onUpdated={onUpdated}
-            editBase={variant === 'admin' ? `/admin/reports/edit` : `/therapist/cases/${caseId}/reports/monthly`}
-          />
-        </>
+        <MonthlyReportRoute
+          caseId={caseId}
+          caseCode={caseCode}
+          childName={childName}
+          variant={variant}
+          onUpdated={onUpdated}
+        />
       ) : null}
 
       {section === 'progress' ? (

@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
-import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
+import {
+  approveMonthlyReport,
+  fetchMonthlyReport,
+  listMonthlyReports,
+  rejectMonthlyReport,
+  resendMonthlyToParent,
+} from '../../lib/monthlyReportApi.js'
 import { AdminPageHeader, AdminPanel, AdminEmptyState, StatusBadge } from './ui/index.js'
 
 export function AdminReportReviewPage() {
@@ -15,10 +20,8 @@ export function AdminReportReviewPage() {
   async function load() {
     setLoading(true)
     try {
-      const rows = unwrapList(
-        await apiFetch('/api/v1/reports/monthly?status=UNDER_REVIEW&page_size=100').catch(() =>
-          apiFetch('/api/v1/reports/monthly?page_size=100'),
-        ),
+      const rows = await listMonthlyReports({ status: 'UNDER_REVIEW', pageSize: 100 }).catch(() =>
+        listMonthlyReports({ pageSize: 100 }),
       )
       setReports(
         rows.filter(
@@ -40,7 +43,7 @@ export function AdminReportReviewPage() {
 
   async function openView(id) {
     try {
-      const detail = await apiFetch(`/api/v1/reports/monthly/${id}`)
+      const detail = await fetchMonthlyReport({ reportId: id })
       setViewReport(detail)
     } catch (err) {
       setMessage(err.message || 'Could not load report')
@@ -51,7 +54,7 @@ export function AdminReportReviewPage() {
     setActing(true)
     setMessage('')
     try {
-      await apiFetch(`/api/v1/reports/monthly/${id}/resend-to-parent`, { method: 'POST' })
+      await resendMonthlyToParent(id)
       setMessage('Report resent to parent for approval.')
       setViewReport(null)
       load()
@@ -66,12 +69,9 @@ export function AdminReportReviewPage() {
     setActing(true)
     setMessage('')
     try {
-      await apiFetch(`/api/v1/reports/monthly/${id}/approve`, {
-        method: 'POST',
-        body: JSON.stringify({
-          comment: 'Approved',
-          visibility_status: 'APPROVED_FOR_PARENT',
-        }),
+      await approveMonthlyReport(id, {
+        comment: 'Approved',
+        visibility_status: 'APPROVED_FOR_PARENT',
       })
       setMessage('Report approved and published for parents.')
       setViewReport(null)
@@ -88,10 +88,7 @@ export function AdminReportReviewPage() {
     setActing(true)
     setMessage('')
     try {
-      await apiFetch(`/api/v1/reports/monthly/${rejectTarget.id}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({ comment: rejectComment.trim() }),
-      })
+      await rejectMonthlyReport(rejectTarget.id, { comment: rejectComment.trim() })
       setRejectTarget(null)
       setRejectComment('')
       setViewReport(null)

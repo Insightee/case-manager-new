@@ -207,6 +207,7 @@ def case_reports_summary(db: Session, user: User, case_id: int) -> dict:
 
 
 def list_hub(db: Session, user_id: int) -> dict:
+    from app.services import case_document_service as case_doc_svc
     from app.services import parent_canonical_report_service as canonical
 
     case_ids = _parent_case_ids(db, user_id)
@@ -225,7 +226,16 @@ def list_hub(db: Session, user_id: int) -> dict:
         canonical.serialize_clinical_monthly_list_item_light(r, cases.get(r.case_id))
         for r in engine_monthly_rows
     ]
-    monthly = canonical.merge_monthly_hub_items(engine_monthly, legacy_monthly)
+    from app.models.case_document import CaseDocumentCategory
+
+    parent_docs = case_doc_svc.list_for_parent(db, user_id)
+    document_monthly = [
+        canonical.serialize_document_monthly_list_item(d, cases.get(d.get("caseDbId")))
+        for d in parent_docs
+        if d.get("category") == CaseDocumentCategory.CLIENT_MONTHLY_REPORT.value
+        and d.get("caseDbId") in case_ids
+    ]
+    monthly = canonical.merge_monthly_hub_items(engine_monthly, legacy_monthly, document_monthly)
 
     attachments = db.scalars(
         select(Attachment).where(

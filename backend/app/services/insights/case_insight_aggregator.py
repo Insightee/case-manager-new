@@ -20,6 +20,7 @@ from app.models.clinical import CaseClinicalProfile
 from app.models.clinical_evidence import IepSupportPriority
 from app.models.iep_plan import IepPlan
 from app.services import iep_plan_service as iep_svc
+from app.services import report_engine_service as report_engine_svc
 from app.services.insights import (
     collaborative_input_mapper,
     evidence_mapper,
@@ -54,12 +55,14 @@ def _build_child_snapshot(
     patterns: dict[str, list[str]],
 ) -> tuple[dict[str, Any], dict]:
     profile = db.scalars(select(CaseClinicalProfile).where(CaseClinicalProfile.case_id == case.id)).first()
-    strengths = _split_list(profile.strengths if profile else None)
-    interests = _split_list(profile.interests if profile else None)
+    obs_signals = report_engine_svc.extract_observation_profile_signals(db, case.id)
+
+    strengths = obs_signals["strengths"] or _split_list(profile.strengths if profile else None)
+    interests = obs_signals["interests"] or _split_list(profile.interests if profile else None)
     support_priorities = db.scalars(
         select(IepSupportPriority).where(IepSupportPriority.case_id == case.id).order_by(IepSupportPriority.sort_order)
     ).all()
-    support_needs = [p.label for p in support_priorities][:6]
+    support_needs = obs_signals["support_needs"] or [p.label for p in support_priorities][:6]
     helpful_supports = patterns.get("helpfulSupports") or []
     recent_pattern = (
         f"{helpful_supports[0]} has shown a positive pattern in recent sessions."
@@ -70,19 +73,29 @@ def _build_child_snapshot(
     child_name = case.child.full_name if case.child else "This child"
     strengths_text = ", ".join(strengths[:3]) or "consistent engagement in structured activities"
     support_text = ", ".join(support_needs[:2]) or "predictable routines"
-    summary_paragraph = (
-        f"{child_name} participates more comfortably with predictable routines and clear supports. "
-        f"Strengths include {strengths_text}. {support_text.capitalize()} still benefit from environmental support."
-    )
+    if obs_signals.get("summary_narrative"):
+        summary_paragraph = obs_signals["summary_narrative"][:600]
+    else:
+        summary_paragraph = (
+            f"{child_name} participates more comfortably with predictable routines and clear supports. "
+            f"Strengths include {strengths_text}. {support_text.capitalize()} still benefit from environmental support."
+        )
+
+    pointers = list(obs_signals.get("pointers") or []) + list(obs_signals.get("parent_priorities") or [])[:3]
 
     snapshot = {
         "childName": child_name,
         "strengthsInterests": strengths + interests,
         "helpfulSupports": helpful_supports,
         "supportNeeds": support_needs,
+        "clinicalPointers": pointers[:6],
         "recentPattern": recent_pattern,
         "summaryParagraph": summary_paragraph,
-        "sourceLine": "Source: observation report, recent session logs, parent input",
+        "sourceLine": (
+            "Source: observation report, recent session logs, parent input"
+            if obs_signals.get("has_observation")
+            else "Source: clinical profile, recent session logs, parent input"
+        ),
     }
     insight = make_insight(
         insight_id="child_snapshot",

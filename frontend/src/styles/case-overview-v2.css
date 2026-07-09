@@ -63,7 +63,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--cov-border);
 }
 
 .cov-page.forest-light .cov-card__icon {
@@ -190,6 +192,33 @@
 }
 
 /* Snapshot KV */
+.cov-page.forest-light .cov-snapshot-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cov-page.forest-light .cov-snapshot-block + .cov-snapshot-block {
+  margin-top: 16px;
+}
+
+.cov-page.forest-light .cov-snapshot-block--clinical {
+  padding: 14px 16px;
+  border-radius: var(--cov-radius);
+  background: var(--cov-surface-soft);
+  border: 1px solid var(--cov-border);
+}
+
+.cov-page.forest-light .cov-snapshot-block__eyebrow {
+  margin: 0 0 8px;
+  font-family: var(--cov-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cov-label);
+}
+
 .cov-page.forest-light .cov-kv-list {
   margin: 0;
   padding: 0;
@@ -302,6 +331,19 @@
 }
 
 /* Strengths */
+.cov-page.forest-light .cov-card--summary {
+  border-left: 4px solid var(--cov-secondary);
+}
+
+.cov-page.forest-light .cov-snapshot-pointers {
+  margin-top: 0;
+}
+
+.cov-page.forest-light .cov-snapshot-pointers .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--cov-secondary);
+}
+
 .cov-page.forest-light .cov-check-list {
   margin: 0;
   padding: 0;
@@ -558,6 +600,8 @@
   font-weight: 600;
   font-size: 0.9375rem;
   text-align: right;
+  max-width: 58%;
+  line-height: 1.35;
 }
 
 /* Missing info */
@@ -602,8 +646,15 @@
 .cov-page.forest-light .cov-rail {
   display: flex;
   flex-direction: column;
-  gap: var(--cov-gutter);
+  gap: 20px;
   min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .cov-page.forest-light .cov-main,
+  .cov-page.forest-light .cov-rail {
+    gap: var(--cov-gutter);
+  }
 }
 
 @media (min-width: 900px) {

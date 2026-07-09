@@ -385,6 +385,23 @@
   max-width: 60ch;
 }
 
+.ci-page.forest-light .ci-child-snapshot__pointers {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ci-page.forest-light .ci-child-snapshot__pointers li {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ci-muted);
+  padding-left: 12px;
+  border-left: 3px solid var(--ci-secondary-container);
+}
+
 .ci-page.forest-light .ci-child-snapshot__grid {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));

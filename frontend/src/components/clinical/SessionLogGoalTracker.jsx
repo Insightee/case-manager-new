@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { fetchMonthlyIepContext } from '../../lib/monthlyReportApi.js'
 import { CLINICAL_DOMAINS } from '../../lib/clinicalDomains.js'
 import { NeuroaffirmativeFieldHint } from '../clinical/NeuroaffirmativeFieldHint.jsx'
 import { STRUCTURED_SESSION_EVIDENCE } from '../../lib/reportsRevampFlags.js'
@@ -23,7 +24,7 @@ export function SessionLogGoalTracker({ logId, caseId, onSaved }) {
     try {
       const [evidence, iepCtx] = await Promise.all([
         apiFetch(`/api/v1/daily-logs/${logId}/session-evidence`).catch(() => ({ goals: [], strategies: [] })),
-        apiFetch(`/api/v1/reports/monthly/iep-context?case_id=${caseId}`).catch(() => ({ goals: [] })),
+        fetchMonthlyIepContext(caseId).catch(() => ({ goals: [] })),
       ])
       setGoals(evidence.goals?.length ? evidence.goals : [{ goal_label: '', support_level: 'MODERATE', response_note: '' }])
       setStrategies(evidence.strategies?.length ? evidence.strategies : [])

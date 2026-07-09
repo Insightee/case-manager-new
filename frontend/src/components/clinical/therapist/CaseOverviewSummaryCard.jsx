@@ -83,7 +83,7 @@ export function CaseOverviewSummaryCard({
         <span className="material-symbols-outlined cov-card__icon" aria-hidden="true">
           description
         </span>
-        <h3 className="cov-card__title">Overview summary</h3>
+        <h3 className="cov-card__title">Case brief</h3>
         {!editing ? (
           <button type="button" className="cov-text-action" onClick={startEdit}>
             Edit
@@ -94,7 +94,7 @@ export function CaseOverviewSummaryCard({
       {editing ? (
         <div className="cov-summary-editor">
           <label className="cov-summary-editor__label" htmlFor={`case-summary-${caseId}`}>
-            Summary for your care team
+            Case brief for your care team
           </label>
           <textarea
             id={`case-summary-${caseId}`}
@@ -138,9 +138,9 @@ export function CaseOverviewSummaryCard({
         {updatedLabel
           ? `Last updated ${updatedLabel}. `
           : readOnlyFallback
-            ? 'From intake, observation, or IEP. '
+            ? 'Pulled from client profile, observation, or IEP. '
             : ''}
-        Internal clinical note — not shared with parents unless included in a published family section.
+        Saved to the client clinical profile — edit here to update the team-facing brief.
       </p>
     </section>
   )

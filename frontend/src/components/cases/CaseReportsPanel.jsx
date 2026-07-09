@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
+import {
+  listMonthlyReports,
+  submitMonthlyReport,
+} from '../../lib/monthlyReportApi.js'
 import { CreateDraftModal } from '../monthly-reports/CreateDraftModal.jsx'
 import { ClinicalStatusBadge } from '../clinical-ui/ClinicalStatusBadge.jsx'
 import { ClinicalCard } from '../clinical-ui/ClinicalCard.jsx'
@@ -32,8 +34,8 @@ export function CaseReportsPanel({ caseId, caseCode, childName, onUpdated, editB
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const rows = await apiFetch('/api/v1/reports/monthly?page_size=100')
-      setReports(unwrapList(rows).filter((r) => r.case_id === caseId))
+      const rows = await listMonthlyReports({ caseId })
+      setReports(rows)
     } catch {
       setReports([])
     } finally {
@@ -51,7 +53,7 @@ export function CaseReportsPanel({ caseId, caseCode, childName, onUpdated, editB
   async function handleSubmit(reportId) {
     setError('')
     try {
-      await apiFetch(`/api/v1/reports/monthly/${reportId}/submit`, { method: 'POST' })
+      await submitMonthlyReport(reportId)
       await load()
       onUpdated?.()
     } catch (err) {

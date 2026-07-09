@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { insertMonthlyInsightsSnapshot } from '../../lib/monthlyReportApi.js'
 import { currentMonthValue, SNAPSHOT_STATUS_LABELS } from '../../lib/insightsConstants.js'
 import { ClinicalPrimaryButton } from '../clinical-ui/ClinicalPrimaryButton.jsx'
 import { ClinicalSecondaryButton } from '../clinical-ui/ClinicalSecondaryButton.jsx'
@@ -29,10 +30,7 @@ export function ClinicalSnapshotReportPanel({ caseId, reportId, month }) {
 
   const insertSection = async (section) => {
     if (!snapshot?.id || !reportId) return
-    await apiFetch(`/api/v1/reports/monthly/${reportId}/insights/insert-snapshot-section`, {
-      method: 'POST',
-      body: JSON.stringify({ snapshot_id: snapshot.id, section }),
-    })
+    await insertMonthlyInsightsSnapshot(reportId, { snapshot_id: snapshot.id, section })
   }
 
   if (loading) return <p className="ic-case-panel__loading">Loading clinical snapshot…</p>
