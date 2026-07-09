@@ -7,6 +7,7 @@ import { QueryState } from '../shared/QueryState.jsx'
 import { formatDisplayDateLabel } from '../../lib/datetime.js'
 import { AbsentNotifications } from './AbsentNotifications.jsx'
 import { ClientSupportPage } from './ClientSupportPage.jsx'
+import { isBillingModuleEnabled, isReportsModuleEnabled } from '../../lib/productFeatureFlags.js'
 import './parent-dashboard.css'
 
 function formatUpdateSessionWhen(update) {
@@ -329,8 +330,10 @@ function RecentNotificationsPanel({ notifications, onMarkRead }) {
 
 function ActionAlertsBanner({ billingSummary, pendingIepCount }) {
   const alerts = []
+  const billingOn = isBillingModuleEnabled()
+  const reportsOn = isReportsModuleEnabled()
 
-  if (billingSummary?.overdueCount > 0) {
+  if (billingOn && billingSummary?.overdueCount > 0) {
     alerts.push({
       key: 'overdue',
       icon: '⚠',
@@ -342,7 +345,7 @@ function ActionAlertsBanner({ billingSummary, pendingIepCount }) {
       link: '/parent/billing',
       linkLabel: 'View payments',
     })
-  } else if (billingSummary?.needsPaymentCount > 0) {
+  } else if (billingOn && billingSummary?.needsPaymentCount > 0) {
     alerts.push({
       key: 'due',
       icon: '💳',
@@ -356,7 +359,7 @@ function ActionAlertsBanner({ billingSummary, pendingIepCount }) {
     })
   }
 
-  if (pendingIepCount > 0) {
+  if (reportsOn && pendingIepCount > 0) {
     alerts.push({
       key: 'iep',
       icon: '📋',
@@ -419,6 +422,7 @@ export function ClientDashboardPage({
   const { user } = useAuth()
   const { data: home, isLoading: homeLoading, isError, error, refetch } = useParentHome()
   const [activeTab, setActiveTab] = useState('overview')
+  const reportsOn = isReportsModuleEnabled()
   const stats = home?.stats
   const firstName = user?.full_name?.split(/\s+/)[0] || 'there'
   const homeCases = useMemo(() => {
@@ -438,8 +442,9 @@ export function ClientDashboardPage({
   const pendingAcceptance = home?.pending_assignment_acceptance || []
   const highlight = homeCases?.[0]?.session_highlight
   const childLabel = homeCases?.[0]?.childName
-  const pendingIepCount =
-    stats?.pending_iep ?? (iepItems || []).filter((item) => item.status === 'pending').length
+  const pendingIepCount = reportsOn
+    ? stats?.pending_iep ?? (iepItems || []).filter((item) => item.status === 'pending').length
+    : 0
   const handleMarkRead = onMarkRead || onMarkNotificationRead
   const pendingIepByChild = useMemo(() => {
     const map = new Map()
@@ -572,10 +577,17 @@ export function ClientDashboardPage({
                   </Link>
                 </li>
                 <li>
+                  {reportsOn ? (
                   <Link to="/parent/reports?type=iep" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--iep">
                     <strong>{stats.pending_iep}</strong>
                     <span>IEP pending</span>
                   </Link>
+                  ) : (
+                  <div className="parent-dashboard-stats__tile parent-dashboard-stats__tile--iep">
+                    <strong>{stats.pending_iep}</strong>
+                    <span>IEP pending</span>
+                  </div>
+                  )}
                 </li>
                 <li>
                   <Link to="/parent/notifications" className="parent-dashboard-stats__tile parent-dashboard-stats__tile--alerts">
@@ -617,6 +629,8 @@ export function ClientDashboardPage({
                           Latest approved report: {item.latestApprovedReportMonth}
                         </p>
                         <div className="parent-case-card__actions">
+                          {reportsOn ? (
+                          <>
                           <Link to="/parent/reports" className="parent-case-card__btn parent-case-card__btn--outline">
                             Latest report
                           </Link>
@@ -627,6 +641,8 @@ export function ClientDashboardPage({
                             >
                               Review IEP
                             </Link>
+                          ) : null}
+                          </>
                           ) : null}
                         </div>
                       </li>

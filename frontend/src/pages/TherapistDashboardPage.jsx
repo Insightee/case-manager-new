@@ -8,7 +8,7 @@ import { QueryState } from '../components/shared/QueryState.jsx'
 import { TherapistDashboardIcon } from '../components/therapist/TherapistDashboardIcon.jsx'
 import { formatDisplayDate, formatDisplayDateTime } from '../lib/datetime.js'
 import { isToday } from '../lib/therapistSchedule.js'
-import { isBillingModuleEnabled } from '../lib/productFeatureFlags.js'
+import { isBillingModuleEnabled, isReportsModuleEnabled } from '../lib/productFeatureFlags.js'
 import '../styles/therapist-dashboard.css'
 
 function dateBlockParts(iso) {
@@ -61,8 +61,9 @@ export function TherapistDashboardPage() {
   const pendingAssignments = home?.pending_assignment_acceptance || []
   const pendingCmMeetings = home?.pending_cm_meetings || []
   const urgentMeeting = pendingCmMeetings[0] || null
-  const reportsDue = (reportsPipeline?.attention || []).slice(0, 3)
+  const reportsDue = isReportsModuleEnabled() ? (reportsPipeline?.attention || []).slice(0, 3) : []
   const billingOn = isBillingModuleEnabled()
+  const reportsOn = isReportsModuleEnabled()
 
   const attentionItems = [
     ...needsLog.slice(0, 3).map((s) => ({
@@ -281,6 +282,7 @@ export function TherapistDashboardPage() {
             </section>
 
             {/* Reports Due */}
+            {reportsOn ? (
             <section className="td-card" aria-labelledby="td-reports-title">
               <div className="td-card__head">
                 <h3 id="td-reports-title" className="td-card__title">Reports Due</h3>
@@ -311,6 +313,7 @@ export function TherapistDashboardPage() {
               )}
               <Link to="/therapist/reports" className="td-card__footer-link">Open Reports</Link>
             </section>
+            ) : null}
 
             {/* Billing Due — module gated */}
             {billingOn ? (

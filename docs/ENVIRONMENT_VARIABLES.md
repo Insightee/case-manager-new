@@ -28,8 +28,9 @@ Detail: [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) · Deploy checklist: [DEPLOY.md
 | Variable | Required | Default | Where | Description |
 |----------|----------|---------|-------|-------------|
 | `VITE_API_URL` | Vercel yes; local optional | *(empty)* | Vercel only | Public API base URL, **no trailing slash**. Local dev: leave empty to proxy `/api` → `http://localhost:8000`. |
-| `VITE_ENABLE_REPORTS` | no | `false` | Vercel | Reports hub + revamp UI (therapist/admin/parent). |
-| `VITE_ENABLE_BILLING` | no | `false` | Vercel | Therapist invoices + admin billing UI. |
+| `VITE_ENABLE_REPORTS` | no | `false` | Vercel **Preview/Staging only** | Reports hub (therapist/parent). **Ignored on Vercel Production** — always Coming Soon. |
+| `VITE_ENABLE_BILLING` | no | `false` | Vercel **Preview/Staging only** | Therapist invoices + parent billing. **Ignored on Vercel Production**. |
+| `VITE_APP_ENV` | no | — | Vercel | Set `staging` on preview/staging deploys; set `production` on Production (optional — `VERCEL_ENV=production` also gates). |
 | `VITE_ENABLE_CLINICAL_BRAIN` | no | `false` | Vercel | Goal bank, strategy pool, clinical review queue. |
 | `VITE_ENABLE_REPORT_BUILDER` | no | `false` | Vercel | Observation/IEP/monthly report builder routes. |
 | `VITE_POLICIES_BOT_URL` | no | — | Frontend | Fallback policies-bot URL if `/api/v1/support/info` does not return one. |

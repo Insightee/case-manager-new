@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '../lib/apiClient.js'
+import { isReportsModuleEnabled } from '../lib/productFeatureFlags.js'
 import { queryKeys } from '../lib/queryClient.js'
 
 export function useTherapistHome() {
@@ -20,5 +21,6 @@ export function useTherapistReportsPipeline() {
   return useQuery({
     queryKey: queryKeys.therapistReportsPipeline,
     queryFn: () => apiFetch('/api/v1/therapist/reports/pipeline'),
+    enabled: isReportsModuleEnabled(),
   })
 }
