@@ -10,6 +10,8 @@ import { InvoicePreviewDrawer } from './InvoicePreviewDrawer.jsx'
 import { SectionHeader } from './SectionHeader.jsx'
 import { SummaryCard } from './SummaryCard.jsx'
 import { computeSummaryFromInvoices, formatInr, mapInvoiceForCard } from './invoiceUtils.js'
+import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
+import { isBillingModuleEnabled } from '../../lib/productFeatureFlags.js'
 
 function Toast({ message, visible, onDismiss }) {
   if (!visible) return null
@@ -59,6 +61,13 @@ function SectionBlock({ id, title, subtitle, dotClass, children }) {
 }
 
 export function InvoicesPage() {
+  if (!isBillingModuleEnabled()) {
+    return <PortalComingSoon variant="therapistBilling" />
+  }
+  return <InvoicesPageContent />
+}
+
+function InvoicesPageContent() {
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [previewMonth, setPreviewMonth] = useState(null)

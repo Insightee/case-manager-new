@@ -14,6 +14,7 @@ import { PortalInstallButton } from '../components/shared/PortalInstallButton.js
 import { PortalInstallBanner } from '../components/shared/PortalInstallBanner.jsx'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
+import { PortalModuleRolloutNotice } from '../components/shared/PortalModuleRolloutNotice.jsx'
 import '../components/shared/notification-bell.css'
 
 const THERAPIST_NAV = [
@@ -608,6 +609,7 @@ export function PortalShell({ portal }) {
             . Edit actions are disabled for those programmes.
           </div>
         ) : null}
+        {(portal === 'therapist' || portal === 'parent') ? <PortalModuleRolloutNotice /> : null}
         <Outlet />
       </main>
       <PortalInstallBanner />
