@@ -14,6 +14,8 @@ import { CreateDraftModal } from './CreateDraftModal.jsx'
 import { PipelineStats } from './PipelineStats.jsx'
 import { ReportCard } from './ReportCard.jsx'
 import { SectionHeader } from './SectionHeader.jsx'
+import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
+import { isReportsModuleEnabled } from '../../lib/productFeatureFlags.js'
 
 const DEFAULT_CHECKLIST = [
   { id: 'c1', label: 'Review all session logs for the month', done: false },
@@ -79,6 +81,13 @@ function SectionBlock({ id, title, subtitle, dotClass, children }) {
 }
 
 export function MonthlyReportsPage() {
+  if (!isReportsModuleEnabled()) {
+    return <PortalComingSoon variant="therapistReports" />
+  }
+  return <MonthlyReportsPageContent />
+}
+
+function MonthlyReportsPageContent() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const caseFilterId = searchParams.get('case_id')

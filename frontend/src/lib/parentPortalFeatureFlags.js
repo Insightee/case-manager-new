@@ -1,5 +1,5 @@
-/** Set to false when the parent Reports hub is ready for production. */
-export const PARENT_REPORTS_COMING_SOON = true
+import { isBillingModuleEnabled, isReportsModuleEnabled } from './productFeatureFlags.js'
 
-/** Set to false when the parent Billing / payments portal is ready for production. */
-export const PARENT_BILLING_COMING_SOON = true
+export const PARENT_REPORTS_COMING_SOON = !isReportsModuleEnabled()
+
+export const PARENT_BILLING_COMING_SOON = !isBillingModuleEnabled()
