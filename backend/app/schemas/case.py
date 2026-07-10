@@ -52,6 +52,7 @@ class CaseRead(CaseBillingFields):
     external_case_ref: Optional[str] = None
     child_id: int
     child_name: Optional[str] = None
+    therapist_name: Optional[str] = None
     service_type: str
     product_module: str
     status: CaseStatus

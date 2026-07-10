@@ -11,6 +11,7 @@ import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
 import { TicketFileInput } from '../support/TicketFileInput.jsx'
+import { CaseCombobox } from '../shared/CaseCombobox.jsx'
 import '../support/support-tickets.css'
 import '../client-portal/parent-support.css'
 
@@ -38,7 +39,6 @@ function topicToRequestType(topic) {
 export function TherapistTicketsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [tickets, setTickets] = useState([])
-  const [cases, setCases] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTicket, setActiveTicket] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -69,9 +69,6 @@ export function TherapistTicketsPage() {
 
   useEffect(() => {
     loadTickets()
-    apiFetch('/api/v1/cases?assigned=true&page_size=100')
-      .then((data) => setCases(unwrapList(data)))
-      .catch(() => setCases([]))
   }, [])
 
   useEffect(() => {
@@ -214,18 +211,14 @@ export function TherapistTicketsPage() {
                 ) : null}
                 <label className="parent-support__field">
                   Related case (optional)
-                  <select
+                  <CaseCombobox
                     value={form.case_id}
-                    onChange={(e) => setForm({ ...form, case_id: e.target.value })}
-                  >
-                    <option value="">No specific case</option>
-                    {cases.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.child_name || c.case_code}
-                        {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(caseId) => setForm({ ...form, case_id: caseId })}
+                    assignedOnly
+                    disabled={submitting}
+                    noneLabel="No specific case"
+                    placeholder="Search client or case code…"
+                  />
                 </label>
                 <label className="parent-support__field">
                   Subject

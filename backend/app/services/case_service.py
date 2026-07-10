@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.module_access import case_product_module_allowed, get_allowed_case_product_modules
+from app.core.module_access import get_allowed_case_product_modules
 from app.core.pagination import normalize_pagination, paginate_query, paginated_response
 from app.core.permissions import case_scope_check, user_has_permission
 from app.core.billing_validation import case_billing_dict
 from app.services.address_service import case_service_address_read
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
+from app.models.child import Child
 from app.models.user import User
 from app.services.admin_scope_service import team_case_access_clause
 from app.services.case_portal_visibility import portal_visible_case_status_filter
@@ -26,6 +27,58 @@ def _apply_module_filter(stmt, user: User):
     return stmt
 
 
+def _apply_case_search(stmt, search: str | None):
+    """Filter by case code, child name, or active therapist name."""
+    q = (search or "").strip()
+    if not q:
+        return stmt
+    pattern = f"%{q}%"
+    child_full = func.trim(Child.first_name + " " + Child.last_name)
+    therapist_match = exists(
+        select(CaseAssignment.id)
+        .join(User, User.id == CaseAssignment.therapist_user_id)
+        .where(
+            CaseAssignment.case_id == Case.id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            User.full_name.ilike(pattern),
+        )
+    )
+    return (
+        stmt.outerjoin(Child, Child.id == Case.child_id)
+        .where(
+            or_(
+                Case.case_code.ilike(pattern),
+                Case.product_module.ilike(pattern),
+                Case.service_type.ilike(pattern),
+                Child.first_name.ilike(pattern),
+                Child.last_name.ilike(pattern),
+                child_full.ilike(pattern),
+                therapist_match,
+            )
+        )
+        .distinct()
+    )
+
+
+def _active_therapist_names(db: Session, case_ids: list[int]) -> dict[int, str]:
+    if not case_ids:
+        return {}
+    rows = db.execute(
+        select(CaseAssignment.case_id, User.full_name)
+        .join(User, User.id == CaseAssignment.therapist_user_id)
+        .where(
+            CaseAssignment.case_id.in_(case_ids),
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.id.desc())
+    ).all()
+    out: dict[int, str] = {}
+    for case_id, name in rows:
+        if case_id not in out and name:
+            out[int(case_id)] = name
+    return out
+
+
 def list_cases_for_user(
     db: Session,
     user: User,
@@ -33,6 +86,7 @@ def list_cases_for_user(
     assigned_only: bool = False,
     status: Optional[CaseStatus] = None,
     product_module: Optional[str] = None,
+    search: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
 ) -> dict:
@@ -90,6 +144,8 @@ def list_cases_for_user(
             .distinct()
         )
 
+    stmt = _apply_case_search(stmt, search)
+
     rows, total = paginate_query(db, stmt, page=page, page_size=page_size)
     # Post-filter for edge roles that need case_scope_check (school coordinator)
     if not assigned_only and user_has_permission(user, "case.read.scoped") and not user_has_permission(
@@ -98,7 +154,12 @@ def list_cases_for_user(
         rows = [c for c in rows if case_scope_check(db, user, c)]
         total = len(rows)
 
-    items = [case_to_read(c, db) for c in rows]
+    therapist_by_case = _active_therapist_names(db, [c.id for c in rows])
+    items = []
+    for c in rows:
+        item = case_to_read(c, db, resolve_therapist=False)
+        item["therapist_name"] = therapist_by_case.get(c.id)
+        items.append(item)
     return paginated_response(items, total, page, page_size)
 
 
@@ -121,17 +182,26 @@ def case_manager_contact(db: Session, case: Case) -> tuple[Optional[str], Option
     return cm.full_name, cm.email
 
 
-def case_to_read(case: Case, db: Session | None = None) -> dict:
+def case_to_read(
+    case: Case,
+    db: Session | None = None,
+    *,
+    resolve_therapist: bool = True,
+) -> dict:
     service_addr = case_service_address_read(case)
     cm_name, cm_email = (None, None)
+    therapist_name = None
     if db is not None:
         cm_name, cm_email = case_manager_contact(db, case)
+        if resolve_therapist:
+            therapist_name = _active_therapist_names(db, [case.id]).get(case.id)
     return {
         "id": case.id,
         "case_code": case.case_code,
         "external_case_ref": case.external_case_ref,
         "child_id": case.child_id,
         "child_name": case.child.full_name if case.child else None,
+        "therapist_name": therapist_name,
         "service_type": case.service_type,
         "product_module": case.product_module,
         "status": case.status,

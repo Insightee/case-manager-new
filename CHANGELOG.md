@@ -9,6 +9,8 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 ## [Unreleased]
 
 ### Added
+- Support tickets: searchable case picker (client name, therapist name, or case code) so shadow (`SS`) and other cases are findable beyond the first 100 alphabetically.
+- `GET /api/v1/cases` `search` query param; case list responses include active `therapist_name`.
 - Team workflow: `CONTRIBUTING.md`, PR template, CODEOWNERS, pre-push/pre-release scripts, pre-commit hooks, CI contributor guards.
 - RBAC editor: bulk Select all / Clear all for service categories, multi-select dropdown, unified clinical features panel.
 - People module: central invite policy (max 2 pending per email, one role per email), uniform row actions (staff/therapists/clients), bulk activate/deactivate and bulk invite cancel, client Deactivated when all cases closed with reactivate case flow, case CM edit modal.

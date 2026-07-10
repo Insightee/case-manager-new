@@ -63,6 +63,7 @@ def list_cases(
     assigned: bool = Query(False),
     status: Optional[CaseStatus] = None,
     product_module: Optional[str] = None,
+    search: Optional[str] = Query(None, max_length=128),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
@@ -83,6 +84,7 @@ def list_cases(
         assigned_only=assigned,
         status=status,
         product_module=product_module,
+        search=search,
         page=page,
         page_size=page_size,
     )

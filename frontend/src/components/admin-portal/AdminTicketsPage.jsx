@@ -6,6 +6,7 @@ import { createStaffTicket } from '../../lib/ticketFormUtils.js'
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { TicketFileInput } from '../support/TicketFileInput.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
+import { CaseCombobox } from '../shared/CaseCombobox.jsx'
 import '../support/support-tickets.css'
 import {
   AdminCollapsibleFilters,
@@ -22,7 +23,6 @@ export function AdminTicketsPage({ embedded = false }) {
   const [searchParams] = useSearchParams()
   const deepLinkTicketId = searchParams.get('ticket')
   const handledDeepLink = useRef(null)
-  const [cases, setCases] = useState([])
   const [tickets, setTickets] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [createForm, setCreateForm] = useState({ subject: '', body: '', category: 'OTHER', case_id: '' })
@@ -53,16 +53,7 @@ export function AdminTicketsPage({ embedded = false }) {
 
   useEffect(() => {
     load()
-    apiFetch('/api/v1/cases?page_size=100')
-      .then((d) => setCases(unwrapList(d)))
-      .catch(() => setCases([]))
   }, [moduleFilter])
-
-  const caseById = useMemo(() => {
-    const map = {}
-    for (const c of cases) map[c.id] = c
-    return map
-  }, [cases])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -236,18 +227,13 @@ export function AdminTicketsPage({ embedded = false }) {
                 </label>
                 <label>
                   Case (optional)
-                  <select
-                    className="admin-input"
+                  <CaseCombobox
                     value={createForm.case_id}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, case_id: e.target.value }))}
-                  >
-                    <option value="">Not linked to a case</option>
-                    {cases.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {[c.case_code, c.child_name].filter(Boolean).join(' · ')}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(caseId) => setCreateForm((f) => ({ ...f, case_id: caseId }))}
+                    disabled={createBusy}
+                    noneLabel="Not linked to a case"
+                    placeholder="Search client, therapist, or case code…"
+                  />
                 </label>
                 <label style={{ gridColumn: '1 / -1' }}>
                   Subject
@@ -307,8 +293,8 @@ export function AdminTicketsPage({ embedded = false }) {
                           ? ` · ${t.raised_by_name}${t.raised_by_portal ? ` (${t.raised_by_portal})` : ''}`
                           : ''}
                         {t.assigned_to_name ? ` → ${t.assigned_to_name}` : ' · Unassigned'}
-                        {t.case_id && caseById[t.case_id]
-                          ? ` · ${caseById[t.case_id].case_code} (${caseById[t.case_id].child_name})`
+                        {t.case_code
+                          ? ` · ${t.case_code}${t.child_name ? ` (${t.child_name})` : ''}`
                           : ''}
                         {t.product_module ? ` · ${t.product_module}` : ''}
                         {t.attachment_count > 0 ? ` · ${t.attachment_count} attachment(s)` : ''}
