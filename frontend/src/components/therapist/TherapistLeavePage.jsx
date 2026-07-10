@@ -29,12 +29,7 @@ const TYPE_COLORS = {
   CARRY_FORWARD: '#ede9fe',
 }
 
-function leaveRowLabel(l, { hideCreditDetails = false } = {}) {
-  if (hideCreditDetails) {
-    const days = l.day_count
-    if (days != null) return `${days} day${days === 1 ? '' : 's'}`
-    return 'Leave'
-  }
+function leaveRowLabel(l) {
   if (l.paid_days != null || l.unpaid_days != null) {
     const paid = l.paid_days ?? 0
     const unpaid = l.unpaid_days ?? 0
@@ -46,8 +41,7 @@ function leaveRowLabel(l, { hideCreditDetails = false } = {}) {
   return l.leave_type || '—'
 }
 
-function leaveRowColor(l, { hideCreditDetails = false } = {}) {
-  if (hideCreditDetails) return '#e0e7ff'
+function leaveRowColor(l) {
   const key = l.billing_category || l.leave_type
   return TYPE_COLORS[key] || '#f3f4f6'
 }
@@ -230,18 +224,20 @@ export function TherapistLeavePage() {
 
   function exportLeavesExcelLikeCsv() {
     const header = hideCreditUi
-      ? ['Leave', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note']
+      ? ['Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note']
       : ['Category', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note']
-    const rows = filteredLeaves.map((l) => [
-      leaveRowLabel(l, { hideCreditDetails: hideCreditUi }),
-      l.service_line || '',
-      formatDisplayDate(l.start_date),
-      formatDisplayDate(l.end_date),
-      l.day_count ?? '',
-      (l.reason || '').replaceAll('"', '""'),
-      l.status || '',
-      (l.status === 'REJECTED' ? l.review_note : '') || '',
-    ])
+    const rows = filteredLeaves.map((l) => {
+      const base = [
+        l.service_line || '',
+        formatDisplayDate(l.start_date),
+        formatDisplayDate(l.end_date),
+        l.day_count ?? '',
+        (l.reason || '').replaceAll('"', '""'),
+        l.status || '',
+        (l.status === 'REJECTED' ? l.review_note : '') || '',
+      ]
+      return hideCreditUi ? base : [leaveRowLabel(l), ...base]
+    })
     const csv = [header, ...rows]
       .map((row) => row.map((cell) => `"${String(cell ?? '')}"`).join(','))
       .join('\n')
@@ -488,7 +484,7 @@ export function TherapistLeavePage() {
               <thead>
                 <tr>
                   {(hideCreditUi
-                    ? ['Leave', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', '']
+                    ? ['Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', '']
                     : ['Category', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', '']
                   ).map((h) => (
                     <th key={h || 'actions'}>{h}</th>
@@ -498,14 +494,16 @@ export function TherapistLeavePage() {
               <tbody>
                 {filteredLeaves.map((l) => {
                   const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
-                  const tc = leaveRowColor(l, { hideCreditDetails: hideCreditUi })
+                  const tc = leaveRowColor(l)
                   return (
                     <tr key={l.id}>
-                      <td>
-                        <span className="therapist-leave-page__pill" style={{ background: tc }}>
-                          {leaveRowLabel(l, { hideCreditDetails: hideCreditUi })}
-                        </span>
-                      </td>
+                      {!hideCreditUi ? (
+                        <td>
+                          <span className="therapist-leave-page__pill" style={{ background: tc }}>
+                            {leaveRowLabel(l)}
+                          </span>
+                        </td>
+                      ) : null}
                       <td style={{ color: '#6b7280', fontSize: '0.8rem' }}>{l.service_line || '—'}</td>
                       <td>{formatDisplayDate(l.start_date)}</td>
                       <td>{formatDisplayDate(l.end_date)}</td>
