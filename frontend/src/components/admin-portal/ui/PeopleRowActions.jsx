@@ -117,19 +117,34 @@ export function PeopleRowActions({
 
   async function reactivateCase(caseId) {
     if (!caseId) return
-    if (!window.confirm('Reactivate this case? Status will return to Active.')) return
+    const reason = window.prompt('Reason for reopening this case (required):')
+    if (reason == null) return
+    if (reason.trim().length < 5) {
+      onError?.('Looks like we still need a reopen reason (at least 5 characters).')
+      return
+    }
+    const dateInput = window.prompt(
+      'Reopening date (YYYY-MM-DD). Leave blank for today:',
+      new Date().toISOString().slice(0, 10),
+    )
+    if (dateInput == null) return
+    const effectiveDate = (dateInput.trim() || new Date().toISOString().slice(0, 10))
     const key = `${user.id}:reactivate`
     onError?.('')
     setRowBusy?.(key)
     try {
-      await apiFetch(`/api/v1/cases/${caseId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'ACTIVE' }),
+      await apiFetch(`/api/v1/cases/${caseId}/client-status`, {
+        method: 'POST',
+        body: JSON.stringify({
+          new_status: 'PENDING_ALLOTMENT',
+          effective_date: effectiveDate,
+          reason: reason.trim(),
+        }),
       })
-      onSuccess?.('Case reactivated.')
+      onSuccess?.('Case reopened. Assign a therapist to resume services.')
       onReload?.()
     } catch (err) {
-      onError?.(err.message || 'Could not reactivate case')
+      onError?.(err.message || 'Could not reopen case')
     } finally {
       setRowBusy?.(null)
     }
@@ -157,7 +172,7 @@ export function PeopleRowActions({
           disabled={disabled || !!rowBusy}
           onClick={() => reactivateCase(user._reactivateCaseId)}
         >
-          {busyReactivate ? 'Reopening…' : 'Reactivate case'}
+          {busyReactivate ? 'Reopening…' : 'Reopen case'}
         </button>
       ) : null}
       <button

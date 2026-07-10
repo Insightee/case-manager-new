@@ -7,8 +7,8 @@ const STATUS_LABELS = {
   PENDING_ALLOTMENT: 'Pending allotment',
   SUSPENDED: 'Suspended',
   PENDING_REPLACEMENT: 'Pending replacement',
-  DEACTIVATED: 'Deactivated',
   CLOSED: 'Closed',
+  DEACTIVATED: 'Closed (legacy)',
 }
 
 function StatusBadge({ status }) {

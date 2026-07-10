@@ -35,6 +35,7 @@ ALL_PERMISSIONS = [
     "case.read.scoped",
     "case.create",
     "case.update",
+    "case.status_manage",
     "case.assign",
     "session.read",
     "session.create",
@@ -72,6 +73,7 @@ _ROLE_MODULE_ADMIN = [
     "case.read.scoped",
     "case.create",
     "case.update",
+    "case.status_manage",
     "case.assign",
     "therapist.read",
     "session.read",
@@ -159,6 +161,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
     RoleName.HR: [
         "case.read.all",
+        "case.status_manage",
         "session.read",
         "therapist.read",
         "leave.manage",
@@ -245,13 +248,14 @@ def case_scope_check(db: Session, user: User, case: Case) -> bool:
         or user_has_permission(user, "case.read.scoped")
     ):
         return False
+    # Global case readers (admin/HR/finance) see all cases regardless of product module.
+    if user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all"):
+        return True
     if user_has_permission(user, "case.read.assigned"):
         if get_active_assignment(db, case.id, user.id):
             return True
     if not case_product_module_allowed(user, case.product_module):
         return False
-    if user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all"):
-        return True
     if user_has_permission(user, "case.read.team"):
         if case.case_manager_user_id == user.id:
             return True

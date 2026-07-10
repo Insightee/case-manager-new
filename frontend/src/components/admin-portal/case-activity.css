@@ -63,6 +63,11 @@
   box-shadow: 0 0 0 2px #f1f5f9;
 }
 
+.case-activity-timeline__item--status::before {
+  border-color: #b45309;
+  box-shadow: 0 0 0 2px #fef3c7;
+}
+
 .case-activity-timeline__head {
   display: flex;
   flex-wrap: wrap;

@@ -148,14 +148,41 @@ def approve_request(db: Session, request_id: int, admin_user: User, note: str | 
     if not case:
         raise ValueError("Case not found")
     if req.to_status == CaseStatus.CLOSED.value:
-        _assert_no_blocking_invoices_for_close(db, case.id)
-    case.status = CaseStatus(req.to_status)
-    if req.to_status == CaseStatus.CLOSED.value:
-        from app.services.case_close_service import apply_case_closed_side_effects
+        assert_no_blocking_invoices_for_close(db, case.id)
 
-        apply_case_closed_side_effects(db, case)
-    elif req.to_status == CaseStatus.SUSPENDED.value:
-        cleanup_future_bookings(db, case.id)
+    from app.services import client_status_service
+
+    # Prefer the audited client-status path for close/reactivate so reason + date are stored.
+    if req.to_status in (
+        CaseStatus.CLOSED.value,
+        CaseStatus.SUSPENDED.value,
+        CaseStatus.ACTIVE.value,
+    ):
+        try:
+            client_status_service.change_client_status(
+                db,
+                case=case,
+                user=admin_user,
+                new_status=req.to_status,
+                effective_date=datetime.now(timezone.utc).date(),
+                reason=req.reason or f"Approved status request #{req.id}",
+                internal_notes=(note or "").strip() or None,
+            )
+        except ValueError:
+            # Fallback for transitions not in ADMIN_ALLOWED_TRANSITIONS (e.g. therapist request edges).
+            case.status = CaseStatus(req.to_status)
+            if req.to_status == CaseStatus.CLOSED.value:
+                from app.services.case_close_service import apply_case_closed_side_effects
+
+                apply_case_closed_side_effects(db, case)
+            elif req.to_status == CaseStatus.SUSPENDED.value:
+                cleanup_future_bookings(db, case.id)
+            case.status_effective_date = datetime.now(timezone.utc).date()
+            case.status_reason = req.reason
+            case.status_changed_by_user_id = admin_user.id
+    else:
+        case.status = CaseStatus(req.to_status)
+
     req.status = CaseStatusRequestStatus.APPROVED
     req.reviewed_by_user_id = admin_user.id
     req.review_note = (note or "").strip() or None

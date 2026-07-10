@@ -7,31 +7,57 @@ from sqlalchemy import select
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
+from app.core.permissions import RoleName, user_has_permission
 from app.models.case import Case, CaseStatus
 from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.models.user import User
 
-# Allowed admin-direct transitions
+# Closed end-state uses CLOSED (same side effects as legacy DEACTIVATED).
 ADMIN_ALLOWED_TRANSITIONS: dict[str, list[str]] = {
     CaseStatus.PENDING_ALLOTMENT.value: [CaseStatus.ACTIVE.value],
     CaseStatus.ACTIVE.value: [
         CaseStatus.SUSPENDED.value,
         CaseStatus.PENDING_REPLACEMENT.value,
-        CaseStatus.DEACTIVATED.value,
+        CaseStatus.CLOSED.value,
     ],
     CaseStatus.SUSPENDED.value: [
         CaseStatus.ACTIVE.value,
-        CaseStatus.DEACTIVATED.value,
+        CaseStatus.CLOSED.value,
     ],
     CaseStatus.PENDING_REPLACEMENT.value: [
         CaseStatus.ACTIVE.value,
-        CaseStatus.DEACTIVATED.value,
+        CaseStatus.CLOSED.value,
     ],
-    CaseStatus.DEACTIVATED.value: [],  # terminal
-    CaseStatus.CLOSED.value: [],       # legacy terminal
+    # Reopen → pending allotment so a therapist must be reassigned.
+    CaseStatus.CLOSED.value: [CaseStatus.PENDING_ALLOTMENT.value],
+    CaseStatus.DEACTIVATED.value: [CaseStatus.PENDING_ALLOTMENT.value],
 }
 
+_TERMINAL_CLOSE_STATUSES = frozenset(
+    {CaseStatus.CLOSED.value, CaseStatus.DEACTIVATED.value}
+)
+_REOPEN_ROLES = frozenset(
+    {
+        RoleName.SUPER_ADMIN.value,
+        RoleName.MODULE_ADMIN.value,
+        RoleName.ADMIN.value,
+        RoleName.HR.value,
+    }
+)
+
 AGEING_WARN_DAYS = 7  # configurable threshold for highlighting
+
+
+def user_can_manage_client_status(user: User) -> bool:
+    return user_has_permission(user, "case.update") or user_has_permission(
+        user, "case.status_manage"
+    )
+
+
+def user_can_reopen_case(user: User) -> bool:
+    if user_has_permission(user, "admin.override"):
+        return True
+    return bool(set(user.role_names) & _REOPEN_ROLES)
 
 
 def _cancel_future_bookings(db: Session, case_id: int) -> None:
@@ -39,6 +65,17 @@ def _cancel_future_bookings(db: Session, case_id: int) -> None:
     from app.services.case_close_service import cleanup_future_bookings
 
     cleanup_future_bookings(db, case_id)
+
+
+def _is_reopen_transition(current_status: str, new_status: str) -> bool:
+    return (
+        current_status in _TERMINAL_CLOSE_STATUSES
+        and new_status == CaseStatus.PENDING_ALLOTMENT.value
+    )
+
+
+def _is_close_transition(new_status: str) -> bool:
+    return new_status == CaseStatus.CLOSED.value
 
 
 def change_client_status(
@@ -50,7 +87,7 @@ def change_client_status(
     reason: str,
     internal_notes: Optional[str] = None,
 ) -> CaseClientStatusAudit:
-    """Admin-direct status change with full audit trail. Caller must commit."""
+    """Admin/HR-direct status change with full audit trail. Caller must commit."""
     current_status = case.status.value if hasattr(case.status, "value") else str(case.status)
     new_status_upper = new_status.upper()
 
@@ -61,6 +98,11 @@ def change_client_status(
             f"Cannot transition from {current_status} to {new_status_upper}. "
             f"Allowed: {allowed or ['none (terminal state)']}"
         )
+
+    if _is_reopen_transition(current_status, new_status_upper) and not user_can_reopen_case(
+        user
+    ):
+        raise ValueError("Only admin or HR can reopen a closed case")
 
     # Validate inputs
     if not effective_date:
@@ -80,9 +122,13 @@ def change_client_status(
         CaseStatus.PENDING_REPLACEMENT.value,
     ):
         _cancel_future_bookings(db, case.id)
-    elif new_status_upper == CaseStatus.DEACTIVATED.value:
-        from app.services.case_close_service import apply_case_closed_side_effects
+    elif _is_close_transition(new_status_upper):
+        from app.services.case_close_service import (
+            apply_case_closed_side_effects,
+            assert_no_blocking_invoices_for_close,
+        )
 
+        assert_no_blocking_invoices_for_close(db, case.id)
         apply_case_closed_side_effects(db, case)
 
     # Create audit row
@@ -142,6 +188,47 @@ def list_audit_for_case(db: Session, case_id: int, limit: int = 50) -> list[dict
     return out
 
 
+def status_timeline_events(db: Session, case_id: int, *, limit: int = 40) -> list[dict]:
+    """Serialize client-status audit rows for the case activity timeline."""
+    rows = db.scalars(
+        select(CaseClientStatusAudit)
+        .where(CaseClientStatusAudit.case_id == case_id)
+        .order_by(CaseClientStatusAudit.changed_at.desc())
+        .limit(limit)
+    ).all()
+    events: list[dict] = []
+    for r in rows:
+        changer = db.get(User, r.changed_by_user_id)
+        eff = r.effective_date.isoformat() if r.effective_date else None
+        if r.new_status == CaseStatus.CLOSED.value:
+            action_label = f"Case closed (effective {eff})" if eff else "Case closed"
+        elif _is_reopen_transition(r.previous_status, r.new_status):
+            action_label = f"Case reopened (effective {eff})" if eff else "Case reopened"
+        else:
+            action_label = f"Status changed: {r.previous_status} → {r.new_status}"
+        if r.reason:
+            action_label = f"{action_label} — {r.reason}"
+        events.append(
+            {
+                "source": "status",
+                "id": f"status-{r.id}",
+                "action": "client_status_change",
+                "action_label": action_label,
+                "actor_name": changer.full_name if changer else "System",
+                "actor_user_id": r.changed_by_user_id,
+                "entity_type": "case_status",
+                "entity_id": str(r.id),
+                "case_id": case_id,
+                "created_at": r.changed_at.isoformat() if r.changed_at else None,
+                "effective_date": eff,
+                "reason": r.reason,
+                "previous_status": r.previous_status,
+                "new_status": r.new_status,
+            }
+        )
+    return events
+
+
 def get_case_billing_cutoff(case: Case) -> Optional[date]:
     """Returns the billing cutoff date if the case status blocks billing. None for active billing."""
     billing_blocked_statuses = {
@@ -157,10 +244,10 @@ def get_case_billing_cutoff(case: Case) -> Optional[date]:
 
 
 def assert_case_not_deactivated(case: Case) -> None:
-    """Raises ValueError if case is deactivated."""
+    """Raises ValueError if case is closed/deactivated."""
     current = case.status.value if hasattr(case.status, "value") else str(case.status)
-    if current == CaseStatus.DEACTIVATED.value:
-        raise ValueError("Case is deactivated — no new sessions can be created")
+    if current in _TERMINAL_CLOSE_STATUSES:
+        raise ValueError("Case is closed — no new sessions can be created")
 
 
 def get_status_report(

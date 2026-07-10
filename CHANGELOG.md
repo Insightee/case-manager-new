@@ -9,6 +9,7 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 ## [Unreleased]
 
 ### Added
+- Case close/reopen: required free-text reason and user-chosen termination/reopen date (past dates allowed); Admin and HR can close and reopen; reopen returns the case to pending allotment for therapist reassignment; close/reopen events appear on the case activity timeline.
 - Support tickets: searchable case picker (client name, therapist name, or case code) so shadow (`SS`) and other cases are findable beyond the first 100 alphabetically.
 - `GET /api/v1/cases` `search` query param; case list responses include active `therapist_name`.
 - Team workflow: `CONTRIBUTING.md`, PR template, CODEOWNERS, pre-push/pre-release scripts, pre-commit hooks, CI contributor guards.
@@ -18,6 +19,7 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 - People directory loads all user pages (not just first 100); server-side search by email/name.
 
 ### Changed
+- Closing a case uses status `CLOSED` with the same side effects as the former deactivate path (cancel future sessions, end assignments, billing cutoff). Bare `PATCH` status=CLOSED is rejected in favor of the audited client-status API.
 - Support ticket case picker: load all accessible cases once into a local pool, then filter/scroll in memory (no per-keystroke fetch).
 - Therapist onboarding pre-selects only **Homecare** and **Shadow support** by default (not every service category).
 - **@antigravity** — Enforced role-specific portal logins on backend and frontend, preventing users from logging in via incorrect portal URLs.

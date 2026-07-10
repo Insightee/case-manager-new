@@ -117,10 +117,14 @@ def test_admin_close_cancels_future_booking_and_hides_from_therapist():
     board_ids_before = [row["id"] for row in visible_before.json()["cases_board"]["allCases"]]
     assert case_id in board_ids_before
 
-    close = client.patch(
-        f"/api/v1/cases/{case_id}",
+    close = client.post(
+        f"/api/v1/cases/{case_id}/client-status",
         headers=admin_headers,
-        json={"status": "CLOSED"},
+        json={
+            "new_status": "CLOSED",
+            "effective_date": date.today().isoformat(),
+            "reason": "Family completed programme goals",
+        },
     )
     assert close.status_code == 200, close.text
 
@@ -148,6 +152,68 @@ def test_admin_close_cancels_future_booking_and_hides_from_therapist():
     admin_detail = client.get(f"/api/v1/cases/{case_id}", headers=admin_headers)
     assert admin_detail.status_code == 200
     assert admin_detail.json()["status"] == "CLOSED"
+    assert admin_detail.json().get("status_reason") or admin_detail.json().get("statusReason")
+
+
+def test_bare_patch_close_is_rejected():
+    admin_headers = _login("superadmin@demo.com")
+    therapists = client.get("/api/v1/admin/users/directory?roles=THERAPIST", headers=admin_headers)
+    therapist_id = therapists.json()[0]["id"]
+    case_id = _create_active_case(admin_headers, therapist_id)
+
+    close = client.patch(
+        f"/api/v1/cases/{case_id}",
+        headers=admin_headers,
+        json={"status": "CLOSED"},
+    )
+    assert close.status_code == 400
+    assert "client-status" in close.json()["detail"].lower() or "reason" in close.json()["detail"].lower()
+
+
+def test_admin_close_and_reopen_writes_audit_and_pending_allotment():
+    admin_headers = _login("superadmin@demo.com")
+    therapists = client.get("/api/v1/admin/users/directory?roles=THERAPIST", headers=admin_headers)
+    therapist_id = therapists.json()[0]["id"]
+    case_id = _create_active_case(admin_headers, therapist_id)
+    past = (date.today() - timedelta(days=3)).isoformat()
+
+    close = client.post(
+        f"/api/v1/cases/{case_id}/client-status",
+        headers=admin_headers,
+        json={
+            "new_status": "CLOSED",
+            "effective_date": past,
+            "reason": "Family relocated out of service area",
+        },
+    )
+    assert close.status_code == 200, close.text
+    assert close.json()["case"]["status"] == "CLOSED"
+
+    reopen_date = (date.today() - timedelta(days=1)).isoformat()
+    reopen = client.post(
+        f"/api/v1/cases/{case_id}/client-status",
+        headers=admin_headers,
+        json={
+            "new_status": "PENDING_ALLOTMENT",
+            "effective_date": reopen_date,
+            "reason": "Family returned and requested restart",
+        },
+    )
+    assert reopen.status_code == 200, reopen.text
+    assert reopen.json()["case"]["status"] == "PENDING_ALLOTMENT"
+
+    audit = client.get(f"/api/v1/cases/{case_id}/client-status/audit", headers=admin_headers)
+    assert audit.status_code == 200
+    rows = audit.json()["audit"]
+    assert len(rows) >= 2
+    assert any(r["newStatus"] == "CLOSED" for r in rows)
+    assert any(r["newStatus"] == "PENDING_ALLOTMENT" for r in rows)
+
+    timeline = client.get(f"/api/v1/admin/cases/{case_id}/timeline", headers=admin_headers)
+    assert timeline.status_code == 200
+    labels = [i.get("action_label", "") for i in timeline.json()["items"]]
+    assert any("closed" in (label or "").lower() for label in labels)
+    assert any("reopened" in (label or "").lower() for label in labels)
 
 
 def test_admin_close_cancels_recurring_schedule_record():
@@ -174,10 +240,14 @@ def test_admin_close_cancels_recurring_schedule_record():
     assert recurring.status_code in (200, 201), recurring.text
     record_id = recurring.json()["id"]
 
-    close = client.patch(
-        f"/api/v1/cases/{case_id}",
+    close = client.post(
+        f"/api/v1/cases/{case_id}/client-status",
         headers=admin_headers,
-        json={"status": "CLOSED"},
+        json={
+            "new_status": "CLOSED",
+            "effective_date": date.today().isoformat(),
+            "reason": "Closing to cancel recurring schedule",
+        },
     )
     assert close.status_code == 200, close.text
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import './admin-client-status.css'
 
@@ -7,43 +7,59 @@ const STATUS_LABELS = {
   PENDING_ALLOTMENT: 'Pending allotment',
   SUSPENDED: 'Suspended',
   PENDING_REPLACEMENT: 'Pending replacement',
-  DEACTIVATED: 'Deactivated',
+  DEACTIVATED: 'Closed',
   CLOSED: 'Closed',
 }
 
 const STATUS_IMPACTS = {
   ACTIVE: 'Services, sessions, billing, and reports continue normally.',
+  PENDING_ALLOTMENT:
+    'Case is reopened and waiting for a therapist to be assigned before services resume.',
   SUSPENDED:
     'Billing will stop from the effective date. Future scheduled sessions will be cancelled. Parent portal will show service as paused.',
   PENDING_REPLACEMENT:
     'Billing stops from the effective date. The case remains open pending therapist reassignment. No new sessions will be auto-scheduled.',
-  DEACTIVATED:
-    'Final billing will be calculated up to the effective date. All future sessions will be cancelled. No new sessions can be created. Records remain accessible.',
   CLOSED:
-    'Case is closed. Final billing settlement applies. No new sessions can be created.',
+    'Final billing will be calculated up to the termination date. All future sessions will be cancelled. Therapist assignment ends. Records remain accessible.',
+  DEACTIVATED:
+    'Final billing will be calculated up to the termination date. All future sessions will be cancelled. Therapist assignment ends. Records remain accessible.',
 }
 
-// Admin-allowed transitions per status
+// Admin-allowed transitions per status (CLOSED replaces DEACTIVATED for new closes)
 const ALLOWED_NEXT = {
   PENDING_ALLOTMENT: ['ACTIVE'],
-  ACTIVE: ['SUSPENDED', 'PENDING_REPLACEMENT', 'DEACTIVATED'],
-  SUSPENDED: ['ACTIVE', 'DEACTIVATED'],
-  PENDING_REPLACEMENT: ['ACTIVE', 'DEACTIVATED'],
-  DEACTIVATED: [],
-  CLOSED: [],
+  ACTIVE: ['SUSPENDED', 'PENDING_REPLACEMENT', 'CLOSED'],
+  SUSPENDED: ['ACTIVE', 'CLOSED'],
+  PENDING_REPLACEMENT: ['ACTIVE', 'CLOSED'],
+  DEACTIVATED: ['PENDING_ALLOTMENT'],
+  CLOSED: ['PENDING_ALLOTMENT'],
 }
 
 function StatusBadge({ status }) {
   const key = (status || 'ACTIVE').toLowerCase()
+  const displayKey = status === 'DEACTIVATED' ? 'closed' : key
   return (
-    <span className={`cs-badge cs-badge--${key}`}>
+    <span className={`cs-badge cs-badge--${displayKey}`}>
       {STATUS_LABELS[status] || status}
     </span>
   )
 }
 
-function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
-  const allowed = ALLOWED_NEXT[currentStatus] || []
+function dateFieldLabel(newStatus) {
+  if (newStatus === 'CLOSED') return 'Termination date'
+  if (newStatus === 'PENDING_ALLOTMENT') return 'Reopening date'
+  return 'Effective date'
+}
+
+function ChangeStatusModal({ currentStatus, caseId, canReopen, onClose, onSuccess }) {
+  const allowed = useMemo(() => {
+    const next = ALLOWED_NEXT[currentStatus] || []
+    if (!canReopen) {
+      return next.filter((s) => s !== 'PENDING_ALLOTMENT')
+    }
+    return next
+  }, [currentStatus, canReopen])
+
   const [newStatus, setNewStatus] = useState(allowed[0] || '')
   const [effectiveDate, setEffectiveDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [reason, setReason] = useState('')
@@ -52,10 +68,12 @@ function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
   const [error, setError] = useState('')
 
   const impact = STATUS_IMPACTS[newStatus] || ''
+  const isClose = newStatus === 'CLOSED'
+  const isReopen = newStatus === 'PENDING_ALLOTMENT'
 
   async function handleSubmit() {
     if (!newStatus || !effectiveDate || reason.trim().length < 5) {
-      setError('Please fill in all required fields. Reason must be at least 5 characters.')
+      setError('Looks like we still need a few details before we can save this. Reason must be at least 5 characters.')
       return
     }
     setSaving(true)
@@ -85,7 +103,9 @@ function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
         <div className="cs-modal" onClick={(e) => e.stopPropagation()}>
           <p className="cs-modal__title">Status cannot be changed</p>
           <p style={{ fontSize: '0.875rem', color: '#64748b' }}>
-            This case is in a terminal state ({STATUS_LABELS[currentStatus]}) and cannot be transitioned further.
+            {['CLOSED', 'DEACTIVATED'].includes(currentStatus) && !canReopen
+              ? 'Only admin or HR can reopen a closed case.'
+              : `This case is in a terminal state (${STATUS_LABELS[currentStatus]}) and cannot be transitioned further.`}
           </p>
           <div className="cs-modal__actions">
             <button type="button" className="admin-btn admin-btn--ghost" onClick={onClose}>Close</button>
@@ -98,7 +118,9 @@ function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
   return (
     <div className="cs-modal-overlay" onClick={onClose}>
       <div className="cs-modal" onClick={(e) => e.stopPropagation()}>
-        <p className="cs-modal__title">Change client status</p>
+        <p className="cs-modal__title">
+          {isClose ? 'Close case' : isReopen ? 'Reopen case' : 'Change client status'}
+        </p>
 
         {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
@@ -117,7 +139,7 @@ function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
           </label>
 
           <label className="admin-label">
-            Effective date <span style={{ color: '#ef4444' }}>*</span>
+            {dateFieldLabel(newStatus)} <span style={{ color: '#ef4444' }}>*</span>
             <input
               type="date"
               className="admin-input"
@@ -125,15 +147,24 @@ function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
               onChange={(e) => setEffectiveDate(e.target.value)}
             />
           </label>
+          <p className="admin-muted" style={{ gridColumn: '1 / -1', margin: 0, fontSize: '0.75rem' }}>
+            You can choose a past date when needed.
+          </p>
 
           <label className="admin-label" style={{ gridColumn: '1 / -1' }}>
             Reason for change <span style={{ color: '#ef4444' }}>*</span>
-            <input
-              type="text"
+            <textarea
               className="admin-input"
+              rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Min 5 characters — e.g. Therapist resigned, service paused pending review"
+              placeholder={
+                isClose
+                  ? 'Why is this case being closed?'
+                  : isReopen
+                    ? 'Why is this case being reopened?'
+                    : 'Min 5 characters — e.g. Therapist resigned, service paused pending review'
+              }
             />
           </label>
 
@@ -159,7 +190,9 @@ function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
         {newStatus ? (
           <div className="cs-modal__confirm">
             You are changing this client status to <strong>{STATUS_LABELS[newStatus] || newStatus}</strong>{' '}
-            effective from <strong>{effectiveDate || '—'}</strong>. This may affect services, scheduling, and billing from this date. Are you sure?
+            effective from <strong>{effectiveDate || '—'}</strong>.
+            {isReopen ? ' A therapist will need to be reassigned before services resume.' : null}
+            {' '}Are you sure?
           </div>
         ) : null}
 
@@ -173,7 +206,7 @@ function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
             onClick={handleSubmit}
             disabled={saving || !newStatus || !effectiveDate || reason.trim().length < 5}
           >
-            {saving ? 'Saving…' : 'Confirm status change'}
+            {saving ? 'Saving…' : isClose ? 'Close case' : isReopen ? 'Reopen case' : 'Confirm status change'}
           </button>
         </div>
       </div>
@@ -181,7 +214,7 @@ function ChangeStatusModal({ currentStatus, caseId, onClose, onSuccess }) {
   )
 }
 
-export function CaseClientStatusCard({ caseId, caseRow, canEdit, onStatusChanged }) {
+export function CaseClientStatusCard({ caseId, caseRow, canEdit, canReopen = false, onStatusChanged }) {
   const [auditData, setAuditData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -220,6 +253,14 @@ export function CaseClientStatusCard({ caseId, caseRow, canEdit, onStatusChanged
     }
   }
 
+  const buttonLabel = ['CLOSED', 'DEACTIVATED'].includes(currentStatus)
+    ? 'Reopen case'
+    : 'Change Status'
+
+  const showStatusButton =
+    canEdit &&
+    (!['CLOSED', 'DEACTIVATED'].includes(currentStatus) || canReopen)
+
   return (
     <div className="case-status-card">
       <div className="case-status-card__header">
@@ -232,20 +273,20 @@ export function CaseClientStatusCard({ caseId, caseRow, canEdit, onStatusChanged
             </p>
           ) : null}
         </div>
-        {canEdit ? (
+        {showStatusButton ? (
           <button
             type="button"
             className="admin-btn admin-btn--secondary admin-btn--sm"
             onClick={() => setShowModal(true)}
           >
-            Change Status
+            {buttonLabel}
           </button>
         ) : null}
       </div>
 
       {showAgeingWarn ? (
         <div className="cs-ageing-warn">
-          ⚠️ {STATUS_LABELS[currentStatus]} for <strong>{ageingDays} days</strong> — action may be needed
+          {STATUS_LABELS[currentStatus]} for <strong>{ageingDays} days</strong> — action may be needed
         </div>
       ) : null}
 
@@ -295,7 +336,7 @@ export function CaseClientStatusCard({ caseId, caseRow, canEdit, onStatusChanged
                     <td>
                       {row.ageingDays !== null ? (
                         <span className="cs-audit__ageing">
-                          ⏱️ {row.ageingDays}d
+                          {row.ageingDays}d
                         </span>
                       ) : (
                         '—'
@@ -313,6 +354,7 @@ export function CaseClientStatusCard({ caseId, caseRow, canEdit, onStatusChanged
         <ChangeStatusModal
           currentStatus={currentStatus}
           caseId={caseId}
+          canReopen={canReopen}
           onClose={() => setShowModal(false)}
           onSuccess={handleSuccess}
         />

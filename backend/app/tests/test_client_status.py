@@ -7,8 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.core.database import get_db
-from app.models.case import Case, CaseStatus
+from app.models.case import CaseStatus
 from app.services import client_status_service
 
 
@@ -16,6 +15,12 @@ from app.services import client_status_service
 
 def _get_admin_token(client: TestClient) -> str:
     r = client.post("/api/v1/auth/login", json={"email": "superadmin@demo.com", "password": "demo123"})
+    assert r.status_code == 200, r.text
+    return r.json()["access_token"]
+
+
+def _get_hr_token(client: TestClient) -> str:
+    r = client.post("/api/v1/auth/login", json={"email": "hr@demo.com", "password": "demo123"})
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
 
@@ -39,14 +44,20 @@ class TestAdminAllowedTransitions:
     def test_active_to_pending_replacement_allowed(self):
         assert CaseStatus.PENDING_REPLACEMENT.value in client_status_service.ADMIN_ALLOWED_TRANSITIONS[CaseStatus.ACTIVE.value]
 
-    def test_active_to_deactivated_allowed(self):
-        assert CaseStatus.DEACTIVATED.value in client_status_service.ADMIN_ALLOWED_TRANSITIONS[CaseStatus.ACTIVE.value]
+    def test_active_to_closed_allowed(self):
+        assert CaseStatus.CLOSED.value in client_status_service.ADMIN_ALLOWED_TRANSITIONS[CaseStatus.ACTIVE.value]
 
-    def test_deactivated_is_terminal(self):
-        assert client_status_service.ADMIN_ALLOWED_TRANSITIONS[CaseStatus.DEACTIVATED.value] == []
+    def test_closed_can_reopen_to_pending_allotment(self):
+        assert (
+            CaseStatus.PENDING_ALLOTMENT.value
+            in client_status_service.ADMIN_ALLOWED_TRANSITIONS[CaseStatus.CLOSED.value]
+        )
 
-    def test_closed_is_terminal(self):
-        assert client_status_service.ADMIN_ALLOWED_TRANSITIONS[CaseStatus.CLOSED.value] == []
+    def test_deactivated_legacy_can_reopen(self):
+        assert (
+            CaseStatus.PENDING_ALLOTMENT.value
+            in client_status_service.ADMIN_ALLOWED_TRANSITIONS[CaseStatus.DEACTIVATED.value]
+        )
 
 
 class TestBillingCutoff:
@@ -70,6 +81,11 @@ class TestBillingCutoff:
     def test_pending_replacement_returns_effective_date(self):
         d = date(2026, 6, 10)
         c = self._make_case("PENDING_REPLACEMENT", d)
+        assert client_status_service.get_case_billing_cutoff(c) == d
+
+    def test_closed_returns_effective_date(self):
+        d = date(2026, 6, 15)
+        c = self._make_case("CLOSED", d)
         assert client_status_service.get_case_billing_cutoff(c) == d
 
     def test_deactivated_returns_effective_date(self):
@@ -132,3 +148,13 @@ class TestClientStatusAPI:
         data = r.json()
         assert "items" in data
         assert "total" in data
+
+    def test_hr_can_access_client_status_endpoint(self, client: TestClient):
+        try:
+            token = _get_hr_token(client)
+        except AssertionError:
+            pytest.skip("HR demo user not available")
+        r = client.get("/api/v1/cases/1/client-status/audit", headers=_auth(token))
+        if r.status_code == 404:
+            pytest.skip("Case 1 not found in test DB")
+        assert r.status_code == 200

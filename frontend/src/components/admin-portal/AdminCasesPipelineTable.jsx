@@ -34,6 +34,7 @@ import {
 
 import { AdminCaseAssignDrawer } from './AdminCaseAssignDrawer.jsx'
 import { AdminBulkAssignModal } from './AdminBulkAssignModal.jsx'
+import { CaseCloseModal } from './CaseCloseModal.jsx'
 import './admin-cases-pipeline.css'
 
 const QUEUE_TABS = [
@@ -64,6 +65,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const [sort, setSort] = useState('priority')
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [assignCard, setAssignCard] = useState(null)
+  const [closeCard, setCloseCard] = useState(null)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [toast, setToast] = useState('')
@@ -174,20 +176,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   }
 
   async function closeCase(card) {
-    if (!window.confirm(`Close case ${card.case_code}?`)) return
-    setActingId(card.id)
-    try {
-      await apiFetch(`/api/v1/cases/${card.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'CLOSED' }),
-      })
-      await load()
-      setToast(`Case ${card.case_code} closed.`)
-    } catch (err) {
-      setToast(err.message || 'Could not close case')
-    } finally {
-      setActingId(null)
-    }
+    setCloseCard(card)
   }
 
   async function confirmAllotment(card) {
@@ -687,6 +676,19 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
           load()
         }}
       />
+
+      {closeCard ? (
+        <CaseCloseModal
+          caseId={closeCard.id}
+          caseCode={closeCard.case_code}
+          onClose={() => setCloseCard(null)}
+          onSuccess={() => {
+            setToast(`Case ${closeCard.case_code} closed.`)
+            setCloseCard(null)
+            load()
+          }}
+        />
+      ) : null}
 
       <AdminBulkAssignModal
         open={bulkOpen}

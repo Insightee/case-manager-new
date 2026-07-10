@@ -14,6 +14,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminEmptyState, AdminSearchInput, AdminToolbar } from './ui/index.js'
 import { AdminCaseAssignDrawer } from './AdminCaseAssignDrawer.jsx'
 import { AdminBulkAssignModal } from './AdminBulkAssignModal.jsx'
+import { CaseCloseModal } from './CaseCloseModal.jsx'
 import './admin-cases-kanban.css'
 
 const VISIBLE_COLUMNS = [
@@ -131,6 +132,7 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
   const [hideClosed, setHideClosed] = useState(true)
   const [activeCard, setActiveCard] = useState(null)
   const [assignCard, setAssignCard] = useState(null)
+  const [closeCard, setCloseCard] = useState(null)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [toast, setToast] = useState('')
@@ -209,16 +211,7 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
   }
 
   async function closeCase(card) {
-    if (!window.confirm(`Close case ${card.case_code}?`)) return
-    try {
-      await apiFetch(`/api/v1/cases/${card.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'CLOSED' }),
-      })
-      await load()
-    } catch (err) {
-      setToast(err.message || 'Could not close case')
-    }
+    setCloseCard(card)
   }
 
   function handleDragEnd(event) {
@@ -379,6 +372,19 @@ export function AdminCasesKanban({ productFilter = 'all' }) {
           load()
         }}
       />
+
+      {closeCard ? (
+        <CaseCloseModal
+          caseId={closeCard.id}
+          caseCode={closeCard.case_code}
+          onClose={() => setCloseCard(null)}
+          onSuccess={() => {
+            setToast(`Case ${closeCard.case_code} closed.`)
+            setCloseCard(null)
+            load()
+          }}
+        />
+      ) : null}
 
       <AdminBulkAssignModal
         open={bulkOpen}

@@ -181,13 +181,24 @@ def update_case(
         new_status = case.status.value if hasattr(case.status, "value") else str(case.status)
         old_status_val = old_status.value if hasattr(old_status, "value") else str(old_status)
         if new_status == CaseStatus.CLOSED.value and old_status_val != CaseStatus.CLOSED.value:
-            from app.services.case_close_service import (
-                apply_case_closed_side_effects,
-                assert_no_blocking_invoices_for_close,
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Closing a case requires a reason and termination date. "
+                    "Use POST /api/v1/cases/{id}/client-status with new_status=CLOSED."
+                ),
             )
-
-            assert_no_blocking_invoices_for_close(db, case.id)
-            apply_case_closed_side_effects(db, case)
+        if (
+            old_status_val in (CaseStatus.CLOSED.value, CaseStatus.DEACTIVATED.value)
+            and new_status not in (CaseStatus.CLOSED.value, CaseStatus.DEACTIVATED.value)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Reopening a case requires a reason and reopen date. "
+                    "Use POST /api/v1/cases/{id}/client-status."
+                ),
+            )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="case", entity_id=case.id, old_value=old, new_value=payload.model_dump(exclude_unset=True), **meta)
     db.commit()
@@ -253,15 +264,20 @@ def update_client_status(
     case_id: int,
     payload: ClientStatusUpdate,
     request: Request,
-    user: User = Depends(require_mutation_permission("case.update")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Admin-direct client status change with audit trail."""
+    """Admin/HR client status change with audit trail (close/reopen included)."""
+    if not client_status_service.user_can_manage_client_status(user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
     case = case_service.get_case(db, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
+    # HR may manage status without full case.update write gates.
+    if user_has_permission(user, "case.update"):
+        ensure_case_write_access(user, case, db)
     try:
         audit = client_status_service.change_client_status(
             db,
@@ -281,7 +297,12 @@ def update_client_status(
         action="client_status_change",
         entity_type="case",
         entity_id=case.id,
-        new_value={"new_status": payload.new_status, "effective_date": str(payload.effective_date)},
+        case_id=case.id,
+        new_value={
+            "new_status": payload.new_status,
+            "effective_date": str(payload.effective_date),
+            "reason": payload.reason,
+        },
         **meta,
     )
     db.commit()

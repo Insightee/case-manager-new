@@ -42,7 +42,7 @@ export function AdminCaseDetailPage() {
   const tab = searchParams.get('tab') || 'overview'
   const highlightSessionId = searchParams.get('session_id')
   const highlightIncidentId = searchParams.get('incident_id')
-  const { can, canWriteProduct, isViewOnly } = useAuth()
+  const { can, canWriteProduct, isViewOnly, user } = useAuth()
   const { canReviewLogs } = useModuleWrite()
   const [caseRow, setCaseRow] = useState(null)
   const [assignments, setAssignments] = useState([])
@@ -138,6 +138,17 @@ export function AdminCaseDetailPage() {
   const canEditCase = Boolean(
     caseRow && can('case.update') && !isViewOnly && canWriteProduct(caseRow.product_module),
   )
+  const canManageStatus = Boolean(
+    caseRow &&
+      !isViewOnly &&
+      (can('admin.override') ||
+        can('case.status_manage') ||
+        (can('case.update') && canWriteProduct(caseRow.product_module))),
+  )
+  const canReopenCase = Boolean(
+    can('admin.override') ||
+      (user?.roles || []).some((r) => ['SUPER_ADMIN', 'MODULE_ADMIN', 'ADMIN', 'HR'].includes(r)),
+  )
   const canAssignCase = Boolean(caseRow && can('case.assign') && canWriteProduct(caseRow.product_module))
   const canReviewCaseLogs = Boolean(
     caseRow && can('daily_log.review') && canReviewLogs(caseRow.product_module),
@@ -214,7 +225,8 @@ export function AdminCaseDetailPage() {
             <CaseClientStatusCard
               caseId={caseRow.id}
               caseRow={caseRow}
-              canEdit={canEditCase}
+              canEdit={canManageStatus}
+              canReopen={canReopenCase}
               onStatusChanged={(updatedCase) => setCaseRow(updatedCase)}
             />
           ) : null}

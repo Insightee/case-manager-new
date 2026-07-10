@@ -23,6 +23,7 @@ ACTION_LABELS: dict[str, str] = {
     "update_parent_profile": "Updated parent profile",
     "approve_session_log": "Approved session log",
     "reject_session_log": "Rejected session log",
+    "client_status_change": "Client status changed",
 }
 
 TIMELINE_ASSIGNMENT_LIMIT = 20
@@ -114,12 +115,16 @@ def case_timeline(db: Session, user: User, case_id: int, *, limit: int = 40) -> 
         raise PermissionError("Case access denied")
 
     from app.models.assignment import CaseAssignment
+    from app.services import client_status_service
 
     events: list[dict] = []
 
     audit = list_audit_events(db, user, case_id=case_id, limit=limit)
     for item in audit.get("items", []):
         events.append({**item, "source": "audit"})
+
+    for item in client_status_service.status_timeline_events(db, case_id, limit=limit):
+        events.append(item)
 
     assignments = db.scalars(
         select(CaseAssignment)

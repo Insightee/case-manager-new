@@ -32,7 +32,8 @@ export function CaseActivityPanel({ caseId }) {
       <header className="case-activity-panel__header">
         <h3 className="case-activity-panel__title">Activity timeline</h3>
         <p className="case-activity-panel__lead">
-          Assignments, session log reviews, report workflow, and other changes on this case.
+          Assignments, status changes (close/reopen), session log reviews, report workflow, and other
+          changes on this case.
         </p>
       </header>
       <div className="case-activity-panel__body">
@@ -47,7 +48,12 @@ export function CaseActivityPanel({ caseId }) {
         >
           <ul className="case-activity-timeline" aria-label="Case activity">
             {items.map((item) => {
-              const source = item.source === 'assignment' ? 'assignment' : 'audit'
+              const source =
+                item.source === 'assignment'
+                  ? 'assignment'
+                  : item.source === 'status'
+                    ? 'status'
+                    : 'audit'
               return (
                 <li
                   key={item.id}
@@ -68,6 +74,11 @@ export function CaseActivityPanel({ caseId }) {
                     {item.entity_type ? (
                       <span className="case-activity-timeline__chip">
                         {String(item.entity_type).replaceAll('_', ' ')}
+                      </span>
+                    ) : null}
+                    {item.effective_date ? (
+                      <span className="case-activity-timeline__chip">
+                        effective {item.effective_date}
                       </span>
                     ) : null}
                   </div>
