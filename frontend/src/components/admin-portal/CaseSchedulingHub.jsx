@@ -31,7 +31,7 @@ function TherapistAssignSection({
   readOnly,
   onAssigned,
 }) {
-  const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || assignments?.[0]
+  const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || null
   const assignedTherapistId = activeAssignment ? String(activeAssignment.therapist_user_id) : ''
 
   const [selectedId, setSelectedId] = useState(assignedTherapistId)
@@ -41,9 +41,9 @@ function TherapistAssignSection({
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // Sync if assignments prop changes (e.g. after parent reload)
+  // Sync if assignments prop changes (e.g. after parent reload / reopen with no active therapist)
   useEffect(() => {
-    if (assignedTherapistId) setSelectedId(assignedTherapistId)
+    setSelectedId(assignedTherapistId)
   }, [assignedTherapistId])
 
   const isChanging = selectedId && selectedId !== assignedTherapistId
@@ -290,7 +290,7 @@ export function CaseSchedulingHub({
   const { isViewOnly } = useAuth()
   const readOnly = !canBook || isViewOnly
 
-  const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || assignments?.[0]
+  const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || null
   const assignedTherapistId = activeAssignment ? String(activeAssignment.therapist_user_id) : ''
 
   // Schedule state

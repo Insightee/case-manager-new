@@ -134,7 +134,7 @@ export function AdminCaseDetailPage() {
     setCaseRow(updated)
   }
 
-  const activeAssignment = assignments.find((a) => a.status === 'ACTIVE') || assignments[0]
+  const activeAssignment = assignments.find((a) => a.status === 'ACTIVE') || null
   const canEditCase = Boolean(
     caseRow && can('case.update') && !isViewOnly && canWriteProduct(caseRow.product_module),
   )
