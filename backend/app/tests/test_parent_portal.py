@@ -1,5 +1,7 @@
 """Parent portal API tests."""
 
+from datetime import date
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -98,10 +100,14 @@ def test_parent_cases_hide_closed_and_suspended():
     visible_before = client.get("/api/v1/parent/cases", headers=parent).json()
     assert any(row["id"] == case_id for row in visible_before)
 
-    close = client.patch(
-        f"/api/v1/cases/{case_id}",
+    close = client.post(
+        f"/api/v1/cases/{case_id}/client-status",
         headers=admin_headers,
-        json={"status": "CLOSED"},
+        json={
+            "new_status": "CLOSED",
+            "effective_date": date.today().isoformat(),
+            "reason": "Test close for parent portal visibility",
+        },
     )
     assert close.status_code == 200, close.text
 
