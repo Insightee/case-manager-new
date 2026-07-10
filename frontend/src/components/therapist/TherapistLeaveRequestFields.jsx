@@ -6,6 +6,8 @@ import './therapist-leave.css'
 
 /**
  * Shared leave request fields — case selection, dates, split preview, parent consultation.
+ * When hideLeaveCreditDetails is true (therapist migration UI), paid/unpaid radios and
+ * credit copy are hidden; billing_category is still auto-set for the backend.
  */
 export function TherapistLeaveRequestFields({
   assignedCases = [],
@@ -28,6 +30,7 @@ export function TherapistLeaveRequestFields({
   casesLoading = false,
   casesError = '',
   onRetryCases,
+  hideLeaveCreditDetails = false,
 }) {
   const [suggestion, setSuggestion] = useState(null)
 
@@ -157,28 +160,53 @@ export function TherapistLeaveRequestFields({
 
       {hasHomecareSelection && !hasShadowSelection ? (
         <div className="therapist-leave-page__warn" role="alert">
-          <strong>Homecare only.</strong> Sessions will be cancelled and parents informed — leave credits are not used.
+          {hideLeaveCreditDetails ? (
+            <>
+              <strong>Homecare only.</strong> Sessions will be cancelled and parents informed.
+            </>
+          ) : (
+            <>
+              <strong>Homecare only.</strong> Sessions will be cancelled and parents informed — leave credits are not
+              used.
+            </>
+          )}
         </div>
+      ) : null}
+
+      {hasShadowSelection && !hasHomecareSelection ? (
+        hideLeaveCreditDetails ? (
+          <div className="therapist-leave-page__warn" role="alert">
+            <strong>Shadow support.</strong> Sessions on these dates will be cancelled after HR approval.
+          </div>
+        ) : (
+          <p className="therapist-leave-page__hint">
+            {paidLeaveCreditHint(leaveBalance) ||
+              'Available leave credits are used first for shadow support days.'}
+          </p>
+        )
       ) : null}
 
       {hasShadowSelection && hasHomecareSelection ? (
         <div className="therapist-leave-page__warn" role="alert">
-          <strong>Mixed cases.</strong> Leave credits apply to shadow days only; homecare sessions cancel without using credits.
+          {hideLeaveCreditDetails ? (
+            <>
+              <strong>Mixed cases.</strong> Shadow and homecare sessions on these dates will be cancelled after HR
+              approval.
+            </>
+          ) : (
+            <>
+              <strong>Mixed cases.</strong> Leave credits apply to shadow days only; homecare sessions cancel without
+              using credits.
+            </>
+          )}
         </div>
       ) : null}
 
-      {hasShadowSelection ? (
-        <p className="therapist-leave-page__hint">
-          {paidLeaveCreditHint(leaveBalance) ||
-            'Available leave credits are used first for shadow support days.'}
-        </p>
-      ) : null}
-
-      {suggestion ? (
+      {!hideLeaveCreditDetails && suggestion ? (
         <p className="therapist-leave-page__suggest">{formatLeaveSplitLabel(suggestion)}</p>
       ) : null}
 
-      {showLeaveType ? (
+      {!hideLeaveCreditDetails && showLeaveType ? (
         <fieldset className="therapist-leave-page__leave-type" style={{ border: 'none', margin: 0, padding: 0 }}>
           <legend className="therapist-leave-page__field" style={{ marginBottom: 8 }}>
             Leave type

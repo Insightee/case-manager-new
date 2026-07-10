@@ -1,5 +1,7 @@
 /** Therapist portal actions — used for shortcuts and usage-based ordering. */
 
+import { HIDE_THERAPIST_LEAVE_CREDITS_UI } from './productFeatureFlags.js'
+
 export const THERAPIST_ACTIONS = [
   {
     id: 'logs',
@@ -50,7 +52,9 @@ export const THERAPIST_ACTIONS = [
     id: 'leave',
     to: '/therapist/leave?new=1',
     label: 'Request leave',
-    description: 'Apply for paid, carry forward, or unpaid leave',
+    description: HIDE_THERAPIST_LEAVE_CREDITS_UI
+      ? 'Apply for leave by case and date range'
+      : 'Apply for paid, carry forward, or unpaid leave',
     icon: '📅',
     tone: 'rose',
     defaultWeight: 2,

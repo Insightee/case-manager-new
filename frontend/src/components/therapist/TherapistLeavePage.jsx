@@ -7,6 +7,7 @@ import { fetchAllPages } from '../../lib/listApi.js'
 import { isLeaveBalanceUpdated, leaveCreditPendingLabel, unpaidBreakdownLabel } from '../../lib/leaveBalanceDisplay.js'
 import { migrationBannerMessage } from '../../lib/leaveMigration.js'
 import { categoryLabel } from '../../lib/leaveFormUtils.js'
+import { HIDE_THERAPIST_LEAVE_CREDITS_UI } from '../../lib/productFeatureFlags.js'
 import { TherapistLeaveRequestFields } from './TherapistLeaveRequestFields.jsx'
 import './therapist-leave.css'
 
@@ -28,7 +29,12 @@ const TYPE_COLORS = {
   CARRY_FORWARD: '#ede9fe',
 }
 
-function leaveRowLabel(l) {
+function leaveRowLabel(l, { hideCreditDetails = false } = {}) {
+  if (hideCreditDetails) {
+    const days = l.day_count
+    if (days != null) return `${days} day${days === 1 ? '' : 's'}`
+    return 'Leave'
+  }
   if (l.paid_days != null || l.unpaid_days != null) {
     const paid = l.paid_days ?? 0
     const unpaid = l.unpaid_days ?? 0
@@ -40,7 +46,8 @@ function leaveRowLabel(l) {
   return l.leave_type || '—'
 }
 
-function leaveRowColor(l) {
+function leaveRowColor(l, { hideCreditDetails = false } = {}) {
+  if (hideCreditDetails) return '#e0e7ff'
   const key = l.billing_category || l.leave_type
   return TYPE_COLORS[key] || '#f3f4f6'
 }
@@ -194,11 +201,12 @@ export function TherapistLeavePage() {
   }
 
   const pendingCount = summary?.pending_count ?? leaves.filter((l) => l.status === 'PENDING').length
-  const rejectedCount = summary?.rejected_count ?? leaves.filter((l) => l.status === 'REJECTED').length
   const leaveCreditPending = leaveCreditPendingLabel(balance)
   const paidTaken = balance?.paid_leaves_taken ?? balance?.computed_paid_used ?? 0
   const unpaidTaken = balance?.unpaid_leaves_taken ?? balance?.computed_unpaid_days ?? 0
   const unpaidBreakdown = unpaidBreakdownLabel(balance)
+  const leavesTakenToDate = Number(paidTaken) + Number(unpaidTaken)
+  const hideCreditUi = HIDE_THERAPIST_LEAVE_CREDITS_UI
 
   const listYearOptions = useMemo(() => {
     const years = new Set([now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1])
@@ -221,9 +229,11 @@ export function TherapistLeavePage() {
   }, [leaves, listYearFilter, listMonthFilter])
 
   function exportLeavesExcelLikeCsv() {
-    const header = ['Category', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note']
+    const header = hideCreditUi
+      ? ['Leave', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note']
+      : ['Category', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note']
     const rows = filteredLeaves.map((l) => [
-      leaveRowLabel(l),
+      leaveRowLabel(l, { hideCreditDetails: hideCreditUi }),
       l.service_line || '',
       formatDisplayDate(l.start_date),
       formatDisplayDate(l.end_date),
@@ -263,6 +273,7 @@ export function TherapistLeavePage() {
           billingCategory={form.billing_category}
           onBillingCategoryChange={(v) => setForm((f) => ({ ...f, billing_category: v }))}
           leaveBalance={balance}
+          hideLeaveCreditDetails={hideCreditUi}
           disabled={submitting}
           casesLoading={casesLoading}
           casesError={casesError}
@@ -306,21 +317,30 @@ export function TherapistLeavePage() {
       ) : null}
 
       <div className="therapist-leave-page__stats">
-        <div className="therapist-leave-page__stat-card">
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Leave credit ({calYear})</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#4338ca' }}>{loading ? '…' : leaveCreditPending}</p>
-        </div>
-        <div className="therapist-leave-page__stat-card">
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Paid leaves taken</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : paidTaken}</p>
-        </div>
-        <div className="therapist-leave-page__stat-card">
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Unpaid leaves taken</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#b45309' }}>{loading ? '…' : unpaidTaken}</p>
-          {!loading && unpaidBreakdown ? (
-            <p style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#9ca3af', marginTop: 2 }}>{unpaidBreakdown}</p>
-          ) : null}
-        </div>
+        {hideCreditUi ? (
+          <div className="therapist-leave-page__stat-card">
+            <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Leaves taken ({calYear})</p>
+            <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : leavesTakenToDate}</p>
+          </div>
+        ) : (
+          <>
+            <div className="therapist-leave-page__stat-card">
+              <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Leave credit ({calYear})</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#4338ca' }}>{loading ? '…' : leaveCreditPending}</p>
+            </div>
+            <div className="therapist-leave-page__stat-card">
+              <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Paid leaves taken</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#15803d' }}>{loading ? '…' : paidTaken}</p>
+            </div>
+            <div className="therapist-leave-page__stat-card">
+              <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Unpaid leaves taken</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#b45309' }}>{loading ? '…' : unpaidTaken}</p>
+              {!loading && unpaidBreakdown ? (
+                <p style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#9ca3af', marginTop: 2 }}>{unpaidBreakdown}</p>
+              ) : null}
+            </div>
+          </>
+        )}
         <div className="therapist-leave-page__stat-card">
           <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending</p>
           <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a16207' }}>{loading ? '…' : pendingCount}</p>
@@ -344,7 +364,7 @@ export function TherapistLeavePage() {
         </label>
       </div>
 
-      {balance ? (
+      {!hideCreditUi && balance ? (
         <div className="therapist-leave-page__balance" style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: '0.875rem' }}>
           <p style={{ margin: '0 0 6px', fontWeight: 700, color: '#3730a3' }}>
             Leave credit ({calYear}): {leaveCreditPending}
@@ -385,8 +405,14 @@ export function TherapistLeavePage() {
       <div className="therapist-leave-page__info">
         <p style={{ margin: 0, fontWeight: 600 }}>How leave affects your caseload</p>
         <p style={{ margin: '6px 0 0' }}>
-          <strong>Paid leave</strong> uses monthly leave credits for shadow support only. Homecare sessions cancel without
-          using credits.
+          {hideCreditUi
+            ? 'Approved leave cancels sessions on the selected cases for those dates. HR reviews each request before anything is cancelled.'
+            : (
+              <>
+                <strong>Paid leave</strong> uses monthly leave credits for shadow support only. Homecare sessions cancel
+                without using credits.
+              </>
+            )}
         </p>
       </div>
 
@@ -461,19 +487,24 @@ export function TherapistLeavePage() {
             <table className="therapist-leave-page__table">
               <thead>
                 <tr>
-                  {['Category', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', ''].map((h) => (
-                    <th key={h}>{h}</th>
+                  {(hideCreditUi
+                    ? ['Leave', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', '']
+                    : ['Category', 'Service', 'From', 'To', 'Days', 'Reason', 'Status', 'Note', '']
+                  ).map((h) => (
+                    <th key={h || 'actions'}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filteredLeaves.map((l) => {
                   const sc = STATUS_COLORS[l.status] || STATUS_COLORS.PENDING
-                  const tc = leaveRowColor(l)
+                  const tc = leaveRowColor(l, { hideCreditDetails: hideCreditUi })
                   return (
                     <tr key={l.id}>
                       <td>
-                        <span className="therapist-leave-page__pill" style={{ background: tc }}>{leaveRowLabel(l)}</span>
+                        <span className="therapist-leave-page__pill" style={{ background: tc }}>
+                          {leaveRowLabel(l, { hideCreditDetails: hideCreditUi })}
+                        </span>
                       </td>
                       <td style={{ color: '#6b7280', fontSize: '0.8rem' }}>{l.service_line || '—'}</td>
                       <td>{formatDisplayDate(l.start_date)}</td>

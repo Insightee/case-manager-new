@@ -77,6 +77,14 @@ export const ENABLE_CLINICAL_BRAIN = readEnvFlag('VITE_ENABLE_CLINICAL_BRAIN')
 /** Observation / IEP / monthly report builder routes */
 export const ENABLE_REPORT_BUILDER = readEnvFlag('VITE_ENABLE_REPORT_BUILDER', { rolloutDefault: false })
 
+/**
+ * Temporary: hide leave-credit balance and paid/unpaid controls from the therapist leave UI
+ * while historical leave data is migrated. Backend billing/credit logic is unchanged.
+ * Set VITE_HIDE_THERAPIST_LEAVE_CREDITS_UI=false to restore the full therapist leave UI.
+ */
+export const HIDE_THERAPIST_LEAVE_CREDITS_UI =
+  import.meta.env.VITE_HIDE_THERAPIST_LEAVE_CREDITS_UI !== 'false'
+
 export function isReportsModuleEnabled() {
   return ENABLE_REPORTS
 }

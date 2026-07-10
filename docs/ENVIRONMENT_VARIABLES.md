@@ -29,6 +29,7 @@ Detail: [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) · Deploy checklist: [DEPLOY.md
 |----------|----------|---------|-------|-------------|
 | `VITE_API_URL` | Vercel yes; local optional | *(empty)* | Vercel only | Public API base URL, **no trailing slash**. Local dev: leave empty to proxy `/api` → `http://localhost:8000`. |
 | `VITE_POLICIES_BOT_URL` | no | — | Frontend | Fallback policies-bot URL if `/api/v1/support/info` does not return one. |
+| `VITE_HIDE_THERAPIST_LEAVE_CREDITS_UI` | no | on (unless `false`) | Frontend | Temporary: hide leave-credit balance and paid/unpaid controls on the therapist leave page while leave history is migrated. Backend logic unchanged. Set to `false` to restore the full UI. |
 
 **Do not** set on Vercel: `DATABASE_URL`, `JWT_*`, `SMTP_*`, `R2_*`, or any backend-only var.
 
