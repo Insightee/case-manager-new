@@ -104,6 +104,7 @@ export function getApiMetricsSnapshot() {
 
 const ACCESS_REFRESH_BUFFER_MS = 2 * 60 * 1000
 const SESSION_KEEPALIVE_MS = 25 * 60 * 1000
+const REFRESH_LOCK_TIMEOUT_MS = 8_000
 const REFRESH_LOCK_NAME = 'insightcase-token-refresh'
 
 /** Auth routes that must not trigger a refresh retry on 401 (unauthenticated endpoints). */
@@ -197,11 +198,75 @@ export function clearTokens() {
   notifyTokenSync()
 }
 
-async function withRefreshLock(fn) {
-  if (typeof navigator !== 'undefined' && navigator.locks?.request) {
-    return navigator.locks.request(REFRESH_LOCK_NAME, fn)
+async function waitForFreshAccessToken(timeoutMs = REFRESH_LOCK_TIMEOUT_MS) {
+  const startedAt = Date.now()
+  const initialAccess = getTokens().access
+
+  if (initialAccess && !accessTokenNeedsRefresh(initialAccess)) {
+    return initialAccess
   }
-  return fn()
+
+  return new Promise((resolve) => {
+    let settled = false
+    let pollTimer = null
+
+    const finish = (access) => {
+      if (settled) return
+      settled = true
+      if (pollTimer) clearTimeout(pollTimer)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', onStorage)
+      }
+      resolve(access)
+    }
+
+    const checkTokens = () => {
+      const { access } = getTokens()
+      if (access && !accessTokenNeedsRefresh(access)) {
+        finish(access)
+        return true
+      }
+      return false
+    }
+
+    const onStorage = (event) => {
+      if (event.key === 'access_token' || event.key === 'refresh_token') {
+        checkTokens()
+      }
+    }
+
+    const poll = () => {
+      if (settled) return
+      if (checkTokens()) return
+      if (Date.now() - startedAt >= timeoutMs) {
+        finish(null)
+        return
+      }
+      pollTimer = setTimeout(poll, 200)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', onStorage)
+    }
+    poll()
+  })
+}
+
+async function withRefreshLock(fn) {
+  if (typeof navigator === 'undefined' || !navigator.locks?.request) {
+    return fn()
+  }
+
+  return navigator.locks.request(REFRESH_LOCK_NAME, { ifAvailable: true }, async (lock) => {
+    if (lock) {
+      return fn()
+    }
+    const freshAccess = await waitForFreshAccessToken()
+    if (freshAccess) {
+      return freshAccess
+    }
+    return fn()
+  })
 }
 
 function timeoutErrorMessage(timeoutMs = DEFAULT_TIMEOUT_MS) {

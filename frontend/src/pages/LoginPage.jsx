@@ -118,6 +118,7 @@ export function LoginPage({ portalType }) {
   const navigate = useNavigate()
   const location = useLocation()
   const gateRunRef = useRef(0)
+  const sessionRestoreAttemptsRef = useRef(0)
 
   const [portalGateReady, setPortalGateReady] = useState(false)
   const [rememberMe, setRememberMe] = useState(() => {
@@ -182,9 +183,18 @@ export function LoginPage({ portalType }) {
       }
 
       if (hasSession && !user) {
+        sessionRestoreAttemptsRef.current += 1
+        if (sessionRestoreAttemptsRef.current >= 2) {
+          logout()
+          sessionRestoreAttemptsRef.current = 0
+          if (!cancelled && runId === gateRunRef.current) setPortalGateReady(true)
+          return
+        }
         await reload()
         return
       }
+
+      sessionRestoreAttemptsRef.current = 0
 
       if (user && sessionMatchesLoginPage(user, selectedPortal, portalType)) {
         navigate(portalHomePath(user), { replace: true })

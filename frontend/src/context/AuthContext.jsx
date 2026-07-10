@@ -45,23 +45,43 @@ export function AuthProvider({ children }) {
   }, [])
 
   const loadMe = useCallback(async () => {
+    const AUTH_BOOTSTRAP_TIMEOUT_MS = 40_000
     setLoading(true)
-    const access = await ensureAccessToken()
-    if (!access) {
-      setUser(null)
-      setLoading(false)
-      return
+
+    const bootstrap = async () => {
+      const access = await ensureAccessToken()
+      if (!access) {
+        setUser(null)
+        return
+      }
+      try {
+        const me = await apiFetch('/api/v1/auth/me')
+        setUser(me)
+      } catch (err) {
+        if (isAuthSessionError(err)) {
+          clearTokens()
+          setUser(null)
+        }
+        // Connection/API errors: keep existing user — do not logout on network blips.
+      }
     }
+
+    let timeoutId = null
     try {
-      const me = await apiFetch('/api/v1/auth/me')
-      setUser(me)
+      await Promise.race([
+        bootstrap(),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error('Session restore timed out'))
+          }, AUTH_BOOTSTRAP_TIMEOUT_MS)
+        }),
+      ])
     } catch (err) {
-      if (isAuthSessionError(err)) {
-        clearTokens()
+      if (/session restore timed out/i.test(String(err?.message || ''))) {
         setUser(null)
       }
-      // Connection/API errors: keep existing user — do not logout on network blips.
     } finally {
+      if (timeoutId) clearTimeout(timeoutId)
       setLoading(false)
     }
   }, [])
