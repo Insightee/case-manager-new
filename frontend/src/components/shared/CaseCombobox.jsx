@@ -1,15 +1,58 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
+import { fetchAllPages } from '../../lib/listApi.js'
 import './case-combobox.css'
 
 const DROPDOWN_GAP = 6
+const POOL_TTL_MS = 5 * 60 * 1000
 const MODULE_LABELS = {
   homecare: 'Homecare',
   shadow_support: 'Shadow',
   b2b: 'B2B',
   billing: 'Billing',
+}
+
+/** Shared in-memory case pools so reopen/filter stays instant. */
+const casePools = {
+  all: { items: null, loadedAt: 0, promise: null },
+  assigned: { items: null, loadedAt: 0, promise: null },
+}
+
+function poolKey(assignedOnly) {
+  return assignedOnly ? 'assigned' : 'all'
+}
+
+function isPoolFresh(entry) {
+  return Array.isArray(entry.items) && Date.now() - entry.loadedAt < POOL_TTL_MS
+}
+
+async function loadCasePool(assignedOnly, { force = false } = {}) {
+  const key = poolKey(assignedOnly)
+  const entry = casePools[key]
+  if (!force && isPoolFresh(entry)) return entry.items
+  if (!force && entry.promise) return entry.promise
+
+  entry.promise = fetchAllPages(
+    (page, pageSize) => {
+      const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+      if (assignedOnly) qs.set('assigned', 'true')
+      return apiFetch(`/api/v1/cases?${qs.toString()}`)
+    },
+    { pageSize: 100, maxPages: 100 },
+  )
+    .then(({ items }) => {
+      entry.items = items
+      entry.loadedAt = Date.now()
+      entry.promise = null
+      return items
+    })
+    .catch((err) => {
+      entry.promise = null
+      throw err
+    })
+
+  return entry.promise
 }
 
 function useDropdownPosition(open, anchorRef) {
@@ -75,9 +118,26 @@ function formatCaseMeta(c) {
   return parts.join(' · ')
 }
 
+function caseMatchesQuery(c, query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const hay = [
+    c.case_code,
+    c.child_name,
+    c.therapist_name,
+    c.product_module,
+    MODULE_LABELS[c.product_module],
+    c.service_type,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return q.split(/\s+/).filter(Boolean).every((tok) => hay.includes(tok))
+}
+
 /**
- * Searchable case picker — queries GET /api/v1/cases?search=…
- * Matches case code, client name, or active therapist name.
+ * Searchable case picker backed by a local case pool.
+ * Loads all accessible cases once, then filters/scrolls in memory.
  */
 export function CaseCombobox({
   value,
@@ -92,19 +152,44 @@ export function CaseCombobox({
   const rootRef = useRef(null)
   const inputRef = useRef(null)
   const [search, setSearch] = useState('')
-  const [debounced, setDebounced] = useState('')
-  const [cases, setCases] = useState([])
+  const [pool, setPool] = useState(() => casePools[poolKey(assignedOnly)].items || [])
   const [selectedCase, setSelectedCase] = useState(null)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [activeIndex, setActiveIndex] = useState(-1)
 
   const dropdownPos = useDropdownPosition(open, inputRef)
 
+  const ensurePool = useCallback(
+    async ({ force = false } = {}) => {
+      const cached = casePools[poolKey(assignedOnly)]
+      if (!force && isPoolFresh(cached)) {
+        setPool(cached.items)
+        setLoadError('')
+        return cached.items
+      }
+      setLoading(true)
+      setLoadError('')
+      try {
+        const items = await loadCasePool(assignedOnly, { force })
+        setPool(items)
+        return items
+      } catch (err) {
+        setLoadError(err.message || 'Could not load cases')
+        if (!casePools[poolKey(assignedOnly)].items) setPool([])
+        return []
+      } finally {
+        setLoading(false)
+      }
+    },
+    [assignedOnly],
+  )
+
+  // Prefetch pool when the picker mounts so open feels instant.
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(search.trim()), 280)
-    return () => clearTimeout(t)
-  }, [search])
+    ensurePool()
+  }, [ensurePool])
 
   useEffect(() => {
     if (!value) {
@@ -112,9 +197,9 @@ export function CaseCombobox({
       return
     }
     if (selectedCase && String(selectedCase.id) === String(value)) return
-    const fromList = cases.find((c) => String(c.id) === String(value))
-    if (fromList) {
-      setSelectedCase(fromList)
+    const fromPool = pool.find((c) => String(c.id) === String(value))
+    if (fromPool) {
+      setSelectedCase(fromPool)
       return
     }
     let cancelled = false
@@ -128,7 +213,7 @@ export function CaseCombobox({
     return () => {
       cancelled = true
     }
-  }, [value, cases, selectedCase])
+  }, [value, pool, selectedCase])
 
   useEffect(() => {
     if (value && selectedCase && String(selectedCase.id) === String(value) && !open) {
@@ -141,28 +226,8 @@ export function CaseCombobox({
 
   useEffect(() => {
     if (!open) return undefined
-    setLoading(true)
-    const qs = new URLSearchParams({ page_size: '50', page: '1' })
-    if (assignedOnly) qs.set('assigned', 'true')
-    if (debounced) qs.set('search', debounced)
-    let cancelled = false
-    apiFetch(`/api/v1/cases?${qs.toString()}`)
-      .then((data) => {
-        if (!cancelled) setCases(unwrapList(data))
-      })
-      .catch(() => {
-        if (!cancelled) setCases([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [debounced, assignedOnly, open])
-
-  useEffect(() => {
-    if (!open) return undefined
+    // Refresh if stale when opening; otherwise use cached pool.
+    ensurePool()
     const onDoc = (e) => {
       if (rootRef.current?.contains(e.target)) return
       const portal = document.getElementById(`case-combo-portal-${listId}`)
@@ -173,7 +238,14 @@ export function CaseCombobox({
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
-  }, [open, listId, value, selectedCase])
+  }, [open, listId, value, selectedCase, ensurePool])
+
+  const filtered = useMemo(() => pool.filter((c) => caseMatchesQuery(c, search)), [pool, search])
+
+  const options = useMemo(() => {
+    if (allowNone) return [{ __none: true }, ...filtered]
+    return filtered
+  }, [allowNone, filtered])
 
   function selectNone() {
     onChange('')
@@ -191,8 +263,8 @@ export function CaseCombobox({
     setActiveIndex(-1)
   }
 
-  const options = allowNone ? [{ __none: true }, ...cases] : cases
   const showDropdown = open
+  const showEmpty = !loading && filtered.length === 0
 
   const dropdown =
     showDropdown && dropdownPos && typeof document !== 'undefined'
@@ -208,11 +280,15 @@ export function CaseCombobox({
               maxHeight: dropdownPos.maxHeight,
             }}
           >
-            {loading ? (
+            {loading && pool.length === 0 ? (
               <li className="case-combobox__status" role="option">
-                Searching…
+                Loading cases…
               </li>
-            ) : options.length === 0 || (options.length === 1 && options[0].__none && cases.length === 0 && debounced) ? (
+            ) : loadError && pool.length === 0 ? (
+              <li className="case-combobox__status case-combobox__status--empty" role="option">
+                {loadError}
+              </li>
+            ) : showEmpty ? (
               <>
                 {allowNone ? (
                   <li role="option" aria-selected={!value}>
@@ -227,41 +303,48 @@ export function CaseCombobox({
                   </li>
                 ) : null}
                 <li className="case-combobox__status case-combobox__status--empty" role="option">
-                  {debounced
+                  {search.trim()
                     ? 'No matching cases — try a client name, therapist name, or case code (e.g. SS for shadow).'
                     : 'No cases available.'}
                 </li>
               </>
             ) : (
-              options.map((item, i) => {
-                if (item.__none) {
+              <>
+                {loading ? (
+                  <li className="case-combobox__status" role="option">
+                    Refreshing cases…
+                  </li>
+                ) : null}
+                {options.map((item, i) => {
+                  if (item.__none) {
+                    return (
+                      <li key="none" role="option" aria-selected={!value}>
+                        <button
+                          type="button"
+                          className={`case-combobox__option${i === activeIndex ? ' case-combobox__option--active' : ''}`}
+                          onMouseEnter={() => setActiveIndex(i)}
+                          onClick={selectNone}
+                        >
+                          <span className="case-combobox__option-name">{noneLabel}</span>
+                        </button>
+                      </li>
+                    )
+                  }
                   return (
-                    <li key="none" role="option" aria-selected={!value}>
+                    <li key={item.id} role="option" aria-selected={String(item.id) === String(value)}>
                       <button
                         type="button"
                         className={`case-combobox__option${i === activeIndex ? ' case-combobox__option--active' : ''}`}
                         onMouseEnter={() => setActiveIndex(i)}
-                        onClick={selectNone}
+                        onClick={() => selectCase(item)}
                       >
-                        <span className="case-combobox__option-name">{noneLabel}</span>
+                        <span className="case-combobox__option-name">{formatCaseLabel(item)}</span>
+                        <span className="case-combobox__option-meta">{formatCaseMeta(item)}</span>
                       </button>
                     </li>
                   )
-                }
-                return (
-                  <li key={item.id} role="option" aria-selected={String(item.id) === String(value)}>
-                    <button
-                      type="button"
-                      className={`case-combobox__option${i === activeIndex ? ' case-combobox__option--active' : ''}`}
-                      onMouseEnter={() => setActiveIndex(i)}
-                      onClick={() => selectCase(item)}
-                    >
-                      <span className="case-combobox__option-name">{formatCaseLabel(item)}</span>
-                      <span className="case-combobox__option-meta">{formatCaseMeta(item)}</span>
-                    </button>
-                  </li>
-                )
-              })
+                })}
+              </>
             )}
           </ul>,
           document.body,
@@ -291,12 +374,7 @@ export function CaseCombobox({
             setSelectedCase(null)
           }
         }}
-        onFocus={() => {
-          setOpen(true)
-          if (value && selectedCase) {
-            // Keep label until user types; still open list for browsing
-          }
-        }}
+        onFocus={() => setOpen(true)}
         onKeyDown={(e) => {
           if (!open || !options.length) return
           if (e.key === 'ArrowDown') {

@@ -18,6 +18,7 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 - People directory loads all user pages (not just first 100); server-side search by email/name.
 
 ### Changed
+- Support ticket case picker: load all accessible cases once into a local pool, then filter/scroll in memory (no per-keystroke fetch).
 - Therapist onboarding pre-selects only **Homecare** and **Shadow support** by default (not every service category).
 - **@antigravity** — Enforced role-specific portal logins on backend and frontend, preventing users from logging in via incorrect portal URLs.
 - **@antigravity** — Allowed SUPER_ADMIN, ADMIN, and MODULE_ADMIN users to view the Case Manager home dashboard.
