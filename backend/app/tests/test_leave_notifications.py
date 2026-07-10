@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.core.database import SessionLocal, engine
+from app.core.timezone import today_ist
 from app.main import app
 from app.models.slot import SlotStatus, TherapistSlot
 from app.seed.demo_seed import run as seed_run
 
 client = TestClient(app)
+
+
+def _future_leave_day(offset_days: int) -> date:
+    """Self-service leave rejects past dates; keep tests anchored to IST today."""
+    return today_ist() + timedelta(days=offset_days)
 
 
 def _reset_sqlite_db() -> None:
@@ -53,7 +59,7 @@ def test_tentative_notification_on_leave_submit():
     parent = _login("parent@demo.com")
     th = _headers(therapist)
 
-    day = date(2026, 7, 7)
+    day = _future_leave_day(14)
     client.post(
         "/api/v1/slots/materialize",
         headers=th,
@@ -85,7 +91,7 @@ def test_approve_cancels_slot_and_confirms_parent():
     hr = _login("hr@demo.com")
     th = _headers(therapist)
 
-    day = date(2026, 7, 14)
+    day = _future_leave_day(21)
     client.post(
         "/api/v1/slots/materialize",
         headers=th,
@@ -151,7 +157,7 @@ def test_reject_keeps_booking_and_notifies_parent():
     hr = _login("hr@demo.com")
     th = _headers(therapist)
 
-    day = date(2026, 7, 21)
+    day = _future_leave_day(28)
     client.post(
         "/api/v1/slots/materialize",
         headers=th,
@@ -208,7 +214,7 @@ def test_cm_notified_on_leave_submit_hr_not_notified():
     therapist = _login("therapist@demo.com")
     hr = _login("hr@demo.com")
     cm = _login("shadowcm@demo.com")
-    day = date(2026, 8, 5)
+    day = _future_leave_day(35)
     leave = client.post(
         "/api/v1/leave",
         headers=_headers(therapist),
@@ -237,7 +243,7 @@ def test_therapist_notified_on_reject_with_note():
     therapist = _login("therapist@demo.com")
     hr = _login("hr@demo.com")
     th = _headers(therapist)
-    day = date(2026, 8, 12)
+    day = _future_leave_day(42)
 
     leave = client.post(
         "/api/v1/leave",
@@ -280,7 +286,7 @@ def test_case_scoped_leave_only_affects_selected_case():
     shadow = next(c for c in cases if c.get("product_module") == "shadow_support")
     homecare = next(c for c in cases if c["case_id"] != shadow["case_id"])
 
-    day = date(2026, 9, 3)
+    day = _future_leave_day(49)
     client.post(
         "/api/v1/slots/materialize",
         headers=th,
@@ -359,7 +365,7 @@ def test_case_scoped_leave_only_affects_selected_case():
 def test_leave_summary_and_report():
     therapist = _login("therapist@demo.com")
     hr = _login("hr@demo.com")
-    year = 2026
+    year = today_ist().year
 
     summary = client.get(
         f"/api/v1/leave/summary?year={year}",
