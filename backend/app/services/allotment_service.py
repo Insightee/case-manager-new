@@ -192,7 +192,21 @@ def activate_allotment(
     sync_case_manager_from_therapist(db, case, assignment.therapist_user_id)
 
     now = datetime.now(timezone.utc)
-    case.status = CaseStatus.ACTIVE
+    if case.status == CaseStatus.PENDING_ALLOTMENT:
+        from app.services import client_status_service
+
+        therapist = db.get(User, assignment.therapist_user_id)
+        therapist_label = therapist.full_name if therapist else f"#{assignment.therapist_user_id}"
+        client_status_service.change_client_status(
+            db,
+            case=case,
+            user=actor,
+            new_status=CaseStatus.ACTIVE.value,
+            effective_date=now.date(),
+            reason=f"Allotment activated — therapist {therapist_label}",
+        )
+    else:
+        case.status = CaseStatus.ACTIVE
     assignment.assignment_offer_sent_at = now
     db.flush()
 

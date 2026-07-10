@@ -204,6 +204,11 @@ def status_timeline_events(db: Session, case_id: int, *, limit: int = 40) -> lis
             action_label = f"Case closed (effective {eff})" if eff else "Case closed"
         elif _is_reopen_transition(r.previous_status, r.new_status):
             action_label = f"Case reopened (effective {eff})" if eff else "Case reopened"
+        elif (
+            r.previous_status == CaseStatus.PENDING_ALLOTMENT.value
+            and r.new_status == CaseStatus.ACTIVE.value
+        ):
+            action_label = f"Case allotted (effective {eff})" if eff else "Case allotted"
         else:
             action_label = f"Status changed: {r.previous_status} → {r.new_status}"
         if r.reason:

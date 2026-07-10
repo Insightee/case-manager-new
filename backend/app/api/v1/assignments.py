@@ -80,7 +80,24 @@ def assign_therapist(
             notes=payload.notes,
         )
     if case.status == CaseStatus.PENDING_ALLOTMENT:
-        case.status = CaseStatus.ACTIVE
+        from app.services import client_status_service
+
+        therapist = db.get(User, assignment.therapist_user_id)
+        therapist_label = therapist.full_name if therapist else f"#{assignment.therapist_user_id}"
+        reason = (payload.reason_for_change or "").strip()
+        if len(reason) < 5:
+            reason = f"Therapist allotted: {therapist_label}"
+        try:
+            client_status_service.change_client_status(
+                db,
+                case=case,
+                user=user,
+                new_status=CaseStatus.ACTIVE.value,
+                effective_date=payload.start_date or date.today(),
+                reason=reason,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="assign", entity_type="case_assignment", entity_id=assignment.id, new_value=payload.model_dump(), **meta)
     db.commit()

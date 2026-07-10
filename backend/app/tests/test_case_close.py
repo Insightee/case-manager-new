@@ -202,18 +202,37 @@ def test_admin_close_and_reopen_writes_audit_and_pending_allotment():
     assert reopen.status_code == 200, reopen.text
     assert reopen.json()["case"]["status"] == "PENDING_ALLOTMENT"
 
+    assign = client.post(
+        f"/api/v1/cases/{case_id}/assignments",
+        headers=admin_headers,
+        json={
+            "therapist_user_id": therapist_id,
+            "start_date": date.today().isoformat(),
+            "reason_for_change": "Reassigned after reopen",
+        },
+    )
+    assert assign.status_code == 201, assign.text
+
+    case_after = client.get(f"/api/v1/cases/{case_id}", headers=admin_headers)
+    assert case_after.status_code == 200
+    assert case_after.json()["status"] == "ACTIVE"
+
     audit = client.get(f"/api/v1/cases/{case_id}/client-status/audit", headers=admin_headers)
     assert audit.status_code == 200
     rows = audit.json()["audit"]
-    assert len(rows) >= 2
+    assert len(rows) >= 3
     assert any(r["newStatus"] == "CLOSED" for r in rows)
     assert any(r["newStatus"] == "PENDING_ALLOTMENT" for r in rows)
+    assert any(
+        r["previousStatus"] == "PENDING_ALLOTMENT" and r["newStatus"] == "ACTIVE" for r in rows
+    )
 
     timeline = client.get(f"/api/v1/admin/cases/{case_id}/timeline", headers=admin_headers)
     assert timeline.status_code == 200
     labels = [i.get("action_label", "") for i in timeline.json()["items"]]
     assert any("closed" in (label or "").lower() for label in labels)
     assert any("reopened" in (label or "").lower() for label in labels)
+    assert any("allotted" in (label or "").lower() for label in labels)
 
 
 def test_admin_close_cancels_recurring_schedule_record():
