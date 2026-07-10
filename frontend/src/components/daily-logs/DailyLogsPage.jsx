@@ -215,7 +215,7 @@ export function DailyLogsPage() {
 
   function scrollToUpcomingSessions() {
     requestAnimationFrame(() => {
-      upcomingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      upcomingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     })
   }
 
@@ -274,7 +274,9 @@ export function DailyLogsPage() {
 
   useEffect(() => {
     if ((logSession || visitSession) && logPanelRef.current) {
-      logPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // Prefer nearest so we don't scroll the document past #root padding / shell chrome
+      // (block: 'start' squashes the therapist portal top when opening from notifications).
+      logPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
   }, [logSession?.id, editingLog?.id, visitSession?.id])
 
@@ -426,7 +428,7 @@ export function DailyLogsPage() {
         logDeepLinkResolvedRef.current = lid
         openLogForm(session || { id: log.session_id }, { readOnly: true, log })
         setTimeout(() => {
-          logPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          logPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
         }, 120)
       } catch (err) {
         if (!cancelled) {
@@ -693,7 +695,7 @@ export function DailyLogsPage() {
         }
         if (result.conflict?.recommendedAction === 'CONTINUE_SESSION') {
           setSuccess('A session is in progress — end it above to start another visit.')
-          activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
           return
         }
         if (result.conflict?.existingSessionId) {
@@ -865,7 +867,7 @@ export function DailyLogsPage() {
         setVisitSession(null)
         closeLogForm()
         setSuccess('Session in progress — end it above when you are finished.')
-        activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        activeSessionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
         return
       }
 
