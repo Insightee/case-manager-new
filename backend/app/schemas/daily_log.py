@@ -20,6 +20,9 @@ class DailyLogCreate(BaseModel):
     parent_notes: Optional[str] = None
     late_reason: Optional[str] = None
     session_evidence: Optional[dict] = None
+    structured_session_json: Optional[dict] = None
+    therapist_reflection: Optional[str] = Field(default=None, max_length=500)
+    recording_id: Optional[int] = None
 
 
 class DailyLogUpdate(BaseModel):
@@ -32,6 +35,9 @@ class DailyLogUpdate(BaseModel):
     parent_notes: Optional[str] = None
     late_reason: Optional[str] = None
     session_evidence: Optional[dict] = None
+    structured_session_json: Optional[dict] = None
+    therapist_reflection: Optional[str] = Field(default=None, max_length=500)
+    recording_id: Optional[int] = None
     parent_voice_attachment_id: Optional[int] = None
 
 
@@ -69,6 +75,9 @@ class DailyLogRead(BaseModel):
     can_edit: bool = False
     can_resubmit: bool = False
     editable_until: Optional[datetime] = None
+    # Canonical voice-first draft — populated on single-log reads only.
+    structured_session_json: Optional[dict] = None
+    therapist_reflection: Optional[str] = None
     absence_reason: Optional[str] = None
     dispute_status: Optional[str] = None
     comment_count: int = 0

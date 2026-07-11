@@ -36,6 +36,7 @@ from app.api.v1 import (
     case_documents,
     case_services,
     session_absence,
+    session_voice,
     memos,
     clinical,
     ai_routes,
@@ -63,6 +64,8 @@ api_router.include_router(assignments.router)
 api_router.include_router(assignment_acceptance.router)
 api_router.include_router(sessions.router)
 api_router.include_router(session_absence.router)
+# Before daily_logs: /daily-logs/voice must win over /daily-logs/{log_id}.
+api_router.include_router(session_voice.router)
 api_router.include_router(daily_logs.router)
 api_router.include_router(
     reports.router,

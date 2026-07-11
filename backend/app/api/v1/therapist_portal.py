@@ -48,6 +48,7 @@ def therapist_create_session_log(
     user: User = Depends(require_permission("daily_log.create")),
     db: Session = Depends(get_db),
 ):
+    """Deprecated: prefer POST /api/v1/daily-logs with structured_session_json."""
     _require_therapist(user)
     try:
         log, created = session_log_service.create_therapist_session_log(db, user, payload.model_dump())

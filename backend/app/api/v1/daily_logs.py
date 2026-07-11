@@ -210,7 +210,7 @@ def get_daily_log(
             raise HTTPException(status_code=403, detail="Log access denied")
     else:
         _log_case_scope(db, user, log)
-    read = log_service.log_to_read(log)
+    read = log_service.log_to_read(log, include_structured=True)
     log_service.attach_comment_counts(db, [read], parent_visible_only=False)
     return DailyLogRead(**read)
 
@@ -222,16 +222,27 @@ def create_daily_log(
     user: User = Depends(require_permission("daily_log.create")),
     db: Session = Depends(get_db),
 ):
+    from app.services import session_log_application_service as sla
+
     evidence = payload.session_evidence
-    body = payload.model_dump(exclude={"session_evidence"})
+    structured = payload.structured_session_json
+    recording_id = payload.recording_id
+    body = payload.model_dump(exclude={"session_evidence", "structured_session_json", "recording_id"})
+    evidence_dict = evidence.model_dump() if evidence else None
     try:
-        log, created = log_service.create_daily_log(db, **body)
+        log, created = sla.submit_log(
+            db,
+            user,
+            session_id=body["session_id"],
+            body=body,
+            structured=structured,
+            session_evidence=evidence_dict,
+            recording_id=recording_id,
+        )
+    except sla.SessionLogValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    try:
-        _apply_session_evidence(db, log, user, evidence)
-    except HTTPException:
-        raise
     if created:
         commit_or_http(db)
         db.refresh(log)
@@ -267,7 +278,7 @@ def create_daily_log(
                 log.id,
             )
             db.rollback()
-    return DailyLogRead(**log_service.log_to_read(log))
+    return DailyLogRead(**log_service.log_to_read(log, include_structured=True))
 
 
 @router.patch("/{log_id}", response_model=DailyLogRead)
@@ -278,25 +289,37 @@ def update_daily_log(
     user: User = Depends(require_permission("daily_log.create")),
     db: Session = Depends(get_db),
 ):
+    from app.services import session_log_application_service as sla
+
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     evidence = payload.session_evidence
-    body = payload.model_dump(exclude={"session_evidence"}, exclude_unset=True)
+    structured = payload.structured_session_json
+    recording_id = payload.recording_id
+    body = payload.model_dump(
+        exclude={"session_evidence", "structured_session_json", "recording_id"},
+        exclude_unset=True,
+    )
+    evidence_dict = evidence.model_dump() if evidence else None
     try:
-        log = log_service.update_daily_log(db, log, user.id, **body)
-    except ValueError as e:
+        log = sla.update_log(
+            db,
+            log,
+            user,
+            body=body,
+            structured=structured,
+            session_evidence=evidence_dict,
+            recording_id=recording_id,
+        )
+    except sla.SessionLogValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    try:
-        _apply_session_evidence(db, log, user, evidence)
-    except HTTPException:
-        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()
-    return DailyLogRead(**log_service.log_to_read(log))
+    return DailyLogRead(**log_service.log_to_read(log, include_structured=True))
 
 
 @router.post("/{log_id}/resubmit", response_model=DailyLogRead)
@@ -307,19 +330,31 @@ def resubmit_daily_log(
     user: User = Depends(require_permission("daily_log.create")),
     db: Session = Depends(get_db),
 ):
+    from app.services import session_log_application_service as sla
+
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     evidence = payload.session_evidence
-    body = payload.model_dump(exclude={"session_evidence"}, exclude_unset=True)
+    structured = payload.structured_session_json
+    recording_id = payload.recording_id
+    body = payload.model_dump(
+        exclude={"session_evidence", "structured_session_json", "recording_id"},
+        exclude_unset=True,
+    )
+    evidence_dict = evidence.model_dump() if evidence else None
     try:
-        log = log_service.resubmit_daily_log(db, log, user.id, **body)
-    except ValueError as e:
+        log = sla.resubmit_log(
+            db,
+            log,
+            user,
+            body=body,
+            structured=structured,
+            session_evidence=evidence_dict,
+            recording_id=recording_id,
+        )
+    except sla.SessionLogValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    try:
-        _apply_session_evidence(db, log, user, evidence)
-    except HTTPException:
-        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     from app.services import session_log_service
@@ -328,7 +363,7 @@ def resubmit_daily_log(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="resubmit", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()
-    return DailyLogRead(**log_service.log_to_read(log))
+    return DailyLogRead(**log_service.log_to_read(log, include_structured=True))
 
 
 @router.post("/{log_id}/approve")
@@ -437,6 +472,14 @@ class SessionEvidenceSave(BaseModel):
     strategies: list[StrategyUseEventIn] = Field(default_factory=list)
 
 
+def _apply_structured_session(db, log, user, structured: dict | None, recording_id: int | None = None) -> None:
+    if not structured:
+        return
+    from app.services import structured_session_log_service as sse_svc
+
+    sse_svc.apply_structured_session_to_log(db, log, user, structured, recording_id=recording_id)
+
+
 def _apply_session_evidence(db, log, user, evidence: SessionEvidenceSave | dict | None) -> None:
     if not evidence:
         return
@@ -475,6 +518,22 @@ def get_session_evidence(
     return ev_svc.entries_for_log(db, log_id)
 
 
+@router.get("/{log_id}/evidence-projection")
+def get_evidence_projection(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Canonical session evidence read contract for reports and read surfaces."""
+    from app.services import session_evidence_projection_service as sep_svc
+
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+    return sep_svc.build_session_evidence_projection(db, log).to_dict()
+
+
 @router.put("/{log_id}/session-evidence")
 def save_session_evidence(
     log_id: int,
@@ -482,8 +541,16 @@ def save_session_evidence(
     user: User = Depends(require_permission("daily_log.create")),
     db: Session = Depends(get_db),
 ):
-    from app.services import clinical_evidence_service as ev_svc
+    """Deprecated: use structured session draft resubmit. Converts payload → structured resubmit."""
+    import logging
 
+    from app.services import session_log_application_service as sla
+
+    logging.getLogger("insightcase.deprecated").warning(
+        "deprecated_route PUT /daily-logs/%s/session-evidence invoked by user %s",
+        log_id,
+        user.id,
+    )
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
@@ -491,16 +558,19 @@ def save_session_evidence(
     case = case_service.get_case(db, case_id)
     if case:
         ensure_case_write_access(user, case, db)
-    result = ev_svc.save_session_evidence(
-        db,
-        daily_log=log,
-        case_id=case_id,
+    structured = sla.evidence_payload_to_structured(
+        log,
         goals=[g.model_dump() for g in payload.goals],
         strategies=[s.model_dump() for s in payload.strategies],
-        created_by_user_id=user.id,
-        commit=True,
     )
-    return result
+    try:
+        sla.apply_structured_to_log(db, log, user, structured, validate_submit=False)
+    except sla.SessionLogValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    from app.services import clinical_evidence_service as ev_svc
+
+    return ev_svc.entries_for_log(db, log_id)
 
 
 class AiNoteRequest(BaseModel):
@@ -795,3 +865,52 @@ def update_comment_status(
         status=comment.status,
         created_at=comment.created_at
     )
+
+
+@router.get("/{log_id}/clinical-review")
+def get_daily_log_clinical_review(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Case Manager review payload — structured session + audit metadata."""
+    if not user_has_permission(user, "daily_log.review") and RoleName.CASE_MANAGER.value not in user.role_names:
+        if RoleName.SUPER_ADMIN.value not in user.role_names and RoleName.ADMIN.value not in user.role_names:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+    from app.services import structured_session_log_service as sse_svc
+    from app.models.session_audio import SessionAudioRecording
+    from sqlalchemy import select
+
+    structured = sse_svc.structured_session_from_log(log)
+    recording = db.scalar(
+        select(SessionAudioRecording).where(SessionAudioRecording.daily_log_id == log.id).limit(1)
+    )
+    session = log.session
+    return {
+        "log_id": log.id,
+        "session_id": log.session_id,
+        "structured_session": structured.to_json_dict() if structured else None,
+        "therapist_reflection": log.therapist_reflection,
+        "clinical_summary": structured.clinical_summary if structured else log.session_notes,
+        "parent_summary": structured.parent_summary if structured else log.parent_notes,
+        "transcript": structured.voice_transcript if structured else None,
+        "ai_metadata": structured.ai_metadata.model_dump() if structured else None,
+        "recording": {
+            "id": recording.id,
+            "audio_available": bool(recording and recording.retention_expires_at),
+            "retention_expires_at": recording.retention_expires_at if recording else None,
+        }
+        if recording
+        else None,
+        "time_edits": {
+            "actual_times_edited": bool(session and session.actual_times_edited),
+            "edited_start_at": session.edited_start_at if session else None,
+            "edited_end_at": session.edited_end_at if session else None,
+            "edit_reason": session.actual_times_edit_reason if session else None,
+        },
+        "approval_status": log.approval_status,
+    }

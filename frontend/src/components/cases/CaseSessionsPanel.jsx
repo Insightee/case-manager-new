@@ -9,7 +9,7 @@ import {
   patchCachesAfterSessionCancel,
   patchCachesAfterSessionEnd,
 } from '../../lib/therapistSessionLogCache.js'
-import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
+import { VoiceSessionLogFlow } from '../daily-logs/voice/VoiceSessionLogFlow.jsx'
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import { SessionLogStatusBadge } from '../daily-logs/SessionLogStatusBadge.jsx'
 import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
@@ -800,7 +800,7 @@ export function CaseSessionsPanel({
           onClose={closeLogForm}
           dismissible={!(logRequired && !editingLog)}
         >
-          <SubmitSessionLogForm
+          <VoiceSessionLogFlow
             session={logSession}
             existingLog={editingLog}
             childName={childName}

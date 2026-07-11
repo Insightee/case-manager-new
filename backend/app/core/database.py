@@ -375,6 +375,64 @@ def ensure_sqlite_schema_patches() -> None:
                 )
             if "parent_voice_attachment_id" not in log_cols:
                 conn.execute(text("ALTER TABLE daily_logs ADD COLUMN parent_voice_attachment_id INTEGER"))
+            if "structured_session_json" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN structured_session_json TEXT"))
+            if "therapist_reflection" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN therapist_reflection TEXT"))
+
+    if not insp.has_table("session_audio_recordings"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE session_audio_recordings (
+                        id INTEGER PRIMARY KEY,
+                        daily_log_id INTEGER REFERENCES daily_logs(id),
+                        session_id INTEGER NOT NULL REFERENCES sessions(id),
+                        case_id INTEGER REFERENCES cases(id),
+                        therapist_id INTEGER NOT NULL REFERENCES users(id),
+                        storage_key VARCHAR(512) NOT NULL,
+                        mime_type VARCHAR(128) NOT NULL,
+                        size_bytes INTEGER NOT NULL DEFAULT 0,
+                        duration_seconds INTEGER,
+                        recording_status VARCHAR(32) NOT NULL DEFAULT 'UPLOADED',
+                        transcription_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                        extraction_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                        transcript TEXT,
+                        transcript_language VARCHAR(16),
+                        transcript_provider VARCHAR(64),
+                        transcript_model VARCHAR(128),
+                        transcript_confidence INTEGER,
+                        processing_ms INTEGER,
+                        extraction_json TEXT,
+                        error_message TEXT,
+                        retention_expires_at DATETIME,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("session_time_audit_events"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE session_time_audit_events (
+                        id INTEGER PRIMARY KEY,
+                        session_id INTEGER NOT NULL REFERENCES sessions(id),
+                        actor_user_id INTEGER NOT NULL REFERENCES users(id),
+                        previous_start_at DATETIME,
+                        previous_end_at DATETIME,
+                        new_start_at DATETIME NOT NULL,
+                        new_end_at DATETIME NOT NULL,
+                        edit_reason VARCHAR(512) NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
 
     if insp.has_table("session_goal_entries"):
         sge_cols = {c["name"] for c in insp.get_columns("session_goal_entries")}

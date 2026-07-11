@@ -1,4 +1,8 @@
-"""Clinical Brain admin review queue — wraps repository review actions."""
+"""Clinical Brain admin review queue — wraps repository review actions.
+
+Deprecated for new work: prefer clinical_review_queue_service (unified queue).
+See docs/product/canonical-manifest.yml.
+"""
 
 from __future__ import annotations
 

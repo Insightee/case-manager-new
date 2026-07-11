@@ -1,0 +1,106 @@
+# InsighteCase Canonical Manifest
+# Read this file first before changing session-log or clinical-brain code.
+# See docs/product/CANONICAL_PRODUCT_DIRECTION.md for precedence rules.
+
+version: 1
+updated: 2026-07-12
+
+canonical:
+  frontend_editor:
+    - frontend/src/components/daily-logs/voice/VoiceSessionLogFlow.jsx
+    - frontend/src/components/daily-logs/voice/VoiceStoryDraftScreen.jsx
+    - frontend/src/lib/structuredSessionEvidence.js
+    - frontend/src/lib/voiceExtractionMapper.js
+    - frontend/src/hooks/useSessionLogSubmit.js
+  backend_write:
+    service: backend/app/services/session_log_application_service.py
+    endpoints:
+      - POST /api/v1/daily-logs
+      - PATCH /api/v1/daily-logs/{id}
+      - POST /api/v1/daily-logs/{id}/resubmit
+      - POST /api/v1/daily-logs/voice
+  backend_read_projection:
+    schema: backend/app/schemas/session_evidence_projection.py
+    builder: backend/app/services/session_evidence_projection_service.py
+  documentation:
+    - docs/product/CANONICAL_PRODUCT_DIRECTION.md
+    - docs/product/SESSION_LOG_V1.md
+    - docs/product/CLINICAL_BRAIN_ARCHITECTURE.md
+    - docs/design/DESIGN.md
+
+deprecated:
+  - id: submit_session_log_form
+    paths:
+      - frontend/src/components/daily-logs/SubmitSessionLogForm.jsx
+      - frontend/src/components/clinical/session-log/**
+    replacement: VoiceSessionLogFlow
+    deletion_gates: [G1_zero_frontend_imports, G5_read_views_verified]
+    status: zero_imports_confirmed
+
+  - id: therapist_portal_session_logs
+    route: POST /api/v1/therapist/session-logs
+    replacement: POST /api/v1/daily-logs with structured_session_json
+    adapter: session_log_application_service.submit_log
+    deletion_gates: [G2_zero_route_traffic_30d, G3_zero_records_written_30d]
+    status: adapter_active
+
+  - id: standalone_session_evidence_put
+    route: PUT /api/v1/daily-logs/{id}/session-evidence
+    replacement: resubmit via SessionLogApplicationService
+    deletion_gates: [G2_zero_route_traffic_30d, G3_zero_records_written_30d]
+    status: converts_to_resubmit
+
+  - id: voice_extraction_mapper_legacy
+    paths:
+      - frontend/src/lib/voiceExtractionMapperLegacy.js
+    replacement: voiceExtractionMapper.js legacyLogToStructuredSession
+    deletion_gates: [G4_backfill_complete, G1_zero_frontend_imports]
+    status: compatibility_adapter
+
+  - id: clinical_brain_review_service_admin_tab
+    paths:
+      - backend/app/services/clinical_brain_review_service.py
+    replacement: clinical_review_queue_service
+    deletion_gates: [G2_zero_route_traffic_30d]
+    status: deferred_phase3
+
+  - id: vite_structured_session_evidence_flag
+    env: VITE_STRUCTURED_SESSION_EVIDENCE
+    replacement: always-on structured JSON in voice flow
+    deletion_gates: [G1_zero_frontend_imports]
+    status: dead_code_only
+
+deletion_gates:
+  G1_zero_frontend_imports: Static analysis shows zero imports of deprecated module
+  G2_zero_route_traffic_30d: Zero HTTP requests to deprecated route for 30 consecutive days
+  G3_zero_records_written_30d: Zero records written through deprecated path in same period
+  G4_backfill_complete: Migration/backfill script run and row counts verified
+  G5_read_views_verified: Read surfaces render projection for sample of historical records
+  G6_rollback_commit_identified: Revert commit hash documented and tested
+  G7_monitoring_stable_7d: Production error rate stable 7 days post-change
+
+source_of_truth:
+  draft: daily_logs.structured_session_json
+  submitted_evidence:
+    - session_goal_entries
+    - strategy_use_events
+  submitted_snapshot: daily_logs.structured_session_json
+  reporting: SessionEvidenceProjection
+  prose_columns: derived_compatibility_projection
+
+goal_states:
+  canonical: [suggested, confirmed, rejected, edited_and_confirmed]
+  legacy_aliases:
+    pending: suggested
+    changed: edited_and_confirmed
+  creates_session_goal_entry: [confirmed, edited_and_confirmed]
+
+strategy_categories:
+  used_today:
+    creates_strategy_use_event: true
+  active_case_context:
+    creates_strategy_use_event: false
+  recommended:
+    creates_strategy_use_event: false
+  emerging_custom:
+    creates_strategy_use_event: true_when_confirmed_used

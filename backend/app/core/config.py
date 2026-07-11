@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     enable_billing: bool = False
     enable_clinical_brain: bool = False
     enable_report_generation: bool = False
+    # Voice-first session log pilot (staging opt-in; dev/staging envs auto-active).
+    enable_voice_session_log: bool = False
+    voice_stt_provider: str = "mock"
+    voice_stt_model: str = ""
+    voice_max_recording_seconds: int = 120
+    voice_max_audio_bytes: int = 15 * 1024 * 1024
+    # Raw audio retention after transcript exists (0 = keep indefinitely).
+    voice_audio_retention_days: int = 7
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).

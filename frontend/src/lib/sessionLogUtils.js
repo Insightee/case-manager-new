@@ -62,3 +62,8 @@ export function validateSessionLogForm(form, { isLateSession }) {
   }
   return ''
 }
+
+export function isLateSessionLog(session) {
+  if (!session?.scheduled_date) return false
+  return session.scheduled_date < todayIsoIST()
+}

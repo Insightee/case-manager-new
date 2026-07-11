@@ -1,0 +1,451 @@
+/* Voice-first session log — Forest Light, calm recording states, thumb-zone actions. */
+
+.vsl-flow--focus {
+  position: relative;
+}
+
+.vsl-recorder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1.25rem;
+  border-radius: 16px;
+  border: 1px solid #d5e6dc;
+  background: #f6faf7;
+}
+
+.vsl-recorder--live-active {
+  min-height: 320px;
+}
+
+.vsl-recorder__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #1f3d31;
+}
+
+.vsl-recorder__hint {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #4b6357;
+}
+
+.vsl-btn {
+  min-height: 44px;
+  padding: 0 1.25rem;
+  border-radius: 12px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.vsl-btn--record {
+  background: #1f6f4e;
+  color: #fff;
+  min-height: 52px;
+  font-size: 1.05rem;
+}
+
+.vsl-btn--primary {
+  background: #1f6f4e;
+  color: #fff;
+}
+
+.vsl-btn--ghost {
+  background: transparent;
+  color: #1f6f4e;
+  border: 1px solid #bcd8c8;
+}
+
+.vsl-btn__mic {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff6b6b;
+}
+
+.vsl-recorder__live {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.vsl-recorder__timer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.vsl-recorder__pulse {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d9534f;
+  animation: vsl-pulse 1.4s ease-in-out infinite;
+}
+
+.vsl-recorder__pulse--paused {
+  animation: none;
+  background: #b9a13a;
+}
+
+@keyframes vsl-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vsl-recorder__pulse { animation: none; }
+}
+
+.vsl-recorder__timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #1f3d31;
+}
+
+.vsl-recorder__recording-label {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f6f4e;
+  text-align: center;
+}
+
+.vsl-waveform {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  height: 72px;
+  padding: 0.5rem 0.25rem;
+  border-radius: 12px;
+  background: #ecf5ee;
+}
+
+.vsl-waveform__bar {
+  flex: 1;
+  max-width: 8px;
+  min-height: 6px;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #3d9970 0%, #1f6f4e 100%);
+  transform-origin: bottom center;
+  transition: transform 80ms ease-out;
+}
+
+.vsl-waveform__bar--paused {
+  background: #b9a13a;
+  opacity: 0.65;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vsl-waveform__bar {
+    transition: none;
+  }
+}
+
+.vsl-recorder__cap {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: #6a8175;
+}
+
+.vsl-recorder__cap--warn {
+  color: #a35b00;
+  font-weight: 600;
+}
+
+.vsl-recorder__cue {
+  margin: 0;
+  padding: 0.875rem 1rem;
+  border-radius: 12px;
+  background: #ecf5ee;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  color: #33523f;
+  text-align: center;
+  min-height: 3.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vsl-recorder__actions {
+  display: flex;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+
+.vsl-recorder__actions--sticky {
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+
+.vsl-recorder__actions .vsl-btn {
+  flex: 1;
+  min-width: 120px;
+}
+
+.vsl-recorder__player {
+  width: 100%;
+}
+
+.vsl-recorder__status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  color: #33523f;
+}
+
+.vsl-recorder__status--warn {
+  color: #7a4a00;
+}
+
+.vsl-recorder__status--ok {
+  color: #1f6f4e;
+  font-weight: 600;
+}
+
+.vsl-recorder__spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid #d5e6dc;
+  border-top-color: #1f6f4e;
+  animation: vsl-spin 0.9s linear infinite;
+}
+
+@keyframes vsl-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vsl-recorder__spinner { animation-duration: 2s; }
+}
+
+.vsl-recorder__error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #8a3b2e;
+}
+
+/* Processing screen */
+.vsl-processing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.vsl-processing__step {
+  font-size: 0.95rem;
+  color: #33523f;
+  font-weight: 600;
+}
+
+.vsl-processing__substep {
+  font-size: 0.85rem;
+  color: #6a8175;
+}
+
+/* Starting-state chips */
+.vsl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.vsl-chip {
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 999px;
+  border: 1px solid #bcd8c8;
+  background: #fff;
+  color: #33523f;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.vsl-chip--selected {
+  background: #1f6f4e;
+  border-color: #1f6f4e;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Flow layout */
+.vsl-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.vsl-flow__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.vsl-flow__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6a8175;
+}
+
+.vsl-flow__title {
+  margin: 0;
+  font-size: 1.35rem;
+  color: #1f3d31;
+}
+
+.vsl-review-banner {
+  padding: 1rem 1.125rem;
+  border-radius: 14px;
+  border: 1px solid #bcd8c8;
+  background: linear-gradient(180deg, #ecf5ee 0%, #f6faf7 100%);
+}
+
+.vsl-review-banner__title {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1f3d31;
+}
+
+.vsl-review-banner__hint {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #4b6357;
+}
+
+.vsl-flow--review .ic-session-log-panel--v2 {
+  border: none;
+  padding-top: 0;
+}
+
+.vsl-flow__meta {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #4b6357;
+}
+
+.vsl-flow__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vsl-flow__section-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #1f3d31;
+}
+
+.vsl-flow__section-hint {
+  margin: 0;
+  font-size: 0.825rem;
+  color: #6a8175;
+}
+
+.vsl-flow__optional {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #6a8175;
+}
+
+.vsl-flow__cancel {
+  align-self: flex-start;
+}
+
+/* Transcript disclosure */
+.vsl-transcript {
+  border: 1px solid #d5e6dc;
+  border-radius: 12px;
+  padding: 0.25rem 0.875rem;
+  background: #fff;
+}
+
+.vsl-transcript summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1f6f4e;
+  padding: 0.5rem 0;
+}
+
+.vsl-transcript__text {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: #4b6357;
+  white-space: pre-wrap;
+}
+
+/* Mobile: full-screen focus mode for recording + processing */
+@media (max-width: 768px) {
+  .vsl-flow--focus {
+    position: fixed;
+    inset: 0;
+    z-index: 220;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #eef5f0;
+    padding: 1rem 1rem max(1.25rem, env(safe-area-inset-bottom));
+    margin: 0 !important;
+    border-radius: 0;
+  }
+
+  .vsl-flow--focus .vsl-recorder {
+    flex: 1;
+    min-height: min(68vh, 560px);
+    padding: 1.5rem 1.25rem;
+  }
+
+  .vsl-flow--focus .vsl-recorder--live-active {
+    min-height: min(72vh, 620px);
+  }
+
+  .vsl-flow--focus .vsl-waveform {
+    height: 96px;
+  }
+
+  .vsl-flow--focus .vsl-recorder__title {
+    font-size: 1.25rem;
+  }
+
+  .vsl-flow--focus .vsl-recorder__cue {
+    font-size: 1.125rem;
+    min-height: 4rem;
+  }
+
+  .vsl-flow--focus .vsl-btn--record {
+    width: 100%;
+    min-height: 56px;
+    font-size: 1.125rem;
+  }
+
+  .vsl-flow--focus .vsl-recorder__actions .vsl-btn {
+    min-height: 52px;
+    font-size: 1rem;
+  }
+
+  .vsl-flow--review {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+}

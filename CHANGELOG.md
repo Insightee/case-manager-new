@@ -9,6 +9,8 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 ## [Unreleased]
 
 ### Added
+- Clinical brain & session-log canonicalisation: product docs (`docs/product/*`), `DESIGN.md`, `canonical-manifest.yml`, Cursor rule `insighte-clinical-canonical.mdc`; `SessionLogApplicationService` (single write entry), `SessionEvidenceProjection` + preview/build services; time audit table; deprecated route adapters with usage gates.
+- Voice-first session log is now the **canonical editor** on all therapist routes (logs page, case detail, edit/resubmit) — frontend flag removed; "Type instead" opens the same structured draft. New clinical confirmation sections: session context header with audited time edit, emerging goal candidates → CM review queue, strategies used today (active / other / max-2 deterministic recommendations), child response signals, challenges with CM flag + incident link (never auto-created), deterministic session insights, family + clinical preview tabs. Legacy prose logs adapt into the draft via `legacyLogToStructuredSession`; all new data lives in `structured_session_json` (no migration).
 - Team workflow: `CONTRIBUTING.md`, PR template, CODEOWNERS, pre-push/pre-release scripts, pre-commit hooks, CI contributor guards.
 - RBAC editor: bulk Select all / Clear all for service categories, multi-select dropdown, unified clinical features panel.
 - People module: central invite policy (max 2 pending per email, one role per email), uniform row actions (staff/therapists/clients), bulk activate/deactivate and bulk invite cancel, client Deactivated when all cases closed with reactivate case flow, case CM edit modal.

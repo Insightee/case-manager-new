@@ -94,6 +94,16 @@ def list_therapist_my_cases(db: Session, user: User) -> dict:
 
 
 def create_therapist_session_log(db: Session, user: User, payload: dict) -> tuple[DailyLog, bool]:
+    """Deprecated compatibility path — routes through SessionLogApplicationService."""
+    import logging
+
+    from app.services import session_log_application_service as sla
+
+    logging.getLogger("insightcase.deprecated").warning(
+        "deprecated_route POST /therapist/session-logs invoked by user %s session %s",
+        user.id,
+        payload.get("session_id"),
+    )
     session = db.scalars(
         select(TherapySession)
         .where(TherapySession.id == payload["session_id"])
@@ -106,7 +116,19 @@ def create_therapist_session_log(db: Session, user: User, payload: dict) -> tupl
     case = session.case or case_service.get_case(db, session.case_id)
     if not case or not case_scope_check(db, user, case):
         raise ValueError("Case access denied")
-    log, created = log_service.create_daily_log(db, **payload)
+    body, structured, session_evidence, recording_id = sla.portal_payload_to_body(dict(payload))
+    try:
+        log, created = sla.submit_log(
+            db,
+            user,
+            session_id=body["session_id"],
+            body=body,
+            structured=structured,
+            session_evidence=session_evidence,
+            recording_id=recording_id,
+        )
+    except sla.SessionLogValidationError as e:
+        raise ValueError(str(e))
     return log, created
 
 

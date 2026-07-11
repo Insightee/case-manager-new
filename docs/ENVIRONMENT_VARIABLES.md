@@ -33,6 +33,7 @@ Detail: [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) · Deploy checklist: [DEPLOY.md
 | `VITE_APP_ENV` | no | — | Vercel | Set `staging` on preview/staging deploys; set `production` on Production (optional — `VERCEL_ENV=production` also gates). |
 | `VITE_ENABLE_CLINICAL_BRAIN` | no | `false` | Vercel | Goal bank, strategy pool, clinical review queue. |
 | `VITE_ENABLE_REPORT_BUILDER` | no | `false` | Vercel | Observation/IEP/monthly report builder routes. |
+| `VITE_ENABLE_VOICE_SESSION_LOG` | no | — | — | **Removed** — the voice-first flow is the canonical session-log editor (no frontend gate). Backend `ENABLE_VOICE_SESSION_LOG` still gates the recording pipeline; UI degrades to manual entry. |
 | `VITE_POLICIES_BOT_URL` | no | — | Frontend | Fallback policies-bot URL if `/api/v1/support/info` does not return one. |
 
 **Do not** set on Vercel: `DATABASE_URL`, `JWT_*`, `SMTP_*`, `R2_*`, or any backend-only var.
@@ -142,6 +143,12 @@ Setup: [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md)
 | `ENABLE_BILLING` | no | `false` | Client billing, ledger, therapist invoices API. |
 | `ENABLE_CLINICAL_BRAIN` | no | `false` | Clinical brain, evidence events, review queue API. |
 | `ENABLE_REPORT_GENERATION` | no | `false` | AI report drafting (`/clinical-ai/*`). Requires brain flag context. |
+| `ENABLE_VOICE_SESSION_LOG` | no | `false` | Voice-first session log pipeline (upload, transcription, extraction). Auto-active on dev/staging envs. |
+| `VOICE_STT_PROVIDER` | no | `mock` | Speech-to-text provider (`mock`, `openai`). |
+| `VOICE_STT_MODEL` | no | — | STT model override (e.g. `whisper-1`). |
+| `VOICE_MAX_RECORDING_SECONDS` | no | `120` | Max voice recording duration. |
+| `VOICE_MAX_AUDIO_BYTES` | no | 15 MiB | Max uploaded audio size. |
+| `VOICE_AUDIO_RETENTION_DAYS` | no | `30` | Raw audio retention after transcript (0 = keep). |
 | `BILLING_LEDGER_DRAFTS` | no | `true` | Billing ledger draft mode. |
 | `ACCEPTANCE_GATING_ENABLED` | no | `false` | When false, parent assignment acceptance is informational only (pilot default). |
 | `TICKET_ATTACHMENT_MAX_BYTES` | no | 5 MiB | Max size per ticket attachment. |

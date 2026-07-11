@@ -39,3 +39,15 @@ def require_clinical_brain() -> None:
 def require_report_generation() -> None:
     if not settings.enable_report_generation:
         _feature_unavailable()
+
+
+def voice_session_log_active() -> bool:
+    if settings.enable_voice_session_log:
+        return True
+    env = settings.app_env.lower()
+    return env in ("development", "dev", "local", "test", "staging", "testing")
+
+
+def require_voice_session_log() -> None:
+    if not voice_session_log_active():
+        _feature_unavailable()

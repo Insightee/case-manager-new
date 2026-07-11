@@ -40,6 +40,11 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 
 | Doc | Purpose |
 |-----|---------|
+| **[product/CANONICAL_PRODUCT_DIRECTION.md](./product/CANONICAL_PRODUCT_DIRECTION.md)** | **Canonical product direction — session log & clinical brain** |
+| **[product/SESSION_LOG_V1.md](./product/SESSION_LOG_V1.md)** | **Voice-first session log specification** |
+| **[product/CLINICAL_BRAIN_ARCHITECTURE.md](./product/CLINICAL_BRAIN_ARCHITECTURE.md)** | **Backend evidence & application service** |
+| **[product/canonical-manifest.yml](./product/canonical-manifest.yml)** | File/route classification & deletion gates |
+| **[design/DESIGN.md](./design/DESIGN.md)** | Session log UI design (Forest Light, 5 screens) |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System overview, components, data flow |
 | [REPORT_ARCHITECTURE.md](./REPORT_ARCHITECTURE.md) | Canonical `clinical_reports` spine vs legacy monthly |
 | [CLINICAL_HANDOVER.md](./CLINICAL_HANDOVER.md) | **Reports, Clinical Brain, session evidence** — CTO/clinical handover |

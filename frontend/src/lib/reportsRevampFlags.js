@@ -27,6 +27,7 @@ export const REPORTS_REVAMP_ADMIN_CASE = REPORTS_REVAMP_ENABLED
 export const REPORTS_REVAMP_PARENT = isReportsModuleEnabled()
 
 /** Session log structured evidence — opt in (stabilisation: default legacy log form). */
+/** @deprecated Dead code path — voice flow always uses structured JSON. */
 export const STRUCTURED_SESSION_EVIDENCE =
   import.meta.env.VITE_STRUCTURED_SESSION_EVIDENCE === 'true'
 
@@ -45,6 +46,17 @@ export const MONTHLY_EVIDENCE_V2 = isClinicalBrainEnabled()
 /** Assigned goals/strategies v2 tab — opt in until clinical sign-off. */
 export const GOALS_STRATEGIES_ENGINE_V2 =
   import.meta.env.VITE_GOALS_STRATEGIES_ENGINE_V2 === 'true'
+
+/**
+ * Voice-first session log is the canonical editor — no longer flag-gated.
+ * Backend voice endpoints keep their own env gate; the UI degrades to
+ * manual entry in the same structured draft when recording is unavailable.
+ */
+export const VOICE_SESSION_LOG_ENABLED = true
+
+export function isVoiceSessionLogActive() {
+  return true
+}
 
 /** Stitch case Reports tab (timeline, attention, filters) — defer until rebuild. */
 export const CASE_REPORTS_TAB_V2 =

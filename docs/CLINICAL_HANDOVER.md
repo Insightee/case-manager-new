@@ -1,5 +1,7 @@
 # Handover: Reports, Clinical Brain & session evidence
 
+**Canonical session-log direction:** [product/CANONICAL_PRODUCT_DIRECTION.md](./product/CANONICAL_PRODUCT_DIRECTION.md) · [SESSION_LOG_V1.md](./product/SESSION_LOG_V1.md)
+
 For CTO, clinical leads, and engineers taking over InsighteCase report simplification. Read with [REPORT_ARCHITECTURE.md](./REPORT_ARCHITECTURE.md), [CLINICAL_EVIDENCE_EVENT_CONTRACT.md](./CLINICAL_EVIDENCE_EVENT_CONTRACT.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [AGENTS.md](../AGENTS.md).
 
 _Last updated: July 2026_

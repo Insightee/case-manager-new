@@ -163,11 +163,19 @@ def compile_monthly_evidence_snapshot(
     if not goals_out:
         quality_flags.append({"code": "no_goal_evidence", "message": "No structured goal evidence this month"})
 
+    session_projections = []
+    if logs:
+        from app.services import session_evidence_projection_service as sep_svc
+
+        for log in logs:
+            session_projections.append(sep_svc.build_session_evidence_projection(db, log).to_dict())
+
     payload = {
         "case_id": case_id,
         "month": month,
         "sessions": sessions_block,
         "goals": goals_out,
+        "session_projections": session_projections,
         "parent_inputs": [],
         "uploads": [],
         "quality_flags": quality_flags,

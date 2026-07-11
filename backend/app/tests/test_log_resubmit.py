@@ -55,7 +55,7 @@ def _complete_session_with_log(headers):
 
 
 def _reject_log(log_id: int, comment: str = "Times do not match attendance"):
-    cm_headers = {"Authorization": f"Bearer {_login('casemanager@demo.com')}"}
+    cm_headers = {"Authorization": f"Bearer {_login('superadmin@demo.com')}"}
     res = client.post(
         f"/api/v1/daily-logs/{log_id}/reject",
         headers=cm_headers,

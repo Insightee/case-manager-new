@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta, timezone
 
 LOG_EDIT_WINDOW = timedelta(hours=24)
@@ -256,7 +257,7 @@ def attach_comment_counts(
         item["open_parent_comment_count"] = open_parent
 
 
-def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
+def log_to_read(log: DailyLog, include_clinical: bool = True, include_structured: bool = False) -> dict:
     session = log.session
     case = session.case if session and getattr(session, "case", None) else None
     data = {
@@ -298,6 +299,15 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
         data["session_notes"] = log.session_notes
         data["observations"] = log.observations
         data["parent_notes"] = log.parent_notes
+    if include_structured and include_clinical:
+        # Single-log reads only — keeps list payloads lean.
+        raw = getattr(log, "structured_session_json", None)
+        if raw:
+            try:
+                data["structured_session_json"] = json.loads(raw) if isinstance(raw, str) else raw
+            except (TypeError, ValueError):
+                pass
+        data["therapist_reflection"] = getattr(log, "therapist_reflection", None)
     if log.late_addition:
         data["source"] = "forgotten"
         status = log.approval_status.value if hasattr(log.approval_status, "value") else str(log.approval_status)

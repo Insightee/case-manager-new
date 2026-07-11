@@ -391,6 +391,9 @@ def update_actual_times(
         raise ValueError("End time must be after start time")
     validate_session_duration_minutes(duration_minutes_between(actual_start_at, actual_end_at))
 
+    prev_start = session.edited_start_at or session.actual_start_at
+    prev_end = session.edited_end_at or session.actual_end_at
+
     session.edited_start_at = _aware(actual_start_at)
     session.edited_end_at = _aware(actual_end_at)
     session.actual_times_edited = True
@@ -398,6 +401,20 @@ def update_actual_times(
     session.actual_times_edited_by = therapist_user_id
     session.actual_times_edit_reason = reason
     session.time_confirmation_required = False
+
+    from app.models.session_time_audit import SessionTimeAuditEvent
+
+    db.add(
+        SessionTimeAuditEvent(
+            session_id=session.id,
+            actor_user_id=therapist_user_id,
+            previous_start_at=_aware(prev_start) if prev_start else None,
+            previous_end_at=_aware(prev_end) if prev_end else None,
+            new_start_at=_aware(actual_start_at),
+            new_end_at=_aware(actual_end_at),
+            edit_reason=reason,
+        )
+    )
     db.flush()
 
     if log and log.approval_status != LogApprovalStatus.REJECTED:

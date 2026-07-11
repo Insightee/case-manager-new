@@ -25,7 +25,7 @@ import {
 } from '../../lib/datetime.js'
 import { isLogEditable } from '../../lib/sessionLogUtils.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
-import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
+import { VoiceSessionLogFlow } from './voice/VoiceSessionLogFlow.jsx'
 import { SessionLogRecentRow } from './SessionLogRecentRow.jsx'
 import { SessionVisitPanel } from './SessionVisitPanel.jsx'
 import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
@@ -346,6 +346,7 @@ export function DailyLogsPage() {
   function logSessionPayload(log) {
     return {
       id: log.session_id,
+      case_id: log.case_id,
       scheduled_date: log.scheduled_date,
       actual_start_at: log.actual_start_at,
       actual_end_at: log.actual_end_at,
@@ -354,6 +355,7 @@ export function DailyLogsPage() {
       actual_times_edited: log.actual_times_edited,
       case_code: log.case_code,
       child_name: log.child_name,
+      mode: log.mode,
       status: 'COMPLETED',
     }
   }
@@ -814,13 +816,13 @@ export function DailyLogsPage() {
 
       {logSession ? (
         <section ref={logPanelRef} style={{ marginBottom: 24 }}>
-          <SubmitSessionLogForm
+          <VoiceSessionLogFlow
             session={logSession}
             existingLog={editingLog}
             caseCode={logSession.case_code}
             childName={logSession.child_name}
             required={logRequired && !editingLog}
-            onEditTimes={() => openEditTimesForSession(logSession)}
+            onTimesSaved={() => void loadAll({ silent: true })}
             onSuccess={(savedLog) => {
               const wasResubmit = editingLog?.approval_status === 'REJECTED' && savedLog?.approval_status === 'PENDING'
               setSuccess(

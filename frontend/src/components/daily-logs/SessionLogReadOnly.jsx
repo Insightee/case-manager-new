@@ -10,6 +10,7 @@ import {
   sessionHasTimeEdit,
 } from '../../lib/sessionTimes.js'
 import { logCommentFieldStyle, logCommentSendButtonStyle } from '../../lib/logCommentComposerStyles.js'
+import { structuredReadSections } from '../../lib/sessionLogReadProjection.js'
 
 export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'attendance_status', label: 'Attendance' },
@@ -266,6 +267,7 @@ export function SessionLogReadOnly({
   const timesSource = session || log
   const hasTimeEdit = sessionHasTimeEdit(session, log)
   const editReason = session?.actual_times_edit_reason || log?.actual_times_edit_reason
+  const structuredSections = structuredReadSections(log)
 
   return (
     <section className={rootClass} aria-label="Session log details">
@@ -375,6 +377,55 @@ export function SessionLogReadOnly({
           ) : null}
         </dl>
       ) : null}
+      {structuredSections ? (
+        <dl className={dlClass}>
+          {structuredSections.story ? (
+            <div>
+              <dt>What happened today</dt>
+              <dd>{structuredSections.story}</dd>
+            </div>
+          ) : null}
+          {structuredSections.goals.length > 0 ? (
+            <div>
+              <dt>Goals confirmed</dt>
+              <dd>
+                <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+                  {structuredSections.goals.map((g) => (
+                    <li key={g.label}>
+                      <strong>{g.label}</strong>
+                      {g.evidence ? ` — ${g.evidence}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          ) : null}
+          {structuredSections.childResponse.length > 0 ? (
+            <div>
+              <dt>Child response</dt>
+              <dd>{structuredSections.childResponse.join(', ')}</dd>
+            </div>
+          ) : null}
+          {structuredSections.challenges.length > 0 ? (
+            <div>
+              <dt>Challenges noted</dt>
+              <dd>{structuredSections.challenges.join(' · ')}</dd>
+            </div>
+          ) : null}
+          {structuredSections.reflection ? (
+            <div>
+              <dt>Therapist reflection</dt>
+              <dd>{structuredSections.reflection}</dd>
+            </div>
+          ) : null}
+          {structuredSections.parentSummary ? (
+            <div>
+              <dt>Update for family</dt>
+              <dd>{structuredSections.parentSummary}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : (
       <dl className={dlClass}>
         {SESSION_LOG_READONLY_FIELDS.map(({ key, label }) => {
           const val = log?.[key]
@@ -387,6 +438,7 @@ export function SessionLogReadOnly({
           )
         })}
       </dl>
+      )}
       {log?.id != null && log.id !== 0 ? (
         <TeamLogCommentsSection
           logId={log.id}

@@ -1,3 +1,4 @@
+/** @deprecated Use VoiceSessionLogFlow — see docs/product/SESSION_LOG_V1.md */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { clearLogDraft, getLogDraft, listPendingDrafts, markDraftSynced, saveLogDraft } from '../../lib/logDraftStore.js'

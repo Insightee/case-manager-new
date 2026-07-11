@@ -85,6 +85,13 @@ from app.models.review import Review
 from app.models.role import Permission, Role, role_permissions, user_roles
 from app.models.session import Session as TherapySession
 from app.models.session_absence import SessionAbsenceRequest
+from app.models.session_audio import (
+    ExtractionStatus,
+    RecordingStatus,
+    SessionAudioRecording,
+    TranscriptionStatus,
+)
+from app.models.session_time_audit import SessionTimeAuditEvent
 from app.models.session_start_idempotency import SessionStartIdempotency
 from app.models.leave import TherapistLeave
 from app.models.memo import Memo, MemoMessage, MemoAttachment, MemoAuditLog
@@ -136,6 +143,10 @@ __all__ = [
     "CaseAppointmentUsage",
     "AppUsageChunk",
     "TherapySession",
+    "SessionAudioRecording",
+    "RecordingStatus",
+    "TranscriptionStatus",
+    "ExtractionStatus",
     "DailyLog",
     "ObservationReport",
     "MonthlyReport",

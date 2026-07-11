@@ -1,6 +1,8 @@
 /**
- * Parent-facing session log layout — mirrors therapist SubmitSessionLogForm fields.
+ * Parent-facing session log layout — prefers structured session parent summary when present.
  */
+
+import { structuredReadSections } from './sessionLogReadProjection.js'
 
 export const PARENT_LOG_SECTIONS = [
   {
@@ -45,6 +47,28 @@ function sameText(a, b) {
 /** Structured sections shown to parents (no duplicate headline/summary). */
 export function getParentLogSections(log) {
   if (!log) return []
+  const structured = structuredReadSections(log)
+  if (structured?.parentSummary) {
+    const sections = [
+      {
+        key: 'parent_notes',
+        label: 'Update for family',
+        hint: 'From your therapist',
+        variant: 'highlight',
+        value: structured.parentSummary,
+      },
+    ]
+    if (structured.story && structured.story !== structured.parentSummary) {
+      sections.push({
+        key: 'activities_done',
+        label: 'What we did today',
+        hint: null,
+        variant: 'default',
+        value: structured.story,
+      })
+    }
+    return sections
+  }
   const familyUpdate = norm(log.parent_notes)
   const sections = []
 
