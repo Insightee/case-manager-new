@@ -26,58 +26,6 @@ const CLINICAL_SECTIONS = [
   { id: 'goals', title: 'Goals', key: 'goals_summary' },
 ]
 
-function StatusChangeModal({ open, onClose, statusTo, setStatusTo, statusReason, setStatusReason, statusBusy, statusMsg, onSubmit }) {
-  if (!open) return null
-  return (
-    <div className="ic-case-status-modal" role="dialog" aria-modal="true" aria-labelledby="status-modal-title">
-      <button type="button" className="ic-case-status-modal__backdrop" aria-label="Close" onClick={onClose} />
-      <div className="ic-case-status-modal__sheet">
-        <h2 id="status-modal-title">Request status change</h2>
-        <p className="ic-case-panel__hint">
-          Submit a request for admin approval. Your case stays active until reviewed.
-        </p>
-        {statusMsg ? <p className="ic-case-status-modal__msg">{statusMsg}</p> : null}
-        <div className="ic-case-status-modal__form">
-          <label>
-            New status
-            <select
-              value={statusTo}
-              onChange={(e) => setStatusTo(e.target.value)}
-              className="ic-case-panel__select"
-            >
-              <option value="SUSPENDED">Suspend case</option>
-              <option value="CLOSED">Close case</option>
-              <option value="ACTIVE">Reactivate case</option>
-            </select>
-          </label>
-          <label>
-            Reason (required)
-            <textarea
-              value={statusReason}
-              onChange={(e) => setStatusReason(e.target.value)}
-              rows={4}
-              placeholder="Why are you requesting this change?"
-            />
-          </label>
-          <div className="ic-case-status-modal__actions">
-            <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="ic-btn ic-btn--primary"
-              disabled={statusBusy || statusReason.trim().length < 5}
-              onClick={onSubmit}
-            >
-              {statusBusy ? 'Submitting…' : 'Submit request'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function CaseDetailPage() {
   const { caseId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -86,11 +34,6 @@ export function CaseDetailPage() {
   const [scheduleItems, setScheduleItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [statusTo, setStatusTo] = useState('SUSPENDED')
-  const [statusReason, setStatusReason] = useState('')
-  const [statusMsg, setStatusMsg] = useState('')
-  const [statusBusy, setStatusBusy] = useState(false)
-  const [statusModalOpen, setStatusModalOpen] = useState(false)
   const [clinicalProfile, setClinicalProfile] = useState(null)
   const [statusPending, setStatusPending] = useState(null)
   const [statusHistory, setStatusHistory] = useState([])
@@ -138,25 +81,6 @@ export function CaseDetailPage() {
     setSearchParams({ tab: id }, { replace: true })
   }
 
-  async function submitStatusRequest() {
-    setStatusBusy(true)
-    setStatusMsg('')
-    try {
-      await apiFetch(`/api/v1/cases/${caseId}/status-requests`, {
-        method: 'POST',
-        body: JSON.stringify({ to_status: statusTo, reason: statusReason.trim() }),
-      })
-      setStatusMsg('Request submitted. Your case manager will review it.')
-      setStatusReason('')
-      setStatusModalOpen(false)
-      await load()
-    } catch (err) {
-      setStatusMsg(err.message || 'Could not submit request')
-    } finally {
-      setStatusBusy(false)
-    }
-  }
-
   if (loading) return <p className="ic-my-cases ic-case-detail__loading">Loading case…</p>
   if (error || !caseRow) {
     return (
@@ -196,16 +120,6 @@ export function CaseDetailPage() {
           <span className={`ic-case-status-pill ic-case-status-pill--${String(caseRow.status).toLowerCase()}`}>
             {statusLabel}
           </span>
-          <button
-            type="button"
-            className="ic-btn ic-btn--ghost ic-case-detail__status-btn"
-            onClick={() => {
-              setStatusMsg('')
-              setStatusModalOpen(true)
-            }}
-          >
-            Request change
-          </button>
         </div>
         <p className="ic-case-detail__meta">
           {caseRow.service_type ? (
@@ -357,17 +271,6 @@ export function CaseDetailPage() {
         />
       ) : null}
 
-      <StatusChangeModal
-        open={statusModalOpen}
-        onClose={() => setStatusModalOpen(false)}
-        statusTo={statusTo}
-        setStatusTo={setStatusTo}
-        statusReason={statusReason}
-        setStatusReason={setStatusReason}
-        statusBusy={statusBusy}
-        statusMsg={statusMsg}
-        onSubmit={submitStatusRequest}
-      />
     </div>
   )
 }
