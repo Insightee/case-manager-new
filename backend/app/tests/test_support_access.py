@@ -81,6 +81,37 @@ def test_finance_can_list_incidents():
     assert len(items) >= 1
 
 
+def test_support_capabilities_case_manager_team_scope():
+    r = client.get("/api/v1/admin/support/capabilities", headers=_auth_headers("casemanager@demo.com"))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["scope"] == "team"
+    assert data["tabs"]["tickets"] is True
+    assert data["tabs"]["incidents"] is True
+
+
+def test_case_manager_ticket_list_subset_of_superadmin():
+    admin = client.get("/api/v1/tickets?page_size=100", headers=_auth_headers("superadmin@demo.com"))
+    cm = client.get("/api/v1/tickets?page_size=100", headers=_auth_headers("casemanager@demo.com"))
+    assert admin.status_code == 200
+    assert cm.status_code == 200
+    admin_ids = {row["id"] for row in admin.json().get("items") or []}
+    cm_ids = {row["id"] for row in cm.json().get("items") or []}
+    assert cm_ids.issubset(admin_ids)
+    assert len(cm_ids) <= len(admin_ids)
+
+
+def test_case_manager_incident_list_subset_of_superadmin():
+    admin = client.get("/api/v1/incidents?page_size=100", headers=_auth_headers("superadmin@demo.com"))
+    cm = client.get("/api/v1/incidents?page_size=100", headers=_auth_headers("casemanager@demo.com"))
+    assert admin.status_code == 200
+    assert cm.status_code == 200
+    admin_ids = {row["id"] for row in admin.json().get("items") or []}
+    cm_ids = {row["id"] for row in cm.json().get("items") or []}
+    assert cm_ids.issubset(admin_ids)
+    assert len(cm_ids) <= len(admin_ids)
+
+
 def test_support_capabilities_admin_full():
     r = client.get("/api/v1/admin/support/capabilities", headers=_auth_headers("admin@demo.com"))
     assert r.status_code == 200

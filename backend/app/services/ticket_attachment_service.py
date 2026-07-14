@@ -64,15 +64,9 @@ def list_for_ticket(db: Session, ticket_id: int) -> list[TicketAttachment]:
 
 
 def can_access_ticket(db: Session, user: User, ticket: SupportTicket) -> bool:
-    if ticket.raised_by_user_id == user.id:
-        return True
-    if ticket.assigned_to_user_id == user.id:
-        return True
-    if user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override"):
-        if ticket.case_id:
-            case = case_service.get_case(db, ticket.case_id)
-            if case and case_scope_check(db, user, case):
-                return True
+    from app.services.support_access_service import may_read_support_ticket
+
+    if may_read_support_ticket(db, user, ticket):
         return True
     if ticket.case_id:
         case = case_service.get_case(db, ticket.case_id)

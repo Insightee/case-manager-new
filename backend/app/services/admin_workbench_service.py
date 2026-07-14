@@ -27,6 +27,11 @@ from app.services import admin_iep_service as iep_svc
 from app.services import log_service
 from app.services.admin_report_service import list_queue_admin
 from app.services.admin_scope_service import apply_case_scope
+from app.services.support_access_service import (
+    is_team_scoped_support_user,
+    team_support_incident_clause,
+    team_support_ticket_clause,
+)
 
 
 def _row(case_code: str | None, child_name: str | None, case_id: int | None, **extra) -> dict:
@@ -128,7 +133,10 @@ def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_
         .order_by(mine_first, SupportTicket.updated_at.desc())
         .limit(limit)
     )
-    ticket_stmt = apply_case_scope(ticket_stmt, user)
+    if is_team_scoped_support_user(user):
+        ticket_stmt = ticket_stmt.where(team_support_ticket_clause(user))
+    else:
+        ticket_stmt = apply_case_scope(ticket_stmt, user)
     ticket_rows = db.execute(ticket_stmt).all()
     count_stmt = (
         select(func.count())
@@ -136,7 +144,10 @@ def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_
         .outerjoin(Case, SupportTicket.case_id == Case.id)
         .where(SupportTicket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS]))
     )
-    count_stmt = apply_case_scope(count_stmt, user)
+    if is_team_scoped_support_user(user):
+        count_stmt = count_stmt.where(team_support_ticket_clause(user))
+    else:
+        count_stmt = apply_case_scope(count_stmt, user)
     return {
         "count": int(db.scalar(count_stmt) or 0),
         "items": [
@@ -526,10 +537,23 @@ def build_workbench_summary(db: Session, user: User) -> dict:
             .order_by(Incident.created_at.desc())
             .limit(8)
         )
-        inc_stmt = apply_case_scope(inc_stmt, user)
+        if is_team_scoped_support_user(user):
+            inc_stmt = inc_stmt.where(team_support_incident_clause(user))
+        else:
+            inc_stmt = apply_case_scope(inc_stmt, user)
         inc_rows = db.execute(inc_stmt).all()
+        inc_count_stmt = (
+            select(func.count())
+            .select_from(Incident)
+            .outerjoin(Case, Incident.case_id == Case.id)
+            .where(Incident.status.in_(list(OPEN_INCIDENT_STATUSES)))
+        )
+        if is_team_scoped_support_user(user):
+            inc_count_stmt = inc_count_stmt.where(team_support_incident_clause(user))
+        else:
+            inc_count_stmt = apply_case_scope(inc_count_stmt, user)
         sections["incidents"] = {
-            "count": len(inc_rows),
+            "count": int(db.scalar(inc_count_stmt) or 0),
             "items": [
                 _row(
                     case.case_code if case else None,

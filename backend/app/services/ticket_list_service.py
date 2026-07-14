@@ -6,30 +6,24 @@ from typing import Optional
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.module_access import case_product_module_allowed, get_allowed_case_product_modules
+from app.core.module_access import get_allowed_case_product_modules
 from app.core.pagination import paginate_query, paginated_response
-from app.core.permissions import case_scope_check, user_has_permission
+from app.core.permissions import user_has_permission
 from app.models.case import Case
 from app.models.support_ticket import SupportTicket, TicketCategory
 from app.models.ticket_attachment import TicketAttachment
 from app.models.user import User
 from app.services import case_service, ticket_escalation_service as ticket_esc
-from app.services.support_access_service import can_view_support_tickets, support_scope
+from app.services.support_access_service import (
+    is_team_scoped_support_user,
+    may_read_support_ticket,
+    support_scope,
+    team_support_ticket_clause,
+)
 
 
 def staff_may_see_ticket(db: Session, user: User, ticket: SupportTicket) -> bool:
-    if user_has_permission(user, "admin.override"):
-        return True
-    if ticket.raised_by_user_id == user.id:
-        return True
-    if not can_view_support_tickets(user, db):
-        return False
-    if ticket.case_id:
-        case = case_service.get_case(db, ticket.case_id)
-        return bool(case and case_scope_check(db, user, case))
-    if ticket.product_module and not case_product_module_allowed(user, ticket.product_module, db):
-        return False
-    return True
+    return may_read_support_ticket(db, user, ticket)
 
 
 def list_tickets_for_user(
@@ -51,18 +45,21 @@ def list_tickets_for_user(
     if support_scope(user, db) == "none":
         stmt = stmt.where(SupportTicket.raised_by_user_id == user.id)
     elif user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override"):
-        allowed = get_allowed_case_product_modules(user)
-        if allowed is not None:
-            if not allowed:
-                stmt = stmt.where(SupportTicket.id < 0)
-            else:
-                stmt = stmt.where(
-                    or_(
-                        SupportTicket.case_id.is_(None),
-                        SupportTicket.product_module.in_(allowed),
-                        SupportTicket.product_module.is_(None),
+        if is_team_scoped_support_user(user):
+            stmt = stmt.where(team_support_ticket_clause(user))
+        else:
+            allowed = get_allowed_case_product_modules(user)
+            if allowed is not None:
+                if not allowed:
+                    stmt = stmt.where(SupportTicket.id < 0)
+                else:
+                    stmt = stmt.where(
+                        or_(
+                            SupportTicket.case_id.is_(None),
+                            SupportTicket.product_module.in_(allowed),
+                            SupportTicket.product_module.is_(None),
+                        )
                     )
-                )
     else:
         stmt = stmt.where(SupportTicket.raised_by_user_id == user.id)
 

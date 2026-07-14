@@ -131,13 +131,20 @@ def list_incidents(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from app.services.support_access_service import can_read_incident, can_view_support_incidents
+    from app.services.support_access_service import (
+        can_read_incident,
+        can_view_support_incidents,
+        is_team_scoped_support_user,
+        team_support_incident_clause,
+    )
 
     has_manage = _has_manage(user, db)
     support_view = can_view_support_incidents(user, db)
 
     if support_view:
         stmt = select(Incident).order_by(Incident.created_at.desc())
+        if is_team_scoped_support_user(user):
+            stmt = stmt.where(team_support_incident_clause(user))
     elif assigned_to_me:
         stmt = (
             select(Incident)

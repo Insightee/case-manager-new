@@ -6,11 +6,9 @@ import io
 from datetime import date, datetime, time, timezone
 from typing import Any, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.module_access import case_product_module_allowed, get_allowed_case_product_modules
-from app.core.permissions import case_scope_check, user_has_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.child import Child
@@ -19,8 +17,13 @@ from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.user import User
 from app.services import case_service
 from app.services.support_access_service import (
+    can_read_incident,
     can_view_support_incidents,
     can_view_support_tickets,
+    is_team_scoped_support_user,
+    may_read_support_ticket,
+    team_support_incident_clause,
+    team_support_ticket_clause,
 )
 
 
@@ -63,20 +66,6 @@ def _therapist_on_case(db: Session, case_id: int | None) -> tuple[int | None, st
     return t.id, t.full_name
 
 
-def _case_visible(db: Session, user: User, case: Case | None) -> bool:
-    if not case:
-        return True
-    if user_has_permission(user, "admin.override"):
-        return True
-    if user_has_permission(user, "ticket.manage") and user_has_permission(user, "case.read.all"):
-        return True
-    if not case_scope_check(db, user, case):
-        return False
-    if case.product_module and not case_product_module_allowed(user, case.product_module, db):
-        return False
-    return True
-
-
 def _ticket_rows(
     db: Session,
     user: User,
@@ -92,6 +81,8 @@ def _ticket_rows(
         return []
 
     stmt = select(SupportTicket).order_by(SupportTicket.created_at.desc())
+    if is_team_scoped_support_user(user):
+        stmt = stmt.where(team_support_ticket_clause(user))
     if status:
         try:
             stmt = stmt.where(SupportTicket.status == TicketStatus(status))
@@ -116,9 +107,9 @@ def _ticket_rows(
 
     rows: list[dict[str, Any]] = []
     for t in tickets:
-        case = cases_by_id.get(t.case_id) if t.case_id else None
-        if not _case_visible(db, user, case):
+        if not may_read_support_ticket(db, user, t):
             continue
+        case = cases_by_id.get(t.case_id) if t.case_id else None
         t_uid, t_name = _therapist_on_case(db, t.case_id)
         if therapist_user_id and t_uid != therapist_user_id:
             continue
@@ -163,6 +154,8 @@ def _incident_rows(
         return []
 
     stmt = select(Incident).order_by(Incident.created_at.desc())
+    if is_team_scoped_support_user(user):
+        stmt = stmt.where(team_support_incident_clause(user))
     if status:
         try:
             stmt = stmt.where(Incident.status == normalize_incident_status(status))
@@ -182,11 +175,13 @@ def _incident_rows(
 
     rows: list[dict[str, Any]] = []
     for inc in incidents:
+        if not can_read_incident(db, user, inc):
+            continue
         case = cases_by_id.get(inc.case_id) if inc.case_id else None
-        if product_module and case and case.product_module != product_module:
-            continue
-        if not _case_visible(db, user, case):
-            continue
+        if product_module:
+            mod = case.product_module if case else inc.service_type
+            if mod != product_module:
+                continue
         if child_id and (not case or case.child_id != child_id):
             continue
         t_uid, t_name = _therapist_on_case(db, inc.case_id)
