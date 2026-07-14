@@ -92,7 +92,7 @@ export function sortPipelineRows(rows, sort = 'priority') {
 }
 
 const EMPTY_FILTERS = {
-  queue: 'needs_action',
+  queue: 'all',
   search: '',
   productModule: 'all',
   caseState: 'all',
@@ -324,6 +324,11 @@ export function countActivePipelineFilters(filters = {}) {
   if (f.unassignedCmOnly) n += 1
   if (f.unassignedTherapistOnly) n += 1
   return n
+}
+
+/** Apply every active filter except the queue tab (for tab badge counts). */
+export function filterPipelineRowsForQueueCounts(rows, filters = {}) {
+  return filterPipelineRows(rows, { ...defaultPipelineFilters(filters), queue: 'all' })
 }
 
 export function pipelineQueueCounts(rows) {

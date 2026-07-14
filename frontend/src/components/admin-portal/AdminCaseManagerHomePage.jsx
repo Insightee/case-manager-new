@@ -167,7 +167,7 @@ function QueueSection({ id, section }) {
 export function AdminCaseManagerHomePage() {
   const { user, can, isViewOnly } = useAuth()
   const { data, isLoading, error, refetch } = useAdminCmHome()
-  const [caseloadFilter, setCaseloadFilter] = useState('needs_action')
+  const [caseloadFilter, setCaseloadFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [pendingMeetings, setPendingMeetings] = useState([])
   const caseloadPanelRef = useRef(null)
@@ -212,7 +212,7 @@ export function AdminCaseManagerHomePage() {
       <AdminPageHeader
         eyebrow="Case management"
         title={`Good day${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`}
-        subtitle="Your assigned caseload and clinical queues — cases needing review or allotment appear first."
+        subtitle="Your assigned caseload — start with all cases, then narrow by queue or search when you need to act."
         actions={
           <div className="admin-btn-group">
             {can('case.create') && !isViewOnly ? (
@@ -245,6 +245,13 @@ export function AdminCaseManagerHomePage() {
         <>
           <section className="admin-cm-stats" aria-label="Caseload summary" role="tablist">
             <AdminStatCard
+              title="All cases"
+              value={summary?.total ?? 0}
+              tone="indigo"
+              active={caseloadFilter === 'all'}
+              onClick={() => selectCaseloadFilter('all')}
+            />
+            <AdminStatCard
               title="Needs action"
               value={summary?.needs_action ?? 0}
               tone="yellow"
@@ -261,16 +268,9 @@ export function AdminCaseManagerHomePage() {
             <AdminStatCard
               title="Active"
               value={summary?.active ?? 0}
-              tone="indigo"
+              tone="teal"
               active={caseloadFilter === 'active'}
               onClick={() => selectCaseloadFilter('active')}
-            />
-            <AdminStatCard
-              title="Total caseload"
-              value={summary?.total ?? 0}
-              tone="slate"
-              active={caseloadFilter === 'all'}
-              onClick={() => selectCaseloadFilter('all')}
             />
           </section>
 

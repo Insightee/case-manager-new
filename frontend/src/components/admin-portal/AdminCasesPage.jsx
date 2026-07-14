@@ -56,7 +56,7 @@ export function AdminCasesPage() {
       <AdminPageHeader
         eyebrow="Case management"
         title="Cases"
-        subtitle="Action queue first — filter by status, case manager, therapist, client, and dates. Use row actions to allot, assign, review, or open the case file."
+        subtitle="Full caseload by default — filter by status, case manager, therapist, client, and dates. Use row actions to allot, assign, review, or open the case file."
         actions={
           canCreateCase ? (
             <button

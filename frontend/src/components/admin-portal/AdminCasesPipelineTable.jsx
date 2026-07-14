@@ -12,6 +12,7 @@ import {
   defaultPipelineFilters,
   derivePipelineFilterOptions,
   filterPipelineRows,
+  filterPipelineRowsForQueueCounts,
   flattenPipelineBoard,
   pipelineQueueCounts,
   pipelineStatusBadgeVariant,
@@ -38,13 +39,13 @@ import { CaseCloseModal } from './CaseCloseModal.jsx'
 import './admin-cases-pipeline.css'
 
 const QUEUE_TABS = [
+  { id: 'all', label: 'All cases' },
   { id: 'needs_action', label: 'Needs action' },
   { id: 'allotment', label: 'Allotment' },
   { id: 'assignment', label: 'Assignment' },
   { id: 'review', label: 'Review' },
   { id: 'compliance', label: 'Compliance' },
   { id: 'closed', label: 'Closed cases' },
-  { id: 'all', label: 'All cases' },
 ]
 
 const SORT_OPTIONS = [
@@ -113,7 +114,8 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
 
   const allRows = useMemo(() => flattenPipelineBoard(board), [board])
   const filterOptions = useMemo(() => derivePipelineFilterOptions(allRows), [allRows])
-  const counts = useMemo(() => pipelineQueueCounts(allRows), [allRows])
+  const scopedRows = useMemo(() => filterPipelineRowsForQueueCounts(allRows, filters), [allRows, filters])
+  const counts = useMemo(() => pipelineQueueCounts(scopedRows), [scopedRows])
   const activeFilterCount = useMemo(() => countActivePipelineFilters(filters), [filters])
 
   const rows = useMemo(() => {
@@ -281,7 +283,9 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
         />
         <span className="admin-cases-pipeline__result-count">
           {rows.length} case{rows.length === 1 ? '' : 's'}
-          {board?.total_cases != null ? ` · ${board.total_cases} total` : ''}
+          {scopedRows.length !== rows.length || filters.queue !== 'all'
+            ? ` · ${scopedRows.length} in scope`
+            : ''}
         </span>
       </div>
 
@@ -456,6 +460,10 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
         {filters.queue === 'closed' ? (
           <>
             <strong>Closed cases</strong> shows every case with status closed. Open a row for history, billing, and documents.
+          </>
+        ) : filters.queue === 'all' ? (
+          <>
+            <strong>All cases</strong> shows your full scoped caseload. Use queue tabs or filters to narrow by case manager, therapist, client, or pending work.
           </>
         ) : (
           <>
