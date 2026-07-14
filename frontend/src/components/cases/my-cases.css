@@ -1697,11 +1697,48 @@
 }
 
 /* Edit session times modal */
+.ic-edit-times-modal {
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+
 .ic-edit-times-modal__sheet {
   max-width: 440px;
   padding: 0;
   display: flex;
   flex-direction: column;
+  max-height: min(90dvh, calc(100dvh - 2rem));
+  overflow: hidden;
+}
+
+.ic-edit-times-modal__form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0;
+  padding: 0;
+}
+
+.ic-edit-times-modal__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 12px 20px 16px;
+}
+
+.ic-edit-times-modal__footer {
+  flex-shrink: 0;
+  margin-top: 0;
+  padding: 12px 20px max(16px, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.ic-edit-times-modal__footer .ic-btn--primary {
+  min-width: 9.5rem;
 }
 
 .ic-edit-times-modal__head {
@@ -1765,7 +1802,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 16px 20px 0;
+  margin: 4px 0 0;
   padding: 12px;
   border-radius: 12px;
   background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
@@ -1806,7 +1843,7 @@
 }
 
 .ic-edit-times-modal__notice {
-  margin: 12px 20px 0;
+  margin: 12px 0 0;
   padding: 10px 12px;
   border-radius: 10px;
   font-size: 0.8125rem;
@@ -1817,16 +1854,11 @@
 }
 
 .ic-edit-times-modal__error {
-  margin: 12px 20px 0;
-}
-
-.ic-edit-times-modal__form {
-  margin-top: 12px;
-  padding: 0 20px 20px;
+  margin: 12px 0 0;
 }
 
 .ic-edit-times-modal__fieldset {
-  margin: 0;
+  margin: 12px 0 0;
   padding: 0;
   border: none;
 }
@@ -1845,7 +1877,7 @@
   gap: 10px;
 }
 
-@media (max-width: 380px) {
+@media (max-width: 480px) {
   .ic-edit-times-modal__time-grid {
     grid-template-columns: 1fr;
   }
@@ -1884,6 +1916,7 @@
 .ic-edit-times-modal__input,
 .ic-edit-times-modal__textarea {
   width: 100%;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid #e2e8f0;
@@ -1940,14 +1973,6 @@
 .ic-edit-times-modal__preview-warn {
   font-weight: 600;
   color: #b45309;
-}
-
-.ic-edit-times-modal__actions {
-  padding-top: 4px;
-}
-
-.ic-edit-times-modal__actions .ic-btn--primary {
-  min-width: 9.5rem;
 }
 
 @keyframes ic-case-modal-in {
