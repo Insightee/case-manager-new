@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { parseApiDatetime } from '../../lib/datetime.js'
@@ -53,6 +54,24 @@ export function EditActualTimesModal({ open, session, onClose, onSaved }) {
     setError('')
   }, [open, session])
 
+  useEffect(() => {
+    if (!open) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return undefined
+    function onKeyDown(e) {
+      if (e.key === 'Escape') onClose?.()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
   const displayName = session?.child_name || session?.case_code || 'Session'
   const scheduledLine = session ? formatScheduledRange(session) : null
   const clockRange = session ? formatClockRange(session) : null
@@ -106,7 +125,7 @@ export function EditActualTimesModal({ open, session, onClose, onSaved }) {
     }
   }
 
-  return (
+  return createPortal(
     <div
       className="ic-case-status-modal ic-edit-times-modal"
       role="dialog"
@@ -141,101 +160,103 @@ export function EditActualTimesModal({ open, session, onClose, onSaved }) {
           </button>
         </header>
 
-        <div className="ic-edit-times-modal__refs" aria-label="Session time reference">
-          {scheduledLine ? (
-            <div className="ic-edit-times-modal__ref">
-              <span className="ic-edit-times-modal__ref-label">Scheduled</span>
-              <span className="ic-edit-times-modal__ref-value">{scheduledLine}</span>
-            </div>
-          ) : null}
-          {clockRange ? (
-            <div className="ic-edit-times-modal__ref ic-edit-times-modal__ref--clock">
-              <span className="ic-edit-times-modal__ref-label">Clock record</span>
-              <span className="ic-edit-times-modal__ref-value">
-                {clockRange}
-                {clockMins != null ? (
-                  <span className="ic-edit-times-modal__ref-dur"> · {clockMins} min</span>
-                ) : (
-                  <span className="ic-edit-times-modal__ref-warn"> · Check times</span>
-                )}
-              </span>
-            </div>
-          ) : null}
-        </div>
-
-        <p className="ic-edit-times-modal__notice" role="note">
-          Your correction is reviewed with the session log. The clock record above stays on file for audit.
-        </p>
-
-        {error ? (
-          <p className="ic-alert ic-alert--error ic-edit-times-modal__error" role="alert">
-            {error}
-          </p>
-        ) : null}
-
         <form className="ic-case-status-modal__form ic-edit-times-modal__form" onSubmit={handleSubmit}>
-          <fieldset className="ic-edit-times-modal__fieldset">
-            <legend>Corrected times</legend>
-            <div className="ic-edit-times-modal__time-grid">
-              <label className="ic-edit-times-modal__field">
-                <span className="ic-edit-times-modal__field-label">Start</span>
-                <input
-                  type="datetime-local"
-                  className="ic-edit-times-modal__input"
-                  value={startLocal}
-                  onChange={(e) => setStartLocal(e.target.value)}
-                  required
-                />
-              </label>
-              <label className="ic-edit-times-modal__field">
-                <span className="ic-edit-times-modal__field-label">End</span>
-                <input
-                  type="datetime-local"
-                  className="ic-edit-times-modal__input"
-                  value={endLocal}
-                  onChange={(e) => setEndLocal(e.target.value)}
-                  required
-                />
-              </label>
+          <div className="ic-edit-times-modal__body">
+            <div className="ic-edit-times-modal__refs" aria-label="Session time reference">
+              {scheduledLine ? (
+                <div className="ic-edit-times-modal__ref">
+                  <span className="ic-edit-times-modal__ref-label">Scheduled</span>
+                  <span className="ic-edit-times-modal__ref-value">{scheduledLine}</span>
+                </div>
+              ) : null}
+              {clockRange ? (
+                <div className="ic-edit-times-modal__ref ic-edit-times-modal__ref--clock">
+                  <span className="ic-edit-times-modal__ref-label">Clock record</span>
+                  <span className="ic-edit-times-modal__ref-value">
+                    {clockRange}
+                    {clockMins != null ? (
+                      <span className="ic-edit-times-modal__ref-dur"> · {clockMins} min</span>
+                    ) : (
+                      <span className="ic-edit-times-modal__ref-warn"> · Check times</span>
+                    )}
+                  </span>
+                </div>
+              ) : null}
             </div>
-            {correctedPreview ? (
-              <p className="ic-edit-times-modal__preview" aria-live="polite">
-                <span className="ic-edit-times-modal__preview-label">Correction preview</span>
-                <span className="ic-edit-times-modal__preview-value">
-                  {correctedPreview} IST
-                  {correctedMins != null ? (
-                    <span className="ic-edit-times-modal__preview-dur"> · {correctedMins} min</span>
-                  ) : (
-                    <span className="ic-edit-times-modal__preview-warn"> · End must be after start</span>
-                  )}
-                </span>
+
+            <p className="ic-edit-times-modal__notice" role="note">
+              Your correction is reviewed with the session log. The clock record above stays on file for audit.
+            </p>
+
+            {error ? (
+              <p className="ic-alert ic-alert--error ic-edit-times-modal__error" role="alert">
+                {error}
               </p>
             ) : null}
-          </fieldset>
 
-          <label className="ic-edit-times-modal__field ic-edit-times-modal__field--full">
-            <span className="ic-edit-times-modal__field-label">
-              Why are you correcting?
-              <span className={`ic-edit-times-modal__char-hint${reasonOk ? ' is-ok' : ''}`}>
-                {reason.trim().length}/5 min
+            <fieldset className="ic-edit-times-modal__fieldset">
+              <legend>Corrected times</legend>
+              <div className="ic-edit-times-modal__time-grid">
+                <label className="ic-edit-times-modal__field">
+                  <span className="ic-edit-times-modal__field-label">Start</span>
+                  <input
+                    type="datetime-local"
+                    className="ic-edit-times-modal__input"
+                    value={startLocal}
+                    onChange={(e) => setStartLocal(e.target.value)}
+                    required
+                  />
+                </label>
+                <label className="ic-edit-times-modal__field">
+                  <span className="ic-edit-times-modal__field-label">End</span>
+                  <input
+                    type="datetime-local"
+                    className="ic-edit-times-modal__input"
+                    value={endLocal}
+                    onChange={(e) => setEndLocal(e.target.value)}
+                    required
+                  />
+                </label>
+              </div>
+              {correctedPreview ? (
+                <p className="ic-edit-times-modal__preview" aria-live="polite">
+                  <span className="ic-edit-times-modal__preview-label">Correction preview</span>
+                  <span className="ic-edit-times-modal__preview-value">
+                    {correctedPreview} IST
+                    {correctedMins != null ? (
+                      <span className="ic-edit-times-modal__preview-dur"> · {correctedMins} min</span>
+                    ) : (
+                      <span className="ic-edit-times-modal__preview-warn"> · End must be after start</span>
+                    )}
+                  </span>
+                </p>
+              ) : null}
+            </fieldset>
+
+            <label className="ic-edit-times-modal__field ic-edit-times-modal__field--full">
+              <span className="ic-edit-times-modal__field-label">
+                Why are you correcting?
+                <span className={`ic-edit-times-modal__char-hint${reasonOk ? ' is-ok' : ''}`}>
+                  {reason.trim().length}/5 min
+                </span>
               </span>
-            </span>
-            <textarea
-              className="ic-edit-times-modal__textarea"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={3}
-              placeholder="e.g. Forgot to clock out, ended visit at client's door"
-              required
-              minLength={5}
-              aria-describedby="edit-times-reason-hint"
-            />
-            <span id="edit-times-reason-hint" className="ic-edit-times-modal__field-hint">
-              Admin needs a short note before approving the corrected times.
-            </span>
-          </label>
+              <textarea
+                className="ic-edit-times-modal__textarea"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+                placeholder="e.g. Forgot to clock out, ended visit at client's door"
+                required
+                minLength={5}
+                aria-describedby="edit-times-reason-hint"
+              />
+              <span id="edit-times-reason-hint" className="ic-edit-times-modal__field-hint">
+                Admin needs a short note before approving the corrected times.
+              </span>
+            </label>
+          </div>
 
-          <div className="ic-case-status-modal__actions ic-edit-times-modal__actions">
+          <footer className="ic-case-status-modal__actions ic-edit-times-modal__foot">
             <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose} disabled={busy}>
               Cancel
             </button>
@@ -246,9 +267,10 @@ export function EditActualTimesModal({ open, session, onClose, onSaved }) {
             >
               {busy ? 'Saving…' : 'Submit correction'}
             </button>
-          </div>
+          </footer>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
