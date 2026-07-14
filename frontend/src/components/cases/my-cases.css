@@ -1697,42 +1697,11 @@
 }
 
 /* Edit session times modal */
-.ic-edit-times-modal {
-  padding: 16px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
-}
-
 .ic-edit-times-modal__sheet {
   max-width: 440px;
-  max-height: min(92vh, 900px);
-  max-height: min(92dvh, 900px);
   padding: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-}
-
-.ic-edit-times-modal__body {
-  flex: 1;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  padding: 16px 20px 12px;
-}
-
-.ic-edit-times-modal__foot {
-  flex-shrink: 0;
-  margin-top: 0;
-  padding: 12px 20px;
-  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid #e2e8f0;
-  background: #fff;
-}
-
-.ic-edit-times-modal__foot .ic-btn {
-  min-height: 44px;
 }
 
 .ic-edit-times-modal__head {
@@ -1796,7 +1765,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 0;
+  margin: 16px 20px 0;
   padding: 12px;
   border-radius: 12px;
   background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
@@ -1837,7 +1806,7 @@
 }
 
 .ic-edit-times-modal__notice {
-  margin: 12px 0 0;
+  margin: 12px 20px 0;
   padding: 10px 12px;
   border-radius: 10px;
   font-size: 0.8125rem;
@@ -1848,21 +1817,16 @@
 }
 
 .ic-edit-times-modal__error {
-  margin: 12px 0 0;
+  margin: 12px 20px 0;
 }
 
 .ic-edit-times-modal__form {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  margin-top: 0;
-  padding: 0;
-  gap: 0;
+  margin-top: 12px;
+  padding: 0 20px 20px;
 }
 
 .ic-edit-times-modal__fieldset {
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   border: none;
 }
@@ -1877,13 +1841,13 @@
 
 .ic-edit-times-modal__time-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
 
-@media (min-width: 640px) {
+@media (max-width: 380px) {
   .ic-edit-times-modal__time-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1920,8 +1884,6 @@
 .ic-edit-times-modal__input,
 .ic-edit-times-modal__textarea {
   width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid #e2e8f0;
@@ -1980,7 +1942,11 @@
   color: #b45309;
 }
 
-.ic-edit-times-modal__foot .ic-btn--primary {
+.ic-edit-times-modal__actions {
+  padding-top: 4px;
+}
+
+.ic-edit-times-modal__actions .ic-btn--primary {
   min-width: 9.5rem;
 }
 
