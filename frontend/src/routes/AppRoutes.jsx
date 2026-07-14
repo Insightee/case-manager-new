@@ -145,6 +145,11 @@ const AdminCaseManagerHomePage = lazy(() =>
     default: m.AdminCaseManagerHomePage,
   }))
 )
+const AdminCmLogReviewPage = lazy(() =>
+  import('../components/admin-portal/AdminCmLogReviewPage.jsx').then((m) => ({
+    default: m.AdminCmLogReviewPage,
+  }))
+)
 const LeaveManagementPage = lazy(() =>
   import('../components/hr-portal/LeaveManagementPage.jsx').then((m) => ({ default: m.LeaveManagementPage }))
 )
@@ -379,6 +384,14 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminCaseManagerHomePage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="cm/logs"
+          element={
+            <Lazy>
+              <AdminCmLogReviewPage />
             </Lazy>
           }
         />

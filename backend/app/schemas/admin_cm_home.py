@@ -42,3 +42,58 @@ class AdminCmHomeResponse(BaseModel):
     caseload: list[CmCaseloadRow]
     sections: dict[str, CmWorkbenchSection]
     quick_actions: list[dict[str, str]]
+
+
+class CmLogReviewSessionSummary(BaseModel):
+    id: int
+    status: str
+    scheduled_date: Optional[str] = None
+    actual_start_at: Optional[str] = None
+    actual_end_at: Optional[str] = None
+    edited_start_at: Optional[str] = None
+    edited_end_at: Optional[str] = None
+    actual_times_edited: bool = False
+    actual_times_edit_reason: Optional[str] = None
+    duplicate_day_session: bool = False
+    therapist_user_id: Optional[int] = None
+
+
+class CmLogReviewLogRow(BaseModel):
+    id: int
+    session_id: int
+    case_id: Optional[int] = None
+    case_code: Optional[str] = None
+    child_name: Optional[str] = None
+    approval_status: str
+    submitted_at: Optional[datetime] = None
+    resubmitted_at: Optional[datetime] = None
+    scheduled_date: Optional[date] = None
+    session_notes: Optional[str] = None
+    observations: Optional[str] = None
+    activities_done: Optional[str] = None
+    goals_addressed: Optional[str] = None
+    follow_ups: Optional[str] = None
+    parent_notes: Optional[str] = None
+    late_addition: bool = False
+    late_reason: Optional[str] = None
+    status_label: Optional[str] = None
+    comment_count: int = 0
+    open_parent_comment_count: int = 0
+    session: CmLogReviewSessionSummary
+
+
+class CmLogReviewCaseRow(BaseModel):
+    case_id: int
+    case_code: str
+    child_name: Optional[str] = None
+    service_type: str
+    product_module: str
+    therapist_name: Optional[str] = None
+    status: str
+    pending_count: int = 0
+    logs: list[CmLogReviewLogRow] = Field(default_factory=list)
+
+
+class CmLogReviewQueueResponse(BaseModel):
+    total_pending: int = 0
+    cases: list[CmLogReviewCaseRow] = Field(default_factory=list)

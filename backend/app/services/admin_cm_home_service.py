@@ -249,8 +249,8 @@ def build_cm_home(db: Session, user: User) -> dict:
             sections[key] = {"count": sec.get("count", 0), "items": sec.get("items", [])}
 
     quick_actions = [
-        {"id": "cases", "label": "My cases", "href": "/admin/cases"},
-        {"id": "queues", "label": "Review queues", "href": "/admin/workbench"},
+        {"id": "cases", "label": "All cases", "href": "/admin/cases"},
+        {"id": "logs", "label": "Session log review", "href": "/admin/cm/logs"},
         {"id": "meetings", "label": "Meetings", "href": "/admin/meetings"},
     ]
     if user_has_permission(user, "case.create"):

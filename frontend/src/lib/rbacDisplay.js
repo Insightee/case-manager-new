@@ -4,7 +4,7 @@ export const ROLE_LANDING_HINTS = {
   SUPER_ADMIN: 'lands on Admin dashboard',
   MODULE_ADMIN: 'lands on Admin dashboard',
   ADMIN: 'legacy — use Module Admin for new staff',
-  CASE_MANAGER: 'lands on My caseload (/admin/cm)',
+  CASE_MANAGER: 'lands on Dashboard (/admin/cm)',
   FINANCE: 'lands on Invoices',
   HR: 'lands on HR portal',
 }

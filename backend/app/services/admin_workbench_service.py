@@ -87,7 +87,7 @@ def widget_section_logs(db: Session, user: User, *, limit: int = WIDGET_ITEM_LIM
                 child.full_name if child else None,
                 case.id,
                 id=log.id,
-                href=f"/admin/cases/{case.id}?tab=logs&session_id={log.session_id}",
+                href=f"/admin/cm/logs?case_id={case.id}&log_id={log.id}",
                 resubmitted=bool(log.resubmitted_at),
                 status="Resubmitted" if log.resubmitted_at else "Pending review",
             )

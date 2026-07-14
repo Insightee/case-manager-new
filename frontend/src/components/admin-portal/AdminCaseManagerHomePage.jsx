@@ -1,176 +1,112 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAdminCmHome } from '../../hooks/useAdminCmHome.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatApiDateIN } from '../../lib/datetime.js'
-import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminSearchInput, AdminStatCard, StatusBadge } from './ui/index.js'
+import { AdminPageHeader, AdminPanel, AdminEmptyState, AdminStatCard, StatusBadge } from './ui/index.js'
 import './admin-cm-home.css'
+import './admin-dashboard.css'
 
-const COLUMN_LABELS = {
-  pending_allotment: 'Pending allotment',
-  needs_therapist: 'Needs therapist',
-  reassignment: 'Reassignment',
-  reports_logs: 'Reports & logs',
-  iep: 'IEP',
-  compliance: 'Compliance',
-  active: 'Active',
-  closed: 'Closed',
+const CM_WIDGET_META = {
+  logs: { icon: '◫', tone: 'indigo', hint: 'Pending therapist logs', title: 'Session queue' },
+  reports: { icon: '▣', tone: 'indigo', hint: 'Awaiting your review', title: 'Reports queue' },
+  tickets: { icon: '✉', tone: 'slate', hint: 'Open support threads', title: 'Support tickets' },
+  incidents: { icon: '⚠', tone: 'amber', hint: 'Active incident reports', title: 'Incidents' },
+  observations: { icon: '☑', tone: 'teal', hint: 'Submitted checklists', title: 'Observations' },
+  status_requests: { icon: '↔', tone: 'amber', hint: 'Pause or close requests', title: 'Status requests' },
+  reschedules: { icon: '↻', tone: 'amber', hint: 'Therapist approval needed', title: 'Reschedules' },
+  iep: { icon: '📋', tone: 'purple', hint: 'IEP attention needed', title: 'IEP' },
+  meetings: { icon: '📅', tone: 'slate', hint: 'Upcoming CM meetings', title: 'Meetings' },
 }
 
-const SECTION_META = {
-  observations: { title: 'Observation checklists', empty: 'No checklists awaiting review.' },
-  status_requests: { title: 'Status change requests', empty: 'No pending requests.' },
-  reports: { title: 'Reports to review', empty: 'No reports in queue.' },
-  logs: { title: 'Session logs', empty: 'No logs pending approval.' },
-  reschedules: { title: 'Reschedules', empty: 'No reschedule requests.' },
-  tickets: { title: 'Support tickets', empty: 'No open tickets.' },
-  incidents: { title: 'Incidents', empty: 'No active incidents.' },
-  iep: { title: 'IEP attention', empty: 'IEP up to date on caseload.' },
-  meetings: { title: 'Upcoming CM meetings', empty: 'No meetings scheduled.' },
+const PRIMARY_WIDGET_IDS = ['logs', 'reports', 'tickets']
+const SECONDARY_WIDGET_IDS = ['incidents', 'observations', 'status_requests', 'reschedules', 'iep', 'meetings']
+
+const WIDGET_FOOTER = {
+  logs: '/admin/cm/logs',
+  reports: '/admin/reports?tab=queue',
+  tickets: '/admin/support?tab=tickets',
+  incidents: '/admin/support?tab=incidents',
+  observations: '/admin/workbench?section=observations',
+  status_requests: '/admin/workbench?section=status_requests',
+  reschedules: '/admin/workbench?section=reschedules',
+  iep: '/admin/iep',
+  meetings: '/admin/meetings',
 }
 
-const SECTION_ORDER = [
-  'observations',
-  'status_requests',
-  'reports',
-  'logs',
-  'reschedules',
-  'tickets',
-  'incidents',
-  'iep',
-  'meetings',
-]
-
-function caseHrefWithTab(href, tab) {
-  if (!href) return href
-  const [path, query = ''] = href.split('?')
-  const params = new URLSearchParams(query)
-  params.set('tab', tab)
-  const qs = params.toString()
-  return qs ? `${path}?${qs}` : path
+function itemPrimary(item) {
+  return item.child_name || item.label || item.subject || item.title || item.case_code || 'View item'
 }
 
-function CaseloadTable({ rows, filter }) {
-  const q = filter.trim().toLowerCase()
-  const filtered = useMemo(() => {
-    let list = rows || []
-    if (q) {
-      list = list.filter((r) => {
-        const hay = `${r.case_code} ${r.child_name} ${r.service_type} ${r.therapist_name || ''} ${r.next_action || ''}`.toLowerCase()
-        return hay.includes(q)
-      })
-    }
-    return list
-  }, [rows, q])
-
-  if (!filtered.length) {
-    return <AdminEmptyState title="No cases match" description="Try another search or allot a new case." />
-  }
-
-  return (
-    <div className="admin-table-wrap">
-      <table className="admin-table admin-cm-caseload-table">
-        <thead>
-          <tr>
-            <th>Case</th>
-            <th>Child</th>
-            <th>Service</th>
-            <th>Therapist</th>
-            <th>Status</th>
-            <th>Next action</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((row) => (
-            <tr key={row.id} className={row.pipeline_column && row.pipeline_column !== 'active' ? 'admin-cm-caseload-table__row--attention' : ''}>
-              <td>
-                <span className="admin-table__primary">{row.case_code}</span>
-              </td>
-              <td>{row.child_name || '—'}</td>
-              <td>{row.service_type}</td>
-              <td>{row.therapist_name || '—'}</td>
-              <td>
-                <StatusBadge status={row.status} />
-                {row.pipeline_column && row.pipeline_column !== 'active' ? (
-                  <span className="admin-cm-pipeline-pill">{COLUMN_LABELS[row.pipeline_column] || row.pipeline_column}</span>
-                ) : null}
-              </td>
-              <td className="admin-cm-next-action">{row.next_action || '—'}</td>
-              <td>
-                <div className="admin-btn-group">
-                  <Link to={row.href} className="admin-btn admin-btn--primary admin-btn--sm">
-                    Open
-                  </Link>
-                  {row.open_reports > 0 ? (
-                    <Link
-                      to={caseHrefWithTab(row.href, 'reports')}
-                      className="admin-btn admin-btn--ghost admin-btn--sm"
-                    >
-                      Reports
-                    </Link>
-                  ) : null}
-                  {row.missing_logs > 0 ? (
-                    <Link to={caseHrefWithTab(row.href, 'logs')} className="admin-btn admin-btn--ghost admin-btn--sm">
-                      Logs
-                    </Link>
-                  ) : null}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
+function itemSecondary(item) {
+  if (item.resubmitted) return 'Resubmitted after changes'
+  if (item.child_name && item.case_code) return item.case_code
+  if (item.status) return String(item.status).replace(/_/g, ' ')
+  return null
 }
 
-function QueueSection({ id, section }) {
-  const meta = SECTION_META[id] || { title: id, empty: 'Nothing here.' }
+function CmWidgetCard({ id, section }) {
+  const meta = CM_WIDGET_META[id] || { icon: '•', tone: 'slate', hint: '', title: id }
+  const count = section?.count ?? 0
   const items = section?.items || []
-  if (!items.length) return null
+  const href = WIDGET_FOOTER[id] || '/admin/workbench'
+  const hasMore = count > items.length
 
   return (
-    <AdminPanel title={`${meta.title} (${section.count ?? items.length})`} padded={false}>
-      <div className="admin-panel__body">
-        <ul className="admin-queue">
-          {items.map((item) => (
-            <li key={`${id}-${item.id}`} className="admin-queue__item">
-              <div>
-                <p className="admin-queue__title">
-                  {item.label || item.subject || item.title || item.child_name || `#${item.id}`}
-                </p>
-                <p className="admin-queue__meta">
-                  {item.case_code ? `${item.case_code} · ` : ''}
-                  {item.child_name || ''}
-                  {item.resubmitted ? ' · Resubmitted after changes' : ''}
-                  {item.status && !item.resubmitted ? ` · ${String(item.status).replace(/_/g, ' ')}` : ''}
-                </p>
-              </div>
-              <Link to={item.href || '/admin/workbench'} className="admin-btn admin-btn--ghost admin-btn--sm">
-                Open →
-              </Link>
-            </li>
-          ))}
-        </ul>
-        {(section.count ?? 0) > items.length ? (
-          <p className="admin-muted" style={{ padding: '8px 16px 12px', fontSize: '0.8rem' }}>
-            +{(section.count ?? 0) - items.length} more in full queue
-          </p>
-        ) : null}
+    <article className={`admin-home-queue-card admin-home-queue-card--${meta.tone}`}>
+      <header className="admin-home-queue-card__head">
+        <span className="admin-home-queue-card__icon" aria-hidden>
+          {meta.icon}
+        </span>
+        <div className="admin-home-queue-card__titles">
+          <h3 className="admin-home-queue-card__title">{meta.title}</h3>
+          {meta.hint ? <p className="admin-home-queue-card__hint">{meta.hint}</p> : null}
+        </div>
+        <span
+          className={`admin-home-queue-card__count${count === 0 ? ' admin-home-queue-card__count--zero' : ''}`}
+          aria-label={`${count} in queue`}
+        >
+          {count}
+        </span>
+      </header>
+
+      <div className="admin-home-queue-card__body">
+        {items.length === 0 ? (
+          <AdminEmptyState title="All clear" description="Nothing waiting in this queue." />
+        ) : (
+          <ul className="admin-home-queue-card__list">
+            {items.slice(0, 5).map((item) => {
+              const primary = itemPrimary(item)
+              const secondary = itemSecondary(item)
+              const to = item.href || href
+              return (
+                <li key={item.id || `${id}-${primary}`}>
+                  <Link to={to} className="admin-home-queue-item">
+                    <span className="admin-home-queue-item__main">{primary}</span>
+                    {secondary ? <span className="admin-home-queue-item__meta">{secondary}</span> : null}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
-    </AdminPanel>
+
+      <footer className="admin-home-queue-card__foot">
+        <Link to={href} className="admin-home-queue-card__link">
+          {hasMore ? `View all ${count}` : 'Open queue'}
+          <span aria-hidden> →</span>
+        </Link>
+      </footer>
+    </article>
   )
 }
 
 export function AdminCaseManagerHomePage() {
   const { user, can, isViewOnly } = useAuth()
   const { data, isLoading, error, refetch } = useAdminCmHome()
-  const [caseloadFilter, setCaseloadFilter] = useState('all')
-  const [search, setSearch] = useState('')
   const [pendingMeetings, setPendingMeetings] = useState([])
-  const caseloadPanelRef = useRef(null)
 
   useEffect(() => {
     apiFetch('/api/v1/meetings/pending-completion')
@@ -178,41 +114,21 @@ export function AdminCaseManagerHomePage() {
       .catch(() => setPendingMeetings([]))
   }, [])
 
-  function selectCaseloadFilter(next) {
-    setCaseloadFilter(next)
-    window.requestAnimationFrame(() => {
-      caseloadPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    })
-  }
-
   const summary = data?.caseload_summary
-  const allCaseload = data?.caseload || []
-
-  const caseloadRows = useMemo(() => {
-    if (caseloadFilter === 'all') return allCaseload
-    if (caseloadFilter === 'needs_action') {
-      return allCaseload.filter(
-        (r) =>
-          r.pipeline_column !== 'active' &&
-          r.pipeline_column !== 'closed' &&
-          r.status !== 'CLOSED',
-      )
-    }
-    if (caseloadFilter === 'pending_allotment') {
-      return allCaseload.filter((r) => r.status === 'PENDING_ALLOTMENT' || r.pipeline_column === 'pending_allotment')
-    }
-    return allCaseload.filter((r) => r.status === 'ACTIVE')
-  }, [allCaseload, caseloadFilter])
-
   const sections = data?.sections || {}
-  const sectionIds = SECTION_ORDER.filter((id) => sections[id]?.items?.length)
+
+  const primaryWidgets = PRIMARY_WIDGET_IDS
+  const secondaryWidgets = useMemo(
+    () => SECONDARY_WIDGET_IDS.filter((id) => sections[id]?.items?.length),
+    [sections],
+  )
 
   return (
-    <div className="admin-page admin-cm-home">
+    <div className="admin-page admin-cm-home admin-dashboard">
       <AdminPageHeader
         eyebrow="Case management"
-        title={`Good day${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}`}
-        subtitle="Your assigned caseload — start with all cases, then narrow by queue or search when you need to act."
+        title="Dashboard"
+        subtitle={`Good day${user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''} — review queues first, then open cases when you need more context.`}
         actions={
           <div className="admin-btn-group">
             {can('case.create') && !isViewOnly ? (
@@ -220,11 +136,8 @@ export function AdminCaseManagerHomePage() {
                 Allot case
               </Link>
             ) : null}
-            <Link to="/admin/workbench" className="admin-btn admin-btn--secondary admin-btn--sm">
-              All queues
-            </Link>
-            <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
-              Case list
+            <Link to="/admin/cases" className="admin-btn admin-btn--secondary admin-btn--sm">
+              All cases
             </Link>
           </div>
         }
@@ -232,7 +145,7 @@ export function AdminCaseManagerHomePage() {
 
       {error ? (
         <p className="admin-alert admin-alert--error">
-          {error.message || 'Could not load CM home'}
+          {error.message || 'Could not load dashboard'}
           <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" style={{ marginLeft: 8 }} onClick={() => refetch()}>
             Retry
           </button>
@@ -240,84 +153,52 @@ export function AdminCaseManagerHomePage() {
       ) : null}
 
       {isLoading ? (
-        <p className="admin-muted">Loading your caseload…</p>
+        <p className="admin-muted">Loading dashboard…</p>
       ) : (
         <>
-          <section className="admin-cm-stats" aria-label="Caseload summary" role="tablist">
-            <AdminStatCard
-              title="All cases"
-              value={summary?.total ?? 0}
-              tone="indigo"
-              active={caseloadFilter === 'all'}
-              onClick={() => selectCaseloadFilter('all')}
-            />
-            <AdminStatCard
-              title="Needs action"
-              value={summary?.needs_action ?? 0}
-              tone="yellow"
-              active={caseloadFilter === 'needs_action'}
-              onClick={() => selectCaseloadFilter('needs_action')}
-            />
-            <AdminStatCard
-              title="Pending allotment"
-              value={summary?.pending_allotment ?? 0}
-              tone="slate"
-              active={caseloadFilter === 'pending_allotment'}
-              onClick={() => selectCaseloadFilter('pending_allotment')}
-            />
-            <AdminStatCard
-              title="Active"
-              value={summary?.active ?? 0}
-              tone="teal"
-              active={caseloadFilter === 'active'}
-              onClick={() => selectCaseloadFilter('active')}
-            />
+          <section className="admin-cm-stats" aria-label="Caseload summary">
+            <AdminStatCard title="All cases" value={summary?.total ?? 0} tone="indigo" />
+            <AdminStatCard title="Needs action" value={summary?.needs_action ?? 0} tone="yellow" />
+            <AdminStatCard title="Pending allotment" value={summary?.pending_allotment ?? 0} tone="slate" />
+            <AdminStatCard title="Active" value={summary?.active ?? 0} tone="teal" />
           </section>
 
-          <div ref={caseloadPanelRef} className="admin-cm-caseload-panel">
-            <AdminPanel title="My caseload" subtitle="Sorted by urgency — allotment and reviews first" padded={false}>
-            <div className="admin-panel__body">
-              <div style={{ padding: '12px 16px 0' }}>
-                <AdminSearchInput value={search} onChange={setSearch} placeholder="Search caseload…" />
-              </div>
-              <div style={{ padding: '0 16px 16px' }}>
-                <CaseloadTable rows={caseloadRows} filter={search} />
-              </div>
-            </div>
-            </AdminPanel>
-          </div>
-
-          <section className="admin-cm-reports-hub" aria-label="Report management">
-            <div className="admin-cm-reports-hub__head">
-              <div>
-                <h2 className="admin-cm-reports-hub__title">Report management</h2>
-                <p className="admin-muted admin-cm-reports-hub__subtitle">
-                  Review monthly, observation, CM meeting, and progress reports for your assigned cases.
+          <section className="admin-home-queue" aria-labelledby="admin-cm-queue-title">
+            <div className="admin-home-queue__header">
+              <div className="admin-home-queue__intro">
+                <p className="admin-home-queue__eyebrow" id="admin-cm-queue-title">
+                  Your work queues
+                </p>
+                <h2 className="admin-home-queue__title">
+                  Case manager
+                  <span className="admin-home-queue__role-pill">dashboard</span>
+                </h2>
+                <p className="admin-home-queue__sub">
+                  Session logs, reports, and support — scoped to your assigned caseload.
                 </p>
               </div>
-              <div className="admin-btn-group">
-                <Link to="/admin/reports?tab=queue" className="admin-btn admin-btn--primary admin-btn--sm">
-                  Open review queue
-                </Link>
-                <Link to="/admin/reports?tab=all" className="admin-btn admin-btn--ghost admin-btn--sm">
-                  All reports
-                </Link>
-              </div>
+              <Link to="/admin/cm/logs" className="admin-btn admin-btn--primary admin-home-queue__cta">
+                Review session logs
+              </Link>
             </div>
-            <div className="admin-cm-reports-hub__links">
-              <Link to="/admin/reports?tab=queue" className="admin-cm-reports-hub__stat">
-                <span className="admin-cm-reports-hub__stat-value">{sections.reports?.count ?? 0}</span>
-                <span className="admin-cm-reports-hub__stat-label">In review queue</span>
-              </Link>
-              <Link to="/admin/reports?tab=iep" className="admin-cm-reports-hub__stat">
-                <span className="admin-cm-reports-hub__stat-value">{sections.iep?.count ?? 0}</span>
-                <span className="admin-cm-reports-hub__stat-label">IEP attention</span>
-              </Link>
-              <Link to="/admin/reports?tab=missing" className="admin-cm-reports-hub__stat">
-                <span className="admin-cm-reports-hub__stat-label">Missing monthly →</span>
-              </Link>
+
+            <div className="admin-home-queue__grid">
+              {primaryWidgets.map((id) => (
+                <CmWidgetCard key={id} id={id} section={sections[id] || { count: 0, items: [] }} />
+              ))}
             </div>
           </section>
+
+          {secondaryWidgets.length > 0 ? (
+            <section className="admin-cm-queues" aria-label="Additional queues">
+              <h2 className="admin-cm-queues__title">More queues</h2>
+              <div className="admin-home-queue__grid">
+                {secondaryWidgets.map((id) => (
+                  <CmWidgetCard key={id} id={id} section={sections[id]} />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           {pendingMeetings.length > 0 ? (
             <AdminPanel
@@ -350,18 +231,11 @@ export function AdminCaseManagerHomePage() {
             </AdminPanel>
           ) : null}
 
-          {sectionIds.length > 0 ? (
-            <div className="admin-cm-queues">
-              <h2 className="admin-cm-queues__title">Action queues</h2>
-              {sectionIds.map((id) => (
-                <QueueSection key={id} id={id} section={sections[id]} />
-              ))}
-            </div>
-          ) : (
-            <AdminPanel title="Action queues">
+          {primaryWidgets.length === 0 && secondaryWidgets.length === 0 ? (
+            <AdminPanel title="Queues">
               <p className="admin-muted">No pending reviews right now. Check back after therapists submit logs or reports.</p>
             </AdminPanel>
-          )}
+          ) : null}
         </>
       )}
     </div>

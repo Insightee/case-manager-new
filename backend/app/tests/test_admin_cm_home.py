@@ -57,3 +57,27 @@ def test_cm_home_caseload_href_includes_tab():
     for row in rows:
         href = row.get("href") or ""
         assert "?tab=" in href, href
+
+
+def test_cm_log_review_queue_for_case_manager():
+    r = client.get("/api/v1/admin/cm/logs/review-queue", headers=_login("casemanager@demo.com"))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "total_pending" in body
+    assert "cases" in body
+    assert isinstance(body["cases"], list)
+    for case_row in body["cases"]:
+        assert case_row["pending_count"] == len(case_row.get("logs") or [])
+        for log_row in case_row.get("logs") or []:
+            assert log_row.get("approval_status") == "PENDING"
+            assert "session" in log_row
+
+
+def test_cm_home_log_items_link_to_review_ui():
+    r = client.get("/api/v1/admin/cm/home", headers=_login("casemanager@demo.com"))
+    assert r.status_code == 200
+    logs = (r.json().get("sections") or {}).get("logs") or {}
+    for item in logs.get("items") or []:
+        href = item.get("href") or ""
+        if href:
+            assert href.startswith("/admin/cm/logs"), href

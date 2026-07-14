@@ -64,8 +64,8 @@ const PORTALS = [
       {
         title: 'Case managers',
         accounts: [
-          { email: 'casemanager@demo.com', label: 'Case Manager', hint: 'My caseload · homecare + shadow' },
-          { email: 'shadowcm@demo.com', label: 'CM · Shadow caseload', hint: 'My caseload · shadow only' },
+          { email: 'casemanager@demo.com', label: 'Case Manager', hint: 'Dashboard · homecare + shadow' },
+          { email: 'shadowcm@demo.com', label: 'CM · Shadow caseload', hint: 'Dashboard · shadow only' },
           { email: 'viewonly@demo.com', label: 'CM · View only', hint: 'Read-only · no mutations' },
         ],
       },

@@ -55,7 +55,7 @@ const PARENT_MOBILE_NAV = [
 ]
 
 const ADMIN_CM_MOBILE_NAV = [
-  { to: '/admin/cm', label: 'Caseload', end: true, icon: 'dashboard' },
+  { to: '/admin/cm', label: 'Dashboard', end: true, icon: 'dashboard' },
   { to: '/admin/cases', label: 'Cases', icon: 'cases' },
   { to: '/admin/workbench', label: 'Review', icon: 'workbench' },
 ]
@@ -63,7 +63,7 @@ const ADMIN_CM_MOBILE_NAV = [
 /** Nav for users whose only operational role is Case Manager (not module admin / finance / HR). */
 function caseManagerNav(clinicalModuleIds) {
   return [
-    { to: '/admin/cm', label: 'My caseload', end: true, perm: null, feature: null, icon: 'dashboard' },
+    { to: '/admin/cm', label: 'Dashboard', end: true, perm: null, feature: null, icon: 'dashboard' },
     { to: '/admin/cases', label: 'Cases', perm: 'case.read.team', feature: 'cases', moduleIds: clinicalModuleIds, icon: 'cases' },
     { to: '/admin/workbench', label: 'Review queues', perm: 'case.read.team', moduleIds: clinicalModuleIds, icon: 'workbench' },
     { to: '/admin/logs', label: 'Session Logs', perm: 'session.read', feature: 'session_logs', moduleIds: clinicalModuleIds, icon: 'grid' },

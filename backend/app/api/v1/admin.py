@@ -597,6 +597,18 @@ def admin_cm_home(
     return AdminCmHomeResponse.model_validate(admin_cm_home_service.build_cm_home(db, user))
 
 
+@router.get("/cm/logs/review-queue")
+def admin_cm_log_review_queue(
+    user: User = Depends(_require_case_manager_home),
+    db: Session = Depends(get_db),
+):
+    from app.services import admin_cm_log_review_service
+
+    if not user_has_permission(user, "daily_log.review"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Log review permission required")
+    return admin_cm_log_review_service.build_cm_log_review_queue(db, user)
+
+
 @router.get("/audit")
 def admin_audit_list(
     entity_type: Optional[str] = None,

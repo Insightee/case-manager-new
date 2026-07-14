@@ -92,7 +92,7 @@ export function AdminRoleQueueSection({
         </div>
         {landing ? (
           <Link to={landing} className="admin-btn admin-btn--primary admin-home-queue__cta">
-            {landing === '/admin/cm' ? 'Open my caseload' : landingLabel}
+            {landing === '/admin/cm' ? 'Open dashboard' : landingLabel}
           </Link>
         ) : null}
       </div>
