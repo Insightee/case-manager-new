@@ -28,10 +28,13 @@ from app.services import log_service
 from app.services.admin_report_service import list_queue_admin
 from app.services.admin_scope_service import apply_case_scope
 from app.services.support_access_service import (
+    is_finance_desk_user,
+    is_hr_desk_user,
     is_team_scoped_support_user,
     team_support_incident_clause,
     team_support_ticket_clause,
 )
+from app.services import ticket_escalation_service as ticket_esc
 
 
 def _row(case_code: str | None, child_name: str | None, case_id: int | None, **extra) -> dict:
@@ -135,6 +138,10 @@ def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_
     )
     if is_team_scoped_support_user(user):
         ticket_stmt = ticket_stmt.where(team_support_ticket_clause(user))
+    elif is_finance_desk_user(user):
+        ticket_stmt = ticket_stmt.where(ticket_esc.finance_desk_ticket_clause(user.id))
+    elif is_hr_desk_user(user):
+        ticket_stmt = ticket_stmt.where(ticket_esc.hr_desk_ticket_clause(user.id))
     else:
         ticket_stmt = apply_case_scope(ticket_stmt, user)
     ticket_rows = db.execute(ticket_stmt).all()
@@ -146,6 +153,10 @@ def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_
     )
     if is_team_scoped_support_user(user):
         count_stmt = count_stmt.where(team_support_ticket_clause(user))
+    elif is_finance_desk_user(user):
+        count_stmt = count_stmt.where(ticket_esc.finance_desk_ticket_clause(user.id))
+    elif is_hr_desk_user(user):
+        count_stmt = count_stmt.where(ticket_esc.hr_desk_ticket_clause(user.id))
     else:
         count_stmt = apply_case_scope(count_stmt, user)
     return {

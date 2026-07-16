@@ -5,7 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.module_access import case_product_module_allowed, user_has_feature
-from app.core.permissions import case_scope_check, user_has_permission
+from app.core.permissions import RoleName, case_scope_check, user_has_permission
 from app.models.user import User
 
 
@@ -29,6 +29,30 @@ def can_manage_incidents(user: User, db: Session | None = None) -> bool:
 
 def has_org_wide_support_scope(user: User) -> bool:
     return user_has_permission(user, "admin.override") or user_has_permission(user, "case.read.all")
+
+
+def is_finance_desk_user(user: User) -> bool:
+    """Finance role desk — ticket queues are billing-scoped, not full clinical org queue."""
+    roles = set(user.role_names or [])
+    if RoleName.FINANCE.value not in roles:
+        return False
+    if user_has_permission(user, "admin.override"):
+        return False
+    if RoleName.SUPER_ADMIN.value in roles:
+        return False
+    return True
+
+
+def is_hr_desk_user(user: User) -> bool:
+    """HR role desk — ticket queues are HR/therapist-chain scoped."""
+    roles = set(user.role_names or [])
+    if RoleName.HR.value not in roles:
+        return False
+    if user_has_permission(user, "admin.override"):
+        return False
+    if RoleName.SUPER_ADMIN.value in roles:
+        return False
+    return True
 
 
 def is_team_scoped_support_user(user: User) -> bool:
@@ -70,12 +94,16 @@ def support_scope(user: User, db: Session | None = None) -> str:
         return "none"
     if is_team_scoped_support_user(user):
         return "team"
+    if is_finance_desk_user(user) and can_view_support_tickets(user, db):
+        return "finance_desk"
+    if is_hr_desk_user(user) and can_view_support_tickets(user, db):
+        return "hr_desk"
     return "full"
 
 
 def may_read_support_ticket(db: Session, user: User, ticket) -> bool:
     """Whether a staff user may view a support ticket in list/detail/history."""
-    from app.services import case_service
+    from app.services import case_service, ticket_escalation_service as ticket_esc
     from app.services.admin_scope_service import team_case_in_scope
 
     if user_has_permission(user, "admin.override"):
@@ -86,6 +114,10 @@ def may_read_support_ticket(db: Session, user: User, ticket) -> bool:
         return True
     if not can_view_support_tickets(user, db):
         return False
+    if is_finance_desk_user(user):
+        return ticket_esc.ticket_visible_to_finance_desk(ticket, user_id=user.id)
+    if is_hr_desk_user(user):
+        return ticket_esc.ticket_visible_to_hr_desk(ticket)
     if has_org_wide_support_scope(user):
         if ticket.case_id:
             case = case_service.get_case(db, ticket.case_id)

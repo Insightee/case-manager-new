@@ -15,13 +15,14 @@ from app.models.child import Child
 from app.models.incident import Incident, IncidentStatus, normalize_incident_status
 from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.user import User
-from app.services import case_service
+from app.services import case_service, ticket_escalation_service as ticket_esc
 from app.services.support_access_service import (
     can_read_incident,
     can_view_support_incidents,
     can_view_support_tickets,
     is_team_scoped_support_user,
     may_read_support_ticket,
+    support_scope,
     team_support_incident_clause,
     team_support_ticket_clause,
 )
@@ -81,8 +82,13 @@ def _ticket_rows(
         return []
 
     stmt = select(SupportTicket).order_by(SupportTicket.created_at.desc())
-    if is_team_scoped_support_user(user):
+    scope = support_scope(user, db)
+    if scope == "team":
         stmt = stmt.where(team_support_ticket_clause(user))
+    elif scope == "finance_desk":
+        stmt = stmt.where(ticket_esc.finance_desk_ticket_clause(user.id))
+    elif scope == "hr_desk":
+        stmt = stmt.where(ticket_esc.hr_desk_ticket_clause(user.id))
     if status:
         try:
             stmt = stmt.where(SupportTicket.status == TicketStatus(status))

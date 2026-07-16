@@ -35,7 +35,7 @@ def test_support_capabilities_finance_all_tabs():
     r = client.get("/api/v1/admin/support/capabilities", headers=_auth_headers("finance@demo.com"))
     assert r.status_code == 200
     data = r.json()
-    assert data["scope"] == "full"
+    assert data["scope"] == "finance_desk"
     assert data["tabs"]["tickets"] is True
     assert data["tabs"]["incidents"] is True
     assert data["tabs"]["history"] is True
@@ -46,7 +46,7 @@ def test_support_capabilities_hr_all_tabs():
     r = client.get("/api/v1/admin/support/capabilities", headers=_auth_headers("hr@demo.com"))
     assert r.status_code == 200
     data = r.json()
-    assert data["scope"] == "full"
+    assert data["scope"] == "hr_desk"
     assert data["tabs"]["tickets"] is True
     assert data["tabs"]["incidents"] is True
     assert data["tabs"]["history"] is True
@@ -127,3 +127,51 @@ def test_therapist_no_admin_support_capabilities():
     data = r.json()
     assert data["scope"] == "none"
     assert data["tabs"]["history"] is False
+
+
+def test_finance_desk_sees_finance_category_tickets():
+    therapist = _auth_headers("therapist@demo.com")
+    finance = _auth_headers("finance@demo.com")
+    admin = _auth_headers("superadmin@demo.com")
+
+    created = client.post(
+        "/api/v1/tickets",
+        headers=therapist,
+        json={
+            "subject": "Finance desk routing test",
+            "body": "Need invoice correction",
+            "category": "FINANCE",
+        },
+    )
+    assert created.status_code == 201
+    ticket_id = created.json()["id"]
+
+    detail = client.get(f"/api/v1/tickets/{ticket_id}", headers=finance)
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["category"] == "FINANCE"
+    assert body["topic"] == "BILLING_PAYMENT"
+    assert body["assigned_to_name"] == "Finance User"
+
+    finance_list = client.get("/api/v1/tickets?page_size=100", headers=finance)
+    assert finance_list.status_code == 200
+    finance_ids = {row["id"] for row in finance_list.json().get("items") or []}
+    assert ticket_id in finance_ids
+
+    other = client.post(
+        "/api/v1/tickets",
+        headers=therapist,
+        json={"subject": "General other ticket", "body": "Unrelated", "category": "OTHER"},
+    )
+    assert other.status_code == 201
+    other_id = other.json()["id"]
+
+    finance_list_after = client.get("/api/v1/tickets?page_size=100", headers=finance)
+    finance_ids_after = {row["id"] for row in finance_list_after.json().get("items") or []}
+    assert ticket_id in finance_ids_after
+    assert other_id not in finance_ids_after
+
+    admin_list = client.get("/api/v1/tickets?page_size=100", headers=admin)
+    admin_ids = {row["id"] for row in admin_list.json().get("items") or []}
+    assert ticket_id in admin_ids
+    assert other_id in admin_ids

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import RoleName
@@ -17,6 +17,11 @@ TOPIC_CATEGORY: dict[TicketTopic, TicketCategory] = {
     TicketTopic.THERAPIST: TicketCategory.SERVICE,
     TicketTopic.CASE_MANAGER: TicketCategory.SERVICE,
     TicketTopic.OTHER: TicketCategory.OTHER,
+}
+
+# When topic is omitted (defaults to OTHER), infer routing from staff-selected category.
+CATEGORY_ROUTING_TOPIC: dict[TicketCategory, TicketTopic] = {
+    TicketCategory.FINANCE: TicketTopic.BILLING_PAYMENT,
 }
 
 # Escalation matrix: each topic has an ordered list of roles (L1 → L2 → L3)
@@ -72,9 +77,40 @@ def ticket_visible_to_finance_desk(ticket: SupportTicket, *, user_id: int) -> bo
     """Finance desk: billing-topic/category or self-raised."""
     if ticket.raised_by_user_id == user_id:
         return True
+    if ticket.assigned_to_user_id == user_id:
+        return True
     if ticket.category == TicketCategory.FINANCE:
         return True
     return ticket.topic == TicketTopic.BILLING_PAYMENT
+
+
+def finance_desk_ticket_clause(user_id: int):
+    """SQL filter for finance desk ticket queues."""
+    return or_(
+        SupportTicket.raised_by_user_id == user_id,
+        SupportTicket.assigned_to_user_id == user_id,
+        SupportTicket.category == TicketCategory.FINANCE,
+        SupportTicket.topic == TicketTopic.BILLING_PAYMENT,
+    )
+
+
+def hr_desk_ticket_clause(user_id: int):
+    """SQL filter for HR desk ticket queues."""
+    return or_(
+        SupportTicket.raised_by_user_id == user_id,
+        SupportTicket.assigned_to_user_id == user_id,
+        SupportTicket.category == TicketCategory.HR,
+        SupportTicket.topic == TicketTopic.THERAPIST,
+    )
+
+
+def normalize_ticket_routing(ticket: SupportTicket) -> None:
+    """Map category to topic when the client only sent a desk category (topic still OTHER)."""
+    if ticket.topic != TicketTopic.OTHER:
+        return
+    routed = CATEGORY_ROUTING_TOPIC.get(ticket.category)
+    if routed:
+        ticket.topic = routed
 
 
 _ADMIN_TAG_ROLES = frozenset(
@@ -155,6 +191,7 @@ def find_assignee_for_role(db: Session, role_name: str, case: Case | None = None
 
 
 def assign_ticket(db: Session, ticket: SupportTicket, case: Case | None = None) -> None:
+    normalize_ticket_routing(ticket)
     roles = escalation_roles(ticket.topic)
     level = min(ticket.escalation_level or 0, len(roles) - 1)
     role = roles[level]
