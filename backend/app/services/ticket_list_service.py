@@ -48,6 +48,8 @@ def list_tickets_for_user(
         stmt = stmt.where(ticket_esc.finance_desk_ticket_clause(user.id))
     elif support_scope(user, db) == "hr_desk":
         stmt = stmt.where(ticket_esc.hr_desk_ticket_clause(user.id))
+    elif support_scope(user, db) == "admin_desk":
+        stmt = stmt.where(ticket_esc.admin_desk_ticket_clause(user.id))
     elif user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override"):
         if is_team_scoped_support_user(user):
             stmt = stmt.where(team_support_ticket_clause(user))

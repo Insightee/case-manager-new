@@ -28,6 +28,7 @@ from app.services import log_service
 from app.services.admin_report_service import list_queue_admin
 from app.services.admin_scope_service import apply_case_scope
 from app.services.support_access_service import (
+    is_admin_desk_user,
     is_finance_desk_user,
     is_hr_desk_user,
     is_team_scoped_support_user,
@@ -142,6 +143,8 @@ def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_
         ticket_stmt = ticket_stmt.where(ticket_esc.finance_desk_ticket_clause(user.id))
     elif is_hr_desk_user(user):
         ticket_stmt = ticket_stmt.where(ticket_esc.hr_desk_ticket_clause(user.id))
+    elif is_admin_desk_user(user):
+        ticket_stmt = ticket_stmt.where(ticket_esc.admin_desk_ticket_clause(user.id))
     else:
         ticket_stmt = apply_case_scope(ticket_stmt, user)
     ticket_rows = db.execute(ticket_stmt).all()
@@ -157,6 +160,8 @@ def widget_section_tickets(db: Session, user: User, *, limit: int = WIDGET_ITEM_
         count_stmt = count_stmt.where(ticket_esc.finance_desk_ticket_clause(user.id))
     elif is_hr_desk_user(user):
         count_stmt = count_stmt.where(ticket_esc.hr_desk_ticket_clause(user.id))
+    elif is_admin_desk_user(user):
+        count_stmt = count_stmt.where(ticket_esc.admin_desk_ticket_clause(user.id))
     else:
         count_stmt = apply_case_scope(count_stmt, user)
     return {

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional
-
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.permissions import RoleName
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
@@ -104,6 +103,29 @@ def hr_desk_ticket_clause(user_id: int):
     )
 
 
+def ticket_visible_to_admin_desk(ticket: SupportTicket, *, user_id: int) -> bool:
+    """Operations admin desk: general categories only (not finance / HR / clinical chains)."""
+    if ticket.raised_by_user_id == user_id or ticket.assigned_to_user_id == user_id:
+        return True
+    if ticket.category in (TicketCategory.FINANCE, TicketCategory.HR):
+        return False
+    if ticket.topic in (TicketTopic.BILLING_PAYMENT, TicketTopic.THERAPIST, TicketTopic.CASE_MANAGER):
+        return False
+    return ticket.category in _ADMIN_DESK_CATEGORIES and ticket.topic == TicketTopic.OTHER
+
+
+def admin_desk_ticket_clause(user_id: int):
+    """SQL filter for operations admin ticket queues."""
+    return or_(
+        SupportTicket.raised_by_user_id == user_id,
+        SupportTicket.assigned_to_user_id == user_id,
+        and_(
+            SupportTicket.category.in_(tuple(_ADMIN_DESK_CATEGORIES)),
+            SupportTicket.topic == TicketTopic.OTHER,
+        ),
+    )
+
+
 def normalize_ticket_routing(ticket: SupportTicket) -> None:
     """Map category to topic when the client only sent a desk category (topic still OTHER)."""
     if ticket.topic != TicketTopic.OTHER:
@@ -113,6 +135,14 @@ def normalize_ticket_routing(ticket: SupportTicket) -> None:
         ticket.topic = routed
 
 
+_ADMIN_DESK_CATEGORIES = frozenset(
+    {
+        TicketCategory.OTHER,
+        TicketCategory.SERVICE,
+        TicketCategory.POSH,
+        TicketCategory.CPP,
+    }
+)
 _ADMIN_TAG_ROLES = frozenset(
     {RoleName.ADMIN.value, RoleName.MODULE_ADMIN.value, RoleName.SUPER_ADMIN.value}
 )
@@ -125,6 +155,63 @@ def role_names_matching_tag(role_tag: str) -> frozenset[str]:
     if role_tag == RoleName.CASE_MANAGER.value:
         return _CM_TAG_ROLES
     return frozenset({role_tag})
+
+
+def _active_user_id_for_email(db: Session, email: str) -> int | None:
+    normalized = (email or "").strip().lower()
+    if not normalized:
+        return None
+    user = db.scalars(
+        select(User).where(func.lower(User.email) == normalized, User.is_active.is_(True))
+    ).first()
+    return user.id if user else None
+
+
+def resolve_finance_desk_assignee(db: Session) -> int | None:
+    uid = _active_user_id_for_email(db, settings.ticket_finance_assignee_email)
+    if uid:
+        return uid
+    return find_assignee_for_role(db, RoleName.FINANCE.value)
+
+
+def resolve_hr_desk_assignee(db: Session) -> int | None:
+    emails = settings.ticket_hr_assignee_email_list
+    if emails:
+        if len(emails) == 1:
+            uid = _active_user_id_for_email(db, emails[0])
+            if uid:
+                return uid
+        else:
+            count = int(
+                db.scalar(
+                    select(func.count()).select_from(SupportTicket).where(
+                        SupportTicket.category == TicketCategory.HR
+                    )
+                )
+                or 0
+            )
+            for offset in range(len(emails)):
+                uid = _active_user_id_for_email(db, emails[(count + offset) % len(emails)])
+                if uid:
+                    return uid
+    return find_assignee_for_role(db, RoleName.HR.value)
+
+
+def resolve_assignee_for_ticket_role(
+    db: Session,
+    ticket: SupportTicket,
+    role_name: str,
+    case: Case | None,
+    *,
+    level: int,
+) -> int | None:
+    if ticket.category == TicketCategory.HR and level == 0 and role_name != RoleName.CASE_MANAGER.value:
+        return resolve_hr_desk_assignee(db)
+    if role_name == RoleName.FINANCE.value and level == 0:
+        return resolve_finance_desk_assignee(db)
+    if role_name == RoleName.HR.value:
+        return resolve_hr_desk_assignee(db)
+    return find_assignee_for_role(db, role_name, case)
 
 
 def user_matches_role_tag(user: User, role_tag: str) -> bool:
@@ -192,10 +279,17 @@ def find_assignee_for_role(db: Session, role_name: str, case: Case | None = None
 
 def assign_ticket(db: Session, ticket: SupportTicket, case: Case | None = None) -> None:
     normalize_ticket_routing(ticket)
+    level = min(ticket.escalation_level or 0, max(len(escalation_roles(ticket.topic)) - 1, 0))
+
+    if ticket.category == TicketCategory.HR and level == 0:
+        assignee = resolve_hr_desk_assignee(db)
+        if assignee:
+            ticket.assigned_to_user_id = assignee
+        return
+
     roles = escalation_roles(ticket.topic)
-    level = min(ticket.escalation_level or 0, len(roles) - 1)
     role = roles[level]
-    assignee = find_assignee_for_role(db, role, case)
+    assignee = resolve_assignee_for_ticket_role(db, ticket, role, case, level=level)
     if assignee:
         ticket.assigned_to_user_id = assignee
     if ticket.topic != TicketTopic.OTHER:

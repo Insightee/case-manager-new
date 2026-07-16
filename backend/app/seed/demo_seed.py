@@ -295,6 +295,54 @@ def run():
             org_capability_grants={"billing": {"enabled": True, "access": "write"}},
             view_only=False,
         )
+        chandra = get_or_create_user(
+            db,
+            "chandrakiran@insighte.org",
+            "demo123",
+            "Chandra Kiran",
+            RoleName.FINANCE.value,
+            module_assignments=["billing"],
+        )
+        sync_user_access_fields(
+            chandra,
+            role_names=[RoleName.FINANCE.value],
+            org_capability_grants={"billing": {"enabled": True, "access": "write"}},
+            view_only=False,
+        )
+        sriparna = get_or_create_user(
+            db,
+            "sriparna.paul@insighte.org",
+            "demo123",
+            "Sriparna Paul",
+            RoleName.HR.value,
+            module_assignments=["people_admin", "hr_ops"],
+        )
+        sync_user_access_fields(
+            sriparna,
+            role_names=[RoleName.HR.value],
+            org_capability_grants={
+                "people_admin": {"enabled": True, "access": "write"},
+                "hr_ops": {"enabled": True, "access": "write"},
+            },
+            view_only=False,
+        )
+        pragya = get_or_create_user(
+            db,
+            "pragya.dwivedi@insighte.org",
+            "demo123",
+            "Pragya Dwivedi",
+            RoleName.HR.value,
+            module_assignments=["people_admin", "hr_ops"],
+        )
+        sync_user_access_fields(
+            pragya,
+            role_names=[RoleName.HR.value],
+            org_capability_grants={
+                "people_admin": {"enabled": True, "access": "write"},
+                "hr_ops": {"enabled": True, "access": "write"},
+            },
+            view_only=False,
+        )
 
         aarav = Child(first_name="Aarav", last_name="M.")
         ira = Child(first_name="Ira", last_name="K.")

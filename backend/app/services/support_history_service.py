@@ -89,6 +89,8 @@ def _ticket_rows(
         stmt = stmt.where(ticket_esc.finance_desk_ticket_clause(user.id))
     elif scope == "hr_desk":
         stmt = stmt.where(ticket_esc.hr_desk_ticket_clause(user.id))
+    elif scope == "admin_desk":
+        stmt = stmt.where(ticket_esc.admin_desk_ticket_clause(user.id))
     if status:
         try:
             stmt = stmt.where(SupportTicket.status == TicketStatus(status))

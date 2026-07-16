@@ -55,6 +55,16 @@ def is_hr_desk_user(user: User) -> bool:
     return True
 
 
+def is_admin_desk_user(user: User) -> bool:
+    """Operations admin / module admin — general ticket queue only."""
+    roles = set(user.role_names or [])
+    if user_has_permission(user, "admin.override"):
+        return False
+    if RoleName.ADMIN.value in roles or RoleName.MODULE_ADMIN.value in roles:
+        return can_view_support_tickets(user)
+    return False
+
+
 def is_team_scoped_support_user(user: User) -> bool:
     """Case managers / supervisors — support desk limited to caseload + items routed to them."""
     if has_org_wide_support_scope(user):
@@ -92,13 +102,17 @@ def support_scope(user: User, db: Session | None = None) -> str:
     """Queue scope for list/history APIs: org-wide desk, caseload-only, or none."""
     if not (can_view_support_tickets(user, db) or can_view_support_incidents(user, db)):
         return "none"
+    if user_has_permission(user, "admin.override"):
+        return "full"
     if is_team_scoped_support_user(user):
         return "team"
     if is_finance_desk_user(user) and can_view_support_tickets(user, db):
         return "finance_desk"
     if is_hr_desk_user(user) and can_view_support_tickets(user, db):
         return "hr_desk"
-    return "full"
+    if is_admin_desk_user(user):
+        return "admin_desk"
+    return "none"
 
 
 def may_read_support_ticket(db: Session, user: User, ticket) -> bool:
@@ -118,6 +132,8 @@ def may_read_support_ticket(db: Session, user: User, ticket) -> bool:
         return ticket_esc.ticket_visible_to_finance_desk(ticket, user_id=user.id)
     if is_hr_desk_user(user):
         return ticket_esc.ticket_visible_to_hr_desk(ticket)
+    if is_admin_desk_user(user):
+        return ticket_esc.ticket_visible_to_admin_desk(ticket, user_id=user.id)
     if has_org_wide_support_scope(user):
         if ticket.case_id:
             case = case_service.get_case(db, ticket.case_id)

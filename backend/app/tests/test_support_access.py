@@ -151,7 +151,7 @@ def test_finance_desk_sees_finance_category_tickets():
     body = detail.json()
     assert body["category"] == "FINANCE"
     assert body["topic"] == "BILLING_PAYMENT"
-    assert body["assigned_to_name"] == "Finance User"
+    assert body["assigned_to_name"] == "Chandra Kiran"
 
     finance_list = client.get("/api/v1/tickets?page_size=100", headers=finance)
     assert finance_list.status_code == 200
@@ -175,3 +175,54 @@ def test_finance_desk_sees_finance_category_tickets():
     admin_ids = {row["id"] for row in admin_list.json().get("items") or []}
     assert ticket_id in admin_ids
     assert other_id in admin_ids
+
+
+def test_hr_category_alternates_named_assignees():
+    therapist = _auth_headers("therapist@demo.com")
+    hr = _auth_headers("hr@demo.com")
+
+    first = client.post(
+        "/api/v1/tickets",
+        headers=therapist,
+        json={"subject": "HR routing A", "body": "Leave question", "category": "HR"},
+    )
+    second = client.post(
+        "/api/v1/tickets",
+        headers=therapist,
+        json={"subject": "HR routing B", "body": "Policy question", "category": "HR"},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    d1 = client.get(f"/api/v1/tickets/{first.json()['id']}", headers=hr)
+    d2 = client.get(f"/api/v1/tickets/{second.json()['id']}", headers=hr)
+    assert d1.status_code == 200
+    assert d2.status_code == 200
+    names = {d1.json()["assigned_to_name"], d2.json()["assigned_to_name"]}
+    assert names == {"Sriparna Paul", "Pragya Dwivedi"}
+
+
+def test_admin_desk_sees_general_not_finance():
+    therapist = _auth_headers("therapist@demo.com")
+    module_admin = _auth_headers("admin@demo.com")
+
+    finance_ticket = client.post(
+        "/api/v1/tickets",
+        headers=therapist,
+        json={"subject": "Billing only", "body": "Invoice", "category": "FINANCE"},
+    )
+    general_ticket = client.post(
+        "/api/v1/tickets",
+        headers=therapist,
+        json={"subject": "General admin queue", "body": "Other issue", "category": "OTHER"},
+    )
+    assert finance_ticket.status_code == 201
+    assert general_ticket.status_code == 201
+
+    cap = client.get("/api/v1/admin/support/capabilities", headers=module_admin)
+    assert cap.json()["scope"] == "admin_desk"
+
+    listing = client.get("/api/v1/tickets?page_size=100", headers=module_admin)
+    ids = {row["id"] for row in listing.json().get("items") or []}
+    assert general_ticket.json()["id"] in ids
+    assert finance_ticket.json()["id"] not in ids

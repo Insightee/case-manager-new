@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     support_phone: str = "+91 80 0000 0000"
     ticket_attachment_max_bytes: int = 5 * 1024 * 1024
     ticket_attachment_max_files: int = 3
+    # Named L1 owners for support ticket desks (Insighte production defaults; override in Railway).
+    ticket_finance_assignee_email: str = "chandrakiran@insighte.org"
+    ticket_hr_assignee_emails: str = "sriparna.paul@insighte.org,pragya.dwivedi@insighte.org"
     case_document_max_bytes: int = 5 * 1024 * 1024
     billing_ledger_drafts: bool = True
     # When false (pilot default), assignment acceptance timestamps are informational only.
@@ -144,6 +147,10 @@ class Settings(BaseSettings):
     @property
     def admin_notification_email_list(self) -> list[str]:
         return [e.strip() for e in self.admin_notification_emails.split(",") if e.strip()]
+
+    @property
+    def ticket_hr_assignee_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.ticket_hr_assignee_emails.split(",") if e.strip()]
 
     def format_from_header(self, email: str) -> str:
         """Build RFC5322 From header for a bare sender address."""
