@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
+import { MemoThreadDrawer } from './MemoThreadDrawer.jsx'
 
 const STATUS_COLORS = {
   OPEN: { bg: '#eef2ff', color: '#4f46e5', label: 'Open' },
@@ -242,277 +243,201 @@ export function ReceivedMemosPage({ embedded = false }) {
         )}
       </div>
 
-      {selectedMemoId ? (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: '100%',
-            maxWidth: 500,
-            background: '#fff',
-            boxShadow: '-5px 0 25px rgba(0,0,0,0.15)',
-            zIndex: 1001,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div
-            style={{
-              padding: '1.25rem',
-              borderBottom: '1px solid #f1f5f9',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: '#f8fafc',
-            }}
-          >
-            <div>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>{detail?.memo_code || 'Loading…'}</span>
-              <h4 style={{ margin: '4px 0 0 0', fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>Memo details</h4>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedMemoId(null)}
-              aria-label="Close memo details"
-              style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#94a3b8' }}
-            >
-              ×
-            </button>
-          </div>
-
-          {detailLoading ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Loading memo details…</div>
-          ) : detail ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div
-                style={{
-                  padding: '1.25rem',
-                  borderBottom: '1px solid #e2e8f0',
-                  background: '#fcfcfd',
-                  overflowY: 'auto',
-                }}
-              >
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <span
-                    style={{
-                      fontSize: '0.7rem',
-                      fontWeight: 600,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      background: '#f1f5f9',
-                      color: '#475569',
-                    }}
-                  >
-                    {detail.category}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '0.7rem',
-                      fontWeight: 600,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      background: '#fee2e2',
-                      color: '#ef4444',
-                    }}
-                  >
-                    {detail.priority}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '0.7rem',
-                      fontWeight: 600,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      background: STATUS_COLORS[detail.status]?.bg || '#f1f5f9',
-                      color: STATUS_COLORS[detail.status]?.color || '#475569',
-                    }}
-                  >
-                    {STATUS_COLORS[detail.status]?.label || detail.status}
-                  </span>
-                </div>
-                <h5 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>{detail.subject}</h5>
-                <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: 12 }}>
-                  From: {detail.sender?.full_name || 'Operations'} · Issued:{' '}
-                  {new Date(detail.created_at).toLocaleDateString()}
-                </p>
-                <p
+      <MemoThreadDrawer
+        open={Boolean(selectedMemoId)}
+        onClose={() => setSelectedMemoId(null)}
+        memoCode={detail?.memo_code}
+        title="Memo details"
+        loading={detailLoading || !detail}
+        loadingLabel="Loading memo details…"
+        timelineLabel="Timeline & messages"
+        memoSection={
+          detail ? (
+            <>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#f1f5f9', color: '#475569' }}>
+                  {detail.category}
+                </span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#fee2e2', color: '#ef4444' }}>
+                  {detail.priority}
+                </span>
+                <span
                   style={{
-                    fontSize: '0.875rem',
-                    color: '#334155',
-                    whiteSpace: 'pre-wrap',
-                    lineHeight: 1.5,
-                    background: '#fff',
-                    padding: 12,
-                    borderRadius: 8,
-                    border: '1px solid #e2e8f0',
-                    margin: 0,
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: STATUS_COLORS[detail.status]?.bg || '#f1f5f9',
+                    color: STATUS_COLORS[detail.status]?.color || '#475569',
                   }}
                 >
-                  {detail.details}
-                </p>
-                {detail.attachments?.length > 0 ? (
-                  <div style={{ marginTop: 12 }}>
-                    <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', margin: '0 0 6px 0' }}>Attachments</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {detail.attachments.map((a) => (
-                        <a
-                          key={a.id}
-                          href={`/api/v1/memos/${detail.id}/attachments/${a.id}`}
-                          download
-                          style={{
-                            fontSize: '0.8rem',
-                            color: '#4f46e5',
-                            textDecoration: 'none',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                        >
-                          📎 {a.file_name}{' '}
-                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>({(a.size_bytes / 1024).toFixed(1)} KB)</span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {detail.acknowledgement_only && !detail.acknowledged_at ? (
-                  <div
-                    style={{
-                      marginTop: 16,
-                      background: '#fffbeb',
-                      border: '1px solid #fef3c7',
-                      padding: 12,
-                      borderRadius: 8,
-                      textAlign: 'center',
-                    }}
-                  >
-                    <p style={{ fontSize: '0.8rem', color: '#b45309', margin: '0 0 8px 0', fontWeight: 500 }}>
-                      Please read and acknowledge this memo:
-                    </p>
-                    <button
-                      type="button"
-                      onClick={acknowledgeMemo}
-                      style={{
-                        background: '#d97706',
-                        color: '#fff',
-                        border: 'none',
-                        padding: '6px 16px',
-                        borderRadius: 6,
-                        fontWeight: 700,
-                        fontSize: '0.8rem',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      I acknowledge this memo
-                    </button>
-                  </div>
-                ) : null}
-                {detail.acknowledged_at ? (
-                  <div style={{ marginTop: 12, fontSize: '0.8rem', color: '#16a34a', fontWeight: 600 }}>
-                    ✓ Acknowledged on {new Date(detail.acknowledged_at).toLocaleDateString()}
-                  </div>
-                ) : null}
+                  {STATUS_COLORS[detail.status]?.label || detail.status}
+                </span>
               </div>
-
-              <div
+              <h5 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>{detail.subject}</h5>
+              <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: 12 }}>
+                From: {detail.sender?.full_name || 'Operations'} · Issued: {new Date(detail.created_at).toLocaleDateString()}
+              </p>
+              <p
                 style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  padding: '1.25rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '1rem',
-                  background: '#f8fafc',
+                  fontSize: '0.875rem',
+                  color: '#334155',
+                  whiteSpace: 'pre-wrap',
+                  lineHeight: 1.5,
+                  background: '#fff',
+                  padding: 12,
+                  borderRadius: 8,
+                  border: '1px solid #e2e8f0',
+                  margin: 0,
                 }}
               >
-                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', margin: 0 }}>
-                  Timeline & messages
-                </p>
-                {detail.messages?.map((msg) => (
-                  <div
-                    key={msg.id}
-                    style={{
-                      alignSelf: msg.author?.id === detail.recipient?.id ? 'flex-end' : 'flex-start',
-                      background: msg.author?.id === detail.recipient?.id ? '#eef2ff' : '#fff',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 12,
-                      padding: '10px 12px',
-                      maxWidth: '85%',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b' }}>{msg.author?.full_name}</span>
-                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{new Date(msg.created_at).toLocaleDateString()}</span>
-                    </div>
-                    <p style={{ fontSize: '0.85rem', color: '#334155', margin: 0, whiteSpace: 'pre-wrap' }}>{msg.body}</p>
-                    {msg.attachments?.map((a) => (
-                      <div key={a.id} style={{ marginTop: 6, borderTop: '1px solid #f1f5f9', paddingTop: 4 }}>
-                        <a
-                          href={`/api/v1/memos/${detail.id}/attachments/${a.id}`}
-                          download
-                          style={{ fontSize: '0.75rem', color: '#4f46e5', textDecoration: 'none' }}
-                        >
-                          📎 {a.file_name}
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-
-              {detail.reply_required && detail.status !== 'CLOSED' ? (
-                <div style={{ padding: '1.25rem', borderTop: '1px solid #e2e8f0', background: '#fff' }}>
-                  <form onSubmit={submitReply} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {replyError ? <div style={{ fontSize: '0.75rem', color: '#ef4444' }}>{replyError}</div> : null}
-                    <textarea
-                      rows={2}
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      placeholder="Your response…"
-                      style={{
-                        width: '100%',
-                        padding: '8px 10px',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: 8,
-                        boxSizing: 'border-box',
-                        fontFamily: 'inherit',
-                        resize: 'none',
-                      }}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <input
-                        type="file"
-                        multiple
-                        onChange={(e) => setReplyFiles(Array.from(e.target.files || []))}
-                        style={{ fontSize: '0.75rem', maxWidth: 180 }}
-                      />
-                      <button
-                        type="submit"
-                        disabled={replyBusy}
+                {detail.details}
+              </p>
+              {detail.attachments?.length > 0 ? (
+                <div style={{ marginTop: 12 }}>
+                  <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', margin: '0 0 6px 0' }}>Attachments</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {detail.attachments.map((a) => (
+                      <a
+                        key={a.id}
+                        href={`/api/v1/memos/${detail.id}/attachments/${a.id}`}
+                        download
                         style={{
-                          background: '#6366f1',
-                          color: '#fff',
-                          border: 'none',
-                          padding: '6px 14px',
-                          borderRadius: 6,
-                          fontWeight: 600,
                           fontSize: '0.8rem',
-                          cursor: 'pointer',
-                          opacity: replyBusy ? 0.7 : 1,
+                          color: '#4f46e5',
+                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
                         }}
                       >
-                        Submit reply
-                      </button>
-                    </div>
-                  </form>
+                        📎 {a.file_name}{' '}
+                        <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>({(a.size_bytes / 1024).toFixed(1)} KB)</span>
+                      </a>
+                    ))}
+                  </div>
                 </div>
               ) : null}
+              {detail.acknowledgement_only && !detail.acknowledged_at ? (
+                <div
+                  style={{
+                    marginTop: 16,
+                    background: '#fffbeb',
+                    border: '1px solid #fef3c7',
+                    padding: 12,
+                    borderRadius: 8,
+                    textAlign: 'center',
+                  }}
+                >
+                  <p style={{ fontSize: '0.8rem', color: '#b45309', margin: '0 0 8px 0', fontWeight: 500 }}>
+                    Please read and acknowledge this memo:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={acknowledgeMemo}
+                    style={{
+                      background: '#d97706',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '6px 16px',
+                      borderRadius: 6,
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    I acknowledge this memo
+                  </button>
+                </div>
+              ) : null}
+              {detail.acknowledged_at ? (
+                <div style={{ marginTop: 12, fontSize: '0.8rem', color: '#16a34a', fontWeight: 600 }}>
+                  ✓ Acknowledged on {new Date(detail.acknowledged_at).toLocaleDateString()}
+                </div>
+              ) : null}
+            </>
+          ) : null
+        }
+        timelineSection={
+          detail?.messages?.map((msg) => (
+            <div
+              key={msg.id}
+              style={{
+                alignSelf: msg.author?.id === detail.recipient?.id ? 'flex-end' : 'flex-start',
+                background: msg.author?.id === detail.recipient?.id ? '#eef2ff' : '#fff',
+                border: '1px solid #e2e8f0',
+                borderRadius: 12,
+                padding: '10px 12px',
+                maxWidth: '85%',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b' }}>{msg.author?.full_name}</span>
+                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{new Date(msg.created_at).toLocaleDateString()}</span>
+              </div>
+              <p style={{ fontSize: '0.85rem', color: '#334155', margin: 0, whiteSpace: 'pre-wrap' }}>{msg.body}</p>
+              {msg.attachments?.map((a) => (
+                <div key={a.id} style={{ marginTop: 6, borderTop: '1px solid #f1f5f9', paddingTop: 4 }}>
+                  <a
+                    href={`/api/v1/memos/${detail.id}/attachments/${a.id}`}
+                    download
+                    style={{ fontSize: '0.75rem', color: '#4f46e5', textDecoration: 'none' }}
+                  >
+                    📎 {a.file_name}
+                  </a>
+                </div>
+              ))}
             </div>
-          ) : null}
-        </div>
-      ) : null}
+          )) ?? null
+        }
+        footer={
+          detail?.reply_required && detail.status !== 'CLOSED' ? (
+            <form onSubmit={submitReply} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {replyError ? <div style={{ fontSize: '0.75rem', color: '#ef4444' }}>{replyError}</div> : null}
+              <textarea
+                rows={2}
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                placeholder="Your response…"
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  boxSizing: 'border-box',
+                  fontFamily: 'inherit',
+                  resize: 'none',
+                }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => setReplyFiles(Array.from(e.target.files || []))}
+                  style={{ fontSize: '0.75rem', maxWidth: 180 }}
+                />
+                <button
+                  type="submit"
+                  disabled={replyBusy}
+                  style={{
+                    background: '#6366f1',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    fontWeight: 600,
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    opacity: replyBusy ? 0.7 : 1,
+                  }}
+                >
+                  Submit reply
+                </button>
+              </div>
+            </form>
+          ) : null
+        }
+      />
     </div>
   )
 }

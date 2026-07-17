@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDateTime } from '../../lib/datetime.js'
+import { MemoThreadDrawer } from '../support/MemoThreadDrawer.jsx'
 
 export function AdminMemosPage() {
   const [memos, setMemos] = useState([])
@@ -630,175 +631,168 @@ export function AdminMemosPage() {
         </div>
       )}
 
-      {/* 5. Detail Thread Side Drawer */}
-      {selectedMemoId && (
-        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '100%', maxWidth: 500, background: '#fff', boxShadow: '-5px 0 25px rgba(0,0,0,0.15)', zIndex: 1001, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '1.25rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
-            <div>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>{memoDetail?.memo_code || 'Loading…'}</span>
-              <h4 style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>Memo Thread</h4>
-            </div>
-            <button onClick={() => setSelectedMemoId(null)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#94a3b8' }}>&times;</button>
-          </div>
-
-          {detailLoading ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Loading thread details…</div>
-          ) : memoDetail ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              
-              {/* Memo Details Section */}
-              <div style={{ padding: '1.25rem', borderBottom: '1px solid #e2e8f0', background: '#fcfcfd', overflowY: 'auto', maxExpandedHeight: '40%' }}>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#f1f5f9', color: '#475569' }}>
-                    {memoDetail.category}
-                  </span>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#fee2e2', color: '#ef4444' }}>
-                    {memoDetail.priority}
-                  </span>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: statusColors[memoDetail.status]?.bg || '#f1f5f9', color: statusColors[memoDetail.status]?.color || '#475569' }}>
-                    {statusColors[memoDetail.status]?.label || memoDetail.status}
-                  </span>
-                </div>
-
-                <h5 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>{memoDetail.subject}</h5>
-                
-                <div style={{ fontSize: '0.825rem', color: '#64748b', marginBottom: 12 }}>
-                  <span>From: <strong>{memoDetail.sender?.full_name || 'System'}</strong></span>
-                  <span style={{ margin: '0 8px' }}>·</span>
-                  <span>To: <strong>{memoDetail.recipient?.full_name}</strong></span>
-                </div>
-
-                <p style={{ fontSize: '0.875rem', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5, background: '#fff', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', margin: 0 }}>
-                  {memoDetail.details}
-                </p>
-
-                {memoDetail.attachments?.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', margin: '0 0 6px 0' }}>Attachments:</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {memoDetail.attachments.map((a) => (
-                        <a
-                          key={a.id}
-                          href={`/api/v1/memos/${memoDetail.id}/attachments/${a.id}`}
-                          download
-                          style={{ fontSize: '0.8rem', color: '#4f46e5', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                        >
-                          📎 {a.file_name} <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>({(a.size_bytes / 1024).toFixed(1)} KB)</span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {memoDetail.due_date && (
-                  <div style={{ marginTop: 12, fontSize: '0.8rem', color: '#b45309', fontWeight: 500 }}>
-                    ⚠️ Response Due Date: {new Date(memoDetail.due_date).toLocaleDateString()}
-                  </div>
-                )}
+      <MemoThreadDrawer
+        open={Boolean(selectedMemoId)}
+        onClose={() => setSelectedMemoId(null)}
+        memoCode={memoDetail?.memo_code}
+        title="Memo Thread"
+        loading={detailLoading || !memoDetail}
+        memoSection={
+          memoDetail ? (
+            <>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#f1f5f9', color: '#475569' }}>
+                  {memoDetail.category}
+                </span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#fee2e2', color: '#ef4444' }}>
+                  {memoDetail.priority}
+                </span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: statusColors[memoDetail.status]?.bg || '#f1f5f9', color: statusColors[memoDetail.status]?.color || '#475569' }}>
+                  {statusColors[memoDetail.status]?.label || memoDetail.status}
+                </span>
               </div>
-
-              {/* Chat Thread Messages & Audit Logs Timeline */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: '#f8fafc' }}>
-                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', margin: 0 }}>Timeline</p>
-
-                {/* Audit trail + replies sorted by date */}
-                {memoDetail.audit_logs?.map((l) => (
-                  <div key={`log-${l.id}`} style={{ display: 'flex', gap: 8, fontSize: '0.75rem', color: '#64748b', padding: '4px 0' }}>
-                    <span style={{ color: '#94a3b8' }}>[{new Date(l.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span>
-                    <span><strong>{l.actor_name}</strong> {l.action === 'created' ? 'issued memo' : l.action === 'viewed' ? 'opened memo' : l.action === 'replied' ? 'submitted reply' : l.action === 'acknowledged' ? 'acknowledged memo' : l.action}</span>
-                    {l.details && <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>({l.details})</span>}
-                  </div>
-                ))}
-
-                {memoDetail.messages?.map((msg) => (
-                  <div
-                    key={`msg-${msg.id}`}
-                    style={{
-                      alignSelf: msg.author.id === memoDetail.recipient?.id ? 'flex-start' : 'flex-end',
-                      background: msg.author.id === memoDetail.recipient?.id ? '#fff' : '#eef2ff',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 12,
-                      padding: '10px 12px',
-                      maxWidth: '85%',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b' }}>{msg.author.full_name}</span>
-                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{new Date(msg.created_at).toLocaleDateString()}</span>
-                    </div>
-                    <p style={{ fontSize: '0.85rem', color: '#334155', margin: 0, whiteSpace: 'pre-wrap' }}>{msg.body}</p>
-                    
-                    {msg.attachments?.map((a) => (
-                      <div key={a.id} style={{ marginTop: 6, borderTop: '1px solid #f1f5f9', pt: 4 }}>
-                        <a
-                          href={`/api/v1/memos/${memoDetail.id}/attachments/${a.id}`}
-                          download
-                          style={{ fontSize: '0.75rem', color: '#4f46e5', textDecoration: 'none' }}
-                        >
-                          📎 {a.file_name}
-                        </a>
-                      </div>
+              <h5 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>{memoDetail.subject}</h5>
+              <div style={{ fontSize: '0.825rem', color: '#64748b', marginBottom: 12 }}>
+                <span>From: <strong>{memoDetail.sender?.full_name || 'System'}</strong></span>
+                <span style={{ margin: '0 8px' }}>·</span>
+                <span>To: <strong>{memoDetail.recipient?.full_name}</strong></span>
+              </div>
+              <p style={{ fontSize: '0.875rem', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5, background: '#fff', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', margin: 0 }}>
+                {memoDetail.details}
+              </p>
+              {memoDetail.attachments?.length > 0 ? (
+                <div style={{ marginTop: 12 }}>
+                  <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', margin: '0 0 6px 0' }}>Attachments:</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {memoDetail.attachments.map((a) => (
+                      <a
+                        key={a.id}
+                        href={`/api/v1/memos/${memoDetail.id}/attachments/${a.id}`}
+                        download
+                        style={{ fontSize: '0.8rem', color: '#4f46e5', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        📎 {a.file_name}{' '}
+                        <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>({(a.size_bytes / 1024).toFixed(1)} KB)</span>
+                      </a>
                     ))}
                   </div>
-                ))}
+                </div>
+              ) : null}
+              {memoDetail.due_date ? (
+                <div style={{ marginTop: 12, fontSize: '0.8rem', color: '#b45309', fontWeight: 500 }}>
+                  ⚠️ Response Due Date: {new Date(memoDetail.due_date).toLocaleDateString()}
+                </div>
+              ) : null}
+            </>
+          ) : null
+        }
+        timelineSection={
+          memoDetail ? (
+            <>
+              {memoDetail.audit_logs?.map((l) => (
+                <div key={`log-${l.id}`} style={{ display: 'flex', gap: 8, fontSize: '0.75rem', color: '#64748b', padding: '4px 0' }}>
+                  <span style={{ color: '#94a3b8' }}>[{new Date(l.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]</span>
+                  <span>
+                    <strong>{l.actor_name}</strong>{' '}
+                    {l.action === 'created'
+                      ? 'issued memo'
+                      : l.action === 'viewed'
+                        ? 'opened memo'
+                        : l.action === 'replied'
+                          ? 'submitted reply'
+                          : l.action === 'acknowledged'
+                            ? 'acknowledged memo'
+                            : l.action}
+                  </span>
+                  {l.details ? <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>({l.details})</span> : null}
+                </div>
+              ))}
+              {memoDetail.messages?.map((msg) => (
+                <div
+                  key={`msg-${msg.id}`}
+                  style={{
+                    alignSelf: msg.author.id === memoDetail.recipient?.id ? 'flex-start' : 'flex-end',
+                    background: msg.author.id === memoDetail.recipient?.id ? '#fff' : '#eef2ff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    padding: '10px 12px',
+                    maxWidth: '85%',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b' }}>{msg.author.full_name}</span>
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{new Date(msg.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <p style={{ fontSize: '0.85rem', color: '#334155', margin: 0, whiteSpace: 'pre-wrap' }}>{msg.body}</p>
+                  {msg.attachments?.map((a) => (
+                    <div key={a.id} style={{ marginTop: 6, borderTop: '1px solid #f1f5f9', paddingTop: 4 }}>
+                      <a
+                        href={`/api/v1/memos/${memoDetail.id}/attachments/${a.id}`}
+                        download
+                        style={{ fontSize: '0.75rem', color: '#4f46e5', textDecoration: 'none' }}
+                      >
+                        📎 {a.file_name}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </>
+          ) : null
+        }
+        footer={
+          memoDetail ? (
+            memoDetail.status === 'CLOSED' ? (
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: '0.875rem', color: '#64748b', margin: '0 0 10px 0' }}>This memo is Closed.</p>
+                <button
+                  type="button"
+                  onClick={handleReopenMemo}
+                  style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
+                >
+                  Reopen Memo Thread
+                </button>
               </div>
-
-              {/* Reply Compose Bar (Disabled if Closed) */}
-              <div style={{ padding: '1.25rem', borderTop: '1px solid #e2e8f0', background: '#fff' }}>
-                {memoDetail.status === 'CLOSED' ? (
-                  <div style={{ textAlign: 'center' }}>
-                    <p style={{ fontSize: '0.875rem', color: '#64748b', margin: '0 0 10px 0' }}>This memo is Closed.</p>
+            ) : (
+              <form onSubmit={submitReply} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {replyError ? <div style={{ fontSize: '0.75rem', color: '#ef4444' }}>{replyError}</div> : null}
+                <textarea
+                  rows={2}
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Type your response/clarification here…"
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 8, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'none' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => setReplyFiles(Array.from(e.target.files || []))}
+                    style={{ fontSize: '0.75rem', maxWidth: 180 }}
+                  />
+                  <div style={{ display: 'flex', gap: 6 }}>
                     <button
-                      onClick={handleReopenMemo}
-                      style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
+                      type="button"
+                      onClick={handleCloseMemo}
+                      style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#ef4444', padding: '6px 12px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
                     >
-                      Reopen Memo Thread
+                      Close Memo
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={replying}
+                      style={{ background: '#6366f1', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer', opacity: replying ? 0.7 : 1 }}
+                    >
+                      Send Reply
                     </button>
                   </div>
-                ) : (
-                  <form onSubmit={submitReply} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {replyError && <div style={{ fontSize: '0.75rem', color: '#ef4444' }}>{replyError}</div>}
-                    <textarea
-                      rows={2}
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      placeholder="Type your response/clarification here…"
-                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 8, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'none' }}
-                    />
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <input
-                        type="file"
-                        multiple
-                        onChange={(e) => setReplyFiles(Array.from(e.target.files || []))}
-                        style={{ fontSize: '0.75rem', maxWidth: 180 }}
-                      />
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button
-                          type="button"
-                          onClick={handleCloseMemo}
-                          style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#ef4444', padding: '6px 12px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
-                        >
-                          Close Memo
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={replying}
-                          style={{ background: '#6366f1', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer', opacity: replying ? 0.7 : 1 }}
-                        >
-                          Send Reply
-                        </button>
-                      </div>
-                    </div>
-                  </form>
-                )}
-              </div>
-
-            </div>
-          ) : null}
-        </div>
-      )}
+                </div>
+              </form>
+            )
+          ) : null
+        }
+      />
 
     </div>
   )
