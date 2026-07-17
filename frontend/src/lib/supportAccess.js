@@ -4,7 +4,12 @@ export function tabsFromCapabilities(cap) {
   const out = []
   if (cap.tabs.tickets) out.push({ id: 'tickets', label: 'Tickets' })
   if (cap.tabs.incidents) out.push({ id: 'incidents', label: 'Incidents' })
-  if (cap.tabs.memos) out.push({ id: 'memos', label: 'Memos' })
+  if (cap.tabs.memos) {
+    out.push({
+      id: 'memos',
+      label: cap.memos_mode === 'received' ? 'Memos received' : 'Memos',
+    })
+  }
   if (cap.tabs.history) out.push({ id: 'reports', label: 'History' })
   return out
 }

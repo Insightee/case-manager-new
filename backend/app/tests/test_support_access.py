@@ -39,6 +39,8 @@ def test_support_capabilities_finance_all_tabs():
     assert data["tabs"]["tickets"] is True
     assert data["tabs"]["incidents"] is True
     assert data["tabs"]["history"] is True
+    assert data["tabs"]["memos"] is True
+    assert data["memos_mode"] == "manage"
     assert data["can_manage_incidents"] is False
 
 
@@ -50,6 +52,8 @@ def test_support_capabilities_hr_all_tabs():
     assert data["tabs"]["tickets"] is True
     assert data["tabs"]["incidents"] is True
     assert data["tabs"]["history"] is True
+    assert data["tabs"]["memos"] is True
+    assert data["memos_mode"] == "manage"
     assert data["can_manage_incidents"] is False
 
 
@@ -88,6 +92,8 @@ def test_support_capabilities_case_manager_team_scope():
     assert data["scope"] == "team"
     assert data["tabs"]["tickets"] is True
     assert data["tabs"]["incidents"] is True
+    assert data["tabs"]["memos"] is True
+    assert data["memos_mode"] == "received"
 
 
 def test_case_manager_ticket_list_subset_of_superadmin():
@@ -297,3 +303,37 @@ def test_hr_can_resolve_hr_category_ticket():
     )
     assert resolved.status_code == 200, resolved.text
     assert resolved.json()["status"] == "RESOLVED"
+
+
+def test_case_manager_lists_received_memo():
+    hr = _auth_headers("hr@demo.com")
+    cm = _auth_headers("casemanager@demo.com")
+
+    recipients = client.get("/api/v1/memos/recipients", headers=hr)
+    assert recipients.status_code == 200
+    cm_user = next(r for r in recipients.json() if r["email"] == "casemanager@demo.com")
+
+    issued = client.post(
+        "/api/v1/memos",
+        headers=hr,
+        json={
+            "category": "Performance",
+            "priority": "Medium",
+            "recipient_type": "Case Manager",
+            "recipient_ids": [cm_user["id"]],
+            "subject": "CM caseload review memo",
+            "details": "Please confirm weekly review notes are up to date.",
+            "reply_required": True,
+            "acknowledgement_only": False,
+        },
+    )
+    assert issued.status_code == 201, issued.text
+
+    cap = client.get("/api/v1/admin/support/capabilities", headers=cm)
+    assert cap.json()["tabs"]["memos"] is True
+    assert cap.json()["memos_mode"] == "received"
+
+    listing = client.get("/api/v1/memos", headers=cm)
+    assert listing.status_code == 200
+    subjects = [m["subject"] for m in listing.json()]
+    assert "CM caseload review memo" in subjects

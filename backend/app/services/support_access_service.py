@@ -184,11 +184,37 @@ def can_manage_memos(user: User, db: Session | None = None) -> bool:
     )
 
 
+MEMO_RECIPIENT_ROLES: frozenset[str] = frozenset(
+    {
+        "THERAPIST",
+        "CASE_MANAGER",
+        "MODULE_ADMIN",
+        "HR",
+        "FINANCE",
+        "ADMIN",
+        "SUPER_ADMIN",
+        "SUPERVISOR",
+    }
+)
+
+
+def can_view_received_memos(user: User, db: Session | None = None) -> bool:
+    """Staff in the admin support hub who receive memos but do not manage the issuer queue."""
+    if can_manage_memos(user, db):
+        return False
+    if support_scope(user, db) == "none":
+        return False
+    return any(role in MEMO_RECIPIENT_ROLES for role in (user.role_names or []))
+
+
 def support_hub_capabilities(user: User, db: Session | None = None) -> dict:
     tickets_tab = can_view_support_tickets(user, db)
     incidents_tab = can_view_support_incidents(user, db)
-    memos_tab = can_manage_memos(user, db)
+    memos_manage = can_manage_memos(user, db)
+    memos_received = can_view_received_memos(user, db)
+    memos_tab = memos_manage or memos_received
     history_tab = tickets_tab or incidents_tab or memos_tab
+    memos_mode = "manage" if memos_manage else ("received" if memos_received else None)
     return {
         "scope": support_scope(user, db),
         "tabs": {
@@ -197,6 +223,7 @@ def support_hub_capabilities(user: User, db: Session | None = None) -> dict:
             "memos": memos_tab,
             "history": history_tab,
         },
+        "memos_mode": memos_mode,
         "history": {
             "tickets": tickets_tab,
             "incidents": incidents_tab,

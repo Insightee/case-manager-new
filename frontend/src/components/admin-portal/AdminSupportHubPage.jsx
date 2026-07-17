@@ -7,6 +7,7 @@ import { AdminTicketsPage } from './AdminTicketsPage.jsx'
 import { AdminIncidentsPage } from './AdminIncidentsPage.jsx'
 import { AdminSupportReportsPage } from './AdminSupportReportsPage.jsx'
 import { AdminMemosPage } from './AdminMemosPage.jsx'
+import { ReceivedMemosPage } from '../support/ReceivedMemosPage.jsx'
 import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
 
 function normalizeSupportTab(raw) {
@@ -51,6 +52,7 @@ export function AdminSupportHubPage() {
   }
 
   const canManageIncidents = capabilities?.can_manage_incidents === true
+  const memosMode = capabilities?.memos_mode || 'manage'
 
   return (
     <div className="admin-page">
@@ -100,7 +102,7 @@ export function AdminSupportHubPage() {
       ) : null}
       {tab === 'memos' && visibleTabs.some((t) => t.id === 'memos') ? (
         <div className="admin-hub-embedded">
-          <AdminMemosPage />
+          {memosMode === 'received' ? <ReceivedMemosPage embedded /> : <AdminMemosPage />}
         </div>
       ) : null}
       {tab === 'reports' && visibleTabs.some((t) => t.id === 'reports') ? (
