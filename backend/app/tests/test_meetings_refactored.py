@@ -271,6 +271,21 @@ def test_meeting_actions_sync_and_dashboard():
     assert len(actions) >= 2
 
 
+def test_meetings_calendar_personal_scope():
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res = client.get(
+        "/api/v1/meetings/calendar",
+        headers=headers,
+        params={"from_date": "2026-01-01", "to_date": "2026-12-31"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "cm_meetings" in data
+    assert isinstance(data["cm_meetings"], list)
+
+
 def test_meeting_exports():
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}

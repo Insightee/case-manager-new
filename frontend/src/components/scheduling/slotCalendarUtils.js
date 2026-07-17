@@ -160,6 +160,7 @@ export function calendarEventStyle(s, mode = 'therapist') {
 function cmMeetingsAsGridEvents(meetings) {
   return (meetings || []).map((m) => ({
     id: `cm-meeting-${m.id}`,
+    meeting_id: m.id,
     event_type: 'cm_meeting',
     status: 'SESSION',
     slot_date: m.date,
@@ -168,6 +169,8 @@ function cmMeetingsAsGridEvents(meetings) {
     child_name: m.child_name,
     case_code: m.case_code,
     title: m.title,
+    meeting_url: m.meeting_url,
+    meeting_status: m.status,
   }))
 }
 

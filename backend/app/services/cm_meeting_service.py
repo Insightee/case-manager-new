@@ -55,6 +55,18 @@ def user_can_view_meeting(meeting: CaseManagerMeeting, user_id: int) -> bool:
     return user_id in meeting_participant_user_ids(meeting)
 
 
+def _staff_attendee_json_contains(user_id: int):
+    """Match user id inside compact JSON array e.g. [1,2,5]."""
+    uid = str(int(user_id))
+    col = CaseManagerMeeting.staff_attendee_user_ids_json
+    return or_(
+        col == f"[{uid}]",
+        col.like(f"[{uid},%"),
+        col.like(f"%,{uid}]"),
+        col.like(f"%,{uid},%"),
+    )
+
+
 def _meeting_participant_sql_filter(user_id: int, assigned_case_ids: list[int] | None = None):
     """SQL filter: meetings where user_id is a direct participant or on an assigned case."""
     clauses = [
@@ -62,6 +74,7 @@ def _meeting_participant_sql_filter(user_id: int, assigned_case_ids: list[int] |
         CaseManagerMeeting.parent_user_id == user_id,
         CaseManagerMeeting.therapist_user_id == user_id,
         CaseManagerMeeting.mentor_user_id == user_id,
+        _staff_attendee_json_contains(user_id),
     ]
     if assigned_case_ids:
         clauses.append(CaseManagerMeeting.case_id.in_(assigned_case_ids))
@@ -179,6 +192,55 @@ def fetch_cm_meetings_for_user(
         .order_by(CaseManagerMeeting.scheduled_date, CaseManagerMeeting.scheduled_time)
     )
     return list(db.scalars(stmt).all())
+
+
+def fetch_my_meetings_for_calendar(
+    db: Session,
+    user: User,
+    *,
+    from_date: date,
+    to_date: date,
+) -> list[CaseManagerMeeting]:
+    """Scheduled meetings in range visible on the current user's personal calendar."""
+    user_id = user.id
+    role = getattr(user, "role_name", None) or (
+        user.roles[0].name if getattr(user, "roles", None) and user.roles else ""
+    )
+
+    assigned_case_ids = list(
+        db.scalars(
+            select(CaseAssignment.case_id).where(
+                CaseAssignment.therapist_user_id == user_id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).all()
+    )
+
+    stmt = select(CaseManagerMeeting).where(
+        CaseManagerMeeting.scheduled_date >= from_date,
+        CaseManagerMeeting.scheduled_date <= to_date,
+        CaseManagerMeeting.status == MeetingStatus.SCHEDULED,
+    )
+
+    if role == RoleName.PARENT.value:
+        child_ids = parent_service.child_ids_for_parent(db, user_id)
+        case_ids: list[int] = []
+        if child_ids:
+            case_ids = list(
+                db.scalars(select(Case.id).where(Case.child_id.in_(child_ids))).all()
+            )
+        parent_clauses = [CaseManagerMeeting.parent_user_id == user_id]
+        if case_ids:
+            parent_clauses.append(CaseManagerMeeting.case_id.in_(case_ids))
+        stmt = stmt.where(or_(*parent_clauses))
+    else:
+        stmt = stmt.where(_meeting_participant_sql_filter(user_id, assigned_case_ids))
+
+    return list(
+        db.scalars(
+            stmt.order_by(CaseManagerMeeting.scheduled_date, CaseManagerMeeting.scheduled_time)
+        ).all()
+    )
 
 
 def fetch_pending_completion_for_therapist(

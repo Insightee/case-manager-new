@@ -496,6 +496,26 @@ def get_meetings_availability(
     }
 
 
+@router.get("/meetings/calendar")
+@compat_router.get("/cm-meetings/calendar")
+def get_meetings_calendar(
+    from_date: date = Query(..., alias="from_date"),
+    to_date: date = Query(..., alias="to_date"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.cm_meeting_service import fetch_my_meetings_for_calendar, meeting_to_calendar_dict
+
+    _require_meetings_read(user)
+    if to_date < from_date:
+        raise HTTPException(status_code=400, detail="to_date must be on or after from_date")
+
+    rows = fetch_my_meetings_for_calendar(db, user, from_date=from_date, to_date=to_date)
+    return {
+        "cm_meetings": [meeting_to_calendar_dict(m, db) for m in rows],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Booking & Rescheduling endpoints
 # ---------------------------------------------------------------------------

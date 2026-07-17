@@ -3,73 +3,25 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
-import { formatDisplayDateTime, formatDisplayDateTimeRange } from '../../lib/datetime.js'
+import { TherapistCalendar } from '../scheduling/TherapistCalendar.jsx'
+import { dateStr } from '../scheduling/slotCalendarUtils.js'
+import { BookMeetingModal } from '../meetings/BookMeetingModal.jsx'
+import { MeetingDetailSheet } from '../meetings/MeetingDetailSheet.jsx'
+import { RescheduleMeetingModal } from '../meetings/RescheduleMeetingModal.jsx'
+import {
+  MONTH_FILTER_OPTIONS,
+  SEARCH_DEBOUNCE_MS,
+  STATUS_FILTER_OPTIONS,
+  STATUS_LABELS,
+  TYPE_FILTER_OPTIONS,
+} from '../meetings/meetingConstants.js'
+import { formatAttendeeList, meetingTypeLabel, padHour, parseMeetingIdFromGridEvent } from '../meetings/meetingUtils.js'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
-import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
+import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
+import { formatDisplayDateTime } from '../../lib/datetime.js'
 import './admin-reports.css'
-
-const MEETING_TYPES = [
-  { value: 'OBSERVATION_REVIEW', label: 'Observation review' },
-  { value: 'OBSERVATION_CHECKLIST_REVIEW', label: 'Observation checklist review' },
-  { value: 'IEP_MEETING', label: 'IEP meeting' },
-  { value: 'MONTHLY_REPORT_REVIEW', label: 'Monthly report review' },
-  { value: 'PROGRESS_REVIEW', label: 'Progress review' },
-  { value: 'PARENT_MEETING', label: 'Parent meeting' },
-  { value: 'SCHOOL_MEETING', label: 'School meeting' },
-  { value: 'THERAPIST_SUPPORT', label: 'Therapist support' },
-  { value: 'MENTOR_REVIEW', label: 'Mentor review' },
-  { value: 'INCIDENT_REVIEW', label: 'Incident review' },
-  { value: 'SUPPORT_TICKET_REVIEW', label: 'Support ticket review' },
-  { value: 'ADMINISTRATIVE_MEETING', label: 'Administrative meeting' },
-  { value: 'TRANSITION_PLANNING', label: 'Transition planning' },
-  { value: 'CASE_CLOSURE_MEETING', label: 'Case closure meeting' },
-  { value: 'OTHER', label: 'Other (specify below)' },
-]
-
-const STATUS_FILTER_OPTIONS = [
-  { value: '', label: 'All statuses' },
-  { value: 'SCHEDULED', label: 'Scheduled' },
-  { value: 'COMPLETED', label: 'Completed' },
-  { value: 'CANCELLED', label: 'Cancelled' },
-]
-
-const TYPE_FILTER_OPTIONS = [
-  { value: '', label: 'All types' },
-  ...MEETING_TYPES,
-]
-
-const MONTH_FILTER_OPTIONS = [
-  { value: '', label: 'All months' },
-  { value: '1', label: 'January' },
-  { value: '2', label: 'February' },
-  { value: '3', label: 'March' },
-  { value: '4', label: 'April' },
-  { value: '5', label: 'May' },
-  { value: '6', label: 'June' },
-  { value: '7', label: 'July' },
-  { value: '8', label: 'August' },
-  { value: '9', label: 'September' },
-  { value: '10', label: 'October' },
-  { value: '11', label: 'November' },
-  { value: '12', label: 'December' },
-]
-
-const SEARCH_DEBOUNCE_MS = 350
-
-const ATTENDEE_ROLE_LABELS = {
-  client: 'Client (parent)',
-  therapist: 'Therapist',
-  case_manager: 'Case manager',
-  admin: 'Admin',
-}
-
-const STATUS_LABELS = {
-  SCHEDULED: { label: 'Scheduled', bg: '#dbeafe', color: '#1e40af' },
-  COMPLETED: { label: 'Completed', bg: '#dcfce7', color: '#14532d' },
-  CANCELLED: { label: 'Cancelled', bg: '#fee2e2', color: '#991b1b' },
-}
+import './admin-scheduling-hub.css'
 
 function StatusBadge({ status }) {
   const s = STATUS_LABELS[status] || { label: status, bg: '#f1f5f9', color: '#475569' }
@@ -77,419 +29,6 @@ function StatusBadge({ status }) {
     <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px', borderRadius: 6, background: s.bg, color: s.color }}>
       {s.label}
     </span>
-  )
-}
-
-function BookMeetingModal({ cases, onClose, onCreated, onOpen, canPickAdmin = true, isTherapistBooking = false }) {
-  const today = new Date().toISOString().slice(0, 10)
-  const [form, setForm] = useState({
-    case_id: '',
-    scheduled_date: today,
-    scheduled_time: '10:00',
-    duration_minutes: 30,
-    meeting_type: 'OBSERVATION_REVIEW',
-    title: '',
-    meeting_url: '',
-  })
-  const [attendees, setAttendees] = useState({
-    client: true,
-    therapist: isTherapistBooking,
-    caseManager: true,
-    admin: false,
-  })
-  const [therapistUserId, setTherapistUserId] = useState('')
-  const [adminUserId, setAdminUserId] = useState('')
-  const [caseSearch, setCaseSearch] = useState('')
-  const [guestInput, setGuestInput] = useState('')
-  const [guestEmails, setGuestEmails] = useState([])
-  const [caseDetail, setCaseDetail] = useState(null)
-  const [therapists, setTherapists] = useState([])
-  const [adminUsers, setAdminUsers] = useState([])
-  const [slots, setSlots] = useState(null)
-  const [slotsLoading, setSlotsLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [createdMeeting, setCreatedMeeting] = useState(null)
-
-  useEffect(() => {
-    onOpen?.()
-  }, [onOpen])
-
-  useEffect(() => {
-    if (!isTherapistBooking || form.case_id || cases.length !== 1) return
-    setForm((f) => ({ ...f, case_id: String(cases[0].id) }))
-  }, [isTherapistBooking, cases, form.case_id])
-
-  useEffect(() => {
-    apiFetch('/api/v1/admin/users?page_size=200')
-      .then((rows) => {
-        const list = Array.isArray(rows) ? rows : rows?.items || []
-        setAdminUsers(
-          list.filter((u) => {
-            const roles = u.roles || []
-            return (
-              roles.includes('MODULE_ADMIN') || roles.includes('SUPER_ADMIN') || roles.includes('ADMIN')
-            ) && !roles.includes('SUPERVISOR')
-          }),
-        )
-      })
-      .catch(() => setAdminUsers([]))
-  }, [])
-
-  useEffect(() => {
-    if (!form.case_id) {
-      setTherapists([])
-      setCaseDetail(null)
-      setTherapistUserId('')
-      return
-    }
-    apiFetch(`/api/v1/booking/therapists?case_id=${form.case_id}`)
-      .then((rows) => {
-        setTherapists(rows || [])
-        if (rows?.length === 1) setTherapistUserId(String(rows[0].therapist_user_id))
-      })
-      .catch(() => setTherapists([]))
-    apiFetch(`/api/v1/cases/${form.case_id}`)
-      .then(setCaseDetail)
-      .catch(() => setCaseDetail(null))
-  }, [form.case_id])
-
-  useEffect(() => {
-    if (!isTherapistBooking || !form.case_id) { setSlots(null); return }
-    setSlotsLoading(true)
-    apiFetch(`/api/v1/booking/slots?case_id=${form.case_id}&date=${form.scheduled_date}`)
-      .then(setSlots)
-      .catch(() => setSlots(null))
-      .finally(() => setSlotsLoading(false))
-  }, [isTherapistBooking, form.case_id, form.scheduled_date])
-
-  function addGuestEmail() {
-    const email = guestInput.trim()
-    if (!email || !email.includes('@')) { setError('Enter a valid guest email'); return }
-    if (!guestEmails.includes(email)) setGuestEmails((g) => [...g, email])
-    setGuestInput('')
-    setError('')
-  }
-
-  function set(k, v) { setForm((f) => ({ ...f, [k]: v })) }
-
-  function toggleAttendee(key) {
-    setAttendees((a) => {
-      const next = { ...a, [key]: !a[key] }
-      if (key === 'admin' && !next.admin) setAdminUserId('')
-      if (key === 'therapist' && !next.therapist) setTherapistUserId('')
-      return next
-    })
-  }
-
-  async function submit(e) {
-    e.preventDefault()
-    if (!form.meeting_url) { setError('Meeting link is required'); return }
-    if (!form.scheduled_date) { setError('Date is required'); return }
-    if (isTherapistBooking && !form.case_id) { setError('Select a case'); return }
-    setSaving(true)
-    setError('')
-    try {
-      const body = {
-        scheduled_date: form.scheduled_date,
-        scheduled_time: form.scheduled_time || null,
-        duration_minutes: Number(form.duration_minutes) || 30,
-        meeting_type: form.meeting_type,
-        title: form.title || null,
-        meeting_url: form.meeting_url.trim(),
-        guest_emails: guestEmails,
-        invite_client: attendees.client,
-        invite_therapist: attendees.therapist,
-        invite_case_manager: attendees.caseManager,
-        admin_user_ids: attendees.admin && adminUserId ? [Number(adminUserId)] : [],
-      }
-      if (form.case_id) body.case_id = Number(form.case_id)
-      if (attendees.therapist && therapistUserId) body.therapist_user_id = Number(therapistUserId)
-      const result = await apiFetch('/api/v1/meetings', { method: 'POST', body: JSON.stringify(body) })
-      setCreatedMeeting(result)
-    } catch (err) { setError(err.message || 'Could not create meeting') } finally { setSaving(false) }
-  }
-
-  const inputStyle = { display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4, boxSizing: 'border-box' }
-  const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
-  const filteredCases = cases.filter((c) => {
-    const q = caseSearch.trim().toLowerCase()
-    return !q || String(c.childName || '').toLowerCase().includes(q) || String(c.caseCode || c.caseId || c.id).toLowerCase().includes(q)
-  })
-  const selectedCase = cases.find((c) => String(c.id) === String(form.case_id))
-
-  if (createdMeeting) {
-    return <BookingSuccessSheet open title="Meeting booked" event={mapCmMeetingToCalendarEvent(createdMeeting)} onClose={() => { onCreated(createdMeeting); setCreatedMeeting(null) }} />
-  }
-
-  // Auto-generate title from meeting type + client + CM name
-  const typeLabel = MEETING_TYPES.find((t) => t.value === form.meeting_type)?.label || ''
-  const clientName = caseDetail?.child_name || selectedCase?.childName || ''
-  const cmName = caseDetail?.case_manager_name || ''
-  const autoTitle = [
-    typeLabel,
-    clientName ? `for ${clientName}` : '',
-    cmName ? `— case of ${cmName}` : '',
-  ].filter(Boolean).join(' ')
-
-  const availableSlots = Array.isArray(slots?.slots) ? slots.slots.filter((s) => s.available) : []
-  const allBusy = slots && availableSlots.length === 0
-  const altSuggestions = slots?.alternate_suggestions || []
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 20px' }}>Book a meeting</h2>
-        {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
-        <form onSubmit={submit}>
-
-          {/* Case search + select */}
-          {!isTherapistBooking ? (
-            <label style={labelStyle}>
-              Search case
-              <input type="search" style={inputStyle} placeholder="Child name or case code" value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} />
-            </label>
-          ) : null}
-          <label style={labelStyle}>
-            {isTherapistBooking ? 'Case *' : 'Case (optional)'}
-            <select style={inputStyle} value={form.case_id} required={isTherapistBooking} onChange={(e) => set('case_id', e.target.value)}>
-              {!isTherapistBooking ? <option value="">— No specific case —</option> : null}
-              {!form.case_id && isTherapistBooking ? <option value="">Choose client…</option> : null}
-              {filteredCases.map((c) => (
-                <option key={c.id} value={c.id}>{c.childName} ({c.caseCode || c.id})</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Case info chip */}
-          {(selectedCase || caseDetail) ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div style={{ background: '#f0f9ff', borderRadius: 10, padding: 10, fontSize: '0.8rem' }}>
-                <strong style={{ color: '#0369a1' }}>Client</strong>
-                <p style={{ margin: '4px 0 0', fontWeight: 600 }}>{caseDetail?.child_name || selectedCase?.childName}</p>
-                <p style={{ margin: 0, color: '#64748b' }}>{caseDetail?.case_code || selectedCase?.caseCode}</p>
-              </div>
-              <div style={{ background: '#f0fdf4', borderRadius: 10, padding: 10, fontSize: '0.8rem' }}>
-                <strong style={{ color: '#15803d' }}>Team</strong>
-                <p style={{ margin: '4px 0 0', fontWeight: 600 }}>{caseDetail?.case_manager_name || '—'}</p>
-                <p style={{ margin: 0, color: '#64748b' }}>{caseDetail?.active_therapist_name || ''}</p>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Meeting link — MANDATORY */}
-          <label style={labelStyle}>
-            Meeting link *
-            <input
-              type="url"
-              style={{ ...inputStyle, borderColor: !form.meeting_url ? '#fca5a5' : '#e2e8f0' }}
-              placeholder="https://meet.google.com/..."
-              value={form.meeting_url}
-              required
-              onChange={(e) => set('meeting_url', e.target.value)}
-            />
-            {!form.meeting_url ? <span style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: 2, display: 'block' }}>Required — paste your meeting link before booking</span> : null}
-          </label>
-
-          {/* Meeting type */}
-          <label style={labelStyle}>
-            Meeting type *
-            <select style={inputStyle} value={form.meeting_type} required onChange={(e) => set('meeting_type', e.target.value)}>
-              {MEETING_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Meeting title — auto-filled from type + client + CM, editable */}
-          <label style={labelStyle}>
-            Meeting title
-            <input
-              type="text"
-              style={{ ...inputStyle, fontStyle: form.title ? 'normal' : 'italic', color: form.title ? '#1e293b' : '#64748b' }}
-              placeholder={autoTitle || 'e.g. Progress review for Aarav M.'}
-              value={form.title}
-              onChange={(e) => set('title', e.target.value)}
-            />
-            {!form.title && autoTitle ? (
-              <button
-                type="button"
-                style={{ marginTop: 4, fontSize: '0.72rem', color: '#4f46e5', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                onClick={() => set('title', autoTitle)}
-              >
-                Use: "{autoTitle}"
-              </button>
-            ) : null}
-          </label>
-
-          {/* Guest emails */}
-          <label style={labelStyle}>
-            Guest emails
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-              <input
-                type="email"
-                style={{ ...inputStyle, marginTop: 0, flex: 1 }}
-                placeholder="coordinator@school.edu"
-                value={guestInput}
-                onChange={(e) => setGuestInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGuestEmail() } }}
-              />
-              <button type="button" style={{ border: '1px solid #c7d2fe', background: '#eef2ff', borderRadius: 10, padding: '8px 12px', fontWeight: 600, cursor: 'pointer' }} onClick={addGuestEmail}>Add</button>
-            </div>
-            {guestEmails.length > 0 ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                {guestEmails.map((email) => (
-                  <span key={email} style={{ background: '#e0e7ff', color: '#3730a3', borderRadius: 99, padding: '4px 10px', fontSize: '0.75rem', fontWeight: 600 }}>
-                    {email}
-                    <button type="button" style={{ marginLeft: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: '#6366f1' }} onClick={() => setGuestEmails((g) => g.filter((x) => x !== email))}>×</button>
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </label>
-
-          {/* Attendees */}
-          <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
-            <legend style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569', padding: '0 6px' }}>Invite attendees</legend>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input type="checkbox" checked={attendees.client} disabled={!form.case_id} onChange={() => toggleAttendee('client')} />
-              {ATTENDEE_ROLE_LABELS.client}
-              {!form.case_id ? <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>(select a case first)</span> : null}
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input type="checkbox" checked={attendees.therapist} disabled={!form.case_id} onChange={() => toggleAttendee('therapist')} />
-              {ATTENDEE_ROLE_LABELS.therapist}
-            </label>
-            {attendees.therapist && form.case_id && therapists.length > 0 ? (
-              <select style={{ ...inputStyle, marginBottom: 10, marginLeft: 24 }} value={therapistUserId} onChange={(e) => setTherapistUserId(e.target.value)}>
-                <option value="">Select therapist…</option>
-                {therapists.map((t) => <option key={t.therapist_user_id} value={t.therapist_user_id}>{t.full_name}</option>)}
-              </select>
-            ) : null}
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input type="checkbox" checked={attendees.caseManager} onChange={() => toggleAttendee('caseManager')} />
-              {ATTENDEE_ROLE_LABELS.case_manager}
-              {caseDetail?.case_manager_name ? <span style={{ color: '#64748b', fontSize: '0.75rem' }}>({caseDetail.case_manager_name})</span> : null}
-            </label>
-            {/* Admin — visible for non-therapist bookings */}
-            {!isTherapistBooking ? (
-              <>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-                  <input type="checkbox" checked={attendees.admin} onChange={() => toggleAttendee('admin')} />
-                  {ATTENDEE_ROLE_LABELS.admin}
-                </label>
-                {attendees.admin ? (
-                  <select style={{ ...inputStyle, marginLeft: 24, marginBottom: 6 }} value={adminUserId} onChange={(e) => setAdminUserId(e.target.value)}>
-                    <option value="">Select admin…</option>
-                    {adminUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
-                  </select>
-                ) : null}
-              </>
-            ) : null}
-          </fieldset>
-
-          {/* Date + Duration row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-            <label style={labelStyle}>
-              Date *
-              <input type="date" style={inputStyle} value={form.scheduled_date} required min={new Date().toISOString().slice(0, 10)} onChange={(e) => set('scheduled_date', e.target.value)} />
-            </label>
-            <label style={labelStyle}>
-              Duration
-              <select style={inputStyle} value={form.duration_minutes} onChange={(e) => set('duration_minutes', e.target.value)}>
-                {[30, 45, 60, 90].map((d) => <option key={d} value={d}>{d} min</option>)}
-              </select>
-            </label>
-          </div>
-
-          {/* Therapist booking: slot grid from availability API */}
-          {isTherapistBooking && form.case_id && caseDetail?.case_manager_user_id ? (
-            <div style={{ marginBottom: 14 }}>
-              <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>
-                Available slots — {caseDetail.case_manager_name || 'Case manager'}
-              </p>
-              {slotsLoading ? (
-                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Checking availability…</p>
-              ) : slots ? (
-                <>
-                  {allBusy ? (
-                    <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', fontSize: '0.8rem', color: '#92400e', marginBottom: 8 }}>
-                      <strong>No slots available on {new Date(form.scheduled_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}.</strong>
-                      {altSuggestions.length > 0 ? (
-                        <>
-                          <p style={{ margin: '6px 0 6px', fontWeight: 600 }}>Try one of these dates instead:</p>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {altSuggestions.map((alt) => (
-                              <button
-                                key={alt.date}
-                                type="button"
-                                style={{ border: '1px solid #fcd34d', background: '#fffbeb', borderRadius: 8, padding: '5px 12px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', color: '#78350f' }}
-                                onClick={() => { set('scheduled_date', alt.date); set('scheduled_time', alt.slots[0]) }}
-                              >
-                                {new Date(alt.date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · {alt.slots[0]}
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      ) : (
-                        <p style={{ margin: '6px 0 0' }}>No availability in the next 7 days. Please contact the case manager directly.</p>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-                        {slots.slots.map((s) => (
-                          <button
-                            key={s.time}
-                            type="button"
-                            title={s.available ? undefined : s.reason}
-                            disabled={!s.available}
-                            style={{
-                              border: `2px solid ${form.scheduled_time === s.time ? '#4f46e5' : s.available ? '#c7d2fe' : '#e2e8f0'}`,
-                              background: form.scheduled_time === s.time ? '#4f46e5' : s.available ? '#eef2ff' : '#f8fafc',
-                              color: form.scheduled_time === s.time ? '#fff' : s.available ? '#3730a3' : '#94a3b8',
-                              borderRadius: 8, padding: '6px 14px', fontSize: '0.82rem', fontWeight: 700,
-                              cursor: s.available ? 'pointer' : 'not-allowed',
-                              textDecoration: !s.available ? 'line-through' : 'none',
-                            }}
-                            onClick={() => set('scheduled_time', s.time)}
-                          >
-                            {s.time}
-                          </button>
-                        ))}
-                      </div>
-                      {!form.scheduled_time ? <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>↑ Tap a slot to select it</p> : null}
-                    </>
-                  )}
-                </>
-              ) : (
-                <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Select a case and date to see available slots.</p>
-              )}
-            </div>
-          ) : !isTherapistBooking ? (
-            /* Non-therapist: manual time input */
-            <label style={labelStyle}>
-              Time *
-              <input type="time" style={inputStyle} value={form.scheduled_time} required onChange={(e) => set('scheduled_time', e.target.value)} />
-            </label>
-          ) : null}
-
-          {/* Submit */}
-          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-            <button
-              type="submit"
-              disabled={saving}
-              style={{ flex: 1, background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 0', fontWeight: 700, fontSize: '0.9rem', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
-            >
-              {saving ? 'Booking…' : '✓ Confirm & book meeting'}
-            </button>
-            <button type="button" style={{ background: '#f1f5f9', border: 'none', borderRadius: 12, padding: '12px 16px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }} onClick={onClose}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
   )
 }
 
@@ -504,7 +43,9 @@ function NotesModal({ meeting, onClose, onUpdated }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  function set(k, v) { setForm((f) => ({ ...f, [k]: v })) }
+  function set(k, v) {
+    setForm((f) => ({ ...f, [k]: v }))
+  }
 
   async function submit(e) {
     e.preventDefault()
@@ -579,27 +120,11 @@ function NotesModal({ meeting, onClose, onUpdated }) {
   )
 }
 
-function formatAttendeeList(meeting) {
-  if (meeting.attendees?.length) {
-    return meeting.attendees.map((a) => {
-      const role = ATTENDEE_ROLE_LABELS[a.role] || a.role
-      return `${role}: ${a.name}`
-    }).join(' · ')
-  }
-  const parts = []
-  if (meeting.parent_name) parts.push(`Client: ${meeting.parent_name}`)
-  if (meeting.therapist_name) parts.push(`Therapist: ${meeting.therapist_name}`)
-  if (meeting.case_manager_name) parts.push(`CM: ${meeting.case_manager_name}`)
-  return parts.join(' · ')
-}
-
-function MeetingCard({ meeting, onAddNotes, onCancel }) {
-  const typeLabel = MEETING_TYPES.find((t) => t.value === meeting.meeting_type)?.label
-    || (meeting.meeting_type === 'SUPERVISION' ? 'Internal meeting' : meeting.meeting_type)
+function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false }) {
+  const typeLabel = meetingTypeLabel(meeting)
   const hasNotes = meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
   const attendeeLine = formatAttendeeList(meeting)
-  const calendarEvent =
-    meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
+  const calendarEvent = meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
 
   return (
     <article style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '16px 18px', marginBottom: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -617,58 +142,38 @@ function MeetingCard({ meeting, onAddNotes, onCancel }) {
       </div>
 
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 8 }}>
-        {meeting.case_id ? (
+        {meeting.case_id && caseLinkPrefix ? (
           <span>
-            <Link to={`/admin/cases/${meeting.case_id}?tab=overview`}>{meeting.case_code || `Case #${meeting.case_id}`}</Link>
+            <Link to={`${caseLinkPrefix}/${meeting.case_id}?tab=overview`}>{meeting.case_code || `Case #${meeting.case_id}`}</Link>
             {meeting.child_name ? ` · ${meeting.child_name}` : ''} &nbsp;·&nbsp;{' '}
           </span>
         ) : meeting.child_name ? (
           <span>Child: <strong>{meeting.child_name}</strong> &nbsp;·&nbsp; </span>
         ) : null}
         {attendeeLine ? <div style={{ marginTop: 4, color: '#334155' }}>Attendees: {attendeeLine}</div> : null}
-        {!meeting.child_name && !attendeeLine ? <span>{typeLabel}</span> : null}
       </div>
       {meeting.meeting_url ? (
         <p style={{ fontSize: '0.8rem', margin: '0 0 8px' }}>
           <a href={meeting.meeting_url} target="_blank" rel="noreferrer">Join meeting</a>
         </p>
       ) : null}
-      {meeting.guest_emails?.length > 0 ? (
-        <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 8px' }}>
-          Guests: {meeting.guest_emails.join(', ')}
-        </p>
-      ) : null}
-
-      {hasNotes ? (
-        <div style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 12px', marginBottom: 10, fontSize: '0.8rem', color: '#334155' }}>
-          {meeting.notes_concerns ? <p style={{ margin: '0 0 4px' }}><strong>Concerns:</strong> {meeting.notes_concerns}</p> : null}
-          {meeting.notes_follow_up ? <p style={{ margin: '0 0 4px' }}><strong>Follow-up:</strong> {meeting.notes_follow_up}</p> : null}
-          {meeting.notes_action ? <p style={{ margin: '0 0 4px' }}><strong>Actions:</strong> {meeting.notes_action}</p> : null}
-          {meeting.notes_other ? <p style={{ margin: 0 }}><strong>Other:</strong> {meeting.notes_other}</p> : null}
-        </div>
-      ) : null}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        {calendarEvent ? (
-          <AddToGoogleCalendarButton event={calendarEvent} variant="inline" />
-        ) : null}
-        {meeting.status !== 'CANCELLED' ? (
-          <button
-            type="button"
-            style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, color: '#3730a3', cursor: 'pointer' }}
-            onClick={() => onAddNotes(meeting)}
-          >
+        {calendarEvent ? <AddToGoogleCalendarButton event={calendarEvent} variant="inline" /> : null}
+        {!readOnly && meeting.status !== 'CANCELLED' ? (
+          <button type="button" style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, color: '#3730a3', cursor: 'pointer' }} onClick={() => onAddNotes(meeting)}>
             {hasNotes ? 'Edit notes' : 'Add notes / complete'}
           </button>
         ) : null}
-        {meeting.status === 'SCHEDULED' ? (
-          <button
-            type="button"
-            style={{ background: '#fff', border: '1px solid #fca5a5', borderRadius: 8, padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}
-            onClick={() => onCancel(meeting)}
-          >
-            Cancel meeting
-          </button>
+        {!readOnly && meeting.status === 'SCHEDULED' ? (
+          <>
+            <button type="button" style={{ background: '#fff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, color: '#3730a3', cursor: 'pointer' }} onClick={() => onReschedule(meeting)}>
+              Reschedule
+            </button>
+            <button type="button" style={{ background: '#fff', border: '1px solid #fca5a5', borderRadius: 8, padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, color: '#dc2626', cursor: 'pointer' }} onClick={() => onCancel(meeting)}>
+              Cancel meeting
+            </button>
+          </>
         ) : null}
       </div>
     </article>
@@ -679,23 +184,34 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
   const isTherapistPortal = portal === 'therapist'
+  const isParentPortal = portal === 'parent'
   const isAdmin =
     !isTherapistPortal
+    && !isParentPortal
     && (user?.roles?.includes('SUPER_ADMIN')
       || user?.roles?.includes('ADMIN')
       || user?.roles?.includes('MODULE_ADMIN'))
   const canBookMeetings =
-    user?.roles?.includes('CASE_MANAGER')
-    || user?.roles?.includes('ADMIN')
-    || user?.roles?.includes('SUPER_ADMIN')
-    || user?.roles?.includes('MODULE_ADMIN')
-    || user?.roles?.includes('THERAPIST')
+    !isParentPortal
+    && (user?.roles?.includes('CASE_MANAGER')
+      || user?.roles?.includes('ADMIN')
+      || user?.roles?.includes('SUPER_ADMIN')
+      || user?.roles?.includes('MODULE_ADMIN')
+      || user?.roles?.includes('THERAPIST'))
+  const caseLinkPrefix = isParentPortal ? null : isTherapistPortal ? '/therapist/cases' : '/admin/cases'
+
+  const [pageView, setPageView] = useState('calendar')
   const [meetings, setMeetings] = useState([])
   const [cases, setCases] = useState([])
   const [cmUsers, setCmUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showBook, setShowBook] = useState(false)
+  const [bookPrefill, setBookPrefill] = useState({ date: null, time: null })
   const [notesTarget, setNotesTarget] = useState(null)
+  const [detailMeeting, setDetailMeeting] = useState(null)
+  const [rescheduleTarget, setRescheduleTarget] = useState(null)
+  const [calendarRefresh, setCalendarRefresh] = useState(0)
+  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState(null)
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
   const [typeFilter, setTypeFilter] = useState(searchParams.get('meeting_type') || '')
   const [caseFilter, setCaseFilter] = useState(searchParams.get('case_id') || '')
@@ -705,6 +221,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   const [searchInput, setSearchInput] = useState(() => searchParams.get('search') || '')
   const [search, setSearch] = useState(searchInput)
   const [error, setError] = useState('')
+
   const yearFilterOptions = useMemo(() => {
     const currentYear = new Date().getFullYear()
     return Array.from({ length: 5 }, (_, idx) => {
@@ -743,6 +260,12 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
       .finally(() => setLoading(false))
   }, [buildQuery])
 
+  const meetingsById = useMemo(() => {
+    const map = new Map()
+    for (const m of meetings) map.set(m.id, m)
+    return map
+  }, [meetings])
+
   const kpis = useMemo(() => {
     const scheduled = meetings.filter((m) => m.status === 'SCHEDULED').length
     const withAdmin = meetings.filter(
@@ -764,7 +287,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
             childName: c.child_name || c.childName || `Case ${c.id}`,
             caseCode: c.case_code || c.caseCode,
             caseId: c.case_code || c.caseId,
-          }))
+          })),
         )
       })
       .catch(() => setCases([]))
@@ -795,44 +318,106 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
     )
   }, [meetings, queueTab])
 
+  function refreshAll() {
+    load()
+    setCalendarRefresh((k) => k + 1)
+  }
+
+  function openBookModal(prefill = {}) {
+    setBookPrefill({
+      date: prefill.date || null,
+      time: prefill.time || null,
+    })
+    loadBookableCases()
+    setShowBook(true)
+  }
+
   function handleCreated(m) {
     setShowBook(false)
+    setBookPrefill({ date: null, time: null })
     setMeetings((prev) => [m, ...prev])
+    refreshAll()
   }
 
   function handleUpdated(m) {
     setNotesTarget(null)
     setMeetings((prev) => prev.map((x) => (x.id === m.id ? m : x)))
+    if (detailMeeting?.id === m.id) setDetailMeeting(m)
+    refreshAll()
+  }
+
+  function handleRescheduled(m) {
+    const oldId = rescheduleTarget?.id
+    setRescheduleTarget(null)
+    setDetailMeeting(null)
+    setMeetings((prev) => {
+      const withoutOld = oldId ? prev.filter((x) => x.id !== oldId) : prev
+      return [m, ...withoutOld]
+    })
+    refreshAll()
+  }
+
+  async function handleCalendarSlotClick(event) {
+    if (event.event_type !== 'cm_meeting') return
+    setSelectedCalendarEventId(event.id)
+    const meetingId = parseMeetingIdFromGridEvent(event)
+    if (!meetingId) return
+    const cached = meetingsById.get(meetingId)
+    if (cached) {
+      setDetailMeeting(cached)
+      return
+    }
+    try {
+      const rows = await apiFetch('/api/v1/meetings?status=SCHEDULED')
+      const found = (Array.isArray(rows) ? rows : []).find((item) => item.id === meetingId)
+      if (found) setDetailMeeting(found)
+    } catch {
+      setError('Could not open that meeting')
+    }
+  }
+
+  function handleCalendarCellClick(day, hour) {
+    if (!canBookMeetings) return
+    openBookModal({ date: dateStr(day), time: padHour(hour) })
   }
 
   async function handleCancel(meeting) {
     if (!window.confirm('Cancel this meeting?')) return
     try {
       await apiFetch(`/api/v1/meetings/${meeting.id}`, { method: 'DELETE' })
-      setMeetings((prev) => prev.map((x) => x.id === meeting.id ? { ...x, status: 'CANCELLED' } : x))
+      setMeetings((prev) => prev.map((x) => (x.id === meeting.id ? { ...x, status: 'CANCELLED' } : x)))
+      if (detailMeeting?.id === meeting.id) setDetailMeeting(null)
+      refreshAll()
     } catch (e) {
       setError(e.message || 'Could not cancel')
     }
   }
 
+  const calendarMode = isParentPortal ? 'parent' : 'therapist'
+
   return (
-    <div className="admin-page" style={{ maxWidth: 900 }}>
+    <div className="admin-page" style={{ maxWidth: 1100 }}>
       <AdminPageHeader
-        title={isTherapistPortal ? 'Book case manager meeting' : 'Case manager meetings'}
+        title={
+          isParentPortal
+            ? 'Your meetings'
+            : isTherapistPortal
+              ? 'Book case manager meeting'
+              : 'Case manager meetings'
+        }
         subtitle={
-          isTherapistPortal
-            ? 'Request a meeting with the case manager for one of your assigned cases.'
-            : 'Schedule case meetings, invite attendees, and log notes.'
+          isParentPortal
+            ? 'View upcoming meetings on your calendar and export to Google Calendar.'
+            : isTherapistPortal
+              ? 'Request a meeting with the case manager for one of your assigned cases.'
+              : 'Schedule meetings, view your calendar, and manage follow-ups.'
         }
         actions={
           canBookMeetings ? (
             <button
               type="button"
               className="admin-btn admin-btn--primary admin-btn--sm"
-              onClick={() => {
-                loadBookableCases()
-                setShowBook(true)
-              }}
+              onClick={() => openBookModal()}
             >
               Book meeting
             </button>
@@ -842,137 +427,177 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
-      <div className="admin-reports__kpis" style={{ marginBottom: 16 }}>
-        <button type="button" className="admin-reports__kpi" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => { setStatusFilter('SCHEDULED'); setSearchParams({}) }}>
-          <div className="admin-reports__kpi-value">{kpis.scheduled}</div>
-          <div className="admin-reports__kpi-label">Scheduled (filtered)</div>
-        </button>
-        <button
-          type="button"
-          className="admin-reports__kpi"
-          style={{ cursor: 'pointer', textAlign: 'left' }}
-          onClick={() => setSearchParams({ queue: 'admin', status: 'SCHEDULED' })}
-        >
-          <div className="admin-reports__kpi-value">{kpis.withAdmin}</div>
-          <div className="admin-reports__kpi-label">With admin invited</div>
-        </button>
-        <div className="admin-reports__kpi">
-          <div className="admin-reports__kpi-value">{kpis.total}</div>
-          <div className="admin-reports__kpi-label">In current list</div>
-        </div>
+      <div className="mb-4 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Meetings view">
+        {[
+          { id: 'calendar', label: 'Calendar' },
+          { id: 'list', label: 'List' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={pageView === tab.id}
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold ${pageView === tab.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+            onClick={() => setPageView(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {queueTab ? (
-        <p className="admin-alert" style={{ marginBottom: 12 }}>
-          Showing meetings with an admin attendee.{' '}
-          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setSearchParams({})}>
-            Clear
-          </button>
-        </p>
+      {pageView === 'calendar' ? (
+        <article className="card admin-scheduling-hub__calendar-wrap" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>My meeting calendar</h3>
+          <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
+            {canBookMeetings
+              ? 'Tap a meeting for details, or tap + on an open slot to book.'
+              : 'Tap a meeting to view details or add it to Google Calendar.'}
+          </p>
+          <TherapistCalendar
+            apiPrefix="/api/v1/meetings"
+            mode={calendarMode}
+            refreshKey={calendarRefresh}
+            selectedSlotId={selectedCalendarEventId}
+            onSlotClick={handleCalendarSlotClick}
+            onCellClick={canBookMeetings ? handleCalendarCellClick : undefined}
+          />
+        </article>
       ) : null}
 
-      <AdminCollapsibleFilters
-        quickSearch={
-          <AdminSearchInput
-            value={searchInput}
-            onChange={setSearchInput}
-            placeholder="Child, case code, or meeting title…"
-            className="admin-meetings-filters__search"
-          />
-        }
-        activeChips={[
-          statusFilter && statusFilter !== 'ALL' ? statusFilter : null,
-          typeFilter && typeFilter !== 'ALL' ? typeFilter : null,
-          caseFilter ? `Case ${caseFilter}` : null,
-        ].filter(Boolean)}
-        activeCount={[statusFilter, typeFilter, caseFilter, cmFilter, monthFilter].filter((v) => v && v !== 'ALL' && v !== '').length}
-      >
-      <div className="admin-meetings-filters">
-        <AdminSearchInput
-          value={searchInput}
-          onChange={setSearchInput}
-          placeholder="Child, case code, or meeting title…"
-          className="admin-meetings-filters__search"
-        />
-        <FilterSelect
-          label="Status"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          options={STATUS_FILTER_OPTIONS}
-        />
-        <FilterSelect
-          label="Meeting type"
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          options={TYPE_FILTER_OPTIONS}
-          disabled={queueTab}
-        />
-        <FilterSelect
-          label="Case"
-          value={caseFilter}
-          onChange={(e) => setCaseFilter(e.target.value)}
-          options={[
-            { value: '', label: 'All cases' },
-            ...cases.map((c) => ({
-              value: String(c.id),
-              label: `${c.childName} (${c.caseCode || c.id})`,
-            })),
-          ]}
-        />
-        {isAdmin ? (
-          <FilterSelect
-            label="Case manager"
-            value={cmFilter}
-            onChange={(e) => setCmFilter(e.target.value)}
-            options={[
-              { value: '', label: 'All case managers' },
-              ...cmUsers.map((u) => ({ value: String(u.id), label: u.full_name })),
-            ]}
-          />
-        ) : null}
-        <FilterSelect
-          label="Month"
-          value={monthFilter}
-          onChange={(e) => setMonthFilter(e.target.value)}
-          options={MONTH_FILTER_OPTIONS}
-        />
-        <FilterSelect
-          label="Year"
-          value={yearFilter}
-          onChange={(e) => setYearFilter(e.target.value)}
-          options={yearFilterOptions}
-          disabled={!monthFilter}
-        />
-      </div>
-      </AdminCollapsibleFilters>
+      {pageView === 'list' ? (
+        <>
+          <div className="admin-reports__kpis" style={{ marginBottom: 16 }}>
+            <button type="button" className="admin-reports__kpi" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => { setStatusFilter('SCHEDULED'); setSearchParams({}) }}>
+              <div className="admin-reports__kpi-value">{kpis.scheduled}</div>
+              <div className="admin-reports__kpi-label">Scheduled (filtered)</div>
+            </button>
+            {!isParentPortal ? (
+              <button type="button" className="admin-reports__kpi" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => setSearchParams({ queue: 'admin', status: 'SCHEDULED' })}>
+                <div className="admin-reports__kpi-value">{kpis.withAdmin}</div>
+                <div className="admin-reports__kpi-label">With admin invited</div>
+              </button>
+            ) : null}
+            <div className="admin-reports__kpi">
+              <div className="admin-reports__kpi-value">{kpis.total}</div>
+              <div className="admin-reports__kpi-label">In current list</div>
+            </div>
+          </div>
 
-      {loading ? (
-        <p style={{ color: '#94a3b8' }}>Loading meetings…</p>
-      ) : displayedMeetings.length === 0 ? (
-        <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 14, padding: '32px 24px', textAlign: 'center' }}>
-          <p style={{ color: '#94a3b8', margin: 0 }}>No meetings yet. Click &ldquo;+ Book meeting&rdquo; to schedule one.</p>
-        </div>
-      ) : (
-        displayedMeetings.map((m) => (
-          <MeetingCard
-            key={m.id}
-            meeting={m}
-            onAddNotes={setNotesTarget}
-            onCancel={handleCancel}
-          />
-        ))
-      )}
+          {queueTab ? (
+            <p className="admin-alert" style={{ marginBottom: 12 }}>
+              Showing meetings with an admin attendee.{' '}
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setSearchParams({})}>
+                Clear
+              </button>
+            </p>
+          ) : null}
+
+          <AdminCollapsibleFilters
+            quickSearch={
+              <AdminSearchInput value={searchInput} onChange={setSearchInput} placeholder="Child, case code, or meeting title…" className="admin-meetings-filters__search" />
+            }
+            activeChips={[
+              statusFilter && statusFilter !== 'ALL' ? statusFilter : null,
+              typeFilter && typeFilter !== 'ALL' ? typeFilter : null,
+              caseFilter ? `Case ${caseFilter}` : null,
+            ].filter(Boolean)}
+            activeCount={[statusFilter, typeFilter, caseFilter, cmFilter, monthFilter].filter((v) => v && v !== 'ALL' && v !== '').length}
+          >
+            <div className="admin-meetings-filters">
+              <AdminSearchInput value={searchInput} onChange={setSearchInput} placeholder="Child, case code, or meeting title…" className="admin-meetings-filters__search" />
+              <FilterSelect label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={STATUS_FILTER_OPTIONS} />
+              <FilterSelect label="Meeting type" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} options={TYPE_FILTER_OPTIONS} disabled={queueTab} />
+              {!isParentPortal ? (
+                <FilterSelect
+                  label="Case"
+                  value={caseFilter}
+                  onChange={(e) => setCaseFilter(e.target.value)}
+                  options={[
+                    { value: '', label: 'All cases' },
+                    ...cases.map((c) => ({ value: String(c.id), label: `${c.childName} (${c.caseCode || c.id})` })),
+                  ]}
+                />
+              ) : null}
+              {isAdmin ? (
+                <FilterSelect
+                  label="Case manager"
+                  value={cmFilter}
+                  onChange={(e) => setCmFilter(e.target.value)}
+                  options={[
+                    { value: '', label: 'All case managers' },
+                    ...cmUsers.map((u) => ({ value: String(u.id), label: u.full_name })),
+                  ]}
+                />
+              ) : null}
+              <FilterSelect label="Month" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} options={MONTH_FILTER_OPTIONS} />
+              <FilterSelect label="Year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} options={yearFilterOptions} disabled={!monthFilter} />
+            </div>
+          </AdminCollapsibleFilters>
+
+          {loading ? (
+            <p style={{ color: '#94a3b8' }}>Loading meetings…</p>
+          ) : displayedMeetings.length === 0 ? (
+            <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 14, padding: '32px 24px', textAlign: 'center' }}>
+              <p style={{ color: '#94a3b8', margin: 0 }}>
+                {canBookMeetings ? 'No meetings yet. Book one from the calendar or use the button above.' : 'No meetings scheduled yet.'}
+              </p>
+            </div>
+          ) : (
+            displayedMeetings.map((m) => (
+              <MeetingCard
+                key={m.id}
+                meeting={m}
+                caseLinkPrefix={caseLinkPrefix}
+                readOnly={isParentPortal}
+                onAddNotes={setNotesTarget}
+                onCancel={handleCancel}
+                onReschedule={setRescheduleTarget}
+              />
+            ))
+          )}
+        </>
+      ) : null}
 
       {showBook ? (
         <BookMeetingModal
           cases={cases}
-          onClose={() => setShowBook(false)}
+          onClose={() => {
+            setShowBook(false)
+            setBookPrefill({ date: null, time: null })
+          }}
           onCreated={handleCreated}
           onOpen={loadBookableCases}
-          canPickAdmin={!isTherapistPortal}
           isTherapistBooking={isTherapistPortal}
+          initialDate={bookPrefill.date}
+          initialTime={bookPrefill.time}
         />
       ) : null}
+
+      <MeetingDetailSheet
+        open={!!detailMeeting}
+        meeting={detailMeeting}
+        readOnly={isParentPortal}
+        caseLinkPrefix={caseLinkPrefix}
+        onClose={() => {
+          setDetailMeeting(null)
+          setSelectedCalendarEventId(null)
+        }}
+        onReschedule={(m) => {
+          setDetailMeeting(null)
+          setRescheduleTarget(m)
+        }}
+        onCancel={handleCancel}
+        onAddNotes={isParentPortal ? undefined : setNotesTarget}
+      />
+
+      {rescheduleTarget ? (
+        <RescheduleMeetingModal
+          meeting={rescheduleTarget}
+          onClose={() => setRescheduleTarget(null)}
+          onRescheduled={handleRescheduled}
+        />
+      ) : null}
+
       {notesTarget ? <NotesModal meeting={notesTarget} onClose={() => setNotesTarget(null)} onUpdated={handleUpdated} /> : null}
     </div>
   )
