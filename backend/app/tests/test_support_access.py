@@ -226,3 +226,74 @@ def test_admin_desk_sees_general_not_finance():
     ids = {row["id"] for row in listing.json().get("items") or []}
     assert general_ticket.json()["id"] in ids
     assert finance_ticket.json()["id"] not in ids
+
+
+def test_finance_can_resolve_and_close_homecare_billing_ticket():
+    """Finance desk write must not require clinical programme module access."""
+    therapist = _auth_headers("therapist@demo.com")
+    finance = _auth_headers("finance@demo.com")
+
+    created = client.post(
+        "/api/v1/tickets",
+        headers=therapist,
+        json={
+            "subject": "Invoice correction on homecare case",
+            "body": "Rate mismatch on last session block",
+            "category": "FINANCE",
+            "product_module": "homecare",
+        },
+    )
+    assert created.status_code == 201
+    ticket_id = created.json()["id"]
+
+    detail = client.get(f"/api/v1/tickets/{ticket_id}", headers=finance)
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["can_close_staff"] is True
+    assert body["can_resolve"] is True
+
+    resolved = client.post(
+        f"/api/v1/tickets/{ticket_id}/resolve",
+        headers=finance,
+        json={"note": "Applied corrected rate to the ledger."},
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["status"] == "RESOLVED"
+
+    closed = client.post(
+        f"/api/v1/tickets/{ticket_id}/close",
+        headers=finance,
+        json={"note": "Closing after ledger correction confirmed."},
+    )
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["status"] == "CLOSED"
+
+
+def test_hr_can_resolve_hr_category_ticket():
+    therapist = _auth_headers("therapist@demo.com")
+    hr = _auth_headers("hr@demo.com")
+
+    created = client.post(
+        "/api/v1/tickets",
+        headers=therapist,
+        json={
+            "subject": "Leave balance question",
+            "body": "Need clarification on carry-forward",
+            "category": "HR",
+            "product_module": "homecare",
+        },
+    )
+    assert created.status_code == 201
+    ticket_id = created.json()["id"]
+
+    detail = client.get(f"/api/v1/tickets/{ticket_id}", headers=hr)
+    assert detail.status_code == 200
+    assert detail.json()["can_resolve"] is True
+
+    resolved = client.post(
+        f"/api/v1/tickets/{ticket_id}/resolve",
+        headers=hr,
+        json={"note": "Leave balance updated in HR records."},
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["status"] == "RESOLVED"

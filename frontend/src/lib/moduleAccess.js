@@ -57,6 +57,24 @@ export function canWriteProduct(user, productModule) {
   return false
 }
 
+/** Finance / HR desk ticket queues live on org modules, not clinical programmes. */
+const ORG_TICKET_MODULE_IDS = ['billing', 'hr_ops']
+
+export function canWriteOrgDeskTickets(user) {
+  if (!user) return false
+  if (isGlobalViewOnly(user)) return false
+  const feats = user.features || []
+  if (feats.includes('*')) return true
+  if (!feats.includes('tickets')) return false
+  for (const moduleId of ORG_TICKET_MODULE_IDS) {
+    const mod = moduleMap(user).get(moduleId)
+    if (mod && (mod.features || []).includes('tickets') && canWriteModule(user, moduleId)) {
+      return true
+    }
+  }
+  return false
+}
+
 export function canWriteFeature(user, featureId, productModule = null) {
   if (!user) return false
   if (isGlobalViewOnly(user)) return false
@@ -65,6 +83,14 @@ export function canWriteFeature(user, featureId, productModule = null) {
   if (!feats.includes(featureId)) return false
   if (featureId === 'invoices' || featureId === 'dashboard') {
     return canWriteModule(user, 'billing')
+  }
+  if (featureId === 'tickets') {
+    if (canWriteOrgDeskTickets(user)) return true
+    if (productModule) return canWriteProduct(user, productModule)
+    for (const m of user?.modules || []) {
+      if ((m.features || []).includes(featureId) && canWriteModule(user, m.id)) return true
+    }
+    return false
   }
   if (productModule) return canWriteProduct(user, productModule)
   for (const m of user?.modules || []) {

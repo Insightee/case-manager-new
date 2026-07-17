@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.module_access import is_view_only_user, module_bypass, user_has_feature
+from app.core.modules import MODULE_BY_ID
 from app.core.rbac_access import build_module_registry, user_can_write_module, user_module_enabled
 from app.models.case import Case
 from app.models.user import User
@@ -16,6 +17,8 @@ FEATURE_PRIMARY_MODULE: dict[str, str] = {
     "invoices": "billing",
     "dashboard": "billing",
 }
+
+ORG_TICKET_MODULE_IDS: tuple[str, ...] = ("billing", "hr_ops")
 
 
 def _raise_read_only(detail: str = "View-only access — changes are not allowed") -> None:
@@ -45,6 +48,23 @@ def user_can_write_product_module(user: User, product_module: str, db: Session |
     return False
 
 
+def user_can_write_org_desk_tickets(user: User) -> bool:
+    """Finance / HR desk queues — org modules, not clinical programme write."""
+    if module_bypass(user):
+        return True
+    if is_view_only_user(user):
+        return False
+    if not user_has_feature(user, "tickets"):
+        return False
+    for mid in ORG_TICKET_MODULE_IDS:
+        mod = MODULE_BY_ID.get(mid)
+        if not mod or not any(f.id == "tickets" for f in mod.features):
+            continue
+        if user_module_enabled(user, mid) and user_can_write_module(user, mid):
+            return True
+    return False
+
+
 def user_can_write_feature(
     user: User,
     feature_id: str,
@@ -61,6 +81,15 @@ def user_can_write_feature(
     primary = FEATURE_PRIMARY_MODULE.get(feature_id)
     if primary:
         return user_module_enabled(user, primary) and user_can_write_module(user, primary)
+    if feature_id == "tickets":
+        if user_can_write_org_desk_tickets(user):
+            return True
+        if product_module:
+            return user_can_write_product_module(user, product_module, db)
+        for mid in user.module_assignments or []:
+            if user_module_enabled(user, mid) and user_can_write_module(user, mid):
+                return True
+        return False
     if product_module:
         return user_can_write_product_module(user, product_module, db)
     for mid in user.module_assignments or []:
