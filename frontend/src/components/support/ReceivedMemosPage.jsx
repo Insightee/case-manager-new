@@ -251,22 +251,19 @@ export function ReceivedMemosPage({ embedded = false }) {
         loading={detailLoading || !detail}
         loadingLabel="Loading memo details…"
         timelineLabel="Timeline & messages"
-        memoSection={
+        memoPreview={
           detail ? (
             <>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#f1f5f9', color: '#475569' }}>
+              <div className="memo-thread-drawer__preview-badges">
+                <span className="memo-thread-drawer__preview-badge" style={{ background: '#f1f5f9', color: '#475569' }}>
                   {detail.category}
                 </span>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#fee2e2', color: '#ef4444' }}>
+                <span className="memo-thread-drawer__preview-badge" style={{ background: '#fee2e2', color: '#ef4444' }}>
                   {detail.priority}
                 </span>
                 <span
+                  className="memo-thread-drawer__preview-badge"
                   style={{
-                    fontSize: '0.7rem',
-                    fontWeight: 600,
-                    padding: '2px 6px',
-                    borderRadius: 4,
                     background: STATUS_COLORS[detail.status]?.bg || '#f1f5f9',
                     color: STATUS_COLORS[detail.status]?.color || '#475569',
                   }}
@@ -274,10 +271,16 @@ export function ReceivedMemosPage({ embedded = false }) {
                   {STATUS_COLORS[detail.status]?.label || detail.status}
                 </span>
               </div>
-              <h5 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>{detail.subject}</h5>
-              <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: 12 }}>
-                From: {detail.sender?.full_name || 'Operations'} · Issued: {new Date(detail.created_at).toLocaleDateString()}
+              <p className="memo-thread-drawer__preview-subject">{detail.subject}</p>
+              <p className="memo-thread-drawer__preview-meta">
+                From {detail.sender?.full_name || 'Operations'} · Issued {new Date(detail.created_at).toLocaleDateString()}
               </p>
+            </>
+          ) : null
+        }
+        memoSection={
+          detail ? (
+            <>
               <p
                 style={{
                   fontSize: '0.875rem',

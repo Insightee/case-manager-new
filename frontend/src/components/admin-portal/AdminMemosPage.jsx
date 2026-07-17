@@ -637,26 +637,36 @@ export function AdminMemosPage() {
         memoCode={memoDetail?.memo_code}
         title="Memo Thread"
         loading={detailLoading || !memoDetail}
-        memoSection={
+        memoPreview={
           memoDetail ? (
             <>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#f1f5f9', color: '#475569' }}>
+              <div className="memo-thread-drawer__preview-badges">
+                <span className="memo-thread-drawer__preview-badge" style={{ background: '#f1f5f9', color: '#475569' }}>
                   {memoDetail.category}
                 </span>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#fee2e2', color: '#ef4444' }}>
+                <span className="memo-thread-drawer__preview-badge" style={{ background: '#fee2e2', color: '#ef4444' }}>
                   {memoDetail.priority}
                 </span>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: statusColors[memoDetail.status]?.bg || '#f1f5f9', color: statusColors[memoDetail.status]?.color || '#475569' }}>
+                <span
+                  className="memo-thread-drawer__preview-badge"
+                  style={{
+                    background: statusColors[memoDetail.status]?.bg || '#f1f5f9',
+                    color: statusColors[memoDetail.status]?.color || '#475569',
+                  }}
+                >
                   {statusColors[memoDetail.status]?.label || memoDetail.status}
                 </span>
               </div>
-              <h5 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>{memoDetail.subject}</h5>
-              <div style={{ fontSize: '0.825rem', color: '#64748b', marginBottom: 12 }}>
-                <span>From: <strong>{memoDetail.sender?.full_name || 'System'}</strong></span>
-                <span style={{ margin: '0 8px' }}>·</span>
-                <span>To: <strong>{memoDetail.recipient?.full_name}</strong></span>
-              </div>
+              <p className="memo-thread-drawer__preview-subject">{memoDetail.subject}</p>
+              <p className="memo-thread-drawer__preview-meta">
+                From {memoDetail.sender?.full_name || 'System'} · To {memoDetail.recipient?.full_name}
+              </p>
+            </>
+          ) : null
+        }
+        memoSection={
+          memoDetail ? (
+            <>
               <p style={{ fontSize: '0.875rem', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5, background: '#fff', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', margin: 0 }}>
                 {memoDetail.details}
               </p>

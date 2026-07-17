@@ -1,6 +1,7 @@
+import { useEffect, useState } from 'react'
 import './memo-thread-drawer.css'
 
-/** Side drawer with capped memo body, scrollable timeline, and pinned reply footer. */
+/** Side drawer — timeline first; original memo expands on demand. */
 export function MemoThreadDrawer({
   open,
   onClose,
@@ -8,11 +9,18 @@ export function MemoThreadDrawer({
   title = 'Memo Thread',
   loading = false,
   loadingLabel = 'Loading thread details…',
+  memoPreview = null,
   memoSection,
   timelineSection,
   timelineLabel = 'Timeline',
   footer = null,
 }) {
+  const [memoExpanded, setMemoExpanded] = useState(false)
+
+  useEffect(() => {
+    if (open) setMemoExpanded(false)
+  }, [open, memoCode])
+
   if (!open) return null
 
   return (
@@ -31,7 +39,22 @@ export function MemoThreadDrawer({
         <div className="memo-thread-drawer__loading">{loadingLabel}</div>
       ) : (
         <div className="memo-thread-drawer__body">
-          <div className="memo-thread-drawer__memo">{memoSection}</div>
+          {memoSection ? (
+            <div className="memo-thread-drawer__memo-bar">
+              <div className="memo-thread-drawer__memo-bar-summary">{memoPreview}</div>
+              <button
+                type="button"
+                className="memo-thread-drawer__memo-toggle"
+                aria-expanded={memoExpanded}
+                onClick={() => setMemoExpanded((v) => !v)}
+              >
+                {memoExpanded ? 'Hide memo' : 'View memo'}
+              </button>
+            </div>
+          ) : null}
+          {memoExpanded && memoSection ? (
+            <div className="memo-thread-drawer__memo">{memoSection}</div>
+          ) : null}
           <div className="memo-thread-drawer__timeline">
             <p className="memo-thread-drawer__timeline-label">{timelineLabel}</p>
             {timelineSection}
