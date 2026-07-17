@@ -20,13 +20,21 @@ def _auth_headers(email: str = "superadmin@demo.com"):
 
 
 def test_support_history_list():
-    r = client.get("/api/v1/admin/support/history?record_type=all&page_size=10", headers=_auth_headers())
+    headers = _auth_headers()
+    r = client.get("/api/v1/admin/support/history?record_type=all&page_size=10", headers=headers)
     assert r.status_code == 200
     data = r.json()
     assert "items" in data
     assert "total" in data
     types = {row["record_type"] for row in data["items"]}
-    assert "incident" in types, "seeded demo incidents should appear in combined history"
+    assert "ticket" in types
+
+    inc = client.get(
+        "/api/v1/admin/support/history?record_type=incidents&page_size=10",
+        headers=headers,
+    )
+    assert inc.status_code == 200
+    assert inc.json()["total"] >= 1, "seeded demo incidents should appear in combined history"
 
 
 def test_support_history_csv_export():

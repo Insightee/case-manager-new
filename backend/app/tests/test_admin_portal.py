@@ -901,8 +901,8 @@ def test_cm_meeting_booking_sends_invite_emails(monkeypatch):
         headers=th_headers,
         json={
             "case_id": case_id,
-            "scheduled_date": "2026-07-15",
-            "scheduled_time": "11:00:00",
+            "scheduled_date": "2026-06-01",
+            "scheduled_time": "14:00:00",
             "duration_minutes": 45,
             "meeting_type": "PARENT_MEETING",
             "title": "Email invite test",
