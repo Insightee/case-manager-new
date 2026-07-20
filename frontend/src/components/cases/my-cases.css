@@ -1696,8 +1696,12 @@
   }
 }
 
-/* Edit session times modal */
+/* Edit session times modal (portaled to body — needs local theme tokens) */
 .ic-edit-times-modal {
+  --ic-primary: #4f46e5;
+  --ic-primary-hover: #4338ca;
+  --ic-text: #0f172a;
+  --ic-border: #e2e8f0;
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
 }
 
@@ -1739,6 +1743,11 @@
 
 .ic-edit-times-modal__footer .ic-btn--primary {
   min-width: 9.5rem;
+}
+
+.ic-edit-times-modal__footer .ic-btn--primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .ic-edit-times-modal__head {
