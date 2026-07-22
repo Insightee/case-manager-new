@@ -101,3 +101,34 @@ def test_cm_meetings_pdf():
     assert r.status_code == 200
     assert r.headers.get("content-type") == "application/pdf"
     assert r.content[:4] == b"%PDF"
+
+
+def test_therapist_log_compliance_catalog_and_json():
+    r = client.get("/api/v1/admin/hr-reports/catalog", headers=_auth_headers("superadmin@demo.com"))
+    assert r.status_code == 200
+    keys = {item["key"] for item in r.json()["reports"]}
+    assert "therapist-log-compliance" in keys
+
+    r = client.get(
+        "/api/v1/admin/hr-reports/therapist-log-compliance",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "rows" in data
+    if data["rows"]:
+        row = data["rows"][0]
+        assert "Therapist ID" in row
+        assert "Not Submitting Since" in row
+        assert "Missing Logs" in row
+
+
+def test_therapist_log_compliance_xlsx():
+    r = client.get(
+        "/api/v1/admin/hr-reports/therapist-log-compliance?format=xlsx",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    assert r.headers.get("content-type", "").startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )

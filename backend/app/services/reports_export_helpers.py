@@ -18,6 +18,7 @@ from app.services import case_service
 IST = ZoneInfo("Asia/Kolkata")
 MAX_EXPORT_ROWS = 5000
 INACTIVE_DAYS_THRESHOLD = 7
+THERAPIST_LOG_COMPLIANCE_MIN_AGE_DAYS = 2
 
 
 def default_export_month() -> str:

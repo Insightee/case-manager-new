@@ -21,6 +21,14 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
         "formats": ["csv", "xlsx", "pdf"],
     },
     {
+        "key": "therapist-log-compliance",
+        "label": "Therapist log compliance",
+        "description": "Therapists with active cases who have completed sessions missing logs (2+ days old).",
+        "category": "hr_attendance",
+        "filters": ["product_module", "case_manager_user_id"],
+        "formats": ["csv", "xlsx", "pdf"],
+    },
+    {
         "key": "session-log-detail",
         "label": "Detailed session log",
         "description": "Every session in range with log compliance, approvals, and billable status.",
