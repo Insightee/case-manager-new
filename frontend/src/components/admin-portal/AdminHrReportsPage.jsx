@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
-import { AdminPageHeader, AdminPanel } from './ui/index.js'
+import { AdminPageHeader, AdminPanel, ServiceFilterSelect } from './ui/index.js'
 import { BillingActionAlert } from './ui/BillingActionAlert.jsx'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
 import './admin-hr-reports.css'
@@ -207,11 +207,11 @@ export function AdminHrReportsPage() {
           {selectedReport?.filters?.includes('product_module') ? (
             <label className="client-inv__filter-field">
               <span className="client-inv__filter-label">Programme</span>
-              <input
+              <ServiceFilterSelect
                 className="client-inv__filter-input"
-                placeholder="e.g. homecare"
                 value={productModule}
-                onChange={(e) => setProductModule(e.target.value)}
+                onChange={setProductModule}
+                id="hr-report-programme"
               />
             </label>
           ) : null}

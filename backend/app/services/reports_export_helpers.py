@@ -197,6 +197,31 @@ def leave_days_in_month(db: Session, therapist_user_id: int, ym: str) -> dict[st
     return {"paid": paid, "unpaid": unpaid, "carry_forward": carry}
 
 
+def is_shadow_case(case: Case | None) -> bool:
+    return "shadow" in ((case.product_module if case else "") or "").lower()
+
+
+def is_homecare_case(case: Case | None) -> bool:
+    mod = ((case.product_module if case else "") or "").lower()
+    return "homecare" in mod
+
+
+def shadow_per_session_day_rate(monthly_fixed_pay: float | None, scheduled_sessions: int) -> float:
+    """Monthly fixed pay divided by scheduled sessions in the month."""
+    if not monthly_fixed_pay or scheduled_sessions <= 0:
+        return 0.0
+    return round(float(monthly_fixed_pay) / scheduled_sessions, 2)
+
+
+def shadow_leave_deduction_estimate(
+    monthly_fixed_pay: float | None, scheduled_sessions: int, unpaid_leave_days: int
+) -> float:
+    rate = shadow_per_session_day_rate(monthly_fixed_pay, scheduled_sessions)
+    if rate <= 0 or unpaid_leave_days <= 0:
+        return 0.0
+    return round(rate * unpaid_leave_days, 2)
+
+
 def monthly_report_submitted(db: Session, case_id: int, ym: str) -> bool:
     from sqlalchemy import or_
 
