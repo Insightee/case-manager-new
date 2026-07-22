@@ -946,7 +946,9 @@ export function AdminReportsPage() {
           <p className="admin-muted" style={{ marginBottom: 16, fontSize: '0.8125rem', maxWidth: 720 }}>
             Reference exports for ops review and bulk data planning. Each workbook includes stable IDs
             (case, therapist, client) plus a column guide sheet. Session and report metrics use the
-            selected month; identity and billing fields are current snapshot.
+            selected month; identity and billing fields are current snapshot. For attendance, session
+            compliance, replacements, and CM meeting exports, use{' '}
+            <Link to="/admin/hr-reports">People &amp; HR → Reports</Link>.
           </p>
           <div
             className="admin-reports__operations-filters"

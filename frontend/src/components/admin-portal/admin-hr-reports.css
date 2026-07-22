@@ -1,0 +1,86 @@
+.admin-hr-reports__hint {
+  margin-bottom: 16px;
+  font-size: 0.8125rem;
+  max-width: 720px;
+}
+
+.admin-hr-reports__categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.admin-hr-reports__category {
+  border: 1px solid var(--admin-border, #e2e8f0);
+  background: var(--admin-surface, #fff);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-hr-reports__category.is-active {
+  border-color: #6366f1;
+  background: #eef2ff;
+  color: #312e81;
+}
+
+.admin-hr-reports__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.admin-hr-reports__card {
+  text-align: left;
+  border: 1px solid var(--admin-border, #e2e8f0);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--admin-surface, #fff);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-hr-reports__card.is-selected {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 1px #c7d2fe;
+  background: #f8fafc;
+}
+
+.admin-hr-reports__card-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.admin-hr-reports__card-desc {
+  font-size: 0.75rem;
+  color: var(--admin-muted, #64748b);
+  line-height: 1.4;
+}
+
+.admin-hr-reports__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-hr-reports__actions {
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 640px) {
+  .admin-hr-reports__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: var(--admin-surface, #fff);
+    padding: 12px 0;
+    border-top: 1px solid var(--admin-border, #e2e8f0);
+  }
+}

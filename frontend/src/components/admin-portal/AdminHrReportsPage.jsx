@@ -1,139 +1,177 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiDownload, apiFetch } from '../../lib/apiClient.js'
-import { REPORTS_HUB_CATEGORIES } from '../../lib/reportCategories.js'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
 import { BillingActionAlert } from './ui/BillingActionAlert.jsx'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
+import './admin-hr-reports.css'
 
-const REPORT_TYPES = [
-  { id: 'clinical', label: 'Clinical' },
-  { id: 'operations', label: 'Operations' },
-  { id: 'people', label: 'People & status' },
-]
+function currentMonth() {
+  return new Date().toISOString().slice(0, 7)
+}
 
-const CLINICAL_KEYS = [
-  { key: 'observation', label: 'Observation reports', category: 'OBSERVATION' },
-  { key: 'client-monthly', label: 'Client monthly reports', category: 'CLIENT_MONTHLY' },
-  { key: 'cm-meeting', label: 'Case manager meetings', category: 'CM_MEETING' },
-  { key: 'progress', label: 'Progress / milestone', category: 'PROGRESS' },
-]
+function monthStartIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
 
-const OPERATIONS_KEYS = [
-  { key: 'session-logs', label: 'Session logs' },
-  { key: 'cases-roster', label: 'Cases & client names' },
-]
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
 
-const PEOPLE_KEYS = [
-  { key: 'staff-status', label: 'Staff status' },
-  { key: 'therapist-status', label: 'Therapist status' },
-]
+function buildQuery(params) {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== '' && value != null) qs.set(key, String(value))
+  })
+  return qs.toString()
+}
+
+function reportUsesMonth(report) {
+  return report?.filters?.includes('month')
+}
+
+function reportUsesDateRange(report) {
+  return report?.filters?.includes('date_from') || report?.filters?.includes('date_to')
+}
 
 export function AdminHrReportsPage() {
-  const [reportType, setReportType] = useState('clinical')
-  const [reportKey, setReportKey] = useState('observation')
-  const [category, setCategory] = useState('OBSERVATION')
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [catalog, setCatalog] = useState({ categories: [], reports: [] })
+  const [categoryId, setCategoryId] = useState('hr_attendance')
+  const [reportKey, setReportKey] = useState('bulk-attendance')
+  const [month, setMonth] = useState(currentMonth)
+  const [dateFrom, setDateFrom] = useState(monthStartIso)
+  const [dateTo, setDateTo] = useState(todayIso)
   const [productModule, setProductModule] = useState('')
+  const [caseManagerUserId, setCaseManagerUserId] = useState('')
   const [preview, setPreview] = useState(null)
+  const [cms, setCms] = useState([])
   const { loading, error, successMessage, run, clearMessages } = useBillingAction()
 
-  const reportOptions = useMemo(() => {
-    if (reportType === 'clinical') return CLINICAL_KEYS
-    if (reportType === 'operations') return OPERATIONS_KEYS
-    return PEOPLE_KEYS
-  }, [reportType])
+  useEffect(() => {
+    apiFetch('/api/v1/admin/hr-reports/catalog')
+      .then(setCatalog)
+      .catch(() => setCatalog({ categories: [], reports: [] }))
+  }, [])
 
-  const categoryOptions = useMemo(
-    () => [{ value: '', label: 'All categories' }, ...REPORTS_HUB_CATEGORIES.map((c) => ({ value: c.id, label: c.label }))],
-    [],
+  useEffect(() => {
+    apiFetch('/api/v1/admin/users/directory?roles=CASE_MANAGER')
+      .then((rows) => setCms(rows || []))
+      .catch(() => setCms([]))
+  }, [])
+
+  const visibleCategories = useMemo(() => {
+    const nonLegacy = catalog.categories?.filter((c) => c.id !== 'legacy') || []
+    return nonLegacy.length ? nonLegacy : catalog.categories || []
+  }, [catalog.categories])
+
+  const reportsInCategory = useMemo(() => {
+    return (catalog.reports || []).filter((r) => r.category === categoryId && r.category !== 'legacy')
+  }, [catalog.reports, categoryId])
+
+  const selectedReport = useMemo(
+    () => (catalog.reports || []).find((r) => r.key === reportKey),
+    [catalog.reports, reportKey],
   )
 
-  function onTypeChange(nextType) {
-    setReportType(nextType)
-    const first =
-      nextType === 'clinical' ? CLINICAL_KEYS[0] : nextType === 'operations' ? OPERATIONS_KEYS[0] : PEOPLE_KEYS[0]
-    setReportKey(first.key)
-    if (first.category) setCategory(first.category)
-  }
+  useEffect(() => {
+    if (!reportsInCategory.length) return
+    if (!reportsInCategory.some((r) => r.key === reportKey)) {
+      setReportKey(reportsInCategory[0].key)
+    }
+  }, [reportsInCategory, reportKey])
 
-  function onReportChange(key) {
-    setReportKey(key)
-    const match = CLINICAL_KEYS.find((r) => r.key === key)
-    if (match?.category) setCategory(match.category)
-  }
+  const filterParams = useMemo(() => {
+    const params = {}
+    if (reportUsesMonth(selectedReport)) params.month = month
+    if (reportUsesDateRange(selectedReport)) {
+      params.date_from = dateFrom
+      params.date_to = dateTo
+    }
+    if (selectedReport?.filters?.includes('product_module') && productModule) {
+      params.product_module = productModule
+    }
+    if (selectedReport?.filters?.includes('case_manager_user_id') && caseManagerUserId) {
+      params.case_manager_user_id = caseManagerUserId
+    }
+    return params
+  }, [selectedReport, month, dateFrom, dateTo, productModule, caseManagerUserId])
 
-  async function loadPreview() {
-    const qs = new URLSearchParams()
-    if (category && reportType === 'clinical') qs.set('category', category)
-    if (month && (reportType === 'clinical' || reportKey === 'session-logs')) qs.set('month', month)
-    if (productModule) qs.set('product_module', productModule)
-    const data = await run(
-      () => apiFetch(`/api/v1/admin/hr-reports/${reportKey}?${qs.toString()}`),
-      { successMsg: 'Report loaded' },
-    )
+  const loadPreview = useCallback(async () => {
+    const qs = buildQuery(filterParams)
+    const data = await run(() => apiFetch(`/api/v1/admin/hr-reports/${reportKey}?${qs}`), {
+      successMsg: 'Report preview loaded',
+    })
     setPreview(data)
-  }
+  }, [filterParams, reportKey, run])
 
-  async function downloadCsv() {
-    const qs = new URLSearchParams({ format: 'csv' })
-    if (category && reportType === 'clinical') qs.set('category', category)
-    if (month && (reportType === 'clinical' || reportKey === 'session-logs')) qs.set('month', month)
-    if (productModule) qs.set('product_module', productModule)
-    await run(
-      () => apiDownload(`/api/v1/admin/hr-reports/${reportKey}?${qs.toString()}`, `${reportKey}.csv`),
-      { successMsg: 'Download started' },
-    )
-  }
+  const downloadReport = useCallback(
+    async (format) => {
+      const qs = buildQuery({ ...filterParams, format })
+      const ext = format === 'xlsx' ? 'xlsx' : format
+      await run(
+        () => apiDownload(`/api/v1/admin/hr-reports/${reportKey}?${qs}`, `${reportKey}.${ext}`),
+        { successMsg: `${format.toUpperCase()} download started` },
+      )
+    },
+    [filterParams, reportKey, run],
+  )
+
+  const previewRows = preview?.rows || []
+  const summaryRows = preview?.summaryRows || []
+  const previewColumns = previewRows[0] ? Object.keys(previewRows[0]) : []
 
   return (
-    <div className="admin-page">
+    <div className="admin-page admin-hr-reports">
       <AdminPageHeader
-        eyebrow="HR"
+        eyebrow="People & HR"
         title="Reports"
-        subtitle="Export clinical summaries, operational rosters, and people status for HR operations."
+        subtitle="Download operational, attendance, and compliance exports for HR and admin review."
       />
 
-      <AdminPanel title="Generate report" padded>
+      <AdminPanel title="Report catalog" padded>
         <BillingActionAlert error={error} successMessage={successMessage} onDismiss={clearMessages} />
-        <p className="admin-muted" style={{ marginBottom: 12, fontSize: '0.8125rem' }}>
-          For full therapist and case Excel rosters (billing, sessions, IEP, meetings), use{' '}
-          <Link to="/admin/reports?tab=operations">Operations → Reports → Operations exports</Link>.
+        <p className="admin-muted admin-hr-reports__hint">
+          Exports use <strong>Case ID</strong> and therapist external IDs. For full therapist and case Excel rosters,
+          use{' '}
+          <Link to="/admin/reports?tab=operations">Operations exports</Link>.
         </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-          <label className="client-inv__filter-field">
-            <span className="client-inv__filter-label">Report type</span>
-            <select className="client-inv__filter-input" value={reportType} onChange={(e) => onTypeChange(e.target.value)}>
-              {REPORT_TYPES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="client-inv__filter-field">
-            <span className="client-inv__filter-label">Report</span>
-            <select className="client-inv__filter-input" value={reportKey} onChange={(e) => onReportChange(e.target.value)}>
-              {reportOptions.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {reportType === 'clinical' ? (
-            <label className="client-inv__filter-field">
-              <span className="client-inv__filter-label">Category</span>
-              <select className="client-inv__filter-input" value={category} onChange={(e) => setCategory(e.target.value)}>
-                {categoryOptions.map((o) => (
-                  <option key={o.value || 'all'} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {reportType === 'clinical' || reportKey === 'session-logs' ? (
+
+        <div className="admin-hr-reports__categories" role="tablist" aria-label="Report categories">
+          {visibleCategories.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              role="tab"
+              aria-selected={categoryId === cat.id}
+              className={`admin-hr-reports__category${categoryId === cat.id ? ' is-active' : ''}`}
+              onClick={() => setCategoryId(cat.id)}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="admin-hr-reports__cards">
+          {reportsInCategory.map((report) => (
+            <button
+              key={report.key}
+              type="button"
+              className={`admin-hr-reports__card${reportKey === report.key ? ' is-selected' : ''}`}
+              onClick={() => setReportKey(report.key)}
+            >
+              <span className="admin-hr-reports__card-title">{report.label}</span>
+              {report.description ? (
+                <span className="admin-hr-reports__card-desc">{report.description}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </AdminPanel>
+
+      <AdminPanel title={selectedReport?.label || 'Generate report'} padded>
+        <div className="admin-hr-reports__filters">
+          {reportUsesMonth(selectedReport) ? (
             <label className="client-inv__filter-field">
               <span className="client-inv__filter-label">Month</span>
               <input
@@ -144,7 +182,29 @@ export function AdminHrReportsPage() {
               />
             </label>
           ) : null}
-          {reportType !== 'people' ? (
+          {reportUsesDateRange(selectedReport) ? (
+            <>
+              <label className="client-inv__filter-field">
+                <span className="client-inv__filter-label">From</span>
+                <input
+                  type="date"
+                  className="client-inv__filter-input"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </label>
+              <label className="client-inv__filter-field">
+                <span className="client-inv__filter-label">To</span>
+                <input
+                  type="date"
+                  className="client-inv__filter-input"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </label>
+            </>
+          ) : null}
+          {selectedReport?.filters?.includes('product_module') ? (
             <label className="client-inv__filter-field">
               <span className="client-inv__filter-label">Programme</span>
               <input
@@ -155,37 +215,120 @@ export function AdminHrReportsPage() {
               />
             </label>
           ) : null}
-          <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={loading} onClick={loadPreview}>
+          {selectedReport?.filters?.includes('case_manager_user_id') ? (
+            <label className="client-inv__filter-field">
+              <span className="client-inv__filter-label">Case manager</span>
+              <select
+                className="client-inv__filter-input"
+                value={caseManagerUserId}
+                onChange={(e) => setCaseManagerUserId(e.target.value)}
+              >
+                <option value="">All case managers</option>
+                {cms.map((cm) => (
+                  <option key={cm.id} value={cm.id}>
+                    {cm.full_name || cm.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+
+        <div className="admin-hr-reports__actions admin-btn-group">
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            disabled={loading}
+            onClick={loadPreview}
+          >
             {loading ? 'Loading…' : 'Preview'}
           </button>
-          <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={loading} onClick={downloadCsv}>
-            Download CSV
-          </button>
+          {(selectedReport?.formats || ['csv']).includes('csv') ? (
+            <button
+              type="button"
+              className="admin-btn admin-btn--secondary admin-btn--sm"
+              disabled={loading}
+              onClick={() => downloadReport('csv')}
+            >
+              CSV
+            </button>
+          ) : null}
+          {(selectedReport?.formats || []).includes('xlsx') ? (
+            <button
+              type="button"
+              className="admin-btn admin-btn--secondary admin-btn--sm"
+              disabled={loading}
+              onClick={() => downloadReport('xlsx')}
+            >
+              Excel
+            </button>
+          ) : null}
+          {(selectedReport?.formats || []).includes('pdf') ? (
+            <button
+              type="button"
+              className="admin-btn admin-btn--secondary admin-btn--sm"
+              disabled={loading}
+              onClick={() => downloadReport('pdf')}
+            >
+              PDF
+            </button>
+          ) : null}
         </div>
-        {preview?.rows?.length ? (
-          <div className="admin-table-wrap">
+
+        {previewRows.length ? (
+          <div className="admin-table-wrap" style={{ marginTop: 16 }}>
             <table className="admin-table">
               <thead>
                 <tr>
-                  {Object.keys(preview.rows[0]).map((k) => (
+                  {previewColumns.map((k) => (
                     <th key={k}>{k}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {preview.rows.slice(0, 50).map((row, idx) => (
+                {previewRows.slice(0, 50).map((row, idx) => (
                   <tr key={idx}>
-                    {Object.keys(preview.rows[0]).map((k) => (
+                    {previewColumns.map((k) => (
                       <td key={k}>{String(row[k] ?? '')}</td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-            {preview.count > 50 ? <p className="admin-muted">Showing first 50 of {preview.count} rows.</p> : null}
+            {preview.count > 50 ? (
+              <p className="admin-muted">Showing first 50 of {preview.count} rows. Download for the full export.</p>
+            ) : null}
           </div>
         ) : preview ? (
-          <p className="admin-muted">No rows for this report.</p>
+          <p className="admin-muted" style={{ marginTop: 12 }}>
+            No rows for this report and filter set.
+          </p>
+        ) : null}
+
+        {summaryRows.length ? (
+          <div style={{ marginTop: 20 }}>
+            <h3 style={{ fontSize: '0.9375rem', marginBottom: 8 }}>Summary</h3>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    {Object.keys(summaryRows[0]).map((k) => (
+                      <th key={k}>{k}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {summaryRows.slice(0, 20).map((row, idx) => (
+                    <tr key={idx}>
+                      {Object.keys(summaryRows[0]).map((k) => (
+                        <td key={k}>{String(row[k] ?? '')}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : null}
       </AdminPanel>
     </div>

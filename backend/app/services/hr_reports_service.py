@@ -1,22 +1,24 @@
-"""HR portal exports: clinical summaries, operations, and people status."""
+"""HR portal exports: operational reports, clinical summaries, and people status."""
 from __future__ import annotations
 
 import csv
 import io
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permissions import case_scope_check
+from app.core.reports_catalog import REPORT_KEYS
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
 from app.models.report import MonthlyReport, ObservationReport, ReportStatus
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
-from app.services import case_service, log_service
+from app.services import case_service, log_service, operational_reports_service
+from app.services.reports_export_helpers import export_case_id, export_therapist_id
 
-REPORT_KEYS = frozenset(
+LEGACY_REPORT_KEYS = frozenset(
     {
         "observation",
         "client-monthly",
@@ -28,6 +30,8 @@ REPORT_KEYS = frozenset(
         "therapist-status",
     }
 )
+
+OPERATIONAL_REPORT_KEYS = REPORT_KEYS - LEGACY_REPORT_KEYS
 
 STAFF_ROLE_NAMES = frozenset(
     {
@@ -43,6 +47,46 @@ STAFF_ROLE_NAMES = frozenset(
 )
 
 
+def run_hr_report(
+    db: Session,
+    report_key: str,
+    *,
+    category: Optional[str] = None,
+    month: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    product_module: Optional[str] = None,
+    case_manager_user_id: Optional[int] = None,
+    therapist_user_id: Optional[int] = None,
+    case_id: Optional[int] = None,
+    user: User | None = None,
+) -> dict[str, Any]:
+    if report_key not in REPORT_KEYS:
+        raise ValueError(f"Unknown report: {report_key}")
+    if report_key in OPERATIONAL_REPORT_KEYS:
+        return operational_reports_service.run_report(
+            db,
+            report_key,
+            user=user,
+            month=month,
+            date_from=date_from,
+            date_to=date_to,
+            product_module=product_module,
+            case_manager_user_id=case_manager_user_id,
+            therapist_user_id=therapist_user_id,
+            case_id=case_id,
+        )
+    rows = report_rows(
+        db,
+        report_key,
+        category=category,
+        month=month,
+        product_module=product_module,
+        user=user,
+    )
+    return {"rows": rows, "count": len(rows)}
+
+
 def report_rows(
     db: Session,
     report_key: str,
@@ -52,8 +96,8 @@ def report_rows(
     product_module: Optional[str] = None,
     user: User | None = None,
 ) -> list[dict]:
-    if report_key not in REPORT_KEYS:
-        raise ValueError(f"Unknown report: {report_key}")
+    if report_key not in LEGACY_REPORT_KEYS:
+        raise ValueError(f"Unknown legacy report: {report_key}")
 
     if report_key == "observation":
         return _observation_rows(db, month=month, product_module=product_module, user=user)
@@ -111,16 +155,15 @@ def _observation_rows(
             continue
         if not _case_allowed(db, user, case):
             continue
+        therapist = db.get(User, r.therapist_user_id)
         out.append(
             {
-                "reportId": r.id,
-                "caseId": r.case_id,
-                "caseCode": case.case_code if case else "",
-                "clientName": case_service.case_child_display_name(case) if case else "",
-                "therapistUserId": r.therapist_user_id,
-                "reportDate": r.report_date.isoformat() if r.report_date else "",
-                "status": getattr(r, "status", None) and getattr(r.status, "value", str(r.status)) or "",
-                "category": "OBSERVATION",
+                "Case ID": export_case_id(case),
+                "Client Name": case_service.case_child_display_name(case) if case else "",
+                "Therapist ID": export_therapist_id(therapist),
+                "Report Date": r.report_date.isoformat() if r.report_date else "",
+                "Status": getattr(r, "status", None) and getattr(r.status, "value", str(r.status)) or "",
+                "Category": "OBSERVATION",
             }
         )
     return out
@@ -144,16 +187,15 @@ def _monthly_rows(
             continue
         if not _case_allowed(db, user, case):
             continue
+        therapist = db.get(User, r.therapist_user_id)
         out.append(
             {
-                "reportId": r.id,
-                "caseId": r.case_id,
-                "caseCode": case.case_code if case else "",
-                "clientName": case_service.case_child_display_name(case) if case else "",
-                "therapistUserId": r.therapist_user_id,
-                "reportMonth": r.month,
-                "status": r.status.value if isinstance(r.status, ReportStatus) else str(r.status),
-                "category": "CLIENT_MONTHLY",
+                "Case ID": export_case_id(case),
+                "Client Name": case_service.case_child_display_name(case) if case else "",
+                "Therapist ID": export_therapist_id(therapist),
+                "Report Month": r.month,
+                "Status": r.status.value if isinstance(r.status, ReportStatus) else str(r.status),
+                "Category": "CLIENT_MONTHLY",
             }
         )
     return out
@@ -162,7 +204,7 @@ def _monthly_rows(
 def _placeholder_category_rows(label: str, category: Optional[str]) -> list[dict]:
     if category and category.upper() != label:
         return []
-    return [{"category": label, "message": "No dedicated export table yet; use case documents hub."}]
+    return [{"Category": label, "Message": "No dedicated export table yet; use case documents hub."}]
 
 
 def _session_log_rows(
@@ -181,20 +223,19 @@ def _session_log_rows(
         if not _case_allowed(db, user, case):
             continue
         s = log.session
+        therapist = db.get(User, s.therapist_user_id) if s else None
         out.append(
             {
-                "logId": log.id,
-                "sessionId": log.session_id,
-                "caseId": s.case_id if s else "",
-                "caseCode": case.case_code if case else "",
-                "clientName": case_service.case_child_display_name(case) if case else "",
-                "scheduledDate": s.scheduled_date.isoformat() if s and s.scheduled_date else "",
-                "approvalStatus": (
+                "Case ID": export_case_id(case),
+                "Client Name": case_service.case_child_display_name(case) if case else "",
+                "Therapist ID": export_therapist_id(therapist),
+                "Session Date": s.scheduled_date.isoformat() if s and s.scheduled_date else "",
+                "Approval Status": (
                     log.approval_status.value
                     if log.approval_status and hasattr(log.approval_status, "value")
                     else (str(log.approval_status) if log.approval_status else "")
                 ),
-                "submittedAt": log.submitted_at.isoformat() if log.submitted_at else "",
+                "Submitted At": log.submitted_at.isoformat() if log.submitted_at else "",
             }
         )
     return out
@@ -214,15 +255,13 @@ def _cases_roster_rows(
     for case in cases:
         if not _case_allowed(db, user, case):
             continue
-        child = case.child
         out.append(
             {
-                "caseId": case.id,
-                "caseCode": case.case_code,
-                "clientName": case_service.case_child_display_name(case),
-                "productModule": case.product_module,
-                "status": case.status.value if case.status else "",
-                "serviceType": case.service_type or "",
+                "Case ID": export_case_id(case),
+                "Client Name": case_service.case_child_display_name(case),
+                "Programme": case.product_module,
+                "Status": case.status.value if case.status else "",
+                "Service Type": case.service_type or "",
             }
         )
     return out
@@ -239,12 +278,11 @@ def _staff_status_rows(db: Session) -> list[dict]:
             continue
         out.append(
             {
-                "userId": u.id,
-                "email": u.email,
-                "fullName": u.full_name,
-                "roles": ", ".join(role_names),
-                "employmentStatus": u.employment_status.value if u.employment_status else "",
-                "isActive": u.is_active,
+                "Email": u.email,
+                "Full Name": u.full_name,
+                "Roles": ", ".join(role_names),
+                "Employment Status": u.employment_status.value if u.employment_status else "",
+                "Active": u.is_active,
             }
         )
     return out
@@ -267,13 +305,13 @@ def _therapist_status_rows(db: Session) -> list[dict]:
         ) or 0
         out.append(
             {
-                "therapistUserId": p.user_id,
-                "displayName": p.display_name or (u.full_name if u else ""),
-                "email": u.email if u else "",
-                "profileStatus": p.status.value if p.status else "",
-                "employmentStatus": u.employment_status.value if u and u.employment_status else "",
-                "employmentStartDate": p.employment_start_date.isoformat() if p.employment_start_date else "",
-                "activeAssignments": int(count),
+                "Therapist ID": export_therapist_id(u),
+                "Display Name": p.display_name or (u.full_name if u else ""),
+                "Email": u.email if u else "",
+                "Profile Status": p.status.value if p.status else "",
+                "Employment Status": u.employment_status.value if u and u.employment_status else "",
+                "Employment Start Date": p.employment_start_date.isoformat() if p.employment_start_date else "",
+                "Active Assignments": int(count),
             }
         )
     return out

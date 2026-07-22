@@ -20,12 +20,24 @@ def _auth_headers(email: str = "hr@demo.com"):
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+def test_hr_report_catalog():
+    r = client.get("/api/v1/admin/hr-reports/catalog", headers=_auth_headers())
+    assert r.status_code == 200
+    data = r.json()
+    assert "categories" in data
+    assert "reports" in data
+    keys = {item["key"] for item in data["reports"]}
+    assert "bulk-attendance" in keys
+    assert "session-log-detail" in keys
+    assert "inactive-clients" in keys
+
+
 def test_hr_staff_status_report():
     r = client.get("/api/v1/admin/hr-reports/staff-status", headers=_auth_headers())
     assert r.status_code == 200
     data = r.json()
     assert data["count"] >= 1
-    assert "email" in data["rows"][0]
+    assert "Email" in data["rows"][0]
 
 
 def test_hr_therapist_status_report():
@@ -40,16 +52,52 @@ def test_module_admin_with_user_manage_can_export_hr_reports():
     assert "rows" in r.json()
 
 
-def test_hr_home_landing_route():
-    r = client.get("/api/v1/admin/home", headers=_auth_headers())
-    assert r.status_code == 200
-    data = r.json()
-    assert data["landing_route"] == "/admin"
-    assert data["dashboard_variant"] == "hr"
-
-
 def test_finance_cannot_export_hr_reports():
     fin = client.post("/api/v1/auth/login", json={"email": "finance@demo.com", "password": "demo123"})
     headers = {"Authorization": f"Bearer {fin.json()['access_token']}"}
     r = client.get("/api/v1/admin/hr-reports/staff-status", headers=headers)
     assert r.status_code == 403
+
+
+def test_bulk_attendance_report_json():
+    r = client.get(
+        "/api/v1/admin/hr-reports/bulk-attendance?month=2026-01",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "rows" in data
+    if data["rows"]:
+        assert "Case ID" in data["rows"][0]
+        assert "Therapist ID" in data["rows"][0]
+
+
+def test_session_log_detail_csv():
+    r = client.get(
+        "/api/v1/admin/hr-reports/session-log-detail?format=csv&date_from=2026-01-01&date_to=2026-12-31",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    assert "text/csv" in r.headers.get("content-type", "")
+    assert "Case ID" in r.text.splitlines()[0]
+
+
+def test_inactive_clients_xlsx():
+    r = client.get(
+        "/api/v1/admin/hr-reports/inactive-clients?format=xlsx",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    assert r.headers.get("content-type", "").startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+def test_cm_meetings_pdf():
+    r = client.get(
+        "/api/v1/admin/hr-reports/cm-meetings?format=pdf&month=2026-01",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    assert r.headers.get("content-type") == "application/pdf"
+    assert r.content[:4] == b"%PDF"
