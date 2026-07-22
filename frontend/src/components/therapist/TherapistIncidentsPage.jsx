@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, apiUpload } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
+import { fetchAllPages } from '../../lib/listApi.js'
 import { INCIDENT_STATUS_META, isOpenIncidentStatus, PRIORITY_META } from '../../lib/incidentCatalog.js'
 import { IncidentDetailPanel } from '../support/IncidentDetailPanel.jsx'
 import { IncidentReportForm } from '../support/IncidentReportForm.jsx'
@@ -31,6 +31,7 @@ export function TherapistIncidentsPage() {
   const [searchParams] = useSearchParams()
   const initialCaseId = searchParams.get('case_id') || ''
   const [cases, setCases] = useState([])
+  const [casesLoading, setCasesLoading] = useState(true)
   const [incidents, setIncidents] = useState([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
@@ -53,7 +54,17 @@ export function TherapistIncidentsPage() {
 
   useEffect(() => {
     loadIncidents()
-    apiFetch('/api/v1/cases/my').then(setCases).catch(() => setCases([]))
+    setCasesLoading(true)
+    fetchAllPages(
+      (page, pageSize) => apiFetch(`/api/v1/cases?assigned=true&page=${page}&page_size=${pageSize}`),
+      { pageSize: 100 },
+    )
+      .then(({ items }) => {
+        const active = items.filter((c) => c.status !== 'CLOSED' && c.status !== 'SUSPENDED')
+        setCases(active)
+      })
+      .catch(() => setCases([]))
+      .finally(() => setCasesLoading(false))
   }, [loadIncidents])
 
   const openIncidents = useMemo(
@@ -183,15 +194,19 @@ export function TherapistIncidentsPage() {
 
         {showForm ? (
           <div style={{ marginTop: 12 }}>
-            <IncidentReportForm
-              cases={cases}
-              caseRequired
-              initialCaseId={initialCaseId}
-              hideServiceType={cases.length > 0}
-              onSubmit={submitReport}
-              submitting={submitting}
-              error={formError}
-            />
+            {casesLoading ? (
+              <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Loading your cases…</p>
+            ) : (
+              <IncidentReportForm
+                cases={cases}
+                caseRequired
+                initialCaseId={initialCaseId}
+                hideServiceType={cases.length > 0}
+                onSubmit={submitReport}
+                submitting={submitting}
+                error={formError}
+              />
+            )}
           </div>
         ) : null}
 
