@@ -30,6 +30,7 @@ def test_hr_report_catalog():
     assert "bulk-attendance" in keys
     assert "session-log-detail" in keys
     assert "inactive-clients" in keys
+    assert "parent-portal-usage" in keys
 
 
 def test_hr_staff_status_report():
@@ -91,6 +92,49 @@ def test_inactive_clients_xlsx():
     assert r.headers.get("content-type", "").startswith(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+
+def test_inactive_clients_json_columns():
+    r = client.get(
+        "/api/v1/admin/hr-reports/inactive-clients",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "rows" in data
+    if data["rows"]:
+        row = data["rows"][0]
+        assert "Last Completed Session" in row
+        assert "Reason" not in row
+
+
+def test_parent_portal_usage_json():
+    r = client.get(
+        "/api/v1/admin/hr-reports/parent-portal-usage",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "rows" in data
+    assert data["count"] == len(data["rows"])
+    if data["rows"]:
+        row = data["rows"][0]
+        assert "Case ID" in row
+        assert "Login Status" in row
+        assert "Has Logged In" in row
+        assert "Days Since Last Activity" in row
+
+
+def test_parent_portal_usage_csv():
+    r = client.get(
+        "/api/v1/admin/hr-reports/parent-portal-usage?format=csv",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    assert "text/csv" in r.headers.get("content-type", "")
+    header = r.text.splitlines()[0]
+    assert "Parent Name" in header
+    assert "Last Seen" in header
 
 
 def test_cm_meetings_pdf():

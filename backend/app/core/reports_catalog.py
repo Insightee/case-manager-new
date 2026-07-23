@@ -72,8 +72,16 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "key": "inactive-clients",
-        "label": "Inactive clients (7+ days)",
+        "label": "Clients without recent sessions (7+ days)",
         "description": "Active cases with no completed session in the last 7 days.",
+        "category": "crm_lifecycle",
+        "filters": ["product_module", "case_manager_user_id"],
+        "formats": ["csv", "xlsx", "pdf"],
+    },
+    {
+        "key": "parent-portal-usage",
+        "label": "Parent portal usage",
+        "description": "Parent login readiness and portal activity by active case.",
         "category": "crm_lifecycle",
         "filters": ["product_module", "case_manager_user_id"],
         "formats": ["csv", "xlsx", "pdf"],
