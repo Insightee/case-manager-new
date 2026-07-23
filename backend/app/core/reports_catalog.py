@@ -62,6 +62,14 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
         "formats": ["csv", "xlsx", "pdf"],
     },
     {
+        "key": "incident-reports",
+        "label": "Incident reports",
+        "description": "Safeguarding and operational incidents with category, status, and case linkage.",
+        "category": "crm_lifecycle",
+        "filters": ["month", "product_module", "case_manager_user_id"],
+        "formats": ["csv", "xlsx", "pdf"],
+    },
+    {
         "key": "cm-meetings",
         "label": "Case manager meetings",
         "description": "Checklist and IEP meetings with monthly CM rollups.",

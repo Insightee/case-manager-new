@@ -10,12 +10,13 @@ from app.core.timezone import today_ist
 from sqlalchemy import extract, func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import RoleName, case_scope_check
+from app.core.incident_catalog import category_label, subcategory_label
+from app.core.permissions import RoleName, case_scope_check, user_has_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.daily_log import DailyLog, LogApprovalStatus
-from app.models.incident import Incident
+from app.models.incident import Incident, normalize_incident_status
 from app.models.ledger_billing import BillableStatus, BillingLedger
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
@@ -26,6 +27,7 @@ from app.models.parent import ParentGuardian, parent_child_link
 from app.models.support_ticket import SupportTicket
 from app.models.user import User
 from app.services import case_service, leave_policy_service
+from app.services.support_access_service import can_read_incident
 from app.services.user_provision_service import login_ready
 from app.services.reports_export_helpers import (
     INACTIVE_DAYS_THRESHOLD,
@@ -67,6 +69,23 @@ def _user_has_role(db: Session, user_id: int, role_name: str) -> bool:
     if not user:
         return False
     return role_name in (user.role_names or [])
+
+
+def _reporter_role_label(reporter: User | None) -> str:
+    if not reporter:
+        return ""
+    roles = reporter.role_names or []
+    for role in (
+        RoleName.PARENT,
+        RoleName.THERAPIST,
+        RoleName.CASE_MANAGER,
+        RoleName.HR,
+        RoleName.ADMIN,
+        RoleName.SUPERVISOR,
+    ):
+        if role.value in roles:
+            return role.value.replace("_", " ").title()
+    return roles[0].replace("_", " ").title() if roles else ""
 
 
 def _resolution_time_label(created: datetime | None, resolved: datetime | None) -> str:
@@ -138,6 +157,15 @@ def run_report(
         return {"rows": rows, "count": len(rows)}
     if report_key == "support-tickets-parent":
         rows = support_tickets_parent_rows(db, ym, user=user, product_module=product_module)
+        return {"rows": rows, "count": len(rows)}
+    if report_key == "incident-reports":
+        rows = incident_reports_rows(
+            db,
+            ym,
+            user=user,
+            product_module=product_module,
+            case_manager_user_id=case_manager_user_id,
+        )
         return {"rows": rows, "count": len(rows)}
     if report_key == "cm-meetings":
         detail_rows, summary_rows = cm_meetings_rows(
@@ -586,6 +614,85 @@ def support_tickets_parent_rows(
                 "Resolution Date": ticket.resolved_at.date().isoformat() if ticket.resolved_at else "",
                 "Resolution Time": _resolution_time_label(ticket.created_at, ticket.resolved_at),
                 "Status": enum_value(ticket.status),
+            }
+        )
+        if len(rows) >= MAX_EXPORT_ROWS:
+            break
+    return rows
+
+
+def incident_reports_rows(
+    db: Session,
+    ym: str,
+    *,
+    user: User | None = None,
+    product_module: str | None = None,
+    case_manager_user_id: int | None = None,
+) -> list[dict[str, Any]]:
+    start, end = month_bounds(ym)
+    month_label = month_long_label(ym)
+    start_dt = datetime.combine(start, datetime.min.time())
+    end_dt = datetime.combine(end, datetime.max.time())
+
+    stmt = (
+        select(Incident)
+        .outerjoin(Case, Incident.case_id == Case.id)
+        .where(
+            Incident.created_at >= start_dt,
+            Incident.created_at <= end_dt,
+        )
+        .order_by(Incident.created_at.desc())
+    )
+    if product_module:
+        stmt = stmt.where(Case.product_module == product_module)
+    if case_manager_user_id:
+        stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
+
+    incidents = db.scalars(stmt.limit(MAX_EXPORT_ROWS * 2)).all()
+    rows: list[dict[str, Any]] = []
+    for incident in incidents:
+        if user and not can_read_incident(db, user, incident):
+            continue
+        if incident.is_sensitive and user and not (
+            user_has_permission(user, "incident.read_sensitive")
+            or user_has_permission(user, "admin.override")
+        ):
+            continue
+        case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+        if case and user and not _case_allowed(db, user, case):
+            continue
+        reporter = db.get(User, incident.reported_by_user_id)
+        assignee = db.get(User, incident.assigned_to_user_id) if incident.assigned_to_user_id else None
+        cm = case_manager(db, case) if case else None
+        status = normalize_incident_status(incident.status).value
+        primary_category = incident.primary_category or ""
+        subcategory = incident.subcategory or ""
+        rows.append(
+            {
+                "Month": month_label,
+                "Incident ID": incident.ticket_code or f"INC-{incident.id}",
+                "Case ID": export_case_id(case) if case else "",
+                "Client Name": case_service.case_child_display_name(case) if case else "",
+                "Programme": case.product_module if case else "",
+                "Category": category_label(primary_category) if primary_category else "",
+                "Subcategory": subcategory_label(primary_category, subcategory)
+                if primary_category and subcategory
+                else subcategory,
+                "Priority": enum_value(incident.priority),
+                "Status": status,
+                "Reported By": user_display_name(reporter),
+                "Reporter Role": _reporter_role_label(reporter),
+                "Assigned To": user_display_name(assignee),
+                "Owner Role": incident.primary_owner_role or "",
+                "Incident Date": incident.incident_at.date().isoformat() if incident.incident_at else "",
+                "Reported Date": incident.created_at.date().isoformat() if incident.created_at else "",
+                "Location": incident.location or "",
+                "Service Type": incident.service_type or "",
+                "Child Safe": incident.child_safe or "",
+                "Parent Informed": incident.parent_informed or "",
+                "Sensitive": "Yes" if incident.is_sensitive else "No",
+                "Description": (incident.description or "")[:500],
+                "Case Manager": user_display_name(cm),
             }
         )
         if len(rows) >= MAX_EXPORT_ROWS:

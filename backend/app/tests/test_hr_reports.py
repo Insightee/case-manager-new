@@ -31,6 +31,7 @@ def test_hr_report_catalog():
     assert "session-log-detail" in keys
     assert "inactive-clients" in keys
     assert "parent-portal-usage" in keys
+    assert "incident-reports" in keys
 
 
 def test_hr_staff_status_report():
@@ -135,6 +136,36 @@ def test_parent_portal_usage_csv():
     header = r.text.splitlines()[0]
     assert "Parent Name" in header
     assert "Last Seen" in header
+
+
+def test_incident_reports_json():
+    r = client.get(
+        "/api/v1/admin/hr-reports/incident-reports",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "rows" in data
+    assert data["count"] == len(data["rows"])
+    if data["rows"]:
+        row = data["rows"][0]
+        assert "Incident ID" in row
+        assert "Case ID" in row
+        assert "Category" in row
+        assert "Status" in row
+        assert "Description" in row
+
+
+def test_incident_reports_csv():
+    r = client.get(
+        "/api/v1/admin/hr-reports/incident-reports?format=csv",
+        headers=_auth_headers("hr@demo.com"),
+    )
+    assert r.status_code == 200
+    assert "text/csv" in r.headers.get("content-type", "")
+    header = r.text.splitlines()[0]
+    assert "Incident ID" in header
+    assert "Reporter Role" in header
 
 
 def test_cm_meetings_pdf():
