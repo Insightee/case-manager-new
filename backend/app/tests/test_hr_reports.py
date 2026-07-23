@@ -122,8 +122,10 @@ def test_parent_portal_usage_json():
         row = data["rows"][0]
         assert "Case ID" in row
         assert "Login Status" in row
-        assert "Has Logged In" in row
+        assert "Last Login" in row
         assert "Days Since Last Activity" in row
+        assert "Has Logged In" not in row
+        assert "Last Seen" not in row
 
 
 def test_parent_portal_usage_csv():
@@ -135,7 +137,10 @@ def test_parent_portal_usage_csv():
     assert "text/csv" in r.headers.get("content-type", "")
     header = r.text.splitlines()[0]
     assert "Parent Name" in header
-    assert "Last Seen" in header
+    assert "Login Status" in header
+    assert "Last Login" in header
+    assert "Has Logged In" not in header
+    assert "Last Seen" not in header
 
 
 def test_incident_reports_json():

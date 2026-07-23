@@ -21,14 +21,12 @@ from app.models.ledger_billing import BillableStatus, BillingLedger
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
-from app.models.app_usage_chunk import AppUsageChunk
 from app.models.audit_event import AuditEvent
 from app.models.parent import ParentGuardian, parent_child_link
 from app.models.support_ticket import SupportTicket
 from app.models.user import User
 from app.services import case_service, leave_policy_service
 from app.services.support_access_service import can_read_incident
-from app.services.user_provision_service import login_ready
 from app.services.reports_export_helpers import (
     INACTIVE_DAYS_THRESHOLD,
     MAX_EXPORT_ROWS,
@@ -865,8 +863,6 @@ def _parent_by_child(db: Session, child_ids: set[int]) -> dict[int, dict[str, An
             User.id,
             User.full_name,
             User.email,
-            User.is_active,
-            User.password_hash,
         )
         .join(ParentGuardian, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
         .join(User, User.id == ParentGuardian.user_id)
@@ -874,29 +870,23 @@ def _parent_by_child(db: Session, child_ids: set[int]) -> dict[int, dict[str, An
         .order_by(parent_child_link.c.child_id, ParentGuardian.id)
     ).all()
     out: dict[int, dict[str, Any]] = {}
-    for child_id, user_id, full_name, email, is_active, password_hash in rows:
+    for child_id, user_id, full_name, email in rows:
         if child_id in out:
             continue
-        parent_user = User(
-            id=user_id,
-            email=email or "",
-            full_name=full_name,
-            is_active=is_active,
-            password_hash=password_hash,
-        )
         out[child_id] = {
             "user_id": user_id,
             "parent_name": full_name or "",
             "parent_email": email or "",
-            "login_ready": login_ready(parent_user, db),
         }
     return out
 
 
-def _parent_portal_activity(db: Session, parent_user_ids: set[int]) -> tuple[dict[int, datetime], set[int], dict[int, datetime]]:
-    """Last login, users with any portal session, and last parent-portal heartbeat."""
+def _parent_portal_activity(
+    db: Session, parent_user_ids: set[int]
+) -> tuple[dict[int, datetime], set[int]]:
+    """Last login date and users with any parent portal session (login or invite accept)."""
     if not parent_user_ids:
-        return {}, set(), {}
+        return {}, set()
 
     login_rows = db.execute(
         select(AuditEvent.actor_user_id, func.max(AuditEvent.created_at))
@@ -917,29 +907,7 @@ def _parent_portal_activity(db: Session, parent_user_ids: set[int]) -> tuple[dic
         .distinct()
     ).all()
     has_portal_session = {uid for uid in portal_session_rows if uid}
-
-    seen_rows = db.execute(
-        select(AppUsageChunk.actor_user_id, func.max(AppUsageChunk.chunk_ended_at))
-        .where(
-            AppUsageChunk.actor_user_id.in_(parent_user_ids),
-            AppUsageChunk.portal == "parent",
-        )
-        .group_by(AppUsageChunk.actor_user_id)
-    ).all()
-    last_seen_by_user = {uid: dt for uid, dt in seen_rows if uid and dt}
-    return last_login_by_user, has_portal_session, last_seen_by_user
-
-
-def _latest_activity_date(
-    last_login: datetime | None,
-    last_seen: datetime | None,
-) -> date | None:
-    candidates: list[date] = []
-    for dt in (last_login, last_seen):
-        if not dt:
-            continue
-        candidates.append(dt.date() if isinstance(dt, datetime) else dt)
-    return max(candidates) if candidates else None
+    return last_login_by_user, has_portal_session
 
 
 def parent_portal_usage_rows(
@@ -963,30 +931,27 @@ def parent_portal_usage_rows(
     parent_user_ids = {
         info["user_id"] for info in parent_by_child.values() if info.get("user_id")
     }
-    last_login_by_user, has_portal_session, last_seen_by_user = _parent_portal_activity(
-        db, parent_user_ids
-    )
+    last_login_by_user, has_portal_session = _parent_portal_activity(db, parent_user_ids)
 
     rows: list[dict[str, Any]] = []
     for case in allowed_cases:
         parent = parent_by_child.get(case.child_id or -1, {})
         parent_user_id = parent.get("user_id")
         last_login = last_login_by_user.get(parent_user_id) if parent_user_id else None
-        last_seen = last_seen_by_user.get(parent_user_id) if parent_user_id else None
-        last_activity = _latest_activity_date(last_login, last_seen)
-        days_since_activity = days_since(last_activity, as_of=today)
+        is_active = bool(parent_user_id and parent_user_id in has_portal_session)
+        days_since_activity = (
+            days_since(last_login.date() if last_login else None, as_of=today)
+            if last_login
+            else None
+        )
         cm = case_manager(db, case)
         rows.append(
             {
                 "Case ID": export_case_id(case),
                 "Client Name": case_service.case_child_display_name(case) or "",
                 "Parent Name": parent.get("parent_name", ""),
-                "Login Status": "Ready" if parent.get("login_ready") else "Not ready",
-                "Has Logged In": "Yes"
-                if parent_user_id and parent_user_id in has_portal_session
-                else "No",
+                "Login Status": "Active" if is_active else "Inactive",
                 "Last Login": last_login.date().isoformat() if last_login else "",
-                "Last Seen": last_seen.date().isoformat() if last_seen else "",
                 "Days Since Last Activity": days_since_activity
                 if days_since_activity is not None
                 else "",
