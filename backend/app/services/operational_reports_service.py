@@ -970,7 +970,7 @@ def therapist_log_compliance_rows(
     product_module: str | None = None,
     case_manager_user_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Therapists with active cases and completed sessions missing logs (2+ days old)."""
+    """One row per therapist–case pair with completed sessions missing logs (2+ days old)."""
     today = today_ist()
     cutoff = today - timedelta(days=THERAPIST_LOG_COMPLIANCE_MIN_AGE_DAYS)
 
@@ -986,28 +986,25 @@ def therapist_log_compliance_rows(
     if not case_ids:
         return []
 
-    assignment_rows = db.execute(
-        select(CaseAssignment.therapist_user_id, CaseAssignment.case_id).where(
-            CaseAssignment.case_id.in_(case_ids),
-            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
-        )
-    ).all()
-
-    therapist_cases: dict[int, list[Case]] = defaultdict(list)
-    for therapist_id, case_id in assignment_rows:
-        case = cases_by_id.get(case_id)
-        if case:
-            therapist_cases[int(therapist_id)].append(case)
-
-    therapist_ids = list(therapist_cases.keys())
+    therapist_ids = list(
+        {
+            int(therapist_id)
+            for therapist_id, _case_id in db.execute(
+                select(CaseAssignment.therapist_user_id, CaseAssignment.case_id).where(
+                    CaseAssignment.case_id.in_(case_ids),
+                    CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                )
+            ).all()
+        }
+    )
     if not therapist_ids:
         return []
 
     missing_rows = db.execute(
         select(
             TherapySession.therapist_user_id,
-            TherapySession.scheduled_date,
             TherapySession.case_id,
+            TherapySession.scheduled_date,
         )
         .outerjoin(DailyLog, DailyLog.session_id == TherapySession.id)
         .where(
@@ -1017,57 +1014,54 @@ def therapist_log_compliance_rows(
             DailyLog.id.is_(None),
             TherapySession.scheduled_date <= cutoff,
         )
-        .order_by(TherapySession.therapist_user_id, TherapySession.scheduled_date)
+        .order_by(TherapySession.therapist_user_id, TherapySession.case_id, TherapySession.scheduled_date)
     ).all()
 
-    missing_by_therapist: dict[int, list[date]] = defaultdict(list)
-    missing_case_ids: dict[int, set[int]] = defaultdict(set)
-    for therapist_id, scheduled_date, missing_case_id in missing_rows:
-        tid = int(therapist_id)
-        missing_by_therapist[tid].append(scheduled_date)
-        missing_case_ids[tid].add(int(missing_case_id))
+    missing_by_pair: dict[tuple[int, int], list[date]] = defaultdict(list)
+    for therapist_id, case_id, scheduled_date in missing_rows:
+        missing_by_pair[(int(therapist_id), int(case_id))].append(scheduled_date)
 
-    last_submitted = dict(
-        db.execute(
-            select(TherapySession.therapist_user_id, func.max(DailyLog.submitted_at))
+    if not missing_by_pair:
+        return []
+
+    last_submitted = {
+        (int(therapist_id), int(case_id)): submitted_at
+        for therapist_id, case_id, submitted_at in db.execute(
+            select(
+                TherapySession.therapist_user_id,
+                TherapySession.case_id,
+                func.max(DailyLog.submitted_at),
+            )
             .join(DailyLog, DailyLog.session_id == TherapySession.id)
             .where(
                 TherapySession.therapist_user_id.in_(therapist_ids),
                 TherapySession.case_id.in_(case_ids),
                 DailyLog.submitted_at.isnot(None),
             )
-            .group_by(TherapySession.therapist_user_id)
+            .group_by(TherapySession.therapist_user_id, TherapySession.case_id)
         ).all()
-    )
+        if submitted_at
+    }
 
     out: list[dict[str, Any]] = []
-    for therapist_id in sorted(therapist_cases.keys()):
-        missing_dates = missing_by_therapist.get(therapist_id, [])
-        if not missing_dates:
+    for (therapist_id, case_id), missing_dates in missing_by_pair.items():
+        case = cases_by_id.get(case_id)
+        if not case:
             continue
-
         therapist = db.get(User, therapist_id)
-        active_cases = therapist_cases[therapist_id]
-        case_ids_str = "; ".join(export_case_id(c) for c in active_cases if export_case_id(c))
-        cm_names = sorted(
-            {
-                user_display_name(case_manager(db, c))
-                for c in active_cases
-                if case_manager(db, c)
-            }
-        )
         oldest = min(missing_dates)
         newest = max(missing_dates)
-        last_at = last_submitted.get(therapist_id)
+        last_at = last_submitted.get((therapist_id, case_id))
+        cm = case_manager(db, case)
 
         out.append(
             {
                 "Therapist ID": export_therapist_id(therapist),
                 "Therapist Name": user_display_name(therapist),
                 "Mentor": user_display_name(mentor_for_therapist(db, therapist_id)),
-                "Case Manager": ", ".join(cm_names),
-                "Active Cases": len(active_cases),
-                "Case IDs": case_ids_str,
+                "Case ID": export_case_id(case),
+                "Client Name": case_service.case_child_display_name(case) or "",
+                "Case Manager": user_display_name(cm),
                 "Missing Logs": len(missing_dates),
                 "Not Submitting Since": oldest.isoformat(),
                 "Days Since Oldest Missing": days_since(oldest, as_of=today),

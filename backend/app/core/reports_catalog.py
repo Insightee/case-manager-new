@@ -23,7 +23,7 @@ REPORT_DEFINITIONS: list[dict[str, Any]] = [
     {
         "key": "therapist-log-compliance",
         "label": "Therapist log compliance",
-        "description": "Therapists with active cases who have completed sessions missing logs (2+ days old).",
+        "description": "Therapist–case rows for completed sessions missing logs (2+ days old).",
         "category": "hr_attendance",
         "filters": ["product_module", "case_manager_user_id"],
         "formats": ["csv", "xlsx", "pdf"],

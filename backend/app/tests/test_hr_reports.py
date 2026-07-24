@@ -203,8 +203,12 @@ def test_therapist_log_compliance_catalog_and_json():
     if data["rows"]:
         row = data["rows"][0]
         assert "Therapist ID" in row
+        assert "Case ID" in row
+        assert "Client Name" in row
         assert "Not Submitting Since" in row
         assert "Missing Logs" in row
+        assert "Case IDs" not in row
+        assert "Active Cases" not in row
 
 
 def test_therapist_log_compliance_xlsx():
