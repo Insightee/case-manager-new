@@ -72,6 +72,8 @@ def test_bulk_attendance_report_json():
     if data["rows"]:
         assert "Case ID" in data["rows"][0]
         assert "Therapist ID" in data["rows"][0]
+        assert "Logs Pending Approval" in data["rows"][0]
+        assert "Logs Rejected" in data["rows"][0]
         assert "Parent Cancelled" not in data["rows"][0]
         assert "Monthly Fixed Pay" not in data["rows"][0]
 

@@ -44,6 +44,7 @@ from app.services.reports_export_helpers import (
     month_bounds,
     month_long_label,
     is_homecare_case,
+    is_shadow_case,
     monthly_report_submitted,
     normalize_month,
     parse_iso_date,
@@ -231,8 +232,9 @@ def bulk_attendance_rows(
         return []
 
     session_stats = _session_stats_by_case(db, case_ids, ym)
-    billable_metrics = _build_billable_metrics(db, cases, case_ids, ym, start, end)
+    billable_metrics = _build_billable_metrics(db, cases, case_ids, start, end)
     missing_logs_month = _missing_logs_in_month(db, case_ids, start, end)
+    logs_pending_month, logs_rejected_month = _log_approval_gap_by_case(db, case_ids, start, end)
     hours_by_case = _session_hours_by_case(db, case_ids, ym)
 
     rows: list[dict[str, Any]] = []
@@ -266,6 +268,8 @@ def bulk_attendance_rows(
                 "Child Absence (All)": stats.get("client_absent", 0),
                 "Therapist Leave": stats.get("therapist_leave", 0),
                 "Completed Missing Logs": missing_logs_month.get(case.id, 0),
+                "Logs Pending Approval": logs_pending_month.get(case.id, 0),
+                "Logs Rejected": logs_rejected_month.get(case.id, 0),
                 "Leave Paid Days": leave["paid"],
                 "Leave Unpaid Days": leave["unpaid"],
                 "Leave Credits Remaining": balance.get("leave_credit_pending", balance.get("paid_remaining", 0)),
@@ -389,7 +393,7 @@ def session_monthly_summary_rows(
     case_ids = [c.id for c in cases if _case_allowed(db, user, c)]
     stats = _session_stats_by_case(db, case_ids, ym)
     start, end = month_bounds(ym)
-    billable_metrics = _build_billable_metrics(db, cases, case_ids, ym, start, end)
+    billable_metrics = _build_billable_metrics(db, cases, case_ids, start, end)
     missing_logs = _missing_logs_in_month(db, case_ids, start, end)
     hours = _session_hours_by_case(db, case_ids, ym)
 
@@ -1159,33 +1163,45 @@ def _approved_child_absence_billable_by_case(
     )
 
 
-def _ledger_billable_by_case(db: Session, case_ids: list[int], ym: str) -> dict[int, int]:
+def _log_approval_gap_by_case(
+    db: Session, case_ids: list[int], start: date, end: date
+) -> tuple[dict[int, int], dict[int, int]]:
+    """Completed sessions with submitted logs awaiting approval or rejected."""
     if not case_ids:
-        return {}
-    return dict(
-        db.execute(
-            select(BillingLedger.case_id, func.count())
-            .where(
-                BillingLedger.case_id.in_(case_ids),
-                BillingLedger.ledger_month == ym,
-                BillingLedger.billable_status.in_([BillableStatus.BILLABLE, BillableStatus.INVOICED]),
-            )
-            .group_by(BillingLedger.case_id)
-        ).all()
-    )
+        return {}, {}
+    pending: dict[int, int] = {}
+    rejected: dict[int, int] = {}
+    rows = db.execute(
+        select(TherapySession.case_id, DailyLog.approval_status, func.count())
+        .join(DailyLog, DailyLog.session_id == TherapySession.id)
+        .where(
+            TherapySession.case_id.in_(case_ids),
+            TherapySession.status == SessionStatus.COMPLETED,
+            TherapySession.scheduled_date >= start,
+            TherapySession.scheduled_date <= end,
+            DailyLog.approval_status.in_(
+                (LogApprovalStatus.PENDING.value, LogApprovalStatus.REJECTED.value)
+            ),
+        )
+        .group_by(TherapySession.case_id, DailyLog.approval_status)
+    ).all()
+    for case_id, approval_status, cnt in rows:
+        if approval_status == LogApprovalStatus.PENDING.value:
+            pending[case_id] = int(cnt)
+        elif approval_status == LogApprovalStatus.REJECTED.value:
+            rejected[case_id] = int(cnt)
+    return pending, rejected
 
 
 def _build_billable_metrics(
     db: Session,
     cases: list[Case],
     case_ids: list[int],
-    ym: str,
     start: date,
     end: date,
 ) -> dict[int, dict[str, Any]]:
     approved_sessions = _approved_sessions_by_case(db, case_ids, start, end)
     approved_child_absence = _approved_child_absence_billable_by_case(db, case_ids, start, end)
-    ledger_billable = _ledger_billable_by_case(db, case_ids, ym)
     cases_by_id = {c.id: c for c in cases if c.id in case_ids}
     out: dict[int, dict[str, Any]] = {}
 
@@ -1195,9 +1211,11 @@ def _build_billable_metrics(
         child_absence = int(approved_child_absence.get(case_id, 0))
 
         if case and is_homecare_case(case):
+            billable = approved
+        elif case and is_shadow_case(case):
             billable = approved + child_absence
         else:
-            billable = int(ledger_billable.get(case_id, 0))
+            billable = approved + child_absence
 
         out[case_id] = {
             "approved_sessions": approved,
