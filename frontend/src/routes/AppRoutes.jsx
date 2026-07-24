@@ -94,6 +94,11 @@ const AdminTherapistPayoutsPage = lazy(() =>
     default: m.AdminTherapistPayoutsPage,
   }))
 )
+const AdminFinanceReportsPage = lazy(() =>
+  import('../components/admin-portal/AdminFinanceReportsPage.jsx').then((m) => ({
+    default: m.AdminFinanceReportsPage,
+  }))
+)
 const AdminClientInvoicePage = lazy(() =>
   import('../components/admin-portal/AdminClientInvoicePage.jsx').then((m) => ({ default: m.AdminClientInvoicePage }))
 )
@@ -464,6 +469,14 @@ export function AppRoutes() {
           element={
             <Lazy>
               <AdminTherapistPayoutsPage />
+            </Lazy>
+          }
+        />
+        <Route
+          path="finance-reports"
+          element={
+            <Lazy>
+              <AdminFinanceReportsPage />
             </Lazy>
           }
         />

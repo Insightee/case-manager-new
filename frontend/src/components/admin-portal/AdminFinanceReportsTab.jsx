@@ -17,8 +17,8 @@ const REPORTS = [
   { key: 'margin-by-case', label: 'Margin by case' },
 ]
 
-export function AdminFinanceReportsTab() {
-  const [reportKey, setReportKey] = useState('monthly-billing')
+export function AdminFinanceReportsTab({ defaultReportKey = 'monthly-billing' }) {
+  const [reportKey, setReportKey] = useState(defaultReportKey)
   const [billingMonth, setBillingMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [preview, setPreview] = useState(null)
   const { loading, error, successMessage, run, clearMessages } = useBillingAction()

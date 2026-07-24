@@ -56,6 +56,11 @@ export function AdminInvoicesPage() {
   const onComposeRoute = location.pathname.includes('/invoices/compose')
 
   useEffect(() => {
+    if (tabParam !== 'reports') return
+    navigate('/admin/finance-reports', { replace: true })
+  }, [tabParam, navigate])
+
+  useEffect(() => {
     if (tabParam !== 'therapist') return
     const next = new URLSearchParams()
     const sub = searchParams.get('therapist_sub') || 'dashboard'
@@ -111,7 +116,7 @@ export function AdminInvoicesPage() {
         title={isFinanceHome ? 'Finance home' : 'Billing & invoices'}
         subtitle={
           isFinanceHome
-            ? 'Client billing, payments, ledger, and reports. Therapist payouts live in the sidebar.'
+            ? 'Client billing, payments, and ledger. Finance reports and therapist payouts are in the sidebar.'
             : 'Ledger-first client billing with finance review before invoices are sent.'
         }
       />

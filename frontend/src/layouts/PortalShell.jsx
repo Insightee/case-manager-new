@@ -86,6 +86,7 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },
     { to: '/admin/invoices', label: 'Invoices & payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices', section: 'Finance' },
     { to: '/admin/therapist-payouts', label: 'Therapist payouts', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'wallet', section: 'Finance' },
+    { to: '/admin/finance-reports', label: 'Reports', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'reports', section: 'Finance' },
     { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },
     { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope', section: 'People & HR' },
     { to: '/admin/leave', label: 'Leave', perm: 'leave.manage', feature: null, icon: 'leave', section: 'People & HR' },
@@ -144,6 +145,7 @@ function iconForNavPath(to) {
   if (to.includes('/reports')) return 'reports'
   if (to.includes('/workbench') || to.includes('/logs')) return 'workbench'
   if (to.includes('/therapist-payouts')) return 'wallet'
+  if (to.includes('/finance-reports')) return 'reports'
   if (to.includes('/invoices')) return 'invoices'
   return 'dashboard'
 }
