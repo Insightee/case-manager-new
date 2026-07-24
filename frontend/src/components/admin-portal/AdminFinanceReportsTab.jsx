@@ -9,6 +9,7 @@ const REPORTS = [
   { key: 'outstanding', label: 'Outstanding balances' },
   { key: 'collections', label: 'Collections' },
   { key: 'therapist-payouts', label: 'Therapist payouts' },
+  { key: 'therapist-payout-preview', label: 'Therapist payout preview' },
   { key: 'pending-payout-approvals', label: 'Pending payout approvals' },
   { key: 'ledger-missing', label: 'Ledger missing' },
   { key: 'manual-adjustments', label: 'Manual adjustments' },

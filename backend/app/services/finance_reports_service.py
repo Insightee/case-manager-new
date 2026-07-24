@@ -19,7 +19,7 @@ from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_manual_line import InvoiceManualLine
 from app.models.ledger_billing import BillableStatus, BillingLedger
 from app.models.user import User
-from app.services import billing_composer_service, client_billing_service
+from app.services import billing_composer_service, client_billing_service, finance_payout_preview_service
 
 
 REPORT_KEYS = frozenset(
@@ -28,6 +28,7 @@ REPORT_KEYS = frozenset(
         "outstanding",
         "collections",
         "therapist-payouts",
+        "therapist-payout-preview",
         "pending-payout-approvals",
         "ledger-missing",
         "manual-adjustments",
@@ -116,6 +117,9 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
             }
             for r in rows
         ]
+
+    if report_key == "therapist-payout-preview":
+        return finance_payout_preview_service.payout_preview_rows(db, ym)
 
     if report_key == "pending-payout-approvals":
         rows = db.scalars(

@@ -1,0 +1,126 @@
+"""Tests for finance therapist payout preview calculations."""
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.models.case import BillingType, Case, CompensationMode
+from app.services.finance_payout_preview_service import (
+    SHADOW_MONTHLY_DAYS,
+    client_lumpsum_inr,
+    per_session_share_inr,
+    predicted_subtotal_inr,
+    therapist_share_inr,
+)
+from app.seed.demo_seed import run as seed_run
+
+client = TestClient(app)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_db():
+    seed_run()
+
+
+def _case(**kwargs) -> Case:
+    base = dict(
+        id=1,
+        case_code="TEST-001",
+        child_id=1,
+        service_type="Homecare",
+        product_module="homecare",
+    )
+    base.update(kwargs)
+    case = Case(**{k: v for k, v in base.items() if k not in ("billing_type", "compensation_mode")})
+    if "billing_type" in kwargs:
+        case.billing_type = kwargs["billing_type"]
+    if "compensation_mode" in kwargs:
+        case.compensation_mode = kwargs["compensation_mode"]
+    return case
+
+
+def test_homecare_per_session_share_is_flat_inr():
+    case = _case(
+        billing_type=BillingType.PER_SESSION,
+        compensation_mode=CompensationMode.PERCENTAGE,
+        pay_share_amount_inr=800,
+    )
+    assert therapist_share_inr(case) == 800
+    assert per_session_share_inr(case) == 800
+    assert predicted_subtotal_inr(case, approved_sessions=5, unpaid_leaves=0) == 4000
+
+
+def test_homecare_package_divides_by_session_count():
+    case = _case(
+        billing_type=BillingType.PACKAGE,
+        compensation_mode=CompensationMode.PERCENTAGE,
+        package_session_count=20,
+        package_amount_inr=25000,
+        pay_share_amount_inr=15000,
+    )
+    assert client_lumpsum_inr(case) == 25000
+    assert per_session_share_inr(case) == 750
+    assert predicted_subtotal_inr(case, approved_sessions=8, unpaid_leaves=2) == 6000
+
+
+def test_shadow_uses_thirty_day_divisor_and_unpaid_leaves():
+    case = _case(
+        service_type="Shadow Support",
+        product_module="shadow_support",
+        billing_type=BillingType.PACKAGE,
+        compensation_mode=CompensationMode.PERCENTAGE,
+        package_session_count=30,
+        package_amount_inr=30000,
+        pay_share_amount_inr=18000,
+    )
+    assert per_session_share_inr(case) == 600
+    assert predicted_subtotal_inr(case, approved_sessions=20, unpaid_leaves=3) == round(
+        600 * (SHADOW_MONTHLY_DAYS - 3), 2
+    )
+
+
+def test_shadow_subtotal_ignores_approved_sessions():
+    case = _case(
+        product_module="shadow_support",
+        billing_type=BillingType.PACKAGE,
+        compensation_mode=CompensationMode.PERCENTAGE,
+        pay_share_amount_inr=15000,
+    )
+    # Approved sessions should not change shadow payout
+    low = predicted_subtotal_inr(case, approved_sessions=5, unpaid_leaves=0)
+    high = predicted_subtotal_inr(case, approved_sessions=25, unpaid_leaves=0)
+    assert low == high == 15000
+
+
+def _headers(email: str) -> dict:
+    r = client.post("/api/v1/auth/login", json={"email": email, "password": "demo123"})
+    assert r.status_code == 200
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_finance_payout_preview_report_json():
+    headers = _headers("finance@demo.com")
+    r = client.get(
+        "/api/v1/admin/finance-reports/therapist-payout-preview?billing_month=2026-06",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reportKey"] == "therapist-payout-preview"
+    assert "rows" in body
+    if body["rows"]:
+        row = body["rows"][0]
+        assert "Case ID" in row
+        assert "Predicted Subtotal" in row
+        assert "Per Session Share" in row
+
+
+def test_finance_payout_preview_report_csv():
+    headers = _headers("finance@demo.com")
+    r = client.get(
+        "/api/v1/admin/finance-reports/therapist-payout-preview?billing_month=2026-06&format=csv",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert "text/csv" in r.headers.get("content-type", "")
