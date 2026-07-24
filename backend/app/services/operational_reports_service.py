@@ -44,13 +44,10 @@ from app.services.reports_export_helpers import (
     month_bounds,
     month_long_label,
     is_homecare_case,
-    is_shadow_case,
     monthly_report_submitted,
     normalize_month,
     parse_iso_date,
     scoped_cases,
-    shadow_leave_deduction_estimate,
-    shadow_per_session_day_rate,
     THERAPIST_LOG_COMPLIANCE_MIN_AGE_DAYS,
     user_display_name,
 )
@@ -234,9 +231,7 @@ def bulk_attendance_rows(
         return []
 
     session_stats = _session_stats_by_case(db, case_ids, ym)
-    billable_metrics = _build_billable_metrics(
-        db, cases, case_ids, ym, start, end, session_stats, leave_cache={}
-    )
+    billable_metrics = _build_billable_metrics(db, cases, case_ids, ym, start, end)
     missing_logs_month = _missing_logs_in_month(db, case_ids, start, end)
     hours_by_case = _session_hours_by_case(db, case_ids, ym)
 
@@ -270,17 +265,12 @@ def bulk_attendance_rows(
                 "Approved Child Absence (Billable)": metrics.get("approved_child_absence", 0),
                 "Child Absence (All)": stats.get("client_absent", 0),
                 "Therapist Leave": stats.get("therapist_leave", 0),
-                "Parent Cancelled": stats.get("cancelled", 0),
-                "Rescheduled": stats.get("rescheduled", 0),
                 "Completed Missing Logs": missing_logs_month.get(case.id, 0),
                 "Leave Paid Days": leave["paid"],
                 "Leave Unpaid Days": leave["unpaid"],
                 "Leave Credits Remaining": balance.get("leave_credit_pending", balance.get("paid_remaining", 0)),
                 "Total Session Hours": round(hours_by_case.get(case.id, 0), 2),
                 "Billable Sessions": metrics.get("billable_sessions", 0),
-                "Monthly Fixed Pay": metrics.get("monthly_fixed_pay", ""),
-                "Per Session Day Rate": metrics.get("per_session_day_rate", ""),
-                "Estimated Unpaid Leave Deduction": metrics.get("leave_deduction_estimate", ""),
                 "Monthly Report Submitted": "Yes" if monthly_report_submitted(db, case.id, ym) else "No",
             }
         )
@@ -399,7 +389,7 @@ def session_monthly_summary_rows(
     case_ids = [c.id for c in cases if _case_allowed(db, user, c)]
     stats = _session_stats_by_case(db, case_ids, ym)
     start, end = month_bounds(ym)
-    billable_metrics = _build_billable_metrics(db, cases, case_ids, ym, start, end, stats, leave_cache={})
+    billable_metrics = _build_billable_metrics(db, cases, case_ids, ym, start, end)
     missing_logs = _missing_logs_in_month(db, case_ids, start, end)
     hours = _session_hours_by_case(db, case_ids, ym)
 
@@ -1192,9 +1182,6 @@ def _build_billable_metrics(
     ym: str,
     start: date,
     end: date,
-    session_stats: dict[int, dict[str, int]],
-    *,
-    leave_cache: dict[int, dict[str, int]],
 ) -> dict[int, dict[str, Any]]:
     approved_sessions = _approved_sessions_by_case(db, case_ids, start, end)
     approved_child_absence = _approved_child_absence_billable_by_case(db, case_ids, start, end)
@@ -1204,41 +1191,18 @@ def _build_billable_metrics(
 
     for case_id in case_ids:
         case = cases_by_id.get(case_id)
-        stats = session_stats.get(case_id, {})
         approved = int(approved_sessions.get(case_id, 0))
         child_absence = int(approved_child_absence.get(case_id, 0))
-        scheduled = int(stats.get("scheduled", 0))
 
         if case and is_homecare_case(case):
             billable = approved + child_absence
         else:
             billable = int(ledger_billable.get(case_id, 0))
 
-        monthly_fixed = ""
-        per_session_rate = ""
-        leave_deduction = ""
-        if case and is_shadow_case(case):
-            fixed_pay = float(case.therapist_fixed_pay_inr or 0)
-            monthly_fixed = fixed_pay if fixed_pay else ""
-            rate = shadow_per_session_day_rate(fixed_pay or None, scheduled)
-            per_session_rate = rate if rate else ""
-            assign = active_assignment(db, case_id)
-            therapist = assignment_therapist(db, assign)
-            unpaid_days = 0
-            if therapist:
-                if therapist.id not in leave_cache:
-                    leave_cache[therapist.id] = leave_days_in_month(db, therapist.id, ym)
-                unpaid_days = int(leave_cache[therapist.id].get("unpaid", 0))
-            deduction = shadow_leave_deduction_estimate(fixed_pay or None, scheduled, unpaid_days)
-            leave_deduction = deduction if deduction else ""
-
         out[case_id] = {
             "approved_sessions": approved,
             "approved_child_absence": child_absence,
             "billable_sessions": billable,
-            "monthly_fixed_pay": monthly_fixed,
-            "per_session_day_rate": per_session_rate,
-            "leave_deduction_estimate": leave_deduction,
         }
     return out
 
