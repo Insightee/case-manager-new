@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { apiFetch } from '../../lib/apiClient.js'
+import { apiDownload, apiFetch } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useStaffDirectory } from '../../hooks/useStaffDirectory.js'
@@ -182,6 +182,7 @@ export function AdminTherapistProfilesPage() {
   const [editServices, setEditServices] = useState([])
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   async function load(selectProfileId = null) {
     setLoading(true)
@@ -364,6 +365,26 @@ export function AdminTherapistProfilesPage() {
     setEditingSupervisor(true)
   }
 
+  async function exportProfiles() {
+    setExporting(true)
+    setError('')
+    try {
+      const params = new URLSearchParams()
+      if (statusFilter !== 'ALL') params.set('status', statusFilter)
+      if (search.trim()) params.set('q', search.trim())
+      const qs = params.toString()
+      const stamp = new Date().toISOString().slice(0, 10)
+      await apiDownload(
+        `/api/v1/admin/therapist-profiles/export.csv${qs ? `?${qs}` : ''}`,
+        `therapist-profiles-${stamp}.csv`,
+      )
+    } catch (err) {
+      setError(err.message || 'Could not download profiles')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="admin-page">
       <AdminPageHeader
@@ -461,7 +482,20 @@ export function AdminTherapistProfilesPage() {
         </form>
       ) : null}
 
-      <AdminPanel title="Profiles" padded={false}>
+      <AdminPanel
+        title="Profiles"
+        padded={false}
+        actions={
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost admin-btn--sm"
+            disabled={exporting || loading}
+            onClick={exportProfiles}
+          >
+            {exporting ? '…' : 'Download CSV'}
+          </button>
+        }
+      >
         <div className="admin-panel__body">
           <div className="admin-desktop-only">
             <AdminCollapsibleFilters

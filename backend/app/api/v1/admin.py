@@ -105,6 +105,7 @@ from app.core.rbac_access import (
     sync_user_access_fields,
 )
 from app.services import auth_service, case_service, log_service, therapist_profile_service as profile_svc
+from app.services import therapist_profile_export_service as therapist_profile_export_svc
 from app.services.admin_scope_service import apply_case_scope
 from app.services import therapist_review_service as review_svc
 from app.core.permissions import RoleName
@@ -2278,6 +2279,26 @@ def list_therapist_profiles(
         u = db.get(User, p.user_id)
         result.append(TherapistProfileRead(**profile_svc.profile_to_dict(p, u)))
     return result
+
+
+@router.get("/therapist-profiles/export.csv")
+def admin_therapist_profiles_export(
+    status: Optional[str] = None,
+    q: Optional[str] = Query(None, description="Search name or email"),
+    user: User = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    st = TherapistProfileStatus(status) if status else None
+    try:
+        csv_text = therapist_profile_export_svc.export_therapist_profiles_csv(db, status=st, search=q)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="therapist-profiles-{stamp}.csv"'},
+    )
 
 
 @router.post("/therapist-profiles", response_model=TherapistProfileRead, status_code=status.HTTP_201_CREATED)
