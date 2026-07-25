@@ -18,7 +18,11 @@ client = TestClient(app)
 
 def _future_leave_day(offset_days: int) -> date:
     """Self-service leave rejects past dates; keep tests anchored to IST today."""
-    return today_ist() + timedelta(days=offset_days)
+    d = today_ist() + timedelta(days=offset_days)
+    # Default schedule template only materializes Mon–Fri slots.
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
 
 
 def _reset_sqlite_db() -> None:
