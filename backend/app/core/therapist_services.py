@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 SERVICE_CATEGORIES: list[dict[str, str]] = [
     {"id": "shadow_support", "label": "Shadow support"},
     {"id": "homecare", "label": "Homecare"},
+    {"id": "b2b", "label": "B2B"},
     {"id": "occupational_therapy", "label": "Occupational therapy"},
     {"id": "speech_therapy", "label": "Speech therapy"},
     {"id": "special_educator", "label": "Special educator"},

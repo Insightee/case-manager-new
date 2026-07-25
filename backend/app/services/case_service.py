@@ -117,7 +117,6 @@ def list_cases_for_user(
         stmt = _apply_module_filter(stmt, user)
     elif user_has_permission(user, "case.read.team"):
         stmt = stmt.where(team_case_access_clause(user))
-        stmt = _apply_module_filter(stmt, user)
     elif user_has_permission(user, "case.read.scoped"):
         stmt = _apply_module_filter(stmt, user)
     elif user_has_permission(user, "case.read.assigned"):

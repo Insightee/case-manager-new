@@ -353,3 +353,78 @@ def test_daily_log_submission_emails_parent(monkeypatch):
     approved = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=approve_headers)
     assert approved.status_code == 200
     assert published == [], "CM approval should NOT send parent email (disabled by default; edits show in-app)"
+
+
+def test_case_manager_can_view_b2b_assigned_case_logs():
+    """Assigned CMs must see logs for B2B caseload even without b2b module grant."""
+    from datetime import datetime, timezone
+
+    from app.models.case import CaseStatus
+    from app.models.child import Child
+    from app.services import case_code_service
+
+    db = SessionLocal()
+    try:
+        cm = db.scalars(select(User).where(User.email == "casemanager@demo.com")).first()
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        child = db.scalars(select(Child).limit(1)).first()
+        assert cm is not None and therapist is not None and child is not None
+
+        case_code = case_code_service.generate_case_code(db, "b2b")
+        case = Case(
+            case_code=case_code,
+            child_id=child.id,
+            service_type="B2B",
+            product_module="b2b",
+            status=CaseStatus.ACTIVE,
+            case_manager_user_id=cm.id,
+        )
+        db.add(case)
+        db.flush()
+
+        session = TherapySession(
+            case_id=case.id,
+            therapist_user_id=therapist.id,
+            scheduled_date=date.today(),
+            status=SessionStatus.COMPLETED,
+            actual_start_at=datetime.now(timezone.utc),
+            actual_end_at=datetime.now(timezone.utc),
+        )
+        db.add(session)
+        db.flush()
+
+        log = DailyLog(
+            session_id=session.id,
+            attendance_status="PRESENT",
+            approval_status=LogApprovalStatus.PENDING,
+            session_notes="B2B scope test",
+            submitted_at=datetime.now(timezone.utc),
+        )
+        db.add(log)
+        db.commit()
+
+        case_id = case.id
+        log_id = log.id
+    finally:
+        db.close()
+
+    cm_headers = _login("casemanager@demo.com")
+
+    case_res = client.get(f"/api/v1/cases/{case_id}", headers=cm_headers)
+    assert case_res.status_code == 200, case_res.text
+    assert case_res.json()["product_module"] == "b2b"
+
+    logs_res = client.get(
+        "/api/v1/admin/session-logs",
+        headers=cm_headers,
+        params={"case_id": case_id, "page_size": 50},
+    )
+    assert logs_res.status_code == 200, logs_res.text
+    log_ids = {row["id"] for row in logs_res.json()["items"] if row.get("id")}
+    assert log_id in log_ids
+
+    queue_res = client.get("/api/v1/admin/cm/logs/review-queue", headers=cm_headers)
+    assert queue_res.status_code == 200, queue_res.text
+    queue_case_ids = {c["case_id"] for c in queue_res.json().get("cases", [])}
+    assert case_id in queue_case_ids
+

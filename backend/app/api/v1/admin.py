@@ -106,7 +106,7 @@ from app.core.rbac_access import (
 )
 from app.services import auth_service, case_service, log_service, therapist_profile_service as profile_svc
 from app.services import therapist_profile_export_service as therapist_profile_export_svc
-from app.services.admin_scope_service import apply_case_scope
+from app.services.admin_scope_service import apply_case_scope, case_row_scope_clause
 from app.services import therapist_review_service as review_svc
 from app.core.permissions import RoleName
 
@@ -884,10 +884,10 @@ def sessions_analytics(
     d_from = date.fromisoformat(date_from) if date_from else today - timedelta(days=29)
     d_to = date.fromisoformat(date_to) if date_to else today
 
-    allowed_cases = get_allowed_case_product_modules(user)
+    scope_clause = case_row_scope_clause(user)
     base_filters = []
-    if allowed_cases is not None:
-        base_filters.append(Case.product_module.in_(allowed_cases) if allowed_cases else Case.id == -1)
+    if scope_clause is not None:
+        base_filters.append(scope_clause)
     if therapist_id:
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:
@@ -1190,10 +1190,10 @@ def export_sessions_xlsx(
     today = date.today()
     d_from = date.fromisoformat(date_from) if date_from else today - timedelta(days=29)
     d_to = date.fromisoformat(date_to) if date_to else today
-    allowed_cases = get_allowed_case_product_modules(user)
+    scope_clause = case_row_scope_clause(user)
     base_filters = []
-    if allowed_cases is not None:
-        base_filters.append(Case.product_module.in_(allowed_cases) if allowed_cases else Case.id == -1)
+    if scope_clause is not None:
+        base_filters.append(scope_clause)
     if therapist_id:
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:
@@ -1289,10 +1289,10 @@ def export_sessions_pdf(
     today = date.today()
     d_from = date.fromisoformat(date_from) if date_from else today - timedelta(days=29)
     d_to = date.fromisoformat(date_to) if date_to else today
-    allowed_cases = get_allowed_case_product_modules(user)
+    scope_clause = case_row_scope_clause(user)
     base_filters = []
-    if allowed_cases is not None:
-        base_filters.append(Case.product_module.in_(allowed_cases) if allowed_cases else Case.id == -1)
+    if scope_clause is not None:
+        base_filters.append(scope_clause)
     if therapist_id:
         base_filters.append(TherapySession.therapist_user_id == therapist_id)
     if product_module:

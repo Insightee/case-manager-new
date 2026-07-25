@@ -254,11 +254,11 @@ def case_scope_check(db: Session, user: User, case: Case) -> bool:
     if user_has_permission(user, "case.read.assigned"):
         if get_active_assignment(db, case.id, user.id):
             return True
-    if not case_product_module_allowed(user, case.product_module):
-        return False
     if user_has_permission(user, "case.read.team"):
         if case.case_manager_user_id == user.id:
             return True
+    if not case_product_module_allowed(user, case.product_module):
+        return False
     if user_has_permission(user, "case.read.scoped"):
         return case_product_module_allowed(user, case.product_module)
     return False

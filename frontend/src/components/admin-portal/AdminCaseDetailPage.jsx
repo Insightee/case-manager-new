@@ -150,8 +150,14 @@ export function AdminCaseDetailPage() {
       (user?.roles || []).some((r) => ['SUPER_ADMIN', 'MODULE_ADMIN', 'ADMIN', 'HR'].includes(r)),
   )
   const canAssignCase = Boolean(caseRow && can('case.assign') && canWriteProduct(caseRow.product_module))
+  const isAssignedCaseManager = Boolean(
+    caseRow && user?.id && caseRow.case_manager_user_id === user.id,
+  )
   const canReviewCaseLogs = Boolean(
-    caseRow && can('daily_log.review') && canReviewLogs(caseRow.product_module),
+    caseRow &&
+      can('daily_log.review') &&
+      !isViewOnly &&
+      (canReviewLogs(caseRow.product_module) || isAssignedCaseManager),
   )
   const visibleTabs = TABS.filter((t) => !t.perm || can(t.perm))
   const visibleTabIds = visibleTabs.map((t) => t.id)

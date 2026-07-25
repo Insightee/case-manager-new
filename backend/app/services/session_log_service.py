@@ -322,6 +322,18 @@ def publish_log_to_parents(log: DailyLog) -> None:
 
 
 def _case_ids_for_admin(db: Session, user: User, product_module: str | None) -> list[int] | None:
+    if user_has_permission(user, "case.read.all") or user_has_permission(user, "admin.override"):
+        stmt = select(Case.id)
+        if product_module:
+            stmt = stmt.where(Case.product_module == product_module)
+        return list(db.scalars(stmt).all())
+
+    if user_has_permission(user, "case.read.team"):
+        stmt = select(Case.id).where(Case.case_manager_user_id == user.id)
+        if product_module:
+            stmt = stmt.where(Case.product_module == product_module)
+        return list(db.scalars(stmt).all())
+
     allowed = get_allowed_case_product_modules(user)
     stmt = select(Case.id)
     if allowed is not None:
@@ -331,8 +343,6 @@ def _case_ids_for_admin(db: Session, user: User, product_module: str | None) -> 
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
     cases = db.scalars(stmt).all()
-    if user_has_permission(user, "case.read.all") or user_has_permission(user, "admin.override"):
-        return list(cases)
     scoped = []
     for cid in cases:
         case = case_service.get_case(db, cid)
