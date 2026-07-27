@@ -12,6 +12,8 @@ from app.core.module_write import ensure_billing_write_access
 from app.core.permissions import require_mutation_permission, require_permission
 from app.models.user import User
 from app.services import finance_bulk_service, finance_overview_service, finance_reports_service
+from app.services.export_document_service import export_meta
+from app.services import reports_export_service
 
 router = APIRouter(prefix="/admin", tags=["admin-finance"])
 
@@ -29,7 +31,7 @@ def finance_overview(
 def finance_report(
     report_key: str,
     billing_month: Optional[str] = None,
-    format: str = Query("json", pattern="^(json|csv)$"),
+    format: str = Query("json", pattern="^(json|csv|xlsx)$"),
     user: User = Depends(require_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
@@ -37,6 +39,11 @@ def finance_report(
         rows = finance_reports_service.report_rows(db, report_key, billing_month=billing_month)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+    meta = export_meta(user)
+    title = finance_reports_service.report_title(report_key)
+    subtitle = finance_reports_service.report_subtitle(report_key, billing_month=billing_month)
+
     if format == "csv":
         csv_text = finance_reports_service.report_csv(report_key, rows)
         return Response(
@@ -44,7 +51,28 @@ def finance_report(
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="{report_key}.csv"'},
         )
-    return {"reportKey": report_key, "rows": rows, "count": len(rows)}
+
+    if format == "xlsx":
+        content = reports_export_service.payload_to_xlsx(
+            title=title,
+            subtitle=subtitle,
+            user=user,
+            rows=rows,
+        )
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{report_key}.xlsx"'},
+        )
+
+    return {
+        "reportKey": report_key,
+        "title": title,
+        "rows": rows,
+        "count": len(rows),
+        "generatedBy": meta["generated_by"],
+        "generatedAt": meta["generated_at"],
+    }
 
 
 class BulkClientInvoicesBody(BaseModel):

@@ -236,7 +236,7 @@ def _assignment_start_for_therapist(
 def _first_session_ever_for_therapist(
     db: Session, case_id: int, therapist_user_id: int
 ) -> date | None:
-    """Earliest session date for this therapist on the case (all time)."""
+    """Earliest session on the case for this therapist (includes manual / forgot-to-log)."""
     return db.scalar(
         select(func.min(TherapySession.scheduled_date)).where(
             TherapySession.case_id == case_id,
@@ -345,7 +345,7 @@ def payout_preview_row(
     hours: float,
     calendar_days: int,
     therapist_start_date: date | None,
-    client_start_date: date | None,
+    case_start_date: date | None,
     leave: dict[str, int],
     leave_credits: int,
 ) -> dict[str, Any]:
@@ -368,7 +368,7 @@ def payout_preview_row(
         "Therapist ID": export_therapist_id(therapist),
         "Service Type": case.service_type or case.product_module or "",
         "Therapist Start Date": therapist_start_date.isoformat() if therapist_start_date else "",
-        "Client Start Date": client_start_date.isoformat() if client_start_date else "",
+        "Case Start Date": case_start_date.isoformat() if case_start_date else "",
         "Calendar Days": calendar_days,
         "Approved Sessions": approved_sessions,
         "Approved Absence": approved_absence,
@@ -426,10 +426,10 @@ def payout_preview_rows(
                 segment.therapist_user_id,
                 reference_date=segment.first_session,
             )
-            client_start = _first_session_ever_for_therapist(
+            employment_start = _employment_start(db, segment.therapist_user_id)
+            case_start = _first_session_ever_for_therapist(
                 db, case.id, segment.therapist_user_id
             )
-            employment_start = _employment_start(db, segment.therapist_user_id)
             calendar_days = calendar_days_for_segment(
                 is_incoming_replacement=segment.is_incoming_replacement,
                 is_outgoing_replacement=segment.is_outgoing_replacement,
@@ -458,8 +458,8 @@ def payout_preview_rows(
                     billable_sessions=billable,
                     hours=hours,
                     calendar_days=calendar_days,
-                    therapist_start_date=assignment_start,
-                    client_start_date=client_start,
+                    therapist_start_date=employment_start,
+                    case_start_date=case_start,
                     leave=leave,
                     leave_credits=leave_credits,
                 )

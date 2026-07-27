@@ -203,11 +203,14 @@ def test_finance_payout_preview_report_json():
     body = r.json()
     assert body["reportKey"] == "therapist-payout-preview"
     assert "rows" in body
+    assert "generatedBy" in body
+    assert "generatedAt" in body
+    assert "IST" in body["generatedAt"]
     if body["rows"]:
         row = body["rows"][0]
         assert "Case ID" in row
         assert "Therapist Start Date" in row
-        assert "Client Start Date" in row
+        assert "Case Start Date" in row
         assert "Calendar Days" in row
         assert "Predicted Subtotal" in row
         assert "Per Session Share" in row
@@ -221,3 +224,13 @@ def test_finance_payout_preview_report_csv():
     )
     assert r.status_code == 200
     assert "text/csv" in r.headers.get("content-type", "")
+
+
+def test_finance_payout_preview_report_xlsx():
+    headers = _headers("finance@demo.com")
+    r = client.get(
+        "/api/v1/admin/finance-reports/therapist-payout-preview?billing_month=2026-06&format=xlsx",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert "spreadsheetml" in r.headers.get("content-type", "")

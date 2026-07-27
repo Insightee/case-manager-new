@@ -22,20 +22,21 @@ from app.models.user import User
 from app.services import billing_composer_service, client_billing_service, finance_payout_preview_service
 
 
-REPORT_KEYS = frozenset(
-    {
-        "monthly-billing",
-        "outstanding",
-        "collections",
-        "therapist-payouts",
-        "therapist-payout-preview",
-        "pending-payout-approvals",
-        "ledger-missing",
-        "manual-adjustments",
-        "revenue-by-service",
-        "margin-by-case",
-    }
-)
+REPORT_LABELS: dict[str, str] = {
+    "monthly-billing": "Monthly billing",
+    "outstanding": "Outstanding balances",
+    "collections": "Collections",
+    "therapist-payouts": "Therapist payouts",
+    "therapist-payout-preview": "Therapist payout preview",
+    "pending-payout-approvals": "Pending payout approvals",
+    "ledger-missing": "Ledger missing",
+    "manual-adjustments": "Manual adjustments",
+    "revenue-by-service": "Revenue by service",
+    "margin-by-case": "Margin by case",
+}
+
+
+REPORT_KEYS = frozenset(REPORT_LABELS.keys())
 
 
 def _ym(month: str | None) -> str:
@@ -234,3 +235,12 @@ def report_csv(report_key: str, rows: list[dict]) -> str:
     writer.writeheader()
     writer.writerows(rows)
     return buf.getvalue()
+
+
+def report_title(report_key: str) -> str:
+    return REPORT_LABELS.get(report_key, report_key.replace("-", " ").title())
+
+
+def report_subtitle(report_key: str, *, billing_month: str | None) -> str:
+    ym = _ym(billing_month)
+    return f"Billing month {ym}"

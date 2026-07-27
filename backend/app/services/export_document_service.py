@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app.models.user import User
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def export_actor_label(user: User) -> str:
@@ -13,7 +16,7 @@ def export_timestamp_label(now: datetime | None = None) -> str:
     ts = now or datetime.now(timezone.utc)
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
-    return ts.strftime("%Y-%m-%d %H:%M UTC")
+    return ts.astimezone(IST).strftime("%Y-%m-%d %H:%M IST")
 
 
 def export_meta(user: User) -> dict[str, str]:
