@@ -211,18 +211,38 @@ def _therapist_segments_for_case(
 
 
 def _assignment_start_for_therapist(
+    db: Session,
+    case_id: int,
+    therapist_user_id: int,
+    *,
+    reference_date: date | None = None,
+) -> date | None:
+    """Portal assignment start for the stint active around reference_date."""
+    base = select(CaseAssignment.start_date).where(
+        CaseAssignment.case_id == case_id,
+        CaseAssignment.therapist_user_id == therapist_user_id,
+    )
+    if reference_date is not None:
+        row = db.scalars(
+            base.where(CaseAssignment.start_date <= reference_date)
+            .order_by(CaseAssignment.start_date.desc())
+            .limit(1)
+        ).first()
+        if row is not None:
+            return row
+    return db.scalars(base.order_by(CaseAssignment.start_date.desc()).limit(1)).first()
+
+
+def _first_session_ever_for_therapist(
     db: Session, case_id: int, therapist_user_id: int
 ) -> date | None:
-    row = db.scalars(
-        select(CaseAssignment.start_date)
-        .where(
-            CaseAssignment.case_id == case_id,
-            CaseAssignment.therapist_user_id == therapist_user_id,
+    """Earliest session date for this therapist on the case (all time)."""
+    return db.scalar(
+        select(func.min(TherapySession.scheduled_date)).where(
+            TherapySession.case_id == case_id,
+            TherapySession.therapist_user_id == therapist_user_id,
         )
-        .order_by(CaseAssignment.start_date.asc())
-        .limit(1)
-    ).first()
-    return row
+    )
 
 
 def _employment_start(db: Session, therapist_user_id: int) -> date | None:
@@ -324,6 +344,8 @@ def payout_preview_row(
     billable_sessions: int,
     hours: float,
     calendar_days: int,
+    therapist_start_date: date | None,
+    client_start_date: date | None,
     leave: dict[str, int],
     leave_credits: int,
 ) -> dict[str, Any]:
@@ -345,6 +367,8 @@ def payout_preview_row(
         "Therapist Name": user_display_name(therapist),
         "Therapist ID": export_therapist_id(therapist),
         "Service Type": case.service_type or case.product_module or "",
+        "Therapist Start Date": therapist_start_date.isoformat() if therapist_start_date else "",
+        "Client Start Date": client_start_date.isoformat() if client_start_date else "",
         "Calendar Days": calendar_days,
         "Approved Sessions": approved_sessions,
         "Approved Absence": approved_absence,
@@ -397,6 +421,12 @@ def payout_preview_rows(
                 continue
 
             assignment_start = _assignment_start_for_therapist(
+                db,
+                case.id,
+                segment.therapist_user_id,
+                reference_date=segment.first_session,
+            )
+            client_start = _first_session_ever_for_therapist(
                 db, case.id, segment.therapist_user_id
             )
             employment_start = _employment_start(db, segment.therapist_user_id)
@@ -428,6 +458,8 @@ def payout_preview_rows(
                     billable_sessions=billable,
                     hours=hours,
                     calendar_days=calendar_days,
+                    therapist_start_date=assignment_start,
+                    client_start_date=client_start,
                     leave=leave,
                     leave_credits=leave_credits,
                 )

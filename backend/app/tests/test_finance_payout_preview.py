@@ -206,6 +206,8 @@ def test_finance_payout_preview_report_json():
     if body["rows"]:
         row = body["rows"][0]
         assert "Case ID" in row
+        assert "Therapist Start Date" in row
+        assert "Client Start Date" in row
         assert "Calendar Days" in row
         assert "Predicted Subtotal" in row
         assert "Per Session Share" in row
