@@ -33,6 +33,7 @@ const CSV_MONTHS = [
   { sheet: 'November 2025',  month: 'November',   year: 2025 },
   { sheet: 'December 2025',  month: 'December',   year: 2025 },
   { sheet: 'January 2026',   month: 'January',    year: 2026 },
+  { sheet: 'April 2026',     month: 'April',      year: 2026 },
 ];
 
 // Months loaded from local JSON (more accurate than CSV export)
