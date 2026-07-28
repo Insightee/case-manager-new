@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { getLast12Months } from '../utils/date';
-import { supabase } from '../utils/supabase';
 
 interface AdminPanelProps {
   isOpen: boolean;
@@ -45,32 +44,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose }) => {
     setFeedback({ type: '', message: '' });
 
     try {
-        // 1. Ensure employee exists (Indicators: employeeId, name)
-        const { error: empError } = await supabase
-            .from('employees')
-            .upsert({
-                employee_id: formData.employeeId,
-                name: formData.name,
-                email: `${formData.name.toLowerCase().replace(/\s+/g, '.')}@example.com`
-            }, { onConflict: 'employee_id,name' });
+        const response = await fetch('/api/admin/payout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Sync-Secret': 'insighte_payout_portal_secret_2026'
+          },
+          body: JSON.stringify({
+            action: 'upsert',
+            employeeId: formData.employeeId,
+            name: formData.name,
+            month: formData.month,
+            year: formData.year,
+            grossPay: formData.grossPay,
+            tds: formData.tds,
+            netPay: formData.netPay
+          })
+        });
 
-        if (empError) throw empError;
-
-        // 2. Add Payout
-        const { error: payoutError } = await supabase
-            .from('payouts')
-            .insert({
-                employee_id: formData.employeeId,
-                name: formData.name,
-                month: formData.month,
-                year: parseInt(formData.year.toString()),
-                gross_pay: parseFloat(formData.grossPay),
-                tds: parseFloat(formData.tds),
-                net_pay: parseFloat(formData.netPay),
-                status: 'paid'
-            });
-
-        if (payoutError) throw payoutError;
+        if (!response.ok) {
+          const resErr = await response.json();
+          throw new Error(resErr.error || 'Server request failed');
+        }
 
         setFeedback({ type: 'success', message: 'Payout record added successfully.' });
         setFormData(prev => ({ ...prev, grossPay: '', tds: '', netPay: '' }));
@@ -93,17 +88,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose }) => {
     setFeedback({ type: '', message: '' });
 
     try {
-        const { error } = await supabase
-            .from('payouts')
-            .delete()
-            .match({
-                employee_id: formData.employeeId,
-                name: formData.name,
-                month: formData.month,
-                year: parseInt(formData.year.toString())
-            });
+        const response = await fetch('/api/admin/payout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Sync-Secret': 'insighte_payout_portal_secret_2026'
+          },
+          body: JSON.stringify({
+            action: 'delete',
+            employeeId: formData.employeeId,
+            name: formData.name,
+            month: formData.month,
+            year: formData.year
+          })
+        });
 
-        if (error) throw error;
+        if (!response.ok) {
+          const resErr = await response.json();
+          throw new Error(resErr.error || 'Server request failed');
+        }
+
         setFeedback({ type: 'success', message: 'Record deleted successfully.' });
     } catch (error: any) {
         setFeedback({ type: 'error', message: error.message || 'Delete operation failed.' });
@@ -111,6 +115,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isOpen, onClose }) => {
         setIsProcessing(false);
     }
   };
+
 
   const handleClose = () => {
       setIsAuthenticated(false);

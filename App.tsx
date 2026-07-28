@@ -2,7 +2,8 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Employee, AppState, PayslipRecord } from './types';
 import { insighteLogo } from './assets/logo';
-import { supabase } from './utils/supabase';
+import { db } from './utils/firebase';
+import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import EmployeeSelector from './components/EmployeeSelector';
 import OtpInput from './components/OtpInput';
 import Payslip from './components/Payslip';
@@ -17,23 +18,23 @@ function App() {
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Fetch employees on mount
+  // Fetch employees on mount from Firestore
   useEffect(() => {
     const fetchEmployees = async () => {
         setIsLoading(true);
         try {
-            const { data: empData, error: empError } = await supabase
-                .from('employees')
-                .select('employee_id, name, email, role')
-                .order('name');
-            if (empError) throw empError;
+            const empQuery = query(collection(db, 'employees'), orderBy('name'));
+            const snapshot = await getDocs(empQuery);
             
-            setEmployees(empData.map(e => ({
-                employeeId: e.employee_id,
-                name: e.name,
-                email: e.email,
-                role: e.role
-            })));
+            setEmployees(snapshot.docs.map(doc => {
+                const e = doc.data();
+                return {
+                    employeeId: e.employeeId || doc.id,
+                    name: e.name,
+                    email: e.email,
+                    role: e.role
+                };
+            }));
         } catch (err: any) {
             setError('Failed to sync with secure vault.');
             console.error(err);
@@ -44,15 +45,14 @@ function App() {
     fetchEmployees();
   }, []); // Only on mount
 
-  // Fetch payouts only for the selected employee (on-demand)
+  // Fetch payouts only for the selected employee from Firestore (on-demand)
   const fetchPayoutsForEmployee = useCallback(async (employeeId: string) => {
     try {
-        const { data: payData, error: payError } = await supabase
-            .from('payouts')
-            .select('*')
-            .eq('employee_id', employeeId)
-            .order('year', { ascending: false });
-        if (payError) throw payError;
+        const payQuery = query(
+            collection(db, 'payouts'),
+            where('employeeId', '==', employeeId)
+        );
+        const snapshot = await getDocs(payQuery);
 
         const safeParse = (val: any) => {
           if (typeof val === 'number') return val;
@@ -61,20 +61,24 @@ function App() {
           return isNaN(parsed) ? 0 : parsed;
         };
 
-        setPayouts(payData.map(p => ({
-            id: p.id,
-            employeeId: p.employee_id,
-            month: p.month,
-            year: p.year,
-            grossPay: safeParse(p.gross_pay),
-            tds: safeParse(p.tds),
-            netPay: safeParse(p.net_pay)
-        })));
+        setPayouts(snapshot.docs.map(doc => {
+            const p = doc.data();
+            return {
+                id: doc.id,
+                employeeId: p.employeeId,
+                month: p.payrollMonth || p.month,
+                year: typeof p.payrollYear === 'number' ? p.payrollYear : parseInt(p.year, 10),
+                grossPay: safeParse(p.grossPayout ?? p.gross_pay),
+                tds: safeParse(p.tds),
+                netPay: safeParse(p.netPayout ?? p.net_pay)
+            };
+        }));
     } catch (err: any) {
         console.error('Failed to fetch payouts:', err);
         setPayouts([]);
     }
   }, []);
+
 
   const handleSelectEmployee = useCallback((employeeId: string) => {
     const employee = employees.find(e => e.employeeId === employeeId);
