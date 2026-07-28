@@ -7,14 +7,26 @@ const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '10mb' }));
 
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 // Initialize Firebase Admin SDK
 if (!getApps().length) {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-    initializeApp({ credential: cert(serviceAccount) });
+    try {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+      initializeApp({ credential: cert(serviceAccount) });
+      console.log('Initialized Firebase Admin with FIREBASE_SERVICE_ACCOUNT_KEY');
+    } catch (e) {
+      console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY, falling back to default:', e.message);
+      initializeApp();
+    }
   } else {
-    // Falls back to Google Application Default Credentials or standard GCP environment
     initializeApp();
+    console.log('Initialized Firebase Admin with default credentials');
   }
 }
 
@@ -25,6 +37,16 @@ const VALID_MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
+
+// Root Endpoint
+app.get('/', (req, res) => {
+  res.json({
+    service: 'Insighte Payout Backend',
+    status: 'active',
+    version: '1.0.0',
+    endpoints: ['/health', '/api/sync/sheet', '/api/admin/payout']
+  });
+});
 
 // Health Check Endpoint
 app.get('/health', (req, res) => {
@@ -229,6 +251,14 @@ app.post('/api/admin/payout', authenticateSyncSecret, async (req, res) => {
   }, { merge: true });
 
   res.json({ status: 'success', message: `Upserted payout ${docId}` });
+});
+
+// JSON 404 Catch-All Handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Not Found',
+    message: `Endpoint ${req.method} ${req.url} does not exist.`
+  });
 });
 
 const PORT = process.env.PORT || 8080;

@@ -35,16 +35,62 @@ function onOpen() {
     .addItem("Sync Current Sheet", "syncCurrentSheet")
     .addSeparator()
     .addItem("Sync All Sheets", "syncAllSheets")
+    .addSeparator()
+    .addItem("Set Backend URL & Secret", "setupBackendConfig")
     .addToUi();
+}
+
+// ─── SETUP BACKEND CONFIG VIA PROMPT ───
+function setupBackendConfig() {
+  var ui = SpreadsheetApp.getUi();
+  var props = PropertiesService.getScriptProperties();
+
+  var urlResponse = ui.prompt(
+    "Set Backend Service URL",
+    "Enter your deployed Cloud Run / Function endpoint URL:\n(e.g., https://insighte-payout-backend-xxx.a.run.app/api/sync/sheet)",
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (urlResponse.getSelectedButton() === ui.Button.OK) {
+    var url = urlResponse.getResponseText().trim();
+    if (url) {
+      props.setProperty("BACKEND_URL", url);
+    }
+  }
+
+  var secretResponse = ui.prompt(
+    "Set Sync Secret",
+    "Enter your Sync Secret:\n(Default: insighte_payout_portal_secret_2026)",
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (secretResponse.getSelectedButton() === ui.Button.OK) {
+    var secret = secretResponse.getResponseText().trim();
+    if (secret) {
+      props.setProperty("SYNC_SECRET", secret);
+    }
+  }
+
+  ui.alert("Configuration Saved", "Backend URL and Sync Secret saved successfully in Script Properties.", ui.ButtonSet.OK);
 }
 
 // ─── GET SCRIPT PROPERTIES ───
 function getBackendConfig() {
   var props = PropertiesService.getScriptProperties();
-  var backendUrl = props.getProperty("BACKEND_URL") || "https://insighte-payout-backend-xyz.a.run.app/api/sync/sheet";
+  var backendUrl = props.getProperty("BACKEND_URL");
   var syncSecret = props.getProperty("SYNC_SECRET") || "insighte_payout_portal_secret_2026";
+
+  if (!backendUrl) {
+    throw new Error(
+      "BACKEND_URL is not set!\n\n" +
+      "Please click Insighte → 'Set Backend URL & Secret' in the Google Sheets menu, " +
+      "or add BACKEND_URL in Apps Script Project Settings → Script Properties."
+    );
+  }
+
   return { url: backendUrl, secret: syncSecret };
 }
+
 
 // ─── SYNC CURRENT SHEET ───
 function syncCurrentSheet() {
