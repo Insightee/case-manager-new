@@ -9,6 +9,7 @@ import { migrationBannerMessage } from '../../lib/leaveMigration.js'
 import { categoryLabel } from '../../lib/leaveFormUtils.js'
 import { HIDE_THERAPIST_LEAVE_CREDITS_UI } from '../../lib/productFeatureFlags.js'
 import { TherapistLeaveRequestFields } from './TherapistLeaveRequestFields.jsx'
+import { MigrationBackfillBanner } from './MigrationBackfillBanner.jsx'
 import './therapist-leave.css'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -307,9 +308,7 @@ export function TherapistLeavePage() {
       </div>
 
       {migrationBanner ? (
-        <div className="therapist-leave-page__migration-banner" role="status">
-          {migrationBanner}
-        </div>
+        <MigrationBackfillBanner migrationInfo={migrationInfo} />
       ) : null}
 
       <div className="therapist-leave-page__stats">

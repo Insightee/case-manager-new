@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { formatDisplayDate, formatDisplayDateTimeRange } from '../../lib/datetime.js'
+import { formatDisplayDate, formatDisplayDateTimeRange, todayIsoIST } from '../../lib/datetime.js'
+import { migrationBackfillDateBounds } from '../../lib/leaveMigration.js'
 
 function sliceTime(t) {
   if (!t) return ''
   return String(t).slice(0, 5)
 }
 
-/** Log child absent for a scheduled visit today — therapist leave uses the Leave tab only. */
+/** Log child absent — today via scheduled visit; July backfill via date picker + optional auto-session. */
 export function SessionAbsenceSheet({
   sessions = [],
   selectedSessionId,
@@ -16,6 +17,8 @@ export function SessionAbsenceSheet({
   onSuccess,
   onError,
   disabled = false,
+  caseId = null,
+  migrationInfo = null,
 }) {
   const [reason, setReason] = useState('')
   const [startTime, setStartTime] = useState('')
@@ -25,23 +28,48 @@ export function SessionAbsenceSheet({
   const [pendingRequest, setPendingRequest] = useState(null)
   const [statusLoading, setStatusLoading] = useState(false)
 
+  const backfillActive = Boolean(migrationInfo?.window_active && caseId)
+  const dateBounds = useMemo(() => migrationBackfillDateBounds(migrationInfo), [migrationInfo])
+  const today = todayIsoIST()
+  const [absenceDate, setAbsenceDate] = useState(today)
+
   const sessionId = selectedSessionId || (sessions[0]?.id ?? null)
   const session = sessions.find((s) => s.id === sessionId) || sessions[0]
+  const sessionsForSelectedDate = useMemo(() => {
+    if (!caseId) return sessions
+    return sessions.filter((s) => s.case_id === caseId && s.scheduled_date === absenceDate)
+  }, [sessions, caseId, absenceDate])
+
+  const activeSessionId = sessionsForSelectedDate[0]?.id ?? sessionId
+  const activeSession = sessionsForSelectedDate[0] || session
 
   useEffect(() => {
-    if (!session) return
-    setStartTime(sliceTime(session.start_time))
-    setEndTime(sliceTime(session.end_time))
-  }, [session?.id, session?.start_time, session?.end_time])
+    if (backfillActive && dateBounds?.min) {
+      setAbsenceDate((prev) => {
+        if (prev >= dateBounds.min && prev <= today) return prev
+        return today
+      })
+    }
+  }, [backfillActive, dateBounds?.min, today])
 
   useEffect(() => {
-    if (!sessionId) {
-      setPendingRequest(null)
+    if (!activeSession) {
+      if (!backfillActive) setStartTime('')
+      if (!backfillActive) setEndTime('')
+      return
+    }
+    setStartTime(sliceTime(activeSession.start_time))
+    setEndTime(sliceTime(activeSession.end_time))
+  }, [activeSession?.id, activeSession?.start_time, activeSession?.end_time, backfillActive])
+
+  useEffect(() => {
+    if (!activeSessionId || backfillActive) {
+      if (backfillActive) setPendingRequest(null)
       return
     }
     let cancelled = false
     setStatusLoading(true)
-    apiFetch(`/api/v1/sessions/${sessionId}/absence`)
+    apiFetch(`/api/v1/sessions/${activeSessionId}/absence`)
       .then((data) => {
         if (cancelled) return
         if (data?.status === 'pending' && data.absence_request) {
@@ -61,16 +89,16 @@ export function SessionAbsenceSheet({
     return () => {
       cancelled = true
     }
-  }, [sessionId])
+  }, [activeSessionId, backfillActive])
 
   async function patchSessionTimesIfNeeded() {
-    if (!sessionId || !session) return
+    if (!activeSessionId || !activeSession || backfillActive) return
     const nextStart = startTime || null
     const nextEnd = endTime || null
-    const prevStart = sliceTime(session.start_time) || null
-    const prevEnd = sliceTime(session.end_time) || null
+    const prevStart = sliceTime(activeSession.start_time) || null
+    const prevEnd = sliceTime(activeSession.end_time) || null
     if (nextStart === prevStart && nextEnd === prevEnd) return
-    await apiFetch(`/api/v1/sessions/${sessionId}`, {
+    await apiFetch(`/api/v1/sessions/${activeSessionId}`, {
       method: 'PATCH',
       body: JSON.stringify({
         start_time: nextStart,
@@ -81,15 +109,41 @@ export function SessionAbsenceSheet({
 
   async function submitChildAbsent(e) {
     e.preventDefault()
-    if (!sessionId) {
+    if (backfillActive) {
+      if (!caseId) {
+        setLocalError('Choose a client first.')
+        return
+      }
+      if (!absenceDate) {
+        setLocalError('Choose the date the child was absent.')
+        return
+      }
+    } else if (!activeSessionId) {
       setLocalError('Choose a scheduled visit for today.')
       return
     }
+
     setBusy(true)
     setLocalError('')
     try {
+      if (backfillActive) {
+        await apiFetch('/api/v1/sessions/child-absence/backfill', {
+          method: 'POST',
+          body: JSON.stringify({
+            case_id: Number(caseId),
+            scheduled_date: absenceDate,
+            reason: reason.trim() || null,
+            start_time: startTime || null,
+            end_time: endTime || null,
+          }),
+        })
+        setReason('')
+        onSuccess?.('Child absent logged — parent or admin will review.', activeSessionId)
+        return
+      }
+
       await patchSessionTimesIfNeeded()
-      await apiFetch(`/api/v1/sessions/${sessionId}/absence`, {
+      await apiFetch(`/api/v1/sessions/${activeSessionId}/absence`, {
         method: 'POST',
         body: JSON.stringify({
           absence_type: 'CLIENT_ABSENT',
@@ -97,11 +151,11 @@ export function SessionAbsenceSheet({
         }),
       })
       setReason('')
-      onSuccess?.('Child absent logged — parent or admin will review.', sessionId)
+      onSuccess?.('Child absent logged — parent or admin will review.', activeSessionId)
     } catch (err) {
       if (err.status === 409 && err.detail?.existing && err.detail?.absence_request) {
         setPendingRequest(err.detail.absence_request)
-        onSuccess?.(err.detail.message || 'Child absence already submitted for this session.', sessionId)
+        onSuccess?.(err.detail.message || 'Child absence already submitted for this session.', activeSessionId)
         return
       }
       const msg = err.message || 'Could not submit child absent'
@@ -112,7 +166,7 @@ export function SessionAbsenceSheet({
     }
   }
 
-  if (!sessions.length) {
+  if (!backfillActive && !sessions.length) {
     return (
       <div className="ic-session-composer__absence-empty" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <p className="ic-session-composer__hint" style={{ fontWeight: 600, color: '#374151' }}>
@@ -139,11 +193,29 @@ export function SessionAbsenceSheet({
 
   return (
     <div className="ic-session-composer__absence">
-      {sessions.length > 1 ? (
+      {backfillActive ? (
+        <label className="ic-session-composer__field" style={{ marginTop: 12 }}>
+          <span>Date child was absent</span>
+          <input
+            type="date"
+            value={absenceDate}
+            min={dateBounds?.min || undefined}
+            max={today}
+            onChange={(e) => setAbsenceDate(e.target.value)}
+            className="ic-session-composer__input"
+            disabled={disabled || busy}
+          />
+          <p className="ic-session-composer__hint" style={{ marginTop: 6 }}>
+            You can log absence for any day in July, even if no visit was scheduled.
+          </p>
+        </label>
+      ) : null}
+
+      {!backfillActive && sessions.length > 1 ? (
         <label className="ic-session-composer__field" style={{ marginTop: 12 }}>
           <span>Today&apos;s visit</span>
           <select
-            value={sessionId || ''}
+            value={activeSessionId || ''}
             onChange={(e) => onSessionChange?.(Number(e.target.value))}
             className="ic-session-composer__input"
             disabled={disabled || busy}
@@ -174,22 +246,22 @@ export function SessionAbsenceSheet({
             {pendingRequest._approved ? 'Child absence approved' : 'Child absence pending review'}
           </p>
           <p style={{ margin: '6px 0 0', fontSize: '0.875rem' }}>
-            Submitted for {formatDisplayDate(session?.scheduled_date)}
+            Submitted for {formatDisplayDate(activeSession?.scheduled_date || absenceDate)}
             {pendingRequest.reason ? ` — ${pendingRequest.reason}` : ''}
           </p>
         </div>
       ) : null}
 
       <div className="ic-session-composer__visit-meta">
-        {session?.child_name ? (
+        {activeSession?.child_name ? (
           <div className="ic-session-composer__visit-row">
             <span className="ic-session-composer__visit-label">Client</span>
-            <strong>{session.child_name}</strong>
+            <strong>{activeSession.child_name}</strong>
           </div>
         ) : null}
         <div className="ic-session-composer__visit-row">
           <span className="ic-session-composer__visit-label">Session date</span>
-          <strong>{formatDisplayDate(session?.scheduled_date)}</strong>
+          <strong>{formatDisplayDate(activeSession?.scheduled_date || absenceDate)}</strong>
         </div>
         {!pendingRequest ? (
           <div className="ic-session-composer__time-grid">

@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).
-    leave_migration_end_date: str = "2026-06-30"
+    leave_migration_end_date: str = "2026-07-31"
     # Hours after actual_start_at a therapist may void a COMPLETED visit that has no log (168 = 7 days cleanup window).
     session_void_window_hours: int = 168
 

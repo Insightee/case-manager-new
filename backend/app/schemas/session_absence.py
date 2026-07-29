@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -11,6 +11,15 @@ class SessionAbsenceCreate(BaseModel):
     reason: Optional[str] = None
     notes: Optional[str] = None
     leave_billing_category: Optional[str] = None
+
+
+class ChildAbsenceBackfillCreate(BaseModel):
+    case_id: int = Field(..., ge=1)
+    scheduled_date: date
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
 
 
 class SessionAbsenceReview(BaseModel):
@@ -42,6 +51,8 @@ class SessionAbsenceRead(BaseModel):
     dispute_status: Optional[str] = None
     record_type: Optional[str] = None
     leave_status: Optional[str] = None
+    is_retroactive: Optional[bool] = None
+    is_migration_reentry: Optional[bool] = None
 
     model_config = {"from_attributes": True}
 

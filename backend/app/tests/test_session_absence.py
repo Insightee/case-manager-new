@@ -432,3 +432,35 @@ def test_manual_log_blocked_when_child_marked_absent():
     assert detail["code"] == "CHILD_MARKED_ABSENT"
     assert detail["recommended_action"] == "blocked_absence"
     assert "marked absent" in detail["message"].lower()
+
+
+def test_child_absence_backfill_creates_session_without_prior_booking():
+    from app.services import leave_migration_service as migration
+
+    if not migration.is_migration_window_active():
+        pytest.skip("Migration window closed")
+
+    therapist_headers = _login("therapist@demo.com")
+    cases = client.get("/api/v1/cases?assigned=true&page_size=1", headers=therapist_headers).json()
+    case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
+    assert case_items
+    case_id = int(case_items[0]["id"])
+    backfill_day = "2026-07-12"
+
+    create = client.post(
+        "/api/v1/sessions/child-absence/backfill",
+        headers=therapist_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": backfill_day,
+            "reason": "July backfill absence",
+        },
+    )
+    assert create.status_code == 201, create.text
+    body = create.json()
+    assert body["absence_type"] == "CLIENT_ABSENT"
+    assert body["status"] == "PENDING_APPROVAL"
+    assert body["is_retroactive"] is True
+    assert body["is_migration_reentry"] is True
+    assert body["scheduled_date"] == backfill_day
+    assert body["session_id"] > 0

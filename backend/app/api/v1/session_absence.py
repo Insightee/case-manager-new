@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.permissions import require_permission
 from app.models.user import User
 from app.schemas.session_absence import (
+    ChildAbsenceBackfillCreate,
     SessionAbsenceCreate,
     SessionAbsenceListResponse,
     SessionAbsenceRead,
@@ -18,6 +19,40 @@ from app.schemas.session_absence import (
 from app.services import session_absence_service as absence_svc
 
 router = APIRouter(prefix="/sessions", tags=["session-absence"])
+
+
+@router.post("/child-absence/backfill", response_model=SessionAbsenceRead, status_code=201)
+def create_child_absence_backfill(
+    payload: ChildAbsenceBackfillCreate,
+    request: Request,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    try:
+        detail = absence_svc.create_child_absence_backfill(
+            db,
+            user,
+            case_id=payload.case_id,
+            scheduled_date=payload.scheduled_date,
+            reason=payload.reason,
+            notes=payload.notes,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+        )
+    except HTTPException:
+        raise
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="create_child_absence_backfill",
+        entity_type="session_absence",
+        entity_id=detail["id"],
+        case_id=detail["case_id"],
+        **meta,
+    )
+    db.commit()
+    return detail
 
 
 @router.post("/{session_id}/absence", response_model=SessionAbsenceRead, status_code=201)

@@ -50,11 +50,11 @@ def test_migration_info_endpoint():
     assert r.status_code == 200
     data = r.json()
     assert "window_active" in data
-    assert data["window_end"] == "2026-06-30"
-    assert data["reentry_start"] == "2026-06-01"
+    assert data["window_end"] == "2026-07-31"
+    assert data["reentry_start"] == "2026-07-01"
 
 
-def test_therapist_can_submit_june_retroactive_leave():
+def test_therapist_can_submit_july_retroactive_leave():
     if not migration.is_migration_window_active():
         pytest.skip("Migration window closed")
     therapist = _login("therapist@demo.com")
@@ -63,8 +63,8 @@ def test_therapist_can_submit_june_retroactive_leave():
         headers=_headers(therapist),
         json={
             "service_line": "shadow_support",
-            "start_date": "2026-06-03",
-            "end_date": "2026-06-03",
+            "start_date": "2026-07-03",
+            "end_date": "2026-07-03",
             "reason": "Migration re-entry",
         },
     )
@@ -81,7 +81,7 @@ def test_retroactive_approve_skips_slot_cancellation():
     hr = _login("hr@demo.com")
     th = _headers(therapist)
 
-    day = date(2026, 6, 10)
+    day = date(2026, 7, 10)
     client.post(
         "/api/v1/slots/materialize",
         headers=th,
@@ -146,8 +146,8 @@ def test_retroactive_submit_skips_parent_notification():
         headers=th,
         json={
             "service_line": "shadow_support",
-            "start_date": "2026-06-04",
-            "end_date": "2026-06-04",
+            "start_date": "2026-07-04",
+            "end_date": "2026-07-04",
         },
     )
     assert r.status_code == 201

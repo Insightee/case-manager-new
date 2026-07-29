@@ -10,6 +10,7 @@ import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
 // TODO: re-enable when therapist self-onboarding is allowed again
 // import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
 import { SessionAbsenceSheet } from './SessionAbsenceSheet.jsx'
+import { MigrationBackfillBanner } from './MigrationBackfillBanner.jsx'
 
 const MODES = [
   { value: 'HOME', label: 'Home' },
@@ -66,10 +67,17 @@ export function TherapistSessionComposer({
   const [localError, setLocalError] = useState('')
   const [composerSuccess, setComposerSuccess] = useState('')
   const [absenceSessionId, setAbsenceSessionId] = useState(null)
+  const [migrationInfo, setMigrationInfo] = useState(null)
 
   useEffect(() => {
     if (lockCaseId) setCaseId(String(lockCaseId))
   }, [lockCaseId])
+
+  useEffect(() => {
+    apiFetch('/api/v1/leave/migration-info')
+      .then((data) => setMigrationInfo(data))
+      .catch(() => setMigrationInfo(null))
+  }, [])
 
   useEffect(() => {
     apiFetch('/api/v1/cases?assigned=true&page_size=100')
@@ -190,6 +198,7 @@ export function TherapistSessionComposer({
 
   return (
     <section className="ic-session-composer" aria-label="Add or start session">
+      <MigrationBackfillBanner migrationInfo={migrationInfo} style={{ marginBottom: 12 }} />
       <div className="ic-session-composer__head">
         <h2 className="ic-session-composer__title">Session</h2>
         <div className="ic-segment ic-segment--primary" role="tablist">
@@ -308,6 +317,8 @@ export function TherapistSessionComposer({
             selectedSessionId={absenceSessionId || todaySessionsForCase[0]?.id}
             onSessionChange={setAbsenceSessionId}
             disabled={busy}
+            caseId={selectedCaseId}
+            migrationInfo={migrationInfo}
             onSuccess={(msg, submittedSessionId) => {
               setLocalError('')
               setComposerSuccess(msg || 'Child absent logged — parent or admin will review.')

@@ -13,7 +13,7 @@ import {
 } from '../admin-portal/ui/index.js'
 import './leave-management.css'
 import { formatLeaveRecordSplit } from '../../lib/leaveFormUtils.js'
-import { leaveRetroactiveHint } from '../../lib/leaveMigration.js'
+import { leaveRetroactiveHint, absenceRetroactiveHint } from '../../lib/leaveMigration.js'
 import { ManualLeaveTab } from './ManualLeaveTab.jsx'
 
 const STATUS_COLORS = {
@@ -392,7 +392,10 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                   {displayed.map((l) => {
                     const key = rowKey(l)
                     const sc = STATUS_COLORS[l.display_status] || STATUS_COLORS.PENDING
-                    const retroHint = l.record_type === 'leave' ? leaveRetroactiveHint(l, migrationInfo) : null
+                    const retroHint =
+                      l.record_type === 'leave'
+                        ? leaveRetroactiveHint(l, migrationInfo)
+                        : absenceRetroactiveHint(l, migrationInfo)
                     const isChildAbsence = l.record_type === 'child_absence'
                     return (
                       <div key={key} className="leave-mgmt__card">
@@ -414,7 +417,9 @@ export function LeaveManagementPage({ portal = 'hr' }) {
                             <span className="leave-mgmt__retro-badge">Child absent</span>
                           ) : null}
                           {l.is_retroactive ? (
-                            <span className="leave-mgmt__retro-badge">Previous leave</span>
+                            <span className="leave-mgmt__retro-badge">
+                              {isChildAbsence ? 'Previous absence' : 'Previous leave'}
+                            </span>
                           ) : null}
                           {!isChildAbsence ? (
                             <span className="admin-chip admin-chip--sm">{l.leave_type}</span>

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import or_, select
@@ -15,6 +15,7 @@ from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.models.user import User
 from app.services import billing_ledger_service, notification_service, parent_service
+from app.services import leave_migration_service as leave_migration
 from app.services import leave_notification_service as leave_notify
 
 PENDING_CHILD_ABSENCE_MESSAGE = (
@@ -47,6 +48,9 @@ def _serialize(db: Session, row: SessionAbsenceRequest) -> dict:
     session = row.session or db.get(TherapySession, row.session_id)
     case = row.case or db.get(Case, row.case_id)
     child_name = case.child.full_name if case and case.child else None
+    session_date = session.scheduled_date if session else None
+    is_retro = bool(session_date and leave_migration.is_retroactive_absence(session_date))
+    is_reentry = bool(session_date and leave_migration.is_migration_absence_reentry(session_date))
     return {
         "id": row.id,
         "session_id": row.session_id,
@@ -64,11 +68,13 @@ def _serialize(db: Session, row: SessionAbsenceRequest) -> dict:
         "reviewed_by_user_id": row.reviewed_by_user_id,
         "review_note": row.review_note,
         "billing_outcome": row.billing_outcome,
-        "scheduled_date": session.scheduled_date.isoformat() if session else None,
+        "scheduled_date": session_date.isoformat() if session_date else None,
         "start_time": str(session.start_time) if session and session.start_time else None,
         "end_time": str(session.end_time) if session and session.end_time else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
+        "is_retroactive": is_retro,
+        "is_migration_reentry": is_reentry,
     }
 
 
@@ -159,6 +165,13 @@ def _notify_staff_on_submit(db: Session, row: SessionAbsenceRequest, therapist: 
     if row.absence_type == SessionAbsenceType.CLIENT_ABSENT:
         title = "Child absence approval needed"
         body = f"{therapist.full_name or 'Therapist'} reported {child} absent for {date_label}. Please review."
+        if leave_migration.is_migration_absence_reentry(
+            row.session.scheduled_date if row.session else date.today()
+        ):
+            body += (
+                " Previous absence — approving records it for billing; "
+                "visit times were not changed."
+            )
     else:
         title = "Therapist leave approval needed"
         body = f"{therapist.full_name or 'Therapist'} requested leave for {date_label}."
@@ -285,6 +298,105 @@ def get_absence_for_session(db: Session, user: User, session_id: int) -> dict:
     }
 
 
+def _ensure_session_for_child_absence(
+    db: Session,
+    user: User,
+    case: Case,
+    scheduled_date: date,
+    *,
+    start_time: time | None = None,
+    end_time: time | None = None,
+) -> TherapySession:
+    from app.services import manual_session_conflict_service as manual_conflict
+
+    existing = manual_conflict.find_existing_session_for_date(
+        db,
+        case_id=case.id,
+        therapist_user_id=user.id,
+        scheduled_date=scheduled_date,
+    )
+    if existing:
+        if existing.status == SessionStatus.CLIENT_ABSENT:
+            raise HTTPException(status_code=400, detail="Child was already marked absent for this day.")
+        if existing.status == SessionStatus.COMPLETED and existing.daily_log is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="This day already has a completed session log — contact your case manager if you need a correction.",
+            )
+        if existing.status not in (SessionStatus.SCHEDULED, SessionStatus.IN_PROGRESS):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot log child absence — session is "
+                    f"{existing.status.value.lower().replace('_', ' ')}."
+                ),
+            )
+        if start_time and existing.start_time != start_time:
+            existing.start_time = start_time
+        if end_time and existing.end_time != end_time:
+            existing.end_time = end_time
+        return existing
+
+    session = TherapySession(
+        case_id=case.id,
+        therapist_user_id=user.id,
+        scheduled_date=scheduled_date,
+        start_time=start_time or time(9, 0),
+        end_time=end_time or time(10, 0),
+        status=SessionStatus.SCHEDULED,
+    )
+    db.add(session)
+    db.flush()
+    return session
+
+
+def create_child_absence_backfill(
+    db: Session,
+    user: User,
+    *,
+    case_id: int,
+    scheduled_date: date,
+    reason: str | None = None,
+    notes: str | None = None,
+    start_time: time | None = None,
+    end_time: time | None = None,
+) -> dict:
+    try:
+        leave_migration.validate_child_absence_date(scheduled_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    case = db.scalars(
+        select(Case).where(Case.id == case_id).options(selectinload(Case.child))
+    ).first()
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    from app.services.case_status_request_service import assert_case_allows_new_session
+
+    try:
+        assert_case_allows_new_session(db, case_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    session = _ensure_session_for_child_absence(
+        db,
+        user,
+        case,
+        scheduled_date,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    return create_request(
+        db,
+        user,
+        session.id,
+        absence_type=SessionAbsenceType.CLIENT_ABSENT.value,
+        reason=reason,
+        notes=notes,
+    )
+
+
 def create_request(
     db: Session,
     user: User,
@@ -314,6 +426,12 @@ def create_request(
         atype = SessionAbsenceType(absence_type.upper())
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid absence_type") from None
+
+    if atype == SessionAbsenceType.CLIENT_ABSENT:
+        try:
+            leave_migration.validate_child_absence_date(session.scheduled_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     existing = db.scalars(
         select(SessionAbsenceRequest).where(
