@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatDisplayDate, formatDisplayDateTimeRange, todayIsoIST } from '../../lib/datetime.js'
-import { migrationBackfillDateBounds } from '../../lib/leaveMigration.js'
+import { isBackfillWindowActive, migrationBackfillDateBounds } from '../../lib/leaveMigration.js'
 
 function sliceTime(t) {
   if (!t) return ''
@@ -28,7 +28,7 @@ export function SessionAbsenceSheet({
   const [pendingRequest, setPendingRequest] = useState(null)
   const [statusLoading, setStatusLoading] = useState(false)
 
-  const backfillActive = Boolean(migrationInfo?.window_active && caseId)
+  const backfillActive = isBackfillWindowActive(migrationInfo)
   const dateBounds = useMemo(() => migrationBackfillDateBounds(migrationInfo), [migrationInfo])
   const today = todayIsoIST()
   const [absenceDate, setAbsenceDate] = useState(today)
@@ -206,7 +206,7 @@ export function SessionAbsenceSheet({
             disabled={disabled || busy}
           />
           <p className="ic-session-composer__hint" style={{ marginTop: 6 }}>
-            You can log absence for any day in July, even if no visit was scheduled.
+            Pick any day in July up to today — no scheduled visit required.
           </p>
         </label>
       ) : null}
