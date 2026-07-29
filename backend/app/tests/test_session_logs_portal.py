@@ -355,8 +355,8 @@ def test_daily_log_submission_emails_parent(monkeypatch):
     assert published == [], "CM approval should NOT send parent email (disabled by default; edits show in-app)"
 
 
-def test_case_manager_can_view_b2b_assigned_case_logs():
-    """Assigned CMs must see logs for B2B caseload even without b2b module grant."""
+def test_case_manager_can_view_and_approve_b2b_assigned_case_logs():
+    """Assigned CMs must review logs for B2B caseload even without b2b module grant."""
     from datetime import datetime, timezone
 
     from app.models.case import CaseStatus
@@ -427,4 +427,8 @@ def test_case_manager_can_view_b2b_assigned_case_logs():
     assert queue_res.status_code == 200, queue_res.text
     queue_case_ids = {c["case_id"] for c in queue_res.json().get("cases", [])}
     assert case_id in queue_case_ids
+
+    approve_res = client.post(f"/api/v1/daily-logs/{log_id}/approve", headers=cm_headers)
+    assert approve_res.status_code == 200, approve_res.text
+    assert approve_res.json().get("status") == "approved"
 

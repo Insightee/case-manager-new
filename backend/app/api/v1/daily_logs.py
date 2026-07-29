@@ -12,7 +12,7 @@ from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.db_errors import commit_or_http
 from app.core.module_access import user_has_feature
-from app.core.module_write import ensure_case_write_access, ensure_feature_write_access
+from app.core.module_write import ensure_log_review_write_access
 from app.core.permissions import RoleName, case_scope_check, require_permission, user_has_permission
 from app.models.case import ClientBillingMode
 from app.models.daily_log import LogApprovalStatus
@@ -322,8 +322,7 @@ def approve_log(
     _log_case_scope(db, user, log)
     case = case_service.get_case(db, log.session.case_id)
     if case:
-        ensure_case_write_access(user, case, db)
-        ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
+        ensure_log_review_write_access(user, case, db)
     log.approval_status = LogApprovalStatus.APPROVED.value
     if not log.submitted_at:
         log.submitted_at = datetime.now(timezone.utc)
@@ -360,8 +359,7 @@ def reject_log(
     _log_case_scope(db, user, log)
     case = case_service.get_case(db, log.session.case_id)
     if case:
-        ensure_case_write_access(user, case, db)
-        ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
+        ensure_log_review_write_access(user, case, db)
     log.approval_status = LogApprovalStatus.REJECTED.value
     log.review_note = comment
     from app.services import session_log_service

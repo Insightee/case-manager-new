@@ -143,6 +143,27 @@ def ensure_feature_write_access(
         _raise_read_only(f"No edit access for feature: {feature_id}")
 
 
+def _assigned_cm_on_caseload(user: User, case: Case) -> bool:
+    from app.core.permissions import user_has_permission
+
+    return bool(
+        user_has_permission(user, "case.read.team")
+        and case.case_manager_user_id == user.id
+    )
+
+
+def ensure_log_review_write_access(user: User, case: Case, db: Session | None = None) -> None:
+    """Log approve/reject: assigned CM may act on their caseload without programme module write."""
+    if module_bypass(user):
+        return
+    if is_view_only_user(user):
+        _raise_read_only()
+    if _assigned_cm_on_caseload(user, case):
+        return
+    ensure_case_write_access(user, case, db)
+    ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
+
+
 def guard_clinical_case(
     user: User,
     case: Case,
