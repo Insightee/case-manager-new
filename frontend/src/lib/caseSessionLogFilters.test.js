@@ -43,6 +43,31 @@ test('matchesCaseSessionLogStatus covers workflow buckets', () => {
     matchesCaseSessionLogStatus({ status: 'COMPLETED' }, { approval_status: 'APPROVED' }, 'times_edited', true),
     true,
   )
+  assert.equal(
+    matchesCaseSessionLogStatus({ status: 'CLIENT_ABSENT' }, null, 'child_on_leave', false),
+    true,
+  )
+  assert.equal(
+    matchesCaseSessionLogStatus({ status: 'COMPLETED' }, { attendance_status: 'CLIENT_LEAVE' }, 'child_on_leave', false),
+    true,
+  )
+  assert.equal(
+    matchesCaseSessionLogStatus({ status: 'THERAPIST_LEAVE' }, null, 'therapist_on_leave', false),
+    true,
+  )
+  assert.equal(
+    matchesCaseSessionLogStatus(
+      { status: 'COMPLETED' },
+      { attendance_status: 'THERAPIST_LEAVE' },
+      'therapist_on_leave',
+      false,
+    ),
+    true,
+  )
+  assert.equal(
+    matchesCaseSessionLogStatus({ status: 'CLIENT_ABSENT' }, null, 'therapist_on_leave', false),
+    false,
+  )
 })
 
 test('filterCaseSessionRows keeps highlighted session when filters would hide it', () => {

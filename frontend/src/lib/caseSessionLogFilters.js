@@ -1,7 +1,7 @@
 import { todayIsoIST } from './datetime.js'
 
 const ONGOING_SESSION_STATUSES = new Set(['SCHEDULED', 'IN_PROGRESS'])
-const LEAVE_SESSION_STATUSES = new Set(['CLIENT_ABSENT', 'THERAPIST_LEAVE'])
+const CHILD_LEAVE_ATTENDANCE = new Set(['CLIENT_ABSENT', 'CLIENT_LEAVE'])
 
 export const CASE_SESSION_LOG_VIEW_MODES = [
   { value: 'month', label: 'Month' },
@@ -17,7 +17,8 @@ export const CASE_SESSION_LOG_STATUS_FILTERS = [
   { value: 'rejected', label: 'Rejected' },
   { value: 'no_log', label: 'No log submitted' },
   { value: 'cancelled', label: 'Cancelled' },
-  { value: 'leave_absence', label: 'Leave / absence' },
+  { value: 'child_on_leave', label: 'Child on leave' },
+  { value: 'therapist_on_leave', label: 'Therapist on leave' },
   { value: 'resubmitted', label: 'Resubmitted' },
   { value: 'times_edited', label: 'Times edited' },
 ]
@@ -51,6 +52,17 @@ export function caseSessionLogStatusLabel(statusFilter) {
   return CASE_SESSION_LOG_STATUS_FILTERS.find((f) => f.value === statusFilter)?.label || 'All statuses'
 }
 
+function isChildOnLeave(session, log) {
+  const sessionStatus = String(session?.status || '').toUpperCase()
+  const attendance = log?.attendance_status
+  return sessionStatus === 'CLIENT_ABSENT' || CHILD_LEAVE_ATTENDANCE.has(attendance)
+}
+
+function isTherapistOnLeave(session, log) {
+  const sessionStatus = String(session?.status || '').toUpperCase()
+  return sessionStatus === 'THERAPIST_LEAVE' || log?.attendance_status === 'THERAPIST_LEAVE'
+}
+
 export function matchesCaseSessionLogView(scheduledDate, viewMode, selectedDate, selectedMonth) {
   const iso = sessionDateIso(scheduledDate)
   if (viewMode === 'all') return true
@@ -80,11 +92,10 @@ export function matchesCaseSessionLogStatus(session, log, statusFilter, hasTimeE
       return !hasLog && !ONGOING_SESSION_STATUSES.has(sessionStatus)
     case 'cancelled':
       return sessionStatus === 'CANCELLED'
-    case 'leave_absence':
-      return (
-        LEAVE_SESSION_STATUSES.has(sessionStatus) ||
-        ['CLIENT_ABSENT', 'CLIENT_LEAVE', 'THERAPIST_LEAVE'].includes(log?.attendance_status)
-      )
+    case 'child_on_leave':
+      return isChildOnLeave(session, log)
+    case 'therapist_on_leave':
+      return isTherapistOnLeave(session, log)
     case 'resubmitted':
       return Boolean(log?.resubmitted_at)
     case 'times_edited':
