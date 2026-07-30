@@ -7,8 +7,13 @@ import {
   sessionHasTimeEdit,
 } from '../../lib/sessionTimes.js'
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
+import {
+  caseSessionLogEmptyMessage,
+  defaultCaseSessionLogFilters,
+  filterCaseSessionRows,
+} from '../../lib/caseSessionLogFilters.js'
 import { AdminDataList, AdminTaskCard, RejectWithComment, StatusBadge } from './ui/index.js'
-import { CaseSessionMonthlyReportBar } from './CaseSessionMonthlyReportBar.jsx'
+import { CaseSessionLogsFilterBar } from './CaseSessionLogsFilterBar.jsx'
 import { LogCommentCountPill, LogOpenParentCommentBadge } from '../shared/LogCommentCountBadge.jsx'
 import { buildSessionLogMeta, enrichLogsWithCommentCounts, logCommentMetaSuffix } from '../../lib/sessionLogComments.js'
 import './admin-sessions-dashboard.css'
@@ -285,6 +290,10 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
   const [rejectingLogId, setRejectingLogId] = useState(null)
   const [rejectComment, setRejectComment] = useState('')
   const [expandedKeys, setExpandedKeys] = useState(() => new Set())
+  const [viewMode, setViewMode] = useState(() => defaultCaseSessionLogFilters().viewMode)
+  const [selectedMonth, setSelectedMonth] = useState(() => defaultCaseSessionLogFilters().selectedMonth)
+  const [selectedDate, setSelectedDate] = useState(() => defaultCaseSessionLogFilters().selectedDate)
+  const [statusFilter, setStatusFilter] = useState(() => defaultCaseSessionLogFilters().statusFilter)
   const highlightRef = useRef(null)
   const autoExpandDoneRef = useRef('')
 
@@ -339,6 +348,46 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     () => logs.filter((l) => !sessions.some((s) => s.id === l.session_id)),
     [logs, sessions],
   )
+
+  const { filteredSessions, filteredOrphanLogs } = useMemo(
+    () =>
+      filterCaseSessionRows({
+        sessions: sortedSessions,
+        logsBySessionId,
+        orphanLogs,
+        viewMode,
+        selectedDate,
+        selectedMonth,
+        statusFilter,
+        highlightSessionId,
+        sessionHasTimeEdit,
+      }),
+    [
+      sortedSessions,
+      logsBySessionId,
+      orphanLogs,
+      viewMode,
+      selectedDate,
+      selectedMonth,
+      statusFilter,
+      highlightSessionId,
+    ],
+  )
+
+  function handleViewModeChange(nextMode) {
+    setViewMode(nextMode)
+    if (nextMode === 'day') {
+      setSelectedDate((prev) => (prev.startsWith(selectedMonth) ? prev : `${selectedMonth}-01`))
+    }
+    if (nextMode === 'month') {
+      setSelectedMonth(selectedDate.slice(0, 7))
+    }
+  }
+
+  function handleSelectedDateChange(nextDate) {
+    setSelectedDate(nextDate)
+    if (nextDate) setSelectedMonth(nextDate.slice(0, 7))
+  }
 
   useEffect(() => {
     if (loading) return
@@ -432,17 +481,38 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     onCommentCountChange: handleLogCommentCountChange,
   }
 
+  const emptyMessage = caseSessionLogEmptyMessage({
+    viewMode,
+    selectedDate,
+    selectedMonth,
+    statusFilter,
+  })
+
   return (
     <>
-      <CaseSessionMonthlyReportBar caseId={caseId} />
+      <CaseSessionLogsFilterBar
+        viewMode={viewMode}
+        selectedMonth={selectedMonth}
+        selectedDate={selectedDate}
+        statusFilter={statusFilter}
+        onViewModeChange={handleViewModeChange}
+        onSelectedMonthChange={setSelectedMonth}
+        onSelectedDateChange={handleSelectedDateChange}
+        onStatusFilterChange={setStatusFilter}
+      />
       <p className="case-sessions-logs__intro admin-portal-lead" style={{ margin: '0 0 12px', fontSize: '0.8125rem', color: '#64748b' }}>
         Sessions appear when scheduled. Daily logs appear after the therapist submits notes. When times were
         corrected, approving the log also approves the corrected clock for billing.
       </p>
+      {filteredSessions.length === 0 && filteredOrphanLogs.length === 0 ? (
+        <p className="admin-muted" style={{ margin: 0 }}>
+          {emptyMessage}
+        </p>
+      ) : (
       <AdminDataList
         desktop={
           <ul className="admin-queue case-sessions-logs">
-            {sortedSessions.map((session) => {
+            {filteredSessions.map((session) => {
               const log = logsBySessionId.get(session.id)
               const isHighlight = highlightSessionId && String(session.id) === String(highlightSessionId)
               const rowTitle = formatSessionLogRowTitle(session, { fmtDate })
@@ -504,7 +574,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
             })}
           </ul>
         }
-        mobile={sortedSessions.map((session) => {
+        mobile={filteredSessions.map((session) => {
           const log = logsBySessionId.get(session.id)
           const expandKey = sessionExpandKey(session.id)
           return (
@@ -522,14 +592,15 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
           )
         })}
       />
+      )}
 
-      {orphanLogs.length > 0 ? (
+      {filteredOrphanLogs.length > 0 ? (
         <div style={{ marginTop: 16 }}>
           <p className="admin-queue__meta" style={{ marginBottom: 8 }}>
             Orphan logs (session record missing)
           </p>
           <ul className="admin-queue case-sessions-logs">
-            {orphanLogs.map((log) => {
+            {filteredOrphanLogs.map((log) => {
               const expandKey = orphanExpandKey(log.id)
               return (
                 <OrphanLogRow
