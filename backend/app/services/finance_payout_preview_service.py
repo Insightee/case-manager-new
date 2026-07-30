@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import extract, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models.assignment import CaseAssignment
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import BillingType, Case, CompensationMode
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.session import Session as TherapySession
@@ -21,7 +21,7 @@ from app.services.reports_export_helpers import (
     MAX_EXPORT_ROWS,
     is_homecare_case,
     is_shadow_case,
-    leave_days_in_month,
+    leave_days_in_month_for_case,
     month_bounds,
     month_long_label,
     scoped_cases,
@@ -82,18 +82,18 @@ def pay_month_day(d: date) -> int:
 def calendar_days_from_start_day(start_day: int) -> int:
     if start_day <= 1:
         return SHADOW_MONTHLY_DAYS
-    return max(SHADOW_MONTHLY_DAYS - start_day, 0)
+    return max(SHADOW_MONTHLY_DAYS - start_day + 1, 0)
 
 
-def calendar_days_outgoing(*, last_session: date, segment_start_day: int) -> int:
-    last_day = pay_month_day(last_session)
+def calendar_days_outgoing(*, last_log: date, segment_start_day: int) -> int:
+    last_day = pay_month_day(last_log)
     if segment_start_day <= 1:
         return last_day
     return max(last_day - segment_start_day + 1, 0)
 
 
-def calendar_days_incoming(*, first_session: date) -> int:
-    return calendar_days_from_start_day(pay_month_day(first_session))
+def calendar_days_incoming(*, first_log: date) -> int:
+    return calendar_days_from_start_day(pay_month_day(first_log))
 
 
 def segment_start_day(
@@ -115,8 +115,8 @@ def calendar_days_for_segment(
     *,
     is_incoming_replacement: bool,
     is_outgoing_replacement: bool,
-    first_session: date | None,
-    last_session: date | None,
+    first_log: date | None,
+    last_log: date | None,
     assignment_start: date | None,
     employment_start: date | None,
     month_start: date,
@@ -129,11 +129,11 @@ def calendar_days_for_segment(
         month_end=month_end,
     )
 
-    if is_outgoing_replacement and last_session is not None:
-        return calendar_days_outgoing(last_session=last_session, segment_start_day=seg_start)
+    if is_outgoing_replacement and last_log is not None:
+        return calendar_days_outgoing(last_log=last_log, segment_start_day=seg_start)
 
-    if is_incoming_replacement and first_session is not None:
-        return calendar_days_incoming(first_session=first_session)
+    if is_incoming_replacement and first_log is not None:
+        return calendar_days_incoming(first_log=first_log)
 
     return calendar_days_from_start_day(seg_start)
 
@@ -162,51 +162,156 @@ def predicted_subtotal_inr(
 @dataclass
 class TherapistCaseSegment:
     therapist_user_id: int
-    first_session: date | None
-    last_session: date | None
+    first_log: date | None
+    last_log: date | None
     is_incoming_replacement: bool
     is_outgoing_replacement: bool
+
+
+
+def _therapists_with_hours_in_month(
+    db: Session, case_id: int, start: date, end: date
+) -> set[int]:
+    rows = db.execute(
+        select(TherapySession.therapist_user_id.distinct()).where(
+            TherapySession.case_id == case_id,
+            TherapySession.status == SessionStatus.COMPLETED,
+            TherapySession.scheduled_date >= start,
+            TherapySession.scheduled_date <= end,
+        )
+    ).all()
+    return {int(r[0]) for r in rows}
+
+
+def _assignment_for_month(
+    db: Session,
+    case_id: int,
+    therapist_user_id: int,
+    month_start: date,
+    month_end: date,
+) -> CaseAssignment | None:
+    return db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id == therapist_user_id,
+            CaseAssignment.start_date <= month_end,
+            or_(
+                CaseAssignment.end_date.is_(None),
+                CaseAssignment.end_date >= month_start,
+            ),
+        )
+        .order_by(CaseAssignment.start_date.desc())
+        .limit(1)
+    ).first()
+
+
+def _is_incoming_replacement(
+    db: Session,
+    case_id: int,
+    therapist_user_id: int,
+    month_start: date,
+    month_end: date,
+) -> bool:
+    assignment = _assignment_for_month(
+        db, case_id, therapist_user_id, month_start, month_end
+    )
+    if not assignment:
+        return False
+    prior = db.scalars(
+        select(CaseAssignment.id)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id != therapist_user_id,
+            CaseAssignment.start_date < assignment.start_date,
+        )
+        .limit(1)
+    ).first()
+    return prior is not None
+
+
+def _is_outgoing_replacement(
+    db: Session,
+    case_id: int,
+    therapist_user_id: int,
+    month_start: date,
+    month_end: date,
+) -> bool:
+    assignment = _assignment_for_month(
+        db, case_id, therapist_user_id, month_start, month_end
+    )
+    if not assignment:
+        return False
+    if assignment.status in (
+        CaseAssignmentStatus.TRANSFERRED,
+        CaseAssignmentStatus.ENDED,
+    ):
+        return True
+    successor = db.scalars(
+        select(CaseAssignment.id)
+        .where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.therapist_user_id != therapist_user_id,
+            CaseAssignment.start_date > assignment.start_date,
+        )
+        .limit(1)
+    ).first()
+    return successor is not None
 
 
 def _therapist_segments_for_case(
     db: Session, case_id: int, start: date, end: date
 ) -> list[TherapistCaseSegment]:
-    rows = db.execute(
+    log_rows = db.execute(
         select(
             TherapySession.therapist_user_id,
             func.min(TherapySession.scheduled_date),
             func.max(TherapySession.scheduled_date),
         )
+        .join(DailyLog, DailyLog.session_id == TherapySession.id)
         .where(
             TherapySession.case_id == case_id,
             TherapySession.scheduled_date >= start,
             TherapySession.scheduled_date <= end,
+            DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
         )
         .group_by(TherapySession.therapist_user_id)
     ).all()
-    if not rows:
-        return []
+
+    therapist_ids = {int(r[0]) for r in log_rows}
+    hour_only = _therapists_with_hours_in_month(db, case_id, start, end) - therapist_ids
 
     segments: list[TherapistCaseSegment] = []
-    for therapist_id, first_sess, last_sess in rows:
-        others = [(tid, f, last) for tid, f, last in rows if tid != therapist_id]
-        is_incoming = any(
-            o_last is not None and first_sess is not None and o_last < first_sess
-            for _, _, o_last in others
-        )
-        is_outgoing = any(
-            o_first is not None and last_sess is not None and o_first > last_sess
-            for _, o_first, _ in others
-        )
+    for therapist_id, first_log, last_log in log_rows:
         segments.append(
             TherapistCaseSegment(
                 therapist_user_id=int(therapist_id),
-                first_session=first_sess,
-                last_session=last_sess,
-                is_incoming_replacement=is_incoming,
-                is_outgoing_replacement=is_outgoing,
+                first_log=first_log,
+                last_log=last_log,
+                is_incoming_replacement=_is_incoming_replacement(
+                    db, case_id, int(therapist_id), start, end
+                ),
+                is_outgoing_replacement=_is_outgoing_replacement(
+                    db, case_id, int(therapist_id), start, end
+                ),
             )
         )
+
+    for therapist_id in hour_only:
+        segments.append(
+            TherapistCaseSegment(
+                therapist_user_id=therapist_id,
+                first_log=None,
+                last_log=None,
+                is_incoming_replacement=_is_incoming_replacement(
+                    db, case_id, therapist_id, start, end
+                ),
+                is_outgoing_replacement=_is_outgoing_replacement(
+                    db, case_id, therapist_id, start, end
+                ),
+            )
+        )
+
     return segments
 
 
@@ -215,9 +320,16 @@ def _assignment_start_for_therapist(
     case_id: int,
     therapist_user_id: int,
     *,
+    month_start: date,
+    month_end: date,
     reference_date: date | None = None,
 ) -> date | None:
-    """Portal assignment start for the stint active around reference_date."""
+    """Portal assignment start for the stint active in the billing month."""
+    assignment = _assignment_for_month(
+        db, case_id, therapist_user_id, month_start, month_end
+    )
+    if assignment:
+        return assignment.start_date
     base = select(CaseAssignment.start_date).where(
         CaseAssignment.case_id == case_id,
         CaseAssignment.therapist_user_id == therapist_user_id,
@@ -241,6 +353,21 @@ def _first_session_ever_for_therapist(
         select(func.min(TherapySession.scheduled_date)).where(
             TherapySession.case_id == case_id,
             TherapySession.therapist_user_id == therapist_user_id,
+        )
+    )
+
+
+def _last_approved_log_for_therapist(
+    db: Session, case_id: int, therapist_user_id: int
+) -> date | None:
+    """Latest approved log date for this therapist on the case (all time)."""
+    return db.scalar(
+        select(func.max(TherapySession.scheduled_date))
+        .join(DailyLog, DailyLog.session_id == TherapySession.id)
+        .where(
+            TherapySession.case_id == case_id,
+            TherapySession.therapist_user_id == therapist_user_id,
+            DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
         )
     )
 
@@ -334,6 +461,13 @@ def _billable_sessions_for_segment(case: Case, approved: int, child_absence: int
     return approved + child_absence
 
 
+def _leave_for_case_row(db: Session, therapist_id: int, case: Case, ym: str) -> dict[str, int]:
+    """Case-scoped leave counts; homecare and shadow/B2B only show linked case leaves."""
+    if is_homecare_case(case) or uses_calendar_day_pay(case):
+        return leave_days_in_month_for_case(db, therapist_id, case.id, ym)
+    return {"paid": 0, "unpaid": 0, "carry_forward": 0}
+
+
 def payout_preview_row(
     case: Case,
     *,
@@ -346,6 +480,7 @@ def payout_preview_row(
     calendar_days: int,
     therapist_start_date: date | None,
     case_start_date: date | None,
+    case_end_date: date | None,
     leave: dict[str, int],
     leave_credits: int,
 ) -> dict[str, Any]:
@@ -357,7 +492,7 @@ def payout_preview_row(
         case,
         approved_sessions=approved_sessions,
         calendar_days=calendar_days,
-        unpaid_leaves=unpaid,
+        unpaid_leaves=unpaid if uses_calendar_day_pay(case) else 0,
     )
 
     return {
@@ -369,6 +504,7 @@ def payout_preview_row(
         "Service Type": case.service_type or case.product_module or "",
         "Therapist Start Date": therapist_start_date.isoformat() if therapist_start_date else "",
         "Case Start Date": case_start_date.isoformat() if case_start_date else "",
+        "Case End Date": case_end_date.isoformat() if case_end_date else "",
         "Calendar Days": calendar_days,
         "Approved Sessions": approved_sessions,
         "Approved Absence": approved_absence,
@@ -424,24 +560,36 @@ def payout_preview_rows(
                 db,
                 case.id,
                 segment.therapist_user_id,
-                reference_date=segment.first_session,
+                month_start=start,
+                month_end=end,
+                reference_date=segment.first_log,
             )
             employment_start = _employment_start(db, segment.therapist_user_id)
             case_start = _first_session_ever_for_therapist(
                 db, case.id, segment.therapist_user_id
             )
+            case_end = (
+                _last_approved_log_for_therapist(
+                    db, case.id, segment.therapist_user_id
+                )
+                if segment.is_outgoing_replacement
+                else None
+            )
+            last_log_for_calendar = segment.last_log
+            if segment.is_outgoing_replacement and case_end is not None:
+                last_log_for_calendar = case_end
             calendar_days = calendar_days_for_segment(
                 is_incoming_replacement=segment.is_incoming_replacement,
                 is_outgoing_replacement=segment.is_outgoing_replacement,
-                first_session=segment.first_session,
-                last_session=segment.last_session,
+                first_log=segment.first_log,
+                last_log=last_log_for_calendar,
                 assignment_start=assignment_start,
                 employment_start=employment_start,
                 month_start=start,
                 month_end=end,
             )
 
-            leave = leave_days_in_month(db, therapist.id, ym)
+            leave = _leave_for_case_row(db, therapist.id, case, ym)
             balance = leave_policy_service.get_leave_balance(db, therapist, year=year, as_of=end)
             leave_credits = int(
                 balance.get("leave_credit_pending", balance.get("paid_remaining", 0)) or 0
@@ -460,6 +608,7 @@ def payout_preview_rows(
                     calendar_days=calendar_days,
                     therapist_start_date=employment_start,
                     case_start_date=case_start,
+                    case_end_date=case_end,
                     leave=leave,
                     leave_credits=leave_credits,
                 )

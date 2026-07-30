@@ -165,23 +165,28 @@ def parse_iso_date(value: str | None, fallback: date) -> date:
         return fallback
 
 
-def leave_days_in_month(db: Session, therapist_user_id: int, ym: str) -> dict[str, int]:
-    """Paid/unpaid leave days overlapping the calendar month."""
-    from app.models.leave import LeaveStatus, TherapistLeave
+def leave_applies_to_case(leave: Any, case_id: int) -> bool:
+    """True when leave was recorded against a specific case (not therapist-wide)."""
+    if not leave.case_id and not leave.case_ids:
+        return False
+    if leave.case_id == case_id:
+        return True
+    if leave.case_ids and case_id in leave.case_ids:
+        return True
+    return False
+
+
+def _leave_days_overlap_month(
+    db: Session,
+    leaves: list[TherapistLeave],
+    ym: str,
+) -> dict[str, int]:
     from app.services import leave_service
     from app.services.leave_policy_service import _paid_unpaid_for_leave
 
     start, end = month_bounds(ym)
     year = int(ym.split("-")[0])
-    leaves = db.scalars(
-        select(TherapistLeave).where(
-            TherapistLeave.therapist_user_id == therapist_user_id,
-            TherapistLeave.status == LeaveStatus.APPROVED,
-            TherapistLeave.start_date <= end,
-            TherapistLeave.end_date >= start,
-        )
-    ).all()
-    paid = unpaid = carry = 0
+    paid = unpaid = 0
     for lv in leaves:
         p, u = _paid_unpaid_for_leave(db, lv, year)
         overlap_start = max(lv.start_date, start)
@@ -195,7 +200,45 @@ def leave_days_in_month(db: Session, therapist_user_id: int, ym: str) -> dict[st
         ratio = total / full
         paid += round(p * ratio)
         unpaid += round(u * ratio)
-    return {"paid": paid, "unpaid": unpaid, "carry_forward": carry}
+    return {"paid": paid, "unpaid": unpaid, "carry_forward": 0}
+
+
+def leave_days_in_month(db: Session, therapist_user_id: int, ym: str) -> dict[str, int]:
+    """Paid/unpaid leave days overlapping the calendar month (all therapist leaves)."""
+    from app.models.leave import LeaveStatus, TherapistLeave
+
+    start, end = month_bounds(ym)
+    leaves = db.scalars(
+        select(TherapistLeave).where(
+            TherapistLeave.therapist_user_id == therapist_user_id,
+            TherapistLeave.status == LeaveStatus.APPROVED,
+            TherapistLeave.start_date <= end,
+            TherapistLeave.end_date >= start,
+        )
+    ).all()
+    return _leave_days_overlap_month(db, leaves, ym)
+
+
+def leave_days_in_month_for_case(
+    db: Session,
+    therapist_user_id: int,
+    case_id: int,
+    ym: str,
+) -> dict[str, int]:
+    """Paid/unpaid leave days for a therapist scoped to one case in the billing month."""
+    from app.models.leave import LeaveStatus, TherapistLeave
+
+    start, end = month_bounds(ym)
+    leaves = db.scalars(
+        select(TherapistLeave).where(
+            TherapistLeave.therapist_user_id == therapist_user_id,
+            TherapistLeave.status == LeaveStatus.APPROVED,
+            TherapistLeave.start_date <= end,
+            TherapistLeave.end_date >= start,
+        )
+    ).all()
+    scoped = [lv for lv in leaves if leave_applies_to_case(lv, case_id)]
+    return _leave_days_overlap_month(db, scoped, ym)
 
 
 def is_shadow_case(case: Case | None) -> bool:

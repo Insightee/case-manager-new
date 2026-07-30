@@ -5,9 +5,13 @@ from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.core.database import SessionLocal
 from app.main import app
 from app.models.case import BillingType, Case, CompensationMode
+from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
+from app.models.user import User
 from app.services.finance_payout_preview_service import (
     SHADOW_MONTHLY_DAYS,
     calendar_days_for_segment,
@@ -19,6 +23,11 @@ from app.services.finance_payout_preview_service import (
     per_session_share_inr,
     predicted_subtotal_inr,
     therapist_share_inr,
+)
+from app.services.reports_export_helpers import (
+    leave_applies_to_case,
+    leave_days_in_month,
+    leave_days_in_month_for_case,
 )
 from app.seed.demo_seed import run as seed_run
 
@@ -52,40 +61,43 @@ def test_pay_month_day_caps_at_thirty():
     assert pay_month_day(date(2026, 7, 15)) == 15
 
 
-def test_calendar_days_from_start_day():
+def test_calendar_days_from_start_day_inclusive():
     assert calendar_days_from_start_day(1) == 30
-    assert calendar_days_from_start_day(10) == 20
-    assert calendar_days_from_start_day(18) == 12
+    assert calendar_days_from_start_day(10) == 21
+    assert calendar_days_from_start_day(15) == 16
+    assert calendar_days_from_start_day(18) == 13
 
 
-def test_calendar_days_outgoing_last_session_day():
-    assert calendar_days_outgoing(last_session=date(2026, 7, 15), segment_start_day=1) == 15
+def test_calendar_days_outgoing_last_log_day():
+    assert calendar_days_outgoing(last_log=date(2026, 7, 15), segment_start_day=1) == 15
+    assert calendar_days_outgoing(last_log=date(2026, 7, 20), segment_start_day=10) == 11
 
 
-def test_calendar_days_incoming_from_first_session():
-    assert calendar_days_incoming(first_session=date(2026, 7, 18)) == 12
+def test_calendar_days_incoming_from_first_log():
+    assert calendar_days_incoming(first_log=date(2026, 7, 18)) == 13
+    assert calendar_days_incoming(first_log=date(2026, 7, 15)) == 16
 
 
 def test_calendar_days_fresh_case_mid_month_assignment():
     days = calendar_days_for_segment(
         is_incoming_replacement=False,
         is_outgoing_replacement=False,
-        first_session=date(2026, 7, 12),
-        last_session=date(2026, 7, 28),
+        first_log=date(2026, 7, 12),
+        last_log=date(2026, 7, 28),
         assignment_start=date(2026, 7, 10),
         employment_start=None,
         month_start=date(2026, 7, 1),
         month_end=date(2026, 7, 31),
     )
-    assert days == 20
+    assert days == 21
 
 
 def test_calendar_days_replacement_outgoing():
     days = calendar_days_for_segment(
         is_incoming_replacement=False,
         is_outgoing_replacement=True,
-        first_session=date(2026, 7, 1),
-        last_session=date(2026, 7, 15),
+        first_log=date(2026, 7, 1),
+        last_log=date(2026, 7, 15),
         assignment_start=date(2026, 6, 1),
         employment_start=None,
         month_start=date(2026, 7, 1),
@@ -98,28 +110,28 @@ def test_calendar_days_replacement_incoming():
     days = calendar_days_for_segment(
         is_incoming_replacement=True,
         is_outgoing_replacement=False,
-        first_session=date(2026, 7, 18),
-        last_session=date(2026, 7, 29),
+        first_log=date(2026, 7, 18),
+        last_log=date(2026, 7, 29),
         assignment_start=date(2026, 7, 17),
         employment_start=None,
         month_start=date(2026, 7, 1),
         month_end=date(2026, 7, 31),
     )
-    assert days == 12
+    assert days == 13
 
 
 def test_calendar_days_new_hire_employment_start():
     days = calendar_days_for_segment(
         is_incoming_replacement=False,
         is_outgoing_replacement=False,
-        first_session=date(2026, 7, 12),
-        last_session=date(2026, 7, 28),
+        first_log=date(2026, 7, 12),
+        last_log=date(2026, 7, 28),
         assignment_start=date(2026, 6, 1),
         employment_start=date(2026, 7, 10),
         month_start=date(2026, 7, 1),
         month_end=date(2026, 7, 31),
     )
-    assert days == 20
+    assert days == 21
 
 
 def test_homecare_per_session_share_is_flat_inr():
@@ -170,9 +182,9 @@ def test_shadow_subtotal_uses_calendar_days_not_sessions():
         pay_share_amount_inr=15000,
     )
     full = predicted_subtotal_inr(case, approved_sessions=5, calendar_days=30, unpaid_leaves=0)
-    partial = predicted_subtotal_inr(case, approved_sessions=25, calendar_days=20, unpaid_leaves=0)
+    partial = predicted_subtotal_inr(case, approved_sessions=25, calendar_days=21, unpaid_leaves=0)
     assert full == 15000
-    assert partial == 10000
+    assert partial == 10500
 
 
 def test_b2b_uses_same_calendar_day_pay_as_shadow():
@@ -183,8 +195,62 @@ def test_b2b_uses_same_calendar_day_pay_as_shadow():
         pay_share_amount_inr=12000,
     )
     assert predicted_subtotal_inr(
-        case, approved_sessions=0, calendar_days=20, unpaid_leaves=2
-    ) == round((12000 / 30) * 18, 2)
+        case, approved_sessions=0, calendar_days=21, unpaid_leaves=2
+    ) == round((12000 / 30) * 19, 2)
+
+
+def test_leave_applies_to_case():
+    leave_on_case = TherapistLeave(
+        therapist_user_id=1,
+        leave_type=LeaveType.ANNUAL,
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 1),
+        status=LeaveStatus.APPROVED,
+        case_id=10,
+        case_ids=[10],
+    )
+    leave_wide = TherapistLeave(
+        therapist_user_id=1,
+        leave_type=LeaveType.CASUAL,
+        start_date=date(2026, 7, 2),
+        end_date=date(2026, 7, 2),
+        status=LeaveStatus.APPROVED,
+    )
+    assert leave_applies_to_case(leave_on_case, 10) is True
+    assert leave_applies_to_case(leave_on_case, 99) is False
+    assert leave_applies_to_case(leave_wide, 10) is False
+
+
+def test_leave_days_in_month_for_case_scoped():
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        cases = db.scalars(select(Case).limit(2)).all()
+        if not therapist or len(cases) < 2:
+            pytest.skip("Need therapist and two cases")
+        case_a, case_b = cases[0], cases[1]
+        ym = "2026-09"
+        db.add(
+            TherapistLeave(
+                therapist_user_id=therapist.id,
+                leave_type=LeaveType.ANNUAL,
+                billing_category=LeaveBillingCategory.UNPAID,
+                start_date=date(2026, 9, 5),
+                end_date=date(2026, 9, 6),
+                status=LeaveStatus.APPROVED,
+                case_id=case_a.id,
+                case_ids=[case_a.id],
+            )
+        )
+        db.commit()
+        scoped_a = leave_days_in_month_for_case(db, therapist.id, case_a.id, ym)
+        scoped_b = leave_days_in_month_for_case(db, therapist.id, case_b.id, ym)
+        total = leave_days_in_month(db, therapist.id, ym)
+        assert scoped_a["unpaid"] >= 2
+        assert scoped_b["unpaid"] == 0
+        assert total["unpaid"] >= scoped_a["unpaid"]
+    finally:
+        db.close()
 
 
 def _headers(email: str) -> dict:
@@ -211,6 +277,7 @@ def test_finance_payout_preview_report_json():
         assert "Case ID" in row
         assert "Therapist Start Date" in row
         assert "Case Start Date" in row
+        assert "Case End Date" in row
         assert "Calendar Days" in row
         assert "Predicted Subtotal" in row
         assert "Per Session Share" in row
