@@ -1,28 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
-import {
-  formatSessionLogRowTitle,
-  sessionHasTimeEdit,
-} from '../../lib/sessionTimes.js'
-import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
+import { sessionHasTimeEdit } from '../../lib/sessionTimes.js'
 import {
   caseSessionLogEmptyMessage,
   defaultCaseSessionLogFilters,
   filterCaseSessionRows,
 } from '../../lib/caseSessionLogFilters.js'
-import { AdminDataList, AdminTaskCard, RejectWithComment, StatusBadge } from './ui/index.js'
+import { CaseSessionLogCard } from './CaseSessionLogCard.jsx'
 import { CaseSessionLogsFilterBar } from './CaseSessionLogsFilterBar.jsx'
-import { LogCommentCountPill, LogOpenParentCommentBadge } from '../shared/LogCommentCountBadge.jsx'
-import { buildSessionLogMeta, enrichLogsWithCommentCounts, logCommentMetaSuffix } from '../../lib/sessionLogComments.js'
+import { enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
 import './admin-sessions-dashboard.css'
-
-function fmtDate(s) {
-  if (!s) return '—'
-  const [y, m, d] = String(s).slice(0, 10).split('-')
-  return `${d}/${m}/${String(y).slice(2)}`
-}
 
 function sessionSortKey(session, logsBySessionId) {
   const log = logsBySessionId.get(session.id)
@@ -51,234 +39,24 @@ function shouldDefaultExpand(sessionId, log, highlightSessionId) {
   return log?.approval_status === 'PENDING'
 }
 
-function SessionLogExpandableBody({
-  expandKey,
-  log,
-  session,
-  caseId,
-  expanded,
-  onToggleExpand,
-  canReview,
-  onReviewLog,
-  actingLogId,
-  rejectingLogId,
-  setRejectingLogId,
-  rejectComment,
-  setRejectComment,
-  analyticsSessionId,
-  onCommentCountChange,
-}) {
-  if (!log) return null
-
-  const hasTimeEdit = sessionHasTimeEdit(session, log)
-  const analyticsHref = analyticsSessionId
-    ? `/admin/logs?tab=sessions&case_id=${caseId}&session_id=${analyticsSessionId}`
-    : `/admin/logs?tab=sessions&case_id=${caseId}`
-
+function SessionLogList({ items, highlightRef, sharedExpandProps }) {
+  const { expandedKeys: _ignored, ...cardProps } = sharedExpandProps
   return (
-    <div className="case-sessions-logs__expand-row">
-      <button
-        type="button"
-        className="admin-btn admin-btn--ghost admin-btn--sm"
-        onClick={() => onToggleExpand(expandKey)}
-        aria-expanded={expanded}
-      >
-        {expanded ? 'Hide full log' : 'View full log'}
-      </button>
-      <Link to={analyticsHref} className="case-sessions-logs__analytics-link">
-        Sessions analytics
-      </Link>
-      {expanded ? (
-        <div style={{ flexBasis: '100%', width: '100%' }}>
-          {log.approval_status === 'PENDING' && log.resubmitted_at ? (
-            <p className="admin-session-log-detail__notice admin-session-log-detail__notice--info" role="status" style={{ marginBottom: 12 }}>
-              Resubmitted after changes — review the therapist&apos;s corrections before approving.
-            </p>
-          ) : null}
-          <SessionLogReadOnly
-            log={log}
+    <ul className="case-sessions-logs__list">
+      {items.map(({ key, session, log, expandKey, expanded, highlight }) => (
+        <li key={key} className="case-sessions-logs__list-item">
+          <CaseSessionLogCard
             session={session}
-            variant="admin"
-            hideHeader
-            onCommentCountChange={onCommentCountChange}
+            log={log}
+            expandKey={expandKey}
+            expanded={expanded}
+            highlight={highlight}
+            highlightRef={highlight ? highlightRef : null}
+            {...cardProps}
           />
-          {log.approval_status === 'PENDING' && canReview ? (
-            <div style={{ marginTop: 12 }}>
-              <RejectWithComment
-                rejecting={rejectingLogId === log.id}
-                comment={rejectingLogId === log.id ? rejectComment : ''}
-                onCommentChange={setRejectComment}
-                onStartReject={() => {
-                  setRejectingLogId(log.id)
-                  setRejectComment('')
-                }}
-                onCancelReject={() => {
-                  setRejectingLogId(null)
-                  setRejectComment('')
-                }}
-                onConfirmReject={() => {
-                  const note = rejectComment.trim()
-                  if (!note) return
-                  onReviewLog(log.id, 'reject', note)
-                  setRejectingLogId(null)
-                  setRejectComment('')
-                }}
-                onApprove={() => onReviewLog(log.id, 'approve')}
-                processing={actingLogId === log.id}
-                approveLabel={hasTimeEdit ? 'Approve log & times' : 'Approve'}
-                placeholder="Why is this log rejected? (required)"
-              />
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function SessionLogCard({
-  session,
-  log,
-  caseId,
-  highlightSessionId,
-  highlightRef,
-  expandKey,
-  expanded,
-  onToggleExpand,
-  canReview,
-  onReviewLog,
-  actingLogId,
-  rejectingLogId,
-  setRejectingLogId,
-  rejectComment,
-  setRejectComment,
-  onCommentCountChange,
-}) {
-  const isHighlight = highlightSessionId && String(session.id) === String(highlightSessionId)
-  const title = formatSessionLogRowTitle(session, { fmtDate })
-
-  const actions = !log ? (
-    <span className="admin-muted" style={{ fontSize: '0.8125rem' }}>
-      {session.status === 'IN_PROGRESS' || session.status === 'SCHEDULED'
-        ? 'Log not submitted yet'
-        : 'No therapist log'}
-    </span>
-  ) : null
-
-  const detailBody = (
-    <>
-      {!log ? (
-        <p className="case-sessions-logs__pending">
-          {session.status === 'IN_PROGRESS' || session.status === 'SCHEDULED'
-            ? 'Session in progress — log not submitted yet.'
-            : 'No therapist log submitted for this session.'}
-        </p>
-      ) : (
-        <SessionLogExpandableBody
-          expandKey={expandKey}
-          log={log}
-          session={session}
-          caseId={caseId}
-          expanded={expanded}
-          onToggleExpand={onToggleExpand}
-          canReview={canReview}
-          onReviewLog={onReviewLog}
-          actingLogId={actingLogId}
-          rejectingLogId={rejectingLogId}
-          setRejectingLogId={setRejectingLogId}
-          rejectComment={rejectComment}
-          setRejectComment={setRejectComment}
-          analyticsSessionId={session.id}
-          onCommentCountChange={onCommentCountChange}
-        />
-      )}
-    </>
-  )
-
-  return (
-    <li ref={isHighlight ? highlightRef : null}>
-      <AdminTaskCard
-        highlight={isHighlight}
-        title={title}
-        meta={buildSessionLogMeta(session, log)}
-        badges={
-          <>
-            <StatusBadge status={session.status} />
-            {log ? <StatusBadge status={log.approval_status} /> : null}
-            {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
-            {log?.resubmitted_at ? (
-              <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
-            ) : null}
-            <LogOpenParentCommentBadge log={log} />
-            {sessionHasTimeEdit(session, log) ? (
-              <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
-            ) : null}
-            {session.duplicate_day_session || log?.duplicate_day_session ? (
-              <span className="admin-badge admin-badge--warning sessions-dash__pill">Same-day duplicate</span>
-            ) : null}
-          </>
-        }
-        actions={actions}
-      >
-        {detailBody}
-      </AdminTaskCard>
-    </li>
-  )
-}
-
-function OrphanLogRow({
-  log,
-  caseId,
-  expandKey,
-  expanded,
-  onToggleExpand,
-  canReview,
-  onReviewLog,
-  actingLogId,
-  rejectingLogId,
-  setRejectingLogId,
-  rejectComment,
-  setRejectComment,
-  onCommentCountChange,
-}) {
-  return (
-    <li className="admin-queue__item case-sessions-logs__item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <div>
-          <p className="admin-queue__title">Log #{log.id}</p>
-          <p className="admin-queue__meta">
-            Session #{log.session_id ?? '—'}
-            {log.scheduled_date ? ` · ${fmtDate(log.scheduled_date)}` : ''}
-            {logCommentMetaSuffix(log)}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <StatusBadge status={log.approval_status} />
-          {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
-          {log.resubmitted_at ? (
-            <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
-          ) : null}
-          <LogOpenParentCommentBadge log={log} />
-        </div>
-      </div>
-      <SessionLogExpandableBody
-        expandKey={expandKey}
-        log={log}
-        session={null}
-        caseId={caseId}
-        expanded={expanded}
-        onToggleExpand={onToggleExpand}
-        canReview={canReview}
-        onReviewLog={onReviewLog}
-        actingLogId={actingLogId}
-        rejectingLogId={rejectingLogId}
-        setRejectingLogId={setRejectingLogId}
-        rejectComment={rejectComment}
-        setRejectComment={setRejectComment}
-        analyticsSessionId={log.session_id}
-        onCommentCountChange={onCommentCountChange}
-      />
-    </li>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -470,6 +248,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
   }
 
   const sharedExpandProps = {
+    caseId,
     canReview,
     onReviewLog: handleReviewLog,
     actingLogId,
@@ -480,6 +259,31 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     onToggleExpand: toggleExpand,
     onCommentCountChange: handleLogCommentCountChange,
   }
+
+  const sessionItems = filteredSessions.map((session) => {
+    const log = logsBySessionId.get(session.id)
+    const expandKey = sessionExpandKey(session.id)
+    return {
+      key: `session-${session.id}`,
+      session,
+      log,
+      expandKey,
+      expanded: expandedKeys.has(expandKey),
+      highlight: Boolean(highlightSessionId && String(session.id) === String(highlightSessionId)),
+    }
+  })
+
+  const orphanItems = filteredOrphanLogs.map((log) => {
+    const expandKey = orphanExpandKey(log.id)
+    return {
+      key: `orphan-${log.id}`,
+      session: null,
+      log,
+      expandKey,
+      expanded: expandedKeys.has(expandKey),
+      highlight: false,
+    }
+  })
 
   const emptyMessage = caseSessionLogEmptyMessage({
     viewMode,
@@ -504,116 +308,20 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
         Sessions appear when scheduled. Daily logs appear after the therapist submits notes. When times were
         corrected, approving the log also approves the corrected clock for billing.
       </p>
-      {filteredSessions.length === 0 && filteredOrphanLogs.length === 0 ? (
+      {sessionItems.length === 0 && orphanItems.length === 0 ? (
         <p className="admin-muted" style={{ margin: 0 }}>
           {emptyMessage}
         </p>
       ) : (
-      <AdminDataList
-        desktop={
-          <ul className="admin-queue case-sessions-logs">
-            {filteredSessions.map((session) => {
-              const log = logsBySessionId.get(session.id)
-              const isHighlight = highlightSessionId && String(session.id) === String(highlightSessionId)
-              const rowTitle = formatSessionLogRowTitle(session, { fmtDate })
-              const expandKey = sessionExpandKey(session.id)
-              const expanded = expandedKeys.has(expandKey)
-
-              return (
-                <li
-                  key={session.id}
-                  ref={isHighlight ? highlightRef : null}
-                  className={`admin-queue__item case-sessions-logs__item ${isHighlight ? 'is-highlight' : ''}`}
-                  style={{ flexDirection: 'column', alignItems: 'stretch' }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                    <div>
-                      <p className="admin-queue__title">
-                        {rowTitle}
-                      </p>
-                      <p className="admin-queue__meta">
-                        {buildSessionLogMeta(session, log)}
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <StatusBadge status={session.status} />
-                      {log ? <StatusBadge status={log.approval_status} /> : null}
-                      {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
-                      {log?.resubmitted_at ? (
-                        <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
-                      ) : null}
-                      <LogOpenParentCommentBadge log={log} />
-                      {sessionHasTimeEdit(session, log) ? (
-                        <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
-                      ) : null}
-                      {session.duplicate_day_session || log?.duplicate_day_session ? (
-                        <span className="admin-badge admin-badge--warning sessions-dash__pill">Same-day duplicate</span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {!log ? (
-                    <p className="case-sessions-logs__pending">
-                      {session.status === 'IN_PROGRESS' || session.status === 'SCHEDULED'
-                        ? 'Session in progress — log not submitted yet.'
-                        : 'No therapist log submitted for this session.'}
-                    </p>
-                  ) : (
-                    <SessionLogExpandableBody
-                      expandKey={expandKey}
-                      log={log}
-                      session={session}
-                      caseId={caseId}
-                      expanded={expanded}
-                      analyticsSessionId={session.id}
-                      {...sharedExpandProps}
-                    />
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        }
-        mobile={filteredSessions.map((session) => {
-          const log = logsBySessionId.get(session.id)
-          const expandKey = sessionExpandKey(session.id)
-          return (
-            <SessionLogCard
-              key={session.id}
-              session={session}
-              log={log}
-              caseId={caseId}
-              highlightSessionId={highlightSessionId}
-              highlightRef={highlightRef}
-              expandKey={expandKey}
-              expanded={expandedKeys.has(expandKey)}
-              {...sharedExpandProps}
-            />
-          )
-        })}
-      />
+        <SessionLogList items={sessionItems} highlightRef={highlightRef} sharedExpandProps={sharedExpandProps} />
       )}
 
-      {filteredOrphanLogs.length > 0 ? (
+      {orphanItems.length > 0 ? (
         <div style={{ marginTop: 16 }}>
           <p className="admin-queue__meta" style={{ marginBottom: 8 }}>
             Orphan logs (session record missing)
           </p>
-          <ul className="admin-queue case-sessions-logs">
-            {filteredOrphanLogs.map((log) => {
-              const expandKey = orphanExpandKey(log.id)
-              return (
-                <OrphanLogRow
-                  key={log.id}
-                  log={log}
-                  caseId={caseId}
-                  expandKey={expandKey}
-                  expanded={expandedKeys.has(expandKey)}
-                  {...sharedExpandProps}
-                />
-              )
-            })}
-          </ul>
+          <SessionLogList items={orphanItems} highlightRef={highlightRef} sharedExpandProps={sharedExpandProps} />
         </div>
       ) : null}
     </>

@@ -248,6 +248,7 @@ export function SessionLogReadOnly({
   onClose,
   variant = 'therapist',
   hideHeader = false,
+  hideTimesSummary = false,
   className = '',
   onCommentCountChange,
 }) {
@@ -313,7 +314,7 @@ export function SessionLogReadOnly({
           Therapist corrected session times. Approving this log accepts the corrected clock for billing.
         </p>
       ) : null}
-      {isAdmin && timesSource ? (
+      {isAdmin && timesSource && !hideTimesSummary ? (
         <dl className="admin-session-log-detail__times" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', margin: '0 0 12px', fontSize: '0.8125rem' }}>
           {formatScheduledRange(timesSource) ? (
             <>
