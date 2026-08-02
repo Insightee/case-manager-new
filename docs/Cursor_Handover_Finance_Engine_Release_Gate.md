@@ -134,8 +134,56 @@ Open PR `feat/billing-engine-steps-1-6` → `main` with flags off. **Do not merg
 
 ---
 
+## CI repair (2026-08-02) — date-sensitive suite failures
+
+### Root causes (all **pre-existing on `main`**, environment-sensitive)
+
+| Group | Failure | Classification | Fix |
+|-------|---------|----------------|-----|
+| Session absence (8) | `Child absence cannot be logged for a future date` — fixtures used `_FRESH_SESSION_BASE = 2099-01-01` | stale test fixture vs production validation | Schedule absence tests on `date.today()`; allocate sessions via DB + cancel same-day siblings for isolation |
+| Leave policy (1) | Past leave `2026-08-01` blocked after `leave_migration_end_date=2026-07-31` | stale test fixture | Use `date.today() + 14 days` for self-service leave |
+| Case close / slot (1) | Full-suite only: `Slot on … is booked for another case` when recurring Mon 10:00 collides | order-dependent state leak | Unique weekday + `06:35` single occurrence ~28 days ahead |
+
+**Not changed:** future-date absence validation, leave migration window, engine calculation services, billing flags.
+
+### Main vs engine comparison (same 10 tests, before fix)
+
+| Test | Main | Engine (pre-fix) | Classification |
+|------|------|-------------------|----------------|
+| 8× session absence | fail | fail | pre-existing / environment-sensitive |
+| `test_create_leave_single_request` | fail | fail | pre-existing / environment-sensitive |
+| `test_admin_close_cancels_recurring_schedule_record` | pass alone / fail in full suite | same | order-dependent |
+
+### Local verification (post-fix)
+
+| Suite | Result |
+|-------|--------|
+| Finance engine release-gate (5 files) | **43 passed** |
+| Full backend `python3 -m pytest app/tests -q` | **676 passed**, 17 skipped, **0 failed** (~47s) |
+
+Safety defaults in `config.py` unchanged: `ENABLE_BILLING=false`, `BILLING_LEDGER_WRITES=false`. Hard `MISSING_PACKAGE_COUNT` still raises. Assignment-gap / add-on exception paths unchanged.
+
+### Vercel checks
+
+Statuses show **policy/access block**, not a build error:
+
+- Description: `Deployment was blocked` / `Git author midhunnoble must have access to the project on Vercel to create deployments.`
+- Projects: `frontend`, `insightecasestaging`, `insightecasetesting`
+- GitHub CI jobs `frontend` + `vercel-monorepo-build` **pass** (code builds)
+
+**Manual action required (no code change):** invite `midhunnoble` (or the commit author) to the Vercel team `insightes-projects`, or re-push with an authorized git author. Do not change production env settings for this.
+
+### Files changed for CI repair
+
+- `backend/app/tests/test_session_absence.py`
+- `backend/app/tests/test_leave_policy.py`
+- `backend/app/tests/test_case_close.py`
+- `docs/Cursor_Handover_Finance_Engine_Release_Gate.md`
+
+---
+
 # Verdict
 
-## SAFE_TO_OPEN_ENGINE_PR
+## ENGINE_PR_READY_TO_MARK_NON_DRAFT
 
-Engine is isolated on clean main, write-gated by default, Steps 1–6 tests + 17 release scenarios green. Merge remains a deliberate human action after PR/CI review — this document does **not** authorize merge or cutover.
+Backend suite is green locally after date-fixture repairs; finance 43 still pass; billing flags remain off. **Do not auto-mark non-draft or merge from this agent.** Confirm GitHub `backend` check is green after push, then a human may mark the PR ready. Vercel deployment statuses may remain red until the team access policy is fixed — treat as repo/Vercel ACL, not an engine defect. This document does **not** authorize merge or cutover.

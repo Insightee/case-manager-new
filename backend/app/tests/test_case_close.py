@@ -241,17 +241,21 @@ def test_admin_close_cancels_recurring_schedule_record():
     therapist_id = therapists.json()[0]["id"]
     case_id = _create_active_case(admin_headers, therapist_id)
 
-    start = date.today() + timedelta(days=1)
-    end = start + timedelta(days=7)
+    # Far enough ahead + uncommon wall-clock avoids seed / prior-test slot collisions
+    # (full-suite flake: "Slot on YYYY-MM-DD is booked for another case").
+    start = date.today() + timedelta(days=28)
+    start += timedelta(days=(0 - start.weekday()) % 7)  # next Monday on/after offset
+    end = start  # single occurrence
+    weekday = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][start.weekday()]
     recurring = client.post(
         "/api/v1/scheduling/assign-recurring",
         headers=admin_headers,
         json={
             "case_id": case_id,
             "therapist_user_id": therapist_id,
-            "weekdays": ["mon"],
-            "start_time": "10:00",
-            "end_time": "11:00",
+            "weekdays": [weekday],
+            "start_time": "06:35",
+            "end_time": "07:35",
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
         },
