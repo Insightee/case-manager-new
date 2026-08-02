@@ -23,15 +23,14 @@ from app.models.invoice import Invoice, InvoiceStatus
 from app.models.ledger_billing import BillableStatus, BillingLedger, BillingPeriodFlag, PeriodFlagKind
 from app.models.user import User
 from app.services import billing_composer_service
-
-Confidence = str  # RECONCILED | PARTIAL | ESTIMATED | INCOMPLETE
-
-_CONFIDENCE_RANK = {
-    "RECONCILED": 0,
-    "PARTIAL": 1,
-    "ESTIMATED": 2,
-    "INCOMPLETE": 3,
-}
+from app.services.finance_confidence import (  # re-export for tests / callers
+    Confidence,
+    count_card,
+    cutover_complete as _cutover_complete,
+    lowest_confidence,
+    money_value,
+    now_iso as _now_iso,
+)
 
 _ASSIGNMENT_CODES = {
     BillingCalcExceptionCode.ASSIGNMENT_GAP.value,
@@ -46,75 +45,6 @@ _LEAVE_CODES = {
 }
 _ADDON_CODES = {BillingCalcExceptionCode.MISSING_ADD_ON_RATE.value}
 _PACKAGE_CODES = {BillingCalcExceptionCode.MISSING_PACKAGE_COUNT.value}
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def _cutover_complete() -> bool:
-    return bool(settings.finance_cutover_complete)
-
-
-def money_value(
-    *,
-    value: float | None,
-    confidence: Confidence,
-    confidence_reason: str,
-    record_count: int,
-    source_period: str,
-    currency: str = "INR",
-) -> dict[str, Any]:
-    """Build MoneyValue. Never upgrade to RECONCILED for engine amounts pre-cutover."""
-    conf = confidence
-    if conf == "RECONCILED" and not _cutover_complete():
-        conf = "PARTIAL"
-        confidence_reason = (
-            "Live financial cutover is pending — figures remain provisional (downgraded from reconciled)."
-        )
-    out: dict[str, Any] = {
-        "currency": currency,
-        "confidence": conf,
-        "confidenceReason": confidence_reason,
-        "recordCount": record_count,
-        "sourcePeriod": source_period,
-        "asOf": _now_iso(),
-    }
-    if value is not None:
-        out["value"] = round(float(value), 2)
-    return out
-
-
-def count_card(
-    *,
-    count: int,
-    confidence: Confidence,
-    confidence_reason: str,
-    source_period: str,
-    impact: dict[str, Any] | None = None,
-    oldest_age_days: int | None = None,
-    drill_queue: str,
-) -> dict[str, Any]:
-    card = {
-        "count": int(count),
-        "confidence": confidence if not (confidence == "RECONCILED" and not _cutover_complete()) else "PARTIAL",
-        "confidenceReason": confidence_reason,
-        "sourcePeriod": source_period,
-        "asOf": _now_iso(),
-        "drillQueue": drill_queue,
-    }
-    if impact is not None:
-        card["impact"] = impact
-    if oldest_age_days is not None:
-        card["oldestAgeDays"] = oldest_age_days
-    return card
-
-
-def lowest_confidence(*levels: Confidence) -> Confidence:
-    present = [c for c in levels if c in _CONFIDENCE_RANK]
-    if not present:
-        return "ESTIMATED"
-    return max(present, key=lambda c: _CONFIDENCE_RANK[c])
 
 
 def _sum_ledger(

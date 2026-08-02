@@ -1,5 +1,7 @@
 /**
- * Stage 1 Finance Control Tower confidence helpers.
+ * Sole frontend finance confidence mirror (display / partial-load downgrade).
+ * Cutover clamp and engine amount confidence are decided on the backend in
+ * `backend/app/services/finance_confidence.py` — do not re-implement that policy here.
  * Frontend may downgrade; never upgrade. Never invent RECONCILED.
  */
 

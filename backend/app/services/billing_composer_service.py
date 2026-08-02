@@ -31,6 +31,7 @@ from app.models.user import User
 from app.services import billing_ledger_service, notification_service, product_billing_rule_service
 from app.services.client_billing_service import _invoice_is_overdue, _parents_for_case
 from app.services import zoho_client_sync
+from app.services.finance_confidence import preview_confidence
 
 DEFAULT_PAYMENT_POLICY = """Payment is due on or before the due date mentioned in this invoice.
 
@@ -617,23 +618,6 @@ def postable_draft_charges_for_case(
     ]
 
 
-def _preview_confidence(*, material_missing: bool, has_suggested: bool) -> dict[str, Any]:
-    """Pre-cutover engine amounts are never RECONCILED."""
-    if material_missing:
-        level = "INCOMPLETE"
-        reason = "A material billing source is missing for this period."
-    elif not settings.finance_cutover_complete:
-        level = "PARTIAL"
-        reason = "Pre-cutover engine amount — provisional until finance cutover."
-    elif has_suggested:
-        level = "PARTIAL"
-        reason = "Based on ledger rows that are not yet production-reconciled."
-    else:
-        level = "ESTIMATED"
-        reason = "Derived from incomplete bases — treat as provisional."
-    return {"confidence": level, "confidenceReason": reason}
-
-
 def get_saved_preferences(db: Session, case_id: int) -> dict:
     from app.models.case_billing_preference import CaseBillingPreference
 
@@ -696,7 +680,7 @@ def get_composer_preview(db: Session, *, case_id: int, billing_month: str) -> di
     blocking = blocking_calc_exceptions_for_case(db, case_id=case_id, billing_month=ym)
     draft_charges = postable_draft_charges_for_case(db, case_id=case_id, billing_month=ym)
     material_missing = (not suggested and not ledger_rows) or bool(blocking)
-    conf = _preview_confidence(material_missing=material_missing, has_suggested=bool(suggested))
+    conf = preview_confidence(material_missing=material_missing, has_suggested=bool(suggested))
     can_build = len(blocking) == 0
 
     return {
