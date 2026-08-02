@@ -18,7 +18,7 @@ Do **not** treat this document as `STAGE_1_APPROVED_FOR_MERGE_BEHIND_FLAG`. That
 |------|--------|
 | Branch | `feat/finance-dashboard-stage1` |
 | Engine merge SHA on `main` | `4eeea85701e47b6b6d822c1e64ba5aea32fcea52` (PR #13 **MERGED**) |
-| Stage 1 rebased tip | `549e76b20a17750791b77f3630262a644367011c` (branch tip; docs-only follow-ups may advance) |
+| Stage 1 rebased tip | `aeb412a937c8f8fb07816caafdcfac5a559e8d92` |
 | Pre-rebase tip | `d658c96acac7221efad34b60fcd1191e91059020` |
 | Stage 1 PR | [#14](https://github.com/Insightee/case-manager-new/pull/14) OPEN |
 | Stage 1 base (GitHub) | still `feat/billing-engine-steps-1-6` until human retargets — **branch already rebased on `main`** |
