@@ -18,14 +18,15 @@ Do **not** treat this document as `STAGE_1_APPROVED_FOR_MERGE_BEHIND_FLAG`. That
 |------|--------|
 | Branch | `feat/finance-dashboard-stage1` |
 | Engine merge SHA on `main` | `4eeea85701e47b6b6d822c1e64ba5aea32fcea52` (PR #13 **MERGED**) |
-| Stage 1 rebased tip family | clean rebase onto `4eeea857…` + status docs (`5a2ecc37…` / follow-ups on branch) |
+| Stage 1 rebased tip | `53896f18c9d22ef2dde46b2ab620c59cb6774953` |
 | Pre-rebase tip | `d658c96acac7221efad34b60fcd1191e91059020` |
-| Stage 1 PR | [#14](https://github.com/Insightee/case-manager-new/pull/14) OPEN draft |
+| Stage 1 PR | [#14](https://github.com/Insightee/case-manager-new/pull/14) OPEN |
+| Stage 1 base (GitHub) | still `feat/billing-engine-steps-1-6` until human retargets — **branch already rebased on `main`** |
 | Stage 1 base (target) | `main` |
 | Engine PR | [#13](https://github.com/Insightee/case-manager-new/pull/13) **MERGED** |
 | Diff vs `origin/main` | **dashboard-only** (29 files; no engine migration/service conflicts) |
 
-**Rebase decision:** Engine merged → rebased onto `origin/main` (clean, no conflicts). Retarget PR #14 to `main`. Do **not** merge #14 yet.
+**Rebase decision:** Engine merged → rebased onto `origin/main` (clean, no conflicts). Agent **could not** change PR #14 base via API (`403 Resource not accessible by integration`) — **human must retarget PR #14 → `main` in GitHub UI**. Do **not** merge #14 yet.
 
 **Targeted tests after rebase (no engine conflicts → no full 43 engine suite):**
 
@@ -230,7 +231,7 @@ Confirmed: engine calc suite unchanged green; Control Tower module is GET-only (
 Prerequisite items done:
 
 1. [x] Rebase `feat/finance-dashboard-stage1` onto `main`
-2. [x] Retarget PR #14 to `main` (confirm in GitHub after push)
+2. [ ] Retarget PR #14 to `main` in GitHub UI (**human** — agent API 403)
 3. [x] Confirm dashboard-only diff
 
 Still pending for Gate 2 execution:
@@ -255,7 +256,7 @@ Real finance user completes the 10 tasks unguided using the timed script.
 ## 14. Merge prerequisites
 
 - [x] PR #13 (Finance Engine) merged (`4eeea85701e47b6b6d822c1e64ba5aea32fcea52`)
-- [x] PR #14 rebased onto `main` with dashboard-only diff  
+- [x] Branch rebased onto `main` with dashboard-only diff (PR base retarget still needs human click)  
 - [ ] Gate 2 live staging complete  
 - [ ] Gate 3 human finance UAT complete  
 - [ ] Production flags remain off (`VITE_ENABLE_FINANCE_DASHBOARD_V1` forced off on canonical prod; no cutover)
