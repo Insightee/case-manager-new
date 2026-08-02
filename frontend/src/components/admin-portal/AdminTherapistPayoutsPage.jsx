@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AdminPageHeader, PortalTabBar } from './ui/index.js'
 import { AdminTherapistPayoutsDashboard } from './AdminTherapistPayoutsDashboard.jsx'
@@ -16,24 +15,6 @@ export function AdminTherapistPayoutsPage() {
     searchParams.get('therapist_sub') ||
     'dashboard'
   const activeSub = SUB_TABS.some((t) => t.id === sub) ? sub : 'dashboard'
-
-  // #region agent log
-  useEffect(() => {
-    fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
-      body: JSON.stringify({
-        sessionId: '3264f0',
-        hypothesisId: 'B',
-        location: 'AdminTherapistPayoutsPage.jsx:mount',
-        message: 'therapist payouts page mounted',
-        data: { sub: activeSub },
-        timestamp: Date.now(),
-        runId: 'browser',
-      }),
-    }).catch(() => {})
-  }, [activeSub])
-  // #endregion
 
   function setSub(id) {
     const next = new URLSearchParams(searchParams)
