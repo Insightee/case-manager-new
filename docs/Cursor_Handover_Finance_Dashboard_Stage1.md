@@ -3,6 +3,7 @@
 **Verdict:** `STAGE_1_READY_FOR_STAGING`
 
 **Branch:** `feat/finance-dashboard-stage1` (from `feat/billing-engine-steps-1-6`)  
+**Stage 1 commit SHA:** `8170d29aea1682f714fcf6b2d56ad62d1bec0392`  
 **Base engine SHA at branch point:** `cdacb6dff31fc3967a99b808e0ea7174e3f870ab`  
 **Scope:** Read-only Finance Control Tower on `/admin/invoices?tab=overview`. No engine calc changes, no money writes, no Zoho/RazorpayX, no merge/deploy of cutover.
 
