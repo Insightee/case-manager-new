@@ -18,7 +18,7 @@ Do **not** treat this document as `STAGE_1_APPROVED_FOR_MERGE_BEHIND_FLAG`. That
 |------|--------|
 | Branch | `feat/finance-dashboard-stage1` |
 | Engine merge SHA on `main` | `4eeea85701e47b6b6d822c1e64ba5aea32fcea52` (PR #13 **MERGED**) |
-| Stage 1 rebased SHA | see tip after status commit (`git rev-parse origin/feat/finance-dashboard-stage1`) |
+| Stage 1 rebased tip family | clean rebase onto `4eeea857…` + status docs (`5a2ecc37…` / follow-ups on branch) |
 | Pre-rebase tip | `d658c96acac7221efad34b60fcd1191e91059020` |
 | Stage 1 PR | [#14](https://github.com/Insightee/case-manager-new/pull/14) OPEN draft |
 | Stage 1 base (target) | `main` |
