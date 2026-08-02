@@ -41,6 +41,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | Doc | Purpose |
 |-----|---------|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System overview, components, data flow |
+| [Cursor_Handover_Clinical_Reports_Structure.md](./Cursor_Handover_Clinical_Reports_Structure.md) | CTO handover: clinical reports schema, UI, generation, storage |
 | [billing-architecture.md](./billing-architecture.md) | Invoices, payouts, billing modes |
 | [Cursor_Handover_Finance_Dashboard_Stage1.md](./Cursor_Handover_Finance_Dashboard_Stage1.md) | Stage 1 read-only Finance Control Tower handover + verdict |
 | [Cursor_Handover_Finance_Dashboard_Stage1_Staging_Acceptance.md](./Cursor_Handover_Finance_Dashboard_Stage1_Staging_Acceptance.md) | Gate 1 local/CI staging-equivalent acceptance |
