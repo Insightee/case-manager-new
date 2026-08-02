@@ -15,7 +15,8 @@ Do **not** treat this document as `STAGE_1_APPROVED_FOR_MERGE_BEHIND_FLAG`. That
 | Item | Value |
 |------|--------|
 | Branch | `feat/finance-dashboard-stage1` |
-| Head SHA (pre-validation commits) | `1aa383235c0c8b12d7c90d4be4068f83bf9fe157` |
+| Head SHA (Gate 1 validation) | `c33c3b311cfd748dfa9dfe17d783b95cd1c833cd` |
+| Prior Stage 1 tip | `1aa383235c0c8b12d7c90d4be4068f83bf9fe157` |
 | Stage 1 PR | [#14](https://github.com/Insightee/case-manager-new/pull/14) OPEN draft |
 | Stage 1 base | `feat/billing-engine-steps-1-6` |
 | Engine PR | [#13](https://github.com/Insightee/case-manager-new/pull/13) OPEN → `main` (`mergedAt: null`) |
