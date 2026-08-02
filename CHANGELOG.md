@@ -14,6 +14,7 @@
 - `docs/Cursor_Handover_Finance_Dashboard_Stage1_Staging_Acceptance.md` (`STAGE_1_LOCALLY_VALIDATED_PENDING_LIVE_STAGING`)
 - `docs/finance_control_tower_stage1_human_uat_script.md`
 - `docs/Cursor_Handover_Finance_Dashboard_Stage2.md` (`STAGE_2_READY_FOR_STAGING`)
+- `docs/Cursor_Handover_Finance_Merge_Local_Runbook.md` (`FINANCE_MERGE_LOCAL_RUNBOOK_GREEN`)
 
 # Changelog
 
@@ -45,6 +46,7 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 - Pending invite UI explains cancel vs post-registration login paths.
 
 ### Fixed
+- Align child-absence "today" with IST (`today_ist`) so walk-in conflict checks match absence eligibility on UTC CI hosts.
 - Use current location: reverse geocode now uses API base URL (works on Vercel production).
 - Security: active portal users no longer hidden from People when total users exceeds 100.
 

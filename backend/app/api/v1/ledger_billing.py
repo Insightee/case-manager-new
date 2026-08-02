@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
+from app.core.feature_flags import require_billing_ledger_writes
 from app.core.module_write import ensure_billing_write_access
 from app.core.permissions import require_mutation_permission, require_permission
 from app.models.user import User
@@ -200,6 +201,7 @@ def post_finance_charge(
 ):
     """Explicit finance post: PENDING_FINANCE → BILLABLE (zero-session DRAFT charges)."""
     _billing_write(user)
+    require_billing_ledger_writes()
     try:
         result = billing_ledger_service.post_pending_finance_charge(
             db, ledger_id, user_id=user.id, note=note

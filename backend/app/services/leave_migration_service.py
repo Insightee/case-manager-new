@@ -78,7 +78,11 @@ def validate_therapist_leave_dates(
 
 def validate_child_absence_date(scheduled_date: date, *, as_of: date | None = None) -> None:
     """Block retroactive child absence outside the migration re-entry window."""
-    as_of = as_of or date.today()
+    # Align with session create / walk-in conflict (`today_ist`) so UTC CI hosts and
+    # IST production clocks agree on "today" for child-absence eligibility.
+    from app.core.timezone import today_ist
+
+    as_of = as_of or today_ist()
     if scheduled_date > as_of:
         raise ValueError("Child absence cannot be logged for a future date.")
     if scheduled_date >= as_of:

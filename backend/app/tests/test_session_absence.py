@@ -55,13 +55,15 @@ _fresh_session_counter = 0
 
 
 def _absence_allowed_day() -> date:
-    """Match leave_migration.validate_child_absence_date clock (date.today()).
+    """Match leave_migration.validate_child_absence_date + session create (`today_ist`).
 
     After the migration window closes, only today's scheduled visit may receive a
     child-absence log. Far-future fixture dates (e.g. 2099) correctly fail validation
     and must not be used to bypass production rules.
     """
-    return date.today()
+    from app.core.timezone import today_ist
+
+    return today_ist()
 
 
 def _fresh_scheduled_session(headers: dict) -> int:

@@ -187,3 +187,57 @@ def test_parent_invoice_detail_still_isolates_payout_fields():
     text = detail.text.lower().replace("_", "")
     assert "therapistpayout" not in text
     assert "estimatedmargin" not in text
+
+
+def test_build_from_ledger_blocked_when_writes_disabled(monkeypatch):
+    """Staging PASS 2 posture: preview OK, money mutations rejected."""
+    # Login while app_env is still test (memory Redis). Gate1 pattern.
+    headers = _login("superadmin@demo.com")
+    case_id = _first_case_id()
+    ym = date.today().strftime("%Y-%m")
+    monkeypatch.setattr(settings, "app_env", "staging")
+    monkeypatch.setattr(settings, "enable_billing", True)
+    monkeypatch.setattr(settings, "billing_ledger_writes", False)
+    monkeypatch.setattr(settings, "finance_cutover_complete", False)
+    r = client.post(
+        f"/api/v1/admin/client-billing/cases/{case_id}/build-from-ledger?billing_month={ym}",
+        headers=headers,
+    )
+    assert r.status_code == 403
+    assert "ledger writes" in r.json().get("detail", "").lower()
+
+
+def test_post_pending_finance_blocked_when_writes_disabled(monkeypatch):
+    headers = _login("superadmin@demo.com")
+    case_id = _first_case_id()
+    ym = date.today().strftime("%Y-%m")
+    db = SessionLocal()
+    try:
+        row = BillingLedger(
+            case_id=case_id,
+            source_type=LedgerSourceType.MONTHLY_FEE,
+            source_id=None,
+            ledger_month=ym,
+            event_date=date.today().replace(day=1),
+            event_type=LedgerEventType.MONTHLY_FEE,
+            billable_status=BillableStatus.PENDING_FINANCE,
+            quantity=1,
+            rate_inr=1000,
+            amount_inr=1000,
+            total_inr=1000,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        ledger_id = row.id
+    finally:
+        db.close()
+    monkeypatch.setattr(settings, "app_env", "staging")
+    monkeypatch.setattr(settings, "enable_billing", True)
+    monkeypatch.setattr(settings, "billing_ledger_writes", False)
+    r = client.post(
+        f"/api/v1/admin/ledger-billing/ledger/{ledger_id}/post-finance",
+        headers=headers,
+    )
+    assert r.status_code == 403
+    assert "ledger writes" in r.json().get("detail", "").lower()
