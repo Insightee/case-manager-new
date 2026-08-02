@@ -261,14 +261,30 @@ Production-env proof: all five writers returned no-op (`None` or `{skipped: True
 - Merge **PR #13 only** with **all billing/ledger flags left off**.
 - Do **not** enable `ENABLE_BILLING` / `BILLING_LEDGER_WRITES`.
 - Do **not** perform production cutover or July recalculation.
-- Do **not** merge or retarget PR #14 as part of this gate.
-- Agent must **not** merge the PR.
+- Stage 1 (PR #14) rebases onto `main` after this merge — do **not** merge #14 here.
+
+---
+
+## Post-merge smoke (2026-08-02)
+
+| Item | Value |
+|------|--------|
+| PR #13 | **MERGED** |
+| Merge SHA on `main` | `4eeea85701e47b6b6d822c1e64ba5aea32fcea52` |
+| Production flag defaults in code | `ENABLE_BILLING=false`, `BILLING_LEDGER_WRITES=false`, `VITE_ENABLE_BILLING` default/prod-off |
+| `/health` | **200** — `db_migration=c2d3e4f5a6b7` |
+| Finance routes (billing disabled) | `ledger-billing` / `finance-ops` / `client-billing` → **404** |
+| Writer no-op | `ensure_period_charges` → `{skipped: true, reason: BILLING_LEDGER_WRITES_disabled}` |
+| Ledger count / money MD5 | unchanged `3` / `7d3013ac390d4bfe564449f486e21c56` |
+| Non-billing routing | `GET /api/v1/auth/me` → **401** (alive, unauth) |
+
+Full backend suite **not** re-run (no implementation change during merge).
 
 ---
 
 # Verdict
 
-## ENGINE_PR_APPROVED_TO_MERGE_WITH_FLAGS_OFF
+## ENGINE_PR_MERGED_FLAGS_OFF_SMOKE_OK
 
-Implementation tip `b5fc27563c4df0c3aa1d15f8937c60c4ac340747` matches green remote CI; post-docs local re-verify finance **43** and full backend **676**; PostgreSQL upgrade to `c2d3e4f5a6b7` succeeded with ledger money checksums unchanged; five automatic writers remain gated; PR scope excludes Stage 1 dashboard and payment cutover work. **Do not merge from this agent.** Human may merge with flags off when ready (after docs-tip CI is green).
+PR #13 merge SHA `4eeea85701e47b6b6d822c1e64ba5aea32fcea52` is on `main` with billing/ledger flags off; post-merge smoke green; ledger money unchanged. No production cutover.
 )
