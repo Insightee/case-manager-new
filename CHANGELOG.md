@@ -46,6 +46,7 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 - Pending invite UI explains cancel vs post-registration login paths.
 
 ### Fixed
+- Align child-absence "today" with IST (`today_ist`) so walk-in conflict checks match absence eligibility on UTC CI hosts.
 - Use current location: reverse geocode now uses API base URL (works on Vercel production).
 - Security: active portal users no longer hidden from People when total users exceeds 100.
 

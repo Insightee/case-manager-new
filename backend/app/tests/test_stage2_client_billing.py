@@ -191,13 +191,14 @@ def test_parent_invoice_detail_still_isolates_payout_fields():
 
 def test_build_from_ledger_blocked_when_writes_disabled(monkeypatch):
     """Staging PASS 2 posture: preview OK, money mutations rejected."""
+    # Login while app_env is still test (memory Redis). Gate1 pattern.
+    headers = _login("superadmin@demo.com")
+    case_id = _first_case_id()
+    ym = date.today().strftime("%Y-%m")
     monkeypatch.setattr(settings, "app_env", "staging")
     monkeypatch.setattr(settings, "enable_billing", True)
     monkeypatch.setattr(settings, "billing_ledger_writes", False)
     monkeypatch.setattr(settings, "finance_cutover_complete", False)
-    case_id = _first_case_id()
-    ym = date.today().strftime("%Y-%m")
-    headers = _login("superadmin@demo.com")
     r = client.post(
         f"/api/v1/admin/client-billing/cases/{case_id}/build-from-ledger?billing_month={ym}",
         headers=headers,
@@ -207,9 +208,7 @@ def test_build_from_ledger_blocked_when_writes_disabled(monkeypatch):
 
 
 def test_post_pending_finance_blocked_when_writes_disabled(monkeypatch):
-    monkeypatch.setattr(settings, "app_env", "staging")
-    monkeypatch.setattr(settings, "enable_billing", True)
-    monkeypatch.setattr(settings, "billing_ledger_writes", False)
+    headers = _login("superadmin@demo.com")
     case_id = _first_case_id()
     ym = date.today().strftime("%Y-%m")
     db = SessionLocal()
@@ -233,7 +232,9 @@ def test_post_pending_finance_blocked_when_writes_disabled(monkeypatch):
         ledger_id = row.id
     finally:
         db.close()
-    headers = _login("superadmin@demo.com")
+    monkeypatch.setattr(settings, "app_env", "staging")
+    monkeypatch.setattr(settings, "enable_billing", True)
+    monkeypatch.setattr(settings, "billing_ledger_writes", False)
     r = client.post(
         f"/api/v1/admin/ledger-billing/ledger/{ledger_id}/post-finance",
         headers=headers,
