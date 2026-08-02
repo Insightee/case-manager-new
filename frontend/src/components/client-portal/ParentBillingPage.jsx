@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import './parent-payments.css'
 import './parent-portal-filters.css'
+import '../../styles/finance-stage2.css'
 import { formatApiDateIN, formatTimestampDateIN } from '../../lib/datetime.js'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 import { ParentComingSoon } from './ParentComingSoon.jsx'
@@ -81,7 +82,7 @@ function InvoiceMobileCard({ inv, onOpen }) {
           <span>
             Due {formatBillingDate(inv.dueDate) || '—'}
             {inv.isOverdue && inv.balanceInr > 0 ? (
-              <span className="parent-pay__badge parent-pay__badge--overdue" style={{ marginLeft: 6 }}>
+              <span className="parent-pay__badge parent-pay__badge--overdue parent-pay__badge--gap">
                 Overdue
               </span>
             ) : null}
@@ -97,7 +98,7 @@ function PackageMobileCard({ pkg }) {
     <article className="parent-pay__mobile-card parent-pay__mobile-card--package">
       <div className="parent-pay__mobile-card-top">
         <strong>{pkg.name}</strong>
-        <span className="parent-pay__badge" style={{ background: '#eef2ff', color: '#3730a3' }}>
+        <span className="parent-pay__badge parent-pay__pkg-left">
           {pkg.remainingSessions} left
         </span>
       </div>
@@ -136,6 +137,13 @@ function ParentBillingPageFull() {
   const [payRef, setPayRef] = useState('')
   const [payNotes, setPayNotes] = useState('')
   const [payProof, setPayProof] = useState(null)
+  const [provisional, setProvisional] = useState(false)
+
+  useEffect(() => {
+    apiFetch('/api/v1/parent/billing/runtime-config')
+      .then((cfg) => setProvisional(Boolean(cfg?.provisional)))
+      .catch(() => setProvisional(true))
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -291,8 +299,8 @@ function ParentBillingPageFull() {
       const count = result?.count ?? 1
       setMessage(
         count > 1
-          ? `${count} disputes submitted. Finance will review and update you in this portal.`
-          : 'Dispute submitted. Finance will review and update you by email or in this portal.',
+          ? `Dispute submitted for ${count} sessions. We’ll review and update you here.`
+          : 'Dispute submitted. We’ll review and update you here or by email.',
       )
       setDisputeOpen(false)
       resetDisputeForm()
@@ -313,14 +321,21 @@ function ParentBillingPageFull() {
   const urgentBanner = (summary.overdueCount || 0) > 0
 
   return (
-    <div className="parent-pay">
+    <div className="parent-pay finance-stage2">
       <header className="parent-pay__hero">
-        <h1>Payments</h1>
+        <h1>Your statements</h1>
       </header>
+
+      {provisional ? (
+        <div className="finance-stage2-banner finance-stage2-banner--mint" role="status">
+          These amounts are from your care plan statements. If something looks off, you can raise a dispute from any
+          open invoice.
+        </div>
+      ) : null}
 
       {error ? (
         <p className="parent-pay__alert parent-pay__alert--error" role="alert">
-          {error}
+          {error} Try refreshing, or contact support if it continues.
         </p>
       ) : null}
       {message ? <p className="parent-pay__alert parent-pay__alert--success">{message}</p> : null}
@@ -494,9 +509,13 @@ function ParentBillingPageFull() {
           <span>{loading ? 'Loading…' : `${invoices.length} shown`}</span>
         </div>
         {loading && !dashboard ? (
-          <p style={{ padding: 16, color: '#9ca3af' }}>Loading…</p>
+          <p className="parent-pay__inline-pad" aria-busy="true">
+            Loading your statements…
+          </p>
         ) : invoices.length === 0 ? (
-          <p style={{ padding: 16, color: '#9ca3af' }}>No invoices match these filters.</p>
+          <p className="parent-pay__inline-pad">
+            No invoices yet for these filters. When a statement is ready, it will show up here.
+          </p>
         ) : (
           <>
             <div className="parent-pay__mobile-list" aria-label="Invoice list">
@@ -529,7 +548,7 @@ function ParentBillingPageFull() {
                     <td>
                       {inv.dueDate ? formatBillingDate(inv.dueDate) : '—'}
                       {inv.isOverdue && inv.balanceInr > 0 ? (
-                        <span className="parent-pay__badge parent-pay__badge--overdue" style={{ marginLeft: 6 }}>
+                        <span className="parent-pay__badge parent-pay__badge--overdue parent-pay__badge--gap">
                           Overdue
                         </span>
                       ) : null}
@@ -566,27 +585,19 @@ function ParentBillingPageFull() {
                 onClick={closeInvoiceDialog}
               />
               <div className="parent-pay__dialog-sheet">
-            <div
-              style={{
-                padding: '12px 16px',
-                borderBottom: '1px solid #e5e7eb',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-              }}
-            >
+            <div className="parent-pay__dialog-head">
               <div>
-                <h2 style={{ margin: 0, fontSize: 18 }}>{selected.invoiceNumber}</h2>
-                <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-                  {selected.childName} · {selected.caseId} · {formatMonth(selected.billingMonth)}
+                <h2 className="parent-pay__dialog-title">{selected.invoiceNumber}</h2>
+                <p className="parent-pay__dialog-sub">
+                  {selected.childName} · {formatMonth(selected.billingMonth)}
                 </p>
-                <p style={{ margin: '8px 0 0', fontSize: 13, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                  <strong>{selected.invoiceType}</strong>
+                <p className="parent-pay__dialog-meta">
+                  <strong>Statement</strong>
                   {selected.dueDate ? (
                     <span>
                       Due {formatBillingDate(selected.dueDate) || '—'}
                       {selected.isOverdue && selected.balanceInr > 0 ? (
-                        <span className="parent-pay__badge parent-pay__badge--overdue" style={{ marginLeft: 6 }}>
+                        <span className="parent-pay__badge parent-pay__badge--overdue parent-pay__badge--gap">
                           Overdue
                         </span>
                       ) : null}
@@ -599,10 +610,10 @@ function ParentBillingPageFull() {
               </button>
             </div>
 
-            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-              <p style={{ margin: '0 0 12px', fontSize: 13, color: '#475569' }}>
-                Payments are usually coordinated with your case coordinator (UPI, bank transfer, or as agreed). Use
-                &quot;Download PDF&quot; for your records.
+            <div className="parent-pay__dialog-body">
+              <p className="parent-pay__help">
+                Here&apos;s your {formatMonth(selected.billingMonth)} statement. Payments are usually coordinated with
+                your case coordinator (UPI, bank transfer, or as agreed). Use Download PDF for your records.
               </p>
               <div className="table-wrap">
                 <table>
@@ -628,7 +639,7 @@ function ParentBillingPageFull() {
                         <td>
                           <button
                             type="button"
-                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
+                            className="parent-pay__linkish"
                             onClick={() => openLine(line.id)}
                           >
                             {formatInr(line.amountInr)}
@@ -640,55 +651,58 @@ function ParentBillingPageFull() {
                 </table>
               </div>
 
-              <dl style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 14 }}>
+              <dl className="parent-pay__totals">
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Subtotal</dt>
-                  <dd style={{ margin: 0 }}>{formatInr(selected.subtotalInr)}</dd>
+                  <dt>Subtotal</dt>
+                  <dd>{formatInr(selected.subtotalInr)}</dd>
                 </div>
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Tax</dt>
-                  <dd style={{ margin: 0 }}>{formatInr(selected.taxInr)}</dd>
+                  <dt>Tax</dt>
+                  <dd>{formatInr(selected.taxInr)}</dd>
                 </div>
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Discount</dt>
-                  <dd style={{ margin: 0 }}>−{formatInr(selected.discountInr)}</dd>
+                  <dt>Discount</dt>
+                  <dd>−{formatInr(selected.discountInr)}</dd>
                 </div>
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Package deduction</dt>
-                  <dd style={{ margin: 0 }}>−{formatInr(selected.packageDeductionInr)}</dd>
+                  <dt>Package deduction</dt>
+                  <dd>−{formatInr(selected.packageDeductionInr)}</dd>
                 </div>
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Adjustments</dt>
-                  <dd style={{ margin: 0 }}>{formatInr(selected.adjustmentInr)}</dd>
+                  <dt>Adjustments</dt>
+                  <dd>{formatInr(selected.adjustmentInr)}</dd>
                 </div>
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Total payable</dt>
-                  <dd style={{ margin: 0, fontWeight: 700 }}>{formatInr(selected.totalInr)}</dd>
+                  <dt>Total payable</dt>
+                  <dd className="is-strong">{formatInr(selected.totalInr)}</dd>
                 </div>
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Paid</dt>
-                  <dd style={{ margin: 0 }}>{formatInr(selected.amountPaidInr)}</dd>
+                  <dt>Paid</dt>
+                  <dd>{formatInr(selected.amountPaidInr)}</dd>
                 </div>
                 <div>
-                  <dt style={{ color: '#6b7280' }}>Balance</dt>
-                  <dd style={{ margin: 0, fontWeight: 700 }}>{formatInr(selected.balanceInr)}</dd>
+                  <dt>Balance</dt>
+                  <dd className="is-strong">{formatInr(selected.balanceInr)}</dd>
                 </div>
               </dl>
 
               {lineDetail ? (
-                <section style={{ marginTop: 16, padding: 12, background: '#f9fafb', borderRadius: 8 }}>
-                  <h3 style={{ marginTop: 0, fontSize: 15 }}>Session detail</h3>
-                  <p style={{ margin: '4px 0' }}>
+                <section className="parent-pay__session-detail">
+                  <h3>Session detail</h3>
+                  <p className="parent-pay__pay-line">
                     <strong>{lineDetail.therapistName}</strong> · {lineDetail.sessionStatus}
                   </p>
-                  {lineDetail.attendance ? <p style={{ margin: '4px 0' }}>Attendance: {lineDetail.attendance}</p> : null}
+                  {lineDetail.attendance ? (
+                    <p className="parent-pay__pay-line">Attendance: {lineDetail.attendance}</p>
+                  ) : null}
                   {lineDetail.activitiesSummary ? (
-                    <p style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{lineDetail.activitiesSummary}</p>
+                    <p className="parent-pay__mt-8 parent-pay__prewrap">
+                      {lineDetail.activitiesSummary}
+                    </p>
                   ) : null}
                   <button
                     type="button"
-                    className="parent-pay__btn parent-pay__btn--ghost parent-pay__btn--sm"
-                    style={{ marginTop: 8 }}
+                    className="parent-pay__btn parent-pay__btn--ghost parent-pay__btn--sm parent-pay__mt-8"
                     onClick={() => setLineDetail(null)}
                   >
                     Close session
@@ -785,8 +799,8 @@ function ParentBillingPageFull() {
               ) : null}
 
               {(selected.payments || []).length > 0 ? (
-                <section style={{ marginTop: 16 }}>
-                  <h3 style={{ fontSize: 15 }}>Payment history</h3>
+                <section className="parent-pay__mt-16">
+                  <h3 className="parent-pay__section-title">Payment history</h3>
                   <ul className="log-list">
                     {selected.payments.map((p) => (
                       <li key={p.id}>
@@ -807,18 +821,15 @@ function ParentBillingPageFull() {
                                 ? 'Not accepted'
                                 : p.paymentStatus}
                         </span>
-                        <p style={{ margin: '4px 0' }}>
+                        <p className="parent-pay__pay-line finance-stage2-mono">
                           ₹{p.amountInr?.toLocaleString('en-IN')} · {p.method}
                           {p.reference ? ` · ${p.reference}` : ''}
                         </p>
-                        {p.rejectionNote ? (
-                          <p style={{ fontSize: 13, color: '#6b7280' }}>{p.rejectionNote}</p>
-                        ) : null}
+                        {p.rejectionNote ? <p className="parent-pay__muted">{p.rejectionNote}</p> : null}
                         {p.hasProof ? (
                           <button
                             type="button"
-                            className="parent-pay__btn parent-pay__btn--ghost parent-pay__btn--sm"
-                            style={{ marginTop: 4 }}
+                            className="parent-pay__btn parent-pay__btn--ghost parent-pay__btn--sm parent-pay__mt-4"
                             onClick={() =>
                               apiDownload(
                                 `/api/v1/parent/billing/payments/${p.id}/proof`,
@@ -836,10 +847,10 @@ function ParentBillingPageFull() {
               ) : null}
 
               {paymentOpen ? (
-                <section style={{ marginTop: 16, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
-                  <h3 style={{ fontSize: 15, marginTop: 0 }}>Record offline payment</h3>
+                <section className="parent-pay__payment-form">
+                  <h3>I paid offline</h3>
                   <form onSubmit={submitPaymentClaim}>
-                    <label style={{ display: 'block', marginBottom: 8 }}>
+                    <label className="parent-pay__field">
                       Amount (INR)
                       <input
                         type="number"
@@ -847,49 +858,34 @@ function ParentBillingPageFull() {
                         min="1"
                         value={payAmount}
                         onChange={(e) => setPayAmount(e.target.value)}
-                        style={{ width: '100%', marginTop: 4, padding: 8 }}
                       />
                     </label>
-                    <label style={{ display: 'block', marginBottom: 8 }}>
+                    <label className="parent-pay__field">
                       Method
-                      <select
-                        value={payMethod}
-                        onChange={(e) => setPayMethod(e.target.value)}
-                        style={{ width: '100%', marginTop: 4, padding: 8 }}
-                      >
+                      <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
                         <option value="UPI">UPI</option>
                         <option value="BANK_TRANSFER">Bank transfer</option>
                         <option value="CASH">Cash</option>
                         <option value="CHEQUE">Cheque</option>
                       </select>
                     </label>
-                    <label style={{ display: 'block', marginBottom: 8 }}>
+                    <label className="parent-pay__field">
                       Reference (optional)
-                      <input
-                        value={payRef}
-                        onChange={(e) => setPayRef(e.target.value)}
-                        style={{ width: '100%', marginTop: 4, padding: 8 }}
-                      />
+                      <input value={payRef} onChange={(e) => setPayRef(e.target.value)} />
                     </label>
-                    <label style={{ display: 'block', marginBottom: 8 }}>
+                    <label className="parent-pay__field">
                       Payment screenshot (optional)
                       <input
                         type="file"
                         accept="image/*,application/pdf"
                         onChange={(e) => setPayProof(e.target.files?.[0] || null)}
-                        style={{ width: '100%', marginTop: 4 }}
                       />
                     </label>
-                    <label style={{ display: 'block', marginBottom: 8 }}>
+                    <label className="parent-pay__field">
                       Notes (optional)
-                      <textarea
-                        value={payNotes}
-                        onChange={(e) => setPayNotes(e.target.value)}
-                        rows={2}
-                        style={{ width: '100%', marginTop: 4, padding: 8 }}
-                      />
+                      <textarea value={payNotes} onChange={(e) => setPayNotes(e.target.value)} rows={2} />
                     </label>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div className="parent-pay__form-actions">
                       <button type="submit" className="parent-pay__btn parent-pay__btn--primary" disabled={acting}>
                         {acting ? 'Submitting…' : 'Submit for review'}
                       </button>
@@ -906,8 +902,8 @@ function ParentBillingPageFull() {
               ) : null}
 
               {(selected.disputes || []).length > 0 ? (
-                <section style={{ marginTop: 16 }} className="parent-pay__dispute-next">
-                  <h3 style={{ fontSize: 15 }}>Dispute status</h3>
+                <section className="parent-pay__dispute-next parent-pay__mt-16">
+                  <h3 className="parent-pay__section-title">Dispute status</h3>
                   <p className="parent-pay__dispute-hint">
                     We typically respond within a few business days. You can track updates here and under the{' '}
                     <button
@@ -933,11 +929,13 @@ function ParentBillingPageFull() {
                         >
                           {DISPUTE_STATUS_LABELS[d.status] || d.status}
                         </span>
-                        <p style={{ margin: '4px 0' }}>{d.message}</p>
+                        <p className="parent-pay__pay-line">{d.message}</p>
                         {d.adminResolution ? (
-                          <p style={{ fontSize: 13, color: '#6b7280' }}>Response: {d.adminResolution}</p>
+                          <p className="parent-pay__muted">Response: {d.adminResolution}</p>
                         ) : d.status === 'open' || d.status === 'under_review' ? (
-                          <p style={{ fontSize: 13, color: '#6b7280' }}>No response yet — our finance team will update this invoice when reviewed.</p>
+                          <p className="parent-pay__muted">
+                            No response yet — we’ll update this statement when it’s reviewed.
+                          </p>
                         ) : null}
                       </li>
                     ))}
@@ -993,8 +991,8 @@ export function ParentBillingPage() {
   if (PARENT_BILLING_COMING_SOON) {
     return (
       <ParentComingSoon
-        title="Billing"
-        subtitle="Invoices, payments, and package balances for your care plans."
+        title="Your statements"
+        subtitle="Statements, payments, and session packages for your care plans — coming soon."
       />
     )
   }

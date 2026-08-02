@@ -44,6 +44,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | [billing-architecture.md](./billing-architecture.md) | Invoices, payouts, billing modes |
 | [Cursor_Handover_Finance_Dashboard_Stage1.md](./Cursor_Handover_Finance_Dashboard_Stage1.md) | Stage 1 read-only Finance Control Tower handover + verdict |
 | [Cursor_Handover_Finance_Dashboard_Stage1_Staging_Acceptance.md](./Cursor_Handover_Finance_Dashboard_Stage1_Staging_Acceptance.md) | Gate 1 local/CI staging-equivalent acceptance |
+| [Cursor_Handover_Finance_Dashboard_Stage2.md](./Cursor_Handover_Finance_Dashboard_Stage2.md) | Stage 2 engine-aware client billing + Forest Light reskin |
 | [finance_control_tower_stage1_human_uat_script.md](./finance_control_tower_stage1_human_uat_script.md) | Timed human finance UAT script (blank results) |
 | [RBAC_SCOPE.md](./RBAC_SCOPE.md) | Roles, permissions, module access |
 | [REVIEW_ROLE_MATRIX.md](./REVIEW_ROLE_MATRIX.md) | Role review matrix |

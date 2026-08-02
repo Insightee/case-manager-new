@@ -21,6 +21,8 @@ from app.models.client_billing import (
 )
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine
+from app.core.config import settings
+from app.models.billing_step6 import BillingCalcException
 from app.models.ledger_billing import BillableStatus, BillingLedger, LedgerSourceType, ProductBillingRule
 from app.models.parent import ParentGuardian
 from app.models.session import Session as TherapySession
@@ -28,6 +30,7 @@ from app.models.session import SessionStatus
 from app.models.user import User
 from app.services import billing_ledger_service, notification_service, product_billing_rule_service
 from app.services.client_billing_service import _invoice_is_overdue, _parents_for_case
+from app.services import zoho_client_sync
 
 DEFAULT_PAYMENT_POLICY = """Payment is due on or before the due date mentioned in this invoice.
 
@@ -555,6 +558,82 @@ def _warnings_for_preview(
     return warnings
 
 
+def blocking_calc_exceptions_for_case(
+    db: Session, *, case_id: int, billing_month: str
+) -> list[dict[str, Any]]:
+    """Open engine calc-exceptions that must block invoice build."""
+    ym = normalize_billing_month(billing_month)
+    rows = db.scalars(
+        select(BillingCalcException)
+        .where(
+            BillingCalcException.case_id == case_id,
+            BillingCalcException.ledger_month == ym,
+            BillingCalcException.resolved.is_(False),
+        )
+        .order_by(BillingCalcException.created_at.asc())
+    ).all()
+    return [
+        {
+            "id": ex.id,
+            "code": ex.code,
+            "message": ex.message,
+            "sessionId": ex.session_id,
+            "openHref": f"/admin/invoices?tab=overview&queue=billing_exceptions&case_id={case_id}&month={ym}",
+        }
+        for ex in rows
+    ]
+
+
+def postable_draft_charges_for_case(
+    db: Session, *, case_id: int, billing_month: str
+) -> list[dict[str, Any]]:
+    """Zero-session DRAFT / PENDING_FINANCE period charges — never auto-posted."""
+    ym = normalize_billing_month(billing_month)
+    rows = db.scalars(
+        select(BillingLedger)
+        .where(
+            BillingLedger.case_id == case_id,
+            BillingLedger.ledger_month == ym,
+            BillingLedger.billable_status == BillableStatus.PENDING_FINANCE,
+            BillingLedger.source_type.in_(
+                (LedgerSourceType.MONTHLY_FEE, LedgerSourceType.PACKAGE_PURCHASE)
+            ),
+            BillingLedger.client_invoice_id.is_(None),
+        )
+        .order_by(BillingLedger.event_date.asc())
+    ).all()
+    return [
+        {
+            "id": r.id,
+            "eventDate": r.event_date.isoformat() if r.event_date else None,
+            "eventType": r.event_type.value if hasattr(r.event_type, "value") else str(r.event_type),
+            "sourceType": r.source_type.value if hasattr(r.source_type, "value") else str(r.source_type),
+            "billableStatus": r.billable_status.value,
+            "amountInr": float(r.amount_inr or 0),
+            "totalInr": float(r.total_inr or 0),
+            "requiresExplicitPost": True,
+        }
+        for r in rows
+    ]
+
+
+def _preview_confidence(*, material_missing: bool, has_suggested: bool) -> dict[str, Any]:
+    """Pre-cutover engine amounts are never RECONCILED."""
+    if material_missing:
+        level = "INCOMPLETE"
+        reason = "A material billing source is missing for this period."
+    elif not settings.finance_cutover_complete:
+        level = "PARTIAL"
+        reason = "Pre-cutover engine amount — provisional until finance cutover."
+    elif has_suggested:
+        level = "PARTIAL"
+        reason = "Based on ledger rows that are not yet production-reconciled."
+    else:
+        level = "ESTIMATED"
+        reason = "Derived from incomplete bases — treat as provisional."
+    return {"confidence": level, "confidenceReason": reason}
+
+
 def get_saved_preferences(db: Session, case_id: int) -> dict:
     from app.models.case_billing_preference import CaseBillingPreference
 
@@ -614,12 +693,24 @@ def get_composer_preview(db: Session, *, case_id: int, billing_month: str) -> di
             inv_type = "PREPAID"
 
     warnings = _warnings_for_preview(db, case_id, ym, suggested, ledger_rows)
+    blocking = blocking_calc_exceptions_for_case(db, case_id=case_id, billing_month=ym)
+    draft_charges = postable_draft_charges_for_case(db, case_id=case_id, billing_month=ym)
+    material_missing = (not suggested and not ledger_rows) or bool(blocking)
+    conf = _preview_confidence(material_missing=material_missing, has_suggested=bool(suggested))
+    can_build = len(blocking) == 0
 
     return {
         "includeFinanceFields": True,
+        "canBuild": can_build,
+        "blockingExceptions": blocking,
+        "postableDraftCharges": draft_charges,
+        "cutoverComplete": bool(settings.finance_cutover_complete),
+        "provisional": not bool(settings.finance_cutover_complete),
+        "zohoConfigured": zoho_client_sync.zoho_configured(),
         "case": {
             "id": case.id,
             "caseCode": case.case_code,
+            "caseId": case.id,
             "childName": case.child.full_name if case.child else "",
             "parentName": _parent_name_for_case(db, case),
             "service": case.product_module,
@@ -650,6 +741,8 @@ def get_composer_preview(db: Session, *, case_id: int, billing_month: str) -> di
             "total": round(total, 2),
             "therapistPayoutTotal": reconcile.get("therapistPayoutTotalInr", 0),
             "estimatedMargin": reconcile.get("marginInr", 0),
+            "confidence": conf["confidence"],
+            "confidenceReason": conf["confidenceReason"],
         },
         "ledgerRows": ledger_rows,
         "therapistSubmissions": therapist_submissions,
