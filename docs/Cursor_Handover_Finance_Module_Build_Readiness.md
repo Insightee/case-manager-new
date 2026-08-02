@@ -1,6 +1,8 @@
 # Cursor Handover — Finance Module Build Readiness
 
-**Document status:** Inspection-only (Plan Mode). No code was changed. Target filename requested: `Cursor_Handover_Finance_Module_Build_Readiness.md` — produce that file in-repo only after you approve this plan (or treat this plan body as the handover until then).
+**Document status:** Approved inspection findings (docs-only commit). Findings unchanged from Plan Mode review on 2026-08-02.
+
+**Preserve snapshot (Step 0):** `/Users/midhunnoble/insighte-billing-engine-preserve/20260802-211023/` · backup branch `backup/billing-engine-wip-20260802` · tag `backup/billing-engine-tree-20260802` · staging alembic `a4b5c6d7e8f9`
 
 **Inspected at:** 2026-08-02 · workspace `case-manager-new-1` · branch `billing`
 
@@ -394,4 +396,4 @@ flowchart LR
 
 ---
 
-**Stop.** No implementation in this step. After approval: write `Cursor_Handover_Finance_Module_Build_Readiness.md` into the repo from this content (docs-only), then optionally start Stage 1 planning as a separate plan.
+**Next:** Engine isolation on `feat/billing-engine-steps-1-6` from `origin/main`. Do not merge `billing` tip to `main`. Do not run production cutover.
