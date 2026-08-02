@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-02  
 **Mode:** Read-only fact-finding  
-**Verdict:** `CUTOVER_SIZING_BLOCKED_NO_STAGING_DATA`
+**Verdict:** `CUTOVER_SIZING_BLOCKED_NO_REAL_RO_DB`
 
 ---
 
@@ -10,26 +10,40 @@
 
 We tried to answer: **how many cases still need a human finance decision before cutover?**
 
-**What we found locally:** the review table exists on probe DBs but contains **zero rows**. Demo/local seed is not a cutover population. Without a staging or production **read-only** database (or a CSV export from ops), we cannot yet say whether this is a dozen-row sheet or a hundreds-row work package.
+**Which DB:** This agent only has **local** Postgres (`127.0.0.1` / `finance_local_host` and empty clones). **Not staging. Not production.**
 
-**What that means for the timeline:** we are still planning blind on volume. The next unblock is one of:
+**Read-only check:** The local credential is **writable** (can INSERT/UPDATE/DELETE). Per safety rules we **stopped** rather than treating it as a real RO probe of production data. No migration and no writes were run.
 
-1. Staging/prod read-only `DATABASE_URL`, or  
-2. A dump/CSV of `monthly_case_review` + package-missing cases from staging.
+**Situation (a / b / c):** **None of the three apply to a real environment** — we never reached a staging or production database.
 
-Until then: **do not schedule cutover.** Run the SQL pack below against the real DB and paste results back into this doc.
+| Situation | Meaning | Are we here? |
+|---|---|---|
+| **(a)** Real migrated `monthly_case_review` rows | Report the real NEEDS_REVIEW count | **No** — no real DB |
+| **(b)** Only STEP1-FIX-* fixtures | Real population not here | **No** — no real DB |
+| **(c)** Table empty/absent; Step 1 not run | Estimate from case/rate data | **No** — local only; not a real estimate |
+
+**Live count / estimate:** **Unavailable.** Do not use local empty-state (0 review rows / 1–2 cases) as a cutover number.
+
+**One plain sentence:** Finance needs to make roughly **N** case-by-case decisions before cutover — **N unknown until a true read-only staging or production connection (or CSV export) is provided.**
+
+**What that means for the timeline:** still planning blind on volume. Unblock with one of:
+
+1. Inject `READONLY_DATABASE_URL` (true SELECT-only role) pointing at staging or production into this agent, or  
+2. Ops runs the SQL packs below and pastes results / CSV back.
+
+Until then: **do not schedule cutover.**
+
+Artifact: `/opt/cursor/artifacts/cutover-sizing/REAL_DB_PROBE_STATUS.md`
 
 ---
 
 ## Local empty-state proof (2026-08-02)
 
-| Database | `monthly_case_review` | Rows | PACKAGE missing `package_session_count` |
-|---|---|---:|---:|
-| `engine_premerge_main` | present | **0** | 0 |
-| `finance_merge_verify` | present | **0** | 0 |
-| `finance_local_host` | absent (greenfield stamp path) | — | 0 |
-
-Artifact: `/opt/cursor/artifacts/cutover-sizing/local_empty_state_proof.txt`
+| Database | `monthly_case_review` | Rows | Cases | Notes |
+|---|---|---:|---:|---|
+| `finance_local_host` | absent | — | 2 | greenfield; **writable** role |
+| `engine_premerge_main` | present | **0** | 1 | clone, not real population |
+| `finance_merge_verify` | present | **0** | 1 | clone, not real population |
 
 ---
 
@@ -40,33 +54,35 @@ Artifact: `/opt/cursor/artifacts/cutover-sizing/local_empty_state_proof.txt`
 | `AUTO_MIGRATED` | Engine already moved the case to monthly; `finance_decision='AUTO'` | None (already done) |
 | `NEEDS_REVIEW` | Could not auto-classify; case **not** mutated; `finance_decision` usually null | Human decision required |
 
-Typical `review_reason` values from the migration:
+Typical `review_reason` values from the migration (`y2z3a4b5c6d7`):
 
-- `Missing product_billing_rule_id`
-- `Non-monthly product rule with monthly-looking rate` (rate threshold ₹8000)
+- `Missing product_billing_rule_id` — only when rate **> ₹8000**
+- `Non-monthly product rule with monthly-looking rate` — rate **> ₹8000**
 
-**Rate column caveat:** `previous_client_rate_per_session_inr` on `NEEDS_REVIEW` is **rate exposure**, not booked monthly revenue. Sum it as “₹ at stake on the decision,” not “₹ monthly billings.”
+**Rate column caveat:** treat rate fields as **rate exposure**, not booked monthly revenue.
 
-Second gate (independent of the review table): active `PACKAGE` cases with `package_session_count` null or ≤ 0 → `MISSING_PACKAGE_COUNT` blocks clean billing.
+Second gate (independent): active `PACKAGE` cases with `package_session_count` null or ≤ 0 → `MISSING_PACKAGE_COUNT`.
 
 ---
 
-## Query pack (run read-only on staging/prod)
+## Query packs (run read-only on staging/prod)
 
-See [`docs/sql/monthly_case_review_cutover_sizing.sql`](./sql/monthly_case_review_cutover_sizing.sql).
+1. If `monthly_case_review` has **real** rows → [`docs/sql/monthly_case_review_cutover_sizing.sql`](./sql/monthly_case_review_cutover_sizing.sql)  
+2. If table empty/absent or fixture-only → [`docs/sql/monthly_case_review_cutover_estimate.sql`](./sql/monthly_case_review_cutover_estimate.sql) (labeled **estimate**, mirrors migration classification without running it)
 
-Fill in after run:
+### Fill in after a real RO run
 
 | Metric | Value |
 |---|---|
-| Total `monthly_case_review` rows | _TBD_ |
-| `AUTO_MIGRATED` | _TBD_ |
-| `NEEDS_REVIEW` | _TBD_ |
+| DB environment (staging / production) | _TBD_ |
+| Situation (a / b / c) | _TBD_ |
+| Total `monthly_case_review` rows (real vs fixture) | _TBD_ |
+| `AUTO_MIGRATED` / would auto-migrate | _TBD_ |
+| `NEEDS_REVIEW` / would need review | _TBD_ |
 | `NEEDS_REVIEW` with `finance_decision` null | _TBD_ |
 | Top review reasons | _TBD_ |
 | Rate exposure min / median / max / sum | _TBD_ |
 | Active PACKAGE missing session count | _TBD_ |
-| Of those, with sessions in last 60 days | _TBD_ |
 
 ### Timeline implication (once numbers land)
 
@@ -78,14 +94,7 @@ Fill in after run:
 
 ---
 
-## CSV for finance (when data exists)
-
-Export `NEEDS_REVIEW` rows with: `case_id`, `client_name`, `service_type`, `review_reason`, `previous_client_rate_per_session_inr`, `finance_decision`.
-
-Placeholder path once available: `/opt/cursor/artifacts/cutover-sizing/needs_review_worklist.csv`
-
----
-
 ## Writes / production
 
-**None.** No migration, no row updates, no production mutation from this workstream.
+**None.** No migration, no row updates, no production mutation from this workstream.  
+If a provided credential is writable, **stop and flag** — do not proceed against it for sizing.
