@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.v1 import (
     finance_ops,
+    finance_control_tower,
     hr_ops,
     admin,
     admin_support,
@@ -57,6 +58,10 @@ api_router.include_router(invoices.router)
 api_router.include_router(admin.router)
 api_router.include_router(
     finance_ops.router,
+    dependencies=[Depends(require_billing)],
+)
+api_router.include_router(
+    finance_control_tower.router,
     dependencies=[Depends(require_billing)],
 )
 api_router.include_router(hr_ops.router)

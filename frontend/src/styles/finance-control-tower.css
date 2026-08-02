@@ -1,0 +1,230 @@
+/* Stage 1 Finance Control Tower — Forest Light scoped to .finance-control-tower */
+
+.finance-control-tower {
+  --fct-surface: #f9f9f9;
+  --fct-panel: #ffffff;
+  --fct-text: #1a1c1c;
+  --fct-muted: #424845;
+  --fct-outline: #c2c8c3;
+  --fct-secondary: #416656;
+  --fct-secondary-soft: #c3ecd7;
+  --fct-font-headline: Manrope, ui-sans-serif, system-ui, sans-serif;
+  --fct-font-body: Inter, ui-sans-serif, system-ui, sans-serif;
+  --fct-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--fct-text);
+  font-family: var(--fct-font-body);
+  background: var(--fct-surface);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.finance-control-tower__title {
+  font-family: var(--fct-font-headline);
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: var(--fct-text);
+}
+
+.finance-control-tower__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  font-size: 0.8125rem;
+  color: var(--fct-muted);
+  margin-bottom: 12px;
+}
+
+.finance-control-tower__meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--fct-outline);
+  border-radius: 999px;
+  background: var(--fct-panel);
+  font-size: 0.75rem;
+}
+
+.finance-control-tower__banner {
+  border: 1px solid var(--fct-outline);
+  background: var(--fct-secondary-soft);
+  color: #002115;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.finance-control-tower__section-title {
+  font-family: var(--fct-font-headline);
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 20px 0 10px;
+}
+
+.finance-control-tower__queue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.finance-control-tower__queue-card {
+  background: var(--fct-panel);
+  border: 1px solid var(--fct-outline);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.finance-control-tower__queue-card:hover,
+.finance-control-tower__queue-card:focus-visible {
+  border-color: var(--fct-secondary);
+  box-shadow: 0 0 0 2px rgba(65, 102, 86, 0.15);
+  outline: none;
+}
+
+.finance-control-tower__queue-card.is-active {
+  border-color: var(--fct-secondary);
+  background: #f3faf6;
+}
+
+.finance-control-tower__queue-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fct-muted);
+}
+
+.finance-control-tower__queue-count {
+  font-family: var(--fct-font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--fct-text);
+  line-height: 1.1;
+}
+
+.finance-control-tower__queue-impact {
+  font-family: var(--fct-font-mono);
+  font-size: 0.8rem;
+  color: var(--fct-secondary);
+}
+
+.finance-control-tower__queue-meta {
+  font-size: 0.72rem;
+  color: var(--fct-muted);
+  margin-top: auto;
+}
+
+.finance-control-tower__summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.finance-control-tower__summary-item {
+  background: var(--fct-panel);
+  border: 1px solid var(--fct-outline);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.finance-control-tower__summary-label {
+  font-size: 0.75rem;
+  color: var(--fct-muted);
+  margin-bottom: 4px;
+}
+
+.finance-control-tower__summary-value {
+  font-family: var(--fct-font-mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.finance-control-tower__funnel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.finance-control-tower__funnel-step {
+  flex: 1 1 120px;
+  background: var(--fct-panel);
+  border: 1px solid var(--fct-outline);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.finance-control-tower__funnel-step strong {
+  font-family: var(--fct-font-mono);
+  display: block;
+  font-size: 1.15rem;
+}
+
+.finance-control-tower__funnel-step span {
+  font-size: 0.72rem;
+  color: var(--fct-muted);
+}
+
+.finance-control-tower__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--fct-outline);
+  border-radius: 10px;
+  background: var(--fct-panel);
+}
+
+.finance-control-tower table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.finance-control-tower th,
+.finance-control-tower td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--fct-outline);
+  text-align: left;
+  vertical-align: top;
+}
+
+.finance-control-tower th {
+  font-weight: 600;
+  color: var(--fct-muted);
+  background: #f3f3f4;
+}
+
+.finance-control-tower .mono {
+  font-family: var(--fct-font-mono);
+}
+
+.finance-control-tower__section-error {
+  border: 1px dashed var(--fct-outline);
+  border-radius: 10px;
+  padding: 14px;
+  color: var(--fct-muted);
+  font-size: 0.875rem;
+  background: #f3f3f4;
+}
+
+.finance-confidence-badge {
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+@media (max-width: 640px) {
+  .finance-control-tower {
+    padding: 12px;
+  }
+  .finance-control-tower__queue-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

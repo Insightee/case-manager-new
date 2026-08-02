@@ -229,10 +229,12 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `ENABLE_BILLING` | `false` | Gates admin/parent billing + finance_ops + ledger-billing routers (`require_billing`). Keep off on production until cutover. |
+| `ENABLE_BILLING` | `false` | Gates admin/parent billing + finance_ops + ledger-billing + finance-control-tower routers (`require_billing`). Keep off on production until cutover. |
 | `BILLING_LEDGER_WRITES` | `false` | Gates session/log ledger upserts (`sync_session_status`, approve, period charges). Merge of engine code must not silently write ledger rows. |
 | `BILLING_LEDGER_DRAFTS` | `true` | Existing ledger draft behaviour. |
+| `FINANCE_CUTOVER_COMPLETE` | `false` | When false, Finance Control Tower shows the provisional banner and never labels engine amounts `RECONCILED`. |
 | `VITE_ENABLE_BILLING` | unset/false | Frontend billing module visibility; keep forced off on canonical production. |
+| `VITE_ENABLE_FINANCE_DASHBOARD_V1` | unset/false | Stage 1 read-only Finance Control Tower on `/admin/invoices?tab=overview`. Forced off on canonical production via `readClientModuleFlag`. |
 
-Staging may set `ENABLE_BILLING=true` and `BILLING_LEDGER_WRITES=true` for engine verification. Production cutover is a separate deliberate event after `monthly_case_review` classification.
+Staging may set `ENABLE_BILLING=true` (required for Control Tower routers to mount) with `BILLING_LEDGER_WRITES=false` for read-only verification. Enable `VITE_ENABLE_FINANCE_DASHBOARD_V1` only on non-production frontend builds. Production cutover is a separate deliberate event after `monthly_case_review` classification.
 

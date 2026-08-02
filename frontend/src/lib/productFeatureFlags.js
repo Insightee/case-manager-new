@@ -71,6 +71,9 @@ export const ENABLE_REPORTS = readClientModuleFlag('VITE_ENABLE_REPORTS')
 /** Therapist invoices, admin client billing / ledger composer */
 export const ENABLE_BILLING = readClientModuleFlag('VITE_ENABLE_BILLING')
 
+/** Stage 1 read-only Finance Control Tower (admin overview). Off on canonical production. */
+export const ENABLE_FINANCE_DASHBOARD_V1 = readClientModuleFlag('VITE_ENABLE_FINANCE_DASHBOARD_V1')
+
 /** Goal bank, strategy pool, review queue, clinical AI assist */
 export const ENABLE_CLINICAL_BRAIN = readEnvFlag('VITE_ENABLE_CLINICAL_BRAIN')
 
@@ -91,6 +94,10 @@ export function isReportsModuleEnabled() {
 
 export function isBillingModuleEnabled() {
   return ENABLE_BILLING
+}
+
+export function isFinanceDashboardV1Enabled() {
+  return ENABLE_FINANCE_DASHBOARD_V1
 }
 
 export function isClinicalBrainEnabled() {

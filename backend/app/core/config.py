@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     enable_billing: bool = False
     # Session/log ledger upserts. Default off so merge ≠ silent production money writes.
     billing_ledger_writes: bool = False
+    # Production money cutover complete. Default false → provisional Control Tower banner;
+    # engine-derived amounts must not be labelled RECONCILED until this is true.
+    finance_cutover_complete: bool = False
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).

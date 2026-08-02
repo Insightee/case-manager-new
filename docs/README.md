@@ -42,6 +42,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 |-----|---------|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System overview, components, data flow |
 | [billing-architecture.md](./billing-architecture.md) | Invoices, payouts, billing modes |
+| [Cursor_Handover_Finance_Dashboard_Stage1.md](./Cursor_Handover_Finance_Dashboard_Stage1.md) | Stage 1 read-only Finance Control Tower handover + verdict |
 | [RBAC_SCOPE.md](./RBAC_SCOPE.md) | Roles, permissions, module access |
 | [REVIEW_ROLE_MATRIX.md](./REVIEW_ROLE_MATRIX.md) | Role review matrix |
 | [ROLE_MODEL_PHASES.md](./ROLE_MODEL_PHASES.md) | Role model rollout phases |
