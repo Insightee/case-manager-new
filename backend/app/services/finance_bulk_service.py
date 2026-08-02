@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.review import ReviewDecision
-from app.services import client_invoice_draft_service, invoice_service
+from app.services import billing_composer_service, client_invoice_draft_service, invoice_service
 
 
 def bulk_client_invoices(
@@ -22,6 +22,14 @@ def bulk_client_invoices(
     for case_id in case_ids:
         try:
             if action == "build_from_ledger":
+                blocking = billing_composer_service.blocking_calc_exceptions_for_case(
+                    db, case_id=case_id, billing_month=billing_month
+                )
+                if blocking:
+                    codes = ", ".join(sorted({b["code"] for b in blocking}))
+                    raise ValueError(
+                        f"Open calculation exception(s) ({codes}); resolve before building"
+                    )
                 result = client_invoice_draft_service.generate_draft_from_ledger(
                     db,
                     case_id=case_id,

@@ -233,7 +233,9 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `BILLING_LEDGER_WRITES` | `false` | Gates session/log ledger upserts (`sync_session_status`, approve, period charges). Merge of engine code must not silently write ledger rows. |
 | `BILLING_LEDGER_DRAFTS` | `true` | Existing ledger draft behaviour. |
 | `FINANCE_CUTOVER_COMPLETE` | `false` | When false, Finance Control Tower shows the provisional banner and never labels engine amounts `RECONCILED`. |
-| `VITE_ENABLE_BILLING` | unset/false | Frontend billing module visibility; keep forced off on canonical production. |
+| `VITE_ENABLE_CLIENT_BILLING` | unset/false | Parent + therapist billing visibility (Stage 2). Forced off on canonical production. |
+| `VITE_ENABLE_BILLING` | unset/false | Legacy alias for `VITE_ENABLE_CLIENT_BILLING` (one-release fallback). |
+| `ZOHO_BOOKS_API_KEY` | empty | Zoho Books sync seam; empty → visible "not configured" status (never fake success). |
 | `VITE_ENABLE_FINANCE_DASHBOARD_V1` | unset/false | Stage 1 read-only Finance Control Tower on `/admin/invoices?tab=overview`. Forced off on canonical production via `readClientModuleFlag`. |
 
 Staging may set `ENABLE_BILLING=true` (required for Control Tower routers to mount) with `BILLING_LEDGER_WRITES=false` for read-only verification. Enable `VITE_ENABLE_FINANCE_DASHBOARD_V1` only on non-production frontend builds. Production cutover is a separate deliberate event after `monthly_case_review` classification.

@@ -68,8 +68,24 @@ function readClientModuleFlag(key) {
 /** Monthly reports hub, parent reports, admin report review UI */
 export const ENABLE_REPORTS = readClientModuleFlag('VITE_ENABLE_REPORTS')
 
-/** Therapist invoices, admin client billing / ledger composer */
-export const ENABLE_BILLING = readClientModuleFlag('VITE_ENABLE_BILLING')
+/**
+ * Client billing visibility (parent Payments + therapist Invoices).
+ * Prefer VITE_ENABLE_CLIENT_BILLING; fall back to legacy VITE_ENABLE_BILLING for one release.
+ * Forced off on canonical production.
+ */
+function readClientBillingVisibilityFlag() {
+  if (isCanonicalProductionFrontend()) return false
+  const next = import.meta.env.VITE_ENABLE_CLIENT_BILLING
+  if (next === 'true') return true
+  if (next === 'false') return false
+  return readClientModuleFlag('VITE_ENABLE_BILLING')
+}
+
+/** @deprecated Use isClientBillingVisible(); kept as alias during rename. */
+export const ENABLE_BILLING = readClientBillingVisibilityFlag()
+
+/** Parent + therapist billing surfaces (visibility only; liveness from runtime-config). */
+export const ENABLE_CLIENT_BILLING = ENABLE_BILLING
 
 /** Stage 1 read-only Finance Control Tower (admin overview). Off on canonical production. */
 export const ENABLE_FINANCE_DASHBOARD_V1 = readClientModuleFlag('VITE_ENABLE_FINANCE_DASHBOARD_V1')
@@ -92,8 +108,14 @@ export function isReportsModuleEnabled() {
   return ENABLE_REPORTS
 }
 
+/** Visibility for parent/therapist billing UI (coming-soon when false). */
 export function isBillingModuleEnabled() {
-  return ENABLE_BILLING
+  return ENABLE_CLIENT_BILLING
+}
+
+/** Alias — single answer for "is client billing visible?" */
+export function isClientBillingVisible() {
+  return ENABLE_CLIENT_BILLING
 }
 
 export function isFinanceDashboardV1Enabled() {

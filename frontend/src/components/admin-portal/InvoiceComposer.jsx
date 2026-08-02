@@ -3,11 +3,13 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
+import { useBillingRuntimeConfig } from '../../hooks/useBillingRuntimeConfig.js'
 import { AdminPageHeader, AdminSearchInput, ServiceFilterSelect } from './ui/index.js'
 import { BillingActionAlert } from './ui/BillingActionAlert.jsx'
 import { InvoiceComposerPreviewPanel } from './InvoiceComposerPreviewPanel.jsx'
 import './admin-client-invoices.css'
 import './admin-client-invoices-composer.css'
+import '../../styles/finance-stage2.css'
 
 const QUEUES = [
   { id: 'all', label: 'All' },
@@ -52,6 +54,8 @@ export function InvoiceComposer() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { canWriteBilling } = useModuleWrite()
+  const runtime = useBillingRuntimeConfig({ enabled: true })
+  const writesEnabled = Boolean(runtime.writesEnabled)
   const { loading, error, successMessage, run, clearMessages, setError, setSuccessMessage } = useBillingAction()
   const isMobile = useIsMobile()
   const [billingMonth, setBillingMonth] = useState(searchParams.get('billing_month') || defaultMonth())
@@ -152,7 +156,11 @@ export function InvoiceComposer() {
   }
 
   async function buildFromLedger(includePending = false) {
-    if (!selectedCaseId || !canWriteBilling) return
+    if (!selectedCaseId || !canWriteBilling || !writesEnabled) return
+    if (preview && preview.canBuild === false) {
+      setError('Cannot build invoice while calculation exceptions are open for this case.')
+      return
+    }
     try {
       const inv = await run(
         () =>
@@ -162,6 +170,9 @@ export function InvoiceComposer() {
           ),
         { successMsg: 'Draft invoice created from ledger' }
       )
+      if (inv?.zohoSync?.status === 'not_configured') {
+        setSuccessMessage('Draft invoice created from ledger · Zoho sync not configured')
+      }
       navigate(`/admin/invoices/client/${inv.id}`)
     } catch (err) {
       const msg = err?.message || ''
@@ -169,12 +180,18 @@ export function InvoiceComposer() {
         setError(
           'No billable ledger rows for this month. Approve daily logs first, or use Create invoice manually.'
         )
+      } else if (msg.toLowerCase().includes('calculation exception')) {
+        setError(msg)
       }
     }
   }
 
   async function createManualInvoice() {
-    if (!selectedCaseId || !canWriteBilling) return
+    if (!selectedCaseId || !canWriteBilling || !writesEnabled) return
+    if (preview && preview.canBuild === false) {
+      setError('Cannot create invoice while calculation exceptions are open for this case.')
+      return
+    }
     const inv = await run(
       () =>
         apiFetch('/api/v1/admin/client-billing/invoices', {
@@ -189,6 +206,19 @@ export function InvoiceComposer() {
       { successMsg: 'Manual draft invoice created' }
     )
     navigate(`/admin/invoices/client/${inv.id}`)
+  }
+
+  async function postDraftCharge(ledgerId) {
+    if (!ledgerId || !canWriteBilling || !writesEnabled) return
+    const note = encodeURIComponent('Posted from invoice composer (explicit finance action)')
+    await run(
+      () =>
+        apiFetch(`/api/v1/admin/ledger-billing/ledger/${ledgerId}/post-finance?note=${note}`, {
+          method: 'POST',
+        }),
+      { successMsg: 'DRAFT charge posted — it can now enter an invoice' }
+    )
+    loadPreview()
   }
 
   async function remindTherapist() {
@@ -211,7 +241,7 @@ export function InvoiceComposer() {
   }
 
   async function bulkBuildFromLedger() {
-    if (!selectedIds.length || !canWriteBilling) return
+    if (!selectedIds.length || !canWriteBilling || !writesEnabled) return
     const result = await run(
       () =>
         apiFetch('/api/v1/admin/finance-bulk/client-invoices', {
@@ -234,17 +264,23 @@ export function InvoiceComposer() {
   }
 
   return (
-    <div className="admin-page client-inv-composer-page">
+    <div className="admin-page client-inv-composer-page finance-stage2">
       <AdminPageHeader
         eyebrow="Finance"
         title="Compose client invoice"
         subtitle="Review ledger and therapist billing, then raise or edit a family invoice."
       />
-      <p style={{ margin: 0 }}>
+      <p className="finance-stage2-back">
         <Link to="/admin/invoices?tab=client">← Back to client invoices</Link>
       </p>
 
-      <BillingActionAlert error={error} successMessage={successMessage} onDismiss={clearMessages} />
+      {runtime.provisional ? (
+        <div className="finance-stage2-banner finance-stage2-banner--mint" role="status">
+          Engine amounts are provisional until cutover. Builds stay gated by write access and open exceptions.
+        </div>
+      ) : null}
+
+      <BillingActionAlert error={error || runtime.error} successMessage={successMessage} onDismiss={clearMessages} />
 
       <div className="client-inv-composer__toolbar">
         <div className="client-inv-composer__toolbar-filters">
@@ -282,7 +318,7 @@ export function InvoiceComposer() {
             </button>
           ))}
         </div>
-        {canWriteBilling && selectedIds.length > 0 ? (
+        {canWriteBilling && writesEnabled && selectedIds.length > 0 ? (
           <button
             type="button"
             className="admin-btn admin-btn--secondary admin-btn--sm"
@@ -309,24 +345,24 @@ export function InvoiceComposer() {
           ) : null}
           <div className="client-inv-composer__case-list">
             {loadingCases ? (
-              <div className="admin-skeleton" style={{ minHeight: 120 }} />
+              <div className="admin-skeleton finance-stage2-skeleton" aria-busy="true" />
             ) : cases.length === 0 ? (
-              <p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>No cases in this queue.</p>
+              <p className="finance-stage2-empty">No cases in this queue.</p>
             ) : (
               cases.map((c) => (
                 <div key={c.caseId} className={`client-inv-composer__case-card ${selectedCaseId === c.caseId ? 'is-selected' : ''}`}>
                   {canWriteBilling ? (
                     <input
                       type="checkbox"
+                      className="finance-stage2-case-check"
                       checked={selectedIds.includes(c.caseId)}
                       onChange={() => toggleSelect(c.caseId)}
                       aria-label={`Select ${c.caseCode}`}
-                      style={{ marginRight: 8 }}
                     />
                   ) : null}
                   <button type="button" className="client-inv-composer__case-card-btn" onClick={() => selectCase(c.caseId)}>
                     <strong>{c.caseCode}</strong> — {c.childName}
-                    <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b', marginTop: 4 }}>
+                    <span className="finance-stage2-case-meta">
                       {c.serviceType} · {c.sessionsCompletedThisMonth ?? 0} sessions
                     </span>
                     <div className="client-inv-composer__badges">
@@ -357,7 +393,7 @@ export function InvoiceComposer() {
                 >
                   ← Back to queue
                 </button>
-                <strong style={{ fontSize: '0.9rem' }}>
+                <strong className="finance-stage2-detail-title">
                   {selectedCard?.caseCode} — {selectedCard?.childName}
                 </strong>
               </div>
@@ -368,17 +404,21 @@ export function InvoiceComposer() {
                   card={selectedCard}
                   billingMonth={billingMonth}
                   canWriteBilling={canWriteBilling}
+                  writesEnabled={writesEnabled}
                   actionLoading={loading}
                   onBuildFromLedger={buildFromLedger}
                   onCreateManualInvoice={createManualInvoice}
                   onRemindTherapist={remindTherapist}
+                  onPostDraftCharge={postDraftCharge}
                   onRefresh={loadPreview}
                 />
               </div>
             </>
           ) : (
             <div className="client-inv-composer__detail-scroll">
-              <p style={{ color: '#64748b', marginTop: 24 }}>Select a case from the queue to review billing context.</p>
+              <p className="finance-stage2-empty finance-stage2-empty--pad">
+                Select a case from the queue to review billing context.
+              </p>
             </div>
           )}
         </section>

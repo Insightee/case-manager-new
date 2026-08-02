@@ -28,8 +28,11 @@ from app.schemas.client_billing import (
     OnboardingInvoiceDraftRequest,
     SaveCaseBillingPreferences,
 )
+from app.core.config import settings
+from app.core.feature_flags import billing_ledger_writes_enabled
 from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service
 from app.services import audit_service
+from app.services import zoho_client_sync
 
 parent_router = APIRouter(prefix="/parent/billing", tags=["parent-billing"])
 admin_router = APIRouter(prefix="/admin/client-billing", tags=["admin-client-billing"])
@@ -38,6 +41,27 @@ admin_router = APIRouter(prefix="/admin/client-billing", tags=["admin-client-bil
 def _require_parent(user: User):
     if RoleName.PARENT.value not in user.role_names:
         raise HTTPException(status_code=403, detail="Parent access only")
+
+
+def _billing_runtime_config() -> dict:
+    return {
+        "billingEnabled": bool(settings.enable_billing),
+        "ledgerWritesEnabled": billing_ledger_writes_enabled(),
+        "cutoverComplete": bool(settings.finance_cutover_complete),
+        "zohoConfigured": zoho_client_sync.zoho_configured(),
+        "provisional": not bool(settings.finance_cutover_complete),
+    }
+
+
+@parent_router.get("/runtime-config")
+def parent_billing_runtime_config(user: User = Depends(get_current_user)):
+    """Parent-safe liveness flags (no internal write keys)."""
+    _require_parent(user)
+    cfg = _billing_runtime_config()
+    return {
+        "cutoverComplete": cfg["cutoverComplete"],
+        "provisional": cfg["provisional"],
+    }
 
 
 @parent_router.get("/dashboard")
@@ -543,6 +567,15 @@ def admin_list_disputes(
     return result
 
 
+@admin_router.get("/runtime-config")
+def admin_billing_runtime_config(
+    user: User = Depends(require_permission("invoice.approve")),
+):
+    """Single coherent answer for visible/live-or-provisional/writes/Zoho."""
+    _ = user
+    return _billing_runtime_config()
+
+
 @admin_router.get("/composer-cases")
 def admin_composer_cases(
     billing_month: str = Query(..., description="YYYY-MM or Mon YYYY"),
@@ -636,6 +669,18 @@ def admin_build_draft_from_ledger_for_case(
 ):
     ensure_billing_write_access(user)
     ym = billing_composer_service.normalize_billing_month(billing_month)
+    blocking = billing_composer_service.blocking_calc_exceptions_for_case(
+        db, case_id=case_id, billing_month=ym
+    )
+    if blocking:
+        codes = ", ".join(sorted({b["code"] for b in blocking}))
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot build invoice: open calculation exception(s) ({codes}). "
+                "Resolve exceptions before generating a client invoice."
+            ),
+        )
     try:
         result = client_invoice_draft_service.generate_draft_from_ledger(
             db,
@@ -657,7 +702,10 @@ def admin_build_draft_from_ledger_for_case(
         **meta,
     )
     db.commit()
-    return client_billing_service.admin_get_invoice_detail(db, result["id"])
+    detail = client_billing_service.admin_get_invoice_detail(db, result["id"])
+    zoho = zoho_client_sync.sync_client_invoice(result["id"], payload={"event": "build_from_ledger"})
+    detail["zohoSync"] = zoho
+    return detail
 
 
 @admin_router.post("/remind-therapist")
@@ -857,6 +905,9 @@ def admin_notify_parent_invoice(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    zoho = zoho_client_sync.sync_client_invoice(invoice_id, payload={"event": "notify_parent"})
+    if isinstance(result, dict):
+        result = {**result, "zohoSync": zoho}
     meta = get_request_meta(request)
     log_audit(
         db,
