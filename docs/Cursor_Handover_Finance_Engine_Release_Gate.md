@@ -4,7 +4,7 @@
 **Branch:** `feat/billing-engine-steps-1-6`  
 **Base:** `origin/main` @ `1e85aa2f5a6a39f4f41075710cf59354f351a007`  
 **Stale gate SHA (43-test record):** `ead0821a760ebae941c129898f1fa64bebc803a2`  
-**CI-fix tip:** `19999f2554676c4a5b08ffdb690d99097ef7c565`  
+**CI-fix tip:** `0c547455dc4edcff93a7338ee4938b504319f8d4` (test fix `19999f2554676c4a5b08ffdb690d99097ef7c565`)  
 **Working tree parent SHA before engine commits:** `1e85aa2f5a6a39f4f41075710cf59354f351a007`  
 **Preserve snapshot:** `/Users/midhunnoble/insighte-billing-engine-preserve/20260802-211023/`  
 **Billing WIP backup:** branch `backup/billing-engine-wip-20260802`, tag `backup/billing-engine-tree-20260802`  
