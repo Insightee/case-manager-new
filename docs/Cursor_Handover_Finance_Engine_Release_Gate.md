@@ -5,7 +5,8 @@
 **PR:** https://github.com/Insightee/case-manager-new/pull/13 (draft; **do not merge from agent**)  
 **Base:** `origin/main` @ `1e85aa2f5a6a39f4f41075710cf59354f351a007`  
 **Implementation tip (code + PostgreSQL/safety evidence):** `b5fc27563c4df0c3aa1d15f8937c60c4ac340747`  
-**Documentation tip (this gate writeup):**  (docs-only; no behavior change)  
+**Documentation tip:** docs-only commits on PR #13 after the implementation tip (no behavior change); confirm tip via `git rev-parse origin/feat/billing-engine-steps-1-6` before merge  
+ 
 **Latest green remote CI on implementation tip:** `b5fc27563c4df0c3aa1d15f8937c60c4ac340747` (`backend` / `frontend` / `vercel-monorepo-build` / `contributor-guards` SUCCESS)  
 **Re-verify after docs tip:** finance **43 passed**; full backend **676 passed**, 17 skipped (local, post-docs)  
 **Historical notes:** prior 43-test record `ead0821a…`; CI date-fixture tip `31d012bd…` / fix `19999f25…` superseded  
