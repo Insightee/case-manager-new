@@ -1,12 +1,14 @@
 # Cursor Handover — Finance Control Tower Stage 1 Gate 1 Acceptance
 
-**Gate 1 verdict:** `STAGE_1_LOCALLY_VALIDATED_PENDING_LIVE_STAGING`
+**Gate 1 verdict:** `STAGE_1_LOCALLY_VALIDATED_PENDING_LIVE_STAGING` (historical)
+
+**Post-engine-merge / rebase status:** `STAGE_1_READY_FOR_LIVE_STAGING`
 
 **Merge stamp:** `HUMAN_FINANCE_UAT_REQUIRED_BEFORE_MERGE`
 
-**Environment note:** No live staging URL or credentials were used. This run is **staging-equivalent local/CI validation only**. Railway/Vercel environments were not discovered, created, or modified.
+**Environment note:** No live staging URL or credentials were used for Gate 1. Railway/Vercel were not modified by the rebase step. **Do not deploy / do not merge PR #14 from this update.**
 
-Do **not** treat this document as `STAGE_1_APPROVED_FOR_MERGE_BEHIND_FLAG`. That verdict requires Gate 2 (live staging) + Gate 3 (human finance UAT).
+Do **not** treat this document as `STAGE_1_APPROVED_FOR_MERGE_BEHIND_FLAG`. That verdict still requires Gate 2 (live staging) + Gate 3 (human finance UAT).
 
 ---
 
@@ -15,17 +17,22 @@ Do **not** treat this document as `STAGE_1_APPROVED_FOR_MERGE_BEHIND_FLAG`. That
 | Item | Value |
 |------|--------|
 | Branch | `feat/finance-dashboard-stage1` |
-| Head SHA (Gate 1 validation) | `c33c3b311cfd748dfa9dfe17d783b95cd1c833cd` |
-| Prior Stage 1 tip | `1aa383235c0c8b12d7c90d4be4068f83bf9fe157` |
+| Engine merge SHA on `main` | `4eeea85701e47b6b6d822c1e64ba5aea32fcea52` (PR #13 **MERGED**) |
+| Stage 1 rebased SHA | see tip after status commit (`git rev-parse origin/feat/finance-dashboard-stage1`) |
+| Pre-rebase tip | `d658c96acac7221efad34b60fcd1191e91059020` |
 | Stage 1 PR | [#14](https://github.com/Insightee/case-manager-new/pull/14) OPEN draft |
-| Stage 1 base | `feat/billing-engine-steps-1-6` |
-| Engine PR | [#13](https://github.com/Insightee/case-manager-new/pull/13) OPEN → `main` (`mergedAt: null`) |
-| Engine head included | `cdacb6dff31fc3967a99b808e0ea7174e3f870ab` |
-| Dashboard-only commits beyond engine | 2 (`8170d29a`, `1aa38323`) + Gate 1 validation commit(s) |
+| Stage 1 base (target) | `main` |
+| Engine PR | [#13](https://github.com/Insightee/case-manager-new/pull/13) **MERGED** |
+| Diff vs `origin/main` | **dashboard-only** (29 files; no engine migration/service conflicts) |
 
-**Rebase decision:** Engine PR has **not** merged → keep PR #14 based on `feat/billing-engine-steps-1-6`. Do not merge #14. Do not retarget to `main` yet.
+**Rebase decision:** Engine merged → rebased onto `origin/main` (clean, no conflicts). Retarget PR #14 to `main`. Do **not** merge #14 yet.
 
-**Diff purity:** `git log origin/feat/billing-engine-steps-1-6..HEAD` shows only Stage 1 dashboard commits (plus this Gate 1 validation follow-up).
+**Targeted tests after rebase (no engine conflicts → no full 43 engine suite):**
+
+| Suite | Result |
+|-------|--------|
+| Stage 1 backend `test_finance_control_tower_stage1.py` + Gate 1 `test_finance_control_tower_gate1_validation.py` | **31 passed** |
+| Stage 1 frontend `financeConfidence.test.js` + `financeControlTowerStage1.test.js` | **14 passed** |
 
 ---
 
@@ -216,16 +223,23 @@ Confirmed: engine calc suite unchanged green; Control Tower module is GET-only (
 
 ---
 
-## 12. Gate 2 — Live staging checklist (pending)
+## 12. Gate 2 — Live staging checklist
 
-After PR #13 merges:
+**Gate 2 readiness:** **READY** — engine on `main`, Stage 1 rebased, dashboard-only diff, targeted tests green. Live staging not started.
 
-1. Rebase `feat/finance-dashboard-stage1` onto `main`; retarget PR #14 to `main`; confirm dashboard-only diff.
-2. Document staging API + UI URLs in repo docs.
-3. Set staging-only: `ENABLE_BILLING=true`, `BILLING_LEDGER_WRITES=false`, `FINANCE_CUTOVER_COMPLETE=false`, `VITE_ENABLE_FINANCE_DASHBOARD_V1=true`.
-4. Zero-write smoke on staging DB for the financial tables list.
-5. RBAC smoke (finance allow; therapist/parent/CM deny including direct API).
-6. Finance user load overview, month change, drill-downs.
+Prerequisite items done:
+
+1. [x] Rebase `feat/finance-dashboard-stage1` onto `main`
+2. [x] Retarget PR #14 to `main` (confirm in GitHub after push)
+3. [x] Confirm dashboard-only diff
+
+Still pending for Gate 2 execution:
+
+4. Document staging API + UI URLs in repo docs.
+5. Set staging-only: `ENABLE_BILLING=true`, `BILLING_LEDGER_WRITES=false`, `FINANCE_CUTOVER_COMPLETE=false`, `VITE_ENABLE_FINANCE_DASHBOARD_V1=true`.
+6. Zero-write smoke on staging DB for the financial tables list.
+7. RBAC smoke (finance allow; therapist/parent/CM deny including direct API).
+8. Finance user load overview, month change, drill-downs.
 
 **Gate 2 outcome target:** `STAGE_1_LIVE_STAGING_TECHNICALLY_APPROVED`
 
@@ -240,18 +254,24 @@ Real finance user completes the 10 tasks unguided using the timed script.
 
 ## 14. Merge prerequisites
 
-- [ ] PR #13 (Finance Engine) merged  
-- [ ] PR #14 rebased onto `main` with dashboard-only diff  
+- [x] PR #13 (Finance Engine) merged (`4eeea85701e47b6b6d822c1e64ba5aea32fcea52`)
+- [x] PR #14 rebased onto `main` with dashboard-only diff  
 - [ ] Gate 2 live staging complete  
 - [ ] Gate 3 human finance UAT complete  
 - [ ] Production flags remain off (`VITE_ENABLE_FINANCE_DASHBOARD_V1` forced off on canonical prod; no cutover)
 
-**Do not merge from Gate 1 alone. Do not enable the dashboard in production. Do not perform financial cutover.**
+**Do not merge PR #14 yet. Do not enable the dashboard in production. Do not perform financial cutover.**
 
 ---
 
-## Final Gate 1 verdict
+## Final Gate 1 verdict (historical)
 
 ```text
 STAGE_1_LOCALLY_VALIDATED_PENDING_LIVE_STAGING
+```
+
+## Post-rebase verdict
+
+```text
+STAGE_1_READY_FOR_LIVE_STAGING
 ```
