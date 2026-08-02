@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -213,18 +213,20 @@ def test_create_leave_single_request():
     finally:
         db.close()
 
+    # Self-service past leave is blocked after leave_migration_end_date; use a future day.
+    leave_day = (date.today() + timedelta(days=14)).isoformat()
     r = client.post(
         "/api/v1/leave",
         headers=_headers(therapist),
         json={
             "service_line": "shadow_support",
-            "start_date": "2026-08-01",
-            "end_date": "2026-08-01",
+            "start_date": leave_day,
+            "end_date": leave_day,
             "reason": "Test",
             "consulted_with_parents": True,
         },
     )
-    assert r.status_code == 201
+    assert r.status_code == 201, r.text
     data = r.json()
     assert data["service_line"] == "shadow_support"
     assert data["consulted_with_parents"] is True

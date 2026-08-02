@@ -224,3 +224,15 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 - [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md) — R2 bucket and tokens
 - [EMAIL_DNS.md](./EMAIL_DNS.md) — ZeptoMail and DNS
 - [AGENTS.md](../AGENTS.md) — agent deploy rules (project names)
+
+## Billing / Finance engine flags
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ENABLE_BILLING` | `false` | Gates admin/parent billing + finance_ops + ledger-billing routers (`require_billing`). Keep off on production until cutover. |
+| `BILLING_LEDGER_WRITES` | `false` | Gates session/log ledger upserts (`sync_session_status`, approve, period charges). Merge of engine code must not silently write ledger rows. |
+| `BILLING_LEDGER_DRAFTS` | `true` | Existing ledger draft behaviour. |
+| `VITE_ENABLE_BILLING` | unset/false | Frontend billing module visibility; keep forced off on canonical production. |
+
+Staging may set `ENABLE_BILLING=true` and `BILLING_LEDGER_WRITES=true` for engine verification. Production cutover is a separate deliberate event after `monthly_case_review` classification.
+

@@ -63,6 +63,10 @@ class Session(Base):
     actual_times_edit_reason: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     is_additional_visit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     additional_visit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Step 6: structured add-on. Legacy is_additional_visit maps to EXTRA_DAY at read time /
+    # soft backfill — financial ledger history is never rewritten.
+    add_on_kind: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    parent_session_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sessions.id"), nullable=True)
     # Reason code stored when a session is manually cancelled (e.g. "accidental_start").
     cancellation_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # Data-quality flag set by duplicate/conflict detection or rejection-safety checks.
