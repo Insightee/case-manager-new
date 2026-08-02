@@ -23,6 +23,7 @@ class CaseStatus(str, enum.Enum):
 class BillingType(str, enum.Enum):
     PER_SESSION = "PER_SESSION"
     PACKAGE = "PACKAGE"
+    MONTHLY_FIXED = "MONTHLY_FIXED"
 
 
 class CompensationMode(str, enum.Enum):
@@ -55,6 +56,12 @@ class Case(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text)
     billing_type: Mapped[Optional[BillingType]] = mapped_column(Enum(BillingType))
     client_rate_per_session_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
+    client_monthly_rate_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
+    # Retainer is a date-bounded sub-state of MONTHLY_FIXED (not a separate billing_type).
+    # Full window plumbing on reassignment is Step 6; calculator already splits by these fields.
+    retainer_start_date: Mapped[Optional[date]] = mapped_column(Date)
+    retainer_end_date: Mapped[Optional[date]] = mapped_column(Date)
+    retainer_rate_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     package_session_count: Mapped[Optional[int]] = mapped_column(Integer)
     package_amount_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     compensation_mode: Mapped[Optional[CompensationMode]] = mapped_column(Enum(CompensationMode))

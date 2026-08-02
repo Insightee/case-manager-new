@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     ticket_hr_assignee_emails: str = "sriparna.paul@insighte.org,pragya.dwivedi@insighte.org"
     case_document_max_bytes: int = 5 * 1024 * 1024
     billing_ledger_drafts: bool = True
+    # Staged billing module — routers/UI. Default off.
+    enable_billing: bool = False
+    # Session/log ledger upserts. Default off so merge ≠ silent production money writes.
+    billing_ledger_writes: bool = False
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).

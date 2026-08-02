@@ -205,6 +205,9 @@ def start_session(
     now = _now()
     if allow_duplicate:
         session.is_additional_visit = True
+        # Step 6: structured add-on; legacy flag stays. Ledger history never rewritten.
+        if not getattr(session, "add_on_kind", None):
+            session.add_on_kind = "EXTRA_DAY"
     session.status = SessionStatus.IN_PROGRESS
     session.actual_start_at = now
     sched_mins = scheduled_duration_minutes(
@@ -262,6 +265,9 @@ def end_session(
         session.checkout_lng = lng
     start_svc.clear_idempotency_for_session(db, session.id)
     db.flush()
+    from app.services import billing_ledger_service
+
+    billing_ledger_service.sync_session_status(db, session)
     return session
 
 
@@ -303,11 +309,16 @@ def void_session_before_log(
     if session.daily_log is not None:
         raise ValueError("Cannot void a session that already has a log")
 
-    from app.models.ledger_billing import BillingLedger
-    from app.services import session_absence_service as absence_svc
+    from app.models.ledger_billing import BillableStatus, BillingLedger
+    from app.services import billing_ledger_service, session_absence_service as absence_svc
 
-    has_ledger = db.scalars(select(BillingLedger).where(BillingLedger.session_id == session.id)).first()
-    if has_ledger:
+    has_invoiced = db.scalars(
+        select(BillingLedger).where(
+            BillingLedger.session_id == session.id,
+            BillingLedger.billable_status == BillableStatus.INVOICED,
+        )
+    ).first()
+    if has_invoiced:
         raise ValueError("Billing records exist for this session — contact your case manager")
 
     if absence_svc.has_blocking_absence_for_session(db, session.id):
@@ -330,6 +341,7 @@ def void_session_before_log(
         session.cancellation_reason = "void_before_log"
     start_svc.clear_idempotency_for_session(db, session.id)
     db.flush()
+    billing_ledger_service.sync_session_status(db, session)
     return session
 
 
@@ -413,6 +425,10 @@ def update_actual_times(
     if log and log.approval_status != LogApprovalStatus.REJECTED:
         log.approval_status = LogApprovalStatus.PENDING.value
         db.flush()
+    # Step 5: confirmation / time correction updates the same SESSION-keyed ledger row in place.
+    from app.services import billing_ledger_service
+
+    billing_ledger_service.sync_session_status(db, session)
     return session
 
 

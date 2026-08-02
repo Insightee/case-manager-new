@@ -66,7 +66,9 @@ def _per_session_amount(case: Case) -> float:
 
 
 def _package_per_session_rate(case: Case, use_therapist_fixed: bool) -> float:
-    pkg_count = int(case.package_session_count or 1)
+    pkg_count = int(case.package_session_count) if case.package_session_count else 0
+    if pkg_count <= 0:
+        raise ValueError("MISSING_PACKAGE_COUNT")
     if use_therapist_fixed:
         base = float(case.therapist_fixed_pay_inr or 0)
     else:
@@ -90,7 +92,9 @@ def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int
         total = sum(s["amount_inr"] for s in session_lines if s.get("included"))
         return 0, 0, round(total, 2)
 
-    pkg_count = int(case.package_session_count or 1)
+    pkg_count = int(case.package_session_count) if case.package_session_count else 0
+    if pkg_count <= 0:
+        raise ValueError("MISSING_PACKAGE_COUNT")
     active_lines = [s for s in session_lines if s.get("included")]
 
     if case.compensation_mode == CompensationMode.FIXED_LUMP:
@@ -109,6 +113,43 @@ def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int
     additional_amt = additional * per_sess
     total = round(included_amt + additional_amt, 2)
     return included, additional, total
+
+
+
+def therapist_active_on_session_date(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_id: int,
+    on_date,
+) -> tuple[bool, str | None]:
+    """Date-active assignment attribution for payout. Returns (ok, exception_code)."""
+    from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+
+    rows = db.scalars(
+        select(CaseAssignment).where(
+            CaseAssignment.case_id == case_id,
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            CaseAssignment.start_date <= on_date,
+        )
+    ).all()
+    covering = []
+    for a in rows:
+        if a.end_date is not None and a.end_date < on_date:
+            continue
+        covering.append(a)
+    if not covering:
+        # Legacy: no assignment history — fall back to session.therapist_user_id match only
+        return True, None
+    matches = [a for a in covering if a.therapist_user_id == therapist_user_id]
+    if len(covering) > 1:
+        # Multiple active windows on same day
+        therapists = {a.therapist_user_id for a in covering}
+        if len(therapists) > 1:
+            return False, "ASSIGNMENT_OVERLAP"
+    if not matches:
+        return False, "ASSIGNMENT_GAP"
+    return True, None
 
 
 def fetch_billable_sessions(
@@ -135,8 +176,35 @@ def fetch_billable_sessions(
     result = []
     for s in sessions:
         log = s.daily_log
-        if log and s.case and s.case.billing_type:
-            result.append((s, log, s.case))
+        if not (log and s.case and s.case.billing_type):
+            continue
+        ok, code = therapist_active_on_session_date(
+            db,
+            case_id=s.case_id,
+            therapist_user_id=therapist_user_id,
+            on_date=s.scheduled_date,
+        )
+        if not ok:
+            # Persist exception when ledger writes are on; never silently include mis-attributed pay.
+            try:
+                from app.services import billing_step6_service as step6
+
+                step6.persist_calc_exceptions(
+                    db,
+                    case_id=s.case_id,
+                    billing_month=s.scheduled_date.strftime("%Y-%m"),
+                    exceptions=[
+                        {
+                            "code": code,
+                            "message": f"Payout attribution {code} for session {s.id}",
+                            "session_id": s.id,
+                        }
+                    ],
+                )
+            except Exception:
+                pass
+            continue
+        result.append((s, log, s.case))
     return result
 
 
