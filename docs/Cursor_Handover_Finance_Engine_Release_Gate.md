@@ -4,9 +4,11 @@
 **Branch:** `feat/billing-engine-steps-1-6`  
 **PR:** https://github.com/Insightee/case-manager-new/pull/13 (draft; **do not merge from agent**)  
 **Base:** `origin/main` @ `1e85aa2f5a6a39f4f41075710cf59354f351a007`  
-**Final PR head SHA:** `b5fc27563c4df0c3aa1d15f8937c60c4ac340747`  
-**Latest green remote CI SHA:** `b5fc27563c4df0c3aa1d15f8937c60c4ac340747` (matches PR head)  
-**Historical notes:** prior 43-test record `ead0821a…`; CI date-fixture tip `31d012bd…` / fix `19999f25…` superseded by final head above  
+**Implementation tip (code + PostgreSQL/safety evidence):** `b5fc27563c4df0c3aa1d15f8937c60c4ac340747`  
+**Documentation tip (this gate writeup):**  (docs-only; no behavior change)  
+**Latest green remote CI on implementation tip:** `b5fc27563c4df0c3aa1d15f8937c60c4ac340747` (`backend` / `frontend` / `vercel-monorepo-build` / `contributor-guards` SUCCESS)  
+**Re-verify after docs tip:** finance **43 passed**; full backend **676 passed**, 17 skipped (local, post-docs)  
+**Historical notes:** prior 43-test record `ead0821a…`; CI date-fixture tip `31d012bd…` / fix `19999f25…` superseded  
 **Preserve snapshot:** `/Users/midhunnoble/insighte-billing-engine-preserve/20260802-211023/`  
 **Billing WIP backup:** branch `backup/billing-engine-wip-20260802`, tag `backup/billing-engine-tree-20260802`  
 **Staging alembic prior to this isolation:** `a4b5c6d7e8f9`
@@ -132,11 +134,11 @@ PYTHONPATH=. APP_ENV=test python -m pytest \
   -k "test_" -q --tb=line
 ```
 
-**Latest local finance release-gate result at final head:** **43 passed**.
+**Latest local finance release-gate result:** **43 passed** (re-run after docs tip).
 
-**Latest local full backend suite at final head (prior gate run):** **676 passed**, 17 skipped, 0 failed.
+**Latest local full backend suite:** **676 passed**, 17 skipped, 0 failed (re-run after docs tip).
 
-**Remote required checks at final head:** `backend`, `frontend`, `vercel-monorepo-build`, `contributor-guards` → **SUCCESS**. Head SHA did not advance past the green run; no re-push required for CI drift.
+**Remote required checks on implementation tip `b5fc2756…`:** `backend`, `frontend`, `vercel-monorepo-build`, `contributor-guards` → **SUCCESS**. Docs-only tip advances after this writeup; behavior unchanged — confirm remote checks on the docs tip before human merge.
 
 Alembic: single head verified. Fresh empty-SQLite `upgrade head` still hits **pre-existing** main-branch migration friction (`duplicate column name: phone`) unrelated to Steps 1–6. **Do not treat empty-SQLite as PostgreSQL proof** — see PostgreSQL validation below.
 
@@ -267,5 +269,5 @@ Production-env proof: all five writers returned no-op (`None` or `{skipped: True
 
 ## ENGINE_PR_APPROVED_TO_MERGE_WITH_FLAGS_OFF
 
-Final head `b5fc27563c4df0c3aa1d15f8937c60c4ac340747` matches green remote CI; finance **43** and full backend **676** are green; PostgreSQL upgrade to `c2d3e4f5a6b7` succeeded with ledger money checksums unchanged; five automatic writers remain gated; PR scope excludes Stage 1 dashboard and payment cutover work. **Do not merge from this agent.** Human may merge with flags off when ready.
+Implementation tip `b5fc27563c4df0c3aa1d15f8937c60c4ac340747` matches green remote CI; post-docs local re-verify finance **43** and full backend **676**; PostgreSQL upgrade to `c2d3e4f5a6b7` succeeded with ledger money checksums unchanged; five automatic writers remain gated; PR scope excludes Stage 1 dashboard and payment cutover work. **Do not merge from this agent.** Human may merge with flags off when ready (after docs-tip CI is green).
 )
