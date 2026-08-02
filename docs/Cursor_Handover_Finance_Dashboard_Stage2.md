@@ -4,7 +4,7 @@
 
 **Branch:** `cursor/feat-finance-dashboard-stage2-client-billing-0d7e`  
 **Stacked on:** `feat/finance-dashboard-stage1` (PR #14 still unmerged to `main` at handoff)  
-**Stage 2 tip (this document’s commit):** see git tip of the branch above after merge of Stage 2 commits  
+**Stage 2 tip SHA:** `b5c9bf0f8d9dd73f3f0ce7852c5329e0aff1e1b5` (probe cleanup `0439d352` + feature commit)  
 **Scope:** Engine-aware invoice composer + Forest Light parent/composer reskin + Zoho stub seam + flag consolidation. No Finance Engine calc changes. No Stage 1 Control Tower feature changes beyond shared debug-probe cleanup. Staging-only, flag-gated, production-off. **Do not merge, deploy, cut over, or start Stage 3 from this PR alone.**
 
 ---
