@@ -28,6 +28,20 @@ def billing_ledger_writes_enabled() -> bool:
     return bool(settings.billing_ledger_writes)
 
 
+def require_billing_ledger_writes() -> None:
+    """HTTP gate for invoice/ledger money mutations when writes are off.
+
+    Distinct from ``require_billing`` (router visibility). Staging PASS 2 keeps
+    ``BILLING_LEDGER_WRITES=false`` so preview/Control Tower can run without
+    creating invoices or promoting PENDING_FINANCE rows.
+    """
+    if not billing_ledger_writes_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Posting disabled until ledger writes are enabled (pre-cutover).",
+        )
+
+
 _CONTROL_TOWER_ROLES = frozenset({RoleName.SUPER_ADMIN.value, RoleName.FINANCE.value})
 
 

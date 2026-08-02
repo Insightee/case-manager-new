@@ -1024,6 +1024,8 @@ def list_period_flags(
 
 def post_pending_finance_charge(db: Session, ledger_id: int, *, user_id: int, note: str | None = None) -> dict:
     """Explicit finance action: PENDING_FINANCE → BILLABLE."""
+    if not _ledger_writes_allowed():
+        raise ValueError("Posting disabled until ledger writes are enabled (pre-cutover).")
     row = db.get(BillingLedger, ledger_id)
     if not row:
         raise ValueError("Ledger row not found")

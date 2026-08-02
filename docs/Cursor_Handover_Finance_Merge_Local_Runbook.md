@@ -90,6 +90,32 @@ DB `finance_pass3_throwaway` (cloned, then dropped):
 
 ---
 
+## Post-run reviews
+
+### Thermo-nuclear (code quality)
+
+Structural **NO-GO** for long-term shape (god-files near/over 1k, triplicated confidence policy, composer-list-as-count, N+1 readiness). Not a merge rollback — track as follow-up decomposition before Stage 3 / cutover.
+
+### CE / Bugbot (correctness)
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| `build-from-ledger` ignored `BILLING_LEDGER_WRITES` | high | **Fixed** — `require_billing_ledger_writes()` on build + create invoice |
+| `post-finance` ignored writes flag | medium | **Fixed** — router + service gate |
+| Manual create bypassed calc-exception block | medium | **Fixed** — same blocking check as build |
+| Bulk build writes-off | medium | **Fixed** — fails all items with clear error |
+| Missing writes-off tests | low | **Fixed** — Stage 2 tests cover 403 on build + post-finance |
+
+### Follow-ups (not blocking flags-off main / staging preview)
+
+1. Decompose `client_billing.py` / `ParentBillingPage.jsx` / Control Tower service  
+2. Canonical backend confidence helper  
+3. Aggregate COUNT queries for Control Tower cards  
+4. Zoho stub status naming when key present (`stub_pending_http`)  
+5. Align missing-package `canBuild` with Control Tower even without calc-exception rows  
+
+---
+
 ## Artifacts
 
 - `pass1-results.json`, `pass2-results.json`, `pass3-results.json`  

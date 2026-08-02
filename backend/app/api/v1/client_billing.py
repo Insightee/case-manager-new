@@ -29,7 +29,7 @@ from app.schemas.client_billing import (
     SaveCaseBillingPreferences,
 )
 from app.core.config import settings
-from app.core.feature_flags import billing_ledger_writes_enabled
+from app.core.feature_flags import billing_ledger_writes_enabled, require_billing_ledger_writes
 from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service
 from app.services import audit_service
 from app.services import zoho_client_sync
@@ -446,6 +446,20 @@ def admin_create_client_invoice(
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
+    require_billing_ledger_writes()
+    ym = billing_composer_service.normalize_billing_month(payload.billing_month)
+    blocking = billing_composer_service.blocking_calc_exceptions_for_case(
+        db, case_id=payload.case_id, billing_month=ym
+    )
+    if blocking:
+        codes = ", ".join(sorted({b["code"] for b in blocking}))
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot create invoice: open calculation exception(s) ({codes}). "
+                "Resolve exceptions before generating a client invoice."
+            ),
+        )
     if not payload.lines:
         try:
             result = client_billing_service.create_draft_from_case_defaults(
@@ -668,6 +682,7 @@ def admin_build_draft_from_ledger_for_case(
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
+    require_billing_ledger_writes()
     ym = billing_composer_service.normalize_billing_month(billing_month)
     blocking = billing_composer_service.blocking_calc_exceptions_for_case(
         db, case_id=case_id, billing_month=ym
