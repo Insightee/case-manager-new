@@ -622,7 +622,12 @@ def create_meeting(
         cm_id = case.case_manager_user_id
     
     if not cm_id:
-        if role in {RoleName.CASE_MANAGER.value, RoleName.ADMIN.value, RoleName.SUPER_ADMIN.value}:
+        if role in {
+            RoleName.CASE_MANAGER.value,
+            RoleName.ADMIN.value,
+            RoleName.SUPER_ADMIN.value,
+            RoleName.MODULE_ADMIN.value,
+        }:
             cm_id = user.id
         else:
             raise HTTPException(status_code=400, detail="Select a case with an assigned case manager")

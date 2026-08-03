@@ -276,7 +276,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
       || user?.roles?.includes('THERAPIST'))
   const caseLinkPrefix = isParentPortal ? null : isTherapistPortal ? '/therapist/cases' : '/admin/cases'
 
-  const [pageView, setPageView] = useState('calendar')
+  const [pageView, setPageView] = useState(isParentPortal ? 'list' : 'calendar')
   const [meetings, setMeetings] = useState([])
   const [cases, setCases] = useState([])
   const [cmUsers, setCmUsers] = useState([])
@@ -484,7 +484,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         }
         subtitle={
           isParentPortal
-            ? 'View upcoming meetings on your calendar and export to Google Calendar.'
+            ? 'View upcoming meetings and join links for your child.'
             : isTherapistPortal
               ? 'Request a meeting with the case manager for one of your assigned cases.'
               : 'Schedule meetings, view your calendar, and manage follow-ups.'
@@ -504,25 +504,27 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
-      <div className="mb-4 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Meetings view">
-        {[
-          { id: 'calendar', label: 'Calendar' },
-          { id: 'list', label: 'List' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={pageView === tab.id}
-            className={`rounded-full px-4 py-1.5 text-sm font-semibold ${pageView === tab.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
-            onClick={() => setPageView(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {!isParentPortal ? (
+        <div className="mb-4 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Meetings view">
+          {[
+            { id: 'calendar', label: 'Calendar' },
+            { id: 'list', label: 'List' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={pageView === tab.id}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold ${pageView === tab.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+              onClick={() => setPageView(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
-      {pageView === 'calendar' ? (
+      {!isParentPortal && pageView === 'calendar' ? (
         <article className="card admin-scheduling-hub__calendar-wrap" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0 }}>My meeting calendar</h3>
           <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
@@ -541,7 +543,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         </article>
       ) : null}
 
-      {pageView === 'list' ? (
+      {isParentPortal || pageView === 'list' ? (
         <>
           <div className="admin-reports__kpis" style={{ marginBottom: 16 }}>
             <button type="button" className="admin-reports__kpi" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => { setStatusFilter('SCHEDULED'); setSearchParams({}) }}>
