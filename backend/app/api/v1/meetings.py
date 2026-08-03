@@ -597,8 +597,12 @@ def create_meeting(
     _validate_meeting_duration(payload.duration_minutes)
     _validate_meeting_link(payload.platform, payload.meeting_url)
 
-    if payload.meeting_type == MeetingType.OTHER and not (payload.other_reason or "").strip():
-        raise HTTPException(status_code=400, detail="Mandatory reason must be provided when Meeting Type is 'Other'")
+    if payload.meeting_type == MeetingType.OTHER:
+        other_reason = (payload.other_reason or "").strip() or (payload.title or "").strip()
+        if not other_reason:
+            raise HTTPException(status_code=400, detail="Mandatory reason must be provided when Meeting Type is 'Other'")
+    else:
+        other_reason = (payload.other_reason or "").strip() or None
 
     role = _role_name(user)
     invite_therapist = payload.invite_therapist
@@ -653,8 +657,8 @@ def create_meeting(
         scheduled_time=payload.scheduled_time,
         duration_minutes=payload.duration_minutes,
         meeting_type=payload.meeting_type,
-        other_reason=payload.other_reason,
-        title=payload.title,
+        other_reason=other_reason,
+        title=payload.title or (other_reason if payload.meeting_type == MeetingType.OTHER else None),
         platform=payload.platform,
         meeting_url=(payload.meeting_url or "").strip() or None,
         guest_emails_json=guest_json,
@@ -859,6 +863,8 @@ def list_meetings(
             stmt = stmt.where(CaseManagerMeeting.status == MeetingStatus(status.upper()))
         except ValueError:
             pass
+    else:
+        stmt = stmt.where(CaseManagerMeeting.status != MeetingStatus.RESCHEDULED)
     if meeting_type:
         try:
             stmt = stmt.where(CaseManagerMeeting.meeting_type == MeetingType(meeting_type.upper()))

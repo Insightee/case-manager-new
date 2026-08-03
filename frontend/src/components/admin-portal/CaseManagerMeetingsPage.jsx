@@ -16,7 +16,7 @@ import {
   STATUS_LABELS,
   TYPE_FILTER_OPTIONS,
 } from '../meetings/meetingConstants.js'
-import { formatAttendeeList, meetingTypeLabel, padHour, parseMeetingIdFromGridEvent } from '../meetings/meetingUtils.js'
+import { formatAttendeeList, meetingDisplayTitle, padHour, parseMeetingIdFromGridEvent } from '../meetings/meetingUtils.js'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
 import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
@@ -192,7 +192,7 @@ function TherapistNotesModal({ meeting, onClose, onUpdated }) {
 }
 
 function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false, isTherapistView = false }) {
-  const typeLabel = meetingTypeLabel(meeting)
+  const displayTitle = meetingDisplayTitle(meeting)
   const hasNotes = isTherapistView
     ? Boolean(meeting.therapist_notes)
     : Boolean(
@@ -207,7 +207,7 @@ function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPref
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div>
           <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: '#1e293b' }}>
-            {meeting.title || typeLabel}
+            {displayTitle}
           </p>
           <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
             {formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
@@ -388,8 +388,9 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   }, [load])
 
   const displayedMeetings = useMemo(() => {
-    if (!queueTab) return meetings
-    return meetings.filter(
+    const active = meetings.filter((m) => m.status !== 'RESCHEDULED')
+    if (!queueTab) return active
+    return active.filter(
       (m) => m.admin_user_ids?.length > 0 || m.attendees?.some((a) => a.role === 'admin'),
     )
   }, [meetings, queueTab])

@@ -173,8 +173,54 @@ def test_reschedule_flow():
     assert details["new_meeting"]["status"] == "SCHEDULED"
     assert details["new_meeting"]["rescheduled_from_id"] == mid
 
+    listed = client.get("/api/v1/meetings", headers=headers)
+    assert listed.status_code == 200
+    ids = [row["id"] for row in listed.json()]
+    assert mid not in ids, "Rescheduled meeting should not appear in default list"
+    assert details["new_meeting"]["id"] in ids
 
-def test_notes_completion_prevent_silent_closure():
+
+def test_other_meeting_type_saves_custom_reason():
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res = client.post(
+        "/api/v1/meetings",
+        headers=headers,
+        json={
+            "scheduled_date": "2026-06-27",
+            "scheduled_time": "12:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "OTHER",
+            "other_reason": "School coordinator sync",
+        },
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["other_reason"] == "School coordinator sync"
+    assert body["title"] == "School coordinator sync"
+
+
+def test_other_meeting_type_accepts_title_fallback():
+    token = _login("superadmin@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res = client.post(
+        "/api/v1/meetings",
+        headers=headers,
+        json={
+            "scheduled_date": "2026-06-27",
+            "scheduled_time": "13:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "OTHER",
+            "title": "External specialist call",
+        },
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["other_reason"] == "External specialist call"
+    assert body["title"] == "External specialist call"
+
     token = _login("superadmin@demo.com")
     headers = {"Authorization": f"Bearer {token}"}
 

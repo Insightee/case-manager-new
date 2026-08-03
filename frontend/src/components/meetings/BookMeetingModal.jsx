@@ -29,6 +29,7 @@ export function BookMeetingModal({
     scheduled_time: initialTime || '10:00',
     duration_minutes: 30,
     meeting_type: 'OBSERVATION_REVIEW',
+    other_reason: '',
     title: '',
     meeting_url: '',
   })
@@ -194,6 +195,10 @@ export function BookMeetingModal({
       setError('Select a case')
       return
     }
+    if (form.meeting_type === 'OTHER' && !form.other_reason.trim() && !form.title.trim()) {
+      setError('Looks like we still need a short reason before we can book this meeting.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -202,13 +207,17 @@ export function BookMeetingModal({
         scheduled_time: form.scheduled_time,
         duration_minutes: Number(form.duration_minutes) || 30,
         meeting_type: form.meeting_type,
-        title: form.title || null,
+        title: form.title.trim() || null,
         meeting_url: form.meeting_url.trim(),
         guest_emails: guestEmails,
         invite_client: attendees.client,
         invite_therapist: attendees.therapist,
         invite_case_manager: attendees.caseManager,
         admin_user_ids: attendees.admin && adminUserId ? [Number(adminUserId)] : [],
+      }
+      if (form.meeting_type === 'OTHER') {
+        body.other_reason = form.other_reason.trim() || form.title.trim() || null
+        if (!body.title && body.other_reason) body.title = body.other_reason
       }
       if (form.case_id) body.case_id = Number(form.case_id)
       if (attendees.therapist && therapistUserId) body.therapist_user_id = Number(therapistUserId)
@@ -313,6 +322,20 @@ export function BookMeetingModal({
               ))}
             </select>
           </label>
+
+          {form.meeting_type === 'OTHER' ? (
+            <label style={MODAL_LABEL_STYLE}>
+              Specify meeting reason *
+              <input
+                type="text"
+                style={MODAL_INPUT_STYLE}
+                placeholder="e.g. School coordination call"
+                value={form.other_reason}
+                required
+                onChange={(e) => set('other_reason', e.target.value)}
+              />
+            </label>
+          ) : null}
 
           <label style={MODAL_LABEL_STYLE}>
             Meeting title

@@ -3,7 +3,7 @@ import { formatDisplayDateTime } from '../../lib/datetime.js'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
 import { MEETING_OUTCOME_LABELS, STATUS_LABELS } from './meetingConstants.js'
-import { formatAttendeeList, meetingTypeLabel } from './meetingUtils.js'
+import { formatAttendeeList, meetingDisplayTitle } from './meetingUtils.js'
 
 function StatusBadge({ status }) {
   const s = STATUS_LABELS[status] || { label: status, bg: '#f1f5f9', color: '#475569' }
@@ -27,7 +27,7 @@ export function MeetingDetailSheet({
 }) {
   if (!open || !meeting) return null
 
-  const typeLabel = meetingTypeLabel(meeting)
+  const displayTitle = meetingDisplayTitle(meeting)
   const attendeeLine = formatAttendeeList(meeting)
   const hasCmNotes = meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
     || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
@@ -41,7 +41,7 @@ export function MeetingDetailSheet({
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">{meeting.title || typeLabel}</h2>
+            <h2 className="text-lg font-bold text-slate-900">{displayTitle}</h2>
             <p className="mt-1 text-sm text-slate-500">
               {formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
               {meeting.duration_minutes ? ` · ${meeting.duration_minutes} min` : ''}
