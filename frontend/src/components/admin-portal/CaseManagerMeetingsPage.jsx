@@ -11,6 +11,7 @@ import { RescheduleMeetingModal } from '../meetings/RescheduleMeetingModal.jsx'
 import {
   MONTH_FILTER_OPTIONS,
   SEARCH_DEBOUNCE_MS,
+  MEETING_OUTCOME_OPTIONS,
   STATUS_FILTER_OPTIONS,
   STATUS_LABELS,
   TYPE_FILTER_OPTIONS,
@@ -34,10 +35,10 @@ function StatusBadge({ status }) {
 
 function NotesModal({ meeting, onClose, onUpdated }) {
   const [form, setForm] = useState({
-    notes_concerns: meeting.notes_concerns || '',
-    notes_follow_up: meeting.notes_follow_up || '',
-    notes_action: meeting.notes_action || '',
-    notes_other: meeting.notes_other || '',
+    notes_outcome: meeting.notes_outcome || '',
+    notes_summary: meeting.notes_summary || '',
+    notes_next_meeting_required: meeting.notes_next_meeting_required || false,
+    notes_additional: meeting.notes_additional || '',
     status: meeting.status || 'SCHEDULED',
   })
   const [saving, setSaving] = useState(false)
@@ -51,15 +52,20 @@ function NotesModal({ meeting, onClose, onUpdated }) {
     e.preventDefault()
     setSaving(true)
     setError('')
+    if (form.status === 'COMPLETED' && (!form.notes_outcome.trim() || !form.notes_summary.trim())) {
+      setError('Looks like we still need a meeting outcome and discussion summary before we can mark this complete.')
+      setSaving(false)
+      return
+    }
     try {
       const result = await apiFetch(`/api/v1/meetings/${meeting.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
           status: form.status,
-          notes_concerns: form.notes_concerns || null,
-          notes_follow_up: form.notes_follow_up || null,
-          notes_action: form.notes_action || null,
-          notes_other: form.notes_other || null,
+          notes_outcome: form.notes_outcome || null,
+          notes_summary: form.notes_summary || null,
+          notes_next_meeting_required: form.notes_next_meeting_required,
+          notes_additional: form.notes_additional || null,
         }),
       })
       onUpdated(result)
@@ -91,20 +97,28 @@ function NotesModal({ meeting, onClose, onUpdated }) {
             </select>
           </label>
           <label style={labelStyle}>
-            Concerns addressed
-            <textarea style={taStyle} placeholder="What concerns were raised and addressed?" value={form.notes_concerns} onChange={(e) => set('notes_concerns', e.target.value)} />
+            Meeting outcome {form.status === 'COMPLETED' ? '(required)' : ''}
+            <select
+              style={{ display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4 }}
+              value={form.notes_outcome}
+              onChange={(e) => set('notes_outcome', e.target.value)}
+            >
+              {MEETING_OUTCOME_OPTIONS.map((opt) => (
+                <option key={opt.value || 'empty'} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </label>
           <label style={labelStyle}>
-            Follow-up steps
-            <textarea style={taStyle} placeholder="Actions to be taken by parent / therapist / case manager…" value={form.notes_follow_up} onChange={(e) => set('notes_follow_up', e.target.value)} />
+            Discussion summary {form.status === 'COMPLETED' ? '(required)' : ''}
+            <textarea style={taStyle} placeholder="What was discussed, agreed, and decided in the meeting…" value={form.notes_summary} onChange={(e) => set('notes_summary', e.target.value)} />
+          </label>
+          <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={form.notes_next_meeting_required} onChange={(e) => set('notes_next_meeting_required', e.target.checked)} />
+            Follow-up meeting required
           </label>
           <label style={labelStyle}>
-            Actions taken
-            <textarea style={taStyle} placeholder="What was done during or after the meeting…" value={form.notes_action} onChange={(e) => set('notes_action', e.target.value)} />
-          </label>
-          <label style={labelStyle}>
-            Additional inputs / log
-            <textarea style={taStyle} placeholder="Any other notes for the record…" value={form.notes_other} onChange={(e) => set('notes_other', e.target.value)} />
+            Additional notes
+            <textarea style={taStyle} placeholder="Any other notes for the record…" value={form.notes_additional} onChange={(e) => set('notes_additional', e.target.value)} />
           </label>
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
             <button type="submit" disabled={saving} style={{ flex: 1, background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
@@ -122,7 +136,8 @@ function NotesModal({ meeting, onClose, onUpdated }) {
 
 function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false }) {
   const typeLabel = meetingTypeLabel(meeting)
-  const hasNotes = meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
+  const hasNotes = meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
+    || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
   const attendeeLine = formatAttendeeList(meeting)
   const calendarEvent = meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
 

@@ -58,6 +58,18 @@ export const STATUS_LABELS = {
   RESCHEDULED: { label: 'Rescheduled', bg: '#f3e8ff', color: '#6b21a8' },
 }
 
+export const MEETING_OUTCOME_OPTIONS = [
+  { value: '', label: 'Select outcome…' },
+  { value: 'RESOLVED', label: 'Resolved' },
+  { value: 'FOLLOW_UP_REQUIRED', label: 'Follow-up required' },
+  { value: 'ESCALATED', label: 'Escalated' },
+  { value: 'NO_ACTION_REQUIRED', label: 'No action required' },
+]
+
+export const MEETING_OUTCOME_LABELS = Object.fromEntries(
+  MEETING_OUTCOME_OPTIONS.filter((o) => o.value).map((o) => [o.value, o.label]),
+)
+
 export const SEARCH_DEBOUNCE_MS = 350
 
 export const MODAL_INPUT_STYLE = {

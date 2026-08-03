@@ -86,7 +86,8 @@ export function AdminCaseCmMeetingsPanel({ caseId }) {
             {meetings.map((m) => {
               const people = participantLine(m)
               const hasNotes =
-                m.notes_concerns || m.notes_follow_up || m.notes_action || m.notes_other
+                m.notes_outcome || m.notes_summary || m.notes_additional
+                || m.notes_concerns || m.notes_follow_up || m.notes_action || m.notes_other
               const cta = hasNotes ? 'Open notes' : 'View meeting'
               return (
                 <li key={m.id}>

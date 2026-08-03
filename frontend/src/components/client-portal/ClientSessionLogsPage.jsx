@@ -6,6 +6,7 @@ import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 import { buildSessionDisputeState, SessionCard } from './SessionCard.jsx'
 import { formatDisplayDateLabel, formatDisplayDateTime, todayIsoIST } from '../../lib/datetime.js'
+import { MEETING_OUTCOME_LABELS } from '../meetings/meetingConstants.js'
 import './parent-session-updates.css'
 
 function sessionDateIso(value) {
@@ -134,6 +135,30 @@ function CmMeetingCard({ meeting }) {
       </header>
 
       <div className="session-card__body">
+        {meeting.notes_outcome ? (
+          <section className="session-card__section">
+            <h4 className="session-card__section-label">Meeting outcome</h4>
+            <p className="session-card__section-text">{MEETING_OUTCOME_LABELS[meeting.notes_outcome] || meeting.notes_outcome}</p>
+          </section>
+        ) : null}
+        {meeting.notes_summary ? (
+          <section className="session-card__section">
+            <h4 className="session-card__section-label">Discussion summary</h4>
+            <p className="session-card__section-text">{meeting.notes_summary}</p>
+          </section>
+        ) : null}
+        {meeting.notes_next_meeting_required ? (
+          <section className="session-card__section">
+            <h4 className="session-card__section-label">Follow-up meeting</h4>
+            <p className="session-card__section-text">A follow-up meeting has been scheduled or recommended.</p>
+          </section>
+        ) : null}
+        {meeting.notes_additional ? (
+          <section className="session-card__section">
+            <h4 className="session-card__section-label">Additional notes</h4>
+            <p className="session-card__section-text">{meeting.notes_additional}</p>
+          </section>
+        ) : null}
         {meeting.notes_concerns ? (
           <section className="session-card__section">
             <h4 className="session-card__section-label">Concerns addressed</h4>
@@ -158,7 +183,10 @@ function CmMeetingCard({ meeting }) {
             <p className="session-card__section-text">{meeting.notes_other}</p>
           </section>
         ) : null}
-        {!meeting.notes_concerns &&
+        {!meeting.notes_outcome &&
+        !meeting.notes_summary &&
+        !meeting.notes_additional &&
+        !meeting.notes_concerns &&
         !meeting.notes_follow_up &&
         !meeting.notes_action &&
         !meeting.notes_other ? (

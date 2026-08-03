@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { formatDisplayDateTime } from '../../lib/datetime.js'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
-import { STATUS_LABELS } from './meetingConstants.js'
+import { MEETING_OUTCOME_LABELS, STATUS_LABELS } from './meetingConstants.js'
 import { formatAttendeeList, meetingTypeLabel } from './meetingUtils.js'
 
 function StatusBadge({ status }) {
@@ -28,7 +28,8 @@ export function MeetingDetailSheet({
 
   const typeLabel = meetingTypeLabel(meeting)
   const attendeeLine = formatAttendeeList(meeting)
-  const hasNotes = meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
+  const hasNotes = meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
+    || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
   const calendarEvent = meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
   const canManage = !readOnly && meeting.status === 'SCHEDULED'
 
@@ -71,6 +72,10 @@ export function MeetingDetailSheet({
 
         {hasNotes ? (
           <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+            {meeting.notes_outcome ? <p className="mb-1"><strong>Outcome:</strong> {MEETING_OUTCOME_LABELS[meeting.notes_outcome] || meeting.notes_outcome}</p> : null}
+            {meeting.notes_summary ? <p className="mb-1"><strong>Summary:</strong> {meeting.notes_summary}</p> : null}
+            {meeting.notes_next_meeting_required ? <p className="mb-1"><strong>Follow-up meeting:</strong> Required</p> : null}
+            {meeting.notes_additional ? <p className="mb-1"><strong>Additional notes:</strong> {meeting.notes_additional}</p> : null}
             {meeting.notes_concerns ? <p className="mb-1"><strong>Concerns:</strong> {meeting.notes_concerns}</p> : null}
             {meeting.notes_follow_up ? <p className="mb-1"><strong>Follow-up:</strong> {meeting.notes_follow_up}</p> : null}
             {meeting.notes_action ? <p className="mb-1"><strong>Actions:</strong> {meeting.notes_action}</p> : null}
