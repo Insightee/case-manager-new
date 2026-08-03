@@ -94,6 +94,25 @@ export function isAbsenceConflict(detail) {
 }
 
 /** @param {import('./apiClient.js').ApiErrorDetail | string | undefined} detail */
+export function parsePendingLogBlock(detail) {
+  if (!detail || typeof detail === 'string') return null
+  if (detail.code === 'PENDING_LOG_REQUIRED') {
+    return {
+      code: detail.code,
+      blockingSessionId: detail.blocking_session_id || detail.existing_session_id,
+      message: detail.message,
+      canDiscard: detail.can_discard !== false,
+    }
+  }
+  return null
+}
+
+/** @param {import('./apiClient.js').ApiErrorDetail | string | undefined} detail */
+export function isPendingLogBlock(detail) {
+  return parsePendingLogBlock(detail) != null
+}
+
+/** @param {import('./apiClient.js').ApiErrorDetail | string | undefined} detail */
 export function isSameDayDuplicateConflict(detail) {
   const conflict = parseSessionStartConflict(detail)
   return conflict?.recommendedAction === 'DUPLICATE_SAME_DAY'

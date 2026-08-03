@@ -199,58 +199,7 @@ def test_auto_closed_sessions_appear_as_needs_log():
 
 
 def test_needs_log_does_not_block_start():
-    headers = _therapist_headers()
-    db = SessionLocal()
-    try:
-        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
-        cases = db.scalars(select(Case).limit(5)).all()
-        if len(cases) < 2:
-            pytest.skip("Need two cases")
-        today = today_ist()
-        needs_log_case = cases[0]
-        start_case = None
-        for candidate in cases[1:]:
-            has_today_visit = db.scalars(
-                select(TherapySession.id).where(
-                    TherapySession.case_id == candidate.id,
-                    TherapySession.therapist_user_id == therapist.id,
-                    TherapySession.scheduled_date == today,
-                    TherapySession.status.in_([SessionStatus.COMPLETED, SessionStatus.IN_PROGRESS]),
-                )
-            ).first()
-            if not has_today_visit:
-                start_case = candidate
-                break
-        if start_case is None:
-            pytest.skip("No case without a completed/in-progress visit today")
-        completed = TherapySession(
-            case_id=needs_log_case.id,
-            therapist_user_id=therapist.id,
-            scheduled_date=today - timedelta(days=1),
-            start_time=time(9, 0),
-            end_time=time(10, 0),
-            mode=SessionMode.HOME,
-            status=SessionStatus.COMPLETED,
-            actual_start_at=datetime.combine(today - timedelta(days=1), time(9, 0), tzinfo=IST).astimezone(timezone.utc),
-            actual_end_at=datetime.combine(today - timedelta(days=1), time(10, 0), tzinfo=IST).astimezone(timezone.utc),
-        )
-        db.add(completed)
-        sched = TherapySession(
-            case_id=start_case.id,
-            therapist_user_id=therapist.id,
-            scheduled_date=today,
-            start_time=time(14, 0),
-            end_time=time(15, 0),
-            mode=SessionMode.HOME,
-            status=SessionStatus.SCHEDULED,
-        )
-        db.add(sched)
-        db.commit()
-        sid = sched.id
-    finally:
-        db.close()
-    r = client.post(f"/api/v1/sessions/{sid}/start", headers=headers, json={})
-    assert r.status_code == 200, r.text
+    pytest.skip("Replaced by test_pending_log_gate.test_needs_log_blocks_start")
 
 
 def test_end_session_idempotent_when_completed():

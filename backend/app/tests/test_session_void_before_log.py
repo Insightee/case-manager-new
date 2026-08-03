@@ -71,7 +71,7 @@ def _completed_session(
 
 
 def _void_completed_without_log_same_day(db, therapist_id: int, case_id: int) -> None:
-    """Clear COMPLETED no-log visits that block start_session in the shared CI database."""
+    """Clear same-day COMPLETED visits that block start_session in the shared CI database."""
     sessions = db.scalars(
         select(TherapySession)
         .where(
@@ -83,12 +83,15 @@ def _void_completed_without_log_same_day(db, therapist_id: int, case_id: int) ->
         .options(selectinload(TherapySession.daily_log))
     ).all()
     for session in sessions:
-        if session.daily_log is not None:
-            continue
-        try:
-            session_service.void_session_before_log(db, session, therapist_id)
-        except ValueError:
-            pass
+        if session.daily_log is None:
+            try:
+                session_service.void_session_before_log(
+                    db, session, therapist_id, skip_void_window=True
+                )
+            except ValueError:
+                pass
+        else:
+            session.status = SessionStatus.CANCELLED
     db.flush()
 
 
@@ -285,6 +288,9 @@ def test_void_before_log_api_writes_audit_trail():
 
 def test_restart_after_void_with_same_idempotency_key():
     from app.services import session_start_service as start_svc
+    from app.tests.session_helpers import clear_blocking_pending_logs_for_therapist
+
+    clear_blocking_pending_logs_for_therapist()
 
     db = SessionLocal()
     try:

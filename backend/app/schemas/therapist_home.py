@@ -109,6 +109,7 @@ class TherapistSessionsWorkspaceResponse(BaseModel):
     active_session: Optional[SessionRead] = None
     stale_previous_sessions: list[SessionRead] = []
     needs_log: list[SessionRead]
+    blocking_log_session: Optional[SessionRead] = None
     booked_slots: list[dict]
 
 

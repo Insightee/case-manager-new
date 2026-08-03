@@ -3,6 +3,7 @@ import {
   labelForSessionAction,
   logsPathForSession,
   parseChildAbsenceBlock,
+  parsePendingLogBlock,
   parseSessionStartConflict,
   sessionStartIdempotencyKey,
 } from './sessionStartRules.js'
@@ -28,6 +29,10 @@ export async function startClinicalSession(sessionId, session, therapistId, body
       }
     }
     if (err?.status === 409) {
+      const pendingLog = parsePendingLogBlock(err.detail)
+      if (pendingLog) {
+        return { ok: false, pendingLog, message: pendingLog.message }
+      }
       const conflict = parseSessionStartConflict(err.detail)
       if (conflict) {
         return { ok: false, conflict, message: conflict.message }

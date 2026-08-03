@@ -50,8 +50,32 @@ def _has_blocking_visit(db, session: TherapySession) -> bool:
     return db.scalars(stmt).first() is not None
 
 
+def clear_blocking_pending_logs_for_therapist(therapist_email: str = "therapist@demo.com") -> None:
+    """Discard completed visits without logs so session-start tests are not gated."""
+    from app.services import pending_log_gate_service
+
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == therapist_email)).first()
+        if not therapist:
+            return
+        for _ in range(20):
+            blocking = pending_log_gate_service.get_blocking_session(db, therapist.id)
+            if not blocking:
+                break
+            try:
+                pending_log_gate_service.discard_blocking_draft_log(db, blocking, therapist.id)
+                db.commit()
+            except ValueError:
+                db.rollback()
+                break
+    finally:
+        db.close()
+
+
 def end_active_sessions_for_therapist(therapist_email: str = "therapist@demo.com") -> None:
     """End any IN_PROGRESS sessions left by earlier tests in the shared CI database."""
+    clear_blocking_pending_logs_for_therapist(therapist_email)
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == therapist_email)).first()

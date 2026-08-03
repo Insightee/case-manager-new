@@ -2724,6 +2724,43 @@
   color: #6b7280;
 }
 
+.ic-pending-log-gate {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid #c7d2fe;
+  background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%);
+}
+
+.ic-pending-log-gate__icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.ic-pending-log-gate__title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #312e81;
+}
+
+.ic-pending-log-gate__text {
+  margin: 0 0 14px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #4338ca;
+}
+
+.ic-pending-log-gate__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .ic-session-log-needs__sub {
   margin: 4px 0 12px;
   font-size: 0.875rem;

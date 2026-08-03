@@ -241,6 +241,17 @@ def test_same_day_duplicate_requires_confirmation():
     end_first = client.post(f"/api/v1/sessions/{first_id}/end", headers=headers, json={})
     assert end_first.status_code == 200, end_first.text
 
+    log_res = client.post(
+        "/api/v1/daily-logs",
+        headers=headers,
+        json={
+            "session_id": first_id,
+            "attendance_status": "PRESENT",
+            "activities_done": "Morning visit for duplicate-day start test.",
+        },
+    )
+    assert log_res.status_code == 201, log_res.text
+
     blocked = client.post(f"/api/v1/sessions/{second_id}/start", headers=headers, json={})
     assert blocked.status_code == 409
     detail = blocked.json()["detail"]

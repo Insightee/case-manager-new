@@ -437,6 +437,11 @@ def build_sessions_workspace(db: Session, user: User) -> TherapistSessionsWorksp
     stale_raw = session_service.get_stale_previous_sessions(db, user.id)
     stale_reads = _prepare_session_reads(db, stale_raw)
 
+    from app.services import pending_log_gate_service
+
+    blocking = pending_log_gate_service.get_blocking_session(db, user.id)
+    blocking_read = _session_read(blocking, blocking.case) if blocking and blocking.case else None
+
     slot_end = today + timedelta(days=tpq.SLOT_FORWARD_DAYS)
     slots = tpq.fetch_booked_slots(db, user, from_date=today, to_date=slot_end)
     from app.services import slot_calendar_service as cal
@@ -446,6 +451,7 @@ def build_sessions_workspace(db: Session, user: User) -> TherapistSessionsWorksp
         active_session=active_read,
         stale_previous_sessions=stale_reads,
         needs_log=needs_log_reads[: tpq.NEEDS_LOG_LIMIT],
+        blocking_log_session=blocking_read,
         booked_slots=[cal._slot_to_dict(sl) for sl in slots],
     )
 

@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { patchCachesAfterAbsenceSubmit } from '../../lib/therapistSessionLogCache.js'
 import { apiFetch } from '../../lib/apiClient.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { isAbsenceConflict } from '../../lib/sessionStartRules.js'
+import { isAbsenceConflict, isPendingLogBlock } from '../../lib/sessionStartRules.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { ExistingSessionForDateCard } from '../daily-logs/ExistingSessionForDateCard.jsx'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
@@ -44,6 +44,7 @@ export function TherapistSessionComposer({
   upcomingSessions = [],
   disabled = false,
   liveBlocked = false,
+  pendingLogBlocked = false,
   existingSessionConflict = null,
   walkInConflict = null,
   onExistingSessionAction,
@@ -109,7 +110,7 @@ export function TherapistSessionComposer({
     onSelectedCaseChange?.(selectedCaseId)
   }, [selectedCaseId, onSelectedCaseChange])
 
-  const blockLive = liveBlocked || disabled
+  const blockLive = liveBlocked || disabled || pendingLogBlocked
   const absenceAllowedStatuses = new Set(['SCHEDULED', 'IN_PROGRESS'])
   const todaySessionsForCase = useMemo(() => {
     if (!selectedCaseId) return []
@@ -154,6 +155,10 @@ export function TherapistSessionComposer({
           }),
         })
       } catch (err) {
+        if (err?.status === 409 && isPendingLogBlock(err.detail)) {
+          setLocalError(err.detail.message || 'Finish your previous visit log before starting another session.')
+          return
+        }
         if (err?.status === 409 && isAbsenceConflict(err.detail)) {
           setLocalError(err.detail.message || 'Session cannot be started because of child absence.')
           return
@@ -261,7 +266,13 @@ export function TherapistSessionComposer({
       ) : null}
       */}
 
-      {blockLive ? (
+      {blockLive && pendingLogBlocked && !liveBlocked ? (
+        <p className="ic-session-composer__live-blocked" role="status">
+          Finish or remove your previous visit log above before starting another session.
+        </p>
+      ) : null}
+
+      {blockLive && liveBlocked ? (
         <p className="ic-session-composer__live-blocked" role="status">
           A session is in progress — end it above to start another visit.
         </p>

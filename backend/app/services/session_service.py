@@ -185,6 +185,9 @@ def start_session(
 
     assert_may_start_session(db, session)
     assert_therapist_may_start_session(db, session.case_id)
+    from app.services.pending_log_gate_service import assert_may_start_new_session
+
+    assert_may_start_new_session(db, therapist_user_id, excluding_session_id=session.id)
     start_svc.resolve_start_conflict(db, session, therapist_user_id, allow_duplicate=allow_duplicate)
 
     today = today_ist()
@@ -300,6 +303,8 @@ def void_session_before_log(
     db: Session,
     session: TherapySession,
     therapist_user_id: int,
+    *,
+    skip_void_window: bool = False,
 ) -> TherapySession:
     """Void a completed visit that has no log — revert scheduled slots or cancel unbooked/manual rows."""
     if session.therapist_user_id != therapist_user_id:
@@ -326,7 +331,7 @@ def void_session_before_log(
 
     anchor = _void_window_anchor(session)
     window = timedelta(hours=settings.session_void_window_hours)
-    if datetime.now(timezone.utc) > anchor + window:
+    if not skip_void_window and datetime.now(timezone.utc) > anchor + window:
         hours = settings.session_void_window_hours
         raise ValueError(
             f"Void window expired — sessions can only be cancelled within {hours} hours of starting"
@@ -470,6 +475,9 @@ def complete_forgotten_session(
         raise ValueError("This session already has a log")
     if session.status != SessionStatus.SCHEDULED:
         raise ValueError("Only scheduled visits can be completed from Forgot to log")
+    from app.services.pending_log_gate_service import assert_may_start_new_session
+
+    assert_may_start_new_session(db, therapist_user_id)
     today = today_ist()
     if session.scheduled_date > today:
         raise ValueError("Cannot complete future visits this way")
@@ -507,6 +515,9 @@ def create_manual_session(
         raise ValueError("Cannot create manual sessions for future dates")
     if actual_end_at <= actual_start_at:
         raise ValueError("End time must be after start time")
+    from app.services.pending_log_gate_service import assert_may_start_new_session
+
+    assert_may_start_new_session(db, therapist_user_id)
     mins = duration_minutes_between(actual_start_at, actual_end_at)
     validate_session_duration_minutes(mins)
     session = TherapySession(

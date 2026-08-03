@@ -28,7 +28,7 @@ from app.schemas.session import (
 )
 from app.core.session_rules import auto_end_label as auto_end_label_for_reason
 from app.core.session_rules import scheduled_end_at_utc
-from app.core.session_start import SessionStartConflict
+from app.core.session_start import PendingLogRequiredError, SessionStartConflict
 from app.core.timezone import ensure_utc_aware
 from app.services import case_service, session_service, therapist_intake_service
 from app.services import manual_session_conflict_service as manual_conflict
@@ -259,6 +259,8 @@ def create_manual_session(
             actual_end_at=payload.actual_end_at,
             mode=payload.mode,
         )
+    except PendingLogRequiredError as e:
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
@@ -290,6 +292,8 @@ def create_manual_walk_in_session(
             mode=payload.mode,
             product_module=payload.product_module,
         )
+    except PendingLogRequiredError as e:
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     case = result["case"]
@@ -346,6 +350,8 @@ def complete_forgotten_session_route(
             actual_end_at=payload.actual_end_at,
             mode=payload.mode,
         )
+    except PendingLogRequiredError as e:
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
@@ -541,6 +547,8 @@ def start_session(
         )
     except SessionStartConflict as e:
         raise HTTPException(status_code=409, detail=e.as_dict())
+    except PendingLogRequiredError as e:
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except ChildAbsenceBlockError as e:
         raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
     except ValueError as e:
@@ -670,6 +678,52 @@ def cancel_session_route(
         db,
         actor_user_id=user.id,
         action="cancel",
+        entity_type="session",
+        entity_id=session.id,
+        case_id=session.case_id,
+        old_value=old_snapshot,
+        new_value=session_service.session_audit_snapshot(session),
+        **meta,
+    )
+    db.commit()
+    return _session_read(session, case)
+
+
+@router.post("/{session_id}/discard-pending-log", response_model=SessionRead)
+def discard_pending_log_route(
+    session_id: int,
+    request: Request,
+    user: User = Depends(require_permission("session.update")),
+    db: Session = Depends(get_db),
+):
+    """Remove the therapist's latest unfinished visit (no time limit) so they can start fresh."""
+    from app.services import pending_log_gate_service
+
+    session = db.scalars(
+        select(TherapySession)
+        .where(TherapySession.id == session_id)
+        .options(
+            selectinload(TherapySession.case).selectinload(Case.child),
+            selectinload(TherapySession.daily_log),
+        )
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = session.case
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if session.therapist_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Can only discard your own sessions")
+    old_snapshot = session_service.session_audit_snapshot(session)
+    try:
+        session = pending_log_gate_service.discard_blocking_draft_log(db, session, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="discard_pending_log",
         entity_type="session",
         entity_id=session.id,
         case_id=session.case_id,

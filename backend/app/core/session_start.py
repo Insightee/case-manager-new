@@ -39,3 +39,23 @@ class SessionStartConflict(Exception):
             "recommended_action": self.recommended_action.value,
             "message": self.message,
         }
+
+
+class PendingLogRequiredError(Exception):
+    """Raised when the therapist must finish or discard their latest visit log first."""
+
+    def __init__(self, *, blocking_session_id: int, message: str) -> None:
+        self.blocking_session_id = blocking_session_id
+        self.message = message
+        super().__init__(message)
+
+    def as_dict(self) -> dict:
+        return {
+            "code": "PENDING_LOG_REQUIRED",
+            "blocking_session_id": self.blocking_session_id,
+            "existing_session_id": self.blocking_session_id,
+            "current_status": "COMPLETED",
+            "recommended_action": RecommendedAction.COMPLETE_LOG.value,
+            "message": self.message,
+            "can_discard": True,
+        }

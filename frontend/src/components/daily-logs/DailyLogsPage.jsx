@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { queryKeys } from '../../lib/queryClient.js'
 import {
   patchCachesAfterLogSave,
+  patchCachesAfterPendingLogDiscarded,
   patchCachesAfterSessionCancel,
   patchCachesAfterSessionEnd,
   patchCachesAfterSessionStart,
@@ -33,7 +34,8 @@ import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
 import { existingVisitForDay, sessionToLogShape } from '../../lib/sessionDayConflict.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { canStartSessionToday, isAbsenceConflict } from '../../lib/sessionStartRules.js'
+import { canStartSessionToday, isAbsenceConflict, isPendingLogBlock } from '../../lib/sessionStartRules.js'
+import { PendingLogGate, discardPendingLogWithDraft } from './PendingLogGate.jsx'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import { ActiveSessionCard } from './ActiveSessionCard.jsx'
 import { canEditSessionTimes, formatClockRange, formatEditedRange } from '../../lib/sessionTimes.js'
@@ -96,6 +98,8 @@ export function DailyLogsPage() {
   const activeInProgress = active?.status === 'IN_PROGRESS' ? active : null
   const stalePrevious = workspace?.stale_previous_sessions || []
   const needsLogRaw = workspace?.needs_log || []
+  const blockingLogSession = workspace?.blocking_log_session || null
+  const pendingLogBlocked = Boolean(blockingLogSession) && !activeInProgress
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
   const needsLog = useMemo(
     () => filterSessionsWithoutAbsence(needsLogRaw, logs),
@@ -117,6 +121,7 @@ export function DailyLogsPage() {
   const [editingLog, setEditingLog] = useState(null)
   const [logRequired, setLogRequired] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [discardBusy, setDiscardBusy] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const handleRetry = () => {
@@ -668,9 +673,38 @@ export function DailyLogsPage() {
     )
   }
 
+  async function handleDiscardPendingLog(session) {
+    if (!session?.id || discardBusy) return
+    const displayName = session.child_name || session.case_code || 'this visit'
+    const when = session.scheduled_date ? formatDisplayDate(session.scheduled_date) : 'that day'
+    const ok = window.confirm(
+      `Remove the unfinished visit for ${displayName} on ${when}? You can start a new session after this — the visit record will be cleared.`,
+    )
+    if (!ok) return
+    setDiscardBusy(true)
+    setError('')
+    try {
+      const updated = await discardPendingLogWithDraft(session.id)
+      patchCachesAfterPendingLogDiscarded(updated)
+      setSuccess('Draft visit removed — you can start a new session now.')
+      void syncDraftIds()
+      void loadAll({ silent: true })
+    } catch (err) {
+      setError(err.message || 'Could not remove the draft visit')
+    } finally {
+      setDiscardBusy(false)
+    }
+  }
+
   async function handleStart(sessionId, sessionMeta = null, { allowDuplicate = false } = {}) {
     setError('')
     setSuccess('')
+    if (pendingLogBlocked && blockingLogSession?.id !== sessionId) {
+      setError(
+        'Your most recent visit still needs a log. Complete it below or remove the draft visit to continue.',
+      )
+      return
+    }
     const meta =
       sessionMeta ||
       upcoming.find((s) => s.id === sessionId) ||
@@ -689,6 +723,10 @@ export function DailyLogsPage() {
         allowDuplicate ? { allow_duplicate: true } : {},
       )
       if (!result.ok) {
+        if (result.pendingLog?.message) {
+          setError(result.pendingLog.message)
+          return
+        }
         if (result.absenceBlock?.message) {
           setError(result.absenceBlock.message)
           return
@@ -837,6 +875,10 @@ export function DailyLogsPage() {
       openLogForm(session, { required: true })
       void loadAll({ silent: true })
     } catch (err) {
+      if (err?.status === 409 && isPendingLogBlock(err.detail)) {
+        setError(err.detail.message || 'Finish your previous visit log before adding another session.')
+        return
+      }
       if (err?.status === 409 && isAbsenceConflict(err.detail)) {
         setExistingSessionConflict({ ...err.detail, pending_payload: payload })
         return
@@ -969,6 +1011,16 @@ export function DailyLogsPage() {
         <div className="ic-alert ic-alert--success">{success}</div>
       ) : null}
 
+      {pendingLogBlocked && !logSession ? (
+        <PendingLogGate
+          session={blockingLogSession}
+          draftSaved={draftIds.has(blockingLogSession.id)}
+          busy={discardBusy}
+          onCompleteLog={(s) => openLogForm(s, { required: true })}
+          onDiscard={handleDiscardPendingLog}
+        />
+      ) : null}
+
       {activeInProgress ? (
         <ActiveSessionCard
           ref={activeSessionCardRef}
@@ -1077,6 +1129,7 @@ export function DailyLogsPage() {
         <TherapistSessionComposer
           upcomingSessions={upcoming}
           liveBlocked={!!activeInProgress}
+          pendingLogBlocked={pendingLogBlocked}
           onSelectedCaseChange={setComposerCaseId}
           existingSessionConflict={existingSessionConflict}
           walkInConflict={walkInConflict}
@@ -1152,7 +1205,8 @@ export function DailyLogsPage() {
                 const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
                 const isInProgress = s.status === 'IN_PROGRESS'
                 const dayExisting = existingVisitForDay(s, deepLinkContext)
-                const canStartFresh = !activeInProgress && !dayExisting && canStartSessionToday(s).ok
+                const canStartFresh =
+                  !activeInProgress && !pendingLogBlocked && !dayExisting && canStartSessionToday(s).ok
                 return (
                   <article
                     key={s.id}
