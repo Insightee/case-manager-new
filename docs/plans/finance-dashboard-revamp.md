@@ -16,7 +16,7 @@ Discovery staleness audit has run (A–J below). Package sections below remain s
 | ID | Work package | Status | Dependency | Risk |
 |----|--------------|-------:|------------|------|
 | FIN-00 | Baseline gate (human-executed, not a loop) | Done | None | High |
-| FIN-00b | Ledger write gating | Active | FIN-00 | High |
+| FIN-00b | Ledger write gating | Done | FIN-00 | High |
 | FIN-01 | Domain and calculation audit | Blocked | FIN-00b | Medium |
 | FIN-02 | Role and route protection | Blocked | FIN-01 | High |
 | FIN-03 | Therapist billing overview | Planned | FIN-02 | Medium |
@@ -105,14 +105,24 @@ date:           03-08-2026
 **Risk:** High. **max_attempts:** 4.
 
 ```
-status:
-files_changed:
-tests_run:
-result:
-deviations:
-new_risks:
-baseline_sha:
-date:
+status:         ALREADY SATISFIED (Done) — no code change made
+files_changed:  none (inspection concluded no build needed; permitted-scope files untouched)
+tests_run:      cd backend && .venv/bin/python -m pytest \
+                  app/tests/test_impact_billing_flags_smoke.py::test_impact_core_paths_with_billing_writes_off \
+                  app/tests/test_billing_engine_release_gate.py::test_16_billing_ledger_writes_false_blocks_outside_test_env -q
+                -> "2 passed, 3 warnings in 1.74s"
+result:         All 4 target ledger writes already gate on shared predicate _ledger_writes_allowed()
+                (billing_ledger_service.py:319/489/737/1044) reading settings.billing_ledger_writes
+                (default False). Two existing tests prove flag-off => no ledger row, bypassing the
+                test-env short-circuit. All 5 acceptance criteria met. No redundant gating written.
+deviations:     Package assumed writes ungated in daily_logs.py; on main they are gated one layer deeper
+                as a shared service predicate. grind-check.sh could not run on main (scripts/agent-pytest.sh
+                not carried over; Alembic step needs backend venv) — ran exact selectors via backend/.venv.
+new_risks:      (1) scripts/agent-pytest.sh missing on main -> grind-check.sh backend unusable until brought
+                over. (2) No end-to-end daily-log-approve endpoint test with flag off; proof is at the
+                shared-predicate + end_session level.
+baseline_sha:   f0f4f47
+date:           03-08-2026
 ```
 
 ## FIN-01 — Domain and calculation audit
