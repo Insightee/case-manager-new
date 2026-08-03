@@ -1,89 +1,65 @@
 # Production read-only Postgres access — finance cutover / staging dashboard
 
 **Date:** 2026-08-03  
-**Status:** `BLOCKED_WAITING_FOR_CREDENTIAL_INJECTION`  
+**Status:** `RO_ROLE_CREATED_ON_PRODUCTION` · cutover sizing **done** (situation **a**)  
 **Goal:** Let agents (and staging finance work) **read** real production finance/case data without write risk.
 
 ---
 
-## Why this is needed
+## Done this session
 
-- Cutover sizing (`monthly_case_review` / estimate pack) needs **production** case + rate rows.  
-- Finance dashboard staging validation needs realistic populations; local/demo DBs are empty of real finance volume.  
-- App `DATABASE_URL` on Railway is a **read-write** role — not safe to hand to agents as-is.
+1. Valid Railway **account** token authenticated as `techsupport@insighte.org`.  
+2. Linked project `truthful-blessing` → environment **production** → service **Postgres**.  
+3. Created Postgres role **`insightcase_readonly`** with `GRANT SELECT` on `public` + `default_transaction_read_only=on`.  
+4. Verified: SELECT on `cases` yes; INSERT/UPDATE/DELETE no; write txn blocked.  
+5. Ran cutover sizing **as RO** — see founder results below / artifact.
 
----
+### Security (do now)
 
-## What we need (exact)
+- Railway Postgres **superuser password was exposed in agent tooling** — **rotate it** in Railway.  
+- Reset `insightcase_readonly` password (you do not have the session-generated secret after scrub):
 
-Inject into the **Cursor cloud agent / environment secrets** (do not paste in chat or PRs):
-
-| Secret name | Value |
-|---|---|
-| `READONLY_DATABASE_URL` | `postgresql://insightcase_readonly:<password>@<prod-host>:<port>/<prod-db>?sslmode=require` |
-
-Optional helpers (not required if URL is complete):
-
-| Secret | Purpose |
-|---|---|
-| `RAILWAY_API_TOKEN` | Account token (Workspace = **No workspace**) so ops can fetch host/db name via CLI without pasting the RW URL into chat |
-
-**Do not** set staging/production app `DATABASE_URL` to this agent secret. Staging API must keep its own DB; use RO only for SELECT probes / export → import.
-
----
-
-## How to create the role (one-time, human/ops)
-
-1. Railway → project `case-manager-new` / Postgres → **Connect** (or `railway connect Postgres`).  
-2. Run [`docs/sql/create_production_readonly_role.sql`](./sql/create_production_readonly_role.sql) with a **strong password**.  
-3. Confirm as the new role:
-   - `SELECT` on `cases` works  
-   - `INSERT` on `cases` fails  
-   - `SHOW default_transaction_read_only` → `on`  
-4. Put the RO URL into Cursor secrets as `READONLY_DATABASE_URL`.  
-5. Re-run / resume the agent and ask for cutover sizing (or staging dashboard seed export).
-
-### Railway token path (alternative to clicking Connect)
-
-```bash
-export RAILWAY_API_TOKEN='…'   # Account → Tokens, No workspace
-cd backend && npx @railway/cli link --project ead85fb6-1826-4eed-bad9-2513e89c4854
-# Then open a Postgres shell / copy public TCP proxy host for the RO URL
+```sql
+ALTER ROLE insightcase_readonly PASSWORD '<new-strong-password>';
 ```
 
-Project token (`RAILWAY_TOKEN`) alone is for deploy — it does **not** replace a Postgres RO role.
+- Inject into Cursor secrets (not chat):
+
+`READONLY_DATABASE_URL=postgresql://insightcase_readonly:<new-password>@<public-proxy-host>:<port>/railway?sslmode=require`
+
+- **Revoke/rotate** any Railway token pasted in chat.
 
 ---
 
-## Staging finance dashboard — safe use of prod data
+## Cutover sizing — production result (2026-08-03)
 
-| Approach | Use when | Risk |
-|---|---|---|
-| **A. RO queries only** (cutover sizing, row counts, rate exposure) | Numbers / gates | Lowest — no copy |
-| **B. Sanitized dump → staging DB** | UI demos with real-ish volumes | Medium — PII handling; never copy secrets/hashes carelessly |
-| **C. Point staging `DATABASE_URL` at prod** | Never | **Forbidden** — write path would hit production |
-
-Recommended for dashboard build: **A** for sizing; **B** (anonymized subset of cases/invoices/ledger) if staging UI needs dense data.
-
----
-
-## Agent checklist after injection
-
-1. Connect with `READONLY_DATABASE_URL` only.  
-2. Abort if role can `INSERT`/`UPDATE`/`DELETE` on `cases`.  
-3. Identify DB (prod vs staging) via `current_database()` / host label — say which.  
-4. Classify `monthly_case_review` situation **(a)/(b)/(c)**.  
-5. Run sizing or estimate pack; report founder-readable N + ₹ exposure.  
-6. Never print the connection string.
-
----
-
-## Current agent VM (2026-08-03)
-
-| Item | State |
+| Field | Value |
 |---|---|
-| `READONLY_DATABASE_URL` | **Missing** |
-| `RAILWAY_API_TOKEN` / `RAILWAY_TOKEN` | **Missing** |
-| Local `DATABASE_URL` | `127.0.0.1` only — not production |
+| Environment | **production** (`railway` DB) |
+| Situation | **(a)** real `monthly_case_review` rows |
+| Cases | 408 |
+| MCR rows | 8 real / 0 fixtures |
+| AUTO_MIGRATED | 0 |
+| NEEDS_REVIEW (untouched) | **8** — all `Missing product_billing_rule_id` |
+| Rate exposure sum | **₹2,32,300** (min 25,300 · median 30,000 · max 30,000) |
+| PACKAGE missing session count | 0 |
+| Alembic | `c2d3e4f5a6b7` |
 
-Until secrets are injected, cutover sizing and prod-backed staging finance work remain blocked.
+**Finance needs to make roughly 8 case-by-case decisions before cutover** (real).
+
+Artifacts: `/opt/cursor/artifacts/cutover-sizing/PRODUCTION_SIZING_FOUNDER.md`, `needs_review_worklist.csv`.
+
+---
+
+## Staging finance dashboard
+
+| Approach | Guidance |
+|---|---|
+| RO queries | Use `READONLY_DATABASE_URL` for counts / sizing only |
+| Dense UI data | Prefer sanitized dump → staging DB — **never** point staging app `DATABASE_URL` at production |
+
+---
+
+## SQL reference
+
+[`docs/sql/create_production_readonly_role.sql`](./sql/create_production_readonly_role.sql) — role already applied on production; keep for rebuilds / other envs.
