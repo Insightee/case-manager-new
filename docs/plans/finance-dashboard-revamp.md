@@ -3,7 +3,7 @@
 status: PLANNING
 initiative: [docs/initiatives/finance-dashboard.md](../initiatives/finance-dashboard.md)
 open_questions: [docs/plans/finance-open-questions.md](./finance-open-questions.md)
-baseline_sha:            # set by FIN-00. No loop may run while this is empty.
+baseline_sha: f0f4f47    # engine HEAD, recorded by FIN-00 (pre-machinery-commit; docs commit f968c40 adds no engine change)
 discovery_run: yes       # A–J staleness audit completed 03-08-2026 against HEAD 16fdc06
 frozen_selectors: []     # set by FIN-01. FIN-12 verifies against this list, not the full suite.
 
@@ -15,7 +15,7 @@ Discovery staleness audit has run (A–J below). Package sections below remain s
 
 | ID | Work package | Status | Dependency | Risk |
 |----|--------------|-------:|------------|------|
-| FIN-00 | Baseline gate (human-executed, not a loop) | Active | None | High |
+| FIN-00 | Baseline gate (human-executed, not a loop) | Done | None | High |
 | FIN-00b | Ledger write gating | Blocked | FIN-00 | High |
 | FIN-01 | Domain and calculation audit | Blocked | FIN-00b | Medium |
 | FIN-02 | Role and route protection | Blocked | FIN-01 | High |
@@ -64,14 +64,14 @@ Every section of [docs/Cursor_Handover_Finance_Module_Build_Readiness.md](../Cur
 **Completion:** `git status --porcelain` is empty and `baseline_sha` is set.
 
 ```
-status:
-files_changed:
-tests_run:
-result:
-deviations:
-new_risks:
-baseline_sha:
-date:
+status:         done
+files_changed:  docs/plans/finance-dashboard-revamp.md (board only)
+tests_run:      n/a (human baseline gate, no code change)
+result:         Baseline recorded as f0f4f47 (clean engine HEAD on main). Engine Steps 1-6 already merged to main via PR #13; no separate engine carve needed.
+deviations:     Original steps assumed carving feat/billing-engine-steps-1-6 from a dirty tree; actual path was cleaner — engine already on main, so baseline points at existing clean HEAD f0f4f47 (pre docs-machinery commit f968c40, which adds docs only).
+new_risks:      Baseline SHA (f0f4f47) is not current HEAD after the docs/board commits; loops diff against the recorded baseline_sha, not HEAD.
+baseline_sha:   f0f4f47
+date:           03-08-2026
 ```
 
 ## FIN-00b — Ledger write gating
