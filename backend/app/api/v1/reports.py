@@ -184,6 +184,11 @@ def create_monthly_report(
             status_code=400,
             detail="Incident and IEP plan documents are managed outside the reports hub",
         )
+    if report.category == ReportCategory.PROGRESS.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Progress reports use the clinical reports engine — start from the case Reports hub",
+        )
     db.add(report)
     db.flush()
     commit_or_http(db)

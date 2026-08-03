@@ -317,27 +317,47 @@ class AIGatewayService:
         user_id: int,
         case_id: int,
         question: str,
-        snapshot_text: str,
+        snapshot_text: str = "",
+        context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         ai_cost_guard.check_budget(db)
         provider, warning = cls._resolve_provider()
+        ctx_json = json.dumps(context or {}, default=str)[:4000]
+        snapshot_part = snapshot_text[:2000] if snapshot_text else "No weekly refresh snapshot yet."
         answer = (
-            f"Based on the saved snapshot: {snapshot_text[:300]}… "
-            f"Regarding your question — {question[:200]}: consider reviewing recent session evidence "
-            "and tagging goal/strategy context consistently."
+            f"Based on structured case context"
+            + (f" and your weekly refresh" if snapshot_text else "")
+            + f": regarding \"{question[:120]}\" — review recent session evidence and goal/strategy tags. "
+            "Say \"not enough evidence\" when logs are thin."
         )
         if provider == "mock":
             if warning:
                 answer = f"{answer} ({warning})"
-            return {"answer": answer, "provider": "mock"}
+            return {"answer": answer, "provider": "mock", "model": "mock-v1"}
 
         prompt = {
-            "system": "Answer briefly using only the snapshot context. No diagnosis.",
-            "user": f"Snapshot:\n{snapshot_text[:2000]}\n\nQuestion: {question}",
+            "system": (
+                "You are a clinical documentation assistant for InsighteCase. "
+                "Answer briefly using ONLY the structured context provided. "
+                "No diagnosis. Use neuro-affirmative language. "
+                "Prefer: appeared helpful, mixed evidence, needs review, not enough evidence. "
+                "Avoid: failed, non-compliant, deficit framing."
+            ),
+            "user": (
+                f"Structured context:\n{ctx_json}\n\n"
+                f"Weekly refresh snapshot (if any):\n{snapshot_part}\n\n"
+                f"Question: {question[:500]}\n\n"
+                "Return JSON: {\"answer\": \"your brief reply\"}"
+            ),
             "insight_type": "followup",
         }
-        out, _, _ = cls._call_provider_json(provider, prompt, {}, "followup")
-        return {"answer": out.get("snapshot_summary") or out.get("answer") or answer, "provider": provider}
+        out, _, model = cls._call_provider_json(provider, prompt, {}, "followup")
+        text = out.get("answer") or out.get("snapshot_summary") or answer
+        return {"answer": text, "provider": provider, "model": model}
+
+    @staticmethod
+    def input_hash_for_payload(payload: dict[str, Any]) -> str:
+        return _input_hash(payload)
 
     @classmethod
     def generate_parent_safe_draft(cls, db: Session, *, user_id: int, case_id: int, summary: dict[str, Any]) -> dict[str, Any]:

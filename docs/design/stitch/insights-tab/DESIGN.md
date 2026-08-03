@@ -72,9 +72,19 @@ Use instead: `child`, `progress insight`, `support pattern`, `participation`, `s
   and structured data."*
 - No new data since last refresh: *"Insights are already up to date from the latest available data."*
 - Loading state: *"Updating insights from latest logs…"*
+- Weekly hero CTA: *"Generate your weekly insights"*
+- Ask cap exceeded: *"You've reached this week's ask limit for this case. Weekly insights still update from session logs — try again next week."*
+- Ask loading: *"Looking at the latest case context…"*
+
+## Inner sub-tabs
+
+| Sub-tab | Content |
+|---------|---------|
+| **Weekly Insights** | Rule-based cards + weekly generate CTA (2 refreshes/week) |
+| **Ask** | Case-scoped chat — explicit Send only; 5 questions/week per case |
+
+URL: `?tab=insights&insightsView=ask` for Ask sub-tab.
 
 ## Retired in this phase
 
-"Ask Insighte AI" follow-up chat and "Generation History" are removed with no direct replacement — the calmer
-direction does not need a chat surface or a snapshot history list. `ClinicalSnapshot` rows are still written
-(now tagged `insight_type="case_insight_refresh"`) purely as the AI refresh cache/weekly-cap ledger.
+"Generation History" list UI remains removed. `ClinicalSnapshot` rows for `case_insight_refresh` remain the AI refresh cache/weekly-cap ledger. Ask chat reuses compact structured context — no persistent cross-device history in v1.

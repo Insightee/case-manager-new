@@ -6,13 +6,11 @@ export function VoiceDraftTopBar({
   onReRecord,
   onListen,
   onViewTranscript,
-  onSaveDraft,
-  onPreview,
-  onSubmit,
-  submitting,
 }) {
+  if (!onReRecord && !(recordingId && audioAvailable) && !onViewTranscript) return null
+
   return (
-    <div className="vsl-stitch__topbar">
+    <nav className="vsl-stitch__topbar" aria-label="Recording actions">
       {onReRecord ? (
         <button type="button" className="vsl-stitch__btn vsl-stitch__btn--ghost" onClick={onReRecord}>
           Re-record
@@ -38,21 +36,6 @@ export function VoiceDraftTopBar({
           Transcript
         </button>
       ) : null}
-      {onSaveDraft ? (
-        <button type="button" className="vsl-stitch__btn vsl-stitch__btn--ghost" onClick={onSaveDraft}>
-          Save draft
-        </button>
-      ) : null}
-      {onPreview ? (
-        <button type="button" className="vsl-stitch__btn vsl-stitch__btn--secondary" onClick={onPreview}>
-          Preview
-        </button>
-      ) : null}
-      {onSubmit ? (
-        <button type="button" className="vsl-stitch__btn vsl-stitch__btn--primary" disabled={submitting} onClick={onSubmit}>
-          {submitting ? 'Submitting…' : 'Submit log'}
-        </button>
-      ) : null}
-    </div>
+    </nav>
   )
 }

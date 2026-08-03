@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/apiClient.js'
 import { unwrapList } from '../../lib/listApi.js'
@@ -93,10 +93,8 @@ function formatDuration(startIso, tick) {
 
 export function DailyLogsPage() {
   const navigate = useNavigate()
-  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
-  const upcomingSectionRef = useRef(null)
   const now = new Date()
   const [logYear, setLogYear] = useState(now.getFullYear())
   const [logMonth, setLogMonth] = useState(now.getMonth())
@@ -219,12 +217,6 @@ export function DailyLogsPage() {
     [filterByMonth, leaveLogs],
   )
 
-  const displayUpcoming = useMemo(() => {
-    const caseId = composerCaseId || (caseFilterId ? Number(caseFilterId) : null)
-    if (!caseId) return upcoming
-    return upcoming.filter((s) => s.case_id === caseId)
-  }, [upcoming, composerCaseId, caseFilterId])
-
   const scopedCaseLabel = useMemo(() => {
     if (!caseFilterId) return ''
     const id = Number(caseFilterId)
@@ -288,14 +280,6 @@ export function DailyLogsPage() {
       logPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [logSession?.id, editingLog?.id, visitSession?.id])
-
-  useEffect(() => {
-    if (location.hash !== '#upcoming' || logSession || visitSession) return undefined
-    const id = window.setTimeout(() => {
-      upcomingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 80)
-    return () => window.clearTimeout(id)
-  }, [location.hash, logSession, visitSession, upcoming.length])
 
   function clearSessionQueryParam() {
     setSearchParams(
@@ -744,17 +728,11 @@ export function DailyLogsPage() {
       ) : null}
 
       {active ? (
-        <section className="session-logs-active-card">
+        <section className="session-logs-active-card" aria-live="polite">
           <p className="session-logs-active-card__title">Session in progress</p>
-          <p style={{ margin: '0 0 4px', fontSize: '0.875rem' }}>
-            {active.child_name || active.case_code} · {formatDisplayDate(active.scheduled_date)}
-            {active.auto_end_label ? (
-              <span style={{ display: 'block', marginTop: 4, fontSize: '0.8125rem', fontWeight: 600, color: '#b45309' }}>
-                {active.auto_end_label}
-              </span>
-            ) : active.auto_ended ? (
-              <span style={{ color: '#b45309' }}> (auto-ended)</span>
-            ) : null}
+          <p className="session-logs-active-card__client">
+            {active.child_name || active.case_code}
+            {active.scheduled_date ? <> · {formatDisplayDate(active.scheduled_date)}</> : null}
             {active.case_id ? (
               <>
                 {' · '}
@@ -763,34 +741,39 @@ export function DailyLogsPage() {
             ) : null}
           </p>
           {active.start_time ? (
-            <p style={{ margin: '0 0 10px', fontSize: '0.78rem', color: '#6b7280' }}>
-              Scheduled: {formatTime(active.start_time)}–{formatTime(active.end_time)}
+            <p className="session-logs-active-card__schedule">
+              Scheduled {formatTime(active.start_time)}–{formatTime(active.end_time)}
               {active.actual_start_at ? (
                 <>
                   {isStartedLateOnSchedule(active.actual_start_at, active.scheduled_date, active.start_time) ? (
-                    <span style={{ color: '#b45309', fontWeight: 600 }}> · Started late at {formatTimeIST(active.actual_start_at)} IST</span>
+                    <span className="session-logs-active-card__schedule-warn">
+                      {' '}
+                      · Started late at {formatTimeIST(active.actual_start_at)}
+                    </span>
                   ) : (
-                    <span> · Started at {formatTimeIST(active.actual_start_at)} IST</span>
+                    <> · Started at {formatTimeIST(active.actual_start_at)}</>
                   )}
                 </>
               ) : null}
+              {active.auto_end_label ? (
+                <span className="session-logs-active-card__schedule-warn"> · {active.auto_end_label}</span>
+              ) : active.auto_ended ? (
+                <span className="session-logs-active-card__schedule-warn"> · Auto-ended</span>
+              ) : null}
             </p>
           ) : null}
-          <p className="attendance-timer" style={{ fontSize: '2rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: '0 0 16px' }}>
-            {formatDuration(active.actual_start_at, tick)}
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <p className="session-logs-active-card__clock">{formatDuration(active.actual_start_at, tick)}</p>
+          <div className="session-logs-active-card__actions">
             <button
               type="button"
-              className="ic-btn ic-btn--primary"
-              style={{ background: '#dc2626', borderColor: '#dc2626' }}
+              className="session-logs-active-card__end"
               onClick={() => handleEnd(active.id)}
             >
               End session & write log
             </button>
             <button
               type="button"
-              className="ic-btn ic-btn--ghost"
+              className="session-logs-active-card__cancel"
               disabled={cancelBusy}
               onClick={() => handleCancel(active.id)}
             >
@@ -854,6 +837,8 @@ export function DailyLogsPage() {
           upcomingSessions={upcoming}
           disabled={!!active}
           onSelectedCaseChange={setComposerCaseId}
+          onStartScheduledSession={(sessionId, meta) => handleStart(sessionId, meta)}
+          onScheduleApplied={() => void loadAll({ silent: true })}
           onSessionStarted={(info) => {
             if (info?.message) setSuccess(info.message)
             void loadAll({ silent: true })
@@ -890,116 +875,6 @@ export function DailyLogsPage() {
         </section>
       ) : null}
 
-      {!logSession ? (
-        <section
-          id="upcoming"
-          ref={upcomingSectionRef}
-          className="session-logs-upcoming"
-        >
-          <h3 className="session-logs-upcoming__title">Upcoming sessions</h3>
-          {displayUpcoming.length === 0 ? (
-            <p className="session-logs-upcoming__empty">
-              {caseFilterId || composerCaseId
-                ? 'No upcoming sessions for this client.'
-                : 'No scheduled sessions in the next two weeks.'}
-            </p>
-          ) : (
-            <div className="session-logs-upcoming__list">
-              {displayUpcoming.map((s) => {
-                const startedLate = isStartedLateOnSchedule(s.actual_start_at, s.scheduled_date, s.start_time)
-                const actualStart = formatTimeIST(s.actual_start_at)
-                const actualEnd = formatTimeIST(s.actual_end_at)
-                const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
-                const isInProgress = s.status === 'IN_PROGRESS'
-                const isCompleted = s.status === 'COMPLETED'
-                return (
-                  <article
-                    key={s.id}
-                    className={`session-logs-upcoming__card${isInProgress ? ' session-logs-upcoming__card--live' : ''}`}
-                  >
-                    <div style={{ flex: 1, minWidth: 160 }}>
-                      <strong>
-                        {composerCaseId
-                          ? formatDisplayDate(s.scheduled_date)
-                          : s.child_name || s.case_code}
-                      </strong>
-                      <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#9ca3af' }}>
-                        {composerCaseId ? (
-                          <>
-                            {String(s.start_time || '').slice(0, 5)}–{String(s.end_time || '').slice(0, 5)}
-                            {s.case_id ? (
-                              <>
-                                {' · '}
-                                <Link to={`/therapist/cases/${s.case_id}`}>View case</Link>
-                              </>
-                            ) : null}
-                          </>
-                        ) : (
-                          <>
-                            Scheduled: {formatDisplayDateTimeRange(s.scheduled_date, s.start_time, s.end_time)}
-                            {s.case_id ? (
-                              <>
-                                {' · '}
-                                <Link to={`/therapist/cases/${s.case_id}`}>View case</Link>
-                              </>
-                            ) : null}
-                          </>
-                        )}
-                      </p>
-                      {/* Actual times */}
-                      {actualStart ? (
-                        <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: startedLate ? '#b45309' : '#059669', fontWeight: 500 }}>
-                          {startedLate ? '⚠ Started late: ' : 'Started: '}
-                          {actualStart}
-                          {actualEnd ? ` · Ended: ${actualEnd}` : ' · In progress…'}
-                          {durMins ? ` · ${durMins} min` : ''}
-                        </p>
-                      ) : null}
-                      {/* Location badges */}
-                      {(s.checkin_lat || s.checkout_lat) ? (
-                        <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
-                          {s.checkin_lat ? (
-                            <a
-                              href={`https://www.google.com/maps?q=${s.checkin_lat},${s.checkin_lng}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ color: '#2563eb', marginRight: 8 }}
-                            >
-                              📍 Check-in location
-                            </a>
-                          ) : null}
-                          {s.checkout_lat ? (
-                            <a
-                              href={`https://www.google.com/maps?q=${s.checkout_lat},${s.checkout_lng}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ color: '#2563eb' }}
-                            >
-                              📍 Check-out location
-                            </a>
-                          ) : null}
-                        </p>
-                      ) : null}
-                    </div>
-                    {!active && canStartSessionToday(s).ok ? (
-                      <button
-                        type="button"
-                        onClick={() => handleStart(s.id, s)}
-                        className="ic-btn ic-btn--primary"
-                      >
-                        Start session
-                      </button>
-                    ) : !active && s.scheduled_date > todayIsoIST() ? (
-                      <span className="ic-session-log-recent__meta">Opens on visit day</span>
-                    ) : null}
-                  </article>
-                )
-              })}
-            </div>
-          )}
-        </section>
-      ) : null}
-
       <section className="session-logs-history">
         <div className="session-logs-history__filters">
           <label>
@@ -1028,6 +903,25 @@ export function DailyLogsPage() {
               {logYears.map((y) => (
                 <option key={y} value={y}>
                   {y}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="session-logs-history__status-select">
+            <span className="sr-only">Status</span>
+            <select
+              value={logTab}
+              onChange={(e) => setLogTab(e.target.value)}
+              aria-label="Filter logs by status"
+              className="ic-case-panel__select"
+            >
+              {LOG_TABS.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                  {t.id === 'needs' && displayNeedsLog.length > 0 ? ` (${displayNeedsLog.length})` : ''}
+                  {t.id === 'child_absent' && childAbsentLogs.length > 0 ? ` (${childAbsentLogs.length})` : ''}
+                  {t.id === 'leave' && leaveLogs.length > 0 ? ` (${leaveLogs.length})` : ''}
+                  {t.id === 'pending' && pendingLogs.length > 0 ? ` (${pendingLogs.length})` : ''}
                 </option>
               ))}
             </select>

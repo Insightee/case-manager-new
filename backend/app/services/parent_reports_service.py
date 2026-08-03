@@ -266,12 +266,17 @@ def list_hub(db: Session, user_id: int) -> dict:
         }
         for r in engine_iep_rows
     ] + legacy_iep_filtered
+    engine_progress_rows = canonical.list_parent_visible_clinical_progress(db, case_ids)
+    progress_items = [
+        canonical.serialize_clinical_progress_list_item_light(r, cases.get(r.case_id))
+        for r in engine_progress_rows
+    ]
     items = sorted(
-        monthly + iep,
-        key=lambda x: x.get("issuedAt") or x.get("month") or "",
+        monthly + iep + progress_items,
+        key=lambda x: x.get("issuedAt") or x.get("month") or x.get("label") or "",
         reverse=True,
     )
-    return {"monthly": monthly, "iep": iep, "items": items}
+    return {"monthly": monthly, "iep": iep, "progress": progress_items, "items": items}
 
 
 def _comment_rows(db: Session, entity_type: str, entity_id: int) -> list[dict]:

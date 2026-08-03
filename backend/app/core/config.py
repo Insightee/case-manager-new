@@ -82,6 +82,20 @@ class Settings(BaseSettings):
     voice_max_audio_bytes: int = 15 * 1024 * 1024
     # Raw audio retention after transcript exists (0 = keep indefinitely).
     voice_audio_retention_days: int = 7
+    # Voice Session Log V2 — Clinical Language Engine + extended extraction schema.
+    enable_voice_session_v2: bool = False
+    enable_clinical_language_engine: bool = False
+    enable_clinical_brain_insights: bool = False
+    enable_session_longitudinal_context: bool = False
+    enable_session_analytics_events: bool = False
+    session_interpretation_model: str = ""
+    session_insight_model: str = ""
+    session_parent_summary_model: str = ""
+    session_interpretation_prompt_version: str = "voice_session_v2"
+    session_insight_prompt_version: str = "clinical_insight_v1"
+    session_parent_prompt_version: str = "family_summary_v1"
+    session_recent_context_limit: int = 5
+    session_insight_min_confirmed_sessions: int = 3
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).

@@ -48,6 +48,14 @@ def voice_session_log_active() -> bool:
     return env in ("development", "dev", "local", "test", "staging", "testing")
 
 
+def voice_session_v2_active() -> bool:
+    return bool(settings.enable_voice_session_v2)
+
+
+def clinical_language_engine_active() -> bool:
+    return bool(settings.enable_clinical_language_engine)
+
+
 def require_voice_session_log() -> None:
     if not voice_session_log_active():
         _feature_unavailable()

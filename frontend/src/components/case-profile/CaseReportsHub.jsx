@@ -5,10 +5,10 @@ import { CaseReportsPanel } from '../cases/CaseReportsPanel.jsx'
 import { normalizeReportsSection } from './reportsHubSections.js'
 import { ObservationChecklistPanel } from '../cases/ObservationChecklistPanel.jsx'
 import { CaseIepSection } from './sections/CaseIepSection.jsx'
-import { CaseProgressReportsSection } from './sections/CaseProgressReportsSection.jsx'
 import { CaseReportHistorySection } from './sections/CaseReportHistorySection.jsx'
 import { CaseReportsTab } from '../clinical/reports-tab/CaseReportsTab.jsx'
 import { MonthlyReportRoute } from '../reports-engine/monthly/MonthlyReportRoute.jsx'
+import { ProgressReportRoute } from '../reports-engine/progress/ProgressReportRoute.jsx'
 import { ReportTypePlaceholder } from '../reports-engine/shell/ReportTypePlaceholder.jsx'
 import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
 import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
@@ -16,7 +16,6 @@ import '../../styles/reports-engine.css'
 
 const PLACEHOLDER_TITLES = {
   monthly: 'Monthly Report',
-  progress: 'Progress Report',
   history: 'Report History',
 }
 
@@ -82,6 +81,13 @@ export function CaseReportsHub({
         </div>
       )
     }
+    if (section === 'progress') {
+      return (
+        <div className="cp-reports-hub forest-light">
+          <ProgressReportRoute caseId={caseId} caseCode={caseCode} childName={childName} variant={variant} />
+        </div>
+      )
+    }
     if (PLACEHOLDER_TITLES[section] && engineOn && section !== 'monthly') {
       return (
         <div className="cp-reports-hub forest-light">
@@ -112,12 +118,7 @@ export function CaseReportsHub({
       ) : null}
 
       {section === 'progress' ? (
-        <CaseProgressReportsSection
-          caseId={caseId}
-          caseCode={caseCode}
-          childName={childName}
-          variant={variant}
-        />
+        <ProgressReportRoute caseId={caseId} caseCode={caseCode} childName={childName} variant={variant} />
       ) : null}
 
       {section === 'history' ? (

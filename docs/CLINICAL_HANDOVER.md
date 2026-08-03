@@ -327,13 +327,16 @@ Legacy section keys map via `LEGACY_MONTHLY_SECTION_KEY_MAP` in `report_engine_c
 
 | Aspect | Status |
 |--------|--------|
-| Engine enum | `ClinicalReportType.PROGRESS` exists |
-| Section builder | **Not implemented** |
-| Evidence hook | `monthly_reports` (planned) |
-| UI | `CaseProgressReportsSection` / placeholder |
-| Reports tab | Due rules in `case_reports_summary_service` (6-month interval) |
+| Engine enum | `ClinicalReportType.PROGRESS` — implemented (V1) |
+| Section builder | `PROGRESS_REPORT_SECTIONS` in `report_engine_constants.py` (9 sections; `goals_progress`, `parent_summary`, `period_overview`, `strengths_and_development`, `next_period_plan` required) |
+| Evidence hook | `progress_report_service.py` + `progress_evidence_scope_service.py` — **approved-only** session logs and monthlies scoped to `review_period_*`; IEP version pinned at populate; `progress_status_rules.py` for suggested vs therapist-final status |
+| Refresh | `POST …/progress/refresh-evidence` — skips `THERAPIST_EDITED` / `CM_EDITED` sections |
+| CM review | `progress_review_service.py` — return with optional `section_comments`; review thread API |
+| Parent bridge | `parent_canonical_report_service.get_clinical_progress_for_parent` — strips `suggested_*`, `evidence_summary`, `therapist_reflection` |
+| Legacy | `progress_legacy_read_service.py` logs fallback reads; new legacy `PROGRESS` monthly writes blocked |
+| UI | Builder: status confirm/override, evidence drawer, refresh preview; Preview: clinical/parent toggle + `ProgressReviewPanel` |
 
-**Clinical action needed:** Sign off progress report template before engineering implements sections.
+**Still deferred:** PDF export, dedicated parent portal progress detail route (list item wired in hub).
 
 ---
 

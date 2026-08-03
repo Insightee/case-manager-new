@@ -83,12 +83,19 @@ def submit_report(db: Session, report: ClinicalReport, user: User, *, readiness_
     return report
 
 
-def return_report(db: Session, report: ClinicalReport, reviewer: User, comment: str) -> ClinicalReport:
+def return_report(
+    db: Session,
+    report: ClinicalReport,
+    reviewer: User,
+    comment: str,
+    *,
+    metadata: dict | None = None,
+) -> ClinicalReport:
     if not can_cm_review(report):
         raise ValueError("Report is not awaiting review")
     report.status = ClinicalReportStatus.RETURNED_FOR_CHANGES.value
     report.returned_at = datetime.now(timezone.utc)
-    log_review_event(db, report, reviewer, ReviewEventType.RETURNED.value, comment=comment)
+    log_review_event(db, report, reviewer, ReviewEventType.RETURNED.value, comment=comment, metadata=metadata)
     db.flush()
     return report
 
@@ -101,7 +108,7 @@ def _snapshot_sections(db: Session, report: ClinicalReport) -> dict:
             .order_by(ClinicalReportSection.section_order)
         ).all()
     )
-    return {
+    payload = {
         "report_id": report.id,
         "report_type": report.report_type,
         "status": report.status,
@@ -117,6 +124,12 @@ def _snapshot_sections(db: Session, report: ClinicalReport) -> dict:
             for s in sections
         ],
     }
+    if report.report_type == "progress":
+        from app.services import progress_report_service as progress_svc
+
+        payload["metadata"] = progress_svc.progress_snapshot_metadata(report)
+        payload["metadata_json"] = _json_loads(report.metadata_json)
+    return payload
 
 
 def create_approved_version_snapshot(db: Session, report: ClinicalReport, actor: User) -> ClinicalReportVersion:

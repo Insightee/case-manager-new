@@ -21,6 +21,8 @@ from app.services import clinical_snapshot_service as snap_svc
 from app.services import reference_retrieval_service as ref_svc
 from app.services.insights import ai_insight_refresh_service as refresh_svc
 from app.services.insights import insight_action_service as action_svc
+from app.services.insights import insights_ask_service as ask_svc
+from app.services.insights import insights_chat_usage_limiter as ask_usage_limiter
 from app.services.insights import weekly_insight_usage_limiter as usage_limiter
 from app.services.insights.case_insight_aggregator import build_case_insight_payload
 
@@ -64,6 +66,11 @@ class FeedbackRequest(BaseModel):
 
 class RejectRequest(BaseModel):
     comment: Optional[str] = None
+
+
+class InsightsAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    conversation_id: Optional[str] = None
 
 
 @router.get("/data-preview")
@@ -172,6 +179,31 @@ def get_refresh_usage(
 ):
     _case_for_user(db, user, case_id)
     return usage_limiter.get_usage(db, case_id=case_id, user_id=user.id)
+
+
+@router.get("/ask-usage")
+def get_ask_usage(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _case_for_user(db, user, case_id)
+    return ask_usage_limiter.get_usage(db, case_id=case_id, user_id=user.id)
+
+
+@router.post("/ask")
+def ask_insights(
+    case_id: int,
+    payload: InsightsAskRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Case-scoped Ask — explicit send only; compact structured context."""
+    _case_write(db, user, case_id)
+    try:
+        return ask_svc.ask_insight(db, case_id=case_id, user=user, question=payload.question)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/refresh")

@@ -1,0 +1,24 @@
+{
+  "name": "InsighteCase",
+  "short_name": "InsighteCase",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#c84b8a",
+  "background_color": "#ffffff",
+  "display": "standalone"
+}

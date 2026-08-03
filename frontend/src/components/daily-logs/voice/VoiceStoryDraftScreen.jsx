@@ -1,71 +1,25 @@
 import { useState } from 'react'
 import {
   NO_GOAL_REASONS,
-  aiMatchedGoals,
-  deriveSessionInsights,
-  getDraftReviewItems,
-  toggleObservation,
-  updateGoal,
+  emergingGoals,
+  getReviewSummary,
+  setChallengeSummary,
+  getChallengeSummary,
+  getChallengeContext,
+  updateChallengeFlags,
+  strengthKeywords,
+  addStrengthKeyword,
+  removeStrengthKeyword,
+  participationSignalsForDisplay,
+  availableParticipationSignals,
+  addParticipationSignal,
+  removeParticipationSignal,
 } from '../../../lib/structuredSessionEvidence.js'
-import { addGoalFromRepo } from '../../../lib/voiceExtractionMapper.js'
+import { IepGoalsSection } from './IepGoalsSection.jsx'
 import { EmergingGoalCandidates } from './EmergingGoalCandidates.jsx'
 import { StrategiesUsedSection } from './StrategiesUsedSection.jsx'
-import { ChildResponseSection } from './ChildResponseSection.jsx'
-import { ChallengesAndConcerns } from './ChallengesAndConcerns.jsx'
-
-function GoalCard({ goal, onConfirm, onReject }) {
-  const resolved = goal.status !== 'pending'
-  return (
-    <article
-      className={`vsl-stitch__goal-card ${goal.status === 'confirmed' ? 'vsl-stitch__goal-card--confirmed' : ''}`}
-    >
-      <div className="vsl-stitch__badges">
-        <span className="vsl-stitch__badge">
-          {goal.match_type === 'active_iep' ? 'Active IEP goal' : 'AI suggested'}
-        </span>
-        {goal.confidence > 0 ? (
-          <span className="vsl-stitch__badge">{Math.round(goal.confidence * 100)}% match</span>
-        ) : null}
-        {goal.status === 'pending' ? (
-          <span className="vsl-stitch__badge vsl-stitch__badge--review">Needs review</span>
-        ) : null}
-        {goal.status === 'rejected' ? <span className="vsl-stitch__badge">Rejected</span> : null}
-      </div>
-      <h4 style={{ margin: '0 0 8px' }}>{goal.goal_label}</h4>
-      {goal.source_transcript_excerpt ? (
-        <div className="vsl-stitch__transcript-box">You said: &ldquo;{goal.source_transcript_excerpt}&rdquo;</div>
-      ) : null}
-      {goal.evidence?.length ? (
-        <ul style={{ margin: '8px 0', paddingLeft: 18, fontSize: '0.875rem' }}>
-          {goal.evidence.map((e, i) => (
-            <li key={i}>{e}</li>
-          ))}
-        </ul>
-      ) : null}
-      <div className="vsl-stitch__chip-row">
-        <button
-          type="button"
-          className={`vsl-stitch__chip ${goal.status === 'confirmed' ? 'vsl-stitch__chip--on' : ''}`}
-          onClick={onConfirm}
-        >
-          {goal.status === 'confirmed' ? 'Confirmed' : 'Confirm'}
-        </button>
-        <button
-          type="button"
-          className={`vsl-stitch__chip ${goal.status === 'rejected' ? 'vsl-stitch__chip--on' : ''}`}
-          onClick={onReject}
-        >
-          {goal.status === 'rejected' ? 'Rejected' : 'Reject'}
-        </button>
-      </div>
-      {!resolved ? (
-        <p style={{ fontSize: '0.75rem', color: 'var(--vsl-secondary)', margin: '6px 0 0' }}>
-          Confirm if this goal was genuinely worked on today; reject if the match is wrong.
-        </p>
-      ) : null}
-    </article>
-  )
-}
+import { ClinicalBrainInsightPanel } from './ClinicalBrainInsightPanel.jsx'
+import { VoiceReviewSummary } from './VoiceReviewSummary.jsx'
 
 export function VoiceStoryDraftScreen({
   structuredSession,
@@ -76,209 +30,283 @@ export function VoiceStoryDraftScreen({
   transcriptOpen,
   onToggleTranscript,
 }) {
-  const [goalSearch, setGoalSearch] = useState('')
-  const reviewItems = getDraftReviewItems(structuredSession)
-  const insights = deriveSessionInsights(structuredSession)
-  const matched = aiMatchedGoals(structuredSession)
+  const [strengthInput, setStrengthInput] = useState('')
+  const [showMoreParticipation, setShowMoreParticipation] = useState(false)
+  const summary = getReviewSummary(structuredSession)
+  const emerging = emergingGoals(structuredSession)
   const confirmedCount = (structuredSession.goals || []).filter(
     (g) => g.status === 'confirmed' || g.status === 'changed',
   ).length
-
-  function setGoal(goal, patch) {
-    const idx = structuredSession.goals.indexOf(goal)
-    if (idx >= 0) onChange(updateGoal(structuredSession, idx, patch))
-  }
-
-  const usedLabels = new Set((structuredSession.goals || []).map((g) => (g.goal_label || '').toLowerCase()))
-  const searchResults = goalSearch.trim()
-    ? (repo?.goals || [])
-        .filter(
-          (g) =>
-            !usedLabels.has((g.label || '').toLowerCase()) &&
-            (g.label || '').toLowerCase().includes(goalSearch.trim().toLowerCase()),
-        )
-        .slice(0, 5)
-    : []
+  const challengeText = getChallengeSummary(structuredSession)
+  const challengeCtx = getChallengeContext(structuredSession)
+  const strengths = strengthKeywords(structuredSession)
+  const participation = participationSignalsForDisplay(structuredSession)
+  const moreParticipation = availableParticipationSignals(structuredSession)
 
   return (
-    <div>
-      {reviewItems.length > 0 ? (
-        <div className="vsl-stitch__banner vsl-stitch__banner--review" role="status">
-          <strong>
-            {reviewItems.length} item{reviewItems.length > 1 ? 's' : ''} to review before submitting
-          </strong>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: '0.8125rem' }}>
-            {reviewItems.map((item, i) => (
-              <li key={i}>{item.label}</li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <div className="vsl-stitch__banner vsl-stitch__banner--success" role="status">
-          <strong>Everything is reviewed — you can preview and submit.</strong>
-        </div>
-      )}
+    <div className="vsl-stitch__timeline-feed">
+      <div className="vsl-stitch__status-row">
+        <span className="vsl-stitch__status-dot" aria-hidden="true" />
+        <span className="vsl-stitch__status-text">Interpretation ready</span>
+        {summary.hasUnresolved ? (
+          <span className="vsl-stitch__status-hint">
+            {summary.pendingGoals ? `${summary.pendingGoals} to review` : 'Review suggested items'}
+          </span>
+        ) : (
+          <span className="vsl-stitch__status-hint vsl-stitch__status-hint--ok">Ready to preview</span>
+        )}
+      </div>
 
-      <section className="vsl-stitch__card">
-        <h3 className="vsl-stitch__section-head" style={{ marginTop: 0 }}>
-          What happened today?
-        </h3>
+      <VoiceReviewSummary structuredSession={structuredSession} />
+
+      <section className="vsl-stitch__timeline-card vsl-stitch__timeline-card--ai">
+        <div className="vsl-stitch__card-head">
+          <div className="vsl-stitch__card-icon vsl-stitch__card-icon--ai">✦</div>
+          <h3 className="vsl-stitch__card-title">Today&apos;s session narrative</h3>
+          <span className="vsl-stitch__ai-tag">AI mapped</span>
+        </div>
         <textarea
-          className="vsl-stitch__textarea"
-          rows={5}
+          className="vsl-stitch__field vsl-stitch__field--narrative"
+          rows={6}
           maxLength={4000}
           value={structuredSession.todays_story}
-          placeholder="A short account of today's session — AI drafted this from your recording; adjust freely."
+          placeholder="Your session story — edit freely. Filled from your voice note."
           onChange={(e) =>
             onChange({ ...structuredSession, todays_story: e.target.value, story_edited_by_therapist: true })
           }
         />
+        {structuredSession.voice_transcript ? (
+          <details className="vsl-stitch__transcript-details" open={transcriptOpen}>
+            <summary onClick={(e) => { e.preventDefault(); onToggleTranscript?.(!transcriptOpen) }}>
+              View transcript
+            </summary>
+            <p className="vsl-stitch__transcript-text">{structuredSession.voice_transcript}</p>
+          </details>
+        ) : null}
       </section>
 
-      {structuredSession.voice_transcript ? (
-        <details open={transcriptOpen} onToggle={(e) => onToggleTranscript?.(e.target.open)}>
-          <summary>View transcript</summary>
-          <p style={{ fontSize: '0.875rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-            {structuredSession.voice_transcript}
-          </p>
-        </details>
-      ) : null}
+      <IepGoalsSection structuredSession={structuredSession} onChange={onChange} repo={repo} />
 
-      <section aria-label="Goals worked on">
-        <h3 className="vsl-stitch__section-head">Goals worked on</h3>
-        {matched.length ? (
-          matched.map((g, i) => (
-            <GoalCard
-              key={`${g.goal_card_id || g.goal_label}-${i}`}
-              goal={g}
-              onConfirm={() => setGoal(g, { status: 'confirmed' })}
-              onReject={() => setGoal(g, { status: 'rejected' })}
-            />
-          ))
-        ) : (
-          <p style={{ color: 'var(--vsl-secondary)', fontSize: '0.875rem' }}>
-            No active IEP goals matched from your update.
-          </p>
-        )}
-
-        <input
-          className="vsl-stitch__input"
-          placeholder="Search IEP goals to add…"
-          value={goalSearch}
-          onChange={(e) => setGoalSearch(e.target.value)}
-          aria-label="Search IEP goals"
-        />
-        {searchResults.length ? (
-          <div className="vsl-stitch__chip-row" style={{ marginTop: 8 }}>
-            {searchResults.map((g) => (
+      {confirmedCount === 0 ? (
+        <div className="vsl-stitch__no-goal vsl-stitch__timeline-card">
+          <p className="vsl-stitch__field-label">No IEP goal addressed today?</p>
+          <div className="vsl-stitch__pill-row">
+            {NO_GOAL_REASONS.map((r) => (
               <button
-                key={g.goal_card_id || g.label}
+                key={r.id}
                 type="button"
-                className="vsl-stitch__chip"
-                onClick={() => {
-                  onChange(addGoalFromRepo(structuredSession, g))
-                  setGoalSearch('')
-                }}
+                className={`vsl-stitch__pill ${structuredSession.no_goal_reason === r.id ? 'vsl-stitch__pill--on' : ''}`}
+                onClick={() =>
+                  onChange({
+                    ...structuredSession,
+                    no_goal_reason: structuredSession.no_goal_reason === r.id ? null : r.id,
+                  })
+                }
               >
-                + {g.label}
+                {r.label}
               </button>
             ))}
           </div>
-        ) : null}
+        </div>
+      ) : null}
 
-        {confirmedCount === 0 ? (
-          <div style={{ marginTop: 12 }}>
-            <p className="vsl-stitch__group-label">No IEP goal addressed today? Tell us why:</p>
-            <div className="vsl-stitch__chip-row">
-              {NO_GOAL_REASONS.map((r) => (
+      {emerging.length ? (
+        <section className="vsl-stitch__timeline-card vsl-stitch__timeline-card--emerging">
+          <div className="vsl-stitch__card-head">
+            <div className="vsl-stitch__card-icon">◎</div>
+            <h3 className="vsl-stitch__card-title">New goal ideas from today</h3>
+            <span className="vsl-stitch__ai-tag">Not on IEP yet</span>
+          </div>
+          <p className="vsl-stitch__section-hint">
+            Your session mentioned work that isn&apos;t on the current IEP — for example a new skill area like maths.
+            Review and suggest adding as a goal for case manager approval.
+          </p>
+          <EmergingGoalCandidates
+            structuredSession={structuredSession}
+            onChange={onChange}
+            caseId={caseId}
+            sessionId={sessionId}
+            embedded
+          />
+        </section>
+      ) : null}
+
+      <div className="vsl-stitch__grid-2">
+        <section className="vsl-stitch__timeline-card">
+          <div className="vsl-stitch__card-head">
+            <div className="vsl-stitch__card-icon">◈</div>
+            <h3 className="vsl-stitch__card-title">Strategies used</h3>
+          </div>
+          <StrategiesUsedSection
+            structuredSession={structuredSession}
+            onChange={onChange}
+            repo={repo}
+            caseId={caseId}
+          />
+        </section>
+
+        <section className="vsl-stitch__timeline-card">
+          <div className="vsl-stitch__card-head">
+            <div className="vsl-stitch__card-icon">◉</div>
+            <h3 className="vsl-stitch__card-title">Participation</h3>
+          </div>
+          {participation.length ? (
+            <div className="vsl-stitch__pill-row">
+              {participation.map((s) => (
                 <button
-                  key={r.id}
+                  key={s.id}
                   type="button"
-                  className={`vsl-stitch__chip ${structuredSession.no_goal_reason === r.id ? 'vsl-stitch__chip--on' : ''}`}
-                  onClick={() =>
-                    onChange({
-                      ...structuredSession,
-                      no_goal_reason: structuredSession.no_goal_reason === r.id ? null : r.id,
-                    })
-                  }
+                  className="vsl-stitch__pill vsl-stitch__pill--mint"
+                  onClick={() => onChange(removeParticipationSignal(structuredSession, s.id))}
+                  title="Remove"
                 >
-                  {r.label}
+                  {s.label} ×
                 </button>
               ))}
             </div>
+          ) : (
+            <p className="vsl-stitch__empty-hint">Participation signals from your recording will appear here.</p>
+          )}
+          {moreParticipation.length ? (
+            <>
+              <button
+                type="button"
+                className="vsl-stitch__text-link"
+                style={{ marginTop: 8 }}
+                onClick={() => setShowMoreParticipation((v) => !v)}
+              >
+                {showMoreParticipation ? 'Hide' : 'Add'} participation signal
+              </button>
+              {showMoreParticipation ? (
+                <div className="vsl-stitch__pill-row" style={{ marginTop: 8 }}>
+                  {moreParticipation.slice(0, 8).map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className="vsl-stitch__pill vsl-stitch__pill--add"
+                      onClick={() => {
+                        onChange(addParticipationSignal(structuredSession, s.id))
+                        setShowMoreParticipation(false)
+                      }}
+                    >
+                      + {s.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          <div style={{ marginTop: 16 }}>
+            <p className="vsl-stitch__field-label">Strengths noticed</p>
+            {strengths.length ? (
+              <div className="vsl-stitch__pill-row">
+                {strengths.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="vsl-stitch__pill vsl-stitch__pill--strength"
+                    onClick={() => onChange(removeStrengthKeyword(structuredSession, s))}
+                  >
+                    {s} ×
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="vsl-stitch__empty-hint">Strength keywords from your session will appear here.</p>
+            )}
+            <div className="vsl-stitch__keyword-add">
+              <input
+                className="vsl-stitch__field vsl-stitch__field--search"
+                placeholder="Add strength keyword…"
+                value={strengthInput}
+                maxLength={80}
+                onChange={(e) => setStrengthInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && strengthInput.trim()) {
+                    e.preventDefault()
+                    onChange(addStrengthKeyword(structuredSession, strengthInput))
+                    setStrengthInput('')
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {(structuredSession.support_signals || []).length ? (
+        <section className="vsl-stitch__timeline-card">
+          <p className="vsl-stitch__section-label">Supports leveraged</p>
+          <div className="vsl-stitch__pill-row">
+            {structuredSession.support_signals.map((s, i) => (
+              <span key={i} className="vsl-stitch__support-pill">
+                {s.label}
+              </span>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section
+        className={`vsl-stitch__timeline-card ${challengeCtx.aiSuggested ? 'vsl-stitch__timeline-card--highlight' : ''}`}
+      >
+        <div className="vsl-stitch__card-head">
+          <p className="vsl-stitch__section-label" style={{ margin: 0 }}>
+            Challenges or barriers observed
+          </p>
+          {challengeCtx.aiSuggested ? (
+            <span className="vsl-stitch__badge vsl-stitch__badge--review">From your recording</span>
+          ) : null}
+        </div>
+        {(challengeCtx.environment || challengeCtx.childLevel) && challengeText.trim() ? (
+          <div className="vsl-stitch__pill-row" style={{ marginBottom: 10 }}>
+            {challengeCtx.environment ? (
+              <span className="vsl-stitch__barrier-pill vsl-stitch__barrier-pill--env">Environment barrier</span>
+            ) : null}
+            {challengeCtx.childLevel ? (
+              <span className="vsl-stitch__barrier-pill vsl-stitch__barrier-pill--child">Support moment</span>
+            ) : null}
+          </div>
+        ) : null}
+        <textarea
+          className="vsl-stitch__field vsl-stitch__field--inline"
+          rows={3}
+          maxLength={1200}
+          placeholder="Barriers, sensory context, or support moments — edit in neuro-affirming language."
+          value={challengeText}
+          onChange={(e) => onChange(setChallengeSummary(structuredSession, e.target.value))}
+        />
+        {challengeText.trim() ? (
+          <div className="vsl-stitch__pill-row" style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className={`vsl-stitch__pill ${challengeCtx.flagCm ? 'vsl-stitch__pill--review' : ''}`}
+              onClick={() =>
+                onChange(updateChallengeFlags(structuredSession, { flag_cm_review: !challengeCtx.flagCm }))
+              }
+            >
+              Flag for CM review
+            </button>
           </div>
         ) : null}
       </section>
 
-      <EmergingGoalCandidates
-        structuredSession={structuredSession}
-        onChange={onChange}
-        caseId={caseId}
-        sessionId={sessionId}
-      />
+      <section className="vsl-stitch__timeline-card vsl-stitch__timeline-card--brain">
+        <div className="vsl-stitch__card-head">
+          <div className="vsl-stitch__card-icon vsl-stitch__card-icon--brain">◆</div>
+          <h3 className="vsl-stitch__card-title vsl-stitch__card-title--light">Clinical Brain insights</h3>
+        </div>
+        <ClinicalBrainInsightPanel structuredSession={structuredSession} compact />
+      </section>
 
-      <StrategiesUsedSection
-        structuredSession={structuredSession}
-        onChange={onChange}
-        repo={repo}
-        caseId={caseId}
-      />
-
-      <ChildResponseSection structuredSession={structuredSession} onChange={onChange} />
-
-      <ChallengesAndConcerns
-        structuredSession={structuredSession}
-        onChange={onChange}
-        caseId={caseId}
-        sessionId={sessionId}
-      />
-
-      {structuredSession.observations?.strengths?.length ? (
-        <section aria-label="Strengths noticed">
-          <h3 className="vsl-stitch__section-head">Strengths noticed</h3>
-          <div className="vsl-stitch__chip-row">
-            {structuredSession.observations.strengths.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className="vsl-stitch__chip vsl-stitch__chip--on"
-                onClick={() => onChange(toggleObservation(structuredSession, 'strengths', s))}
-                title="Tap to remove"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {insights.length ? (
-        <section className="vsl-stitch__card" aria-label="Therapist insights">
-          <h3 className="vsl-stitch__section-head" style={{ marginTop: 0 }}>
-            Session insights
-          </h3>
-          <p style={{ fontSize: '0.75rem', color: 'var(--vsl-secondary)', margin: '0 0 8px' }}>
-            Drawn from what you confirmed today. Single-session signals only — never shared with families.
-          </p>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.875rem', lineHeight: 1.6 }}>
-            {insights.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <section className="vsl-stitch__card">
-        <h3 className="vsl-stitch__section-head" style={{ marginTop: 0 }}>
-          Therapist reflection
-        </h3>
-        <p style={{ fontSize: '0.8125rem', color: 'var(--vsl-secondary)', margin: '0 0 8px' }}>
-          Optional — internal only, not shared with families (max 500 characters)
-        </p>
+      <section className="vsl-stitch__timeline-card">
+        <p className="vsl-stitch__section-label">Therapist reflection (internal)</p>
         <textarea
-          className="vsl-stitch__textarea"
+          className="vsl-stitch__field vsl-stitch__field--inline"
           maxLength={500}
-          placeholder="Something that surprised me, what worked, supervision notes…"
+          rows={2}
+          placeholder="Optional — not shared with families"
           value={structuredSession.therapist_reflection || ''}
           onChange={(e) => onChange({ ...structuredSession, therapist_reflection: e.target.value || null })}
         />

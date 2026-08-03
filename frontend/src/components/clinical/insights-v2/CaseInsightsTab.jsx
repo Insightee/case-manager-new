@@ -10,9 +10,12 @@ import { SessionLogInsightsSection } from './SessionLogInsightsSection.jsx'
 import { SuggestedGoalsStrategiesSection } from './SuggestedGoalsStrategiesSection.jsx'
 import { InsightsBottomActions } from './InsightsBottomActions.jsx'
 import { InsightsRefreshBar } from './InsightsRefreshBar.jsx'
+import { InsightsSubTabBar, useInsightsSubTab } from './InsightsSubTabBar.jsx'
+import { InsightsAskPanel } from './InsightsAskPanel.jsx'
 
 export function CaseInsightsTab({ caseId, variant = 'therapist' }) {
   const navigate = useNavigate()
+  const { view, setView } = useInsightsSubTab()
   const {
     summary,
     isLoading,
@@ -74,61 +77,69 @@ export function CaseInsightsTab({ caseId, variant = 'therapist' }) {
 
   return (
     <div className="ci-page forest-light">
-      <InsightsRefreshBar usage={usage} onRefresh={refresh} isRefreshing={isRefreshing} message={refreshMessage} />
+      <InsightsSubTabBar activeView={view} onChange={setView} />
 
-      <ChildSnapshotSection
-        child={summary.child}
-        insight={childSnapshotInsight}
-        selected={selectedIds.has('child_snapshot')}
-        onToggleSelect={toggleSelected}
-      />
+      {view === 'ask' ? (
+        <InsightsAskPanel caseId={caseId} />
+      ) : (
+        <div role="tabpanel" id="ci-subtabpanel-weekly" aria-labelledby="ci-subtab-weekly">
+          <InsightsRefreshBar usage={usage} onRefresh={refresh} isRefreshing={isRefreshing} message={refreshMessage} />
 
-      <IepGoalProgressSection
-        goals={summary.activeIEP?.goals}
-        insightsById={insightsById}
-        selectedIds={selectedIds}
-        onToggleSelect={toggleSelected}
-        onViewFullIep={() => navigate(`${basePath}?tab=goals`)}
-        onViewEvidence={() => navigate(variant === 'admin' ? `${basePath}?tab=logs` : '/therapist/logs')}
-      />
+          <ChildSnapshotSection
+            child={summary.child}
+            insight={childSnapshotInsight}
+            selected={selectedIds.has('child_snapshot')}
+            onToggleSelect={toggleSelected}
+          />
 
-      <NextSessionFocusCard
-        focus={summary.nextSessionFocus}
-        insight={nextSessionInsight}
-        selected={selectedIds.has('next_session_focus')}
-        onToggleSelect={toggleSelected}
-      />
+          <IepGoalProgressSection
+            goals={summary.activeIEP?.goals}
+            insightsById={insightsById}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelected}
+            onViewFullIep={() => navigate(`${basePath}?tab=goals`)}
+            onViewEvidence={() => navigate(variant === 'admin' ? `${basePath}?tab=logs` : '/therapist/logs')}
+          />
 
-      <CollaborativeInputsGrid
-        cards={summary.collaborativeInputs}
-        insightsById={insightsById}
-        selectedIds={selectedIds}
-        onToggleSelect={toggleSelected}
-      />
+          <NextSessionFocusCard
+            focus={summary.nextSessionFocus}
+            insight={nextSessionInsight}
+            selected={selectedIds.has('next_session_focus')}
+            onToggleSelect={toggleSelected}
+          />
 
-      <SessionLogInsightsSection
-        evidence={summary.evidence}
-        insightsById={insightsById}
-        selectedIds={selectedIds}
-        onToggleSelect={toggleSelected}
-      />
+          <CollaborativeInputsGrid
+            cards={summary.collaborativeInputs}
+            insightsById={insightsById}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelected}
+          />
 
-      <SuggestedGoalsStrategiesSection suggested={summary.suggested} />
+          <SessionLogInsightsSection
+            evidence={summary.evidence}
+            insightsById={insightsById}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelected}
+          />
 
-      {stagedMessage ? <p className="ci-staged-message" role="status">{stagedMessage}</p> : null}
+          <SuggestedGoalsStrategiesSection suggested={summary.suggested} />
 
-      <InsightsBottomActions
-        selectedCount={selectedCount}
-        onAddToMonthlyReport={() => handleSubmit('monthly_report')}
-        onSubmitForIepReview={() => handleSubmit('iep_review')}
-        busy={isSubmittingSelection}
-      />
+          {stagedMessage ? <p className="ci-staged-message" role="status">{stagedMessage}</p> : null}
 
-      {goalCount === 0 && insights.length <= 1 ? (
-        <p className="ci-empty-note">
-          Add IEP goals and session logs for this case to start building structured insights.
-        </p>
-      ) : null}
+          <InsightsBottomActions
+            selectedCount={selectedCount}
+            onAddToMonthlyReport={() => handleSubmit('monthly_report')}
+            onSubmitForIepReview={() => handleSubmit('iep_review')}
+            busy={isSubmittingSelection}
+          />
+
+          {goalCount === 0 && insights.length <= 1 ? (
+            <p className="ci-empty-note">
+              Add IEP goals and session logs for this case to start building structured insights.
+            </p>
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }

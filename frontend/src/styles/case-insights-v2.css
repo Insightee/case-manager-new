@@ -1007,3 +1007,202 @@
     transition: none !important;
   }
 }
+
+/* Inner sub-tabs: Weekly Insights | Ask */
+.ci-page.forest-light .ci-subtabs {
+  display: flex;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 0;
+  background: var(--ci-bg);
+}
+
+.ci-page.forest-light .ci-subtabs__pill {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--ci-border);
+  background: var(--ci-surface);
+  color: var(--ci-muted);
+  font-family: var(--ci-font-body);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ci-page.forest-light .ci-subtabs__pill--active {
+  background: var(--ci-secondary-container);
+  border-color: var(--ci-secondary);
+  color: var(--ci-on-secondary-container);
+}
+
+/* Ask panel */
+.ci-page.forest-light .ci-ask-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: min(70vh, 560px);
+  padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+}
+
+.ci-page.forest-light .ci-ask-panel__header {
+  background: var(--ci-surface);
+  border: 1px solid var(--ci-border);
+  border-radius: var(--ci-radius-lg);
+  padding: 16px;
+}
+
+.ci-page.forest-light .ci-ask-panel__title {
+  margin: 0;
+  font-family: var(--ci-font-headline);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ci-ink);
+}
+
+.ci-page.forest-light .ci-ask-panel__subtext {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: var(--ci-muted);
+}
+
+.ci-page.forest-light .ci-ask-panel__usage {
+  display: inline-block;
+  margin-top: 10px;
+  font-family: var(--ci-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ci-label);
+}
+
+.ci-page.forest-light .ci-ask-panel__messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.ci-page.forest-light .ci-ask-panel__empty,
+.ci-page.forest-light .ci-ask-panel__loading {
+  margin: 0;
+  padding: 16px;
+  border-radius: var(--ci-radius);
+  background: var(--ci-surface-soft);
+  color: var(--ci-muted);
+  font-size: 0.875rem;
+}
+
+.ci-page.forest-light .ci-ask-panel__error {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--ci-radius);
+  background: var(--ci-error-container);
+  color: var(--ci-error);
+  font-size: 0.8125rem;
+}
+
+.ci-page.forest-light .ci-ask-bubble {
+  max-width: 92%;
+  padding: 12px 14px;
+  border-radius: var(--ci-radius);
+  border: 1px solid var(--ci-border);
+}
+
+.ci-page.forest-light .ci-ask-bubble--user {
+  align-self: flex-end;
+  background: var(--ci-secondary-container);
+  border-color: transparent;
+}
+
+.ci-page.forest-light .ci-ask-bubble--assistant {
+  align-self: flex-start;
+  background: var(--ci-surface);
+}
+
+.ci-page.forest-light .ci-ask-bubble__label {
+  margin: 0 0 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ci-label);
+}
+
+.ci-page.forest-light .ci-ask-bubble__text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--ci-ink);
+}
+
+.ci-page.forest-light .ci-ask-panel__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ci-page.forest-light .ci-ask-chip {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--ci-border);
+  background: var(--ci-surface);
+  color: var(--ci-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ci-page.forest-light .ci-ask-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ci-page.forest-light .ci-ask-panel__composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--ci-bg) 80%, transparent);
+}
+
+.ci-page.forest-light .ci-ask-panel__input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--ci-radius);
+  border: 1px solid var(--ci-border);
+  background: var(--ci-surface);
+  font-family: var(--ci-font-body);
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+.ci-page.forest-light .ci-ask-panel__send {
+  min-height: 44px;
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .ci-page.forest-light .ci-ask-panel__send {
+    width: auto;
+    align-self: flex-end;
+  }
+
+  .ci-page.forest-light .ci-ask-panel__composer {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  .ci-page.forest-light .ci-ask-panel__input {
+    flex: 1;
+  }
+}

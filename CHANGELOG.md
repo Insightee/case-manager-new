@@ -9,6 +9,9 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 ## [Unreleased]
 
 ### Added
+- Voice Session Log V2 Phase 2: Clinical Language Engine (`clinical_language_engine_service.py`), compact session context builder, extended extraction schema v2, honest 3-stage processing UI. Flags: `ENABLE_VOICE_SESSION_V2`, `ENABLE_CLINICAL_LANGUAGE_ENGINE` (default off).
+- Progress report engine: `progress_report_service` + builder/preview UI, evidence scope/review helpers (`docs/PROGRESS_REPORT_RULES.md`).
+- Case Insights **Ask** sub-tab: case-scoped chatbot with weekly cap (`insights_ask_service`, `POST /cases/{id}/insights/ask`).
 - Clinical brain & session-log canonicalisation: product docs (`docs/product/*`), `DESIGN.md`, `canonical-manifest.yml`, Cursor rule `insighte-clinical-canonical.mdc`; `SessionLogApplicationService` (single write entry), `SessionEvidenceProjection` + preview/build services; time audit table; deprecated route adapters with usage gates.
 - Voice-first session log is now the **canonical editor** on all therapist routes (logs page, case detail, edit/resubmit) — frontend flag removed; "Type instead" opens the same structured draft. New clinical confirmation sections: session context header with audited time edit, emerging goal candidates → CM review queue, strategies used today (active / other / max-2 deterministic recommendations), child response signals, challenges with CM flag + incident link (never auto-created), deterministic session insights, family + clinical preview tabs. Legacy prose logs adapt into the draft via `legacyLogToStructuredSession`; all new data lives in `structured_session_json` (no migration).
 - Team workflow: `CONTRIBUTING.md`, PR template, CODEOWNERS, pre-push/pre-release scripts, pre-commit hooks, CI contributor guards.
@@ -25,6 +28,7 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 - Pending invite UI explains cancel vs post-registration login paths.
 
 ### Fixed
+- Voice Session Log V2 Phase 3–5: mobile review accordions, Clinical Brain insight panel, family preview from confirmed evidence only, longitudinal insight services, analytics events on submit.
 - Use current location: reverse geocode now uses API base URL (works on Vercel production).
 - Security: active portal users no longer hidden from People when total users exceeds 100.
 

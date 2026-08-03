@@ -121,13 +121,37 @@ def apply_structured_to_log(
     model = structured if isinstance(structured, StructuredSessionEvidence) else _parse_structured(structured)
     if validate_submit:
         validate_structured_for_submit(model)
-    return sse_svc.apply_structured_session_to_log(
+    result = sse_svc.apply_structured_session_to_log(
         db,
         log,
         user,
         model,
         recording_id=recording_id,
     )
+    if validate_submit:
+        from app.services.session_analytics_event_service import record_structured_session_events
+
+        extraction_meta = None
+        if recording_id:
+            from app.models.session_audio import SessionAudioRecording
+
+            rec = db.get(SessionAudioRecording, recording_id)
+            if rec and rec.extraction_json:
+                try:
+                    import json
+
+                    ext = json.loads(rec.extraction_json)
+                    extraction_meta = ext.get("extraction_metadata")
+                except (json.JSONDecodeError, TypeError):
+                    extraction_meta = None
+        record_structured_session_events(
+            db,
+            log,
+            result.to_json_dict(),
+            user,
+            extraction_metadata=extraction_meta,
+        )
+    return result
 
 
 def apply_session_evidence_payload(

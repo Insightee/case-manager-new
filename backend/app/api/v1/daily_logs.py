@@ -394,6 +394,12 @@ def approve_log(
         billing_ledger_service.upsert_from_daily_log_approved(db, log)
         if case and case.client_billing_mode == ClientBillingMode.PREPAID:
             billing_ledger_service.consume_package_session(db, case_id=case.id, session=log.session)
+        if case and log.session and log.session.scheduled_date:
+            billing_ledger_service.ensure_period_charges(
+                db,
+                case_id=case.id,
+                billing_month=log.session.scheduled_date.strftime("%Y-%m"),
+            )
     except Exception:
         pass
     db.commit()
@@ -424,6 +430,11 @@ def reject_log(
     from app.services import session_log_service
 
     session_log_service.notify_therapist_log_rejected(db, log, comment=comment)
+    try:
+        if log.session:
+            billing_ledger_service.sync_session_status(db, log.session)
+    except Exception:
+        pass
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="reject", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()

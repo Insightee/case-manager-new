@@ -149,6 +149,14 @@ Setup: [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md)
 | `VOICE_MAX_RECORDING_SECONDS` | no | `120` | Max voice recording duration. |
 | `VOICE_MAX_AUDIO_BYTES` | no | 15 MiB | Max uploaded audio size. |
 | `VOICE_AUDIO_RETENTION_DAYS` | no | `30` | Raw audio retention after transcript (0 = keep). |
+| `ENABLE_VOICE_SESSION_V2` | no | `false` | Voice Session Log V2 extraction schema + honest 3-stage pipeline UI. |
+| `ENABLE_CLINICAL_LANGUAGE_ENGINE` | no | `false` | Versioned CLE prompts for session interpretation (requires V2 for full path). |
+| `ENABLE_CLINICAL_BRAIN_INSIGHTS` | no | `false` | Session-scoped Clinical Brain insight panel (Phase 4). |
+| `ENABLE_SESSION_LONGITUDINAL_CONTEXT` | no | `false` | Include recent confirmed sessions in interpretation context. |
+| `ENABLE_SESSION_ANALYTICS_EVENTS` | no | `false` | Structured immutable evidence events after submit (Phase 6). |
+| `SESSION_INTERPRETATION_MODEL` | no | — | Model override for session interpretation (falls back to `SESSION_LOG_MODEL`). |
+| `SESSION_INTERPRETATION_PROMPT_VERSION` | no | `voice_session_v2` | CLE prompt version tag stored in extraction metadata. |
+| `SESSION_RECENT_CONTEXT_LIMIT` | no | `5` | Max recent structured sessions in interpretation context. |
 | `BILLING_LEDGER_DRAFTS` | no | `true` | Billing ledger draft mode. |
 | `ACCEPTANCE_GATING_ENABLED` | no | `false` | When false, parent assignment acceptance is informational only (pilot default). |
 | `TICKET_ATTACHMENT_MAX_BYTES` | no | 5 MiB | Max size per ticket attachment. |

@@ -309,6 +309,10 @@ def extract_session_log_structure(
 def extract_for_recording(db: Session, recording: SessionAudioRecording) -> SessionAudioRecording:
     """Pipeline step: run extraction for a transcribed recording and persist
     the outcome on the row. Never raises."""
+    from app.core.feature_flags import clinical_language_engine_active, voice_session_v2_active
+    from app.services.clinical_language_engine_service import extract_with_cle_if_active
+    from app.services.session_context_builder import build_session_interpretation_context
+
     if not recording.transcript:
         recording.extraction_status = ExtractionStatus.SKIPPED.value
         db.commit()
@@ -324,8 +328,19 @@ def extract_for_recording(db: Session, recording: SessionAudioRecording) -> Sess
 
     started = time.monotonic()
     try:
-        context = build_case_context(db, recording.case_id)
-        extraction = extract_session_log_structure(recording.transcript, context)
+        if voice_session_v2_active() or clinical_language_engine_active():
+            context = build_session_interpretation_context(
+                db,
+                recording.case_id,
+                session_id=recording.session_id,
+            )
+        else:
+            context = build_case_context(db, recording.case_id)
+        extraction = extract_with_cle_if_active(
+            recording.transcript,
+            context,
+            starting_state=None,
+        )
         recording.extraction_json = extraction.model_dump_json()
         recording.extraction_status = ExtractionStatus.COMPLETED.value
     except (ValidationError, ValueError, KeyError) as exc:

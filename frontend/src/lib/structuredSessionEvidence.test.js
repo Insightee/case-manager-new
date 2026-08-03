@@ -1,18 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  addChallenge,
+  buildFamilyPreview,
   canSubmitVoiceDraft,
   collectSessionStrategies,
   deriveSessionInsights,
   dismissEmergingGoal,
   emptyStructuredSession,
   getDraftReviewItems,
+  getReviewSummary,
   inferResponseSignals,
   markGoalCandidateSent,
   recommendStrategies,
+  setChallengeSummary,
   toggleResponseSignal,
   updateStrategyFeedback,
+  addChallenge,
 } from './structuredSessionEvidence.js'
 
 function sessionWith(goals = [], extra = {}) {
@@ -122,4 +125,32 @@ test('addChallenge appends an editable therapist entry', () => {
   assert.equal(updated.challenge_observations.length, 1)
   assert.equal(updated.challenge_observations[0].source, 'therapist')
   assert.equal(updated.challenge_observations[0].flag_cm_review, false)
+})
+
+test('buildFamilyPreview uses confirmed goals only', () => {
+  const session = sessionWith([], { child_response_signals: ['requested_break'] })
+  session.goals = [
+    {
+      ...pendingIepGoal,
+      status: 'confirmed',
+      strategies: [{ strategy_label: 'Visual timer', feedback: 'worked_well' }],
+    },
+    { goal_label: 'Emerging', match_type: 'new_observation', status: 'pending' },
+  ]
+  const preview = buildFamilyPreview(session)
+  assert.deepEqual(preview.worked_on, ['Turn-taking'])
+  assert.ok(preview.appeared_helpful.includes('Visual timer'))
+  assert.ok(preview.strength_highlight.some((s) => s.toLowerCase().includes('break')))
+})
+
+test('getReviewSummary counts pending goals', () => {
+  const summary = getReviewSummary(sessionWith([pendingIepGoal]))
+  assert.equal(summary.pendingGoals, 1)
+  assert.equal(summary.hasUnresolved, true)
+})
+
+test('setChallengeSummary keeps a single summary entry', () => {
+  const updated = setChallengeSummary(sessionWith(), 'Noise made participation harder.')
+  assert.equal(updated.challenge_observations.length, 1)
+  assert.match(updated.challenge_observations[0].text, /Noise/)
 })

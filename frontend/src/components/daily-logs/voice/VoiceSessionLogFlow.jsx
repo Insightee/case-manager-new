@@ -18,6 +18,7 @@ import { emptyStructuredSession } from '../../../lib/structuredSessionEvidence.j
 import { useVoiceRecorder } from '../../../hooks/useVoiceRecorder.js'
 import { useSessionLogSubmit } from '../../../hooks/useSessionLogSubmit.js'
 import { isLateSessionLog } from '../../../lib/sessionLogUtils.js'
+import { canSubmitVoiceDraft } from '../../../lib/structuredSessionEvidence.js'
 import { VoiceReadyScreen } from './VoiceReadyScreen.jsx'
 import { VoiceRecordingScreen } from './VoiceRecordingScreen.jsx'
 import { VoiceProcessingScreen } from './VoiceProcessingScreen.jsx'
@@ -63,6 +64,7 @@ function VoiceFlowInner(props) {
   const [audioAvailable, setAudioAvailable] = useState(false)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [lateReason, setLateReason] = useState(existingLog?.late_reason || '')
+  const [savingDraft, setSavingDraft] = useState(false)
   const resumeStartedRef = useRef(false)
 
   const isLate = isLateSessionLog(session)
@@ -242,6 +244,16 @@ function VoiceFlowInner(props) {
     }
   }
 
+  async function handleSaveDraft() {
+    setSavingDraft(true)
+    setError('')
+    try {
+      await saveDraft(structuredSession)
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
   async function handleSubmit() {
     if (isLate && !lateReason.trim()) {
       setError('Past-day visit: add a late reason before submitting.')
@@ -252,6 +264,26 @@ function VoiceFlowInner(props) {
       await clearPendingAudio(session.id).catch(() => {})
       clearVoiceFlowState(session.id)
     }
+  }
+
+  async function handleSubmitFromDraft() {
+    const gate = canSubmitVoiceDraft(structuredSession)
+    if (!gate.ok) {
+      setError(gate.reason)
+      return
+    }
+    if (isLate && !lateReason.trim()) {
+      setError('Past-day visit: add a late reason before submitting.')
+      return
+    }
+    await handleSubmit()
+  }
+
+  async function goPreview() {
+    if (step === 'draft' && !isEdit) {
+      await saveDraft(structuredSession)
+    }
+    setStep('preview')
   }
 
   const focusClass = ' vsl-stitch vsl-stitch--focus'
@@ -273,10 +305,6 @@ function VoiceFlowInner(props) {
             onReRecord={!isEdit ? goRecording : undefined}
             onListen={handleListen}
             onViewTranscript={structuredSession.voice_transcript ? () => setTranscriptOpen((o) => !o) : undefined}
-            onSaveDraft={step === 'draft' && !isEdit ? () => saveDraft(structuredSession) : undefined}
-            onPreview={step === 'draft' ? () => setStep('preview') : undefined}
-            onSubmit={step === 'preview' ? handleSubmit : undefined}
-            submitting={submitting}
           />
         </>
       )}
@@ -310,6 +338,7 @@ function VoiceFlowInner(props) {
       {step === 'processing' && (
         <VoiceProcessingScreen
           pipelinePhase={pipelineStatus?.pipeline_phase || 'transcribing'}
+          pipelineVersion={pipelineStatus?.pipeline_version || 'v1'}
           error={pipelineError}
           onCancel={goReady}
           onRetry={recordingId ? () => retryVoiceRecording(recordingId).then(() => handleUploaded({ id: recordingId })) : undefined}
@@ -332,6 +361,9 @@ function VoiceFlowInner(props) {
       {step === 'preview' && (
         <VoiceSessionPreviewScreen
           structuredSession={structuredSession}
+          onChange={setStructuredSession}
+          childName={childName}
+          caseCode={caseCode}
           isLateSession={isLate}
           lateReason={lateReason}
           onLateReasonChange={setLateReason}
@@ -354,11 +386,12 @@ function VoiceFlowInner(props) {
       {(step === 'draft' || step === 'preview') && (
         <VoiceFlowFooter
           previewMode={step === 'preview'}
-          onSaveDraft={step === 'draft' && !isEdit ? () => saveDraft(structuredSession) : undefined}
           onBack={step === 'preview' ? () => setStep('draft') : undefined}
-          onPreview={step === 'draft' ? () => setStep('preview') : undefined}
-          onSubmit={step === 'preview' ? handleSubmit : undefined}
+          onSaveDraft={step === 'draft' ? handleSaveDraft : undefined}
+          onPreview={step === 'draft' ? goPreview : undefined}
+          onSubmit={step === 'preview' ? handleSubmit : step === 'draft' ? handleSubmitFromDraft : undefined}
           submitting={submitting}
+          savingDraft={savingDraft}
           submitLabel={existingLog?.approval_status === 'REJECTED' ? 'Resubmit log' : isEdit ? 'Save changes' : 'Submit log'}
         />
       )}
