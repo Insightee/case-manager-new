@@ -45,7 +45,20 @@ def _therapist_cm_parent(db):
 
 
 def _start_progress(db, case, therapist):
+    """Return an editable progress draft (isolate from prior suite submit/approve)."""
     report = progress_svc.get_or_create_progress_report(db, case, therapist)
+    if not progress_svc.can_populate_or_refresh(report):
+        # Shared demo DB may still hold SUBMITTED_FOR_REVIEW from an earlier test.
+        if report.status == ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value:
+            report.status = ClinicalReportStatus.RETURNED_FOR_CHANGES.value
+            db.flush()
+        elif report.status in (
+            ClinicalReportStatus.APPROVED.value,
+            ClinicalReportStatus.LOCKED.value,
+        ):
+            report = progress_svc.start_correction_cycle(
+                db, case, therapist, locked_report_id=report.id
+            )
     db.commit()
     return report
 
