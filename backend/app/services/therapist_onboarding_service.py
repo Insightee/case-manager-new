@@ -109,10 +109,14 @@ def onboard_therapist_invite(
     primary_case_manager_user_id: int,
     mentor_user_id: int | None = None,
 ) -> dict:
-    from app.services.external_employee_id_service import assert_external_employee_id_available
+    from app.services.external_employee_id_service import (
+        assert_external_employee_id_available,
+        normalize_external_employee_id,
+    )
 
     _assert_new_invite_allowed(db, email, "THERAPIST")
-    assert_external_employee_id_available(db, external_employee_id)
+    normalized_external_id = normalize_external_employee_id(external_employee_id)
+    assert_external_employee_id_available(db, normalized_external_id)
     modules = validate_module_assignments(["THERAPIST"], module_assignments, db)
     services = validate_service_ids(services_offered, db) if services_offered else []
 
@@ -127,7 +131,7 @@ def onboard_therapist_invite(
         invite_metadata={
             "full_name": full_name.strip(),
             "phone": (phone or "").strip() or None,
-            "external_employee_id": external_employee_id,
+            "external_employee_id": normalized_external_id,
             "services_offered": services,
             "short_bio": short_bio,
             "primary_case_manager_user_id": primary_case_manager_user_id,
@@ -282,9 +286,27 @@ def onboard_therapists_bulk(
     primary_case_manager_user_id: int,
     mentor_user_id: int | None = None,
 ) -> list[dict]:
+    from app.services.external_employee_id_service import normalize_external_employee_id
+
     results = []
+    seen_external_ids: set[str] = set()
     for row in rows:
         email = row.get("email", "").strip()
+        ext_id = normalize_external_employee_id(row.get("external_employee_id"))
+        if ext_id:
+            if ext_id in seen_external_ids:
+                results.append(
+                    {
+                        "email": email,
+                        "success": False,
+                        "user_id": None,
+                        "invite_url": None,
+                        "temporary_password": None,
+                        "error": f"Duplicate Therapist ID '{ext_id}' in this upload",
+                    }
+                )
+                continue
+            seen_external_ids.add(ext_id)
         try:
             data = onboard_therapist(
                 db,
@@ -334,7 +356,12 @@ def apply_therapist_invite_metadata(db: Session, user: User, invite: InviteToken
     if meta.get("phone"):
         user.phone = meta["phone"]
     if meta.get("external_employee_id"):
-        assert_external_employee_id_available(db, meta["external_employee_id"], exclude_user_id=user.id)
+        assert_external_employee_id_available(
+            db,
+            meta["external_employee_id"],
+            exclude_user_id=user.id,
+            exclude_invite_id=invite.id,
+        )
         apply_external_employee_id(user, meta["external_employee_id"])
     services = meta.get("services_offered") or []
     full_name = meta.get("full_name") or user.full_name

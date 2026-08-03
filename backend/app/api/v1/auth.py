@@ -239,7 +239,11 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
     elif invite.role_name == "THERAPIST":
         from app.services.therapist_onboarding_service import apply_therapist_invite_metadata
 
-        apply_therapist_invite_metadata(db, user, invite)
+        try:
+            apply_therapist_invite_metadata(db, user, invite)
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     invite.used_at = datetime.now(timezone.utc)
     if invite.invite_metadata and invite.invite_metadata.get("pending_slot_id"):
         from app.services import appointment_notification_service as appt_ns
