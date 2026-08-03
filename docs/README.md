@@ -11,6 +11,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | [../frontend/README.md](../frontend/README.md) | Vite app, build, E2E |
 | [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md) | **All env vars** — local, Railway, Vercel, CI |
 | [AGENT_WORKFLOW.md](./AGENT_WORKFLOW.md) | Delivery, RBAC, billing, deploy checklists for agents |
+| [LOOP_SYSTEM.md](./LOOP_SYSTEM.md) | **Grind loops** — bounded initiative execution, interlocks, work packages |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | **Team workflow** — PRs, pre-push, hooks, release |
 | [../CHANGELOG.md](../CHANGELOG.md) | **Change log** — `[Unreleased]` + dated releases |
 | [TEAM_OWNERSHIP.md](./TEAM_OWNERSHIP.md) | Area owners, CODEOWNERS |
@@ -53,6 +54,17 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | [PRODUCT_ROADMAP.md](./PRODUCT_ROADMAP.md) | Product roadmap |
 | [PILOT_RELEASE_SCOPE.md](./PILOT_RELEASE_SCOPE.md) | Pilot release boundaries |
 | [BOARD_ONE_PAGER.md](./BOARD_ONE_PAGER.md) | Executive one-pager |
+
+## Initiatives in flight
+
+Executed as bounded work packages — see [LOOP_SYSTEM.md](./LOOP_SYSTEM.md).
+
+| Doc | Purpose |
+|-----|---------|
+| [initiatives/finance-dashboard.md](./initiatives/finance-dashboard.md) | **Finance dashboard initiative** — intent, non-negotiables, success criteria |
+| [plans/finance-dashboard-revamp.md](./plans/finance-dashboard-revamp.md) | Work packages FIN-00 to FIN-12, status board, `baseline_sha` |
+| [plans/finance-open-questions.md](./plans/finance-open-questions.md) | Escalation register — blocks packages until answered |
+| [Cursor_Handover_Finance_Module_Build_Readiness.md](./Cursor_Handover_Finance_Module_Build_Readiness.md) | Prior finance audit — **verify per section before relying on it** |
 
 ## Support hub & HR (recent)
 
