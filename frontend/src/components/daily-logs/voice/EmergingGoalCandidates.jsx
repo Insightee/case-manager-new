@@ -7,7 +7,7 @@ import { dismissEmergingGoal, emergingGoals, markGoalCandidateSent } from '../..
  * Never counted as goal evidence, never in the family update.
  * Therapist can edit, dismiss, or send to the case manager review queue.
  */
-export function EmergingGoalCandidates({ structuredSession, onChange, caseId, sessionId }) {
+export function EmergingGoalCandidates({ structuredSession, onChange, caseId, sessionId, embedded = false }) {
   const candidates = emergingGoals(structuredSession)
   const [busyLabel, setBusyLabel] = useState(null)
   const [notice, setNotice] = useState('')
@@ -51,20 +51,23 @@ export function EmergingGoalCandidates({ structuredSession, onChange, caseId, se
   }
 
   return (
-    <section className="vsl-stitch__card" aria-label="Emerging goal suggestions">
-      <h3 className="vsl-stitch__section-head" style={{ marginTop: 0 }}>
-        Emerging goal suggestions
-      </h3>
-      <p style={{ fontSize: '0.8125rem', color: 'var(--vsl-secondary)', margin: '0 0 10px' }}>
-        Patterns noticed today without an active IEP goal. These stay out of goal evidence and the family
-        update unless your case manager approves them.
-      </p>
+    <section className={embedded ? '' : 'vsl-stitch__card'} aria-label="Emerging goal suggestions">
+      {!embedded ? (
+        <>
+          <h3 className="vsl-stitch__section-head" style={{ marginTop: 0 }}>
+            Suggest a new goal
+          </h3>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--vsl-secondary)', margin: '0 0 10px' }}>
+            Work noticed today that is not on the IEP yet. Send to your case manager to consider adding to the plan.
+          </p>
+        </>
+      ) : null}
       {candidates.map((goal, i) => {
         const sent = goal.candidate_status === 'pending_review'
         return (
           <article key={`${goal.goal_label}-${i}`} className="vsl-stitch__goal-card">
             <div className="vsl-stitch__badges">
-              <span className="vsl-stitch__badge">New observation</span>
+              <span className="vsl-stitch__badge">New goal idea</span>
               {sent ? <span className="vsl-stitch__badge vsl-stitch__badge--review">Sent for CM review</span> : null}
             </div>
             <input

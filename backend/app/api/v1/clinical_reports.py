@@ -71,6 +71,14 @@ class StrategyCandidateCreate(BaseModel):
 
 class ReturnBody(BaseModel):
     comment: str = Field(min_length=3)
+    section_comments: Optional[dict[str, str]] = None
+
+
+class ProgressGoalPatch(BaseModel):
+    final_status: Optional[str] = None
+    final_summary: Optional[str] = None
+    therapist_rationale: Optional[str] = None
+    status_confirmed: Optional[bool] = None
 
 
 class ApproveBody(BaseModel):
@@ -293,6 +301,176 @@ def populate_monthly_from_evidence(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.get("/cases/{case_id}/reports/progress/summary")
+def progress_summary(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    case = _case_for_user(db, user, case_id)
+    try:
+        return report_engine_service.progress_summary(db, case, user)
+    except Exception as exc:
+        logger.exception("progress_summary failed case_id=%s", case_id)
+        raise HTTPException(status_code=503, detail="Could not load progress report summary") from exc
+
+
+@router.post("/cases/{case_id}/reports/progress/start")
+def start_progress(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    case = _case_for_user_write(db, user, case_id)
+    try:
+        report = report_engine_service.get_or_create_progress_report(db, case, user)
+        db.commit()
+        return report_engine_service.serialize_report_workspace(db, report, case)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as exc:
+        logger.exception("start_progress failed case_id=%s", case_id)
+        raise HTTPException(status_code=503, detail="Could not start progress report") from exc
+
+
+@router.post("/reports/{report_id}/progress/populate-from-evidence")
+def populate_progress_from_evidence(
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import progress_report_service as progress_svc
+
+    report = _report_or_404(db, report_id)
+    case = _case_for_user_write(db, user, report.case_id)
+    if report.report_type != "progress":
+        raise HTTPException(status_code=400, detail="Not a progress report")
+    if not report_status_service.can_therapist_edit(report, user):
+        raise HTTPException(status_code=403, detail="Cannot edit this report")
+    try:
+        result = progress_svc.populate_progress_from_evidence(db, report)
+        db.commit()
+        result["workspace"] = report_engine_service.serialize_report_workspace(db, report, case)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/reports/{report_id}/progress/refresh-evidence")
+def refresh_progress_evidence(
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import progress_report_service as progress_svc
+
+    report = _report_or_404(db, report_id)
+    case = _case_for_user_write(db, user, report.case_id)
+    if report.report_type != "progress":
+        raise HTTPException(status_code=400, detail="Not a progress report")
+    if not report_status_service.can_therapist_edit(report, user):
+        raise HTTPException(status_code=403, detail="Cannot edit this report")
+    try:
+        result = progress_svc.refresh_progress_evidence(db, report)
+        db.commit()
+        result["workspace"] = report_engine_service.serialize_report_workspace(db, report, case)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.patch("/reports/{report_id}/progress/goals/{goal_id}")
+def patch_progress_goal(
+    report_id: int,
+    goal_id: str,
+    payload: ProgressGoalPatch,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import progress_report_service as progress_svc
+
+    report = _report_or_404(db, report_id)
+    _case_for_user_write(db, user, report.case_id)
+    if report.report_type != "progress":
+        raise HTTPException(status_code=400, detail="Not a progress report")
+    try:
+        goal = progress_svc.patch_progress_goal(
+            db,
+            report,
+            goal_id,
+            user,
+            final_status=payload.final_status,
+            final_summary=payload.final_summary,
+            therapist_rationale=payload.therapist_rationale,
+            status_confirmed=payload.status_confirmed,
+        )
+        db.commit()
+        return {"goal": goal}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/reports/{report_id}/progress/goals/{goal_id}/evidence")
+def get_progress_goal_evidence(
+    report_id: int,
+    goal_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import progress_report_service as progress_svc
+
+    report = _report_or_404(db, report_id)
+    _case_for_user(db, user, report.case_id)
+    if report.report_type != "progress":
+        raise HTTPException(status_code=400, detail="Not a progress report")
+    try:
+        return progress_svc.get_goal_evidence_detail(db, report, goal_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get("/reports/{report_id}/progress/review-thread")
+def progress_review_thread(
+    report_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import progress_review_service
+
+    report = _report_or_404(db, report_id)
+    _case_for_user(db, user, report.case_id)
+    if report.report_type != "progress":
+        raise HTTPException(status_code=400, detail="Not a progress report")
+    return {"events": progress_review_service.list_review_thread(db, report_id)}
+
+
+@router.post("/cases/{case_id}/reports/progress/start-correction")
+def start_progress_correction(
+    case_id: int,
+    locked_report_id: int = Query(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import progress_report_service as progress_svc
+
+    case = _case_for_user_write(db, user, case_id)
+    try:
+        report = progress_svc.start_correction_cycle(db, case, user, locked_report_id=locked_report_id)
+        db.commit()
+        return report_engine_service.serialize_report_workspace(db, report, case)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/cases/{case_id}/reports/progress/start-next")
+def start_progress_next_cycle(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services import progress_report_service as progress_svc
+
+    case = _case_for_user_write(db, user, case_id)
+    try:
+        report = progress_svc.start_next_cycle(db, case, user)
+        db.commit()
+        return report_engine_service.serialize_report_workspace(db, report, case)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.get("/cases/{case_id}/reports/{report_type}")
 def get_report_by_type(
     case_id: int,
@@ -323,6 +501,13 @@ def get_report_by_type(
         report = report_engine_service.get_monthly_report_for_case_month(db, case.id, month)
         if not report:
             raise HTTPException(status_code=404, detail="No monthly report for this month")
+        return report_engine_service.serialize_report_workspace(db, report, case)
+    if report_type == "progress":
+        from app.services import progress_report_service as progress_svc
+
+        report = progress_svc.get_workflow_progress_report(db, case.id) or progress_svc.get_latest_progress_report(db, case.id)
+        if not report:
+            raise HTTPException(status_code=404, detail="No active progress report")
         return report_engine_service.serialize_report_workspace(db, report, case)
     raise HTTPException(status_code=404, detail="Report type not implemented yet")
 
@@ -355,14 +540,26 @@ def patch_section(
     if not report_status_service.can_therapist_edit(report, user):
         raise HTTPException(status_code=403, detail="Cannot edit this report")
     try:
-        sec = report_engine_service.patch_section(
-            db,
-            report,
-            section_key,
-            narrative_text=payload.narrative_text,
-            internal_notes=payload.internal_notes,
-            structured_data=payload.structured_data,
-        )
+        if report.report_type == "progress":
+            from app.services import progress_report_service as progress_svc
+
+            sec = progress_svc.patch_progress_section(
+                db,
+                report,
+                section_key,
+                user,
+                narrative_text=payload.narrative_text,
+                structured_data=payload.structured_data,
+            )
+        else:
+            sec = report_engine_service.patch_section(
+                db,
+                report,
+                section_key,
+                narrative_text=payload.narrative_text,
+                internal_notes=payload.internal_notes,
+                structured_data=payload.structured_data,
+            )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     db.commit()
@@ -392,6 +589,15 @@ def submit_report(report_id: int, user: User = Depends(get_current_user), db: Se
             ready = report_engine_service.required_monthly_sections_complete(sections)
             if not ready:
                 raise ValueError("Complete required monthly sections before submitting")
+            report_status_service.submit_report(db, report, user, readiness_ok=True)
+        elif report.report_type == "progress":
+            from app.services import progress_report_service as progress_svc
+
+            validation = progress_svc.validate_progress_submit(db, report)
+            if not validation.get("ready"):
+                if validation.get("pending_goal_confirmations"):
+                    raise ValueError("Confirm or override status for each active goal before submitting")
+                raise ValueError("Complete required progress sections before submitting")
             report_status_service.submit_report(db, report, user, readiness_ok=True)
         else:
             from sqlalchemy import select
@@ -441,7 +647,14 @@ def return_report(report_id: int, payload: ReturnBody, user: User = Depends(get_
     report = _report_or_404(db, report_id)
     _case_for_user(db, user, report.case_id)
     try:
-        report_status_service.return_report(db, report, user, payload.comment)
+        if report.report_type == "progress" and payload.section_comments:
+            from app.services import progress_review_service
+
+            progress_review_service.return_with_comments(
+                db, report, user, payload.comment, section_comments=payload.section_comments
+            )
+        else:
+            report_status_service.return_report(db, report, user, payload.comment)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     db.commit()
@@ -575,6 +788,14 @@ def preview_report(
     if report.report_type == "iep":
         if mode == "parent":
             return report_engine_service.serialize_parent_safe_iep(db, report, case)
+        return report_engine_service.serialize_report_workspace(db, report, case)
+    if report.report_type == "monthly":
+        if mode == "parent":
+            return report_engine_service.serialize_parent_safe_monthly(db, report, case)
+        return report_engine_service.serialize_report_workspace(db, report, case)
+    if report.report_type == "progress":
+        if mode == "parent":
+            return report_engine_service.serialize_parent_safe_progress(db, report, case)
         return report_engine_service.serialize_report_workspace(db, report, case)
     return report_engine_service.serialize_parent_safe_observation(db, report, case)
 

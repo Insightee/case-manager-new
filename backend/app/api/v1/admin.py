@@ -2740,6 +2740,7 @@ class ClientBulkRow(BaseModel):
     billing_type: Optional[str] = None
     client_billing_mode: Optional[str] = None
     client_rate_per_session_inr: Optional[float] = None
+    client_monthly_rate_inr: Optional[float] = None
     package_session_count: Optional[int] = None
     package_amount_inr: Optional[float] = None
     compensation_mode: Optional[str] = None
@@ -2920,6 +2921,7 @@ def admin_bulk_import_clients(
                         "billing_type",
                         "client_billing_mode",
                         "client_rate_per_session_inr",
+                        "client_monthly_rate_inr",
                         "package_session_count",
                         "package_amount_inr",
                         "compensation_mode",
@@ -2956,7 +2958,7 @@ def admin_bulk_import_clients(
                             bt = billing_data["billing_type"]
                             if bt == "PACKAGE":
                                 billing_data["client_billing_mode"] = ClientBillingMode.PREPAID.value
-                            elif bt == "PER_SESSION":
+                            elif bt in ("PER_SESSION", "MONTHLY_FIXED"):
                                 billing_data["client_billing_mode"] = ClientBillingMode.POSTPAID.value
 
                         case = Case(**case_data)

@@ -5,20 +5,20 @@ export function InsightsRefreshBar({ usage, onRefresh, isRefreshing, message }) 
   return (
     <div className="ci-refresh-bar">
       <div className="ci-refresh-bar__text">
-        <p className="ci-refresh-bar__title">Insights update automatically from session logs, IEP goals, and inputs.</p>
+        <p className="ci-refresh-bar__title">Generate your weekly insights</p>
         <p className="ci-refresh-bar__subtext">
-          "Refresh Insights" polishes wording using session logs, IEP goals, observation notes, parent inputs, and CM comments.
+          Insights load automatically from session logs and IEP goals. Tap generate to polish wording for this week.
         </p>
       </div>
       <div className="ci-refresh-bar__actions">
         <span className="ci-refresh-bar__usage">
-          {remaining}/{cap} refreshes left this week
+          {remaining}/{cap} left this week
         </span>
-        <button type="button" className="ci-btn ci-btn--secondary" onClick={onRefresh} disabled={isRefreshing}>
+        <button type="button" className="ci-btn ci-btn--primary" onClick={onRefresh} disabled={isRefreshing}>
           <span className="material-symbols-outlined" aria-hidden="true">
             autorenew
           </span>
-          {isRefreshing ? 'Updating insights from latest logs…' : 'Refresh Insights'}
+          {isRefreshing ? 'Updating insights from latest logs…' : 'Generate weekly insights'}
         </button>
       </div>
       {message ? <p className="ci-refresh-bar__message">{message}</p> : null}

@@ -56,6 +56,17 @@ def ensure_sqlite_schema_patches() -> None:
     if "client_billing_mode" not in cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE cases ADD COLUMN client_billing_mode VARCHAR(32)"))
+    # Monthly/retainer billing fields (alembic y2z3a4b5c6d7) — local SQLite catch-up.
+    for col, ddl in (
+        ("client_monthly_rate_inr", "NUMERIC(12, 2)"),
+        ("retainer_start_date", "DATE"),
+        ("retainer_end_date", "DATE"),
+        ("retainer_rate_inr", "NUMERIC(12, 2)"),
+    ):
+        if col not in cols:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE cases ADD COLUMN {col} {ddl}"))
+            cols.add(col)
 
     if insp.has_table("invite_tokens"):
         inv_cols = {c["name"] for c in insp.get_columns("invite_tokens")}
@@ -208,6 +219,8 @@ def ensure_sqlite_schema_patches() -> None:
             "edited_end_at": "DATETIME",
             "is_additional_visit": "BOOLEAN NOT NULL DEFAULT 0",
             "additional_visit_reason": "VARCHAR(64)",
+            "add_on_kind": "VARCHAR(32)",
+            "parent_session_id": "INTEGER",
             "resumed_count": "INTEGER NOT NULL DEFAULT 0",
             "cancellation_reason": "VARCHAR(64)",
             "data_quality_flag": "VARCHAR(64)",

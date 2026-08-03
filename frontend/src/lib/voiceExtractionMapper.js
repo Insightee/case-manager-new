@@ -63,6 +63,8 @@ export function extractionToStructuredSession(extraction, { sessionId, recording
       goal_repository_item_id: goal.goal_repository_item_id,
       goal_label: goal.goal_label || goal.goal_candidate_label || '',
       match_type,
+      match_label: goal.match_label || null,
+      source_type: goal.source_type || null,
       confidence: goal.confidence ?? 0,
       status: 'pending',
       source_transcript_excerpt: goal.source_transcript_excerpt || goal.evidence_summary?.slice(0, 500) || '',
@@ -122,6 +124,51 @@ export function extractionToStructuredSession(extraction, { sessionId, recording
       base.goals.length > 0
         ? base.goals.reduce((a, g) => a + (g.confidence || 0), 0) / base.goals.length
         : 0,
+  }
+
+  base.session_insights = (extraction.session_insights || []).map((item) => ({
+    insight_type: item.insight_type,
+    title: item.title,
+    summary: item.summary,
+    certainty: item.certainty || 'single_session_signal',
+  }))
+
+  if (extraction.family_summary) {
+    const fs = extraction.family_summary
+    if (fs.worked_on?.length && !base.parent_update.todays_session.length) {
+      base.parent_update.todays_session = fs.worked_on.slice(0, 5)
+    }
+    if (fs.appeared_helpful?.length && !base.parent_update.helpful_supports.length) {
+      base.parent_update.helpful_supports = fs.appeared_helpful.slice(0, 4)
+    }
+    if (fs.strength_highlight?.length && !base.parent_update.wins_today.length) {
+      base.parent_update.wins_today = fs.strength_highlight.slice(0, 3)
+    }
+    if (fs.looking_ahead?.length && !base.parent_update.next_session.length) {
+      base.parent_update.next_session = fs.looking_ahead.slice(0, 3)
+    }
+  }
+
+  if (extraction.participation_signals?.length) {
+    for (const sig of extraction.participation_signals) {
+      if (sig.signal_id && !base.child_response_signals.includes(sig.signal_id)) {
+        base.child_response_signals.push(sig.signal_id)
+      }
+    }
+  }
+  if (extraction.strengths?.length) {
+    for (const s of extraction.strengths) {
+      if (s.label && !base.observations.strengths.includes(s.label)) {
+        base.observations.strengths.push(s.label.slice(0, 300))
+      }
+    }
+  }
+  if (extraction.support_signals?.length) {
+    base.support_signals = extraction.support_signals.map((s) => ({
+      label: s.label || '',
+      support_type: s.support_type || 'accommodation',
+      evidence: s.evidence || '',
+    }))
   }
 
   return base

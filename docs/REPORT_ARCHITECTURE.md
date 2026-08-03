@@ -11,7 +11,7 @@ _Last updated: June 2026_
 | `observation` | Implemented | Builder + lifecycle when reports revamp flag is on |
 | `iep` | Implemented | Report lifecycle; structured plan data may live in `iep_plans` |
 | `monthly` | Implemented (engine) | New writes via engine when flag enabled; legacy remains active |
-| `progress` | Planned | Enum exists; sections TBD |
+| `progress` | **Implemented** | `progress_report_service.py` — scoped approved evidence, status rules, CM review, parent bridge; legacy `MonthlyReport`/`PROGRESS` read-only fallback |
 | `history` | Planned | Enum exists; sections TBD |
 
 Models: `ClinicalReport`, `ClinicalReportSection`, `ClinicalReportVersion`, `ClinicalReportEvidence`, `ClinicalReportReviewEvent`.
@@ -29,6 +29,14 @@ API: `clinical_reports.py` (`/api/v1/cases/{id}/reports/*`, `/api/v1/reports/{id
 - **Parent:** `/api/v1/parent/reports/monthly/{id}`
 - **Sync:** On legacy approval/publish, `monthly_report_sync_service` mirrors to `clinical_reports(type=monthly)` idempotently.
 - **Future:** Stop new legacy writes after `MONTHLY_REPORTS_USE_CLINICAL_ENGINE` is production-safe.
+
+- **Future:** Stop new legacy writes after `MONTHLY_REPORTS_USE_CLINICAL_ENGINE` is production-safe.
+
+### Legacy progress (`monthly_reports.category=PROGRESS`)
+
+- **Status:** Read-only fallback via `progress_legacy_read_service.resolve_progress_for_case`.
+- **Writes:** Blocked on `POST /api/v1/reports/monthly` when `category=PROGRESS`.
+- **Sunset:** When all active cases have ≥1 engine progress report and legacy draft count = 0 for 30 days.
 
 ### Legacy observation (`observation_reports`)
 

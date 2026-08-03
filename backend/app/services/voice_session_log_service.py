@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.feature_flags import voice_session_v2_active
 from app.models.session import Session as TherapySession
 from app.models.session_audio import (
     ExtractionStatus,
@@ -157,6 +158,14 @@ def _pipeline_phase(recording: SessionAudioRecording) -> str:
         return "ready"
     if recording.transcription_status in (TranscriptionStatus.PENDING.value, TranscriptionStatus.RUNNING.value):
         return "transcribing"
+    if voice_session_v2_active():
+        if recording.extraction_status in (ExtractionStatus.PENDING.value, ExtractionStatus.RUNNING.value):
+            return "organising_evidence"
+        if recording.extraction_status in (ExtractionStatus.COMPLETED.value, ExtractionStatus.PARTIAL.value):
+            if recording.recording_status != RecordingStatus.READY.value:
+                return "preparing_review"
+            return "ready"
+        return "organising_evidence"
     if recording.extraction_status in (ExtractionStatus.PENDING.value, ExtractionStatus.RUNNING.value):
         if recording.extraction_status == ExtractionStatus.RUNNING.value:
             return "matching_strategies"
@@ -168,7 +177,7 @@ def _pipeline_phase(recording: SessionAudioRecording) -> str:
     return "identifying_observations"
 
 
-def recording_status_read(recording: SessionAudioRecording) -> dict[str, Any]:
+def recording_status_read(recording: SessionAudioRecording, db: Session | None = None) -> dict[str, Any]:
     extraction: Optional[dict[str, Any]] = None
     structured_session: Optional[dict[str, Any]] = None
     if recording.extraction_json:
@@ -188,6 +197,16 @@ def recording_status_read(recording: SessionAudioRecording) -> dict[str, Any]:
                 transcript=recording.transcript or "",
             )
             structured_session = sse.to_json_dict()
+            if recording.case_id and voice_session_v2_active() and db is not None:
+                from app.services.session_clinical_insight_service import build_session_clinical_insights
+
+                structured_session["session_insights"] = build_session_clinical_insights(
+                    db,
+                    case_id=recording.case_id,
+                    session_id=recording.session_id,
+                    structured=structured_session,
+                    extraction_insights=extraction.get("session_insights"),
+                )
             review_count = sse.pending_review_count() + len(sse.ai_metadata.review_items)
         except Exception:
             structured_session = None
@@ -210,6 +229,7 @@ def recording_status_read(recording: SessionAudioRecording) -> dict[str, Any]:
         "transcription_status": recording.transcription_status,
         "extraction_status": recording.extraction_status,
         "pipeline_phase": phase,
+        "pipeline_version": "v2" if voice_session_v2_active() else "v1",
         "review_items_count": review_count,
         "transcript": recording.transcript if recording.transcription_status == TranscriptionStatus.COMPLETED.value else None,
         "transcript_language": recording.transcript_language,

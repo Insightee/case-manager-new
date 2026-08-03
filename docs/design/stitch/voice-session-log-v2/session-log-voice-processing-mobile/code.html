@@ -1,0 +1,183 @@
+<!DOCTYPE html><html lang="en" class="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-fixed-dim": "#b7cbc1",
+                    "on-surface": "#151c27",
+                    "inverse-primary": "#b7cbc1",
+                    "tertiary-fixed": "#e4e2e1",
+                    "surface": "#f9f9ff",
+                    "on-background": "#151c27",
+                    "surface-dim": "#d3daea",
+                    "secondary-container": "#c3ecd7",
+                    "surface-container-lowest": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "primary-fixed": "#d3e7dd",
+                    "secondary": "#416656",
+                    "on-secondary-fixed-variant": "#294e3f",
+                    "on-surface-variant": "#424845",
+                    "surface-container-low": "#f0f3ff",
+                    "on-primary-fixed-variant": "#394a43",
+                    "on-error-container": "#93000a",
+                    "on-primary": "#ffffff",
+                    "on-primary-fixed": "#0e1f19",
+                    "tertiary-container": "#1b1c1b",
+                    "surface-bright": "#f9f9ff",
+                    "outline-variant": "#c2c8c3",
+                    "secondary-fixed-dim": "#a8cfbc",
+                    "error-container": "#ffdad6",
+                    "on-error": "#ffffff",
+                    "surface-tint": "#50625a",
+                    "on-secondary-fixed": "#002115",
+                    "primary": "#000000",
+                    "tertiary-fixed-dim": "#c7c6c5",
+                    "background": "#f9f9ff",
+                    "secondary-fixed": "#c3ecd7",
+                    "outline": "#737875",
+                    "on-tertiary-container": "#848483",
+                    "primary-container": "#0e1f19",
+                    "on-secondary-container": "#476c5b",
+                    "surface-container-highest": "#dce2f3",
+                    "surface-container": "#e7eefe",
+                    "tertiary": "#000000",
+                    "on-tertiary-fixed": "#1b1c1b",
+                    "surface-variant": "#dce2f3",
+                    "on-tertiary-fixed-variant": "#464746",
+                    "on-secondary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "inverse-on-surface": "#ebf1ff",
+                    "inverse-surface": "#2a313d",
+                    "on-primary-container": "#75887f",
+                    "surface-container-high": "#e2e8f8"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "base_unit": "8px",
+                    "gutter": "24px",
+                    "margin_mobile": "16px",
+                    "margin_desktop": "auto",
+                    "container_max_width": "800px"
+            },
+            "fontFamily": {
+                    "body-lg": ["Manrope"],
+                    "headline-lg": ["Manrope"],
+                    "headline-md": ["Manrope"],
+                    "body-md": ["Manrope"],
+                    "label-sm": ["Manrope"],
+                    "headline-lg-mobile": ["Manrope"]
+            },
+            "fontSize": {
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-lg": ["30px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    }catch(_e){}</script><meta charset="utf-8"></head><body class="bg-background text-on-background font-body-md overflow-hidden">
+<!-- Top App Bar -->
+<header class="fixed top-0 left-0 right-0 z-50 bg-surface/80 backdrop-blur-md">
+<div class="flex justify-between items-center w-full px-4 h-16 max-w-[800px] mx-auto">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-primary">close</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Voice Processing - Mobile</h1>
+<div class="w-10"></div> <!-- Spacer for symmetry -->
+</div>
+</header>
+<main class="relative h-screen w-full flex flex-col items-center justify-center px-6 pt-16">
+<!-- Background Calm Processing Animation Shell -->
+<div class="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+
+</div>
+<!-- Main Visual Centerpiece -->
+<div class="relative w-full max-w-[400px] flex flex-col items-center">
+<!-- Animated Processing Core -->
+<div class="relative mb-12">
+<div class="absolute inset-0 bg-secondary/10 rounded-full blur-3xl animate-breath"></div>
+<div class="relative z-10 w-48 h-48 flex items-center justify-center">
+
+</div>
+</div>
+<!-- Contextual Status Message -->
+<div class="text-center mb-10">
+<p class="font-headline-lg-mobile text-headline-lg-mobile text-primary mb-2">Analyzing Clinical Nuance</p>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-[280px] mx-auto">
+                    Synthesizing key insights and emotional markers from the last 45 minutes of session audio.
+                </p>
+</div>
+<!-- Progress Steps (Bento Style Layout for Mobile) -->
+<div class="w-full space-y-3">
+<!-- Completed Step -->
+<div class="glass-panel p-4 rounded-xl flex items-center gap-4 transition-all duration-500 border-l-4 border-secondary bg-secondary-container/20">
+<div class="w-8 h-8 rounded-full bg-secondary text-on-secondary flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+<div class="flex-grow">
+<p class="font-label-sm text-label-sm text-secondary uppercase tracking-wider mb-0.5">Stage 1</p>
+<p class="font-body-md text-body-md font-bold text-on-surface">Audio Decryption &amp; Normalization</p>
+</div>
+</div>
+<!-- Active Step -->
+<div class="glass-panel p-4 rounded-xl flex items-center gap-4 transition-all duration-500 border-l-4 border-primary">
+<div class="w-8 h-8 rounded-full border-2 border-primary flex items-center justify-center flex-shrink-0 relative overflow-hidden">
+<div class="absolute inset-0 bg-primary/10 animate-pulse"></div>
+<span class="material-symbols-outlined text-sm text-primary">psychology</span>
+</div>
+<div class="flex-grow">
+<p class="font-label-sm text-label-sm text-primary uppercase tracking-wider mb-0.5">Stage 2 • In Progress</p>
+<p class="font-body-md text-body-md font-bold text-on-surface">Semantic Theme Extraction</p>
+<!-- Inline Progress Bar for Active Step -->
+<div class="w-full h-1 bg-surface-container-highest rounded-full mt-3 overflow-hidden">
+<div class="h-full bg-primary transition-all duration-700 ease-out" id="progress-bar" style="width: 65%;"></div>
+</div>
+</div>
+</div>
+<!-- Pending Step -->
+<div class="glass-panel p-4 rounded-xl flex items-center gap-4 transition-all duration-500 opacity-60">
+<div class="w-8 h-8 rounded-full border border-outline flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-sm text-outline">summarize</span>
+</div>
+<div class="flex-grow">
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-0.5">Stage 3</p>
+<p class="font-body-md text-body-md font-bold text-on-surface-variant">Clinical Narrative Generation</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer Action -->
+<div class="fixed bottom-8 left-0 right-0 px-6 max-w-[800px] mx-auto">
+<button class="w-full py-4 bg-primary text-on-primary rounded-xl font-bold font-body-lg flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-primary/10">
+<span>Cancel Processing</span>
+<span class="material-symbols-outlined">stop_circle</span>
+</button>
+<p class="text-center font-label-sm text-label-sm text-on-surface-variant mt-4 opacity-70">
+            Encrypted End-to-End • HIPAA Compliant Environment
+        </p>
+</div>
+<!-- Micro-interaction Script -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const bar = document.getElementById('progress-bar');
+            let width = 65;
+            
+            // Subtle random progress oscillation to feel "organic"
+            setInterval(() => {
+                const change = (Math.random() * 2) - 0.5;
+                width = Math.min(95, Math.max(60, width + change));
+                bar.style.width = width + '%';
+            }, 2000);
+        });
+    </script>
+</body></html>

@@ -51,7 +51,7 @@ def test_validate_case_billing_rejects_missing_share():
     with pytest.raises(HTTPException) as excinfo:
         validate_case_billing(_package_case(0.0))
     assert excinfo.value.status_code == 400
-    assert "pay_share_amount_inr required" in excinfo.value.detail
+    assert "therapist pay share" in excinfo.value.detail.lower()
 
 
 def _headers(email: str) -> dict:

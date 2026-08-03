@@ -4,6 +4,16 @@ import { todayIsoIST } from './datetime.js'
  * @typedef {'START_SESSION'|'CONTINUE_SESSION'|'COMPLETE_LOG'|'EDIT_LOG'|'VIEW_EXISTING'|'REQUEST_ADDITIONAL_VISIT'|'DUPLICATE_SAME_DAY'} RecommendedAction
  */
 
+/** Earliest scheduled visit today the therapist can start (walk-in uses a separate path). */
+export function pickNextStartableSessionToday(sessions) {
+  const today = todayIsoIST()
+  const startable = (sessions || [])
+    .filter((s) => s?.scheduled_date === today && canStartSessionToday(s).ok)
+    .filter((s) => !s?.status || s.status === 'SCHEDULED')
+    .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')))
+  return startable[0] || null
+}
+
 export function canStartSessionToday(session) {
   if (!session?.scheduled_date) return { ok: true }
   const today = todayIsoIST()

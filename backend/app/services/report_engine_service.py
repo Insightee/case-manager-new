@@ -4,7 +4,7 @@ import json
 import re
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.case import Case
@@ -23,9 +23,11 @@ from app.report_engine_constants import (
     LEGACY_CHECKLIST_KEY_MAP,
     MONTHLY_REPORT_SECTIONS,
     OBSERVATION_REPORT_SECTIONS,
+    PROGRESS_REPORT_SECTIONS,
     REQUIRED_IEP_SECTION_KEYS,
     REQUIRED_MONTHLY_SECTION_KEYS,
     REQUIRED_OBSERVATION_SECTION_KEYS,
+    REQUIRED_PROGRESS_SECTION_KEYS,
     REPORT_TYPE_HOOKS,
 )
 from app.services import report_status_service
@@ -106,6 +108,28 @@ def seed_monthly_sections(db: Session, report_id: int) -> None:
     db.flush()
 
 
+def seed_progress_sections(db: Session, report_id: int) -> None:
+    existing = db.scalars(
+        select(ClinicalReportSection.section_key).where(ClinicalReportSection.report_id == report_id)
+    ).all()
+    have = set(existing)
+    for i, meta in enumerate(PROGRESS_REPORT_SECTIONS):
+        key = str(meta["key"])
+        if key in have:
+            continue
+        db.add(
+            ClinicalReportSection(
+                report_id=report_id,
+                section_key=key,
+                section_title=str(meta["label"]),
+                section_order=i,
+                visibility=_section_visibility(meta),
+                completion_status=SectionCompletionStatus.NOT_STARTED.value,
+            )
+        )
+    db.flush()
+
+
 def section_completion_status(narrative: str | None, internal: str | None, structured: dict | None = None) -> str:
     text = (narrative or "").strip()
     struct = structured or {}
@@ -165,6 +189,26 @@ def missing_monthly_required_keys(sections: list[ClinicalReportSection]) -> list
         sec = by_key.get(key)
         if not sec or sec.completion_status != SectionCompletionStatus.COMPLETED.value:
             meta = next((m for m in MONTHLY_REPORT_SECTIONS if m["key"] == key), None)
+            missing.append(str(meta["label"]) if meta else key)
+    return missing
+
+
+def required_progress_sections_complete(sections: list[ClinicalReportSection]) -> bool:
+    by_key = {s.section_key: s for s in sections}
+    for key in REQUIRED_PROGRESS_SECTION_KEYS:
+        sec = by_key.get(key)
+        if not sec or sec.completion_status != SectionCompletionStatus.COMPLETED.value:
+            return False
+    return True
+
+
+def missing_progress_required_keys(sections: list[ClinicalReportSection]) -> list[str]:
+    by_key = {s.section_key: s for s in sections}
+    missing = []
+    for key in REQUIRED_PROGRESS_SECTION_KEYS:
+        sec = by_key.get(key)
+        if not sec or sec.completion_status != SectionCompletionStatus.COMPLETED.value:
+            meta = next((m for m in PROGRESS_REPORT_SECTIONS if m["key"] == key), None)
             missing.append(str(meta["label"]) if meta else key)
     return missing
 
@@ -316,6 +360,46 @@ def populate_monthly_from_evidence(db: Session, report: ClinicalReport) -> dict:
     return {"report_id": report.id, "sections_populated": list(sections_data.keys()), "log_count": len(logs)}
 
 
+def _report_period_from_metadata(report: ClinicalReport) -> dict[str, str | None]:
+    return report_period_from_metadata(report)
+
+
+def report_period_from_metadata(report: ClinicalReport) -> dict[str, str | None]:
+    from app.services import progress_report_service as progress_svc
+
+    return progress_svc.report_period_from_metadata(report)
+
+
+def get_active_progress_report(db: Session, case_id: int) -> ClinicalReport | None:
+    from app.services import progress_report_service as progress_svc
+
+    return progress_svc.get_active_progress_report(db, case_id)
+
+
+def get_or_create_progress_report(db: Session, case: Case, user: User) -> ClinicalReport:
+    from app.services import progress_report_service as progress_svc
+
+    return progress_svc.get_or_create_progress_report(db, case, user)
+
+
+def populate_progress_from_evidence(db: Session, report: ClinicalReport) -> dict:
+    from app.services import progress_report_service as progress_svc
+
+    return progress_svc.populate_progress_from_evidence(db, report)
+
+
+def progress_summary(db: Session, case: Case, user: User) -> dict:
+    from app.services import progress_report_service as progress_svc
+
+    return progress_svc.progress_summary(db, case, user)
+
+
+def serialize_parent_safe_progress(db: Session, report: ClinicalReport, case: Case) -> dict:
+    from app.services import progress_report_service as progress_svc
+
+    return progress_svc.serialize_parent_safe_progress(db, report, case)
+
+
 def get_or_create_observation_report(db: Session, case: Case, user: User) -> ClinicalReport:
     from app.services.observation_checklist_service import compute_due
 
@@ -444,6 +528,8 @@ def _section_catalog(report_type: str) -> list[dict]:
         return IEP_REPORT_SECTIONS
     if report_type == ClinicalReportType.MONTHLY.value:
         return MONTHLY_REPORT_SECTIONS
+    if report_type == ClinicalReportType.PROGRESS.value:
+        return PROGRESS_REPORT_SECTIONS
     return OBSERVATION_REPORT_SECTIONS
 
 
@@ -484,6 +570,10 @@ def serialize_report_workspace(db: Session, report: ClinicalReport, case: Case) 
         ready = required_monthly_sections_complete(sections)
         missing = missing_monthly_required_keys(sections)
         catalog = MONTHLY_REPORT_SECTIONS
+    elif report.report_type == ClinicalReportType.PROGRESS.value:
+        ready = required_progress_sections_complete(sections)
+        missing = missing_progress_required_keys(sections)
+        catalog = PROGRESS_REPORT_SECTIONS
     else:
         ready = required_sections_complete(sections)
         missing = missing_required_keys(sections)
@@ -529,6 +619,8 @@ def serialize_report_workspace(db: Session, report: ClinicalReport, case: Case) 
     }
     if report.report_type == ClinicalReportType.MONTHLY.value:
         payload["month"] = _report_month_from_metadata(report)
+    if report.report_type == ClinicalReportType.PROGRESS.value:
+        payload["period"] = _report_period_from_metadata(report)
     if report.report_type == ClinicalReportType.IEP.value:
         from app.services import iep_approval_service
         from app.services.iep_input_aggregation_service import aggregate_case_inputs

@@ -20,6 +20,7 @@ const EMPTY_BILLING = {
   billing_type: 'PER_SESSION',
   client_billing_mode: 'POSTPAID',
   client_rate_per_session_inr: '1000',
+  client_monthly_rate_inr: '',
   pay_share_amount_inr: '600',
   package_session_count: '12',
   package_amount_inr: '12000',
@@ -121,16 +122,28 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
     const product = productsForModule.find((p) => String(p.id) === String(serviceProductId))
     if (!product) return
     const model = (product.billing_model || 'PER_SESSION').toUpperCase()
-    const isPackage = model.includes('PACKAGE') || model.includes('PREPAID')
+    const isMonthly = model.includes('MONTHLY')
+    const isPackage = !isMonthly && (model.includes('PACKAGE') || model.includes('PREPAID'))
+    const price = product.price_inr != null ? String(product.price_inr) : null
+    const monthlyPrice =
+      product.total_inr != null ? String(product.total_inr) : price
     setBilling((b) => ({
       ...b,
       product_billing_rule_id: product.product_billing_rule_id
         ? String(product.product_billing_rule_id)
         : '',
-      billing_type: isPackage ? 'PACKAGE' : 'PER_SESSION',
+      billing_type: isMonthly ? 'MONTHLY_FIXED' : isPackage ? 'PACKAGE' : 'PER_SESSION',
       client_billing_mode: isPackage ? 'PREPAID' : 'POSTPAID',
-      client_rate_per_session_inr:
-        product.price_inr != null ? String(product.price_inr) : b.client_rate_per_session_inr,
+      client_rate_per_session_inr: isMonthly
+        ? ''
+        : price != null
+          ? price
+          : b.client_rate_per_session_inr,
+      client_monthly_rate_inr: isMonthly
+        ? monthlyPrice != null
+          ? monthlyPrice
+          : b.client_monthly_rate_inr
+        : '',
       package_session_count:
         product.package_sessions != null ? String(product.package_sessions) : b.package_session_count,
       package_amount_inr: product.total_inr != null ? String(product.total_inr) : b.package_amount_inr,
@@ -274,6 +287,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       }
       if (billing.billing_type === 'PER_SESSION') {
         payload.client_rate_per_session_inr = Number(billing.client_rate_per_session_inr)
+        payload.client_monthly_rate_inr = null
+      } else if (billing.billing_type === 'MONTHLY_FIXED') {
+        payload.client_monthly_rate_inr = Number(billing.client_monthly_rate_inr)
+        payload.client_rate_per_session_inr = null
       } else {
         payload.package_session_count = Number(billing.package_session_count)
         payload.package_amount_inr = Number(billing.package_amount_inr)
@@ -669,6 +686,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                 >
                   <option value="PER_SESSION">Per session</option>
                   <option value="PACKAGE">Package</option>
+                  <option value="MONTHLY_FIXED">Monthly fixed</option>
                 </select>
               </label>
               {billing.billing_type === 'PER_SESSION' ? (
@@ -697,6 +715,35 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                     />
                     <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
                       Share of client session fee paid to the assigned therapist in INR.
+                    </span>
+                  </label>
+                </>
+              ) : billing.billing_type === 'MONTHLY_FIXED' ? (
+                <>
+                  <label>
+                    Monthly rate (INR)
+                    <input
+                      type="number"
+                      className="admin-input"
+                      value={billing.client_monthly_rate_inr}
+                      onChange={(e) => setBill('client_monthly_rate_inr', e.target.value)}
+                      disabled={!therapistId}
+                    />
+                  </label>
+                  <label>
+                    Therapist pay share (INR)
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      className="admin-input"
+                      value={billing.pay_share_amount_inr}
+                      onChange={(e) => setBill('pay_share_amount_inr', e.target.value)}
+                      disabled={!therapistId}
+                    />
+                    <span className="admin-muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>
+                      Share of the monthly client fee paid to the assigned therapist in INR.
                     </span>
                   </label>
                 </>
@@ -773,6 +820,8 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
               <dd>
                 {billing.billing_type === 'PER_SESSION'
                   ? `Per session · ₹${billing.client_rate_per_session_inr}/session · ₹${billing.pay_share_amount_inr || 0} therapist share`
+                  : billing.billing_type === 'MONTHLY_FIXED'
+                    ? `Monthly fixed · ₹${billing.client_monthly_rate_inr}/month · ₹${billing.pay_share_amount_inr || 0} therapist share`
                   : `Package · ${billing.package_session_count} sessions · ₹${billing.package_amount_inr} · ₹${billing.pay_share_amount_inr || 0} therapist share`}
               </dd>
             </div>
@@ -826,6 +875,8 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
                 <dd>
                   {previewData.billing_summary.billing_type === 'PER_SESSION'
                     ? `Per session · ₹${previewData.billing_summary.client_rate_per_session_inr} · ₹${previewData.billing_summary.pay_share_amount_inr || 0} therapist share`
+                    : previewData.billing_summary.billing_type === 'MONTHLY_FIXED'
+                      ? `Monthly fixed · ₹${previewData.billing_summary.client_monthly_rate_inr}/month · ₹${previewData.billing_summary.pay_share_amount_inr || 0} therapist share`
                     : `Package · ${previewData.billing_summary.package_session_count} sessions · ₹${previewData.billing_summary.package_amount_inr} · ₹${previewData.billing_summary.pay_share_amount_inr || 0} therapist share`}
                 </dd>
               </div>

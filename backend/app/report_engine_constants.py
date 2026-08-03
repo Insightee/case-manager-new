@@ -48,7 +48,7 @@ REPORT_TYPE_HOOKS: dict[str, dict] = {
     "observation": {"evidence_sources": ["session_logs", "checklists", "uploads"], "implemented": True},
     "iep": {"evidence_sources": ["observation_report", "goal_repository", "strategy_repository", "session_logs"], "implemented": True},
     "monthly": {"evidence_sources": ["session_logs", "iep_baseline", "goal_evidence", "strategy_events"], "implemented": True},
-    "progress": {"evidence_sources": ["monthly_reports"], "implemented": False},
+    "progress": {"evidence_sources": ["monthly_reports", "goal_evidence", "strategy_events"], "implemented": True},
     "history": {"evidence_sources": ["all_reports"], "implemented": False},
 }
 
@@ -88,3 +88,22 @@ REQUIRED_OBSERVATION_SECTION_KEYS = [
 ]
 
 REQUIRED_IEP_SECTION_KEYS = [s["key"] for s in IEP_REPORT_SECTIONS if s.get("required")]
+
+# Engine progress sections — longer-term review (6-month, annual, transition).
+# Goal status uses the same Emerging/Building/Consistent vocabulary as the
+# Insights tab (app/services/insights/helpers.py) — no invented percentages.
+PROGRESS_REPORT_SECTIONS: list[dict[str, str | bool]] = [
+    {"key": "period_overview", "label": "Period Overview", "required": True, "prompt": "Meaningful changes, priorities, and context for this review period."},
+    {"key": "goals_progress", "label": "Goal Review", "required": True, "prompt": "Progress across active goals since the last review."},
+    {"key": "strengths_and_development", "label": "Strengths & Development", "required": True, "prompt": "Strengths, interests, and development observed this period."},
+    {"key": "strategies_and_supports", "label": "Strategies & Supports", "required": False, "prompt": "Strategies and supports that appeared helpful, and what needs adapting."},
+    {"key": "challenges_and_support_needs", "label": "Challenges & Support Needs", "required": False, "prompt": "Barriers and ongoing support needs — strengths-based language."},
+    {"key": "family_school_input", "label": "Parent & School Input", "required": False, "prompt": "Parent and school perspective for this period, where available."},
+    {"key": "next_period_plan", "label": "Plan for Next Period", "required": True, "prompt": "Goals and strategies to continue, adapt, or introduce next."},
+    {"key": "therapist_reflection", "label": "Therapist Reflection", "required": False, "prompt": "Internal reflection — not shared with parents.", "visibility": "internal_only"},
+    {"key": "parent_summary", "label": "Parent Summary", "required": True, "prompt": "Parent-facing summary — review before publish.", "visibility": "parent_visible"},
+]
+
+REQUIRED_PROGRESS_SECTION_KEYS = [
+    s["key"] for s in PROGRESS_REPORT_SECTIONS if s.get("required")
+]

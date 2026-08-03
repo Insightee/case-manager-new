@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { apiFetch } from '../../lib/apiClient.js'
-import { todayIsoIST } from '../../lib/datetime.js'
+import { formatDisplayDateTimeRange, todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
+import { pickNextStartableSessionToday } from '../../lib/sessionStartRules.js'
+import { addDays, dateStr, startOfWeek } from '../scheduling/slotCalendarUtils.js'
 import { ForgotSessionForm } from '../daily-logs/ForgotSessionForm.jsx'
 import { ClinicalSubTabs } from '../clinical-ui/ClinicalSubTabBar.jsx'
-// TODO: re-enable when therapist self-onboarding is allowed again
-// import { NewClientIntakeForm } from '../daily-logs/NewClientIntakeForm.jsx'
 import { SessionAbsenceSheet } from './SessionAbsenceSheet.jsx'
+import { WeeklyScheduleDrawer } from './WeeklyScheduleDrawer.jsx'
 
 const MODES = [
   { value: 'HOME', label: 'Home' },
@@ -33,7 +35,7 @@ function addMinutesToTime(timeStr, mins) {
 }
 
 /**
- * Top-of-page session actions: walk-in today, log a past session, or log child absence.
+ * Top-of-page session actions: start today's visit, log a past session, or log child absence.
  */
 export function TherapistSessionComposer({
   lockCaseId = null,
@@ -42,6 +44,8 @@ export function TherapistSessionComposer({
   disabled = false,
   caseProfileMode = false,
   onSessionStarted,
+  onStartScheduledSession,
+  onScheduleApplied,
   onManualSession,
   onError,
   onSelectedCaseChange,
@@ -56,6 +60,10 @@ export function TherapistSessionComposer({
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState('')
   const [absenceSessionId, setAbsenceSessionId] = useState(null)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+
+  const scheduleWeekStart = useMemo(() => dateStr(startOfWeek(new Date())), [])
+  const scheduleWeekEnd = useMemo(() => dateStr(addDays(startOfWeek(new Date()), 6)), [])
 
   useEffect(() => {
     if (lockCaseId) setCaseId(String(lockCaseId))
@@ -86,10 +94,24 @@ export function TherapistSessionComposer({
   }, [cases, upcomingSessions])
 
   const selectedCaseId = caseId ? Number(caseId) : null
+  const selectedCase = caseOptions.find((c) => c.case_id === selectedCaseId) || null
+
+  const nextSessionToday = useMemo(
+    () => pickNextStartableSessionToday(upcomingSessions),
+    [upcomingSessions],
+  )
+
+  const hasScheduledToday = Boolean(nextSessionToday)
 
   useEffect(() => {
     onSelectedCaseChange?.(selectedCaseId)
   }, [selectedCaseId, onSelectedCaseChange])
+
+  useEffect(() => {
+    if (hasScheduledToday && nextSessionToday?.case_id && !lockCaseId) {
+      setCaseId(String(nextSessionToday.case_id))
+    }
+  }, [hasScheduledToday, nextSessionToday?.case_id, lockCaseId])
 
   const todaySessionsForCase = useMemo(() => {
     if (!selectedCaseId) return []
@@ -100,7 +122,7 @@ export function TherapistSessionComposer({
   }, [upcomingSessions, selectedCaseId])
 
   async function handleWalkIn(e) {
-    e.preventDefault()
+    e?.preventDefault?.()
     if (!selectedCaseId) {
       setLocalError('Choose a client first.')
       return
@@ -131,12 +153,39 @@ export function TherapistSessionComposer({
         onSessionStarted?.()
       }
     } catch (err) {
-      const msg = err.message || 'Could not start walk-in session'
+      const msg = err.message || 'Could not start one-off session'
       setLocalError(msg)
       onError?.(msg)
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handleStartScheduled() {
+    if (!nextSessionToday) return
+    setBusy(true)
+    setLocalError('')
+    try {
+      await onStartScheduledSession?.(nextSessionToday.id, nextSessionToday)
+    } catch (err) {
+      const msg = err.message || 'Could not start scheduled session'
+      setLocalError(msg)
+      onError?.(msg)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleScheduleApplied(result) {
+    const count = result?.booked_slot_count ?? 0
+    setLocalError('')
+    onScheduleApplied?.()
+    onSessionStarted?.({
+      message:
+        count > 0
+          ? `Added ${count} session${count === 1 ? '' : 's'} to your schedule.`
+          : 'Schedule updated.',
+    })
   }
 
   if (disabled) {
@@ -152,13 +201,30 @@ export function TherapistSessionComposer({
     { id: 'absence', label: 'Child absence' },
   ]
 
+  const scheduledTimeLabel = nextSessionToday
+    ? formatDisplayDateTimeRange(
+        nextSessionToday.scheduled_date,
+        nextSessionToday.start_time,
+        nextSessionToday.end_time,
+      )
+    : ''
+
+  const scheduleCaseId = lockCaseId || selectedCaseId || nextSessionToday?.case_id || null
+
   return (
     <section
-      className={`ic-session-composer${caseProfileMode ? ' ic-session-composer--case-profile' : ''}`}
-      aria-label={caseProfileMode ? 'Log session for this case' : 'Add or start session'}
+      className={`ic-session-composer sl-new-session${caseProfileMode ? ' ic-session-composer--case-profile' : ''}`}
+      aria-label={caseProfileMode ? 'Log session for this case' : 'New session'}
     >
-      <div className="ic-session-composer__head">
-        {!caseProfileMode ? <h2 className="ic-session-composer__title">Session</h2> : null}
+      <div className="sl-new-session__head">
+        {!caseProfileMode ? (
+          <h2 className="sl-new-session__title">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              add_circle
+            </span>
+            New session
+          </h2>
+        ) : null}
         {caseProfileMode ? (
           <ClinicalSubTabs
             tabs={caseProfileTabs}
@@ -168,64 +234,58 @@ export function TherapistSessionComposer({
             className="clinical-logs-composer__tabs"
           />
         ) : (
-          <div className="ic-segment ic-segment--primary" role="tablist">
+          <div className="sl-new-session__tiles" role="tablist" aria-label="Session actions">
             <button
               type="button"
               role="tab"
               aria-selected={mode === 'live'}
-              className={mode === 'live' ? 'active' : ''}
-              onClick={() => setMode('live')}
+              aria-label="Start now"
+              className={`sl-new-session__tile${mode === 'live' ? ' is-active' : ''}`}
+              onClick={() => {
+                setMode('live')
+                setLocalError('')
+              }}
             >
-              Start now
+              <span className="material-symbols-outlined" aria-hidden="true">
+                play_circle
+              </span>
+              <span>Start now</span>
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={mode === 'past'}
-              className={mode === 'past' ? 'active' : ''}
-              onClick={() => setMode('past')}
+              className={`sl-new-session__tile${mode === 'past' ? ' is-active' : ''}`}
+              onClick={() => {
+                setMode('past')
+                setLocalError('')
+              }}
             >
-              Forgot to log
+              <span className="material-symbols-outlined" aria-hidden="true">
+                history
+              </span>
+              <span>Forgot to log</span>
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={mode === 'absence'}
-              className={mode === 'absence' ? 'active' : ''}
-              onClick={() => setMode('absence')}
+              className={`sl-new-session__tile${mode === 'absence' ? ' is-active' : ''}`}
+              onClick={() => {
+                setMode('absence')
+                setLocalError('')
+              }}
             >
-              Child absence
+              <span className="material-symbols-outlined" aria-hidden="true">
+                event_busy
+              </span>
+              <span>Child absence</span>
             </button>
           </div>
         )}
       </div>
 
       {localError ? <p className="ic-session-composer__error">{localError}</p> : null}
-
-      {/* TODO: re-enable when therapist self-onboarding is allowed again
-      {mode === 'newClient' ? (
-        <NewClientIntakeForm
-          disabled={busy}
-          onCancel={() => setMode('live')}
-          onCreated={(result) => {
-            setCases((prev) => [
-              ...prev,
-              {
-                id: result.case_id,
-                child_name: result.child_name,
-                case_code: result.case_code,
-              },
-            ])
-            setCaseId(String(result.case_id))
-            setMode('live')
-            setLocalError('')
-            onSessionStarted?.({
-              message: `Client ${result.case_code} created. Start a session to send the parent invite.`,
-            })
-          }}
-        />
-      ) : null}
-      */}
 
       {mode === 'past' ? (
         <ForgotSessionForm
@@ -285,49 +345,96 @@ export function TherapistSessionComposer({
           />
         </div>
       ) : !caseProfileMode && mode === 'live' ? (
-        <div className="ic-session-composer__body">
-          {lockCaseId && lockCaseLabel ? (
-            <p className="ic-session-composer__locked-client">
-              <span className="ic-session-composer__locked-label">Client</span>
-              {lockCaseLabel}
-            </p>
-          ) : (
-            <div className="ic-session-composer__client-pick">
-              <label className="ic-session-composer__field">
-                <span>Client</span>
-                <select
-                  value={caseId}
-                  onChange={(e) => setCaseId(e.target.value)}
-                  className="ic-session-composer__input"
-                >
-                  <option value="">Choose client…</option>
-                  {caseOptions.map((c) => (
-                    <option key={c.case_id} value={c.case_id}>
-                      {c.child_name || c.case_code}
-                      {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {/* TODO: re-enable when therapist self-onboarding is allowed again
+        <div className="sl-live-panel">
+          {hasScheduledToday ? (
+            <article className="sl-live-panel__card sl-live-panel__card--scheduled">
+              <div className="sl-live-panel__head">
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  event_available
+                </span>
+                <div>
+                  <span className="sl-live-panel__label">Today&apos;s scheduled session</span>
+                  <strong className="sl-live-panel__title">
+                    {nextSessionToday.child_name || nextSessionToday.case_code}
+                  </strong>
+                  <span className="sl-live-panel__meta">{scheduledTimeLabel}</span>
+                </div>
+              </div>
+              {nextSessionToday.case_id ? (
+                <Link to={`/therapist/cases/${nextSessionToday.case_id}`} className="sl-live-panel__case-link">
+                  View case file
+                </Link>
+              ) : null}
               <button
                 type="button"
-                className="ic-session-composer__add-client"
-                onClick={() => setMode('newClient')}
+                className="sl-live-panel__cta"
+                disabled={busy}
+                onClick={handleStartScheduled}
               >
-                + Add new client
+                {busy ? 'Starting…' : 'Start scheduled session'}
               </button>
-              */}
-            </div>
-          )}
+              <p className="sl-live-panel__hint">
+                This is your visit for today — start here to clock in and write the log after.
+              </p>
+            </article>
+          ) : (
+            <article className="sl-live-panel__card sl-live-panel__card--oneoff">
+              <div className="sl-live-panel__head">
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  play_circle
+                </span>
+                <div>
+                  <span className="sl-live-panel__label">One-off visit today</span>
+                  <strong className="sl-live-panel__title">No appointment on today&apos;s calendar.</strong>
+                </div>
+              </div>
 
-          {selectedCaseId ? (
-            <>
-              <form className="ic-session-composer__walkin" onSubmit={handleWalkIn}>
-                <p className="ic-session-composer__walkin-title">
-                  <strong>Walk-in today</strong>
-                  <span className="ic-session-composer__walkin-note"> (Use if slots not configured)</span>
+              {lockCaseId && lockCaseLabel ? (
+                <p className="ic-session-composer__locked-client">
+                  <span className="ic-session-composer__locked-label">Client</span>
+                  {lockCaseLabel}
                 </p>
+              ) : (
+                <label className="sl-walkin__label">
+                  <span>Client</span>
+                  <select
+                    value={caseId}
+                    onChange={(e) => {
+                      setCaseId(e.target.value)
+                      setLocalError('')
+                    }}
+                    className="ic-session-composer__input sl-walkin__select"
+                  >
+                    <option value="">Choose client…</option>
+                    {caseOptions.map((c) => (
+                      <option key={c.case_id} value={c.case_id}>
+                        {c.child_name || c.case_code}
+                        {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {selectedCase && !lockCaseId ? (
+                <div className="sl-walkin__profile">
+                  <div>
+                    <span className="sl-walkin__profile-label">Client profile summary</span>
+                    <p className="sl-walkin__profile-meta">
+                      {selectedCase.case_code ? (
+                        <span>
+                          Case: <strong>{selectedCase.case_code}</strong>
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
+                  <Link to={`/therapist/cases/${selectedCase.case_id}`} className="sl-walkin__profile-link">
+                    View full file
+                  </Link>
+                </div>
+              ) : null}
+
+              <form className="ic-session-composer__walkin sl-walkin__form" onSubmit={handleWalkIn}>
                 <div className="ic-session-composer__grid">
                   <label className="ic-session-composer__field">
                     <span>Start</span>
@@ -364,18 +471,48 @@ export function TherapistSessionComposer({
                     </select>
                   </label>
                 </div>
-                <button type="submit" className="ic-btn ic-btn--primary ic-session-composer__submit" disabled={busy}>
-                  {busy ? 'Starting…' : 'Start session'}
+                <button
+                  type="submit"
+                  className="sl-live-panel__cta"
+                  disabled={busy || !selectedCaseId}
+                >
+                  {busy ? 'Starting…' : 'Start one-off session'}
                 </button>
               </form>
-            </>
-          ) : (
-            <p className="ic-session-composer__hint">
-              Select a client for walk-in, or start a scheduled visit in Upcoming sessions below.
-            </p>
+            </article>
           )}
+
+          <div className="sl-live-panel__schedule-row">
+            <p className="sl-live-panel__schedule-copy">
+              {hasScheduledToday
+                ? 'Need more visits on the calendar? Book recurring days and times.'
+                : 'Want this client on the calendar going forward? Add a recurring schedule.'}
+            </p>
+            <button
+              type="button"
+              className="sl-live-panel__schedule-btn"
+              onClick={() => setScheduleOpen(true)}
+            >
+              <span className="material-symbols-outlined" aria-hidden="true">
+                calendar_add_on
+              </span>
+              Add to schedule
+            </button>
+          </div>
         </div>
       ) : null}
+
+      <WeeklyScheduleDrawer
+        open={scheduleOpen}
+        onClose={() => setScheduleOpen(false)}
+        onApplied={handleScheduleApplied}
+        weekStart={scheduleWeekStart}
+        weekEnd={scheduleWeekEnd}
+        therapistUserIdProp={user?.id}
+        fixedCaseId={scheduleCaseId || undefined}
+        initialTab="recurring"
+        singleTab="recurring"
+      />
     </section>
   )
 }

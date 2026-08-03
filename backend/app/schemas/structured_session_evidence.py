@@ -118,6 +118,24 @@ class StructuredSessionEvidence(BaseModel):
     def confirmed_goals(self) -> list[StructuredGoalEvidence]:
         return [g for g in self.goals if g.status in ("confirmed", "changed")]
 
+    @staticmethod
+    def _normalize_strategy_feedback_for_evidence(feedback: Optional[str]) -> Optional[str]:
+        """Map voice-session vocabulary to clinical evidence enums."""
+        if not feedback:
+            return None
+        voice_map = {
+            "worked_well": "HELPFUL",
+            "partially_worked": "PARTLY_HELPFUL",
+            "did_not_work": "NOT_HELPFUL",
+            "not_observed": None,
+        }
+        key = feedback.strip().lower()
+        if key in voice_map:
+            return voice_map[key]
+        upper = feedback.strip().upper()
+        allowed = {"HELPFUL", "PARTLY_HELPFUL", "NOT_HELPFUL", "CHILD_REJECTED", "NEEDS_ADAPTATION"}
+        return upper if upper in allowed else None
+
     def pending_review_count(self) -> int:
         return sum(1 for g in self.goals if g.status == "pending")
 
@@ -136,7 +154,9 @@ class StructuredSessionEvidence(BaseModel):
                         "strategy_id": s.strategy_id,
                         "strategy_label": s.strategy_label,
                         "short_note": s.spoken_phrase or s.strategy_label,
-                        "strategy_feedback": s.feedback,
+                        "strategy_feedback": StructuredSessionEvidence._normalize_strategy_feedback_for_evidence(
+                            s.feedback
+                        ),
                     }
                 )
             goals.append(
@@ -162,7 +182,9 @@ class StructuredSessionEvidence(BaseModel):
                     "strategy_id": s.strategy_id,
                     "strategy_label": s.strategy_label,
                     "short_note": s.spoken_phrase or s.strategy_label,
-                    "strategy_feedback": s.feedback,
+                    "strategy_feedback": StructuredSessionEvidence._normalize_strategy_feedback_for_evidence(
+                        s.feedback
+                    ),
                 }
             )
         return {"schema_version": 2, "goals": goals, "strategies": loose}

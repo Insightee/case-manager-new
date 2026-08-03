@@ -63,6 +63,11 @@ def _compact_ai_context(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def compact_ai_context(payload: dict[str, Any]) -> dict[str, Any]:
+    """Public alias for ask/refresh compact context."""
+    return _compact_ai_context(payload)
+
+
 def refresh_insights(db: Session, *, case_id: int, user: User) -> dict[str, Any]:
     payload = build_case_insight_payload(db, case_id)
     input_hash = compute_input_hash(payload)

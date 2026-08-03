@@ -92,19 +92,3 @@ export function isClinicalBrainEnabled() {
 export function isReportBuilderEnabled() {
   return ENABLE_REPORT_BUILDER
 }
-
-/** Banner copy when therapist/parent reports or billing are deferred. */
-export function clientPortalModuleRolloutMessage() {
-  const deferred = []
-  if (!isReportsModuleEnabled()) deferred.push('Reports')
-  if (!isBillingModuleEnabled()) deferred.push('Billing')
-  if (deferred.length === 0) return null
-  if (deferred.length === 2) {
-    return 'Reports and Billing are being refreshed — coming soon on this portal. Session logs and case updates continue as usual.'
-  }
-  return `${deferred[0]} is being refreshed — coming soon on this portal. Session logs and case updates continue as usual.`
-}
-
-export function shouldShowClientPortalRolloutNotice() {
-  return Boolean(clientPortalModuleRolloutMessage())
-}

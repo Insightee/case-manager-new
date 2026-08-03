@@ -59,6 +59,34 @@ def list_parent_visible_clinical_iep(db: Session, case_ids: list[int]) -> list[C
     return [r for r in rows if report_engine_service.parent_can_see_clinical_report(r)]
 
 
+def list_parent_visible_clinical_progress(db: Session, case_ids: list[int]) -> list[ClinicalReport]:
+    if not case_ids:
+        return []
+    rows = db.scalars(_parent_visible_clinical_query(case_ids, ClinicalReportType.PROGRESS.value)).all()
+    return [r for r in rows if report_engine_service.parent_can_see_clinical_report(r)]
+
+
+def serialize_clinical_progress_list_item_light(report: ClinicalReport, case: Case | None) -> dict:
+    from app.services import progress_report_service as progress_svc
+
+    period = progress_svc.report_period_from_metadata(report)
+    period_label = ""
+    if period.get("start") and period.get("end"):
+        period_label = f"{period['start']} – {period['end']}"
+    return {
+        "kind": "progress",
+        "id": str(report.id),
+        "source": "clinical_reports",
+        "clinicalReportId": report.id,
+        "caseId": case.case_code if case else "",
+        "caseDbId": report.case_id,
+        "childName": case.child.full_name if case and case.child else "",
+        "label": period_label or report.title,
+        "status": "shared" if report.parent_visible_at else "approved",
+        "summaryPreview": (report.title or "")[:120],
+    }
+
+
 def _month_key_for_clinical(report: ClinicalReport) -> str:
     meta = json.loads(report.metadata_json) if report.metadata_json else {}
     return str(meta.get("month") or "")
@@ -188,6 +216,46 @@ def get_clinical_observation_for_parent(
         "status": "approved",
         "createdAt": report.created_at.isoformat() if report.created_at else None,
     }
+
+
+def get_clinical_progress_for_parent(
+    db: Session, user: User, report_id: int
+) -> dict | None:
+    from app.services import progress_report_service as progress_svc
+
+    report = db.get(ClinicalReport, report_id)
+    if not report or report.report_type != ClinicalReportType.PROGRESS.value:
+        return None
+    if not report_engine_service.parent_can_see_clinical_report(report):
+        return None
+    case = parent_service.get_parent_case(db, user, report.case_id)
+    if not case:
+        return None
+    safe = progress_svc.serialize_parent_safe_progress(db, report, case)
+    sections_html = "".join(
+        f"<h2>{s['label']}</h2>{s.get('narrative_text', '')}" for s in safe.get("sections", [])
+    )
+    period = safe.get("period") or {}
+    return {
+        "kind": "progress",
+        "id": str(report.id),
+        "source": "clinical_reports",
+        "clinicalReportId": report.id,
+        "caseId": case.case_code,
+        "caseDbId": case.id,
+        "childName": case.child.full_name if case.child else "",
+        "title": report.title,
+        "bodyHtml": sections_html,
+        "periodStart": period.get("start"),
+        "periodEnd": period.get("end"),
+        "downloadPath": f"/api/v1/parent/reports/progress/{report.id}/download",
+        "status": "shared" if report.parent_visible_at else "approved",
+        "createdAt": report.created_at.isoformat() if report.created_at else None,
+    }
+
+
+def resolve_parent_progress_detail(db: Session, user: User, report_id: int) -> dict | None:
+    return get_clinical_progress_for_parent(db, user, report_id)
 
 
 def get_clinical_iep_for_parent(

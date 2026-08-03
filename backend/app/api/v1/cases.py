@@ -107,6 +107,7 @@ def create_case(
     data = payload.model_dump()
     billing_data = {k: data.pop(k) for k in list(data.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
+        "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
@@ -122,7 +123,7 @@ def create_case(
         bt = billing_data.get("billing_type")
         if bt == "PACKAGE":
             billing_data["client_billing_mode"] = ClientBillingMode.PREPAID.value
-        elif bt == "PER_SESSION":
+        elif bt in ("PER_SESSION", "MONTHLY_FIXED"):
             billing_data["client_billing_mode"] = ClientBillingMode.POSTPAID.value
     case = Case(**data)
     if service_data:
@@ -167,6 +168,7 @@ def update_case(
     updates = payload.model_dump(exclude_unset=True)
     billing_data = {k: updates.pop(k) for k in list(updates.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
+        "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
     )}

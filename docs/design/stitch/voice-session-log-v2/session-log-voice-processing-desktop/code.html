@@ -1,0 +1,306 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Voice Processing - Desktop</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind Configuration -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-fixed-dim": "#b7cbc1",
+                    "on-surface": "#151c27",
+                    "inverse-primary": "#b7cbc1",
+                    "tertiary-fixed": "#e4e2e1",
+                    "surface": "#f9f9ff",
+                    "on-background": "#151c27",
+                    "surface-dim": "#d3daea",
+                    "secondary-container": "#c3ecd7",
+                    "surface-container-lowest": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "primary-fixed": "#d3e7dd",
+                    "secondary": "#416656",
+                    "on-secondary-fixed-variant": "#294e3f",
+                    "on-surface-variant": "#424845",
+                    "surface-container-low": "#f0f3ff",
+                    "on-primary-fixed-variant": "#394a43",
+                    "on-error-container": "#93000a",
+                    "on-primary": "#ffffff",
+                    "on-primary-fixed": "#0e1f19",
+                    "tertiary-container": "#1b1c1b",
+                    "surface-bright": "#f9f9ff",
+                    "outline-variant": "#c2c8c3",
+                    "secondary-fixed-dim": "#a8cfbc",
+                    "error-container": "#ffdad6",
+                    "on-error": "#ffffff",
+                    "surface-tint": "#50625a",
+                    "on-secondary-fixed": "#002115",
+                    "primary": "#000000",
+                    "tertiary-fixed-dim": "#c7c6c5",
+                    "background": "#f9f9ff",
+                    "secondary-fixed": "#c3ecd7",
+                    "outline": "#737875",
+                    "on-tertiary-container": "#848483",
+                    "primary-container": "#0e1f19",
+                    "on-secondary-container": "#476c5b",
+                    "surface-container-highest": "#dce2f3",
+                    "surface-container": "#e7eefe",
+                    "tertiary": "#000000",
+                    "on-tertiary-fixed": "#1b1c1b",
+                    "surface-variant": "#dce2f3",
+                    "on-tertiary-fixed-variant": "#464746",
+                    "on-secondary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "inverse-on-surface": "#ebf1ff",
+                    "inverse-surface": "#2a313d",
+                    "on-primary-container": "#75887f",
+                    "surface-container-high": "#e2e8f8"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "base_unit": "8px",
+                    "gutter": "24px",
+                    "margin_mobile": "16px",
+                    "margin_desktop": "auto",
+                    "container_max_width": "800px"
+            },
+            "fontFamily": {
+                    "body-lg": ["Manrope"],
+                    "headline-lg": ["Manrope"],
+                    "headline-md": ["Manrope"],
+                    "body-md": ["Manrope"],
+                    "label-sm": ["Manrope"],
+                    "headline-lg-mobile": ["Manrope"]
+            },
+            "fontSize": {
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-lg": ["30px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #FDFBFA; /* Style Guidance warm off-white */
+            color: #151c27;
+            font-family: 'Manrope', sans-serif;
+            overflow-x: hidden;
+        }
+        
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        .voice-pulse {
+            animation: pulse-ring 3s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(.8); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 0.3; }
+            100% { transform: scale(.8); opacity: 0.8; }
+        }
+
+        .step-active-bg {
+            background-color: #ECFDF5; /* AI-matched section from Style Guidance */
+        }
+
+        .forest-green {
+            background-color: #0B1C16; /* Primary Button color from Style Guidance used for Brand Sidebar */
+        }
+    </style>
+</head>
+<body class="flex min-h-screen">
+<!-- Sidebar Navigation (SideNavBar Anchor) -->
+<aside class="h-screen w-64 fixed left-0 top-0 forest-green text-white hidden md:flex flex-col p-4 gap-2 z-50">
+<div class="mb-10 px-4 pt-4">
+<h1 class="font-headline-md text-headline-md font-bold text-secondary-fixed">Therapist Portal</h1>
+<p class="font-label-sm text-label-sm opacity-60">Digital Sanctuary Therapeutics</p>
+</div>
+<nav class="flex-1 flex flex-col gap-2">
+<!-- Active state manually determined as Client Sessions for this context -->
+<a class="flex items-center gap-3 px-4 py-3 bg-secondary-container text-on-secondary-container rounded-lg font-bold transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="event_note">event_note</span>
+<span class="font-label-md text-label-md">Client Sessions</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-outline-variant hover:bg-surface-container-high/10 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-outline-variant hover:bg-surface-container-high/10 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="insights">insights</span>
+<span class="font-label-md text-label-md">Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-outline-variant hover:bg-surface-container-high/10 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<div class="mt-auto p-4 flex items-center gap-3 border-t border-white/10 pt-6">
+<div class="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed font-bold">DA</div>
+<div>
+<p class="font-label-md text-label-md font-bold">Dr. Aris</p>
+<p class="text-[10px] opacity-60 uppercase tracking-wider">Clinical Supervisor</p>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 ml-0 md:ml-64 p-gutter flex flex-col items-center justify-center min-h-screen">
+<!-- Header Shell (TopAppBar Anchor Logic) -->
+<header class="fixed top-0 right-0 left-0 md:left-64 bg-surface/80 backdrop-blur-md z-40">
+<div class="w-full px-gutter max-w-[800px] mx-auto flex justify-between items-center h-16">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="mic">mic</span>
+<h2 class="font-headline-md text-headline-md font-bold text-primary">Voice Processing - Desktop</h2>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full cursor-pointer" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full cursor-pointer" data-icon="account_circle">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Focus Container -->
+<div class="w-full max-w-[800px] mt-16 pb-20">
+<!-- Central Visualization Card -->
+<section class="bg-[#FDFBFA] rounded-xl border border-gray-200 p-8 shadow-sm flex flex-col items-center gap-8 relative overflow-hidden">
+<!-- Background Atmospheric Shader (Visual Token for Advanced State) -->
+<div class="absolute inset-0 opacity-10 pointer-events-none">
+
+</div>
+<!-- Pulse Visualizer -->
+<div class="relative flex items-center justify-center w-48 h-48">
+<div class="absolute w-full h-full rounded-full bg-secondary/10 voice-pulse"></div>
+<div class="absolute w-3/4 h-3/4 rounded-full bg-secondary/20 voice-pulse" style="animation-delay: 0.5s;"></div>
+<div class="relative z-10 w-20 h-20 rounded-full bg-secondary flex items-center justify-center shadow-lg transform transition-transform duration-500 hover:scale-105">
+<span class="material-symbols-outlined text-white text-4xl" data-icon="graphic_eq">graphic_eq</span>
+</div>
+</div>
+<div class="text-center z-10">
+<h3 class="font-headline-lg text-headline-lg mb-2">Analyzing Session Audio</h3>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-md mx-auto">
+                        AI is currently distilling clinical insights from your dialogue. This process typically takes 15-30 seconds.
+                    </p>
+</div>
+<!-- Processing Steps (Session Card Flow Logic) -->
+<div class="w-full space-y-4 z-10 relative">
+<!-- Step 1: Active -->
+<div class="flex items-center gap-4 p-4 rounded-xl border border-gray-100 step-active-bg transition-all duration-300">
+<div class="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-white text-sm" data-icon="check" style="font-variation-settings: 'wght' 700;">check</span>
+</div>
+<div class="flex-1">
+<p class="font-label-md text-label-md font-bold text-secondary">Transcribing narrative...</p>
+<div class="h-1.5 w-full bg-secondary-fixed rounded-full mt-2 overflow-hidden">
+<div class="h-full bg-secondary w-full"></div>
+</div>
+</div>
+<span class="font-label-sm text-label-sm text-secondary">Complete</span>
+</div>
+<!-- Step 2: In Progress -->
+<div class="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-white shadow-sm transition-all duration-300">
+<div class="w-8 h-8 rounded-full border-2 border-secondary flex items-center justify-center shrink-0">
+<div class="w-2 h-2 rounded-full bg-secondary animate-ping"></div>
+</div>
+<div class="flex-1">
+<p class="font-label-md text-label-md font-bold">Identifying clinical evidence...</p>
+<div class="h-1.5 w-full bg-surface-container rounded-full mt-2 overflow-hidden">
+<div class="h-full bg-secondary w-2/3 animate-[progress_2s_ease-in-out_infinite]"></div>
+</div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Processing</span>
+</div>
+<!-- Step 3: Pending -->
+<div class="flex items-center gap-4 p-4 rounded-xl border border-gray-100 opacity-50 grayscale transition-all duration-300">
+<div class="w-8 h-8 rounded-full border-2 border-outline-variant flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-outline text-sm" data-icon="lock">lock</span>
+</div>
+<div class="flex-1">
+<p class="font-label-md text-label-md">Mapping to IEP goals...</p>
+</div>
+<span class="font-label-sm text-label-sm">Waiting</span>
+</div>
+<!-- Timeline Thread (Style Guidance Element) -->
+<div class="absolute left-8 top-12 bottom-12 w-[2px] bg-outline-variant -z-10 hidden sm:block"></div>
+</div>
+</section>
+<!-- Quick Controls -->
+<div class="mt-8 flex flex-wrap justify-center gap-4">
+<button class="flex items-center gap-2 px-6 py-3 rounded-full border border-outline hover:bg-surface-container-low transition-colors font-label-md text-label-md">
+<span class="material-symbols-outlined text-base" data-icon="pause">pause</span>
+                    Pause Analysis
+                </button>
+<button class="flex items-center gap-2 px-6 py-3 rounded-full bg-[#0B1C16] text-white hover:opacity-90 active:scale-95 transition-all font-label-md text-label-md">
+<span class="material-symbols-outlined text-base" data-icon="visibility">visibility</span>
+                    View Live Transcript
+                </button>
+</div>
+<!-- Metadata Cards (Asymmetric Layout) -->
+<div class="mt-gutter grid grid-cols-1 md:grid-cols-2 gap-gutter">
+<div class="bg-surface-container-lowest border border-gray-100 p-6 rounded-xl">
+<h4 class="font-label-md text-label-md font-bold text-secondary-fixed-dim mb-2 uppercase tracking-widest">Active Client</h4>
+<div class="flex items-center gap-4">
+<img class="w-12 h-12 rounded-full object-cover" data-alt="A professional studio portrait of a young child with a bright, engaged expression, featuring soft natural lighting and a neutral clinical background. The style is clean, modern, and empathetic, reflecting a healthcare context with high-end photographic quality." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDTNi4kPM3uOxP7w7Uh--LRCoXT5Ojw-l_vuFxfcpTy7Wip1ULZnD29DWudECA-PD2Dm_kgQsOUIixdUHggCCQ6y-Eq6kh_ue9gYp42GKs1yWh6rGOQry3Kxj5xhuv_vMfYDCkSXqjdHBgsJBaNRQBV3HV5tbWUV58ct3UGXQT4VoAsxUwFbnitjzaTvPCzKu6TYHv-OgfY2b7R6KAJUsHuKO58svrqgJc8owNsPP3t4iKygXFYCiT1BA">
+<div>
+<p class="font-body-lg text-body-lg font-bold">Liam Henderson</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Cognitive Behavioral Therapy • Session #12</p>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-gray-100 p-6 rounded-xl flex flex-col justify-center">
+<div class="flex justify-between items-center mb-1">
+<span class="font-label-md text-label-md font-bold text-secondary-fixed-dim uppercase tracking-widest">Signal Quality</span>
+<span class="text-green-600 font-bold font-label-sm text-label-sm">Optimal</span>
+</div>
+<div class="flex gap-1 h-8 items-end">
+<div class="flex-1 bg-secondary rounded-t-sm h-1/2"></div>
+<div class="flex-1 bg-secondary rounded-t-sm h-3/4"></div>
+<div class="flex-1 bg-secondary rounded-t-sm h-2/3"></div>
+<div class="flex-1 bg-secondary rounded-t-sm h-full"></div>
+<div class="flex-1 bg-secondary rounded-t-sm h-5/6"></div>
+<div class="flex-1 bg-secondary rounded-t-sm h-1/2"></div>
+<div class="flex-1 bg-secondary rounded-t-sm h-3/4"></div>
+<div class="flex-1 bg-secondary rounded-t-sm h-2/3"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer (Footer Anchor) -->
+<footer class="w-full py-stack-lg px-container-padding-desktop max-w-[800px] mx-auto flex flex-col items-center gap-4 mt-auto border-t border-outline-variant">
+<div class="flex gap-6">
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Privacy Policy</a>
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Support</a>
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Documentation</a>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant opacity-60">© 2024 Digital Sanctuary Therapeutics</p>
+</footer>
+</main>
+<script>
+        // Micro-interactions for processing state
+        document.addEventListener('DOMContentLoaded', () => {
+            const steps = document.querySelectorAll('section > .z-10.relative > div');
+            
+            // Artificial "progress" demonstration
+            setTimeout(() => {
+                const secondStep = steps[1];
+                secondStep.classList.add('step-active-bg');
+                secondStep.querySelector('.material-symbols-outlined').innerHTML = 'check';
+                secondStep.querySelector('.material-symbols-outlined').classList.remove('animate-ping');
+                secondStep.querySelector('.animate-\\[progress_2s_ease-in-out_infinite\\]').classList.replace('w-2/3', 'w-full');
+            }, 8000);
+        });
+    </script>
+</body></html>

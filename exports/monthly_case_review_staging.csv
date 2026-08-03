@@ -1,0 +1,6 @@
+case_id,client_name,service_type,classification_bucket,previous_billing_type,current_billing_type,previous_client_rate_per_session_inr,client_monthly_rate_inr,product_billing_rule_id,review_reason,finance_decision
+25,Aarav M.,Shadow support,AUTO_MIGRATED,PER_SESSION,MONTHLY_FIXED,30000.0,30000.0,1,Linked to MONTHLY_FIXED product rule,AUTO
+26,Aarav M.,Shadow support,AUTO_MIGRATED,PER_SESSION,MONTHLY_FIXED,45000.0,45000.0,1,Linked to MONTHLY_FIXED product rule,AUTO
+27,Aarav M.,Shadow support,AUTO_MIGRATED,PACKAGE,MONTHLY_FIXED,28000.0,28000.0,1,Linked to MONTHLY_FIXED product rule,AUTO
+28,Aarav M.,Homecare,NEEDS_REVIEW,PER_SESSION,PER_SESSION,25000.0,,,Missing product_billing_rule_id,
+29,Aarav M.,Homecare,NEEDS_REVIEW,PER_SESSION,PER_SESSION,32000.0,,2,Non-monthly product rule with monthly-looking rate,

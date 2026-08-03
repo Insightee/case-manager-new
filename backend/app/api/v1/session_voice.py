@@ -69,7 +69,7 @@ async def upload_voice_recording(
         recording = voice_svc.get_owned_recording(db, recording.id, user)
     else:
         background_tasks.add_task(voice_svc.run_pipeline, recording.id)
-    return voice_svc.recording_status_read(recording)
+    return voice_svc.recording_status_read(recording, db)
 
 
 @router.get("/{recording_id}/status")
@@ -79,7 +79,7 @@ def voice_recording_status(
     db: Session = Depends(get_db),
 ):
     recording = voice_svc.get_owned_recording(db, recording_id, user)
-    return voice_svc.recording_status_read(recording)
+    return voice_svc.recording_status_read(recording, db)
 
 
 @router.post("/{recording_id}/retry")
@@ -92,7 +92,7 @@ def retry_voice_recording(
     recording = voice_svc.get_owned_recording(db, recording_id, user)
     recording = voice_svc.retry_recording(db, recording)
     background_tasks.add_task(voice_svc.run_pipeline, recording.id)
-    return voice_svc.recording_status_read(recording)
+    return voice_svc.recording_status_read(recording, db)
 
 
 @router.get("/{recording_id}/audio")

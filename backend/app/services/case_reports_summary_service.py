@@ -165,7 +165,11 @@ def _target_monthly_legacy(case_id: int, report_id: int) -> str:
     return f"/therapist/cases/{case_id}/reports/monthly/{report_id}"
 
 
-def _target_progress(report_id: int) -> str:
+def _target_progress_engine(case_id: int) -> str:
+    return f"/therapist/cases/{case_id}?tab=reports&section=progress"
+
+
+def _target_progress_legacy(report_id: int) -> str:
     return f"/therapist/reports/edit/{report_id}"
 
 
@@ -384,6 +388,41 @@ def _monthly_state_for_month(
 
 
 def _progress_state(db: Session, case: Case, assignment: CaseAssignment | None) -> dict[str, Any]:
+    engine_report = report_engine_svc.get_active_progress_report(db, case.id)
+    if engine_report:
+        status = engine_report.status
+        status_label = CLINICAL_STATUS_LABELS.get(status, status)
+        approved = status in (ClinicalReportStatus.APPROVED.value, ClinicalReportStatus.LOCKED.value)
+        period = report_engine_svc.report_period_from_metadata(engine_report)
+        due = None
+        if period.get("end"):
+            try:
+                due = date.fromisoformat(period["end"])
+            except ValueError:
+                due = None
+        flag = _due_soon_flag(due, approved=approved)
+        priority = None
+        if status == ClinicalReportStatus.RETURNED_FOR_CHANGES.value:
+            priority = "needs_changes"
+        elif status == ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value:
+            priority = "pending_cm_approval"
+        elif flag:
+            priority = flag
+        return {
+            "type": "progress_report",
+            "title": "Progress Report",
+            "report_id": engine_report.id,
+            "status": status,
+            "status_label": status_label,
+            "due_date": _iso(due),
+            "last_updated": _iso(engine_report.updated_at),
+            "next_due_label": "Completed" if approved else (_iso(due) or "Not due"),
+            "target_url": _target_progress_engine(case.id),
+            "cta_label": "Continue" if _clinical_editable(status) else "View",
+            "priority": priority,
+        }
+
+    # Legacy fallback — older progress reports created before the clinical_reports engine.
     progress_rows = db.scalars(
         select(MonthlyReport)
         .where(
@@ -422,7 +461,7 @@ def _progress_state(db: Session, case: Case, assignment: CaseAssignment | None) 
             "due_date": _iso(due),
             "last_updated": _iso(draft.updated_at),
             "next_due_label": _iso(due),
-            "target_url": _target_progress(draft.id),
+            "target_url": _target_progress_legacy(draft.id),
             "cta_label": "Continue" if _legacy_editable(draft.status) else "View",
             "priority": "needs_changes" if draft.status == ReportStatus.REJECTED else flag,
         }
@@ -443,7 +482,7 @@ def _progress_state(db: Session, case: Case, assignment: CaseAssignment | None) 
         "status_label": status_label,
         "due_date": _iso(due),
         "next_due_label": _iso(due),
-        "target_url": f"/therapist/cases/{case.id}?tab=reports&section=progress",
+        "target_url": _target_progress_engine(case.id),
         "cta_label": "Start" if status in ("overdue", "due_soon", "not_started") else "View timeline",
         "priority": flag,
     }

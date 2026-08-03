@@ -18,7 +18,6 @@ import { AuthenticatedAvatar } from '../components/shared/AvatarUpload.jsx'
 import { NotificationBell } from '../components/shared/NotificationBell.jsx'
 import { NavIcon } from '../components/shared/NavIcon.jsx'
 import { SkipLink } from '../components/shared/SkipLink.jsx'
-import { PortalModuleRolloutNotice } from '../components/shared/PortalModuleRolloutNotice.jsx'
 import { CaseProfileSidebarNav } from '../components/case-profile/CaseProfileSidebarNav.jsx'
 import { CaseReportsSidebarNav } from '../components/case-profile/CaseReportsSidebarNav.jsx'
 import { normalizeReportsSection } from '../components/case-profile/reportsHubSections.js'
@@ -913,7 +912,6 @@ function PortalShellInner({ portal }) {
             . Edit actions are disabled for those programmes.
           </div>
         ) : null}
-        {(portal === 'therapist' || portal === 'parent') ? <PortalModuleRolloutNotice /> : null}
         <Outlet />
       </main>
     </div>

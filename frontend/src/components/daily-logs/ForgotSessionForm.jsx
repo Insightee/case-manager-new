@@ -1,16 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { formatApiDateIN, todayIsoIST } from '../../lib/datetime.js'
 import { unwrapList } from '../../lib/listApi.js'
 import { ExistingSessionForDateCard } from './ExistingSessionForDateCard.jsx'
-
-const MODES = [
-  { value: 'HOME', label: 'Home' },
-  { value: 'SCHOOL', label: 'School' },
-  { value: 'CENTER', label: 'Center' },
-  { value: 'ONLINE', label: 'Online' },
-]
 
 const DURATION_PRESETS = [
   { label: '30 min', minutes: 30 },
@@ -37,8 +29,18 @@ export function defaultForgotSession() {
     session_date: todayIsoIST(),
     start_time: toTimeInput(start),
     end_time: toTimeInput(end),
-    mode: 'HOME',
   }
+}
+
+/** Map case service_location_type to API SessionMode (location is set on the case). */
+export function sessionModeFromCase(caseRow) {
+  const raw = caseRow?.service_location_type
+  if (!raw) return 'HOME'
+  const key = String(raw).toUpperCase()
+  if (key === 'CLINIC') return 'CENTER'
+  if (key === 'COMMUNITY') return 'HOME'
+  if (['HOME', 'SCHOOL', 'CENTER', 'ONLINE'].includes(key)) return key
+  return 'HOME'
 }
 
 export function combineDateAndTime(dateStr, timeStr) {
@@ -61,36 +63,6 @@ function formatDisplayDate(dateStr) {
   return formatApiDateIN(dateStr) || dateStr || ''
 }
 
-const fieldStyle = {
-  display: 'block',
-  width: '100%',
-  marginTop: 6,
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #d1d5db',
-  fontSize: '0.9375rem',
-  minHeight: 44,
-  boxSizing: 'border-box',
-}
-
-const labelStyle = {
-  fontSize: '0.8125rem',
-  fontWeight: 600,
-  color: '#374151',
-}
-
-const tabBtnStyle = (active) => ({
-  flex: 1,
-  padding: '8px 12px',
-  borderRadius: 8,
-  border: active ? '2px solid #6366f1' : '1px solid #e2e8f0',
-  background: active ? '#eef2ff' : '#fff',
-  color: active ? '#4338ca' : '#64748b',
-  fontWeight: 600,
-  fontSize: '0.8125rem',
-  cursor: 'pointer',
-})
-
 export function ForgotSessionForm({
   fallbackCases = [],
   onSubmit,
@@ -101,20 +73,10 @@ export function ForgotSessionForm({
   onExistingSessionAction,
   onDismissExistingSessionConflict,
 }) {
-  const [clientTab, setClientTab] = useState(initialCaseId ? 'existing' : 'existing')
   const [form, setForm] = useState(() => ({
     ...defaultForgotSession(),
     case_id: initialCaseId ? String(initialCaseId) : '',
   }))
-  // TODO: re-enable when therapist self-onboarding is allowed again
-  /*
-  const [newClient, setNewClient] = useState({
-    client_name: '',
-    child_name: '',
-    client_email: '',
-    client_phone: '',
-  })
-  */
   const [cases, setCases] = useState([])
   const [localError, setLocalError] = useState('')
   const [selectedPresetMinutes, setSelectedPresetMinutes] = useState(null)
@@ -184,210 +146,135 @@ export function ForgotSessionForm({
       setLocalError('End time cannot be in the future for today.')
       return
     }
-
-    // TODO: re-enable when therapist self-onboarding is allowed again (new client branch in handleSubmit)
-
     if (!form.case_id) {
       setLocalError('Select a client.')
       return
     }
+    const caseRow = cases.find((c) => c.id === Number(form.case_id))
     onSubmit({
       case_id: Number(form.case_id),
       scheduled_date: form.session_date,
       actual_start_at: start.toISOString(),
       actual_end_at: end.toISOString(),
-      mode: form.mode,
+      mode: sessionModeFromCase(caseRow),
       isPastDay,
     })
   }
 
+  if (existingSessionConflict) {
+    return (
+      <ExistingSessionForDateCard
+        conflict={existingSessionConflict}
+        onAction={onExistingSessionAction}
+        onDismiss={onDismissExistingSessionConflict}
+      />
+    )
+  }
+
   return (
-    <>
-      {existingSessionConflict ? (
-        <ExistingSessionForDateCard
-          conflict={existingSessionConflict}
-          onAction={onExistingSessionAction}
-          onDismiss={onDismissExistingSessionConflict}
-        />
-      ) : (
-    <form
-      onSubmit={handleSubmit}
-      className="forgot-session-form"
-      style={{
-        background: 'linear-gradient(180deg, #f8fafc 0%, #fff 100%)',
-        border: '1px solid #e2e8f0',
-        borderRadius: 16,
-        padding: '18px 20px',
-        marginBottom: 16,
-        boxShadow: '0 4px 20px rgba(15, 23, 42, 0.06)',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+    <form onSubmit={handleSubmit} className="sl-composer-panel forgot-session-form">
+      <header className="sl-composer-panel__head">
         <div>
-          <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Log a session you missed</h4>
-          <p style={{ margin: '6px 0 0', fontSize: '0.8125rem', color: '#64748b', lineHeight: 1.45 }}>
+          <h4 className="sl-composer-panel__title">Log a session you missed</h4>
+          <p className="sl-composer-panel__subtitle">
             Pick the visit date, then enter when the session started and ended. No live timer needed.
           </p>
         </div>
         {onCancel ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Close"
-            style={{
-              border: 'none',
-              background: '#f1f5f9',
-              borderRadius: 8,
-              width: 32,
-              height: 32,
-              cursor: 'pointer',
-              color: '#64748b',
-              fontSize: '1.1rem',
-              flexShrink: 0,
-            }}
-          >
+          <button type="button" className="sl-composer-panel__close" onClick={onCancel} aria-label="Close">
             ×
           </button>
         ) : null}
-      </div>
+      </header>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="sl-composer-panel__body">
         {!initialCaseId ? (
-          <div>
-            <p style={{ ...labelStyle, margin: '0 0 8px' }}>Client</p>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-              <button type="button" style={tabBtnStyle(clientTab === 'existing')} onClick={() => setClientTab('existing')}>
-                Existing client
-              </button>
-              {/* TODO: re-enable when therapist self-onboarding is allowed again
-              <button type="button" style={tabBtnStyle(clientTab === 'new')} onClick={() => setClientTab('new')}>
-                New client
-              </button>
-              */}
-            </div>
-            {clientTab === 'existing' ? (
-              <label style={labelStyle}>
-                <span className="sr-only">Choose client</span>
-                <select
-                  required={clientTab === 'existing'}
-                  value={form.case_id}
-                  onChange={(e) => setForm({ ...form, case_id: e.target.value })}
-                  style={fieldStyle}
-                >
-                  <option value="">Choose client…</option>
-                  {caseOptions.map((c) => (
-                    <option key={c.case_id} value={c.case_id}>
-                      {c.child_name || c.case_code}
-                      {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            {/* TODO: re-enable when therapist self-onboarding is allowed again — new client fields
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                ...
-              </div>
-            )}
-            */}
-          </div>
+          <label className="sl-composer-panel__field">
+            <span>Client</span>
+            <select
+              required
+              value={form.case_id}
+              onChange={(e) => setForm({ ...form, case_id: e.target.value })}
+            >
+              <option value="">Choose client…</option>
+              {caseOptions.map((c) => (
+                <option key={c.case_id} value={c.case_id}>
+                  {c.child_name || c.case_code}
+                  {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
         ) : (
-          <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, color: '#374151' }}>
-            {caseOptions[0]?.child_name || caseOptions[0]?.case_code || 'Selected client'}
+          <p className="sl-composer-panel__client-name">
+            {caseOptions.find((c) => String(c.case_id) === String(initialCaseId))?.child_name
+              || caseOptions[0]?.child_name
+              || caseOptions[0]?.case_code
+              || 'Selected client'}
           </p>
         )}
 
-        <label style={labelStyle}>
-          Session date
+        <label className="sl-composer-panel__field">
+          <span>Session date</span>
           <input
             type="date"
             required
             max={today}
             value={form.session_date}
             onChange={(e) => setForm({ ...form, session_date: e.target.value })}
-            style={fieldStyle}
           />
-          <span style={{ display: 'block', marginTop: 4, fontSize: '0.75rem', color: '#94a3b8' }}>
+          <span className="sl-composer-panel__field-hint">
             {formatDisplayDate(form.session_date)}
             {isToday ? ' · Today (IST)' : isPastDay ? ' · Past date' : ''}
           </span>
         </label>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: 12,
-          }}
-        >
-          <label style={labelStyle}>
-            Start time
+        <div className="sl-composer-panel__grid">
+          <label className="sl-composer-panel__field">
+            <span>Start time</span>
             <input
               type="time"
               required
               value={form.start_time}
               onChange={(e) => setStartTime(e.target.value)}
-              style={fieldStyle}
             />
           </label>
-          <label style={labelStyle}>
-            End time
+          <label className="sl-composer-panel__field">
+            <span>End time</span>
             <input
               type="time"
               required
               value={form.end_time}
               onChange={(e) => setForm({ ...form, end_time: e.target.value })}
-              style={fieldStyle}
             />
           </label>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>Duration:</span>
+        <div className="sl-composer-panel__chips">
+          <span className="sl-composer-panel__chips-label">Duration</span>
           {DURATION_PRESETS.map((p) => {
             const chipsDisabled = !form.start_time
             const active = selectedPresetMinutes === p.minutes
             return (
-            <button
-              key={p.minutes}
-              type="button"
-              disabled={chipsDisabled}
-              title={chipsDisabled ? 'Set a start time first' : undefined}
-              onClick={() => applyDurationPreset(p.minutes)}
-              style={{
-                padding: '4px 10px',
-                borderRadius: 20,
-                border: active ? '2px solid #6366f1' : '1px solid #e2e8f0',
-                background: active ? '#eef2ff' : chipsDisabled ? '#f8fafc' : '#fff',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                color: active ? '#4338ca' : chipsDisabled ? '#94a3b8' : '#475569',
-                cursor: chipsDisabled ? 'not-allowed' : 'pointer',
-                opacity: chipsDisabled ? 0.7 : 1,
-              }}
-            >
-              {p.label}
-            </button>
+              <button
+                key={p.minutes}
+                type="button"
+                disabled={chipsDisabled}
+                title={chipsDisabled ? 'Set a start time first' : undefined}
+                className={`sl-composer-panel__chip${active ? ' is-active' : ''}`}
+                onClick={() => applyDurationPreset(p.minutes)}
+              >
+                {p.label}
+              </button>
             )
           })}
         </div>
 
         {durationLabel ? (
-          <p
-            style={{
-              margin: 0,
-              padding: '10px 12px',
-              borderRadius: 10,
-              background: '#eef2ff',
-              color: '#3730a3',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-            }}
-          >
+          <p className="sl-composer-panel__summary">
             Session length: {durationLabel}
             {form.start_time && form.end_time ? (
-              <span style={{ fontWeight: 400, color: '#6366f1' }}>
+              <span className="sl-composer-panel__summary-muted">
                 {' '}
                 ({form.start_time} – {form.end_time})
               </span>
@@ -396,80 +283,24 @@ export function ForgotSessionForm({
         ) : null}
 
         {isPastDay ? (
-          <p
-            style={{
-              margin: 0,
-              padding: '10px 12px',
-              borderRadius: 10,
-              background: '#fffbeb',
-              border: '1px solid #fde047',
-              color: '#a16207',
-              fontSize: '0.8125rem',
-            }}
-          >
+          <p className="sl-composer-panel__notice">
             Sessions from a past day need admin review. You will be asked for a late reason when you submit the log.
           </p>
         ) : null}
 
-        <label style={labelStyle}>
-          Location
-          <select
-            value={form.mode}
-            onChange={(e) => setForm({ ...form, mode: e.target.value })}
-            style={fieldStyle}
-          >
-            {MODES.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {localError ? <p className="sl-composer-panel__error">{localError}</p> : null}
 
-        {localError ? (
-          <p style={{ margin: 0, fontSize: '0.8125rem', color: '#b91c1c' }}>{localError}</p>
-        ) : null}
-
-        <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              flex: 1,
-              padding: '12px 16px',
-              borderRadius: 10,
-              background: '#6366f1',
-              color: '#fff',
-              fontWeight: 600,
-              fontSize: '0.9375rem',
-              border: 'none',
-              cursor: submitting ? 'not-allowed' : 'pointer',
-              opacity: submitting ? 0.7 : 1,
-            }}
-          >
+        <div className="sl-composer-panel__actions">
+          <button type="submit" className="sl-composer-panel__submit" disabled={submitting}>
             {submitting ? 'Adding…' : 'Add session & write log'}
           </button>
           {onCancel ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              style={{
-                padding: '12px 16px',
-                borderRadius: 10,
-                border: '1px solid #d1d5db',
-                background: '#fff',
-                fontWeight: 600,
-                fontSize: '0.875rem',
-                cursor: 'pointer',
-              }}
-            >
+            <button type="button" className="sl-composer-panel__secondary" onClick={onCancel}>
               Cancel
             </button>
           ) : null}
         </div>
       </div>
     </form>
-      )}
-    </>
   )
 }
