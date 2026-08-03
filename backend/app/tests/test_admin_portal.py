@@ -1011,6 +1011,9 @@ def test_therapist_can_update_cm_meeting_notes():
             "duration_minutes": 30,
             "meeting_type": "PARENT_MEETING",
             "title": "Therapist note test",
+            "invite_client": False,
+            "invite_therapist": True,
+            "invite_case_manager": True,
         },
     )
     assert created.status_code == 201, created.text
@@ -1018,10 +1021,80 @@ def test_therapist_can_update_cm_meeting_notes():
     updated = client.patch(
         f"/api/v1/cm-meetings/{meeting_id}",
         headers=th_headers,
-        json={"notes_additional": "Therapist follow-up from supervision call"},
+        json={"therapist_notes": "Discussed session pacing and home practice ideas"},
     )
     assert updated.status_code == 200, updated.text
-    assert updated.json()["notes_additional"] == "Therapist follow-up from supervision call"
+    body = updated.json()
+    assert body["therapist_notes"] == "Discussed session pacing and home practice ideas"
+    assert body.get("notes_summary") is None
+    assert body.get("notes_outcome") is None
+
+
+def test_therapist_cannot_complete_cm_meeting():
+    th_token = _login("therapist@demo.com")
+    th_headers = {"Authorization": f"Bearer {th_token}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=th_headers)
+    case_id = cases.json()[0]["id"]
+    created = client.post(
+        "/api/v1/cm-meetings",
+        headers=th_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": "2026-06-04",
+            "scheduled_time": "16:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "PARENT_MEETING",
+            "title": "Therapist complete blocked",
+            "invite_client": False,
+            "invite_therapist": True,
+            "invite_case_manager": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    meeting_id = created.json()["id"]
+    blocked = client.patch(
+        f"/api/v1/cm-meetings/{meeting_id}",
+        headers=th_headers,
+        json={
+            "status": "COMPLETED",
+            "notes_outcome": "RESOLVED",
+            "notes_summary": "Should not be allowed",
+        },
+    )
+    assert blocked.status_code == 403, blocked.text
+
+
+def test_cm_meeting_invites_respect_attendee_selection(monkeypatch):
+    sent: list[dict] = []
+
+    monkeypatch.setattr(
+        "app.services.cm_meeting_service.cm_meeting_invite_email",
+        lambda **kw: sent.append(kw),
+    )
+    cm_token = _login("casemanager@demo.com")
+    cm_headers = {"Authorization": f"Bearer {cm_token}"}
+    cases = client.get("/api/v1/cm-meetings/bookable-cases", headers=cm_headers)
+    case_id = cases.json()[0]["id"]
+    created = client.post(
+        "/api/v1/cm-meetings",
+        headers=cm_headers,
+        json={
+            "case_id": case_id,
+            "scheduled_date": "2026-06-05",
+            "scheduled_time": "11:00:00",
+            "duration_minutes": 30,
+            "meeting_type": "THERAPIST_SUPPORT",
+            "title": "Therapist-only invite",
+            "meeting_url": "https://meet.google.com/abc-defg-hij",
+            "invite_client": False,
+            "invite_therapist": True,
+            "invite_case_manager": False,
+        },
+    )
+    assert created.status_code == 201, created.text
+    recipients = {s.get("to") for s in sent}
+    assert "therapist@demo.com" in recipients or any("therapist" in (s.get("to") or "") for s in sent)
+    assert not any("parent" in (s.get("to") or "") for s in sent), sent
 
 
 def test_cm_meetings_filters_and_case_code():

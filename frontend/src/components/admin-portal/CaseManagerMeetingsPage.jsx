@@ -33,7 +33,7 @@ function StatusBadge({ status }) {
   )
 }
 
-function NotesModal({ meeting, onClose, onUpdated }) {
+function CmNotesModal({ meeting, onClose, onUpdated }) {
   const [form, setForm] = useState({
     notes_outcome: meeting.notes_outcome || '',
     notes_summary: meeting.notes_summary || '',
@@ -134,10 +134,71 @@ function NotesModal({ meeting, onClose, onUpdated }) {
   )
 }
 
-function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false }) {
+function TherapistNotesModal({ meeting, onClose, onUpdated }) {
+  const [discussion, setDiscussion] = useState(meeting.therapist_notes || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(e) {
+    e.preventDefault()
+    setSaving(true)
+    setError('')
+    try {
+      const result = await apiFetch(`/api/v1/meetings/${meeting.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          therapist_notes: discussion.trim() || null,
+        }),
+      })
+      onUpdated(result)
+    } catch (err) {
+      setError(err.message || 'Could not save your notes')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const taStyle = { display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4, minHeight: 120, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }
+  const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 4px' }}>Your meeting notes</h2>
+        <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 20px' }}>
+          {meeting.child_name ? `${meeting.child_name} · ` : ''}{formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
+        </p>
+        <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 16px' }}>
+          These notes are only visible to you. Your case manager completes the meeting separately.
+        </p>
+        {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
+        <form onSubmit={submit}>
+          <label style={labelStyle}>
+            What was discussed
+            <textarea style={taStyle} placeholder="Brief summary of what you covered in the meeting…" value={discussion} onChange={(e) => setDiscussion(e.target.value)} />
+          </label>
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <button type="submit" disabled={saving} style={{ flex: 1, background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
+              {saving ? 'Saving…' : 'Save notes'}
+            </button>
+            <button type="button" style={{ background: '#f1f5f9', border: 'none', borderRadius: 12, padding: '11px 16px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }} onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false, isTherapistView = false }) {
   const typeLabel = meetingTypeLabel(meeting)
-  const hasNotes = meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
-    || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
+  const hasNotes = isTherapistView
+    ? Boolean(meeting.therapist_notes)
+    : Boolean(
+      meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
+      || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
+    )
   const attendeeLine = formatAttendeeList(meeting)
   const calendarEvent = meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
 
@@ -177,7 +238,7 @@ function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPref
         {calendarEvent ? <AddToGoogleCalendarButton event={calendarEvent} variant="inline" /> : null}
         {!readOnly && meeting.status !== 'CANCELLED' ? (
           <button type="button" style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, color: '#3730a3', cursor: 'pointer' }} onClick={() => onAddNotes(meeting)}>
-            {hasNotes ? 'Edit notes' : 'Add notes / complete'}
+            {hasNotes ? 'Edit notes' : isTherapistView ? 'Add notes' : 'Add notes / complete'}
           </button>
         ) : null}
         {!readOnly && meeting.status === 'SCHEDULED' ? (
@@ -564,6 +625,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
                 meeting={m}
                 caseLinkPrefix={caseLinkPrefix}
                 readOnly={isParentPortal}
+                isTherapistView={isTherapistPortal}
                 onAddNotes={setNotesTarget}
                 onCancel={handleCancel}
                 onReschedule={setRescheduleTarget}
@@ -592,6 +654,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         open={!!detailMeeting}
         meeting={detailMeeting}
         readOnly={isParentPortal}
+        isTherapistView={isTherapistPortal}
         caseLinkPrefix={caseLinkPrefix}
         onClose={() => {
           setDetailMeeting(null)
@@ -613,7 +676,13 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         />
       ) : null}
 
-      {notesTarget ? <NotesModal meeting={notesTarget} onClose={() => setNotesTarget(null)} onUpdated={handleUpdated} /> : null}
+      {notesTarget ? (
+        isTherapistPortal ? (
+          <TherapistNotesModal meeting={notesTarget} onClose={() => setNotesTarget(null)} onUpdated={handleUpdated} />
+        ) : (
+          <CmNotesModal meeting={notesTarget} onClose={() => setNotesTarget(null)} onUpdated={handleUpdated} />
+        )
+      ) : null}
     </div>
   )
 }

@@ -81,6 +81,7 @@ class MeetingNotesUpdate(BaseModel):
     notes_summary: Optional[str] = None
     notes_next_meeting_required: Optional[bool] = None
     notes_additional: Optional[str] = None
+    therapist_notes: Optional[str] = None
 
     therapist_user_id: Optional[int] = None
     mentor_user_id: Optional[int] = None
@@ -250,7 +251,60 @@ def _validate_meeting_link(platform: Optional[str], url: Optional[str]) -> None:
         raise HTTPException(status_code=400, detail="Invalid Microsoft Teams URL")
 
 
-def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
+def _can_complete_meeting(user: User, meeting: CaseManagerMeeting) -> bool:
+    if user_has_permission(user, "admin.override"):
+        return True
+    role = _role_name(user)
+    return role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id == user.id
+
+
+def _viewer_is_therapist(user: User | None) -> bool:
+    return user is not None and _role_name(user) == RoleName.THERAPIST.value
+
+
+def _viewer_is_parent(user: User | None) -> bool:
+    return user is not None and _role_name(user) == RoleName.PARENT.value
+
+
+def _apply_role_scoped_notes(data: dict, viewer: User | None) -> dict:
+    """Hide CM notes from therapists and therapist notes from everyone else."""
+    if _viewer_is_therapist(viewer):
+        for key in (
+            "notes_outcome",
+            "notes_summary",
+            "notes_next_meeting_required",
+            "notes_additional",
+            "notes_concerns",
+            "notes_follow_up",
+            "notes_action",
+            "notes_other",
+        ):
+            data[key] = None
+        data["actions"] = []
+        if data.get("display_status") in {"OVERDUE_NOTES", "PENDING_NOTES"}:
+            data["display_status"] = data.get("status")
+    else:
+        data["therapist_notes"] = None
+
+    if _viewer_is_parent(viewer):
+        for key in (
+            "notes_outcome",
+            "notes_summary",
+            "notes_next_meeting_required",
+            "notes_additional",
+            "notes_concerns",
+            "notes_follow_up",
+            "notes_action",
+            "notes_other",
+            "therapist_notes",
+        ):
+            data[key] = None
+        data["actions"] = []
+
+    return data
+
+
+def _serialize(meeting: CaseManagerMeeting, db: Session, viewer: User | None = None) -> dict:
     from app.services.cm_meeting_service import build_attendee_rows, parse_staff_attendee_ids
     from app.core.timezone import today_ist
 
@@ -297,7 +351,7 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
         for a in meeting.actions
     ]
 
-    return {
+    data = {
         "id": meeting.id,
         "case_manager_user_id": meeting.case_manager_user_id,
         "case_manager_name": cm.full_name if cm else None,
@@ -329,6 +383,7 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
         "notes_summary": meeting.notes_summary,
         "notes_next_meeting_required": meeting.notes_next_meeting_required,
         "notes_additional": meeting.notes_additional,
+        "therapist_notes": meeting.therapist_notes,
         "actions": action_items,
         "linked_observation_report_id": meeting.linked_observation_report_id,
         "linked_observation_checklist_id": meeting.linked_observation_checklist_id,
@@ -338,6 +393,11 @@ def _serialize(meeting: CaseManagerMeeting, db: Session) -> dict:
         "linked_ticket_id": meeting.linked_ticket_id,
         "created_at": meeting.created_at.isoformat() if meeting.created_at else None,
     }
+    return _apply_role_scoped_notes(data, viewer)
+
+
+def _serialize_many(meetings: list[CaseManagerMeeting], db: Session, viewer: User | None = None) -> list[dict]:
+    return [_serialize(m, db, viewer=viewer) for m in meetings]
 
 
 # ---------------------------------------------------------------------------
@@ -548,7 +608,6 @@ def create_meeting(
     if role == RoleName.THERAPIST.value:
         therapist_user_id = user.id
         invite_therapist = True
-        invite_client = True
 
     # Auto-resolve CM
     cm_id = None
@@ -632,7 +691,7 @@ def create_meeting(
 
     commit_or_http(db)
     db.refresh(meeting)
-    return _serialize(meeting, db)
+    return _serialize(meeting, db, viewer=user)
 
 
 @router.post("/meetings/{meeting_id}/reschedule")
@@ -718,8 +777,8 @@ def reschedule_meeting(
     db.refresh(replacement)
     db.refresh(meeting)
     return {
-        "old_meeting": _serialize(meeting, db),
-        "new_meeting": _serialize(replacement, db)
+        "old_meeting": _serialize(meeting, db, viewer=user),
+        "new_meeting": _serialize(replacement, db, viewer=user)
     }
 
 
@@ -836,7 +895,7 @@ def list_meetings(
         from app.services.cm_meeting_service import user_can_view_meeting
         meetings = [m for m in meetings if user_can_view_meeting(m, user.id)]
 
-    return [_serialize(m, db) for m in meetings]
+    return _serialize_many(meetings, db, viewer=user)
 
 
 @router.get("/meetings/pending-completion")
@@ -876,7 +935,7 @@ def list_pending_completion_meetings(
     if role == RoleName.THERAPIST.value:
         meetings = [m for m in meetings if user_can_view_meeting(m, user.id)]
 
-    return [_serialize(m, db) for m in meetings]
+    return _serialize_many(meetings, db, viewer=user)
 
 
 # ---------------------------------------------------------------------------
@@ -898,16 +957,55 @@ def update_meeting(
 
     _guard_meeting_write(user, meeting.case_id, db, meeting=meeting)
     role = _role_name(user)
+    is_therapist = role == RoleName.THERAPIST.value
     if role == RoleName.CASE_MANAGER.value and meeting.case_manager_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your meeting")
+
+    if is_therapist:
+        if payload.status is not None and payload.status != meeting.status:
+            raise HTTPException(status_code=403, detail="Only the case manager can update meeting status")
+        cm_only_fields = (
+            payload.notes_outcome,
+            payload.notes_summary,
+            payload.notes_next_meeting_required,
+            payload.notes_additional,
+            payload.actions,
+            payload.title,
+            payload.other_reason,
+            payload.platform,
+            payload.meeting_url,
+            payload.guest_emails,
+            payload.therapist_user_id,
+            payload.mentor_user_id,
+            payload.scheduled_date,
+            payload.scheduled_time,
+            payload.duration_minutes,
+            payload.linked_observation_report_id,
+            payload.linked_observation_checklist_id,
+            payload.linked_iep_id,
+            payload.linked_monthly_report_id,
+            payload.linked_incident_id,
+            payload.linked_ticket_id,
+        )
+        if any(v is not None for v in cm_only_fields):
+            raise HTTPException(status_code=403, detail="Therapists can only save their own meeting discussion notes")
+        if payload.therapist_notes is not None:
+            meeting.therapist_notes = payload.therapist_notes.strip() or None
+        db.commit()
+        db.refresh(meeting)
+        return _serialize(meeting, db, viewer=user)
+
+    if payload.therapist_notes is not None:
+        raise HTTPException(status_code=403, detail="Therapist notes can only be edited by the therapist")
 
     if payload.duration_minutes is not None:
         _validate_meeting_duration(payload.duration_minutes)
     if payload.meeting_url is not None:
         _validate_meeting_link(payload.platform or meeting.platform, payload.meeting_url)
 
-    # Note outcome fields validation on complete
     completing = payload.status == MeetingStatus.COMPLETED
+    if completing and not _can_complete_meeting(user, meeting):
+        raise HTTPException(status_code=403, detail="Only the assigned case manager can complete this meeting")
     if completing:
         outcome = payload.notes_outcome if payload.notes_outcome is not None else meeting.notes_outcome
         summary = payload.notes_summary if payload.notes_summary is not None else meeting.notes_summary
@@ -917,7 +1015,6 @@ def update_meeting(
                 detail="Meeting Outcome and Discussion Summary are required before completing the meeting. Silent closures are blocked."
             )
 
-    # Update Notes Fields
     if payload.status is not None:
         meeting.status = payload.status
         if payload.status == MeetingStatus.COMPLETED:
@@ -955,7 +1052,6 @@ def update_meeting(
     if payload.duration_minutes is not None:
         meeting.duration_minutes = payload.duration_minutes
 
-    # Linked records updates
     if payload.linked_observation_report_id is not None:
         meeting.linked_observation_report_id = payload.linked_observation_report_id
     if payload.linked_observation_checklist_id is not None:
@@ -969,12 +1065,9 @@ def update_meeting(
     if payload.linked_ticket_id is not None:
         meeting.linked_ticket_id = payload.linked_ticket_id
 
-    # Actions list sync
     if payload.actions is not None:
-        # Clear existing actions
         for act in list(meeting.actions):
             db.delete(act)
-        # Create new actions
         for act_schema in payload.actions:
             new_action = MeetingAction(
                 meeting_id=meeting.id,
@@ -987,7 +1080,7 @@ def update_meeting(
 
     db.commit()
     db.refresh(meeting)
-    return _serialize(meeting, db)
+    return _serialize(meeting, db, viewer=user)
 
 
 @router.delete("/meetings/{meeting_id}", status_code=204)
