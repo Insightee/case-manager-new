@@ -16,7 +16,7 @@ Discovery staleness audit has run (A–J below). Package sections below remain s
 | ID | Work package | Status | Dependency | Risk |
 |----|--------------|-------:|------------|------|
 | FIN-00 | Baseline gate (human-executed, not a loop) | Done | None | High |
-| FIN-00b | Ledger write gating | Blocked | FIN-00 | High |
+| FIN-00b | Ledger write gating | Active | FIN-00 | High |
 | FIN-01 | Domain and calculation audit | Blocked | FIN-00b | Medium |
 | FIN-02 | Role and route protection | Blocked | FIN-01 | High |
 | FIN-03 | Therapist billing overview | Planned | FIN-02 | Medium |
