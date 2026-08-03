@@ -22,6 +22,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 |-----|---------|
 | [DEPLOY.md](./DEPLOY.md) | End-to-end deploy checklist |
 | [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) | Railway API + Vercel frontend pairing, tokens, CORS |
+| [Cursor_Handover_Production_Readonly_Postgres.md](./Cursor_Handover_Production_Readonly_Postgres.md) | Prod SELECT-only Postgres role for cutover / finance reads |
 | [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) | Pre-release verification |
 | [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md) | R2 object storage for production uploads |
 | [EMAIL_DNS.md](./EMAIL_DNS.md) | ZeptoMail, SMTP, DNS records |
