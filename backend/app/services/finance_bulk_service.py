@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.core.feature_flags import billing_ledger_writes_enabled
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.review import ReviewDecision
-from app.services import client_invoice_draft_service, invoice_service
+from app.services import billing_composer_service, client_invoice_draft_service, invoice_service
 
 
 def bulk_client_invoices(
@@ -17,11 +18,30 @@ def bulk_client_invoices(
     admin_user_id: int,
     include_pending: bool = False,
 ) -> dict:
+    if action == "build_from_ledger" and not billing_ledger_writes_enabled():
+        return {
+            "succeeded": [],
+            "failed": [
+                {
+                    "caseId": case_id,
+                    "error": "Posting disabled until ledger writes are enabled (pre-cutover).",
+                }
+                for case_id in case_ids
+            ],
+        }
     succeeded = []
     failed = []
     for case_id in case_ids:
         try:
             if action == "build_from_ledger":
+                blocking = billing_composer_service.blocking_calc_exceptions_for_case(
+                    db, case_id=case_id, billing_month=billing_month
+                )
+                if blocking:
+                    codes = ", ".join(sorted({b["code"] for b in blocking}))
+                    raise ValueError(
+                        f"Open calculation exception(s) ({codes}); resolve before building"
+                    )
                 result = client_invoice_draft_service.generate_draft_from_ledger(
                     db,
                     case_id=case_id,

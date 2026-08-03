@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.v1 import (
     finance_ops,
+    finance_control_tower,
     hr_ops,
     admin,
     admin_support,
@@ -38,6 +39,7 @@ from app.api.v1 import (
     session_absence,
     memos,
 )
+from app.core.feature_flags import require_billing
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -54,13 +56,29 @@ api_router.include_router(daily_logs.router)
 api_router.include_router(reports.router)
 api_router.include_router(invoices.router)
 api_router.include_router(admin.router)
-api_router.include_router(finance_ops.router)
+api_router.include_router(
+    finance_ops.router,
+    dependencies=[Depends(require_billing)],
+)
+api_router.include_router(
+    finance_control_tower.router,
+    dependencies=[Depends(require_billing)],
+)
 api_router.include_router(hr_ops.router)
 api_router.include_router(admin_support.router)
 api_router.include_router(parent.router)
-api_router.include_router(client_billing.parent_router)
-api_router.include_router(client_billing.admin_router)
-api_router.include_router(ledger_billing.router)
+api_router.include_router(
+    client_billing.parent_router,
+    dependencies=[Depends(require_billing)],
+)
+api_router.include_router(
+    client_billing.admin_router,
+    dependencies=[Depends(require_billing)],
+)
+api_router.include_router(
+    ledger_billing.router,
+    dependencies=[Depends(require_billing)],
+)
 api_router.include_router(tickets.router)
 api_router.include_router(support.router)
 api_router.include_router(attachments.router)

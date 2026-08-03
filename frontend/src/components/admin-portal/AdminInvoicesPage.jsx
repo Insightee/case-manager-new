@@ -67,21 +67,6 @@ export function AdminInvoicesPage() {
     next.set('sub', sub === 'payouts' ? 'payouts' : 'dashboard')
     const status = searchParams.get('status')
     if (status) next.set('status', status)
-    // #region agent log
-    fetch('http://127.0.0.1:7284/ingest/6bb4b18a-59b3-4583-8388-f541aa2607d1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3264f0' },
-      body: JSON.stringify({
-        sessionId: '3264f0',
-        hypothesisId: 'A',
-        location: 'AdminInvoicesPage.jsx:redirect',
-        message: 'legacy tab=therapist redirect',
-        data: { sub: next.get('sub'), status: next.get('status') },
-        timestamp: Date.now(),
-        runId: 'browser',
-      }),
-    }).catch(() => {})
-    // #endregion
     navigate(`/admin/therapist-payouts?${next.toString()}`, { replace: true })
   }, [tabParam, searchParams, navigate])
 

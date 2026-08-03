@@ -52,46 +52,90 @@ def _therapist_scheduled_session(headers: dict) -> int:
 
 
 _fresh_session_counter = 0
-# Far-future dates avoid same-day duplicate rules and seed collisions in the shared CI DB.
-_FRESH_SESSION_BASE = date(2099, 1, 1)
+
+
+def _absence_allowed_day() -> date:
+    """Match leave_migration.validate_child_absence_date + session create (`today_ist`).
+
+    After the migration window closes, only today's scheduled visit may receive a
+    child-absence log. Far-future fixture dates (e.g. 2099) correctly fail validation
+    and must not be used to bypass production rules.
+    """
+    from app.core.timezone import today_ist
+
+    return today_ist()
 
 
 def _fresh_scheduled_session(headers: dict) -> int:
+    """Allocate a unique SCHEDULED session on the absence-allowed day (today).
+
+    Inserts via DB so tests are not blocked by therapist API rules that allow only one
+    walk-in/session create per case-day once a pending child absence exists. Absence
+    API validation still enforces the production no-future-date rule.
+    """
     global _fresh_session_counter
+    from datetime import time as dt_time
+
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.session import Session as TherapySession
+    from app.models.session import SessionMode, SessionStatus
+
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200, me.text
+    therapist_id = int(me.json()["id"])
+
     cases = client.get("/api/v1/cases?assigned=true&page_size=20", headers=headers).json()
     case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
     if not case_items:
         raise AssertionError("No assigned cases for therapist")
-    for attempt in range(len(case_items) * 3):
-        _fresh_session_counter += 1
-        case_id = int(case_items[_fresh_session_counter % len(case_items)]["id"])
-        day = (_FRESH_SESSION_BASE + timedelta(days=_fresh_session_counter)).isoformat()
-        hour = 8 + (_fresh_session_counter % 10)
-        minute = 10 + (_fresh_session_counter % 45)
-        start = f"{hour:02d}:{minute:02d}"
-        end_hour = hour + ((minute + 29) // 60)
-        end_minute = (minute + 29) % 60
-        end = f"{end_hour:02d}:{end_minute:02d}"
-        created = client.post(
-            "/api/v1/sessions",
-            headers=headers,
-            json={
-                "case_id": case_id,
-                "therapist_user_id": 0,
-                "scheduled_date": day,
-                "start_time": start,
-                "end_time": end,
-                "mode": "HOME",
-                "status": "SCHEDULED",
-            },
-        )
-        if created.status_code != 201:
-            continue
-        session_id = int(created.json()["id"])
-        existing = client.get(f"/api/v1/sessions/{session_id}/absence", headers=headers)
-        if existing.status_code == 200 and existing.json().get("status") == "none":
-            return session_id
-    raise AssertionError("Could not allocate a fresh scheduled session for absence tests")
+
+    day = _absence_allowed_day()
+    db = SessionLocal()
+    try:
+        for _attempt in range(24):
+            _fresh_session_counter += 1
+            case_id = int(case_items[_fresh_session_counter % len(case_items)]["id"])
+            hour = 6 + (_fresh_session_counter % 14)
+            minute = (_fresh_session_counter * 7) % 50
+            end_minute = minute + 25
+            end_hour = hour + (1 if end_minute >= 60 else 0)
+            session = TherapySession(
+                case_id=case_id,
+                therapist_user_id=therapist_id,
+                scheduled_date=day,
+                start_time=dt_time(hour, minute),
+                end_time=dt_time(end_hour, end_minute % 60),
+                mode=SessionMode.HOME,
+                status=SessionStatus.SCHEDULED,
+            )
+            db.add(session)
+            db.flush()
+            # Isolate case+day so manual/walk-in conflict lookup prefers this row
+            # (SCHEDULED ranks above CLIENT_ABSENT; leftover siblings caused EXISTING_SESSION_FOR_DATE).
+            siblings = db.scalars(
+                select(TherapySession).where(
+                    TherapySession.case_id == case_id,
+                    TherapySession.therapist_user_id == therapist_id,
+                    TherapySession.scheduled_date == day,
+                    TherapySession.id != session.id,
+                    TherapySession.status.notin_(
+                        (SessionStatus.CANCELLED, SessionStatus.RESCHEDULED)
+                    ),
+                )
+            ).all()
+            for sib in siblings:
+                sib.status = SessionStatus.CANCELLED
+            db.commit()
+            db.refresh(session)
+            session_id = int(session.id)
+            existing = client.get(f"/api/v1/sessions/{session_id}/absence", headers=headers)
+            if existing.status_code == 200 and existing.json().get("status") == "none":
+                return session_id
+        raise AssertionError("Could not allocate a fresh scheduled session for absence tests")
+    finally:
+        db.close()
 
 
 def test_child_absent_admin_approve_parent_notification():
@@ -240,25 +284,7 @@ def test_absence_does_not_create_in_progress_or_daily_log():
     from app.models.daily_log import DailyLog
 
     therapist_headers = _login("therapist@demo.com")
-    isolated_day = (date(2099, 6, 1)).isoformat()
-    cases = client.get("/api/v1/cases?assigned=true&page_size=1", headers=therapist_headers).json()
-    case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
-    case_id = int(case_items[0]["id"])
-    created = client.post(
-        "/api/v1/sessions",
-        headers=therapist_headers,
-        json={
-            "case_id": case_id,
-            "therapist_user_id": 0,
-            "scheduled_date": isolated_day,
-            "start_time": "15:20",
-            "end_time": "16:20",
-            "mode": "HOME",
-            "status": "SCHEDULED",
-        },
-    )
-    assert created.status_code == 201, created.text
-    session_id = int(created.json()["id"])
+    session_id = _fresh_scheduled_session(therapist_headers)
     create = client.post(
         f"/api/v1/sessions/{session_id}/absence",
         headers=therapist_headers,
@@ -325,44 +351,12 @@ def test_cannot_start_session_with_pending_child_absence():
 
 
 def test_walk_in_create_blocked_with_pending_child_absence_message():
-    from app.core.timezone import today_ist
-
     therapist_headers = _login("therapist@demo.com")
-    today = today_ist().isoformat()
-    cases = client.get("/api/v1/cases?assigned=true&page_size=20", headers=therapist_headers).json()
-    case_items = cases.get("items", cases) if isinstance(cases, dict) else cases
-    session_id = None
-    case_id = None
-    for idx, case in enumerate(case_items):
-        case_id = int(case["id"])
-        listed = client.get(
-            f"/api/v1/sessions?assigned=true&case_id={case_id}&page_size=50",
-            headers=therapist_headers,
-        ).json()
-        items = listed.get("items", listed) if isinstance(listed, dict) else listed
-        for s in items:
-            if s.get("scheduled_date") == today and s.get("status") == "SCHEDULED":
-                session_id = int(s["id"])
-                break
-        if session_id:
-            break
-        created = client.post(
-            "/api/v1/sessions",
-            headers=therapist_headers,
-            json={
-                "case_id": case_id,
-                "therapist_user_id": 0,
-                "scheduled_date": today,
-                "start_time": f"{18 + (idx % 2):02d}:{10 + idx:02d}",
-                "end_time": f"{19 + (idx % 2):02d}:{10 + idx:02d}",
-                "mode": "HOME",
-                "status": "SCHEDULED",
-            },
-        )
-        if created.status_code == 201:
-            session_id = int(created.json()["id"])
-            break
-    assert session_id and case_id
+    session_id = _fresh_scheduled_session(therapist_headers)
+    sess = client.get(f"/api/v1/sessions/{session_id}", headers=therapist_headers)
+    assert sess.status_code == 200
+    case_id = int(sess.json()["case_id"])
+    today = sess.json()["scheduled_date"]
 
     create = client.post(
         f"/api/v1/sessions/{session_id}/absence",

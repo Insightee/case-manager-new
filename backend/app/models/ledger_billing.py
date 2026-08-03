@@ -41,6 +41,7 @@ class LedgerEventType(str, enum.Enum):
 
 class BillableStatus(str, enum.Enum):
     PENDING_REVIEW = "PENDING_REVIEW"
+    PENDING_FINANCE = "PENDING_FINANCE"  # computed period charge; finance must post before billing
     BILLABLE = "BILLABLE"
     NON_BILLABLE = "NON_BILLABLE"
     INVOICED = "INVOICED"
@@ -129,6 +130,31 @@ class BillingLedger(Base):
     )
 
     product_rule = relationship("ProductBillingRule")
+    case = relationship("Case", foreign_keys=[case_id])
+
+
+class PeriodFlagKind(str, enum.Enum):
+    ACTIVE_NO_SESSIONS = "ACTIVE_NO_SESSIONS"
+
+
+class BillingPeriodFlag(Base):
+    """Report signal for finance — not a charge. e.g. active case, zero sessions in month."""
+
+    __tablename__ = "billing_period_flags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), nullable=False, index=True)
+    ledger_month: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    flag_kind: Mapped[PeriodFlagKind] = mapped_column(Enum(PeriodFlagKind), nullable=False)
+    case_status: Mapped[Optional[str]] = mapped_column(String(32))
+    session_count: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str] = mapped_column(String(255), nullable=False)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
     case = relationship("Case", foreign_keys=[case_id])
 
 

@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     ticket_hr_assignee_emails: str = "sriparna.paul@insighte.org,pragya.dwivedi@insighte.org"
     case_document_max_bytes: int = 5 * 1024 * 1024
     billing_ledger_drafts: bool = True
+    # Staged billing module — routers/UI. Default off.
+    enable_billing: bool = False
+    # Session/log ledger upserts. Default off so merge ≠ silent production money writes.
+    billing_ledger_writes: bool = False
+    # Production money cutover complete. Default false → provisional Control Tower banner;
+    # engine-derived amounts must not be labelled RECONCILED until this is true.
+    finance_cutover_complete: bool = False
+    # Zoho Books adapter key — empty = sync not configured (Stage 2 seam; never fake success).
+    zoho_books_api_key: str = ""
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).
