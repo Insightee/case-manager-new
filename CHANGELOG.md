@@ -15,6 +15,7 @@
 - `docs/finance_control_tower_stage1_human_uat_script.md`
 - `docs/Cursor_Handover_Finance_Dashboard_Stage2.md` (`STAGE_2_READY_FOR_STAGING`)
 - `docs/Cursor_Handover_Finance_Merge_Local_Runbook.md` (`FINANCE_MERGE_LOCAL_RUNBOOK_GREEN`)
+- `docs/Cursor_Handover_Production_Readonly_Postgres.md` + `docs/sql/create_production_readonly_role.sql`
 
 # Changelog
 
