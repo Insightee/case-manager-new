@@ -18,7 +18,11 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 def _postgres_proof_enabled() -> bool:
     if os.environ.get("MIGRATION_PROOF_REQUIRED", "").lower() in ("1", "true", "yes"):
         return True
-    url = (os.environ.get("DATABASE_URL") or "").lower()
+    url = (
+        os.environ.get("POSTGRES_MIGRATION_PROOF_URL")
+        or os.environ.get("DATABASE_URL")
+        or ""
+    ).lower()
     if not url.startswith("postgresql"):
         return False
     if "railway" in url or "rlwy.net" in url:

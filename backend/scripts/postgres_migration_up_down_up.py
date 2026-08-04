@@ -35,7 +35,11 @@ from scripts.postgres_migration_proof_registry import (  # noqa: E402
 
 
 def _database_url() -> str:
-    url = os.environ.get("DATABASE_URL", "")
+    url = (
+        os.environ.get("POSTGRES_MIGRATION_PROOF_URL")
+        or os.environ.get("DATABASE_URL")
+        or ""
+    )
     if not url:
         raise RuntimeError("DATABASE_URL is required for migration proof")
     lower = url.lower()
