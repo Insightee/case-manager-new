@@ -15,6 +15,16 @@ from sqlalchemy import create_engine, func, inspect, select
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
+def _proof_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{BACKEND_DIR}:{BACKEND_DIR / 'alembic'}"
+    proof_url = os.environ.get("POSTGRES_MIGRATION_PROOF_URL") or os.environ.get("DATABASE_URL")
+    if proof_url:
+        env["DATABASE_URL"] = proof_url
+        env["POSTGRES_MIGRATION_PROOF_URL"] = proof_url
+    return env
+
+
 def _postgres_proof_enabled() -> bool:
     if os.environ.get("MIGRATION_PROOF_REQUIRED", "").lower() in ("1", "true", "yes"):
         return True
@@ -35,12 +45,10 @@ def _postgres_proof_enabled() -> bool:
     reason="Postgres migration proof requires DATABASE_URL=postgresql… or MIGRATION_PROOF_REQUIRED=1",
 )
 def test_postgres_migration_up_down_up_orchestrator():
-    env = os.environ.copy()
-    env["PYTHONPATH"] = f"{BACKEND_DIR}:{BACKEND_DIR / 'alembic'}"
     result = subprocess.run(
         [sys.executable, str(BACKEND_DIR / "scripts" / "postgres_migration_up_down_up.py")],
         cwd=BACKEND_DIR,
-        env=env,
+        env=_proof_env(),
         capture_output=True,
         text=True,
     )
@@ -52,12 +60,10 @@ def test_postgres_migration_up_down_up_orchestrator():
     reason="Postgres migration proof requires DATABASE_URL=postgresql… or MIGRATION_PROOF_REQUIRED=1",
 )
 def test_alembic_single_head():
-    env = os.environ.copy()
-    env["PYTHONPATH"] = f"{BACKEND_DIR}:{BACKEND_DIR / 'alembic'}"
     proc = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
         cwd=BACKEND_DIR,
-        env=env,
+        env=_proof_env(),
         capture_output=True,
         text=True,
         check=True,
@@ -66,17 +72,28 @@ def test_alembic_single_head():
     assert len(head_lines) == 1, proc.stdout
 
 
+def _current_head() -> str:
+    proc = subprocess.run(
+        [sys.executable, "-m", "alembic", "heads"],
+        cwd=BACKEND_DIR,
+        env=_proof_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    for line in proc.stdout.splitlines():
+        if "(head)" in line:
+            return line.split()[0]
+    raise RuntimeError(f"No alembic head found:\n{proc.stdout}")
+
+
 @pytest.mark.skipif(
     not _postgres_proof_enabled(),
     reason="Postgres migration proof requires DATABASE_URL=postgresql… or MIGRATION_PROOF_REQUIRED=1",
 )
 def test_billing_readiness_exception_rules_when_head_applies():
     """Runs when head is d0e1f2a3b4c6+; no-op skip when model/revision absent."""
-    from alembic.config import Config
-    from alembic.script import ScriptDirectory
-
-    cfg = Config(str(BACKEND_DIR / "alembic.ini"))
-    head = ScriptDirectory.from_config(cfg).get_heads()[0]
+    head = _current_head()
     if head != "d0e1f2a3b4c6":
         pytest.skip(f"Head is {head}, not d0e1f2a3b4c6")
 
