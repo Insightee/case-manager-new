@@ -1160,12 +1160,20 @@ def admin_add_late_fee(
 def admin_confirm_payment_claim(
     payment_id: int,
     request: Request,
+    amount_inr: Optional[float] = Query(
+        None,
+        gt=0,
+        description="Optional cap — confirm up to this amount (max claim, max collectible). "
+        "Use when collectible dropped after parent submitted the claim.",
+    ),
     user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
     try:
-        result = client_billing_service.confirm_payment_claim(db, payment_id, user.id)
+        result = client_billing_service.confirm_payment_claim(
+            db, payment_id, user.id, confirm_amount_inr=amount_inr
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)

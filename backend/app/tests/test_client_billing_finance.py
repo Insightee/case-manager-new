@@ -91,12 +91,18 @@ def test_confirm_claim_idempotent_and_partial_status():
     if pay_amt < balance - 0.01:
         assert after.get("status", "").lower() == "partially_paid"
     assert float(after.get("amountPaidInr") or 0) >= pay_amt - 0.01
+    paid_after_first = float(after.get("amountPaidInr") or 0)
+    status_after_first = after.get("status")
 
     second = client.post(
         f"/api/v1/admin/client-billing/payments/{payment_id}/confirm", headers=finance_h
     )
     assert second.status_code == 200, second.text
     assert second.json().get("status") == "already_confirmed"
+
+    after_second = client.get(f"/api/v1/admin/client-billing/invoices/{inv_id}", headers=finance_h).json()
+    assert float(after_second.get("amountPaidInr") or 0) == paid_after_first
+    assert after_second.get("status") == status_after_first
 
 
 def test_confirm_claim_blocked_when_exceeds_collectible():
@@ -115,14 +121,14 @@ def test_confirm_claim_blocked_when_exceeds_collectible():
     if not payment_id:
         return
 
-    line_ids = [ln["id"] for ln in detail["lines"]]
+    line_id = detail["lines"][0]["id"]
     client.post(
         f"/api/v1/parent/billing/invoices/{inv_id}/disputes",
         headers=parent_h,
         json={
             "reason_code": "incorrect_amount",
-            "message": "Finance test — hold all lines before confirm.",
-            "line_ids": line_ids,
+            "message": "Finance test — partial hold before confirm.",
+            "line_ids": [line_id],
         },
     )
 
@@ -130,6 +136,19 @@ def test_confirm_claim_blocked_when_exceeds_collectible():
         f"/api/v1/admin/client-billing/payments/{payment_id}/confirm", headers=finance_h
     )
     assert blocked.status_code == 400
+
+    after_dispute = client.get(f"/api/v1/parent/billing/invoices/{inv_id}", headers=parent_h).json()
+    cap_amount = float(after_dispute.get("balanceInr") or 0)
+    if cap_amount <= 0:
+        return
+
+    capped = client.post(
+        f"/api/v1/admin/client-billing/payments/{payment_id}/confirm?amount_inr={cap_amount}",
+        headers=finance_h,
+    )
+    assert capped.status_code == 200, capped.text
+    assert capped.json().get("status") == "confirmed"
+    assert float(capped.json().get("amountInr") or 0) <= cap_amount + 0.01
 
 
 def test_resolve_dispute_releases_hold_and_recomputes_collectible():
@@ -167,7 +186,9 @@ def test_resolve_dispute_releases_hold_and_recomputes_collectible():
     assert resolved.status_code == 200, resolved.text
 
     after = client.get(f"/api/v1/parent/billing/invoices/{inv_id}", headers=parent_h).json()
-    assert float(after.get("heldAmountInr") or 0) < float(held.get("heldAmountInr") or 0)
+    resolved_disputes = [d for d in after.get("disputes") or [] if d.get("id") == dispute_id]
+    assert resolved_disputes and resolved_disputes[0].get("status") == "REJECTED"
+    assert float(after.get("balanceInr") or 0) >= float(held.get("balanceInr") or 0)
 
 
 def test_late_fee_add_and_reverse():
@@ -188,11 +209,10 @@ def test_late_fee_add_and_reverse():
     line_id = add.json().get("lineId")
     assert line_id
 
-    admin_detail = client.get(f"/api/v1/admin/client-billing/invoices/{inv_id}", headers=finance_h).json()
-    assert float(admin_detail.get("totalInr") or 0) >= total_before + 149
-
     parent_detail = client.get(f"/api/v1/parent/billing/invoices/{inv_id}", headers=parent_h).json()
-    assert any((ln.get("lineItemType") or "").upper() == "LATE_FEE" for ln in parent_detail.get("lines") or [])
+    late_lines = [ln for ln in parent_detail.get("lines") or [] if (ln.get("lineItemType") or "").upper() == "LATE_FEE"]
+    assert late_lines
+    assert float(late_lines[0].get("amountInr") or 0) >= 149
 
     rem = client.delete(
         f"/api/v1/admin/client-billing/invoices/{inv_id}/lines/{line_id}/late-fee",

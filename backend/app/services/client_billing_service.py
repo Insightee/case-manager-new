@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -33,6 +34,8 @@ from app.models.user import User
 from app.core.config import settings
 from app.services import billing_composer_service, notification_service, parent_service, product_billing_rule_service
 from app.services.email.service import enqueue_parent_invoice_email, parent_invoice_ready_email
+
+logger = logging.getLogger("insightcase.client_billing")
 
 _OPEN_DISPUTE_STATUSES = frozenset({BillingDisputeStatus.OPEN, BillingDisputeStatus.UNDER_REVIEW})
 
@@ -1383,7 +1386,13 @@ async def submit_payment_claim(
     return payment
 
 
-def confirm_payment_claim(db: Session, payment_id: int, admin_user_id: int) -> dict:
+def confirm_payment_claim(
+    db: Session,
+    payment_id: int,
+    admin_user_id: int,
+    *,
+    confirm_amount_inr: Optional[float] = None,
+) -> dict:
     payment = db.get(ClientPayment, payment_id)
     if not payment:
         raise ValueError("Payment claim not found")
@@ -1404,11 +1413,23 @@ def confirm_payment_claim(db: Session, payment_id: int, admin_user_id: int) -> d
     amounts = _compute_invoice_balances(inv, list(inv.lines or []), list(inv.disputes or []))
     collectible_balance = float(amounts["balanceInr"])
     claim_amount = float(payment.amount_inr)
-    if claim_amount > collectible_balance + 0.01:
+    apply_amount = float(confirm_amount_inr) if confirm_amount_inr is not None else claim_amount
+    if apply_amount <= 0:
+        raise ValueError("Confirm amount must be greater than zero")
+    if apply_amount > claim_amount + 0.01:
+        raise ValueError("Confirm amount cannot exceed the claimed amount")
+    if apply_amount > collectible_balance + 0.01:
         note = (
-            f"Reconciliation hold: claim ₹{claim_amount:,.2f} exceeds collectible "
-            f"₹{collectible_balance:,.2f}. Confirm blocked until disputes clear or claim is adjusted."
+            f"Reconciliation hold: confirm amount ₹{apply_amount:,.2f} exceeds collectible "
+            f"₹{collectible_balance:,.2f}."
         )
+        if collectible_balance > 0 and claim_amount > collectible_balance + 0.01:
+            note += (
+                f" Finance may confirm against current collectible with amount_inr={collectible_balance:.2f}, "
+                "resolve disputes first, record payment for the received amount, or reject the claim."
+            )
+        else:
+            note += " Resolve disputes, record payment for the received amount, or reject the claim."
         payment.notes = f"{payment.notes or ''}\n{note}".strip()
         db.flush()
         raise ValueError(note)
@@ -1417,22 +1438,40 @@ def confirm_payment_claim(db: Session, payment_id: int, admin_user_id: int) -> d
     payment.confirmed_by_user_id = admin_user_id
     payment.confirmed_at = datetime.now(timezone.utc)
     payment.recorded_by_user_id = admin_user_id
-    inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + claim_amount
+    if abs(apply_amount - claim_amount) > 0.01:
+        payment.notes = (
+            f"{payment.notes or ''}\n"
+            f"Confirmed at ₹{apply_amount:,.2f} (claimed ₹{claim_amount:,.2f}; collectible cap applied)."
+        ).strip()
+    payment.amount_inr = apply_amount
+    inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + apply_amount
     _refresh_invoice_payment_status(db, inv)
     _activate_packages_for_invoice(db, inv)
+    db.flush()
+
     from app.services.bookkeeping_provider import get_bookkeeping_provider
 
-    get_bookkeeping_provider().push_client_payment(payment.id, payload={"event": "claim_confirmed"}, db=db)
+    try:
+        get_bookkeeping_provider().push_client_payment(
+            payment.id, payload={"event": "claim_confirmed"}, db=db
+        )
+    except Exception:
+        logger.warning(
+            "Bookkeeping push failed after payment confirm (payment_id=%s); payment still recorded",
+            payment.id,
+            exc_info=True,
+        )
+
     notification_service.create_notification(
         db,
         user_id=inv.parent_user_id,
         title="Payment confirmed",
-        body=f"₹{int(payment.amount_inr):,} confirmed for {inv.invoice_number}",
+        body=f"₹{int(apply_amount):,} confirmed for {inv.invoice_number}",
         entity_type="client_invoice",
         entity_id=inv.id,
     )
     db.flush()
-    return {"status": "confirmed", "invoiceId": inv.id}
+    return {"status": "confirmed", "invoiceId": inv.id, "amountInr": apply_amount}
 
 
 def reject_payment_claim(db: Session, payment_id: int, admin_user_id: int, note: str) -> ClientPayment:
