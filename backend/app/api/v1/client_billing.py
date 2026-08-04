@@ -32,7 +32,7 @@ from app.core.config import settings
 from app.core.feature_flags import billing_ledger_writes_enabled, require_billing_ledger_writes
 from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service
 from app.services import audit_service
-from app.services import zoho_client_sync
+from app.services.bookkeeping_provider import get_bookkeeping_provider
 
 parent_router = APIRouter(prefix="/parent/billing", tags=["parent-billing"])
 admin_router = APIRouter(prefix="/admin/client-billing", tags=["admin-client-billing"])
@@ -44,11 +44,14 @@ def _require_parent(user: User):
 
 
 def _billing_runtime_config() -> dict:
+    from app.services import zoho_client_sync
+
     return {
         "billingEnabled": bool(settings.enable_billing),
         "ledgerWritesEnabled": billing_ledger_writes_enabled(),
         "cutoverComplete": bool(settings.finance_cutover_complete),
         "zohoConfigured": zoho_client_sync.zoho_configured(),
+        "zohoBooksLivePush": bool(getattr(settings, "zoho_books_live_push", False)),
         "provisional": not bool(settings.finance_cutover_complete),
     }
 
@@ -239,6 +242,53 @@ def parent_payment_proof(
         return client_billing_service.payment_proof_download(db, user, payment_id, admin=False)
     except ValueError:
         raise HTTPException(status_code=404, detail="Proof not found")
+
+
+@parent_router.post("/invoices/{invoice_id}/pay-gateway")
+def parent_pay_gateway(
+    invoice_id: int,
+    request: Request,
+    reference: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    if not settings.enable_billing:
+        raise HTTPException(status_code=403, detail="Billing is not enabled")
+    try:
+        result = client_billing_service.initiate_gateway_payment(
+            db, user, invoice_id, reference=reference
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    if result.get("success") and result.get("paymentId"):
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="gateway_payment",
+            entity_type="client_payment",
+            entity_id=result["paymentId"],
+            **meta,
+        )
+    db.commit()
+    return result
+
+
+@parent_router.get("/payments/{payment_id}/receipt")
+def parent_payment_receipt(
+    payment_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    _require_parent(user)
+    try:
+        pdf, filename = client_billing_service.get_payment_receipt(db, user, payment_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Receipt not available")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @admin_router.get("/summary")
@@ -572,6 +622,7 @@ def admin_list_disputes(
                 "invoiceId": d.client_invoice_id,
                 "invoiceNumber": inv.invoice_number if inv else "",
                 "caseCode": case.case_code if case else "",
+                "lineId": d.client_invoice_line_id,
                 "reasonCode": d.reason_code,
                 "message": d.message,
                 "status": d.status.value,
@@ -718,8 +769,14 @@ def admin_build_draft_from_ledger_for_case(
     )
     db.commit()
     detail = client_billing_service.admin_get_invoice_detail(db, result["id"])
-    zoho = zoho_client_sync.sync_client_invoice(result["id"], payload={"event": "build_from_ledger"})
-    detail["zohoSync"] = zoho
+    zoho = get_bookkeeping_provider().push_client_invoice(
+        result["id"], payload={"event": "build_from_ledger"}, db=db
+    )
+    detail["zohoSync"] = {
+        "status": zoho.status,
+        "message": zoho.message,
+        "externalId": zoho.external_id,
+    }
     return detail
 
 
@@ -920,9 +977,18 @@ def admin_notify_parent_invoice(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    zoho = zoho_client_sync.sync_client_invoice(invoice_id, payload={"event": "notify_parent"})
+    zoho = get_bookkeeping_provider().push_client_invoice(
+        invoice_id, payload={"event": "notify_parent"}, db=db
+    )
     if isinstance(result, dict):
-        result = {**result, "zohoSync": zoho}
+        result = {
+            **result,
+            "zohoSync": {
+                "status": zoho.status,
+                "message": zoho.message,
+                "externalId": zoho.external_id,
+            },
+        }
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -934,6 +1000,104 @@ def admin_notify_parent_invoice(
     )
     db.commit()
     return result
+
+
+@admin_router.get("/receivables")
+def admin_receivables(
+    month: Optional[str] = None,
+    status: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
+    overdue_only: bool = Query(False),
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    return client_billing_service.admin_receivables_summary(
+        db,
+        month=month,
+        status=status,
+        module=module,
+        search=search,
+        overdue_only=overdue_only,
+    )
+
+
+@admin_router.post("/invoices/{invoice_id}/payment-reminder")
+def admin_send_payment_reminder(
+    invoice_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        result = client_billing_service.send_payment_reminder(db, invoice_id, background_tasks)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="payment_reminder",
+        entity_type="client_invoice",
+        entity_id=invoice_id,
+        **meta,
+    )
+    db.commit()
+    return result
+
+
+@admin_router.post("/invoices/{invoice_id}/push-zoho")
+def admin_push_zoho_invoice(
+    invoice_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        result = client_billing_service.admin_push_zoho_invoice(db, invoice_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="push_zoho_invoice",
+        entity_type="client_invoice",
+        entity_id=invoice_id,
+        new_value={"externalId": result.get("externalId"), "status": result.get("status")},
+        **meta,
+    )
+    db.commit()
+    return result
+
+
+@admin_router.delete("/invoices/{invoice_id}/lines/{line_id}/late-fee")
+def admin_remove_late_fee(
+    invoice_id: int,
+    line_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        client_billing_service.admin_remove_late_fee_line(db, invoice_id, line_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="remove_late_fee",
+        entity_type="client_invoice_line",
+        entity_id=line_id,
+        **meta,
+    )
+    db.commit()
+    return {"status": "removed"}
 
 
 @admin_router.post("/invoices/{invoice_id}/payments")
@@ -963,22 +1127,59 @@ def admin_record_payment(
     return {"status": "recorded"}
 
 
-@admin_router.post("/payments/{payment_id}/confirm")
-def admin_confirm_payment_claim(
-    payment_id: int,
+@admin_router.post("/invoices/{invoice_id}/late-fee")
+def admin_add_late_fee(
+    invoice_id: int,
     request: Request,
+    amount_inr: float = Query(..., gt=0),
+    finance_note: Optional[str] = Query(None),
     user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
     try:
-        client_billing_service.confirm_payment_claim(db, payment_id, user.id)
+        line = client_billing_service.admin_add_late_fee_line(
+            db, invoice_id, amount_inr, finance_note=finance_note
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="add_late_fee",
+        entity_type="client_invoice_line",
+        entity_id=line.id,
+        **meta,
+    )
+    db.commit()
+    return {"lineId": line.id, "amountInr": float(line.amount_inr)}
+
+
+@admin_router.post("/payments/{payment_id}/confirm")
+def admin_confirm_payment_claim(
+    payment_id: int,
+    request: Request,
+    amount_inr: Optional[float] = Query(
+        None,
+        gt=0,
+        description="Optional cap — confirm up to this amount (max claim, max collectible). "
+        "Use when collectible dropped after parent submitted the claim.",
+    ),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        result = client_billing_service.confirm_payment_claim(
+            db, payment_id, user.id, confirm_amount_inr=amount_inr
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="confirm_payment", entity_type="client_payment", entity_id=payment_id, **meta)
     db.commit()
-    return {"status": "confirmed"}
+    return result
 
 
 @admin_router.post("/payments/{payment_id}/reject")

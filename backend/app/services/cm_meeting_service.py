@@ -115,6 +115,17 @@ def _meeting_type_label(meeting_type: MeetingType | None) -> str:
     return "Case manager meeting"
 
 
+def _meeting_display_title(meeting: CaseManagerMeeting) -> str:
+    title = (meeting.title or "").strip()
+    if title:
+        return title
+    if meeting.meeting_type == MeetingType.OTHER:
+        other = (meeting.other_reason or "").strip()
+        if other:
+            return other
+    return _meeting_type_label(meeting.meeting_type)
+
+
 def build_attendee_rows(meeting: CaseManagerMeeting, db: Session) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
@@ -158,7 +169,7 @@ def meeting_to_calendar_dict(meeting: CaseManagerMeeting, db: Session) -> dict[s
         "start_time": meeting.scheduled_time.strftime("%H:%M") if meeting.scheduled_time else None,
         "end_time": _end_time_from_start(meeting.scheduled_time, meeting.duration_minutes),
         "duration_minutes": meeting.duration_minutes,
-        "title": meeting.title or _meeting_type_label(meeting.meeting_type),
+        "title": _meeting_display_title(meeting),
         "meeting_type": meeting.meeting_type.value if meeting.meeting_type else None,
         "status": meeting.status.value if meeting.status else None,
         "meeting_url": meeting.meeting_url,
@@ -284,7 +295,7 @@ def meeting_to_pending_dict(meeting: CaseManagerMeeting, db: Session) -> dict[st
         "child_name": child_name,
         "scheduled_date": meeting.scheduled_date.isoformat() if meeting.scheduled_date else "",
         "scheduled_time": meeting.scheduled_time.strftime("%H:%M") if meeting.scheduled_time else None,
-        "title": meeting.title or _meeting_type_label(meeting.meeting_type),
+        "title": _meeting_display_title(meeting),
         "meeting_type": meeting.meeting_type.value if meeting.meeting_type else None,
     }
 
@@ -397,8 +408,7 @@ def send_meeting_invite_emails(
     case = db.get(Case, meeting.case_id) if meeting.case_id else None
     child_name = case.child.full_name if case and case.child else None
     case_code = case.case_code if case else None
-    label = _meeting_type_label(meeting.meeting_type)
-    title_text = meeting.title or label
+    title_text = _meeting_display_title(meeting)
     when = _format_meeting_when(meeting)
     actor = db.get(User, actor_user_id)
     organizer_name = (actor.full_name if actor else None) or "Insighte"
@@ -474,8 +484,7 @@ def notify_meeting_invites_respecting_flags(
     """In-app notifications and email invites for all stakeholders."""
     case = db.get(Case, meeting.case_id) if meeting.case_id else None
     child_name = case.child.full_name if case and case.child else None
-    label = _meeting_type_label(meeting.meeting_type)
-    title_text = meeting.title or label
+    title_text = _meeting_display_title(meeting)
     when = _format_meeting_when(meeting)
     body_parts = [f"{title_text}"]
     if child_name:

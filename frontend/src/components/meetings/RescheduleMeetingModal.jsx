@@ -4,7 +4,7 @@ import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import { MeetingAvailabilitySlots } from './MeetingAvailabilitySlots.jsx'
 import { MODAL_INPUT_STYLE, MODAL_LABEL_STYLE } from './meetingConstants.js'
-import { buildMeetingsAvailabilityQuery } from './meetingUtils.js'
+import { buildMeetingsAvailabilityQuery, meetingDisplayTitle } from './meetingUtils.js'
 
 export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
   const [form, setForm] = useState({
@@ -101,7 +101,7 @@ export function RescheduleMeetingModal({ meeting, onClose, onRescheduled }) {
       <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
         <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px' }}>Reschedule meeting</h2>
         <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 16px' }}>
-          {meeting.title || meeting.child_name || 'Case manager meeting'}
+          {meetingDisplayTitle(meeting) || meeting.child_name || 'Case manager meeting'}
         </p>
         {error ? (
           <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>

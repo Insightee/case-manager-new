@@ -3,7 +3,7 @@ import { formatDisplayDateTime } from '../../lib/datetime.js'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
 import { MEETING_OUTCOME_LABELS, STATUS_LABELS } from './meetingConstants.js'
-import { formatAttendeeList, meetingTypeLabel } from './meetingUtils.js'
+import { formatAttendeeList, meetingDisplayTitle } from './meetingUtils.js'
 
 function StatusBadge({ status }) {
   const s = STATUS_LABELS[status] || { label: status, bg: '#f1f5f9', color: '#475569' }
@@ -19,6 +19,7 @@ export function MeetingDetailSheet({
   meeting,
   onClose,
   readOnly = false,
+  isTherapistView = false,
   caseLinkPrefix = '/admin/cases',
   onReschedule,
   onCancel,
@@ -26,10 +27,12 @@ export function MeetingDetailSheet({
 }) {
   if (!open || !meeting) return null
 
-  const typeLabel = meetingTypeLabel(meeting)
+  const displayTitle = meetingDisplayTitle(meeting)
   const attendeeLine = formatAttendeeList(meeting)
-  const hasNotes = meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
+  const hasCmNotes = meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
     || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
+  const hasTherapistNotes = Boolean(meeting.therapist_notes)
+  const hasNotes = isTherapistView ? hasTherapistNotes : hasCmNotes
   const calendarEvent = meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
   const canManage = !readOnly && meeting.status === 'SCHEDULED'
 
@@ -38,7 +41,7 @@ export function MeetingDetailSheet({
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">{meeting.title || typeLabel}</h2>
+            <h2 className="text-lg font-bold text-slate-900">{displayTitle}</h2>
             <p className="mt-1 text-sm text-slate-500">
               {formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
               {meeting.duration_minutes ? ` · ${meeting.duration_minutes} min` : ''}
@@ -72,14 +75,20 @@ export function MeetingDetailSheet({
 
         {hasNotes ? (
           <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-            {meeting.notes_outcome ? <p className="mb-1"><strong>Outcome:</strong> {MEETING_OUTCOME_LABELS[meeting.notes_outcome] || meeting.notes_outcome}</p> : null}
-            {meeting.notes_summary ? <p className="mb-1"><strong>Summary:</strong> {meeting.notes_summary}</p> : null}
-            {meeting.notes_next_meeting_required ? <p className="mb-1"><strong>Follow-up meeting:</strong> Required</p> : null}
-            {meeting.notes_additional ? <p className="mb-1"><strong>Additional notes:</strong> {meeting.notes_additional}</p> : null}
-            {meeting.notes_concerns ? <p className="mb-1"><strong>Concerns:</strong> {meeting.notes_concerns}</p> : null}
-            {meeting.notes_follow_up ? <p className="mb-1"><strong>Follow-up:</strong> {meeting.notes_follow_up}</p> : null}
-            {meeting.notes_action ? <p className="mb-1"><strong>Actions:</strong> {meeting.notes_action}</p> : null}
-            {meeting.notes_other ? <p><strong>Other:</strong> {meeting.notes_other}</p> : null}
+            {isTherapistView ? (
+              meeting.therapist_notes ? <p><strong>What was discussed:</strong> {meeting.therapist_notes}</p> : null
+            ) : (
+              <>
+                {meeting.notes_outcome ? <p className="mb-1"><strong>Outcome:</strong> {MEETING_OUTCOME_LABELS[meeting.notes_outcome] || meeting.notes_outcome}</p> : null}
+                {meeting.notes_summary ? <p className="mb-1"><strong>Summary:</strong> {meeting.notes_summary}</p> : null}
+                {meeting.notes_next_meeting_required ? <p className="mb-1"><strong>Follow-up meeting:</strong> Required</p> : null}
+                {meeting.notes_additional ? <p className="mb-1"><strong>Additional notes:</strong> {meeting.notes_additional}</p> : null}
+                {meeting.notes_concerns ? <p className="mb-1"><strong>Concerns:</strong> {meeting.notes_concerns}</p> : null}
+                {meeting.notes_follow_up ? <p className="mb-1"><strong>Follow-up:</strong> {meeting.notes_follow_up}</p> : null}
+                {meeting.notes_action ? <p className="mb-1"><strong>Actions:</strong> {meeting.notes_action}</p> : null}
+                {meeting.notes_other ? <p><strong>Other:</strong> {meeting.notes_other}</p> : null}
+              </>
+            )}
           </div>
         ) : null}
 
@@ -91,7 +100,7 @@ export function MeetingDetailSheet({
               className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800"
               onClick={() => onAddNotes?.(meeting)}
             >
-              {hasNotes ? 'Edit notes' : 'Add notes / complete'}
+              {hasNotes ? 'Edit notes' : isTherapistView ? 'Add notes' : 'Add notes / complete'}
             </button>
           ) : null}
           {canManage ? (

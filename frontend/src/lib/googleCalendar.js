@@ -152,7 +152,9 @@ export function mapCmMeetingToCalendarEvent(meeting, { deepLinkPath = '/admin/me
     CM_TYPE_LABELS[meeting.meeting_type]
     || (meeting.meeting_type === 'SUPERVISION' ? 'Internal meeting' : meeting.meeting_type)
   const child = meeting.child_name
-  const title = meeting.title || (child ? `${typeLabel} · ${child}` : typeLabel)
+  const customTitle = (meeting.title || '').trim()
+    || (meeting.meeting_type === 'OTHER' && (meeting.other_reason || '').trim())
+  const title = customTitle || (child ? `${typeLabel} · ${child}` : typeLabel)
   const details = joinDetails([
     meeting.case_code ? `Case: ${meeting.case_code}` : meeting.case_id ? `Case ID: ${meeting.case_id}` : null,
     meeting.id ? `Meeting ID: ${meeting.id}` : null,

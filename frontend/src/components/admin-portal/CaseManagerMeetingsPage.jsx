@@ -16,7 +16,7 @@ import {
   STATUS_LABELS,
   TYPE_FILTER_OPTIONS,
 } from '../meetings/meetingConstants.js'
-import { formatAttendeeList, meetingTypeLabel, padHour, parseMeetingIdFromGridEvent } from '../meetings/meetingUtils.js'
+import { formatAttendeeList, meetingDisplayTitle, padHour, parseMeetingIdFromGridEvent } from '../meetings/meetingUtils.js'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
 import { AdminCollapsibleFilters, AdminPageHeader, AdminSearchInput, FilterSelect } from './ui/index.js'
@@ -33,7 +33,7 @@ function StatusBadge({ status }) {
   )
 }
 
-function NotesModal({ meeting, onClose, onUpdated }) {
+function CmNotesModal({ meeting, onClose, onUpdated }) {
   const [form, setForm] = useState({
     notes_outcome: meeting.notes_outcome || '',
     notes_summary: meeting.notes_summary || '',
@@ -134,10 +134,71 @@ function NotesModal({ meeting, onClose, onUpdated }) {
   )
 }
 
-function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false }) {
-  const typeLabel = meetingTypeLabel(meeting)
-  const hasNotes = meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
-    || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
+function TherapistNotesModal({ meeting, onClose, onUpdated }) {
+  const [discussion, setDiscussion] = useState(meeting.therapist_notes || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(e) {
+    e.preventDefault()
+    setSaving(true)
+    setError('')
+    try {
+      const result = await apiFetch(`/api/v1/meetings/${meeting.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          therapist_notes: discussion.trim() || null,
+        }),
+      })
+      onUpdated(result)
+    } catch (err) {
+      setError(err.message || 'Could not save your notes')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const taStyle = { display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: '0.875rem', marginTop: 4, minHeight: 120, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }
+  const labelStyle = { fontSize: '0.875rem', fontWeight: 500, color: '#475569', display: 'block', marginBottom: 12 }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', padding: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1e293b', margin: '0 0 4px' }}>Your meeting notes</h2>
+        <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 20px' }}>
+          {meeting.child_name ? `${meeting.child_name} · ` : ''}{formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
+        </p>
+        <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 16px' }}>
+          These notes are only visible to you. Your case manager completes the meeting separately.
+        </p>
+        {error ? <p style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', marginBottom: 12 }}>{error}</p> : null}
+        <form onSubmit={submit}>
+          <label style={labelStyle}>
+            What was discussed
+            <textarea style={taStyle} placeholder="Brief summary of what you covered in the meeting…" value={discussion} onChange={(e) => setDiscussion(e.target.value)} />
+          </label>
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <button type="submit" disabled={saving} style={{ flex: 1, background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 0', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer' }}>
+              {saving ? 'Saving…' : 'Save notes'}
+            </button>
+            <button type="button" style={{ background: '#f1f5f9', border: 'none', borderRadius: 12, padding: '11px 16px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }} onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPrefix, readOnly = false, isTherapistView = false }) {
+  const displayTitle = meetingDisplayTitle(meeting)
+  const hasNotes = isTherapistView
+    ? Boolean(meeting.therapist_notes)
+    : Boolean(
+      meeting.notes_outcome || meeting.notes_summary || meeting.notes_additional
+      || meeting.notes_concerns || meeting.notes_follow_up || meeting.notes_action || meeting.notes_other
+    )
   const attendeeLine = formatAttendeeList(meeting)
   const calendarEvent = meeting.status === 'SCHEDULED' ? mapCmMeetingToCalendarEvent(meeting) : null
 
@@ -146,7 +207,7 @@ function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPref
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div>
           <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem', color: '#1e293b' }}>
-            {meeting.title || typeLabel}
+            {displayTitle}
           </p>
           <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
             {formatDisplayDateTime(meeting.scheduled_date, meeting.scheduled_time)}
@@ -177,7 +238,7 @@ function MeetingCard({ meeting, onAddNotes, onCancel, onReschedule, caseLinkPref
         {calendarEvent ? <AddToGoogleCalendarButton event={calendarEvent} variant="inline" /> : null}
         {!readOnly && meeting.status !== 'CANCELLED' ? (
           <button type="button" style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '6px 14px', fontSize: '0.8rem', fontWeight: 600, color: '#3730a3', cursor: 'pointer' }} onClick={() => onAddNotes(meeting)}>
-            {hasNotes ? 'Edit notes' : 'Add notes / complete'}
+            {hasNotes ? 'Edit notes' : isTherapistView ? 'Add notes' : 'Add notes / complete'}
           </button>
         ) : null}
         {!readOnly && meeting.status === 'SCHEDULED' ? (
@@ -215,7 +276,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
       || user?.roles?.includes('THERAPIST'))
   const caseLinkPrefix = isParentPortal ? null : isTherapistPortal ? '/therapist/cases' : '/admin/cases'
 
-  const [pageView, setPageView] = useState('calendar')
+  const [pageView, setPageView] = useState(isParentPortal ? 'list' : 'calendar')
   const [meetings, setMeetings] = useState([])
   const [cases, setCases] = useState([])
   const [cmUsers, setCmUsers] = useState([])
@@ -327,8 +388,9 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
   }, [load])
 
   const displayedMeetings = useMemo(() => {
-    if (!queueTab) return meetings
-    return meetings.filter(
+    const active = meetings.filter((m) => m.status !== 'RESCHEDULED')
+    if (!queueTab) return active
+    return active.filter(
       (m) => m.admin_user_ids?.length > 0 || m.attendees?.some((a) => a.role === 'admin'),
     )
   }, [meetings, queueTab])
@@ -422,7 +484,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         }
         subtitle={
           isParentPortal
-            ? 'View upcoming meetings on your calendar and export to Google Calendar.'
+            ? 'View upcoming meetings and join links for your child.'
             : isTherapistPortal
               ? 'Request a meeting with the case manager for one of your assigned cases.'
               : 'Schedule meetings, view your calendar, and manage follow-ups.'
@@ -442,25 +504,27 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
 
       {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
 
-      <div className="mb-4 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Meetings view">
-        {[
-          { id: 'calendar', label: 'Calendar' },
-          { id: 'list', label: 'List' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={pageView === tab.id}
-            className={`rounded-full px-4 py-1.5 text-sm font-semibold ${pageView === tab.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
-            onClick={() => setPageView(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {!isParentPortal ? (
+        <div className="mb-4 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Meetings view">
+          {[
+            { id: 'calendar', label: 'Calendar' },
+            { id: 'list', label: 'List' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={pageView === tab.id}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold ${pageView === tab.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+              onClick={() => setPageView(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
-      {pageView === 'calendar' ? (
+      {!isParentPortal && pageView === 'calendar' ? (
         <article className="card admin-scheduling-hub__calendar-wrap" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0 }}>My meeting calendar</h3>
           <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
@@ -479,7 +543,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         </article>
       ) : null}
 
-      {pageView === 'list' ? (
+      {isParentPortal || pageView === 'list' ? (
         <>
           <div className="admin-reports__kpis" style={{ marginBottom: 16 }}>
             <button type="button" className="admin-reports__kpi" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => { setStatusFilter('SCHEDULED'); setSearchParams({}) }}>
@@ -564,6 +628,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
                 meeting={m}
                 caseLinkPrefix={caseLinkPrefix}
                 readOnly={isParentPortal}
+                isTherapistView={isTherapistPortal}
                 onAddNotes={setNotesTarget}
                 onCancel={handleCancel}
                 onReschedule={setRescheduleTarget}
@@ -592,6 +657,7 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         open={!!detailMeeting}
         meeting={detailMeeting}
         readOnly={isParentPortal}
+        isTherapistView={isTherapistPortal}
         caseLinkPrefix={caseLinkPrefix}
         onClose={() => {
           setDetailMeeting(null)
@@ -613,7 +679,13 @@ export function CaseManagerMeetingsPage({ portal = 'admin' } = {}) {
         />
       ) : null}
 
-      {notesTarget ? <NotesModal meeting={notesTarget} onClose={() => setNotesTarget(null)} onUpdated={handleUpdated} /> : null}
+      {notesTarget ? (
+        isTherapistPortal ? (
+          <TherapistNotesModal meeting={notesTarget} onClose={() => setNotesTarget(null)} onUpdated={handleUpdated} />
+        ) : (
+          <CmNotesModal meeting={notesTarget} onClose={() => setNotesTarget(null)} onUpdated={handleUpdated} />
+        )
+      ) : null}
     </div>
   )
 }

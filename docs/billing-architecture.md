@@ -150,5 +150,6 @@ Build from ledger requires billable ledger rows. Completed sessions alone are in
 ### Migration policy
 
 - Single Alembic head; additive migrations only.
+- **Proof gate:** Postgres up/down/up on throwaway DB — see [MIGRATION_VALIDATION.md](MIGRATION_VALIDATION.md). Migrations are proven on Postgres, not SQLite; pytest/conftest upgrade is not downgrade-proof (**HARNESS-001**).
 - Optional: `invoice_manual_lines.line_category` (nullable VARCHAR) for payout reporting.
 - `client_invoice_lines.line_item_type` is `String(32)` — extend via constants without DB enum migration when possible.

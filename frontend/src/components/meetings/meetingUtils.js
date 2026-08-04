@@ -21,6 +21,15 @@ export function meetingTypeLabel(meeting) {
   )
 }
 
+/** Primary label for cards, calendar, and detail headers. */
+export function meetingDisplayTitle(meeting) {
+  const title = (meeting.title || '').trim()
+  if (title) return title
+  const otherReason = (meeting.other_reason || '').trim()
+  if (meeting.meeting_type === 'OTHER' && otherReason) return otherReason
+  return meetingTypeLabel(meeting)
+}
+
 export function parseMeetingIdFromGridEvent(event) {
   if (!event) return null
   if (event.meeting_id) return Number(event.meeting_id)

@@ -32,6 +32,7 @@ from app.services.reports_export_helpers import (
     MAX_EXPORT_ROWS,
     active_assignment,
     assignment_therapist,
+    billing_snapshot_report_columns,
     calendar_days_in_month,
     case_manager,
     days_since,
@@ -558,6 +559,7 @@ def replacement_history_rows(
                 "Reallotted On": new_assign.start_date.isoformat() if new_assign else "",
                 "Reason for Replacement": assign.reason_for_change or assign.notes or "",
                 "Replacement Count": replacement_count[case.id],
+                **billing_snapshot_report_columns(assign.billing_snapshot),
             }
         )
     return rows

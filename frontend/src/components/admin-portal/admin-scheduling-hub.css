@@ -74,12 +74,27 @@
 
 .admin-scheduling-hub__range-option {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   font-size: 0.8125rem;
   color: #334155;
   margin-bottom: 6px;
   cursor: pointer;
+}
+
+.reassignment-billing-confirm .admin-scheduling-hub__range-option input[type='radio'] {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.reassignment-billing-confirm__step {
+  margin: 0 0 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6366f1;
 }
 
 .admin-scheduling-hub__oneoff {

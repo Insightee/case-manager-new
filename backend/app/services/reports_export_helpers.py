@@ -115,6 +115,50 @@ def assignment_therapist(db: Session, assignment: CaseAssignment | None) -> User
     return db.get(User, assignment.therapist_user_id)
 
 
+def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
+    """Flatten locked assignment billing snapshot for HR export rows."""
+    if not snapshot:
+        return {
+            "Previous Billing Type": "",
+            "Previous Client Rate": "",
+            "Previous Package Amount": "",
+            "Previous Compensation Mode": "",
+            "Previous Therapist Pay": "",
+        }
+    billing_type = snapshot.get("billing_type") or ""
+    client_rate = ""
+    if billing_type == "PER_SESSION":
+        rate = snapshot.get("client_rate_per_session_inr")
+        client_rate = f"₹{rate}/session" if rate is not None else ""
+    elif billing_type == "MONTHLY_FIXED":
+        rate = snapshot.get("client_monthly_rate_inr")
+        client_rate = f"₹{rate}/month" if rate is not None else ""
+    elif billing_type == "PACKAGE":
+        count = snapshot.get("package_session_count")
+        amount = snapshot.get("package_amount_inr")
+        client_rate = f"₹{amount} / {count} sessions" if amount is not None and count else ""
+
+    comp_mode = snapshot.get("compensation_mode") or ""
+    if comp_mode == "FIXED_LUMP":
+        pay = snapshot.get("therapist_fixed_pay_inr")
+        therapist_pay = f"₹{pay} fixed" if pay is not None else ""
+    else:
+        pay = snapshot.get("pay_share_amount_inr")
+        therapist_pay = f"₹{pay} share" if pay is not None else ""
+
+    package_amount = ""
+    if billing_type == "PACKAGE" and snapshot.get("package_amount_inr") is not None:
+        package_amount = str(snapshot.get("package_amount_inr"))
+
+    return {
+        "Previous Billing Type": billing_type.replace("_", " "),
+        "Previous Client Rate": client_rate,
+        "Previous Package Amount": package_amount,
+        "Previous Compensation Mode": comp_mode.replace("_", " "),
+        "Previous Therapist Pay": therapist_pay,
+    }
+
+
 def case_manager(db: Session, case: Case) -> User | None:
     if not case.case_manager_user_id:
         return None

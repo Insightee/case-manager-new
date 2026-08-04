@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.billing_validation import case_billing_dict
+from app.core.billing_validation import apply_billing_payload, case_billing_dict
 from app.core.module_write import ensure_case_write_access
 from app.core.permissions import case_scope_check, require_mutation_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
@@ -19,6 +19,43 @@ from app.schemas.case import AssignmentBookingUpdate, AssignmentCreate, Assignme
 from app.services import assignment_service, case_service
 
 router = APIRouter(prefix="/cases/{case_id}/assignments", tags=["assignments"])
+
+
+def _apply_post_assignment_billing(case, payload: AssignmentCreate, user_id: int) -> None:
+    if payload.billing_update:
+        apply_billing_payload(case, payload.billing_update, user_id)
+
+
+def _create_case_assignment(db, case, case_id: int, payload: AssignmentCreate, user_id: int):
+    try:
+        if payload.case_service_id:
+            service_line = db.get(CaseService, payload.case_service_id)
+            if not service_line or service_line.case_id != case_id:
+                raise HTTPException(status_code=404, detail="Service line not found")
+            assignment = assignment_service.add_assignment_to_service(
+                db,
+                case_id=case_id,
+                case_service_id=service_line.id,
+                therapist_user_id=payload.therapist_user_id,
+                assigned_by_user_id=user_id,
+                start_date=payload.start_date or date.today(),
+                reason_for_change=payload.reason_for_change,
+                notes=payload.notes,
+            )
+        else:
+            assignment = assignment_service.create_assignment(
+                db,
+                case_id=case_id,
+                therapist_user_id=payload.therapist_user_id,
+                assigned_by_user_id=user_id,
+                start_date=payload.start_date or date.today(),
+                reason_for_change=payload.reason_for_change,
+                notes=payload.notes,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _apply_post_assignment_billing(case, payload, user_id)
+    return assignment
 
 
 @router.get("", response_model=list[AssignmentRead])
@@ -55,30 +92,7 @@ def assign_therapist(
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
     ensure_case_write_access(user, case, db)
-    if payload.case_service_id:
-        service_line = db.get(CaseService, payload.case_service_id)
-        if not service_line or service_line.case_id != case_id:
-            raise HTTPException(status_code=404, detail="Service line not found")
-        assignment = assignment_service.add_assignment_to_service(
-            db,
-            case_id=case_id,
-            case_service_id=service_line.id,
-            therapist_user_id=payload.therapist_user_id,
-            assigned_by_user_id=user.id,
-            start_date=payload.start_date or date.today(),
-            reason_for_change=payload.reason_for_change,
-            notes=payload.notes,
-        )
-    else:
-        assignment = assignment_service.create_assignment(
-            db,
-            case_id=case_id,
-            therapist_user_id=payload.therapist_user_id,
-            assigned_by_user_id=user.id,
-            start_date=payload.start_date or date.today(),
-            reason_for_change=payload.reason_for_change,
-            notes=payload.notes,
-        )
+    assignment = _create_case_assignment(db, case, case_id, payload, user.id)
     if case.status == CaseStatus.PENDING_ALLOTMENT:
         from app.services import client_status_service
 
@@ -184,16 +198,20 @@ def replace_service_assignment(
     service_line = db.get(CaseService, service_id)
     if not service_line or service_line.case_id != case_id:
         raise HTTPException(status_code=404, detail="Service line not found")
-    assignment = assignment_service.replace_assignment_in_service(
-        db,
-        case_id=case_id,
-        case_service_id=service_line.id,
-        therapist_user_id=payload.therapist_user_id,
-        assigned_by_user_id=user.id,
-        start_date=payload.start_date or date.today(),
-        reason_for_change=payload.reason_for_change,
-        notes=payload.notes,
-    )
+    try:
+        assignment = assignment_service.replace_assignment_in_service(
+            db,
+            case_id=case_id,
+            case_service_id=service_line.id,
+            therapist_user_id=payload.therapist_user_id,
+            assigned_by_user_id=user.id,
+            start_date=payload.start_date or date.today(),
+            reason_for_change=payload.reason_for_change,
+            notes=payload.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _apply_post_assignment_billing(case, payload, user.id)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="replace_service_assignment", entity_type="case_assignment", entity_id=assignment.id, new_value=payload.model_dump(), **meta)
     db.commit()

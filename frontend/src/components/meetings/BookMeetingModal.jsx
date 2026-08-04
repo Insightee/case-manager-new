@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { mapCmMeetingToCalendarEvent } from '../../lib/googleCalendar.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import { MeetingAvailabilitySlots } from './MeetingAvailabilitySlots.jsx'
+import { StaffAttendeePicker } from './StaffAttendeePicker.jsx'
 import {
   ATTENDEE_ROLE_LABELS,
   MEETING_TYPES,
@@ -11,6 +12,26 @@ import {
   MODAL_LABEL_STYLE,
 } from './meetingConstants.js'
 import { buildMeetingsAvailabilityQuery } from './meetingUtils.js'
+
+const ADMIN_ROLES = new Set(['MODULE_ADMIN', 'SUPER_ADMIN', 'ADMIN'])
+const INTERNAL_STAFF_ROLES = new Set(['MODULE_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CASE_MANAGER'])
+
+function hasRole(user, role) {
+  return (user?.roles || []).includes(role)
+}
+
+function isAdminBooker(user) {
+  const roles = user?.roles || []
+  return roles.some((r) => ADMIN_ROLES.has(r))
+}
+
+function filterStaffUsers(list, roleSet) {
+  return (list || []).filter((u) => {
+    const roles = u.roles || []
+    if (roles.includes('SUPERVISOR')) return false
+    return roles.some((r) => roleSet.has(r))
+  })
+}
 
 export function BookMeetingModal({
   cases,
@@ -22,6 +43,9 @@ export function BookMeetingModal({
   initialTime = null,
 }) {
   const { user } = useAuth()
+  const bookAsAdmin = !isTherapistBooking && isAdminBooker(user)
+  const bookAsCaseManager = !isTherapistBooking && !bookAsAdmin && hasRole(user, 'CASE_MANAGER')
+
   const today = new Date().toISOString().slice(0, 10)
   const [form, setForm] = useState({
     case_id: '',
@@ -29,29 +53,35 @@ export function BookMeetingModal({
     scheduled_time: initialTime || '10:00',
     duration_minutes: 30,
     meeting_type: 'OBSERVATION_REVIEW',
+    other_reason: '',
     title: '',
     meeting_url: '',
   })
   const [attendees, setAttendees] = useState({
-    client: true,
-    therapist: isTherapistBooking,
-    caseManager: true,
-    admin: false,
+    client: !isTherapistBooking,
+    therapist: !isTherapistBooking,
+    caseManager: isTherapistBooking || bookAsCaseManager,
+    inviteStaff: false,
   })
   const [therapistUserId, setTherapistUserId] = useState('')
-  const [adminUserId, setAdminUserId] = useState('')
+  const [selectedStaffIds, setSelectedStaffIds] = useState([])
   const [caseSearch, setCaseSearch] = useState('')
   const [guestInput, setGuestInput] = useState('')
   const [guestEmails, setGuestEmails] = useState([])
   const [caseDetail, setCaseDetail] = useState(null)
   const [therapists, setTherapists] = useState([])
-  const [adminUsers, setAdminUsers] = useState([])
+  const [staffUsers, setStaffUsers] = useState([])
+  const [staffLoading, setStaffLoading] = useState(false)
   const [therapistSlots, setTherapistSlots] = useState(null)
   const [staffSlots, setStaffSlots] = useState(null)
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [createdMeeting, setCreatedMeeting] = useState(null)
+
+  const staffRoleQuery = bookAsAdmin
+    ? 'MODULE_ADMIN,ADMIN,SUPER_ADMIN,CASE_MANAGER'
+    : 'MODULE_ADMIN,ADMIN,SUPER_ADMIN'
 
   useEffect(() => {
     onOpen?.()
@@ -71,20 +101,17 @@ export function BookMeetingModal({
   }, [isTherapistBooking, cases, form.case_id])
 
   useEffect(() => {
-    apiFetch('/api/v1/admin/users?page_size=200')
+    if (isTherapistBooking) return
+    setStaffLoading(true)
+    apiFetch(`/api/v1/admin/users/directory?roles=${staffRoleQuery}&limit=500`)
       .then((rows) => {
         const list = Array.isArray(rows) ? rows : rows?.items || []
-        setAdminUsers(
-          list.filter((u) => {
-            const roles = u.roles || []
-            return (
-              roles.includes('MODULE_ADMIN') || roles.includes('SUPER_ADMIN') || roles.includes('ADMIN')
-            ) && !roles.includes('SUPERVISOR')
-          }),
-        )
+        const roleSet = bookAsAdmin ? INTERNAL_STAFF_ROLES : ADMIN_ROLES
+        setStaffUsers(filterStaffUsers(list, roleSet))
       })
-      .catch(() => setAdminUsers([]))
-  }, [])
+      .catch(() => setStaffUsers([]))
+      .finally(() => setStaffLoading(false))
+  }, [isTherapistBooking, staffRoleQuery, bookAsAdmin])
 
   useEffect(() => {
     if (!form.case_id) {
@@ -93,22 +120,39 @@ export function BookMeetingModal({
       setTherapistUserId('')
       return
     }
-    apiFetch(`/api/v1/booking/therapists?case_id=${form.case_id}`)
-      .then((rows) => {
-        setTherapists(rows || [])
-        if (rows?.length === 1) setTherapistUserId(String(rows[0].therapist_user_id))
-      })
-      .catch(() => setTherapists([]))
+    if (!isTherapistBooking) {
+      apiFetch(`/api/v1/booking/therapists?case_id=${form.case_id}`)
+        .then((rows) => {
+          setTherapists(rows || [])
+          if (rows?.length === 1) setTherapistUserId(String(rows[0].therapist_user_id))
+        })
+        .catch(() => setTherapists([]))
+    }
     apiFetch(`/api/v1/cases/${form.case_id}`)
       .then(setCaseDetail)
       .catch(() => setCaseDetail(null))
-  }, [form.case_id])
+  }, [form.case_id, isTherapistBooking])
 
   const caseManagerId = useMemo(() => {
     if (caseDetail?.case_manager_user_id) return caseDetail.case_manager_user_id
-    if (user?.roles?.includes('CASE_MANAGER')) return user.id
+    if (bookAsCaseManager) return user?.id || null
+    if (bookAsAdmin) {
+      const pickedCm = selectedStaffIds.find((id) => {
+        const row = staffUsers.find((u) => Number(u.id) === id)
+        return row?.roles?.includes('CASE_MANAGER')
+      })
+      if (pickedCm) return pickedCm
+    }
+    if (hasRole(user, 'CASE_MANAGER')) return user.id
     return user?.id || null
-  }, [caseDetail, user])
+  }, [caseDetail, user, bookAsCaseManager, bookAsAdmin, selectedStaffIds, staffUsers])
+
+  const availabilityAdminIds = useMemo(() => {
+    if (bookAsAdmin || (attendees.inviteStaff && selectedStaffIds.length > 0)) {
+      return selectedStaffIds
+    }
+    return []
+  }, [bookAsAdmin, attendees.inviteStaff, selectedStaffIds])
 
   useEffect(() => {
     if (isTherapistBooking) {
@@ -134,7 +178,7 @@ export function BookMeetingModal({
       durationMinutes: form.duration_minutes,
       caseManagerId,
       therapistId: attendees.therapist && therapistUserId ? Number(therapistUserId) : null,
-      adminIds: attendees.admin && adminUserId ? [Number(adminUserId)] : [],
+      adminIds: availabilityAdminIds,
     })
     apiFetch(`/api/v1/meetings/availability?${qs}`)
       .then(setStaffSlots)
@@ -147,9 +191,8 @@ export function BookMeetingModal({
     form.duration_minutes,
     caseManagerId,
     attendees.therapist,
-    attendees.admin,
     therapistUserId,
-    adminUserId,
+    availabilityAdminIds,
   ])
 
   function addGuestEmail() {
@@ -170,7 +213,7 @@ export function BookMeetingModal({
   function toggleAttendee(key) {
     setAttendees((a) => {
       const next = { ...a, [key]: !a[key] }
-      if (key === 'admin' && !next.admin) setAdminUserId('')
+      if (key === 'inviteStaff' && !next.inviteStaff) setSelectedStaffIds([])
       if (key === 'therapist' && !next.therapist) setTherapistUserId('')
       return next
     })
@@ -194,24 +237,57 @@ export function BookMeetingModal({
       setError('Select a case')
       return
     }
+    if (form.meeting_type === 'OTHER' && !form.other_reason.trim() && !form.title.trim()) {
+      setError('Looks like we still need a short reason before we can book this meeting.')
+      return
+    }
+    if (bookAsAdmin && selectedStaffIds.length === 0) {
+      setError('Pick at least one admin or case manager to join this meeting.')
+      return
+    }
+    if (bookAsCaseManager && attendees.inviteStaff && selectedStaffIds.length === 0) {
+      setError('Pick at least one admin to invite, or uncheck Admin.')
+      return
+    }
+    if (!isTherapistBooking && !bookAsAdmin && attendees.therapist && form.case_id && therapists.length > 1 && !therapistUserId) {
+      setError('Select which therapist to invite.')
+      return
+    }
+
     setSaving(true)
     setError('')
     try {
+      const staffIds = bookAsAdmin
+        ? selectedStaffIds
+        : (attendees.inviteStaff ? selectedStaffIds : [])
+
       const body = {
         scheduled_date: form.scheduled_date,
         scheduled_time: form.scheduled_time,
         duration_minutes: Number(form.duration_minutes) || 30,
         meeting_type: form.meeting_type,
-        title: form.title || null,
+        title: form.title.trim() || null,
         meeting_url: form.meeting_url.trim(),
         guest_emails: guestEmails,
         invite_client: attendees.client,
-        invite_therapist: attendees.therapist,
-        invite_case_manager: attendees.caseManager,
-        admin_user_ids: attendees.admin && adminUserId ? [Number(adminUserId)] : [],
+        invite_therapist: isTherapistBooking ? true : attendees.therapist,
+        invite_case_manager: isTherapistBooking
+          ? attendees.caseManager
+          : bookAsAdmin
+            ? false
+            : attendees.caseManager,
+        admin_user_ids: staffIds.map(Number),
+      }
+      if (form.meeting_type === 'OTHER') {
+        body.other_reason = form.other_reason.trim() || form.title.trim() || null
+        if (!body.title && body.other_reason) body.title = body.other_reason
       }
       if (form.case_id) body.case_id = Number(form.case_id)
-      if (attendees.therapist && therapistUserId) body.therapist_user_id = Number(therapistUserId)
+      if (isTherapistBooking) {
+        body.therapist_user_id = user.id
+      } else if (attendees.therapist && therapistUserId) {
+        body.therapist_user_id = Number(therapistUserId)
+      }
       const result = await apiFetch('/api/v1/meetings', { method: 'POST', body: JSON.stringify(body) })
       setCreatedMeeting(result)
     } catch (err) {
@@ -314,6 +390,20 @@ export function BookMeetingModal({
             </select>
           </label>
 
+          {form.meeting_type === 'OTHER' ? (
+            <label style={MODAL_LABEL_STYLE}>
+              Specify meeting reason *
+              <input
+                type="text"
+                style={MODAL_INPUT_STYLE}
+                placeholder="e.g. School coordination call"
+                value={form.other_reason}
+                required
+                onChange={(e) => set('other_reason', e.target.value)}
+              />
+            </label>
+          ) : null}
+
           <label style={MODAL_LABEL_STYLE}>
             Meeting title
             <input
@@ -358,39 +448,95 @@ export function BookMeetingModal({
 
           <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
             <legend style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569', padding: '0 6px' }}>Invite attendees</legend>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input type="checkbox" checked={attendees.client} disabled={!form.case_id} onChange={() => toggleAttendee('client')} />
-              {ATTENDEE_ROLE_LABELS.client}
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input type="checkbox" checked={attendees.therapist} disabled={!form.case_id} onChange={() => toggleAttendee('therapist')} />
-              {ATTENDEE_ROLE_LABELS.therapist}
-            </label>
-            {attendees.therapist && form.case_id && therapists.length > 0 ? (
-              <select style={{ ...MODAL_INPUT_STYLE, marginBottom: 10, marginLeft: 24 }} value={therapistUserId} onChange={(e) => setTherapistUserId(e.target.value)}>
-                <option value="">Select therapist…</option>
-                {therapists.map((t) => <option key={t.therapist_user_id} value={t.therapist_user_id}>{t.full_name}</option>)}
-              </select>
-            ) : null}
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-              <input type="checkbox" checked={attendees.caseManager} onChange={() => toggleAttendee('caseManager')} />
-              {ATTENDEE_ROLE_LABELS.case_manager}
-              {caseDetail?.case_manager_name ? <span style={{ color: '#64748b', fontSize: '0.75rem' }}>({caseDetail.case_manager_name})</span> : null}
-            </label>
-            {!isTherapistBooking ? (
+
+            {isTherapistBooking ? (
+              <>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 10px' }}>
+                  You will be included as the therapist on this meeting.
+                </p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
+                  <input type="checkbox" checked={attendees.client} disabled={!form.case_id} onChange={() => toggleAttendee('client')} />
+                  {ATTENDEE_ROLE_LABELS.client}
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
+                  <input type="checkbox" checked={attendees.caseManager} onChange={() => toggleAttendee('caseManager')} />
+                  {ATTENDEE_ROLE_LABELS.case_manager}
+                  {caseDetail?.case_manager_name ? <span style={{ color: '#64748b', fontSize: '0.75rem' }}>({caseDetail.case_manager_name})</span> : null}
+                </label>
+              </>
+            ) : bookAsAdmin ? (
               <>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
-                  <input type="checkbox" checked={attendees.admin} onChange={() => toggleAttendee('admin')} />
-                  {ATTENDEE_ROLE_LABELS.admin}
+                  <input type="checkbox" checked={attendees.client} disabled={!form.case_id} onChange={() => toggleAttendee('client')} />
+                  {ATTENDEE_ROLE_LABELS.client}
                 </label>
-                {attendees.admin ? (
-                  <select style={{ ...MODAL_INPUT_STYLE, marginLeft: 24, marginBottom: 6 }} value={adminUserId} onChange={(e) => setAdminUserId(e.target.value)}>
-                    <option value="">Select admin…</option>
-                    {adminUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
+                  <input type="checkbox" checked={attendees.therapist} disabled={!form.case_id} onChange={() => toggleAttendee('therapist')} />
+                  {ATTENDEE_ROLE_LABELS.therapist}
+                </label>
+                {attendees.therapist && form.case_id && therapists.length > 1 ? (
+                  <select style={{ ...MODAL_INPUT_STYLE, marginBottom: 10, marginLeft: 24 }} value={therapistUserId} onChange={(e) => setTherapistUserId(e.target.value)}>
+                    <option value="">Select therapist…</option>
+                    {therapists.map((t) => <option key={t.therapist_user_id} value={t.therapist_user_id}>{t.full_name}</option>)}
                   </select>
                 ) : null}
+                <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569', margin: '8px 0 6px' }}>
+                  Admins & case managers *
+                </p>
+                <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 8px' }}>Select everyone who should join this meeting.</p>
+                <StaffAttendeePicker
+                  users={staffUsers}
+                  selectedIds={selectedStaffIds}
+                  onChange={setSelectedStaffIds}
+                  loading={staffLoading}
+                  emptyMessage="No admins or case managers found."
+                />
               </>
-            ) : null}
+            ) : (
+              <>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
+                  <input type="checkbox" checked={attendees.client} disabled={!form.case_id} onChange={() => toggleAttendee('client')} />
+                  {ATTENDEE_ROLE_LABELS.client}
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
+                  <input type="checkbox" checked={attendees.therapist} disabled={!form.case_id} onChange={() => toggleAttendee('therapist')} />
+                  {ATTENDEE_ROLE_LABELS.therapist}
+                </label>
+                {attendees.therapist && form.case_id && therapists.length > 1 ? (
+                  <select style={{ ...MODAL_INPUT_STYLE, marginBottom: 10, marginLeft: 24 }} value={therapistUserId} onChange={(e) => setTherapistUserId(e.target.value)}>
+                    <option value="">Select therapist…</option>
+                    {therapists.map((t) => <option key={t.therapist_user_id} value={t.therapist_user_id}>{t.full_name}</option>)}
+                  </select>
+                ) : null}
+                {attendees.therapist && form.case_id && therapists.length === 1 ? (
+                  <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 8px 24px' }}>
+                    {therapists[0].full_name}
+                  </p>
+                ) : null}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
+                  <input type="checkbox" checked={attendees.caseManager} onChange={() => toggleAttendee('caseManager')} />
+                  {ATTENDEE_ROLE_LABELS.case_manager}
+                  {bookAsCaseManager ? (
+                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>(you)</span>
+                  ) : caseDetail?.case_manager_name ? (
+                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>({caseDetail.case_manager_name})</span>
+                  ) : null}
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: '0.875rem' }}>
+                  <input type="checkbox" checked={attendees.inviteStaff} onChange={() => toggleAttendee('inviteStaff')} />
+                  {ATTENDEE_ROLE_LABELS.admin}
+                </label>
+                {attendees.inviteStaff ? (
+                  <StaffAttendeePicker
+                    users={staffUsers}
+                    selectedIds={selectedStaffIds}
+                    onChange={setSelectedStaffIds}
+                    loading={staffLoading}
+                    emptyMessage="No admins found."
+                  />
+                ) : null}
+              </>
+            )}
           </fieldset>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>

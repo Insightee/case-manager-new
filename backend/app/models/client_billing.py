@@ -24,6 +24,7 @@ class ClientInvoiceLineType(str, enum.Enum):
     LEAVE_ADJUSTMENT = "LEAVE_ADJUSTMENT"
     DISCOUNT = "DISCOUNT"
     MANUAL_FEE = "MANUAL_FEE"
+    LATE_FEE = "LATE_FEE"
     TAX = "TAX"
     OTHER = "OTHER"
 
@@ -31,11 +32,13 @@ class ClientInvoiceLineType(str, enum.Enum):
 class ClientInvoiceStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     GENERATED = "GENERATED"
+    ISSUED = "ISSUED"
     SENT = "SENT"
     PARTIALLY_PAID = "PARTIALLY_PAID"
     PAID = "PAID"
     OVERDUE = "OVERDUE"
     DISPUTED = "DISPUTED"
+    CLOSED = "CLOSED"
     CANCELLED = "CANCELLED"
     VOID = "VOID"
 
@@ -181,6 +184,9 @@ class ClientPayment(Base):
     confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     rejection_note: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    gateway_provider: Mapped[Optional[str]] = mapped_column(String(32))
+    gateway_payment_id: Mapped[Optional[str]] = mapped_column(String(128))
+    provider_ref: Mapped[Optional[str]] = mapped_column(String(128))
 
     invoice = relationship("ClientInvoice", back_populates="payments")
 

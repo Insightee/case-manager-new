@@ -14,6 +14,10 @@ export function ClientInvoiceOverviewPanel({
   onSendToClient,
   onMarkGenerated,
   onOpenPayment,
+  onAddLateFee,
+  onSendReminder,
+  onPushZoho,
+  zohoStatus,
 }) {
   if (!detail) return null
 
@@ -140,6 +144,13 @@ export function ClientInvoiceOverviewPanel({
           {detail.gatewayEnabled ? ' · Payment gateway enabled' : ''}
         </p>
         {detail.notes ? <p style={{ fontSize: '0.85rem', marginTop: 8 }}>{detail.notes}</p> : null}
+        {detail.zohoExternalId ? (
+          <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 8 }}>
+            Zoho ref: {detail.zohoExternalId}
+          </p>
+        ) : zohoStatus ? (
+          <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 8 }}>{zohoStatus}</p>
+        ) : null}
 
         {canWriteBilling ? (
           <div className="admin-btn-group" style={{ marginTop: 16, flexWrap: 'wrap' }}>
@@ -154,6 +165,21 @@ export function ClientInvoiceOverviewPanel({
             {detail.balanceInr > 0 && onOpenPayment ? (
               <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={onOpenPayment}>
                 Record payment
+              </button>
+            ) : null}
+            {detail.balanceInr > 0 && onSendReminder ? (
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={acting} onClick={onSendReminder}>
+                Send reminder
+              </button>
+            ) : null}
+            {onAddLateFee ? (
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={acting} onClick={onAddLateFee}>
+                Add late fee
+              </button>
+            ) : null}
+            {onPushZoho ? (
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={acting} onClick={onPushZoho}>
+                Push to Zoho
               </button>
             ) : null}
           </div>

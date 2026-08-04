@@ -80,6 +80,7 @@ class CaseManagerMeeting(Base):
     notes_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes_next_meeting_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=sa.false())
     notes_additional: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    therapist_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Linked Records
     linked_observation_report_id: Mapped[Optional[int]] = mapped_column(ForeignKey("observation_reports.id"), nullable=True)
