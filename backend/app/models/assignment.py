@@ -6,7 +6,7 @@ import enum
 import json
 from datetime import date, datetime, time
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text, Time, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, Time, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -45,6 +45,7 @@ class CaseAssignment(Base):
         Enum(CaseAssignmentStatus), default=CaseAssignmentStatus.ACTIVE, index=True
     )
     reason_for_change: Mapped[Optional[str ]] = mapped_column(String(255))
+    billing_snapshot: Mapped[Optional[dict]] = mapped_column(JSON)
     notes: Mapped[Optional[str ]] = mapped_column(Text)
     booking_mode: Mapped[str] = mapped_column(String(16), default=BookingMode.OPEN.value, nullable=False)
     fixed_weekdays: Mapped[Optional[str]] = mapped_column(Text)

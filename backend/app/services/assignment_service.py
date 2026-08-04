@@ -19,6 +19,17 @@ CASE_CM_SYNC_STATUSES = frozenset(
     }
 )
 
+REASSIGNMENT_REASON_MIN_LEN = 5
+
+
+def validate_reassignment_reason(reason: str | None) -> str:
+    clean = (reason or "").strip()
+    if len(clean) < REASSIGNMENT_REASON_MIN_LEN:
+        raise ValueError(
+            "Please add a reason for this reassignment (at least 5 characters)."
+        )
+    return clean
+
 
 def resolve_primary_case_manager_user_id(db: Session, therapist_user_id: int) -> int | None:
     profile = db.scalars(
@@ -239,6 +250,12 @@ def replace_assignment_in_service(
     reason_for_change: str | None = None,
     notes: str | None = None,
 ) -> CaseAssignment:
+    from app.core.billing_validation import case_billing_dict
+
+    case = db.get(Case, case_id)
+    if not case:
+        raise ValueError("Case not found")
+
     active = db.scalars(
         select(CaseAssignment).where(
             CaseAssignment.case_id == case_id,
@@ -246,10 +263,18 @@ def replace_assignment_in_service(
             CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
         )
     ).all()
-    for a in active:
-        a.status = CaseAssignmentStatus.TRANSFERRED
-        a.end_date = start_date
-        a.reason_for_change = reason_for_change or "Reassigned"
+    is_reassignment = bool(active)
+
+    if is_reassignment:
+        reassignment_reason = validate_reassignment_reason(reason_for_change)
+        billing_snap = case_billing_dict(case)
+        for a in active:
+            if a.therapist_user_id == therapist_user_id:
+                raise ValueError("This therapist is already actively assigned to this case")
+            a.status = CaseAssignmentStatus.TRANSFERRED
+            a.end_date = start_date
+            a.reason_for_change = reassignment_reason
+            a.billing_snapshot = billing_snap
 
     assignment = CaseAssignment(
         case_id=case_id,
@@ -258,7 +283,7 @@ def replace_assignment_in_service(
         assigned_by_user_id=assigned_by_user_id,
         start_date=start_date,
         status=CaseAssignmentStatus.ACTIVE,
-        reason_for_change=reason_for_change,
+        reason_for_change=None,
         notes=notes,
     )
     db.add(assignment)
@@ -312,6 +337,7 @@ def assignment_to_read_dict(assignment: CaseAssignment, therapist_name: str | No
         "end_date": assignment.end_date,
         "status": assignment.status.value,
         "reason_for_change": assignment.reason_for_change,
+        "billing_snapshot": assignment.billing_snapshot,
         "notes": assignment.notes,
         "booking_mode": assignment.booking_mode,
         "fixed_weekdays": assignment.get_fixed_weekdays(),

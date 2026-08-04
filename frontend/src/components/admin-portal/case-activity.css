@@ -99,6 +99,13 @@
   color: #64748b;
 }
 
+.case-activity-timeline__detail {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
 .case-activity-timeline__chip {
   font-size: 0.625rem;
   font-weight: 700;

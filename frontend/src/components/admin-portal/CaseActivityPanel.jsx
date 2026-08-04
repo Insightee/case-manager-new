@@ -82,6 +82,9 @@ export function CaseActivityPanel({ caseId }) {
                       </span>
                     ) : null}
                   </div>
+                  {item.detail ? (
+                    <p className="case-activity-timeline__detail">{item.detail}</p>
+                  ) : null}
                 </li>
               )
             })}
