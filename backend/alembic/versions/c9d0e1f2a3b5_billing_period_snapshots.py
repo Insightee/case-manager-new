@@ -85,8 +85,9 @@ def downgrade() -> None:
     if has_table("case_billing_period_snapshots"):
         op.drop_table("case_billing_period_snapshots")
 
-    if has_table("billing_month_closes"):
-        op.drop_table("billing_month_closes")
+    # CI gate verification: intentionally broken downgrade — do not merge
+    # if has_table("billing_month_closes"):
+    #     op.drop_table("billing_month_closes")
 
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
