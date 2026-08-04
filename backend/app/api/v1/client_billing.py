@@ -241,6 +241,53 @@ def parent_payment_proof(
         raise HTTPException(status_code=404, detail="Proof not found")
 
 
+@parent_router.post("/invoices/{invoice_id}/pay-gateway")
+def parent_pay_gateway(
+    invoice_id: int,
+    request: Request,
+    reference: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_parent(user)
+    if not settings.enable_billing:
+        raise HTTPException(status_code=403, detail="Billing is not enabled")
+    try:
+        result = client_billing_service.initiate_gateway_payment(
+            db, user, invoice_id, reference=reference
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    if result.get("success") and result.get("paymentId"):
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="gateway_payment",
+            entity_type="client_payment",
+            entity_id=result["paymentId"],
+            **meta,
+        )
+    db.commit()
+    return result
+
+
+@parent_router.get("/payments/{payment_id}/receipt")
+def parent_payment_receipt(
+    payment_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    _require_parent(user)
+    try:
+        pdf, filename = client_billing_service.get_payment_receipt(db, user, payment_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Receipt not available")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @admin_router.get("/summary")
 def admin_billing_summary(
     user: User = Depends(require_permission("invoice.approve")),
@@ -961,6 +1008,35 @@ def admin_record_payment(
     log_audit(db, actor_user_id=user.id, action="record_payment", entity_type="client_invoice", entity_id=invoice_id, **meta)
     db.commit()
     return {"status": "recorded"}
+
+
+@admin_router.post("/invoices/{invoice_id}/late-fee")
+def admin_add_late_fee(
+    invoice_id: int,
+    request: Request,
+    amount_inr: float = Query(..., gt=0),
+    finance_note: Optional[str] = Query(None),
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        line = client_billing_service.admin_add_late_fee_line(
+            db, invoice_id, amount_inr, finance_note=finance_note
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="add_late_fee",
+        entity_type="client_invoice_line",
+        entity_id=line.id,
+        **meta,
+    )
+    db.commit()
+    return {"lineId": line.id, "amountInr": float(line.amount_inr)}
 
 
 @admin_router.post("/payments/{payment_id}/confirm")

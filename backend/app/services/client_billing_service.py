@@ -21,6 +21,7 @@ from app.models.client_billing import (
     CarePackageStatus,
     ClientInvoice,
     ClientInvoiceLine,
+    ClientInvoiceLineType,
     ClientInvoiceStatus,
     ClientInvoiceType,
     ClientPayment,
@@ -33,6 +34,78 @@ from app.core.config import settings
 from app.services import billing_composer_service, notification_service, parent_service, product_billing_rule_service
 from app.services.email.service import enqueue_parent_invoice_email, parent_invoice_ready_email
 
+_OPEN_DISPUTE_STATUSES = frozenset({BillingDisputeStatus.OPEN, BillingDisputeStatus.UNDER_REVIEW})
+
+
+def _line_is_unreconciled(line: ClientInvoiceLine) -> bool:
+    return (line.approval_status or "").upper() == "NEEDS_REVIEW"
+
+
+def _held_line_ids(
+    lines: list[ClientInvoiceLine],
+    disputes: list[BillingDispute],
+) -> set[int]:
+    held: set[int] = {line.id for line in lines if _line_is_unreconciled(line)}
+    for dispute in disputes:
+        if dispute.status in _OPEN_DISPUTE_STATUSES and dispute.client_invoice_line_id:
+            held.add(dispute.client_invoice_line_id)
+    return held
+
+
+def _compute_invoice_balances(
+    inv: ClientInvoice,
+    lines: list[ClientInvoiceLine],
+    disputes: list[BillingDispute],
+) -> dict[str, float | bool | list[int]]:
+    total = float(inv.total_inr or 0)
+    paid = float(inv.amount_paid_inr or 0)
+    held_ids = _held_line_ids(lines, disputes)
+    held_amount = round(sum(float(line.amount_inr or 0) for line in lines if line.id in held_ids), 2)
+    collectible = max(0.0, round(total - held_amount, 2))
+    balance = max(0.0, round(collectible - paid, 2))
+    has_open_dispute = any(d.status in _OPEN_DISPUTE_STATUSES for d in disputes)
+    return {
+        "totalInr": total,
+        "heldAmountInr": held_amount,
+        "collectibleInr": collectible,
+        "amountPaidInr": paid,
+        "balanceInr": balance,
+        "heldLineIds": sorted(held_ids),
+        "hasOpenDispute": has_open_dispute,
+    }
+
+
+def _refresh_invoice_payment_status(db: Session, inv: ClientInvoice) -> None:
+    """Set invoice status from collectible balance (held lines excluded)."""
+    loaded = db.scalar(
+        select(ClientInvoice)
+        .where(ClientInvoice.id == inv.id)
+        .options(selectinload(ClientInvoice.lines), selectinload(ClientInvoice.disputes))
+    )
+    if not loaded:
+        return
+    amounts = _compute_invoice_balances(loaded, list(loaded.lines or []), list(loaded.disputes or []))
+    balance = float(amounts["balanceInr"])
+    paid = float(loaded.amount_paid_inr or 0)
+    if balance <= 0 and paid >= float(amounts["collectibleInr"]) - 0.01:
+        loaded.status = ClientInvoiceStatus.PAID
+    elif paid > 0:
+        loaded.status = ClientInvoiceStatus.PARTIALLY_PAID
+    elif loaded.status in (ClientInvoiceStatus.PAID, ClientInvoiceStatus.PARTIALLY_PAID):
+        loaded.status = ClientInvoiceStatus.SENT if loaded.sent_at else ClientInvoiceStatus.GENERATED
+    inv.status = loaded.status
+    db.flush()
+
+
+def _payment_bucket(inv: ClientInvoice, *, balance: float, has_open_dispute: bool) -> str:
+    if inv.status == ClientInvoiceStatus.PAID or balance <= 0:
+        return "paid"
+    if float(inv.amount_paid_inr or 0) > 0:
+        return "partial"
+    if has_open_dispute:
+        return "disputed"
+    return "unpaid"
+
 
 def _parent_case_ids(db: Session, user_id: int) -> list[int]:
     child_ids = parent_service.child_ids_for_parent(db, user_id)
@@ -41,28 +114,27 @@ def _parent_case_ids(db: Session, user_id: int) -> list[int]:
     return list(db.scalars(select(Case.id).where(Case.child_id.in_(child_ids))).all())
 
 
-def _payment_bucket(inv: ClientInvoice) -> str:
-    if inv.status == ClientInvoiceStatus.DISPUTED:
-        return "disputed"
-    balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
-    if inv.status == ClientInvoiceStatus.PAID or balance <= 0:
-        return "paid"
-    if float(inv.amount_paid_inr or 0) > 0:
-        return "partial"
-    return "unpaid"
-
-
-def _invoice_is_overdue(inv: ClientInvoice, balance: float) -> bool:
-    if inv.status == ClientInvoiceStatus.DISPUTED or balance <= 0:
+def _invoice_is_overdue(inv: ClientInvoice, balance: float, *, has_open_dispute: bool = False) -> bool:
+    if balance <= 0:
         return False
     if not inv.due_date:
         return False
     return date.today() > inv.due_date
 
 
-def _serialize_invoice_summary(inv: ClientInvoice, case: Case | None) -> dict:
-    balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
-    bucket = _payment_bucket(inv)
+def _serialize_invoice_summary(
+    inv: ClientInvoice,
+    case: Case | None,
+    *,
+    lines: list[ClientInvoiceLine] | None = None,
+    disputes: list[BillingDispute] | None = None,
+) -> dict:
+    line_rows = lines if lines is not None else list(inv.lines or [])
+    dispute_rows = disputes if disputes is not None else list(inv.disputes or [])
+    amounts = _compute_invoice_balances(inv, line_rows, dispute_rows)
+    balance = float(amounts["balanceInr"])
+    has_open_dispute = bool(amounts["hasOpenDispute"])
+    bucket = _payment_bucket(inv, balance=balance, has_open_dispute=has_open_dispute)
     is_overdue = _invoice_is_overdue(inv, balance)
     return {
         "id": inv.id,
@@ -78,10 +150,13 @@ def _serialize_invoice_summary(inv: ClientInvoice, case: Case | None) -> dict:
         "status": inv.status.value.lower(),
         "paymentBucket": bucket,
         "dueDate": inv.due_date.isoformat() if inv.due_date else None,
-        "totalInr": float(inv.total_inr),
-        "amountPaidInr": float(inv.amount_paid_inr or 0),
-        "balanceInr": max(0, balance),
-        "hasDispute": inv.status == ClientInvoiceStatus.DISPUTED,
+        "totalInr": float(amounts["totalInr"]),
+        "heldAmountInr": float(amounts["heldAmountInr"]),
+        "collectibleInr": float(amounts["collectibleInr"]),
+        "amountPaidInr": float(amounts["amountPaidInr"]),
+        "balanceInr": balance,
+        "hasDispute": has_open_dispute,
+        "hasHeldLines": float(amounts["heldAmountInr"]) > 0,
         "isOverdue": is_overdue,
         "createdAt": inv.created_at.isoformat() if inv.created_at else None,
     }
@@ -118,13 +193,20 @@ def list_invoices(
 
     rows = db.scalars(stmt.order_by(ClientInvoice.created_at.desc())).all()
     cases = {c.id: c for c in db.scalars(select(Case).where(Case.id.in_(case_ids))).all()}
+    inv_ids = [r.id for r in rows]
+    lines_by_inv, disputes_by_inv = _batch_invoice_context(db, inv_ids)
     result = []
     for inv in rows:
-        item = _serialize_invoice_summary(inv, cases.get(inv.case_id))
+        item = _serialize_invoice_summary(
+            inv,
+            cases.get(inv.case_id),
+            lines=lines_by_inv.get(inv.id, []),
+            disputes=disputes_by_inv.get(inv.id, []),
+        )
         if payment_bucket:
             b = item["paymentBucket"]
             if payment_bucket == "needs_payment":
-                if b not in ("unpaid", "partial"):
+                if item["balanceInr"] <= 0:
                     continue
             elif b != payment_bucket:
                 continue
@@ -152,6 +234,44 @@ def _sort_invoices_for_parent_view(items: list[dict]) -> list[dict]:
     return sorted(items, key=key)
 
 
+def _batch_invoice_context(
+    db: Session, invoice_ids: list[int]
+) -> tuple[dict[int, list[ClientInvoiceLine]], dict[int, list[BillingDispute]]]:
+    if not invoice_ids:
+        return {}, {}
+    lines = db.scalars(select(ClientInvoiceLine).where(ClientInvoiceLine.client_invoice_id.in_(invoice_ids))).all()
+    disputes = db.scalars(select(BillingDispute).where(BillingDispute.client_invoice_id.in_(invoice_ids))).all()
+    lines_by_inv: dict[int, list[ClientInvoiceLine]] = {}
+    disputes_by_inv: dict[int, list[BillingDispute]] = {}
+    for line in lines:
+        lines_by_inv.setdefault(line.client_invoice_id, []).append(line)
+    for dispute in disputes:
+        disputes_by_inv.setdefault(dispute.client_invoice_id, []).append(dispute)
+    return lines_by_inv, disputes_by_inv
+
+
+def _serialize_parent_line(line: ClientInvoiceLine, *, held_line_ids: set[int]) -> dict:
+    is_held = line.id in held_line_ids
+    hold_reason = None
+    if is_held:
+        hold_reason = "needs_review" if _line_is_unreconciled(line) else "disputed"
+    return {
+        "id": line.id,
+        "sessionDate": line.session_date.isoformat(),
+        "therapistName": line.therapist_name,
+        "serviceLabel": line.service_label,
+        "sessionStatus": line.session_status,
+        "amountInr": float(line.amount_inr),
+        "packageDeducted": line.package_deducted,
+        "parentSummary": line.parent_summary,
+        "sessionId": line.session_id,
+        "dailyLogId": line.daily_log_id,
+        "isHeld": is_held,
+        "holdReason": hold_reason,
+        "isCollectible": not is_held,
+    }
+
+
 def get_dashboard(
     db: Session,
     user: User,
@@ -167,10 +287,10 @@ def get_dashboard(
     )
     invoices = _sort_invoices_for_parent_view(invoices)
     packages = list_packages(db, user)
-    due_total = sum(i["balanceInr"] for i in all_invoices if i["paymentBucket"] in ("unpaid", "partial"))
-    needs_payment = [i for i in all_invoices if i["paymentBucket"] in ("unpaid", "partial")]
+    due_total = sum(i["balanceInr"] for i in all_invoices if i["balanceInr"] > 0)
+    needs_payment = [i for i in all_invoices if i["balanceInr"] > 0]
     overdue_ct = sum(1 for i in needs_payment if i.get("isOverdue"))
-    disputed = sum(1 for i in all_invoices if i["paymentBucket"] == "disputed")
+    disputed = sum(1 for i in all_invoices if i.get("hasDispute"))
     months = sorted({i["billingMonth"] for i in all_invoices}, reverse=True)
     children = sorted({f"{i['childName']}|{i['caseDbId']}" for i in all_invoices if i.get("childName")})
     services = sorted({i["serviceType"] for i in all_invoices})
@@ -185,6 +305,7 @@ def get_dashboard(
         },
         "invoices": invoices,
         "packages": packages,
+        "packageRenewals": _package_renewals_for_parent(db, user),
         "filterOptions": {
             "months": months,
             "children": [
@@ -196,6 +317,8 @@ def get_dashboard(
 
 
 def list_packages(db: Session, user: User) -> list[dict]:
+    from app.services import client_package_cycle_service
+
     case_ids = _parent_case_ids(db, user.id)
     if not case_ids:
         return []
@@ -222,9 +345,21 @@ def list_packages(db: Session, user: User) -> list[dict]:
                 "validityEnd": pkg.validity_end.isoformat() if pkg.validity_end else None,
                 "serviceLabel": pkg.service_label,
                 "status": pkg.status.value.lower(),
+                "renewalPreview": client_package_cycle_service.renewal_preview(db, pkg, case)
+                if case
+                else None,
             }
         )
     return result
+
+
+def _package_renewals_for_parent(db: Session, user: User) -> list[dict]:
+    previews = []
+    for pkg_row in list_packages(db, user):
+        preview = pkg_row.get("renewalPreview")
+        if preview:
+            previews.append(preview)
+    return previews
 
 
 def get_invoice_detail(db: Session, user: User, invoice_id: int) -> dict:
@@ -240,7 +375,10 @@ def get_invoice_detail(db: Session, user: User, invoice_id: int) -> dict:
         raise ValueError("Invoice not found")
 
     lines = sorted(inv.lines, key=lambda x: (x.session_date, x.sort_order))
-    detail = _serialize_invoice_summary(inv, case)
+    disputes = list(inv.disputes or [])
+    amounts = _compute_invoice_balances(inv, lines, disputes)
+    held_line_ids = set(amounts["heldLineIds"])
+    detail = _serialize_invoice_summary(inv, case, lines=lines, disputes=disputes)
     detail.update(
         {
             "subtotalInr": float(inv.subtotal_inr or 0),
@@ -249,21 +387,7 @@ def get_invoice_detail(db: Session, user: User, invoice_id: int) -> dict:
             "packageDeductionInr": float(inv.package_deduction_inr or 0),
             "adjustmentInr": float(inv.adjustment_inr or 0),
             "notes": inv.notes,
-            "lines": [
-                {
-                    "id": line.id,
-                    "sessionDate": line.session_date.isoformat(),
-                    "therapistName": line.therapist_name,
-                    "serviceLabel": line.service_label,
-                    "sessionStatus": line.session_status,
-                    "amountInr": float(line.amount_inr),
-                    "packageDeducted": line.package_deducted,
-                    "parentSummary": line.parent_summary,
-                    "sessionId": line.session_id,
-                    "dailyLogId": line.daily_log_id,
-                }
-                for line in lines
-            ],
+            "lines": [_serialize_parent_line(line, held_line_ids=held_line_ids) for line in lines],
             "payments": [
                 {
                     "id": p.id,
@@ -363,7 +487,6 @@ def create_dispute(
         db.add(dispute)
         created.append(dispute)
 
-    inv.status = ClientInvoiceStatus.DISPUTED
     db.flush()
 
     case = db.get(Case, inv.case_id)
@@ -414,12 +537,7 @@ def record_payment(
     )
     db.add(payment)
     inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + amount_inr
-    balance = float(inv.total_inr) - float(inv.amount_paid_inr)
-    if balance <= 0:
-        inv.status = ClientInvoiceStatus.PAID
-    elif float(inv.amount_paid_inr) > 0:
-        inv.status = ClientInvoiceStatus.PARTIALLY_PAID
-    db.flush()
+    _refresh_invoice_payment_status(db, inv)
     notification_service.create_notification(
         db,
         user_id=inv.parent_user_id,
@@ -449,21 +567,7 @@ def resolve_dispute(
         inv.adjustment_inr = float(inv.adjustment_inr or 0) + adjustment_inr
         inv.total_inr = max(0, float(inv.total_inr) + adjustment_inr)
     if inv:
-        open_disputes = db.scalars(
-            select(BillingDispute).where(
-                BillingDispute.client_invoice_id == inv.id,
-                BillingDispute.status.in_([BillingDisputeStatus.OPEN, BillingDisputeStatus.UNDER_REVIEW]),
-                BillingDispute.id != dispute.id,
-            )
-        ).all()
-        if not open_disputes:
-            balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
-            if balance <= 0:
-                inv.status = ClientInvoiceStatus.PAID
-            elif float(inv.amount_paid_inr or 0) > 0:
-                inv.status = ClientInvoiceStatus.PARTIALLY_PAID
-            else:
-                inv.status = ClientInvoiceStatus.SENT
+        _refresh_invoice_payment_status(db, inv)
     db.flush()
     if inv:
         notification_service.create_notification(
@@ -501,7 +605,17 @@ def notify_parent_invoice_issued(
 
     case = db.get(Case, inv.case_id)
     child_name = case.child.full_name if case and case.child else "Your child"
-    balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
+    loaded = db.scalar(
+        select(ClientInvoice)
+        .where(ClientInvoice.id == invoice_id)
+        .options(selectinload(ClientInvoice.lines), selectinload(ClientInvoice.disputes))
+    )
+    amounts = _compute_invoice_balances(
+        loaded or inv,
+        list((loaded or inv).lines or []),
+        list((loaded or inv).disputes or []),
+    )
+    balance = float(amounts["balanceInr"])
     is_overdue = _invoice_is_overdue(inv, balance)
     due_str = inv.due_date.strftime("%d %b %Y") if inv.due_date else None
     url = f"{settings.frontend_url.rstrip('/')}/parent/billing"
@@ -523,8 +637,8 @@ def notify_parent_invoice_issued(
         parent_invoice_ready_email(**email_kwargs)
     now = datetime.now(timezone.utc)
     inv.sent_at = now
-    if inv.status == ClientInvoiceStatus.GENERATED:
-        inv.status = ClientInvoiceStatus.SENT
+    if inv.status in (ClientInvoiceStatus.GENERATED, ClientInvoiceStatus.DRAFT):
+        inv.status = ClientInvoiceStatus.ISSUED
     if balance > 0:
         notification_service.create_notification(
             db,
@@ -575,8 +689,15 @@ def _next_invoice_number(db: Session) -> str:
     return f"{prefix}{seq:04d}"
 
 
-def _admin_invoice_summary_row(inv: ClientInvoice, case: Case | None, parent: User | None) -> dict:
-    base = _serialize_invoice_summary(inv, case)
+def _admin_invoice_summary_row(
+    inv: ClientInvoice,
+    case: Case | None,
+    parent: User | None,
+    *,
+    lines: list[ClientInvoiceLine] | None = None,
+    disputes: list[BillingDispute] | None = None,
+) -> dict:
+    base = _serialize_invoice_summary(inv, case, lines=lines, disputes=disputes)
     base["status"] = inv.status.value
     base["parentUserId"] = inv.parent_user_id
     base["parentName"] = parent.full_name if parent else ""
@@ -604,7 +725,11 @@ def admin_list_invoices(
 
     stmt = (
         select(ClientInvoice)
-        .options(selectinload(ClientInvoice.payments))
+        .options(
+            selectinload(ClientInvoice.payments),
+            selectinload(ClientInvoice.lines),
+            selectinload(ClientInvoice.disputes),
+        )
         .order_by(ClientInvoice.created_at.desc())
     )
     if month:
@@ -649,7 +774,7 @@ def admin_list_invoices(
                 select(Case).where(Case.id == inv.case_id).options(selectinload(Case.child))
             ) or case
         parent = parents.get(inv.parent_user_id)
-        item = _admin_invoice_summary_row(inv, case, parent)
+        item = _admin_invoice_summary_row(inv, case, parent, lines=list(inv.lines or []), disputes=list(inv.disputes or []))
         item["payments"] = [
             {
                 "id": p.id,
@@ -662,7 +787,8 @@ def admin_list_invoices(
             if not any(p.payment_status == ClientPaymentStatus.PENDING_REVIEW for p in (inv.payments or [])):
                 continue
         if filter_overdue:
-            balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
+            amounts = _compute_invoice_balances(inv, list(inv.lines or []), list(inv.disputes or []))
+            balance = float(amounts["balanceInr"])
             if not _invoice_is_overdue(inv, balance):
                 continue
         if search:
@@ -1106,22 +1232,20 @@ def save_case_billing_preferences(db: Session, case_id: int, data: dict) -> None
 
 
 def admin_summary(db: Session) -> dict:
-    rows = db.scalars(select(ClientInvoice)).all()
+    rows = db.scalars(select(ClientInvoice).options(selectinload(ClientInvoice.lines), selectinload(ClientInvoice.disputes))).all()
     today = date.today()
     month_prefix = today.strftime("%b %Y")
     total_outstanding = 0.0
     overdue_count = 0
-    disputed_count = 0
     paid_this_month = 0
     draft_count = 0
     sent_unpaid = 0
 
     for inv in rows:
-        balance = float(inv.total_inr) - float(inv.amount_paid_inr or 0)
+        amounts = _compute_invoice_balances(inv, list(inv.lines or []), list(inv.disputes or []))
+        balance = float(amounts["balanceInr"])
         if inv.status == ClientInvoiceStatus.DRAFT:
             draft_count += 1
-        if inv.status == ClientInvoiceStatus.DISPUTED:
-            disputed_count += 1
         if inv.status == ClientInvoiceStatus.PAID or balance <= 0:
             if inv.billing_month == month_prefix or (
                 inv.updated_at and inv.updated_at.strftime("%b %Y") == month_prefix
@@ -1150,7 +1274,7 @@ def admin_summary(db: Session) -> dict:
     return {
         "totalOutstandingInr": round(total_outstanding, 2),
         "overdueCount": overdue_count,
-        "disputedCount": disputed_count,
+        "disputedCount": open_disputes,
         "openDisputesCount": open_disputes,
         "paidThisMonthCount": paid_this_month,
         "draftCount": draft_count,
@@ -1245,11 +1369,7 @@ def confirm_payment_claim(db: Session, payment_id: int, admin_user_id: int) -> C
     payment.confirmed_at = datetime.now(timezone.utc)
     payment.recorded_by_user_id = admin_user_id
     inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + float(payment.amount_inr)
-    balance = float(inv.total_inr) - float(inv.amount_paid_inr)
-    if balance <= 0:
-        inv.status = ClientInvoiceStatus.PAID
-    elif float(inv.amount_paid_inr) > 0:
-        inv.status = ClientInvoiceStatus.PARTIALLY_PAID
+    _refresh_invoice_payment_status(db, inv)
     _activate_packages_for_invoice(db, inv)
     notification_service.create_notification(
         db,
@@ -1584,3 +1704,127 @@ def admin_list_disputes(db: Session) -> list[dict]:
         }
         for d in rows
     ]
+
+
+def initiate_gateway_payment(
+    db: Session,
+    user: User,
+    invoice_id: int,
+    *,
+    reference: Optional[str] = None,
+) -> dict:
+    from app.services.payment_provider import get_payment_provider
+
+    inv_detail = get_invoice_detail(db, user, invoice_id)
+    balance = float(inv_detail.get("balanceInr") or 0)
+    if balance <= 0:
+        raise ValueError("Nothing due on this invoice")
+    inv = db.get(ClientInvoice, invoice_id)
+    if not inv:
+        raise ValueError("Invoice not found")
+    provider = get_payment_provider()
+    ref = reference or f"GW-{invoice_id}-{secrets.token_hex(4).upper()}"
+    init = provider.initiate(invoice_id=invoice_id, amount_inr=balance, reference=ref)
+    if not init.success:
+        return {"success": False, "message": init.message, "providerRef": init.provider_ref}
+    verify = provider.verify(provider_ref=init.provider_ref or ref, amount_inr=balance)
+    if not verify.success:
+        return {"success": False, "message": verify.message, "providerRef": init.provider_ref}
+    payment = ClientPayment(
+        client_invoice_id=inv.id,
+        amount_inr=balance,
+        method=PaymentMethod.GATEWAY,
+        reference=init.provider_ref,
+        provider_ref=init.provider_ref,
+        gateway_provider=init.provider,
+        gateway_payment_id=init.provider_ref,
+        submitted_by_user_id=user.id,
+        recorded_by_user_id=user.id,
+        payment_status=ClientPaymentStatus.CONFIRMED,
+        confirmed_by_user_id=user.id,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    db.add(payment)
+    inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + balance
+    _refresh_invoice_payment_status(db, inv)
+    _activate_packages_for_invoice(db, inv)
+    from app.services.bookkeeping_provider import get_bookkeeping_provider
+
+    bk = get_bookkeeping_provider()
+    bk.push_client_payment(payment.id, payload={"event": "gateway_confirmed"})
+    db.flush()
+    return {
+        "success": True,
+        "paymentId": payment.id,
+        "providerRef": init.provider_ref,
+        "receiptAvailable": True,
+        "message": "Payment recorded",
+    }
+
+
+def payment_receipt_pdf_bytes(payment: ClientPayment, inv_detail: dict) -> bytes:
+    import io
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=48, rightMargin=48, topMargin=48, bottomMargin=48)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Payment receipt", styles["Title"]),
+        Spacer(1, 12),
+        Paragraph(f"Invoice: {inv_detail.get('invoiceNumber', '')}", styles["Normal"]),
+        Paragraph(f"Amount: ₹{float(payment.amount_inr):,.2f}", styles["Normal"]),
+        Paragraph(f"Method: {payment.method.value}", styles["Normal"]),
+        Paragraph(f"Reference: {payment.provider_ref or payment.reference or '—'}", styles["Normal"]),
+        Paragraph(
+            f"Confirmed: {payment.confirmed_at.isoformat() if payment.confirmed_at else payment.paid_at.isoformat()}",
+            styles["Normal"],
+        ),
+    ]
+    doc.build(story)
+    return buf.getvalue()
+
+
+def get_payment_receipt(db: Session, user: User, payment_id: int) -> tuple[bytes, str]:
+    payment = db.get(ClientPayment, payment_id)
+    if not payment or payment.payment_status != ClientPaymentStatus.CONFIRMED:
+        raise ValueError("Receipt not available")
+    inv = db.get(ClientInvoice, payment.client_invoice_id)
+    if not inv or inv.parent_user_id != user.id:
+        raise ValueError("Receipt not found")
+    detail = get_invoice_detail(db, user, inv.id)
+    pdf = payment_receipt_pdf_bytes(payment, detail)
+    safe = (payment.provider_ref or str(payment.id)).replace("/", "-")
+    return pdf, f"receipt_{safe}.pdf"
+
+
+def admin_add_late_fee_line(
+    db: Session,
+    invoice_id: int,
+    amount_inr: float,
+    *,
+    finance_note: Optional[str] = None,
+) -> ClientInvoiceLine:
+    inv = db.get(ClientInvoice, invoice_id)
+    if not inv:
+        raise ValueError("Invoice not found")
+    sort = max((ln.sort_order for ln in (inv.lines or [])), default=-1) + 1
+    line = ClientInvoiceLine(
+        client_invoice_id=invoice_id,
+        session_date=date.today(),
+        therapist_name="—",
+        service_label="Late fee",
+        session_status="FEE",
+        amount_inr=amount_inr,
+        line_item_type=ClientInvoiceLineType.LATE_FEE.value,
+        sort_order=sort,
+        finance_note=finance_note,
+    )
+    db.add(line)
+    db.flush()
+    recalculate_client_invoice(db, invoice_id)
+    db.refresh(inv)
+    return line
