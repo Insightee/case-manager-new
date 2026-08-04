@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import invoiceData from '../../data/invoices.json'
-import { ChecklistPanel } from './ChecklistPanel.jsx'
 import { EarningsTrendChart } from './EarningsTrendChart.jsx'
 import { GenerateInvoiceModal } from './GenerateInvoiceModal.jsx'
 import { InvoiceBreakdownModal } from './InvoiceBreakdownModal.jsx'
@@ -43,7 +42,23 @@ function Toast({ message, visible, onDismiss }) {
 function matchesSearch(item, q) {
   if (!q.trim()) return true
   const s = q.toLowerCase()
-  return item.month?.toLowerCase().includes(s) || item.detail?.toLowerCase().includes(s) || item.subtitle?.toLowerCase().includes(s)
+  return (
+    item.month?.toLowerCase().includes(s) ||
+    item.detail?.toLowerCase().includes(s) ||
+    item.subtitle?.toLowerCase().includes(s) ||
+    item.apiStatus?.toLowerCase().includes(s) ||
+    item.status?.toLowerCase().includes(s)
+  )
+}
+
+function matchesLedgerSearch(inv, q) {
+  if (!q.trim()) return true
+  const s = q.toLowerCase()
+  return (
+    inv.month?.toLowerCase().includes(s) ||
+    String(inv.status || '').toLowerCase().includes(s) ||
+    String(inv.amount_inr ?? '').includes(s)
+  )
 }
 
 function SectionBlock({ id, title, subtitle, dotClass, children }) {
@@ -76,7 +91,6 @@ function InvoicesPageContent() {
   const [breakdownInvoice, setBreakdownInvoice] = useState(null)
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
-  const [checklist, setChecklist] = useState(invoiceData.checklist.map((c) => ({ ...c })))
   const [toast, setToast] = useState({ visible: false, message: '' })
   const [downloadingId, setDownloadingId] = useState(null)
 
@@ -112,12 +126,11 @@ function InvoicesPageContent() {
     () => cards.filter((x) => !x.status && (x.apiStatus === 'IN_REVIEW' || x.apiStatus === 'DRAFT' || x.apiStatus === 'APPROVED')).filter((x) => matchesSearch(x, q)),
     [cards, q],
   )
-  const filteredPaid = useMemo(
-    () => cards.filter((x) => x.apiStatus === 'PAID' || (!x.status && x.apiStatus === 'PAID')).filter((x) => matchesSearch(x, q)),
-    [cards, q],
+  const filteredLedger = useMemo(
+    () => invoices.filter((inv) => matchesLedgerSearch(inv, q)),
+    [invoices, q],
   )
 
-  const totalVisible = filteredAttention.length + filteredProgress.length + filteredPaid.length
   const summary = useMemo(() => computeSummaryFromInvoices(invoices), [invoices])
 
   const openGenerate = useCallback(() => setModalOpen(true), [])
@@ -137,10 +150,6 @@ function InvoicesPageContent() {
     },
     [loadInvoices, showToast],
   )
-
-  const handleCheckToggle = (id) => {
-    setChecklist((prev) => prev.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
-  }
 
   const handleDownloadPayslip = useCallback(
     async (inv) => {
@@ -214,133 +223,108 @@ function InvoicesPageContent() {
 
       <SummaryCard summary={summary} />
 
-      <StatementLedger
-        invoices={invoices}
-        loading={loading}
-        downloadingId={downloadingId}
-        onView={handleLedgerView}
-        onDownloadPayslip={handleDownloadPayslip}
-      />
+      <div className="flex min-w-0 flex-col gap-8">
+        <EarningsTrendChart data={invoiceData.earningsTrend} />
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex min-w-0 flex-col gap-8">
-          <EarningsTrendChart data={invoiceData.earningsTrend} />
+        {loading ? (
+          <p className="text-center text-sm text-slate-500">Loading invoices…</p>
+        ) : invoices.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#E2E8F0] bg-white px-6 py-16 text-center shadow-sm">
+            <p className="text-lg font-semibold text-slate-800">
+              No invoices yet — generate your first invoice from logs
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Validated daily logs are used to calculate your payout.
+            </p>
+            <button
+              type="button"
+              onClick={openGenerate}
+              className="mt-6 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+            >
+              Generate invoice
+            </button>
+          </div>
+        ) : (
+          <>
+            <SectionBlock
+              id="attention-inv"
+              title="Attention required"
+              subtitle="Queried and rejected — resolve before payout can proceed."
+              dotClass="bg-red-500"
+            >
+              {filteredAttention.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  No action items in this view.
+                </p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {filteredAttention.map((inv) => (
+                    <InvoiceCard
+                      key={inv.id}
+                      variant="attention"
+                      invoice={inv}
+                      onResolve={() => setBreakdownInvoice(inv)}
+                      onViewDetails={() => setBreakdownInvoice(inv)}
+                      onSessionBreakdown={() => setBreakdownInvoice(inv)}
+                    />
+                  ))}
+                </div>
+              )}
+            </SectionBlock>
 
-          {loading ? (
-            <p className="text-center text-sm text-slate-500">Loading invoices…</p>
-          ) : totalVisible === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#E2E8F0] bg-white px-6 py-16 text-center shadow-sm">
-              <p className="text-lg font-semibold text-slate-800">
-                {q ? 'No invoices match your search' : 'No invoices yet — generate your first invoice from logs'}
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                {q ? 'Try a different query or clear search.' : 'Validated daily logs are used to calculate your payout.'}
-              </p>
-              <button
-                type="button"
-                onClick={openGenerate}
-                className="mt-6 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
-              >
-                Generate invoice
-              </button>
-            </div>
-          ) : (
-            <>
-              <SectionBlock
-                id="attention-inv"
-                title="Attention required"
-                subtitle="Queried and rejected — resolve before payout can proceed."
-                dotClass="bg-red-500"
-              >
-                {filteredAttention.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                    No action items in this view.
-                  </p>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {filteredAttention.map((inv) => (
-                      <InvoiceCard
-                        key={inv.id}
-                        variant="attention"
-                        invoice={inv}
-                        onResolve={() => setBreakdownInvoice(inv)}
-                        onViewDetails={() => setBreakdownInvoice(inv)}
-                        onSessionBreakdown={() => setBreakdownInvoice(inv)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </SectionBlock>
+            <SectionBlock
+              id="progress-inv"
+              title="In progress"
+              subtitle="Recently generated and under finance review."
+              dotClass="bg-amber-400"
+            >
+              {filteredProgress.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  Nothing in review for this search.
+                </p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {filteredProgress.map((inv) => (
+                    <InvoiceCard
+                      key={inv.id}
+                      variant="progress"
+                      invoice={inv}
+                      onViewDetails={() => setBreakdownInvoice(inv)}
+                      onSessionBreakdown={() => setBreakdownInvoice(inv)}
+                      onDownloadCsv={() =>
+                        apiDownload(`/api/v1/invoices/${inv.id}/export.csv`, `invoice-${inv.id}.csv`).catch((e) =>
+                          showToast(e.message || 'CSV export failed'),
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </SectionBlock>
 
-              <SectionBlock
-                id="progress-inv"
-                title="In progress"
-                subtitle="Recently generated and under finance review."
-                dotClass="bg-amber-400"
-              >
-                {filteredProgress.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                    Nothing in review for this search.
-                  </p>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {filteredProgress.map((inv) => (
-                      <InvoiceCard
-                        key={inv.id}
-                        variant="progress"
-                        invoice={inv}
-                        onViewDetails={() => setBreakdownInvoice(inv)}
-                        onSessionBreakdown={() => setBreakdownInvoice(inv)}
-                        onDownloadCsv={() =>
-                          apiDownload(`/api/v1/invoices/${inv.id}/export.csv`, `invoice-${inv.id}.csv`).catch((e) =>
-                            showToast(e.message || 'CSV export failed'),
-                          )
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
-              </SectionBlock>
-
-              <SectionBlock
-                id="paid-inv"
-                title="Paid"
-                subtitle="Settled payouts — view receipt or PDF."
-                dotClass="bg-emerald-500"
-              >
-                {filteredPaid.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                    No paid invoices match your search.
-                  </p>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredPaid.map((inv) => (
-                      <InvoiceCard
-                        key={inv.id}
-                        variant="paid"
-                        invoice={inv}
-                        onView={() => setBreakdownInvoice(inv)}
-                        onSessionBreakdown={() => setBreakdownInvoice(inv)}
-                        onDownloadPdf={() => handleDownloadPayslip(inv)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </SectionBlock>
-            </>
-          )}
-        </div>
-
-        <div className="min-w-0 xl:sticky xl:top-4 xl:self-start">
-          <ChecklistPanel
-            items={checklist}
-            onToggle={handleCheckToggle}
-            title="Invoice progress checklist"
-            subtitle="Finance readiness"
-            completeLabel="Payout workflow complete"
-            stepLabel="step"
-          />
-        </div>
+            <SectionBlock
+              id="ledger-inv"
+              title="Ledger"
+              subtitle="Previous submitted bills with updated payout status — view breakdown or download payslips."
+              dotClass="bg-emerald-500"
+            >
+              {filteredLedger.length === 0 && q ? (
+                <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  No statements match your search.
+                </p>
+              ) : (
+                <StatementLedger
+                  embedded
+                  invoices={filteredLedger}
+                  loading={loading}
+                  downloadingId={downloadingId}
+                  onView={handleLedgerView}
+                  onDownloadPayslip={handleDownloadPayslip}
+                />
+              )}
+            </SectionBlock>
+          </>
+        )}
       </div>
 
       <button
