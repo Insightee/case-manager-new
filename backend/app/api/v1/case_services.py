@@ -167,16 +167,23 @@ def replace_service_assignment(
     service_line = db.get(CaseService, service_id)
     if not service_line or service_line.case_id != case_id:
         raise HTTPException(status_code=404, detail="Service line not found")
-    assignment = assignment_service.replace_assignment_in_service(
-        db,
-        case_id=case_id,
-        case_service_id=service_line.id,
-        therapist_user_id=payload.therapist_user_id,
-        assigned_by_user_id=user.id,
-        start_date=payload.start_date or date.today(),
-        reason_for_change=payload.reason_for_change,
-        notes=payload.notes,
-    )
+    try:
+        assignment = assignment_service.replace_assignment_in_service(
+            db,
+            case_id=case_id,
+            case_service_id=service_line.id,
+            therapist_user_id=payload.therapist_user_id,
+            assigned_by_user_id=user.id,
+            start_date=payload.start_date or date.today(),
+            reason_for_change=payload.reason_for_change,
+            notes=payload.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload.billing_update:
+        from app.core.billing_validation import apply_billing_payload
+
+        apply_billing_payload(case, payload.billing_update, user.id)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="replace_service_assignment", entity_type="case_assignment", entity_id=assignment.id, new_value=payload.model_dump(), **meta)
     db.commit()

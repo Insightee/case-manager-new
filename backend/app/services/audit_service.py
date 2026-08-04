@@ -26,8 +26,6 @@ ACTION_LABELS: dict[str, str] = {
     "client_status_change": "Client status changed",
 }
 
-TIMELINE_ASSIGNMENT_LIMIT = 20
-
 
 def humanize_action(action: str) -> str:
     if action in ACTION_LABELS:
@@ -126,29 +124,77 @@ def case_timeline(db: Session, user: User, case_id: int, *, limit: int = 40) -> 
     for item in client_status_service.status_timeline_events(db, case_id, limit=limit):
         events.append(item)
 
-    assignments = db.scalars(
+    from app.models.assignment import CaseAssignmentStatus
+
+    all_assignments = db.scalars(
         select(CaseAssignment)
         .where(CaseAssignment.case_id == case_id)
-        .order_by(CaseAssignment.start_date.desc())
-        .limit(TIMELINE_ASSIGNMENT_LIMIT)
+        .order_by(CaseAssignment.start_date.asc(), CaseAssignment.id.asc())
     ).all()
-    therapist_ids = {a.therapist_user_id for a in assignments}
+    therapist_ids = {a.therapist_user_id for a in all_assignments}
     therapists: dict[int, User] = {}
     if therapist_ids:
         for u in db.scalars(select(User).where(User.id.in_(therapist_ids))).all():
             therapists[u.id] = u
-    for a in assignments:
+
+    def _successor(a: CaseAssignment) -> CaseAssignment | None:
+        end = a.end_date or a.start_date
+        candidates = [
+            other
+            for other in all_assignments
+            if other.id != a.id and other.start_date >= end
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda o: (o.start_date, o.id))
+
+    def _has_prior(a: CaseAssignment) -> bool:
+        for other in all_assignments:
+            if other.id == a.id:
+                continue
+            if other.end_date and other.end_date <= a.start_date:
+                return True
+            if other.start_date < a.start_date and other.status in (
+                CaseAssignmentStatus.TRANSFERRED,
+                CaseAssignmentStatus.ENDED,
+            ):
+                return True
+        return False
+
+    for a in all_assignments:
         therapist = therapists.get(a.therapist_user_id)
-        events.append(
-            {
-                "source": "assignment",
-                "id": f"assignment-{a.id}",
-                "action_label": f"Therapist assigned: {therapist.full_name if therapist else a.therapist_user_id}",
-                "created_at": a.start_date.isoformat() if a.start_date else None,
-                "entity_type": "case_assignment",
-                "entity_id": str(a.id),
-            }
-        )
+        therapist_label = therapist.full_name if therapist else str(a.therapist_user_id)
+
+        if a.status in (CaseAssignmentStatus.TRANSFERRED, CaseAssignmentStatus.ENDED):
+            successor = _successor(a)
+            new_label = (
+                therapists.get(successor.therapist_user_id).full_name
+                if successor and therapists.get(successor.therapist_user_id)
+                else (str(successor.therapist_user_id) if successor else "—")
+            )
+            events.append(
+                {
+                    "source": "assignment",
+                    "id": f"assignment-{a.id}",
+                    "action_label": f"Therapist reassigned: {therapist_label} → {new_label}",
+                    "detail": a.reason_for_change,
+                    "created_at": (a.end_date or a.start_date).isoformat() if (a.end_date or a.start_date) else None,
+                    "entity_type": "case_assignment",
+                    "entity_id": str(a.id),
+                }
+            )
+        elif a.status == CaseAssignmentStatus.ACTIVE and not _has_prior(a):
+            events.append(
+                {
+                    "source": "assignment",
+                    "id": f"assignment-{a.id}",
+                    "action_label": f"Therapist assigned: {therapist_label}",
+                    "detail": None,
+                    "created_at": a.start_date.isoformat() if a.start_date else None,
+                    "entity_type": "case_assignment",
+                    "entity_id": str(a.id),
+                }
+            )
 
     events.sort(key=lambda e: e.get("created_at") or "", reverse=True)
     return events[:limit]

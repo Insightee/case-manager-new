@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
+import { isReassignmentReasonValid } from './ReassignmentBillingConfirm.jsx'
 
 export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
   const [therapistId, setTherapistId] = useState('')
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [reason, setReason] = useState('Bulk reassignment from pipeline')
+  const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [results, setResults] = useState(null)
   const [error, setError] = useState('')
@@ -20,6 +21,10 @@ export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
       setError('Select a therapist.')
       return
     }
+    if (!isReassignmentReasonValid(reason)) {
+      setError('Please add a reason for this reassignment (at least 5 characters).')
+      return
+    }
     setBusy(true)
     setError('')
     setResults(null)
@@ -32,7 +37,7 @@ export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
           body: JSON.stringify({
             therapist_user_id: Number(therapistId),
             start_date: startDate,
-            reason_for_change: reason,
+            reason_for_change: reason.trim(),
           }),
         })
         succeeded.push(card.case_code)
@@ -51,9 +56,9 @@ export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
   return (
     <div className="admin-drawer-backdrop" role="presentation" onClick={onClose}>
       <div className="admin-drawer" style={{ maxWidth: 480 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3 className="admin-drawer__title">Bulk assign therapist</h3>
+        <h3 className="admin-drawer__title">Bulk reassign therapist</h3>
         <p className="admin-muted" style={{ marginBottom: 16 }}>
-          {caseCards.length} case{caseCards.length === 1 ? '' : 's'} selected
+          {caseCards.length} case{caseCards.length === 1 ? '' : 's'} selected. Billing stays the same for each case.
         </p>
         <form onSubmit={submit} className="admin-form-grid">
           <label>
@@ -75,12 +80,13 @@ export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
             />
           </label>
           <label>
-            Reason
+            Reason for change <span style={{ color: '#ef4444' }}>*</span>
             <input
               type="text"
               className="admin-input"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Caseload rebalance across pipeline"
             />
           </label>
           {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
@@ -101,8 +107,12 @@ export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
             </div>
           ) : null}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="submit" className="admin-btn admin-btn--primary" disabled={busy}>
-              {busy ? 'Assigning…' : `Assign to ${caseCards.length} cases`}
+            <button
+              type="submit"
+              className="admin-btn admin-btn--primary"
+              disabled={busy || !isReassignmentReasonValid(reason)}
+            >
+              {busy ? 'Assigning…' : `Reassign ${caseCards.length} cases`}
             </button>
             <button type="button" className="admin-btn admin-btn--secondary" onClick={onClose} disabled={busy}>
               {results?.failed?.length ? 'Close' : 'Cancel'}

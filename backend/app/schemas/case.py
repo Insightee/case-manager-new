@@ -87,6 +87,7 @@ class AssignmentCreate(BaseModel):
     case_service_id: Optional[int] = None
     reason_for_change: Optional[str] = None
     notes: Optional[str] = None
+    billing_update: Optional[dict] = None
 
 
 class AssignmentBookingUpdate(BaseModel):
@@ -108,6 +109,7 @@ class AssignmentRead(BaseModel):
     end_date: Optional[date]
     status: str
     reason_for_change: Optional[str]
+    billing_snapshot: Optional[dict] = None
     notes: Optional[str]
     booking_mode: str = "OPEN"
     fixed_weekdays: Optional[list[str]] = None
