@@ -35,16 +35,24 @@ export function AdminFinanceReportsTab({ defaultReportKey = 'monthly-billing' })
   }
 
   async function downloadCsv() {
-    await apiDownload(
-      `/api/v1/admin/finance-reports/${reportKey}?billing_month=${encodeURIComponent(billingMonth)}&format=csv`,
-      `${reportKey}.csv`
+    await run(
+      () =>
+        apiDownload(
+          `/api/v1/admin/finance-reports/${reportKey}?billing_month=${encodeURIComponent(billingMonth)}&format=csv`,
+          `${reportKey}.csv`
+        ),
+      { successMsg: 'CSV downloaded' }
     )
   }
 
   async function downloadExcel() {
-    await apiDownload(
-      `/api/v1/admin/finance-reports/${reportKey}?billing_month=${encodeURIComponent(billingMonth)}&format=xlsx`,
-      `${reportKey}.xlsx`
+    await run(
+      () =>
+        apiDownload(
+          `/api/v1/admin/finance-reports/${reportKey}?billing_month=${encodeURIComponent(billingMonth)}&format=xlsx`,
+          `${reportKey}.xlsx`
+        ),
+      { successMsg: 'Excel downloaded' }
     )
   }
 
@@ -74,10 +82,10 @@ export function AdminFinanceReportsTab({ defaultReportKey = 'monthly-billing' })
         <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={loading} onClick={loadPreview}>
           {loading ? 'Loading…' : 'Preview'}
         </button>
-        <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={downloadCsv}>
+        <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={loading} onClick={downloadCsv}>
           Download CSV
         </button>
-        <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={downloadExcel}>
+        <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" disabled={loading} onClick={downloadExcel}>
           Download Excel
         </button>
       </div>
