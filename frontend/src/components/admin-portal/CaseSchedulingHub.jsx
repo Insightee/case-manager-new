@@ -38,7 +38,7 @@ function TherapistAssignSection({
   const [selectedId, setSelectedId] = useState(assignedTherapistId)
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [reason, setReason] = useState('')
-  const [billingChoice, setBillingChoice] = useState('keep')
+  const [billingReady, setBillingReady] = useState(false)
   const [billingPayload, setBillingPayload] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -49,6 +49,11 @@ function TherapistAssignSection({
     setSelectedId(assignedTherapistId)
   }, [assignedTherapistId])
 
+  useEffect(() => {
+    setBillingReady(false)
+    setBillingPayload(null)
+  }, [selectedId, assignedTherapistId])
+
   const isChanging = selectedId && selectedId !== assignedTherapistId
   const isNew = !activeAssignment && selectedId
 
@@ -56,6 +61,10 @@ function TherapistAssignSection({
     if (!selectedId || !caseItem?.id) return
     if (isChanging && !isReassignmentReasonValid(reason)) {
       setError('Please add a reason for this reassignment (at least 5 characters).')
+      return
+    }
+    if (isChanging && !billingReady) {
+      setError('Update billing for the new therapist before confirming reassignment.')
       return
     }
     setBusy(true)
@@ -68,7 +77,7 @@ function TherapistAssignSection({
       }
       if (isChanging) {
         body.reason_for_change = reason.trim()
-        if (billingChoice === 'update' && billingPayload) {
+        if (billingPayload) {
           body.billing_update = billingPayload
         }
       }
@@ -78,7 +87,7 @@ function TherapistAssignSection({
       })
       setSuccess(isNew ? 'Therapist assigned.' : 'Therapist reassigned.')
       setReason('')
-      setBillingChoice('keep')
+      setBillingReady(false)
       setBillingPayload(null)
       onAssigned?.()
     } catch (err) {
@@ -151,9 +160,16 @@ function TherapistAssignSection({
                   </label>
                   <ReassignmentBillingConfirm
                     caseItem={caseItem}
-                    billingChoice={billingChoice}
-                    onBillingChoiceChange={setBillingChoice}
-                    onBillingPayloadChange={setBillingPayload}
+                    billingReady={billingReady}
+                    onBillingReady={(payload) => {
+                      setBillingPayload(payload)
+                      setBillingReady(true)
+                      setError('')
+                    }}
+                    onBillingDraftChange={() => {
+                      setBillingReady(false)
+                      setBillingPayload(null)
+                    }}
                     readOnly={readOnly}
                   />
                 </>
@@ -166,29 +182,42 @@ function TherapistAssignSection({
 
           {(isChanging || isNew) && !readOnly ? (
             <div style={{ gridColumn: '1 / -1' }}>
-              <button
-                type="button"
-                className="admin-btn admin-btn--primary"
-                onClick={handleSave}
-                disabled={
-                  busy ||
-                  !selectedId ||
-                  (isChanging && !isReassignmentReasonValid(reason)) ||
-                  (isChanging && billingChoice === 'update' && !billingPayload)
-                }
-              >
-                {busy ? 'Saving…' : activeAssignment ? 'Confirm reassignment' : 'Assign therapist'}
-              </button>
               {isChanging ? (
+                <>
+                  {billingReady ? (
+                    <>
+                      <p className="reassignment-billing-confirm__step" style={{ marginBottom: 10 }}>
+                        Step 2 of 2 — Confirm reassignment
+                      </p>
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn--primary"
+                        onClick={handleSave}
+                        disabled={busy || !selectedId || !isReassignmentReasonValid(reason) || !billingReady}
+                      >
+                        {busy ? 'Saving…' : 'Confirm reassignment'}
+                      </button>
+                    </>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--ghost"
+                    style={{ marginLeft: billingReady ? 8 : 0 }}
+                    onClick={() => setSelectedId(assignedTherapistId)}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
-                  className="admin-btn admin-btn--ghost"
-                  style={{ marginLeft: 8 }}
-                  onClick={() => setSelectedId(assignedTherapistId)}
+                  className="admin-btn admin-btn--primary"
+                  onClick={handleSave}
+                  disabled={busy || !selectedId}
                 >
-                  Cancel
+                  {busy ? 'Saving…' : 'Assign therapist'}
                 </button>
-              ) : null}
+              )}
             </div>
           ) : null}
         </div>

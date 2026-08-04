@@ -1,90 +1,70 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { billingSummary } from '../invoices/invoiceUtils.js'
 
 /**
- * Billing verification step shown only when reassigning to a new therapist.
+ * Step 1 of reassignment: re-enter billing for the incoming therapist.
+ * Payload is held locally until reassignment confirms (preserves outgoing snapshot).
  */
 export function ReassignmentBillingConfirm({
   caseItem,
-  billingChoice,
-  onBillingChoiceChange,
-  onBillingPayloadChange,
+  billingReady,
+  onBillingReady,
+  onBillingDraftChange,
   readOnly = false,
 }) {
-  const [localCase, setLocalCase] = useState(caseItem)
-
-  useEffect(() => {
-    setLocalCase(caseItem)
-  }, [caseItem])
-
-  const summary = useMemo(
+  const previousSummary = useMemo(
     () =>
       billingSummary({
-        billing_type: localCase?.billing_type,
-        client_rate_per_session_inr: localCase?.client_rate_per_session_inr,
-        package_session_count: localCase?.package_session_count,
-        package_amount_inr: localCase?.package_amount_inr,
-        compensation_mode: localCase?.compensation_mode,
-        pay_share_amount_inr: localCase?.pay_share_amount_inr,
-        therapist_fixed_pay_inr: localCase?.therapist_fixed_pay_inr,
+        billing_type: caseItem?.billing_type,
+        client_rate_per_session_inr: caseItem?.client_rate_per_session_inr,
+        package_session_count: caseItem?.package_session_count,
+        package_amount_inr: caseItem?.package_amount_inr,
+        compensation_mode: caseItem?.compensation_mode,
+        pay_share_amount_inr: caseItem?.pay_share_amount_inr,
+        therapist_fixed_pay_inr: caseItem?.therapist_fixed_pay_inr,
       }),
-    [localCase],
+    [caseItem],
   )
 
-  function handleFormSave(payload) {
-    setLocalCase((prev) => ({ ...prev, ...payload }))
-    onBillingPayloadChange?.(payload)
+  function handleBillingSubmit(payload) {
+    onBillingReady?.(payload)
     return Promise.resolve()
   }
 
   return (
     <div className="reassignment-billing-confirm" style={{ gridColumn: '1 / -1' }}>
-      <p className="admin-label" style={{ marginBottom: 8 }}>
-        Billing for the new therapist
-      </p>
-      {summary ? (
+      <p className="reassignment-billing-confirm__step">Step 1 of 2 — Billing for the new therapist</p>
+      {previousSummary ? (
         <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>
-          Current terms: {summary}
+          Outgoing therapist terms (locked on reassignment): {previousSummary}
         </p>
-      ) : (
-        <p className="admin-scheduling-hub__billing-note" style={{ marginBottom: 10 }}>
-          No billing configured yet — update below if needed.
+      ) : null}
+      <p className="admin-scheduling-hub__billing-note" style={{ marginBottom: 12 }}>
+        Enter billing for the incoming therapist below, then choose Update billing. Reassignment unlocks after that.
+      </p>
+      {billingReady ? (
+        <p className="admin-alert admin-alert--success" style={{ marginBottom: 12 }}>
+          Billing ready for the new therapist. Continue to step 2 below.
         </p>
-      )}
-      <div className="admin-scheduling-hub__range" style={{ marginBottom: 12 }}>
-        <label className="admin-scheduling-hub__range-option">
-          <input
-            type="radio"
-            name="billingChoice"
-            checked={billingChoice === 'keep'}
-            onChange={() => onBillingChoiceChange?.('keep')}
-            disabled={readOnly}
-          />
-          Keep same billing for the new therapist
-        </label>
-        <label className="admin-scheduling-hub__range-option">
-          <input
-            type="radio"
-            name="billingChoice"
-            checked={billingChoice === 'update'}
-            onChange={() => onBillingChoiceChange?.('update')}
-            disabled={readOnly}
-          />
-          Update billing for the new therapist
-        </label>
-      </div>
-      {billingChoice === 'update' && !readOnly ? (
-        <div style={{ borderTop: '1px solid var(--border, #e2e8f0)', paddingTop: 12 }}>
-          <p className="admin-muted" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
-            Update the fields below and save billing, then confirm reassignment.
-          </p>
-          <CaseBillingForm
-            caseItem={localCase}
-            onSave={handleFormSave}
-            readOnly={false}
-          />
-        </div>
+      ) : null}
+      {!readOnly && !billingReady ? (
+        <CaseBillingForm
+          key={`reassign-billing-${caseItem?.id}-draft`}
+          caseItem={caseItem}
+          onSave={handleBillingSubmit}
+          submitLabel="Update billing"
+          blankSlate
+        />
+      ) : null}
+      {!readOnly && billingReady ? (
+        <button
+          type="button"
+          className="admin-btn admin-btn--ghost admin-btn--sm"
+          onClick={() => onBillingDraftChange?.()}
+        >
+          Edit billing again
+        </button>
       ) : null}
     </div>
   )

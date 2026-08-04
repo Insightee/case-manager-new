@@ -88,6 +88,15 @@
   margin: 0;
 }
 
+.reassignment-billing-confirm__step {
+  margin: 0 0 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6366f1;
+}
+
 .admin-scheduling-hub__oneoff {
   margin-top: 16px;
 }

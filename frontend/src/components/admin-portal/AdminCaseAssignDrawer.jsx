@@ -7,7 +7,7 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
   const [therapistId, setTherapistId] = useState('')
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [reason, setReason] = useState('')
-  const [billingChoice, setBillingChoice] = useState('keep')
+  const [billingReady, setBillingReady] = useState(false)
   const [billingPayload, setBillingPayload] = useState(null)
   const [caseItem, setCaseItem] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -18,7 +18,7 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
   useEffect(() => {
     if (!open || !caseCard?.id) return
     setReason('')
-    setBillingChoice('keep')
+    setBillingReady(false)
     setBillingPayload(null)
     setError('')
     apiFetch(`/api/v1/cases/${caseCard.id}`)
@@ -26,10 +26,15 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
       .catch(() => setCaseItem(null))
   }, [open, caseCard?.id])
 
+  useEffect(() => {
+    setBillingReady(false)
+    setBillingPayload(null)
+  }, [therapistId])
+
   if (!open || !caseCard) return null
 
-  async function submit(e) {
-    e.preventDefault()
+  async function confirmAssignment(e) {
+    e?.preventDefault()
     if (!therapistId) {
       setError('Select a therapist.')
       return
@@ -38,8 +43,8 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
       setError('Please add a reason for this reassignment (at least 5 characters).')
       return
     }
-    if (isReassignment && billingChoice === 'update' && !billingPayload) {
-      setError('Save the updated billing terms before confirming.')
+    if (isReassignment && !billingReady) {
+      setError('Update billing for the new therapist before confirming reassignment.')
       return
     }
     setBusy(true)
@@ -51,7 +56,7 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
       }
       if (isReassignment) {
         body.reason_for_change = reason.trim()
-        if (billingChoice === 'update' && billingPayload) {
+        if (billingPayload) {
           body.billing_update = billingPayload
         }
       }
@@ -80,7 +85,7 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
             <> · Current: <strong>{caseCard.therapist_name}</strong></>
           ) : null}
         </p>
-        <form onSubmit={submit} className="admin-form-grid" style={{ maxWidth: 480 }}>
+        <form onSubmit={confirmAssignment} className="admin-form-grid" style={{ maxWidth: 480 }}>
           <label>
             Therapist
             <AdminTherapistPicker
@@ -117,22 +122,42 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
               {caseItem ? (
                 <ReassignmentBillingConfirm
                   caseItem={caseItem}
-                  billingChoice={billingChoice}
-                  onBillingChoiceChange={setBillingChoice}
-                  onBillingPayloadChange={setBillingPayload}
+                  billingReady={billingReady}
+                  onBillingReady={(payload) => {
+                    setBillingPayload(payload)
+                    setBillingReady(true)
+                    setError('')
+                  }}
+                  onBillingDraftChange={() => {
+                    setBillingReady(false)
+                    setBillingPayload(null)
+                  }}
                 />
               ) : null}
             </>
           ) : null}
           {error ? <p className="admin-alert admin-alert--error" style={{ gridColumn: '1 / -1' }}>{error}</p> : null}
-          <div style={{ display: 'flex', gap: 8, gridColumn: '1 / -1' }}>
-            <button
-              type="submit"
-              className="admin-btn admin-btn--primary"
-              disabled={busy || (isReassignment && !isReassignmentReasonValid(reason))}
-            >
-              {busy ? 'Saving…' : isReassignment ? 'Confirm reassignment' : 'Assign'}
-            </button>
+          <div style={{ display: 'flex', gap: 8, gridColumn: '1 / -1', flexWrap: 'wrap' }}>
+            {isReassignment ? (
+              billingReady ? (
+                <>
+                  <p className="reassignment-billing-confirm__step" style={{ width: '100%', margin: '0 0 4px' }}>
+                    Step 2 of 2 — Confirm reassignment
+                  </p>
+                  <button
+                    type="submit"
+                    className="admin-btn admin-btn--primary"
+                    disabled={busy || !isReassignmentReasonValid(reason)}
+                  >
+                    {busy ? 'Saving…' : 'Confirm reassignment'}
+                  </button>
+                </>
+              ) : null
+            ) : (
+              <button type="submit" className="admin-btn admin-btn--primary" disabled={busy}>
+                {busy ? 'Saving…' : 'Assign'}
+              </button>
+            )}
             <button type="button" className="admin-btn admin-btn--secondary" onClick={onClose} disabled={busy}>
               Cancel
             </button>

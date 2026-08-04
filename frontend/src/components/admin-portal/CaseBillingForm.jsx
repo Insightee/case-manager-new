@@ -16,7 +16,7 @@ const EMPTY = {
   billing_notes: '',
 }
 
-export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
+export function CaseBillingForm({ caseItem, onSave, readOnly, onError, submitLabel = 'Save billing', blankSlate = false }) {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState('')
@@ -31,6 +31,13 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
 
   useEffect(() => {
     if (!caseItem) return
+    if (blankSlate) {
+      setForm({
+        ...EMPTY,
+        product_billing_rule_id: caseItem.product_billing_rule_id ?? '',
+      })
+      return
+    }
     setForm({
       product_billing_rule_id: caseItem.product_billing_rule_id ?? '',
       billing_type: caseItem.billing_type || '',
@@ -43,7 +50,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
       therapist_fixed_pay_inr: caseItem.therapist_fixed_pay_inr ?? '',
       billing_notes: caseItem.billing_notes || '',
     })
-  }, [caseItem])
+  }, [caseItem, blankSlate])
 
   if (!caseItem) return null
 
@@ -204,7 +211,7 @@ export function CaseBillingForm({ caseItem, onSave, readOnly, onError }) {
       ) : null}
 
       <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={saving}>
-        {saving ? 'Saving…' : 'Save billing'}
+        {saving ? 'Saving…' : submitLabel}
       </button>
     </form>
   )
