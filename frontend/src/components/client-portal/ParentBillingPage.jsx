@@ -150,13 +150,6 @@ function ParentBillingPageFull() {
   const [payRef, setPayRef] = useState('')
   const [payNotes, setPayNotes] = useState('')
   const [payProof, setPayProof] = useState(null)
-  const [provisional, setProvisional] = useState(false)
-
-  useEffect(() => {
-    apiFetch('/api/v1/parent/billing/runtime-config')
-      .then((cfg) => setProvisional(Boolean(cfg?.provisional)))
-      .catch(() => setProvisional(true))
-  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -374,13 +367,6 @@ function ParentBillingPageFull() {
         <p>Review session charges, pay offline or online, and track dispute updates in one place.</p>
       </header>
 
-      {provisional ? (
-        <div className="finance-stage2-banner finance-stage2-banner--mint" role="status">
-          These amounts are from your care plan statements. If something looks off, you can raise a dispute from any
-          open invoice.
-        </div>
-      ) : null}
-
       {error ? (
         <p className="parent-pay__alert parent-pay__alert--error" role="alert">
           {error} Try refreshing, or contact support if it continues.
@@ -388,43 +374,65 @@ function ParentBillingPageFull() {
       ) : null}
       {message ? <p className="parent-pay__alert parent-pay__alert--success">{message}</p> : null}
 
-      {(summary.needsPaymentCount || 0) > 0 && (summary.dueTotalInr || 0) > 0 ? (
-        <section className={`parent-pay__banner ${urgentBanner ? 'parent-pay__banner--urgent' : ''}`}>
-          <div className="parent-pay__banner-main">
-            <h2>{urgentBanner ? 'Payment overdue' : 'Payment required'}</h2>
-            <p>
-              {urgentBanner
-                ? `${summary.overdueCount} overdue · ${summary.needsPaymentCount} open`
-                : `${summary.needsPaymentCount} invoice(s) with balance due`}
-            </p>
-          </div>
-          <strong className="parent-pay__banner-amount">{formatInr(summary.dueTotalInr)}</strong>
-        </section>
-      ) : null}
-
       {dashboard?.summary ? (
-        <ul className="parent-pay__stats parent-pay__stats--compact finance-dash__grid" aria-label="Payment summary">
-          <li className="parent-pay__stat parent-pay__stat--due">
-            <strong>{formatInr(summary.dueTotalInr)}</strong>
-            <span>Balance due</span>
-          </li>
-          <li className="parent-pay__stat">
-            <strong>{summary.needsPaymentCount ?? 0}</strong>
-            <span>Needs payment</span>
-          </li>
-          <li className="parent-pay__stat parent-pay__stat--overdue">
-            <strong>{summary.overdueCount ?? 0}</strong>
-            <span>Overdue</span>
-          </li>
-          <li className="parent-pay__stat">
-            <strong>{summary.invoiceCount ?? 0}</strong>
-            <span>All invoices</span>
-          </li>
-          <li className="parent-pay__stat">
-            <strong>{summary.activePackages ?? 0}</strong>
-            <span>Active packages</span>
-          </li>
-        </ul>
+        <section className="parent-pay__summary" aria-label="Billing overview">
+          {(summary.needsPaymentCount || 0) > 0 && (summary.dueTotalInr || 0) > 0 ? (
+            <article
+              className={`parent-pay__summary-feature ${urgentBanner ? 'parent-pay__summary-feature--urgent' : 'parent-pay__summary-feature--due'}`}
+            >
+              <div className="parent-pay__summary-feature-icon" aria-hidden>
+                {urgentBanner ? '!' : '₹'}
+              </div>
+              <div className="parent-pay__summary-feature-body">
+                <p className="parent-pay__summary-feature-kicker">
+                  {urgentBanner ? 'Action needed' : 'Payment due'}
+                </p>
+                <h2>{urgentBanner ? 'Payment overdue' : 'Balance outstanding'}</h2>
+                <p>
+                  {urgentBanner
+                    ? `${summary.overdueCount} overdue · ${summary.needsPaymentCount} open invoice${summary.needsPaymentCount === 1 ? '' : 's'}`
+                    : `${summary.needsPaymentCount} invoice${summary.needsPaymentCount === 1 ? '' : 's'} awaiting payment`}
+                </p>
+              </div>
+              <div className="parent-pay__summary-feature-amount-wrap">
+                <span className="parent-pay__summary-feature-amount-label">Total due</span>
+                <strong className="parent-pay__summary-feature-amount">{formatInr(summary.dueTotalInr)}</strong>
+              </div>
+            </article>
+          ) : null}
+
+          <ul className="parent-pay__summary-grid finance-dash__grid">
+            {!((summary.needsPaymentCount || 0) > 0 && (summary.dueTotalInr || 0) > 0) ? (
+              <li className="finance-dash__card finance-dash__card--accent">
+                <span className="finance-dash__card-k">Balance due</span>
+                <strong>{formatInr(summary.dueTotalInr)}</strong>
+                <span className="finance-dash__card-meta">Across open invoices</span>
+              </li>
+            ) : null}
+            <li className="finance-dash__card">
+              <span className="finance-dash__card-k">Needs payment</span>
+              <strong>{summary.needsPaymentCount ?? 0}</strong>
+              <span className="finance-dash__card-meta">Open balances</span>
+            </li>
+            <li className={`finance-dash__card ${(summary.overdueCount ?? 0) > 0 ? 'finance-dash__card--warn' : ''}`}>
+              <span className="finance-dash__card-k">Overdue</span>
+              <strong>{summary.overdueCount ?? 0}</strong>
+              <span className="finance-dash__card-meta">
+                {(summary.overdueCount ?? 0) > 0 ? 'Past due date' : 'All current'}
+              </span>
+            </li>
+            <li className="finance-dash__card">
+              <span className="finance-dash__card-k">All invoices</span>
+              <strong>{summary.invoiceCount ?? 0}</strong>
+              <span className="finance-dash__card-meta">Statement history</span>
+            </li>
+            <li className="finance-dash__card">
+              <span className="finance-dash__card-k">Active packages</span>
+              <strong>{summary.activePackages ?? 0}</strong>
+              <span className="finance-dash__card-meta">Session packs</span>
+            </li>
+          </ul>
+        </section>
       ) : null}
 
       {showDueStrip ? (
