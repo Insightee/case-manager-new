@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
-import invoiceData from '../../data/invoices.json'
 import { EarningsTrendChart } from './EarningsTrendChart.jsx'
 import { GenerateInvoiceModal } from './GenerateInvoiceModal.jsx'
 import { InvoiceBreakdownModal } from './InvoiceBreakdownModal.jsx'
@@ -12,6 +11,7 @@ import { computeSummaryFromInvoices, formatInr, mapInvoiceForCard } from './invo
 import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
 import { isBillingModuleEnabled } from '../../lib/productFeatureFlags.js'
 import { StatementLedger } from './StatementLedger.jsx'
+import { earningsTrendFromLedger } from '../../lib/ledgerUtils.js'
 
 function Toast({ message, visible, onDismiss }) {
   if (!visible) return null
@@ -39,28 +39,6 @@ function Toast({ message, visible, onDismiss }) {
   )
 }
 
-function matchesSearch(item, q) {
-  if (!q.trim()) return true
-  const s = q.toLowerCase()
-  return (
-    item.month?.toLowerCase().includes(s) ||
-    item.detail?.toLowerCase().includes(s) ||
-    item.subtitle?.toLowerCase().includes(s) ||
-    item.apiStatus?.toLowerCase().includes(s) ||
-    item.status?.toLowerCase().includes(s)
-  )
-}
-
-function matchesLedgerSearch(inv, q) {
-  if (!q.trim()) return true
-  const s = q.toLowerCase()
-  return (
-    inv.month?.toLowerCase().includes(s) ||
-    String(inv.status || '').toLowerCase().includes(s) ||
-    String(inv.amount_inr ?? '').includes(s)
-  )
-}
-
 function SectionBlock({ id, title, subtitle, dotClass, children }) {
   return (
     <section aria-labelledby={id}>
@@ -84,13 +62,15 @@ export function InvoicesPage() {
 }
 
 function InvoicesPageContent() {
-  const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [previewMonth, setPreviewMonth] = useState(null)
   const [previewData, setPreviewData] = useState(null)
   const [breakdownInvoice, setBreakdownInvoice] = useState(null)
   const [invoices, setInvoices] = useState([])
+  const [ledgerRows, setLedgerRows] = useState([])
+  const [ledgerFilters, setLedgerFilters] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [ledgerLoading, setLedgerLoading] = useState(true)
   const [toast, setToast] = useState({ visible: false, message: '' })
   const [downloadingId, setDownloadingId] = useState(null)
 
@@ -99,37 +79,52 @@ function InvoicesPageContent() {
     try {
       const rows = await apiFetch('/api/v1/invoices')
       setInvoices(rows)
-    } catch (err) {
+    } catch {
       setInvoices([])
     } finally {
       setLoading(false)
     }
   }, [])
 
+  const loadLedger = useCallback(async () => {
+    setLedgerLoading(true)
+    try {
+      const payload = await apiFetch('/api/v1/invoices/ledger')
+      setLedgerRows(payload.rows || [])
+      setLedgerFilters(payload.filters || null)
+    } catch {
+      setLedgerRows([])
+      setLedgerFilters(null)
+    } finally {
+      setLedgerLoading(false)
+    }
+  }, [])
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([loadInvoices(), loadLedger()])
+  }, [loadInvoices, loadLedger])
+
   useEffect(() => {
-    loadInvoices()
-  }, [loadInvoices])
+    refreshAll()
+  }, [refreshAll])
 
   const showToast = useCallback((message) => {
     setToast({ visible: true, message })
     window.setTimeout(() => setToast((t) => ({ ...t, visible: false })), 3800)
   }, [])
 
-  const q = search.trim()
   const cards = useMemo(() => invoices.map(mapInvoiceForCard), [invoices])
 
   const filteredAttention = useMemo(
-    () => cards.filter((x) => x.status === 'rejected' || x.status === 'queried').filter((x) => matchesSearch(x, q)),
-    [cards, q],
+    () => cards.filter((x) => x.status === 'rejected' || x.status === 'queried'),
+    [cards],
   )
   const filteredProgress = useMemo(
-    () => cards.filter((x) => !x.status && (x.apiStatus === 'IN_REVIEW' || x.apiStatus === 'DRAFT' || x.apiStatus === 'APPROVED')).filter((x) => matchesSearch(x, q)),
-    [cards, q],
+    () => cards.filter((x) => !x.status && (x.apiStatus === 'IN_REVIEW' || x.apiStatus === 'DRAFT' || x.apiStatus === 'APPROVED')),
+    [cards],
   )
-  const filteredLedger = useMemo(
-    () => invoices.filter((inv) => matchesLedgerSearch(inv, q)),
-    [invoices, q],
-  )
+
+  const earningsTrend = useMemo(() => earningsTrendFromLedger(ledgerRows, 6), [ledgerRows])
 
   const summary = useMemo(() => computeSummaryFromInvoices(invoices), [invoices])
 
@@ -145,10 +140,10 @@ function InvoicesPageContent() {
     (inv) => {
       setPreviewData(null)
       setPreviewMonth(null)
-      loadInvoices()
+      refreshAll()
       showToast(`Invoice for ${inv.month} submitted · ${formatInr(inv.amount_inr)}.`)
     },
-    [loadInvoices, showToast],
+    [refreshAll, showToast],
   )
 
   const handleDownloadPayslip = useCallback(
@@ -167,12 +162,19 @@ function InvoicesPageContent() {
     [showToast],
   )
 
-  const handleLedgerView = useCallback(
-    (inv) => {
-      setBreakdownInvoice(mapInvoiceForCard(inv))
-    },
-    [],
-  )
+  const handleLedgerView = useCallback((inv) => {
+    setBreakdownInvoice(
+      mapInvoiceForCard({
+        id: inv.id,
+        month: inv.month,
+        amount_inr: inv.amountInr ?? inv.amount_inr,
+        sessions_count: inv.sessionsCount ?? inv.sessions_count,
+        status: inv.status,
+        reviewer_comment: inv.reviewerComment ?? inv.reviewer_comment,
+        notes: inv.notes,
+      }),
+    )
+  }, [])
 
   const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -208,15 +210,13 @@ function InvoicesPageContent() {
         onClose={() => setBreakdownInvoice(null)}
         onAmended={() => {
           setBreakdownInvoice(null)
-          loadInvoices()
+          refreshAll()
         }}
       />
 
       <SectionHeader
         title="Invoices"
         subtitle="Generate and track payout workflow from validated logs"
-        search={search}
-        onSearchChange={setSearch}
         primaryActionLabel="+ Generate Invoice"
         onPrimaryAction={openGenerate}
       />
@@ -224,8 +224,6 @@ function InvoicesPageContent() {
       <SummaryCard summary={summary} />
 
       <div className="flex min-w-0 flex-col gap-8">
-        <EarningsTrendChart data={invoiceData.earningsTrend} />
-
         {loading ? (
           <p className="text-center text-sm text-slate-500">Loading invoices…</p>
         ) : invoices.length === 0 ? (
@@ -254,7 +252,7 @@ function InvoicesPageContent() {
             >
               {filteredAttention.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                  No action items in this view.
+                  No action items right now.
                 </p>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -280,7 +278,7 @@ function InvoicesPageContent() {
             >
               {filteredProgress.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                  Nothing in review for this search.
+                  Nothing in review right now.
                 </p>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -305,23 +303,19 @@ function InvoicesPageContent() {
             <SectionBlock
               id="ledger-inv"
               title="Ledger"
-              subtitle="Previous submitted bills with updated payout status — view breakdown or download payslips."
+              subtitle="Filter by year, month, client, or status — view breakdowns and download payslips."
               dotClass="bg-emerald-500"
             >
-              {filteredLedger.length === 0 && q ? (
-                <p className="rounded-xl border border-dashed border-[#E2E8F0] bg-white px-4 py-8 text-center text-sm text-slate-500">
-                  No statements match your search.
-                </p>
-              ) : (
-                <StatementLedger
-                  embedded
-                  invoices={filteredLedger}
-                  loading={loading}
-                  downloadingId={downloadingId}
-                  onView={handleLedgerView}
-                  onDownloadPayslip={handleDownloadPayslip}
-                />
-              )}
+              {earningsTrend.length > 0 ? <EarningsTrendChart data={earningsTrend} /> : null}
+              <StatementLedger
+                embedded
+                rows={ledgerRows}
+                filterOptions={ledgerFilters}
+                loading={ledgerLoading}
+                downloadingId={downloadingId}
+                onView={handleLedgerView}
+                onDownloadPayslip={handleDownloadPayslip}
+              />
             </SectionBlock>
           </>
         )}
