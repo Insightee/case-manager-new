@@ -685,10 +685,6 @@ function ParentBillingPageFull() {
             </div>
 
             <div className="parent-pay__dialog-body">
-              <p className="parent-pay__help">
-                Here&apos;s your {formatMonth(selected.billingMonth)} statement. Payments are usually coordinated with
-                your case coordinator (UPI, bank transfer, or as agreed). Use Download PDF for your records.
-              </p>
               <div className="table-wrap">
                 <table>
                   <thead>
