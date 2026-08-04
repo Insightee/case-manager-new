@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, Fragment } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { parseClientInvoiceFilters, buildClientBillingScopeQuery } from '../../lib/invoiceFilters.js'
 import { useBillingRuntimeConfig } from '../../hooks/useBillingRuntimeConfig.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { formatInr, normalizeConfidence } from '../../lib/financeConfidence.js'
@@ -45,14 +44,12 @@ function statusPillClass(status) {
 
 export function FinanceMondayBrief() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const filters = parseClientInvoiceFilters(searchParams)
   const flagOn = isFinanceDashboardV1Enabled()
   const monthFromUrl = searchParams.get('month')
-  const billingMonth = monthFromUrl || filters.month || new Date().toISOString().slice(0, 7)
-  const [brief, setBrief] = useState(null)
+  const billingMonth = monthFromUrl || new Date().toISOString().slice(0, 7)
   const [financeSummary, setFinanceSummary] = useState(null)
-  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   const setMonth = useCallback(
     (ym) => {
@@ -65,64 +62,45 @@ export function FinanceMondayBrief() {
   )
 
   useEffect(() => {
+    if (!flagOn) {
+      setFinanceSummary(null)
+      setLoadError(null)
+      setLoading(false)
+      return undefined
+    }
+    let cancelled = false
     setLoading(true)
     setLoadError(null)
-    const scopeQs = buildClientBillingScopeQuery({ ...filters, month: billingMonth })
-    const briefQs = billingMonth ? `?billing_month=${encodeURIComponent(billingMonth)}` : ''
     const q = `billing_month=${encodeURIComponent(billingMonth)}`
-    const requests = [
-      apiFetch(`/api/v1/admin/client-billing/receivables${scopeQs}`),
-      apiFetch(`/api/v1/admin/finance-overview/monday-brief${briefQs}`),
-    ]
-    if (flagOn) {
-      requests.push(apiFetch(`/api/v1/admin/finance-control-tower/summary?${q}`))
-    }
-    Promise.allSettled(requests)
-      .then(([receivablesResult, briefResult, summaryResult]) => {
-        const briefData = briefResult.status === 'fulfilled' ? briefResult.value : null
-        const receivables = receivablesResult.status === 'fulfilled' ? receivablesResult.value : null
-        if (!briefData && !receivables && summaryResult?.status !== 'fulfilled') {
-          const err = receivablesResult.reason || briefResult.reason
-          setBrief(null)
-          setFinanceSummary(null)
-          setLoadError(err?.message || 'Finance overview is unavailable right now.')
-          return
-        }
-        const totals = receivables?.totals || {}
-        if (briefData) {
-          setBrief({
-            ...briefData,
-            moneyIn: {
-              ...(briefData?.moneyIn || {}),
-              collectibleOutstandingInr: totals.outstandingInr ?? briefData?.moneyIn?.collectibleOutstandingInr,
-              overdueInr: totals.overdueInr ?? briefData?.moneyIn?.overdueInr,
-              overdueCount: totals.overdueCount ?? briefData?.moneyIn?.overdueCount,
-            },
-            receivablesSource: receivables,
-          })
-        } else {
-          setBrief(null)
-        }
-        setFinanceSummary(
-          summaryResult?.status === 'fulfilled' ? summaryResult.value?.financeSummary : null,
-        )
+    apiFetch(`/api/v1/admin/finance-control-tower/summary?${q}`)
+      .then((data) => {
+        if (cancelled) return
+        setFinanceSummary(data?.financeSummary || null)
+        setLoadError(null)
       })
-      .finally(() => setLoading(false))
-  }, [billingMonth, flagOn, filters, searchParams])
+      .catch((err) => {
+        if (cancelled) return
+        setFinanceSummary(null)
+        setLoadError(err?.message || 'Finance summary unavailable')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [billingMonth, flagOn])
 
-  if (loading) return <div className="admin-skeleton" style={{ minHeight: 120, marginBottom: 16 }} />
-  if (loadError) {
+  if (!flagOn) {
     return (
-      <AdminPanel title="Finance snapshot" padded style={{ marginBottom: 16 }}>
-        <AdminEmptyState title="Finance snapshot could not load" description={loadError} />
-      </AdminPanel>
+      <AdminEmptyState
+        title="Finance snapshot is not enabled"
+        description="Set VITE_ENABLE_FINANCE_DASHBOARD_V1=true to load monthly finance summary here. Client invoices and payments tabs stay available."
+      />
     )
   }
-  if (!brief && !financeSummary) return null
 
-  const moneyIn = brief?.moneyIn || {}
-  const moneyOut = brief?.moneyOut || {}
-  const top = brief?.thisWeek?.topItems || []
+  if (loading) return <div className="admin-skeleton" style={{ minHeight: 120, marginBottom: 16 }} />
 
   return (
     <AdminPanel title="Finance snapshot" padded className="finance-dash" style={{ marginBottom: 16 }}>
@@ -138,98 +116,39 @@ export function FinanceMondayBrief() {
           />
         </label>
       </div>
-      <div className="finance-dash__hero">
-        <h2>Good morning — finance snapshot</h2>
-        <p>
-          {billingMonth
-            ? `Outstanding figures for billing month ${billingMonth} — same source as Client invoices and Receivables.`
-            : 'Figures match receivables and payout queue sources. Tap a card to drill in.'}
-        </p>
-      </div>
-      {financeSummary ? (
-        <>
-          <h3 className="finance-control-tower__section-title">Finance summary</h3>
-          <div className="finance-control-tower__summary-grid" style={{ marginBottom: 16 }}>
-            {FINANCE_SUMMARY_FIELDS.map((field) => {
-              const mv = financeSummary[field.key]
-              const label = summaryMoneyLabel(mv)
-              return (
-                <div key={field.key} className="finance-control-tower__summary-item">
-                  <div className="finance-control-tower__summary-label">{field.label}</div>
-                  <div className="finance-control-tower__summary-value">{label || '—'}</div>
-                  <ConfidenceBadge
-                    confidence={mv?.confidence}
-                    reason={mv?.confidenceReason}
-                    materialSourceMissing={mv?.value == null}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        </>
-      ) : null}
-      {brief ? (
-        <>
-          <div className="finance-dash__grid" style={{ marginBottom: 16 }}>
-            <div className="finance-dash__card finance-dash__card--accent">
-              <span className="finance-dash__card-k">Money in · outstanding</span>
-              <strong>{formatCurrency(moneyIn.collectibleOutstandingInr)}</strong>
-              <Link to={brief.links?.receivables || '/admin/invoices?tab=receivables'} className="finance-dash__card-link">
-                Receivables →
-              </Link>
-            </div>
-            <div className="finance-dash__card finance-dash__card--warn">
-              <span className="finance-dash__card-k">Overdue</span>
-              <strong>{formatCurrency(moneyIn.overdueInr)}</strong>
-              <span className="finance-dash__card-meta">{moneyIn.overdueCount ?? 0} invoice(s)</span>
-            </div>
-            <div className="finance-dash__card">
-              <span className="finance-dash__card-k">Payment claims</span>
-              <strong>{moneyIn.paymentClaimsPending ?? 0}</strong>
-              <Link to={brief.links?.paymentClaims || '/admin/invoices?tab=payments'} className="finance-dash__card-link">
-                Review →
-              </Link>
-            </div>
-            <div className="finance-dash__card">
-              <span className="finance-dash__card-k">Client disputes</span>
-              <strong>{moneyIn.openClientDisputes ?? 0}</strong>
-              <Link to={brief.links?.clientDisputes || '/admin/invoices?tab=disputes'} className="finance-dash__card-link">
-                Disputes →
-              </Link>
-            </div>
-            <div className="finance-dash__card finance-dash__card--accent">
-              <span className="finance-dash__card-k">Money out · payable now</span>
-              <strong>{formatCurrency(moneyOut.totalPayableInr)}</strong>
-              <Link to={brief.links?.therapistPayoutQueue || '/admin/therapist-payouts?sub=payouts'} className="finance-dash__card-link">
-                Payout queue →
-              </Link>
-            </div>
-            <div className="finance-dash__card">
-              <span className="finance-dash__card-k">Statements pending</span>
-              <strong>{moneyOut.statementsPendingApproval ?? 0}</strong>
-              <span className="finance-dash__card-meta">{moneyOut.disputedQueriedCount ?? 0} disputed</span>
-            </div>
-          </div>
-          {brief.thisWeek?.mostImportant ? (
-            <p style={{ margin: 0 }}>
-              <strong>Focus:</strong> {brief.thisWeek.mostImportant.label}
-            </p>
-          ) : top.length === 0 ? (
-            <p className="admin-muted" style={{ margin: 0 }}>Nothing urgent this week.</p>
-          ) : (
-            <ul className="admin-muted" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-              {top.map((item) => (
-                <li key={item.kind}>
-                  <Link to={item.href}>{item.label}</Link>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="admin-muted" style={{ marginTop: 12, marginBottom: 0, fontSize: '0.85rem' }}>
-            {moneyOut.approveDisabledNote}
-          </p>
-        </>
-      ) : null}
+      {loadError ? (
+        <AdminEmptyState
+          title="Finance summary could not load"
+          description={
+            loadError.includes('Finance Control Tower is limited')
+              ? 'This summary is available to Finance and Super Admin roles.'
+              : loadError
+          }
+        />
+      ) : financeSummary ? (
+        <div className="finance-control-tower__summary-grid">
+          {FINANCE_SUMMARY_FIELDS.map((field) => {
+            const mv = financeSummary[field.key]
+            const label = summaryMoneyLabel(mv)
+            return (
+              <div key={field.key} className="finance-control-tower__summary-item">
+                <div className="finance-control-tower__summary-label">{field.label}</div>
+                <div className="finance-control-tower__summary-value">{label || '—'}</div>
+                <ConfidenceBadge
+                  confidence={mv?.confidence}
+                  reason={mv?.confidenceReason}
+                  materialSourceMissing={mv?.value == null}
+                />
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <AdminEmptyState
+          title="No finance summary for this month"
+          description="Try another billing month or check back after invoices and sessions are recorded."
+        />
+      )}
     </AdminPanel>
   )
 }

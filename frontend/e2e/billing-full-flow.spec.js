@@ -198,6 +198,6 @@ test.describe('Billing full flow', () => {
     await expect(page.getByText(/payout finance queue|money out|payable now/i).first()).toBeVisible({ timeout: 15_000 })
 
     await page.goto('/admin/invoices?tab=overview')
-    await expect(page.getByText(/monday briefing|finance snapshot/i).first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(/finance snapshot|potential billable/i).first()).toBeVisible({ timeout: 15_000 })
   })
 })

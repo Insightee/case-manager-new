@@ -30,9 +30,9 @@ describe('Finance Control Tower Stage 1 static contracts', () => {
       assert.doesNotMatch(call, /method:\s*['"]POST['"]/i)
     }
     const snapshotFinanceCalls = snapshotCalls.filter((call) =>
-      /finance-control-tower|finance-overview/.test(call),
+      /finance-control-tower/.test(call),
     )
-    assert.ok(snapshotFinanceCalls.length >= 2)
+    assert.ok(snapshotFinanceCalls.length >= 1)
     for (const call of snapshotFinanceCalls) {
       assert.doesNotMatch(call, /method:\s*['"]POST['"]/i)
     }
@@ -55,18 +55,20 @@ describe('Finance Control Tower Stage 1 static contracts', () => {
     assert.match(badgeSrc, /Estimated/)
   })
 
-  it('17 finance snapshot exposes drill links for receivables and payouts', () => {
-    assert.match(snapshotSrc, /Receivables →/)
-    assert.match(snapshotSrc, /Payout queue →/)
-    assert.match(snapshotSrc, /tab=disputes/)
-    assert.match(snapshotSrc, /therapist-payouts/)
+  it('17 finance snapshot shows summary metric labels', () => {
+    assert.match(snapshotSrc, /Potential billable/)
+    assert.match(snapshotSrc, /Therapist payable/)
+    assert.match(snapshotSrc, /finance-control-tower__summary-grid/)
+    assert.doesNotMatch(snapshotSrc, /Money in · outstanding/)
+    assert.doesNotMatch(snapshotSrc, /monday-brief/)
   })
 
   it('18 partial failure isolates section errors', () => {
     assert.match(overviewSrc, /Promise\.allSettled/)
     assert.match(overviewSrc, /financeOverviewErrorMessage/)
     assert.match(overviewSrc, /Billing readiness unavailable/)
-    assert.match(snapshotSrc, /Promise\.allSettled/)
+    assert.match(snapshotSrc, /loadError/)
+    assert.match(snapshotSrc, /Finance summary could not load/)
   })
 
   it('21 no authoritative profitability / contribution margin UI', () => {
