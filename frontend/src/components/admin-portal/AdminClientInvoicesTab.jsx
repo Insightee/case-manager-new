@@ -73,6 +73,10 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
   const [resolveAdj, setResolveAdj] = useState('')
   const [rejectPayId, setRejectPayId] = useState(null)
   const [rejectPayNote, setRejectPayNote] = useState('')
+  const [lateFeeOpen, setLateFeeOpen] = useState(false)
+  const [lateFeeAmount, setLateFeeAmount] = useState('')
+  const [lateFeeNote, setLateFeeNote] = useState('')
+  const [zohoStatus, setZohoStatus] = useState('')
   const [acting, setActing] = useState(false)
 
   const load = useCallback(() => {
@@ -139,9 +143,14 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
   async function confirmPaymentClaim(paymentId) {
     setActing(true)
     try {
-      await apiFetch(`/api/v1/admin/client-billing/payments/${paymentId}/confirm`, { method: 'POST' })
+      const result = await apiFetch(`/api/v1/admin/client-billing/payments/${paymentId}/confirm`, { method: 'POST' })
+      if (result?.status === 'already_confirmed') {
+        setZohoStatus('Payment was already confirmed.')
+      }
       load()
       onRefresh()
+    } catch (err) {
+      alert(err?.message || 'Could not confirm payment — check collectible balance and disputes.')
     } finally {
       setActing(false)
     }
@@ -182,6 +191,60 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
       setResolveId(null)
       setResolveNote('')
       setResolveAdj('')
+      load()
+      onRefresh()
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function sendPaymentReminder() {
+    setActing(true)
+    try {
+      await apiFetch(`/api/v1/admin/client-billing/invoices/${invoiceId}/payment-reminder`, { method: 'POST' })
+      setZohoStatus('Payment reminder sent to parent.')
+      load()
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function pushToZoho() {
+    setActing(true)
+    try {
+      const result = await apiFetch(`/api/v1/admin/client-billing/invoices/${invoiceId}/push-zoho`, { method: 'POST' })
+      setZohoStatus(result?.externalId ? `Zoho: ${result.externalId} (${result.status})` : result?.message || result?.status || 'Push attempted')
+      load()
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function addLateFee(e) {
+    e.preventDefault()
+    const amount = Number(lateFeeAmount)
+    if (!amount || amount <= 0) return
+    setActing(true)
+    try {
+      const note = lateFeeNote.trim()
+      const qs = new URLSearchParams({ amount_inr: String(amount) })
+      if (note) qs.set('finance_note', note)
+      await apiFetch(`/api/v1/admin/client-billing/invoices/${invoiceId}/late-fee?${qs}`, { method: 'POST' })
+      setLateFeeOpen(false)
+      setLateFeeAmount('')
+      setLateFeeNote('')
+      load()
+      onRefresh()
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function removeLateFeeLine(lineId) {
+    if (!window.confirm('Remove this late fee line?')) return
+    setActing(true)
+    try {
+      await apiFetch(`/api/v1/admin/client-billing/invoices/${invoiceId}/lines/${lineId}/late-fee`, { method: 'DELETE' })
       load()
       onRefresh()
     } finally {
@@ -233,6 +296,10 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
                 onSendToClient={sendToClient}
                 onMarkGenerated={markGenerated}
                 onOpenPayment={detail.balanceInr > 0 ? () => setPaymentOpen(true) : null}
+                onSendReminder={detail.balanceInr > 0 ? sendPaymentReminder : null}
+                onAddLateFee={canWriteBilling ? () => setLateFeeOpen(true) : null}
+                onPushZoho={canWriteBilling ? pushToZoho : null}
+                zohoStatus={zohoStatus}
               />
             ) : null}
 
@@ -243,6 +310,7 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
                 detail={detail}
                 canWrite={canWriteBilling && detail.status === 'DRAFT'}
                 onUpdated={load}
+                onRemoveLateFee={canWriteBilling ? removeLateFeeLine : null}
               />
             ) : null}
 
@@ -378,6 +446,36 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
                 Save payment
               </button>
               <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setPaymentOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {canWriteBilling && lateFeeOpen && detail ? (
+          <form onSubmit={addLateFee} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
+            <h4 style={{ margin: '0 0 10px' }}>Add late fee</h4>
+            <input
+              type="number"
+              className="client-inv__filter-input"
+              style={{ width: '100%', marginBottom: 8 }}
+              placeholder="Amount INR"
+              value={lateFeeAmount}
+              onChange={(e) => setLateFeeAmount(e.target.value)}
+              required
+            />
+            <input
+              className="client-inv__filter-input"
+              style={{ width: '100%', marginBottom: 8 }}
+              placeholder="Finance note (optional)"
+              value={lateFeeNote}
+              onChange={(e) => setLateFeeNote(e.target.value)}
+            />
+            <div className="admin-btn-group">
+              <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={acting}>
+                Add fee line
+              </button>
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setLateFeeOpen(false)}>
                 Cancel
               </button>
             </div>
