@@ -44,6 +44,11 @@ class TherapistStatementDispute(Base):
     # revisit to a join table only if session-level dispute queries are ever
     # needed.
     disputed_session_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Snapshot of invoice.status before QUERIED flip — restored on finance resolve.
+    prior_invoice_status: Mapped[Optional[str]] = mapped_column(String(32))
+    admin_resolution: Mapped[Optional[str]] = mapped_column(Text)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    resolved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

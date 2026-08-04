@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
+import { TherapistPayoutQueuePanel } from './TherapistPayoutFinance.jsx'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -34,6 +35,7 @@ export function TherapistPayoutsTab() {
   const { can } = useAuth()
   const { canWriteBilling } = useModuleWrite()
   const [searchParams, setSearchParams] = useSearchParams()
+  const queueView = (searchParams.get('view') || 'queue') !== 'list'
   const [invoices, setInvoices] = useState([])
   const [filters, setFilters] = useState(() => {
     const parsed = parseTherapistInvoiceFilters(searchParams)
@@ -154,6 +156,33 @@ export function TherapistPayoutsTab() {
 
   return (
     <>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className={`admin-btn admin-btn--sm ${queueView ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+          onClick={() => {
+            const next = new URLSearchParams(searchParams)
+            next.set('view', 'queue')
+            setSearchParams(next)
+          }}
+        >
+          Finance queue
+        </button>
+        <button
+          type="button"
+          className={`admin-btn admin-btn--sm ${!queueView ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
+          onClick={() => {
+            const next = new URLSearchParams(searchParams)
+            next.set('view', 'list')
+            setSearchParams(next)
+          }}
+        >
+          Invoice list
+        </button>
+      </div>
+      {queueView ? <TherapistPayoutQueuePanel /> : null}
+      {!queueView ? (
+        <>
       <BillingActionAlert error={error} successMessage={successMessage} onDismiss={clearMessages} />
       <InvoiceBreakdownModal
         invoiceId={breakdownId}
@@ -445,6 +474,8 @@ export function TherapistPayoutsTab() {
             </div>
           </div>
         </div>
+      ) : null}
+        </>
       ) : null}
     </>
   )
