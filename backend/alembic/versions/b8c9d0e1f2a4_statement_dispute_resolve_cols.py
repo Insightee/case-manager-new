@@ -1,7 +1,7 @@
 """Additive: therapist_statement_disputes resolve columns.
 
 Revision ID: b8c9d0e1f2a4
-Revises: a7d9f2c4e6b8
+Revises: b8c9d0e1f2a3
 Create Date: 2026-08-04
 
 Purely additive — adds finance resolution metadata columns. No engine/ledger touch.
@@ -16,7 +16,7 @@ from alembic import op
 from migration_util import has_column, has_table
 
 revision: str = "b8c9d0e1f2a4"
-down_revision: Union[str, None] = "a7d9f2c4e6b8"
+down_revision: Union[str, None] = "b8c9d0e1f2a3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
