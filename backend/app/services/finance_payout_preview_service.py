@@ -496,6 +496,7 @@ def payout_preview_row(
     )
 
     return {
+        "caseId": case.id,
         "Month": month_long_label(ym),
         "Case ID": export_case_id(case),
         "Client Name": case_service.case_child_display_name(case) or "",

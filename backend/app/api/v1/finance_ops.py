@@ -98,6 +98,62 @@ def resolve_statement_dispute(
     return statement_dispute_service.dispute_dict(dispute)
 
 
+class CloseBillingMonthBody(BaseModel):
+    billing_month: str = Field(..., min_length=7, max_length=7)
+    notes: Optional[str] = None
+    force: bool = False
+
+
+@router.get("/finance-reports/billing-month-close")
+def billing_month_close_status(
+    billing_month: str,
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.services import billing_period_snapshot_service
+
+    row = billing_period_snapshot_service.get_month_close(db, billing_month)
+    if not row:
+        return {
+            "billingMonth": billing_period_snapshot_service.normalize_billing_month(billing_month),
+            "closed": False,
+        }
+    return {"closed": True, **billing_period_snapshot_service.month_close_dict(row)}
+
+
+@router.post("/finance-reports/close-billing-month")
+def close_billing_month(
+    payload: CloseBillingMonthBody,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    from app.services import billing_period_snapshot_service
+
+    try:
+        result = billing_period_snapshot_service.close_billing_month(
+            db,
+            billing_month=payload.billing_month,
+            actor_user_id=user.id,
+            notes=payload.notes,
+            force=payload.force,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="billing_month.close",
+        entity_type="billing_month_close",
+        entity_id=payload.billing_month,
+        **meta,
+    )
+    db.commit()
+    return result
+
+
 @router.get("/finance-reports/{report_key}")
 def finance_report(
     report_key: str,
@@ -114,6 +170,15 @@ def finance_report(
     meta = export_meta(user)
     title = finance_reports_service.report_title(report_key)
     subtitle = finance_reports_service.report_subtitle(report_key, billing_month=billing_month)
+
+    from app.services import billing_period_snapshot_service
+
+    ym = finance_reports_service._ym(billing_month)
+    month_closed = billing_period_snapshot_service.is_billing_month_closed(db, ym)
+    snapshot_reports = frozenset({"therapist-payout-preview", "margin-by-case"})
+    data_source = "snapshot" if month_closed and report_key in snapshot_reports else "live"
+    if month_closed:
+        subtitle = f"{subtitle} · closed snapshot"
 
     if format == "csv":
         csv_text = finance_reports_service.report_csv(report_key, rows)
@@ -143,6 +208,8 @@ def finance_report(
         "count": len(rows),
         "generatedBy": meta["generated_by"],
         "generatedAt": meta["generated_at"],
+        "billingMonthClosed": month_closed,
+        "dataSource": data_source,
     }
 
 

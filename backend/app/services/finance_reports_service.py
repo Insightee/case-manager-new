@@ -120,6 +120,11 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         ]
 
     if report_key == "therapist-payout-preview":
+        from app.services import billing_period_snapshot_service
+
+        frozen = billing_period_snapshot_service.get_closed_payout_preview_rows(db, ym)
+        if frozen is not None:
+            return frozen
         return finance_payout_preview_service.payout_preview_rows(db, ym)
 
     if report_key == "pending-payout-approvals":
@@ -204,6 +209,12 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         ]
 
     if report_key == "margin-by-case":
+        from app.services import billing_period_snapshot_service
+
+        frozen = billing_period_snapshot_service.margin_rows_from_case_snapshots(db, ym)
+        if frozen is not None:
+            return frozen
+
         from app.models.case import CaseStatus
         from app.services import billing_ledger_service
 
@@ -243,4 +254,5 @@ def report_title(report_key: str) -> str:
 
 def report_subtitle(report_key: str, *, billing_month: str | None) -> str:
     ym = _ym(billing_month)
-    return f"Billing month {ym}"
+    base = f"Billing month {ym}"
+    return base

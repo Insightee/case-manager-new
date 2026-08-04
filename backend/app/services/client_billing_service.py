@@ -618,6 +618,19 @@ def notify_parent_invoice_issued(
         inv.payment_policy_snapshot = DEFAULT_PAYMENT_POLICY
 
     case = db.get(Case, inv.case_id)
+    if not inv.billing_snapshot and case:
+        from app.core.billing_validation import case_billing_dict
+        from app.services import billing_period_snapshot_service
+
+        inv.billing_snapshot = case_billing_dict(case)
+        billing_period_snapshot_service.upsert_case_period_snapshot(
+            db,
+            case_id=inv.case_id,
+            billing_month=inv.billing_month,
+            actor_user_id=inv.approved_by_user_id,
+            client_invoice_id=inv.id,
+        )
+
     child_name = case.child.full_name if case and case.child else "Your child"
     loaded = db.scalar(
         select(ClientInvoice)

@@ -48,6 +48,11 @@ def _ledger_writes_allowed() -> bool:
     return billing_ledger_writes_enabled()
 
 
+def _ledger_amounts_frozen(status: BillableStatus) -> bool:
+    """Billable and invoiced rows keep rate/amount — case price changes must not rewrite history."""
+    return status in (BillableStatus.BILLABLE, BillableStatus.INVOICED)
+
+
 
 def _ledger_month(d: date) -> str:
     return d.strftime("%Y-%m")
@@ -414,6 +419,12 @@ def upsert_from_session_event(
     parent_id = _parent_for_case(db, case)
 
     if existing:
+        if _ledger_amounts_frozen(existing.billable_status):
+            if daily_log_id is not None:
+                existing.daily_log_id = daily_log_id
+            existing.therapist_user_id = session.therapist_user_id
+            db.flush()
+            return existing
         existing.event_type = event_type
         existing.billable_status = billable
         existing.rate_inr = rate
@@ -822,7 +833,7 @@ def _upsert_monthly_fee_charge(
     )
     parent_id = _parent_for_case(db, case)
     if existing:
-        if existing.billable_status == BillableStatus.INVOICED:
+        if _ledger_amounts_frozen(existing.billable_status):
             return _serialize_ledger(existing, include_finance=True)
         # Do not silently demote a finance-posted BILLABLE row back to PENDING_FINANCE
         # when re-running with zero sessions later — keep BILLABLE if already posted.
@@ -897,7 +908,7 @@ def _upsert_package_purchase_charge(
     )
     parent_id = _parent_for_case(db, case)
     if existing:
-        if existing.billable_status == BillableStatus.INVOICED:
+        if _ledger_amounts_frozen(existing.billable_status):
             return _serialize_ledger(existing, include_finance=True)
         if existing.billable_status == BillableStatus.BILLABLE and session_count == 0:
             status = BillableStatus.BILLABLE
