@@ -1,0 +1,57 @@
+---
+description: Client billing loop guardrails — money-IN side (reuse, no renames, engine SSOT).
+alwaysApply: false
+globs:
+  - backend/app/models/client_billing.py
+  - backend/app/models/ledger_billing.py
+  - backend/app/services/client_billing_service.py
+  - backend/app/services/billing_ledger_service.py
+  - backend/app/services/billing_composer_service.py
+  - backend/app/services/client_invoice_draft_service.py
+  - backend/app/api/v1/client_billing.py
+  - backend/app/services/payment_provider*.py
+  - backend/app/services/bookkeeping_provider*.py
+  - frontend/src/components/client-portal/ParentBillingPage.jsx
+  - frontend/src/components/admin-portal/AdminClient*.jsx
+---
+
+# InsighteCase client billing loop (money-IN)
+
+## Non-negotiables
+
+1. **Engine is SSOT for amounts.** Compose from `billing_ledger` + `product_billing_rules` + case rates. Never recompute or copy price into a parallel store.
+2. **Additive only.** Reuse existing tables/enums — **no renames**:
+   - `client_invoices`, `client_invoice_lines`, `client_payments`, `billing_disputes`, `care_packages`
+   - `ClientInvoiceStatus`, `ClientPaymentStatus` (`PENDING_REVIEW` stays; not `CLAIM`)
+   - Payout `invoices` / `InvoiceStatus` is separate (therapist money-out)
+3. **Pre-cutover:** mock gateway, no-op Zoho until env flags + credentials. Nothing charges live money.
+4. **Visibility by construction:**
+   - Finance/admin (`invoice.approve`): full detail incl. margin
+   - Parent: own case only — never margin, payout, or another family
+   - Therapist: **none** of client billing data
+5. **Bill-once + idempotent:** each delivered session billable at most once; package-covered sessions draw down package, no double charge.
+6. **Fail-safe:** ambiguous lines → `needs_review` / HOLD; never auto-bill or auto-collect.
+7. **Manual payment:** parent claim = `PENDING_REVIEW` only; balance moves on finance `CONFIRMED` only.
+8. **Per-line dispute hold:** collectible = total − Σ(held disputed lines); invoice does **not** flip to global `DISPUTED`; rest stays payable.
+9. **Late fee:** additive `LATE_FEE` line — never mutate invoice total in place.
+10. **Package rollover (standard PACKAGE):** credit-forward — 10 billed − 8 consumed = 2 remaining → next cycle renews to 10 by billing delta (8); credits not re-charged; unused credits expire after **one** cycle.
+11. **Shadow/retainer packages:** mark cycle `needs_review`; do **not** auto-credit; flag for finance.
+
+## Create only (when missing)
+
+- `client_package_cycle` (or cycle fields) for drawdown/rollover
+- `LATE_FEE` in `ClientInvoiceLineType`
+- `external_ref` id-map (provider, entity_type, entity_id → external_id)
+- `PaymentProvider` / `BookkeepingProvider` interfaces (mock/no-op default)
+
+## Enum extensions (additive)
+
+- Add `ISSUED`, `CLOSED` to `ClientInvoiceStatus` — do not alias to `SENT`/`GENERATED`.
+
+## Deferred (name only)
+
+Live gateway credentials, dunning automation, refunds/credit notes, partial-payment plans, bidirectional Zoho sync, parent-initiated package changes beyond top-up.
+
+## Migration policy
+
+Single revision off real `alembic heads`; prove up/down/up on throwaway Postgres; never touch Railway DATABASE_URL or `alembic/env.py`.

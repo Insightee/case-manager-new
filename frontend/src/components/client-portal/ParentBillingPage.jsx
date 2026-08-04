@@ -94,6 +94,7 @@ function InvoiceMobileCard({ inv, onOpen }) {
 }
 
 function PackageMobileCard({ pkg }) {
+  const preview = pkg.renewalPreview
   return (
     <article className="parent-pay__mobile-card parent-pay__mobile-card--package">
       <div className="parent-pay__mobile-card-top">
@@ -110,6 +111,17 @@ function PackageMobileCard({ pkg }) {
           Expires {pkg.validityEnd ? formatBillingDate(pkg.validityEnd) : '—'}
         </span>
       </div>
+      {preview?.nextCyclePreview ? (
+        <p className="parent-pay__muted parent-pay__mt-4">{preview.nextCyclePreview}</p>
+      ) : null}
+      {preview?.topUpRecommended ? (
+        <p className="parent-pay__alert parent-pay__alert--info parent-pay__mt-4">
+          Sessions running low — contact finance to top up your package.
+        </p>
+      ) : null}
+      {preview?.needsReview ? (
+        <p className="parent-pay__muted parent-pay__mt-4">{preview.message}</p>
+      ) : null}
     </article>
   )
 }
@@ -216,6 +228,40 @@ function ParentBillingPageFull() {
       setPayAmount(String(detail.balanceInr ?? ''))
     } catch (err) {
       setError(err.message || 'Could not load invoice')
+    }
+  }
+
+  async function submitGatewayPayment() {
+    if (!selected) return
+    setActing(true)
+    setError('')
+    setMessage('')
+    try {
+      const result = await apiFetch(`/api/v1/parent/billing/invoices/${selected.id}/pay-gateway`, {
+        method: 'POST',
+      })
+      if (!result.success) {
+        setError(result.message || 'Online payment did not complete. You can retry or pay offline.')
+        return
+      }
+      setMessage('Payment received. Your receipt is ready to download.')
+      const detail = await apiFetch(`/api/v1/parent/billing/invoices/${selected.id}`)
+      setSelected(detail)
+      await load()
+    } catch (err) {
+      setError(err.message || 'Online payment did not complete')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function downloadReceipt(paymentId, reference) {
+    setError('')
+    try {
+      const safe = (reference || paymentId).toString().replace(/\//g, '-')
+      await apiDownload(`/api/v1/parent/billing/payments/${paymentId}/receipt`, `receipt_${safe}.pdf`)
+    } catch (err) {
+      setError(err.message || 'Could not download receipt')
     }
   }
 
@@ -826,6 +872,15 @@ function ParentBillingPageFull() {
                           {p.reference ? ` · ${p.reference}` : ''}
                         </p>
                         {p.rejectionNote ? <p className="parent-pay__muted">{p.rejectionNote}</p> : null}
+                        {p.paymentStatus === 'confirmed' ? (
+                          <button
+                            type="button"
+                            className="parent-pay__btn parent-pay__btn--ghost parent-pay__btn--sm parent-pay__mt-4"
+                            onClick={() => downloadReceipt(p.id, p.reference)}
+                          >
+                            Download receipt
+                          </button>
+                        ) : null}
                         {p.hasProof ? (
                           <button
                             type="button"
@@ -952,13 +1007,13 @@ function ParentBillingPageFull() {
               >
                 Download PDF
               </button>
-              {selected.paymentBucket !== 'paid' && selected.paymentBucket !== 'disputed' ? (
+              {selected.paymentBucket !== 'paid' && (selected.balanceInr ?? 0) > 0 ? (
                 <>
                   <button
                     type="button"
                     className="parent-pay__btn parent-pay__btn--primary"
-                    disabled
-                    title="Online payment gateway coming soon"
+                    disabled={acting}
+                    onClick={submitGatewayPayment}
                   >
                     Pay online
                   </button>
