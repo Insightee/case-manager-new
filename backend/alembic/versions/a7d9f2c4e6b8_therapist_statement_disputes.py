@@ -1,7 +1,7 @@
 """Additive: therapist_statement_disputes (therapist-side statement flag).
 
 Revision ID: a7d9f2c4e6b8
-Revises: m7n8o9p0q1r2
+Revises: n8o9p0q1r2s3
 Create Date: 2026-08-03
 
 Purely additive — creates ONE new standalone table and alters nothing else.
@@ -17,7 +17,7 @@ from alembic import op
 from migration_util import has_table
 
 revision: str = "a7d9f2c4e6b8"
-down_revision: Union[str, None] = "m7n8o9p0q1r2"
+down_revision: Union[str, None] = "n8o9p0q1r2s3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
