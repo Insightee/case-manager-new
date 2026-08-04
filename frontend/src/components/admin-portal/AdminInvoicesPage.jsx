@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAdminHome } from '../../hooks/useAdminHome.js'
 import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
-import { AdminMobilePillTabs, AdminPageHeader, AdminPanel, PortalTabBar } from './ui/index.js'
+import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
 import { AdminClientInvoicesTab } from './AdminClientInvoicesTab.jsx'
 import { AdminClientPaymentsTab } from './AdminClientPaymentsTab.jsx'
 import { AdminProductRulesTab } from './AdminProductRulesTab.jsx'
@@ -11,6 +11,8 @@ import { AdminSessionLedgerTab } from './AdminSessionLedgerTab.jsx'
 import { AdminPackagesTab } from './AdminPackagesTab.jsx'
 import { AdminDisputesTab } from './AdminDisputesTab.jsx'
 import { AdminReceivablesTab } from './AdminReceivablesTab.jsx'
+import { AdminFinanceOverviewTab } from './AdminFinanceOverviewTab.jsx'
+import { FinanceMondayBrief } from './TherapistPayoutFinance.jsx'
 import { AdminFinanceReportsTab } from './AdminFinanceReportsTab.jsx'
 import './admin-client-invoices.css'
 import '../../styles/billing-readiness-master-sheet.css'
@@ -60,34 +62,6 @@ function financeWidgetFooter(widget) {
     client_claims: '/admin/invoices?tab=payments',
   }
   return map[widget.id] || '/admin/invoices/compose?queue=not_invoiced_this_month'
-}
-
-function FinanceOverviewLinks({ claimsPending }) {
-  const links = [
-    { to: '/admin/invoices?tab=client', label: 'Client invoices', hint: 'Review and send invoices' },
-    { to: '/admin/invoices?tab=payments', label: 'Client payments', hint: 'Payment claims and receipts' },
-    { to: '/admin/invoices?tab=receivables', label: 'Receivables', hint: 'Outstanding balances' },
-    { to: '/admin/invoices?tab=disputes', label: 'Disputes', hint: 'Open billing disputes' },
-    { to: '/admin/invoices/compose?queue=not_invoiced_this_month', label: 'Billing composer', hint: 'Build invoices from session ledger' },
-  ]
-  return (
-    <AdminPanel title="Billing workspace">
-      {claimsPending > 0 ? (
-        <p className="finance-overview-links__alert">
-          <strong>{claimsPending} payment claim{claimsPending === 1 ? '' : 's'}</strong> awaiting review.{' '}
-          <Link to="/admin/invoices?tab=payments">Review now →</Link>
-        </p>
-      ) : null}
-      <div className="finance-overview-links__grid">
-        {links.map((item) => (
-          <Link key={item.to} to={item.to} className="finance-overview-links__card">
-            <span className="finance-overview-links__card-title">{item.label}</span>
-            <span className="finance-overview-links__card-hint">{item.hint}</span>
-          </Link>
-        ))}
-      </div>
-    </AdminPanel>
-  )
 }
 
 export function AdminInvoicesPage() {
@@ -228,7 +202,12 @@ export function AdminInvoicesPage() {
         />
       ) : null}
 
-      {activeTab === 'overview' ? <FinanceOverviewLinks claimsPending={claimsPending} /> : null}
+      {activeTab === 'overview' ? (
+        <>
+          <FinanceMondayBrief />
+          <AdminFinanceOverviewTab />
+        </>
+      ) : null}
       {activeTab === 'receivables' ? (
         <AdminReceivablesTab openInvoiceId={searchParams.get('invoiceId')} />
       ) : null}
