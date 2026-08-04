@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import {
-  downgradeConfidence,
   formatInr,
   normalizeConfidence,
 } from '../../lib/financeConfidence.js'
@@ -13,7 +12,6 @@ import { QueryState } from '../shared/QueryState.jsx'
 import { ConfidenceBadge } from './ui/ConfidenceBadge.jsx'
 import {
   AdminEmptyState,
-  AdminFilterGrid,
   AdminPanel,
 } from './ui/index.js'
 import { AdminBillingReadinessMasterSheet } from './AdminBillingReadinessMasterSheet.jsx'
@@ -55,6 +53,17 @@ function moneyLabel(mv) {
   if (!amt) return null
   const conf = normalizeConfidence(mv.confidence)
   return `${amt} · ${conf.charAt(0)}${conf.slice(1).toLowerCase()}`
+}
+
+function financeOverviewErrorMessage(message) {
+  const msg = String(message || '')
+  if (msg.includes('not available in this environment')) {
+    return 'Finance overview is not enabled on this server yet. Use Client invoices and Client payments below for day-to-day billing work.'
+  }
+  if (msg.includes('Finance Control Tower is limited')) {
+    return 'This overview is available to Finance and Super Admin roles.'
+  }
+  return msg || "We couldn't load this month's finance overview. Try again or choose another billing month."
 }
 
 export function AdminFinanceOverviewTab() {
@@ -151,15 +160,6 @@ export function AdminFinanceOverviewTab() {
     }
   }, [flagOn, billingMonth, queue])
 
-  const pageConfidence = useMemo(() => {
-    let c = summary?.pageConfidence || 'ESTIMATED'
-    if (exceptionsError || billingError || payoutError) {
-      c = downgradeConfidence(c, 'ESTIMATED')
-    }
-    if (summaryError) c = downgradeConfidence(c, 'INCOMPLETE')
-    return normalizeConfidence(c)
-  }, [summary, summaryError, exceptionsError, billingError, payoutError])
-
   if (!flagOn) {
     return (
       <AdminEmptyState
@@ -181,44 +181,23 @@ export function AdminFinanceOverviewTab() {
 
   return (
     <div className="finance-control-tower forest-light">
-      <h2 className="finance-control-tower__title">Finance Control Tower</h2>
-      <div className="finance-control-tower__meta">
-        <AdminFilterGrid ariaLabel="Control tower filters">
-          <label className="client-inv__filter-field">
-            <span className="client-inv__filter-label">Billing month</span>
-            <input
-              type="month"
-              className="client-inv__filter-input"
-              value={billingMonth}
-              onChange={(e) => setMonth(e.target.value)}
-            />
-          </label>
-        </AdminFilterGrid>
-        <span className="finance-control-tower__meta-chip">
-          Last refreshed{' '}
-          <span className="mono">{summary?.asOf ? new Date(summary.asOf).toLocaleString('en-IN') : '—'}</span>
-        </span>
-        <span className="finance-control-tower__meta-chip">
-          Engine {summary?.engineAvailable ? 'available' : 'gated off'}
-        </span>
-        <span className="finance-control-tower__meta-chip">
-          Cutover {summary?.cutoverComplete ? 'complete' : 'pending'}
-        </span>
-        <span className="finance-control-tower__meta-chip">Read-only</span>
-        <ConfidenceBadge confidence={pageConfidence} reason={summary?.pageConfidenceReason} />
+      <div className="finance-control-tower__toolbar">
+        <label className="finance-control-tower__month-field">
+          <span className="client-inv__filter-label">Billing month</span>
+          <input
+            type="month"
+            className="client-inv__filter-input finance-control-tower__month-input"
+            value={billingMonth}
+            onChange={(e) => setMonth(e.target.value)}
+            aria-label="Billing month"
+          />
+        </label>
       </div>
-
-      {summary?.provisionalBanner || !summary?.cutoverComplete ? (
-        <div className="finance-control-tower__banner" role="status">
-          Showing verified calculations from staging. Live financial cutover is pending, so figures remain
-          provisional.
-        </div>
-      ) : null}
 
       <QueryState
         isLoading={summaryLoading}
         isError={Boolean(summaryError) && !summary}
-        error={summaryError}
+        error={{ message: financeOverviewErrorMessage(summaryError) }}
         onRetry={() => setMonth(billingMonth)}
         isEmpty={false}
         skeletonVariant="list"
@@ -299,7 +278,7 @@ export function AdminFinanceOverviewTab() {
           subtitle={`Source queue: ${queue} · month ${billingMonth}`}
           actions={
             <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => openQueue(null)}>
-              Back to Control Tower
+              Back to overview
             </button>
           }
         >
@@ -333,7 +312,7 @@ export function AdminFinanceOverviewTab() {
       <h3 className="finance-control-tower__section-title">Exception preview</h3>
       {exceptionsError ? (
         <div className="finance-control-tower__section-error">
-          Exception preview unavailable. Page confidence is downgraded.
+          Exception preview unavailable for this month.
         </div>
       ) : (
         <ExceptionTable items={exceptions?.items || []} emptyLabel="No open exceptions for this month." />
