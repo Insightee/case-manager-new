@@ -4,6 +4,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { formatInr } from '../../lib/financeConfidence.js'
 import { AdminEmptyState, AdminSearchInput } from './ui/index.js'
 import '../../styles/billing-readiness-master-sheet.css'
+import { FinanceCorrectionPanel } from './FinanceCorrectionPanel.jsx'
 
 const EXCEPTION_PILL = {
   CLEAR: 'brms-pill--clear',
@@ -96,7 +97,7 @@ function ExceptionPill({ state, held }) {
   )
 }
 
-function ExpandedDetail({ row }) {
+function ExpandedDetail({ row, billingMonth, onRefresh }) {
   return (
     <div className="brms-expanded">
       <div className="brms-expanded__grid">
@@ -147,7 +148,7 @@ function ExpandedDetail({ row }) {
           </dl>
         </section>
         <section>
-          <h4>Comments (read-only)</h4>
+          <h4>Comments</h4>
           <dl>
             <dt>CRM</dt><dd>{row.comments?.crm}</dd>
             <dt>HR</dt><dd>{row.comments?.hr}</dd>
@@ -155,6 +156,7 @@ function ExpandedDetail({ row }) {
           </dl>
         </section>
       </div>
+      <FinanceCorrectionPanel row={row} billingMonth={billingMonth} onDone={onRefresh} />
       {row.exceptions?.length ? (
         <ul className="brms-exception-list">
           {row.exceptions.map((ex) => (
@@ -328,7 +330,7 @@ export function AdminBillingReadinessMasterSheet({ billingMonth: billingMonthPro
                   </span>
                   <ExceptionPill state={row.exceptionState} held={row.held} />
                 </button>
-                {open ? <ExpandedDetail row={row} /> : null}
+                {open ? <ExpandedDetail row={row} billingMonth={billingMonth} onRefresh={load} /> : null}
               </li>
             )
           })}

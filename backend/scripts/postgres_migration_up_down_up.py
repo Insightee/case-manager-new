@@ -105,8 +105,10 @@ def _seed_demo_and_proof(head: str) -> None:
         check=True,
     )
     if not head_config(head):
-        print(f"No proof registry for head {head} — skipping revision seed (schema-only head?)")
-        return
+        raise RuntimeError(
+            f"Alembic head {head} is not registered in postgres_migration_proof_registry.py — "
+            "add tables_added/columns_added and a seed() before merging."
+        )
     subprocess.run(
         [sys.executable, "-m", "scripts.postgres_migration_proof_seed"],
         cwd=BACKEND_DIR,
