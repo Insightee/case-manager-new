@@ -1270,32 +1270,55 @@ def save_case_billing_preferences(db: Session, case_id: int, data: dict) -> None
     db.flush()
 
 
-def admin_summary(db: Session) -> dict:
-    rows = db.scalars(select(ClientInvoice).options(selectinload(ClientInvoice.lines), selectinload(ClientInvoice.disputes))).all()
+def admin_summary(
+    db: Session,
+    *,
+    month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
+) -> dict:
+    """KPI cards — totals always match admin_list_invoices / receivables for the same scope."""
+    receivables = admin_receivables_summary(
+        db,
+        month=month,
+        year=year,
+        date_from=date_from,
+        date_to=date_to,
+        case_id=case_id,
+        status=status,
+        invoice_type=invoice_type,
+        module=module,
+        search=search,
+    )
+    rows = receivables.get("invoices") or []
+    totals = receivables.get("totals") or {}
+
     today = date.today()
-    month_prefix = today.strftime("%b %Y")
-    total_outstanding = 0.0
-    overdue_count = 0
     paid_this_month = 0
     draft_count = 0
     sent_unpaid = 0
 
-    for inv in rows:
-        amounts = _compute_invoice_balances(inv, list(inv.lines or []), list(inv.disputes or []))
-        balance = float(amounts["balanceInr"])
-        if inv.status == ClientInvoiceStatus.DRAFT:
+    for row in rows:
+        status_key = (row.get("status") or "").upper()
+        balance = float(row.get("balanceInr") or 0)
+        if status_key == ClientInvoiceStatus.DRAFT.value:
             draft_count += 1
-        if inv.status == ClientInvoiceStatus.PAID or balance <= 0:
-            if inv.billing_month == month_prefix or (
-                inv.updated_at and inv.updated_at.strftime("%b %Y") == month_prefix
-            ):
+        if status_key == ClientInvoiceStatus.PAID.value or balance <= 0:
+            billing_month = row.get("billingMonth") or ""
+            if billing_month == today.strftime("%Y-%m"):
                 paid_this_month += 1
-        elif balance > 0:
-            total_outstanding += balance
-            if _invoice_is_overdue(inv, balance):
-                overdue_count += 1
-            if inv.status in (ClientInvoiceStatus.SENT, ClientInvoiceStatus.PARTIALLY_PAID, ClientInvoiceStatus.GENERATED):
-                sent_unpaid += 1
+        elif balance > 0 and status_key in (
+            ClientInvoiceStatus.SENT.value,
+            ClientInvoiceStatus.PARTIALLY_PAID.value,
+            ClientInvoiceStatus.GENERATED.value,
+        ):
+            sent_unpaid += 1
 
     open_disputes = (
         db.scalar(
@@ -1311,14 +1334,27 @@ def admin_summary(db: Session) -> dict:
     )
 
     return {
-        "totalOutstandingInr": round(total_outstanding, 2),
-        "overdueCount": overdue_count,
+        "totalOutstandingInr": float(totals.get("outstandingInr") or 0),
+        "overdueInr": float(totals.get("overdueInr") or 0),
+        "overdueCount": int(totals.get("overdueCount") or 0),
         "disputedCount": open_disputes,
         "openDisputesCount": open_disputes,
         "paidThisMonthCount": paid_this_month,
         "draftCount": draft_count,
         "sentUnpaidCount": sent_unpaid,
         "invoiceCount": len(rows),
+        "scope": {
+            "month": month,
+            "year": year,
+            "dateFrom": date_from,
+            "dateTo": date_to,
+            "caseId": case_id,
+            "status": status,
+            "invoiceType": invoice_type,
+            "module": module,
+            "search": search,
+        },
+        "source": "admin_receivables_summary",
     }
 
 
@@ -2015,7 +2051,12 @@ def admin_receivables_summary(
     db: Session,
     *,
     month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    case_id: Optional[int] = None,
     status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
     overdue_only: bool = False,
@@ -2023,7 +2064,12 @@ def admin_receivables_summary(
     rows = admin_list_invoices(
         db,
         month=month,
+        year=year,
+        date_from=date_from,
+        date_to=date_to,
+        case_id=case_id,
         status=status,
+        invoice_type=invoice_type,
         module=module,
         search=search,
     )

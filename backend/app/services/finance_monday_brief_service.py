@@ -9,11 +9,24 @@ from app.services import billing_composer_service, client_billing_service, finan
 
 
 def monday_finance_brief(db: Session, *, billing_month: str | None = None) -> dict:
-    ym = billing_composer_service.normalize_billing_month(billing_month or date.today().strftime("%Y-%m"))
+    ym = (
+        billing_composer_service.normalize_billing_month(billing_month)
+        if billing_month
+        else None
+    )
 
-    receivables = client_billing_service.admin_receivables_summary(db)
-    payout_queue = therapist_payout_queue_service.admin_payout_queue_summary(db, month=ym)
-    overview = finance_overview_service.finance_overview_summary(db, billing_month=ym)
+    receivables = client_billing_service.admin_receivables_summary(
+        db,
+        month=ym,
+    )
+    payout_queue = therapist_payout_queue_service.admin_payout_queue_summary(
+        db,
+        month=ym or billing_composer_service.normalize_billing_month(date.today().strftime("%Y-%m")),
+    )
+    overview = finance_overview_service.finance_overview_summary(
+        db,
+        billing_month=ym or billing_composer_service.normalize_billing_month(date.today().strftime("%Y-%m")),
+    )
 
     recv_totals = receivables.get("totals") or {}
     pay_totals = payout_queue.get("totals") or {}
@@ -76,6 +89,7 @@ def monday_finance_brief(db: Session, *, billing_month: str | None = None) -> di
 
     return {
         "billingMonth": ym,
+        "scopeAllMonths": ym is None,
         "moneyIn": money_in,
         "moneyOut": money_out,
         "thisWeek": {
