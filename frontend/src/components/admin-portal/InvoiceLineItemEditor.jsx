@@ -62,7 +62,7 @@ function InvoiceTotalsFooter({ detail, lines }) {
   )
 }
 
-export function InvoiceLineItemEditor({ invoiceId, lines, detail, canWrite, onUpdated }) {
+export function InvoiceLineItemEditor({ invoiceId, lines, detail, canWrite, onUpdated, onRemoveLateFee }) {
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({})
   const { loading: busy, error, successMessage, run, clearMessages, setError } = useBillingAction()
@@ -304,6 +304,12 @@ export function InvoiceLineItemEditor({ invoiceId, lines, detail, canWrite, onUp
                             <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => startEdit(l)}>Edit</button>
                             <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={busy} onClick={() => deleteLine(l.id)}>Remove</button>
                           </div>
+                        </td>
+                      ) : onRemoveLateFee && (l.lineItemType || '').toUpperCase() === 'LATE_FEE' ? (
+                        <td>
+                          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => onRemoveLateFee(l.id)}>
+                            Reverse late fee
+                          </button>
                         </td>
                       ) : null}
                     </>

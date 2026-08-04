@@ -130,6 +130,7 @@ def finance_overview_summary(db: Session, *, billing_month: str | None = None) -
             "composerTherapistPending": f"/admin/invoices/compose?billing_month={ym}&queue=therapist_pending",
             "clientInvoices": "/admin/invoices?tab=client",
             "clientPayments": "/admin/invoices?tab=payments",
+            "receivables": "/admin/invoices?tab=receivables",
             "therapistPayouts": "/admin/therapist-payouts?sub=payouts&status=IN_REVIEW",
             "disputes": "/admin/invoices?tab=disputes",
         },
