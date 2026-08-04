@@ -111,10 +111,7 @@ def _payment_bucket(inv: ClientInvoice, *, balance: float, has_open_dispute: boo
 
 
 def _parent_case_ids(db: Session, user_id: int) -> list[int]:
-    child_ids = parent_service.child_ids_for_parent(db, user_id)
-    if not child_ids:
-        return []
-    return list(db.scalars(select(Case.id).where(Case.child_id.in_(child_ids))).all())
+    return parent_service.parent_portal_case_ids(db, user_id)
 
 
 def _invoice_is_overdue(inv: ClientInvoice, balance: float, *, has_open_dispute: bool = False) -> bool:
