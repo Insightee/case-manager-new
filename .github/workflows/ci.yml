@@ -5,11 +5,51 @@ on:
     branches: [main, master, develop]
   pull_request:
     branches: [main, master, develop]
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  postgres-migration-proof:
+    runs-on: ubuntu-latest
+    env:
+      STORAGE_PROVIDER: local
+      APP_ENV: test
+      MIGRATION_PROOF_REQUIRED: "1"
+      DATABASE_URL: postgresql+psycopg2://insightcase:insightcase@localhost:5432/insightcase_migration
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: insightcase
+          POSTGRES_PASSWORD: insightcase
+          POSTGRES_DB: insightcase_migration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U insightcase -d insightcase_migration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Alembic single head (gate)
+        run: |
+          PYTHONPATH=.:alembic python3 -m alembic heads | tee /tmp/heads.txt
+          test "$(grep -c '(head)' /tmp/heads.txt)" -eq 1
+      - name: Seeded Postgres up/down/up proof
+        run: python3 scripts/postgres_migration_up_down_up.py
+      - name: Migration proof pytest module
+        run: python3 -m pytest app/tests/test_postgres_migration_proof.py -q --tb=short
+
   backend:
     runs-on: ubuntu-latest
     env:
@@ -29,10 +69,6 @@ jobs:
           python3 scripts/check_pyproject_requirements.py
           pip install --no-cache-dir .
           python3 -c "import boto3; import reportlab; import openpyxl"
-      - name: Alembic single head
-        run: |
-          PYTHONPATH=.:alembic python3 -m alembic heads | tee /tmp/heads.txt
-          test "$(grep -c '(head)' /tmp/heads.txt)" -eq 1
       - name: Production config guard tests
         run: python3 -m pytest app/tests/test_production_checks.py app/tests/test_refresh_token_storage.py -q --tb=short
       # Tests bootstrap DB in app/tests/conftest.py (migrate + seed per runner).
