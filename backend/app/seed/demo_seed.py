@@ -665,6 +665,42 @@ def run():
             )
 
         if not db.scalars(select(Invoice).where(Invoice.therapist_user_id == therapist.id)).first():
+            therapist.external_employee_id = therapist.external_employee_id or "1406"
+            therapist.job_title = therapist.job_title or "Senior Therapist"
+            db.add(
+                Invoice(
+                    therapist_user_id=therapist.id,
+                    month="Jul 2026",
+                    amount_inr=42500,
+                    subtotal_inr=45000,
+                    leave_deduction_inr=2500,
+                    sessions_count=32,
+                    status=InvoiceStatus.PAID,
+                    paid_amount_inr=42500,
+                )
+            )
+            db.add(
+                Invoice(
+                    therapist_user_id=therapist.id,
+                    month="Jun 2026",
+                    amount_inr=38000,
+                    subtotal_inr=40000,
+                    leave_deduction_inr=2000,
+                    sessions_count=28,
+                    status=InvoiceStatus.PAID,
+                    paid_amount_inr=38000,
+                )
+            )
+            db.add(
+                Invoice(
+                    therapist_user_id=therapist.id,
+                    month="May 2026",
+                    amount_inr=36000,
+                    subtotal_inr=36000,
+                    sessions_count=26,
+                    status=InvoiceStatus.APPROVED,
+                )
+            )
             db.add(
                 Invoice(
                     therapist_user_id=therapist.id,

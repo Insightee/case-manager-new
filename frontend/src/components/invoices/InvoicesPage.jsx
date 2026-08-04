@@ -12,6 +12,7 @@ import { SummaryCard } from './SummaryCard.jsx'
 import { computeSummaryFromInvoices, formatInr, mapInvoiceForCard } from './invoiceUtils.js'
 import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
 import { isBillingModuleEnabled } from '../../lib/productFeatureFlags.js'
+import { StatementLedger } from './StatementLedger.jsx'
 
 function Toast({ message, visible, onDismiss }) {
   if (!visible) return null
@@ -77,6 +78,7 @@ function InvoicesPageContent() {
   const [loading, setLoading] = useState(true)
   const [checklist, setChecklist] = useState(invoiceData.checklist.map((c) => ({ ...c })))
   const [toast, setToast] = useState({ visible: false, message: '' })
+  const [downloadingId, setDownloadingId] = useState(null)
 
   const loadInvoices = useCallback(async () => {
     setLoading(true)
@@ -140,6 +142,29 @@ function InvoicesPageContent() {
     setChecklist((prev) => prev.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
   }
 
+  const handleDownloadPayslip = useCallback(
+    async (inv) => {
+      const id = inv.id ?? inv
+      setDownloadingId(id)
+      try {
+        await apiDownload(`/api/v1/invoices/${id}/pdf`, `insighte_statement_${id}.pdf`)
+        showToast(`Payslip downloaded for ${inv.month || 'statement'}.`)
+      } catch (err) {
+        showToast(err.message || 'Could not download payslip PDF')
+      } finally {
+        setDownloadingId(null)
+      }
+    },
+    [showToast],
+  )
+
+  const handleLedgerView = useCallback(
+    (inv) => {
+      setBreakdownInvoice(mapInvoiceForCard(inv))
+    },
+    [],
+  )
+
   const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
   return (
@@ -188,6 +213,14 @@ function InvoicesPageContent() {
       />
 
       <SummaryCard summary={summary} />
+
+      <StatementLedger
+        invoices={invoices}
+        loading={loading}
+        downloadingId={downloadingId}
+        onView={handleLedgerView}
+        onDownloadPayslip={handleDownloadPayslip}
+      />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-8">
@@ -288,7 +321,7 @@ function InvoicesPageContent() {
                         invoice={inv}
                         onView={() => setBreakdownInvoice(inv)}
                         onSessionBreakdown={() => setBreakdownInvoice(inv)}
-                        onDownloadPdf={() => showToast(`PDF for ${inv.month} coming soon`)}
+                        onDownloadPdf={() => handleDownloadPayslip(inv)}
                       />
                     ))}
                   </div>
