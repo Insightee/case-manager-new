@@ -103,3 +103,61 @@ def test_partial_dispute_allows_payment_on_remainder():
     )
     assert claim.status_code == 201, claim.text
     assert claim.json().get("paymentStatus") == "pending_review"
+
+
+def test_all_lines_held_collectible_zero_pay_blocked():
+    """When every line is disputed, collectible and balance are 0; pay paths reject."""
+    headers = _login("parent@demo.com")
+    detail = _first_unpaid_invoice(headers)
+    if not detail or not detail.get("lines"):
+        return
+    inv_id = detail["id"]
+    all_line_ids = [ln["id"] for ln in detail["lines"]]
+    total = detail["totalInr"]
+
+    dispute = client.post(
+        f"/api/v1/parent/billing/invoices/{inv_id}/disputes",
+        headers=headers,
+        json={
+            "reason_code": "incorrect_amount",
+            "message": "All session lines disputed for full-hold collectible test.",
+            "line_ids": all_line_ids,
+        },
+    )
+    assert dispute.status_code == 200, dispute.text
+
+    after = client.get(f"/api/v1/parent/billing/invoices/{inv_id}", headers=headers).json()
+    assert after.get("heldAmountInr", 0) >= total - 0.01
+    assert after.get("collectibleInr") == 0
+    assert after.get("balanceInr") == 0
+    assert all(ln.get("isHeld") for ln in after.get("lines") or [])
+
+    claim = client.post(
+        f"/api/v1/parent/billing/invoices/{inv_id}/payment-claims",
+        headers=headers,
+        data={"amount_inr": "100", "method": "UPI", "reference": "SHOULD-BLOCK"},
+    )
+    assert claim.status_code == 400
+
+    gateway = client.post(f"/api/v1/parent/billing/invoices/{inv_id}/pay-gateway", headers=headers)
+    assert gateway.status_code == 400
+
+
+def test_held_sum_cannot_drive_collectible_negative():
+    """Held line totals above invoice total clamp collectible at 0, never negative."""
+    from app.models.client_billing import ClientInvoice, ClientInvoiceLine, BillingDispute, BillingDisputeStatus
+    from app.services.client_billing_service import _compute_invoice_balances
+
+    inv = ClientInvoice(total_inr=100, amount_paid_inr=0)
+    lines = [
+        ClientInvoiceLine(id=1, amount_inr=80),
+        ClientInvoiceLine(id=2, amount_inr=70),
+    ]
+    disputes = [
+        BillingDispute(client_invoice_line_id=1, status=BillingDisputeStatus.OPEN),
+        BillingDispute(client_invoice_line_id=2, status=BillingDisputeStatus.OPEN),
+    ]
+    amounts = _compute_invoice_balances(inv, lines, disputes)
+    assert amounts["heldAmountInr"] == 150
+    assert amounts["collectibleInr"] == 0
+    assert amounts["balanceInr"] == 0
