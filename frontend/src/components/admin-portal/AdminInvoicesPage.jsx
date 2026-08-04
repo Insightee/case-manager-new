@@ -12,6 +12,7 @@ import { AdminPackagesTab } from './AdminPackagesTab.jsx'
 import { AdminDisputesTab } from './AdminDisputesTab.jsx'
 import { AdminReceivablesTab } from './AdminReceivablesTab.jsx'
 import { AdminFinanceOverviewTab } from './AdminFinanceOverviewTab.jsx'
+import { FinanceMondayBrief } from './TherapistPayoutFinance.jsx'
 import { AdminFinanceReportsTab } from './AdminFinanceReportsTab.jsx'
 import './admin-client-invoices.css'
 
@@ -153,7 +154,12 @@ export function AdminInvoicesPage() {
         }))}
       />
 
-      {activeTab === 'overview' ? <AdminFinanceOverviewTab /> : null}
+      {activeTab === 'overview' ? (
+        <>
+          <FinanceMondayBrief />
+          <AdminFinanceOverviewTab />
+        </>
+      ) : null}
       {activeTab === 'receivables' ? (
         <AdminReceivablesTab openInvoiceId={searchParams.get('invoiceId')} />
       ) : null}

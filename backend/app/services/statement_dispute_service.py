@@ -7,6 +7,8 @@ existing ``InvoiceStatus.QUERIED`` flip — no parallel status concept.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from app.models.invoice import Invoice, InvoiceStatus
@@ -14,6 +16,7 @@ from app.models.therapist_statement_dispute import TherapistStatementDispute
 
 # A dispute makes a submitted statement "queried" for finance to look at.
 _FLIP_TO_QUERIED_FROM = {InvoiceStatus.IN_REVIEW, InvoiceStatus.APPROVED}
+_OPEN_DISPUTE_STATUSES = {"OPEN", "UNDER_REVIEW"}
 
 
 def create_statement_dispute(
@@ -52,7 +55,48 @@ def create_statement_dispute(
 
     # Reuse the existing invoice status — no amount is ever changed here.
     if invoice is not None and invoice.status in _FLIP_TO_QUERIED_FROM:
+        dispute.prior_invoice_status = invoice.status.value
         invoice.status = InvoiceStatus.QUERIED
+
+    db.flush()
+    return dispute
+
+
+def resolve_statement_dispute(
+    db: Session,
+    dispute_id: int,
+    *,
+    status: str,
+    resolution: str,
+    resolved_by_user_id: int,
+) -> TherapistStatementDispute:
+    """Mirror client-side resolve_dispute — close dispute, release hold, restore invoice status."""
+    dispute = db.get(TherapistStatementDispute, dispute_id)
+    if not dispute:
+        raise ValueError("Dispute not found")
+    if dispute.status not in _OPEN_DISPUTE_STATUSES:
+        raise ValueError("Dispute is already closed")
+
+    normalized = status.upper()
+    if normalized not in {"RESOLVED", "REJECTED"}:
+        raise ValueError("Status must be RESOLVED or REJECTED")
+
+    dispute.status = normalized
+    dispute.admin_resolution = (resolution or "").strip()
+    dispute.resolved_at = datetime.now(timezone.utc)
+    dispute.resolved_by_user_id = resolved_by_user_id
+
+    if dispute.invoice_id:
+        invoice = db.get(Invoice, dispute.invoice_id)
+        if invoice and invoice.status == InvoiceStatus.QUERIED:
+            prior = dispute.prior_invoice_status
+            if prior:
+                try:
+                    invoice.status = InvoiceStatus(prior)
+                except ValueError:
+                    invoice.status = InvoiceStatus.IN_REVIEW
+            else:
+                invoice.status = InvoiceStatus.IN_REVIEW
 
     db.flush()
     return dispute
@@ -82,5 +126,8 @@ def dispute_dict(d: TherapistStatementDispute) -> dict:
         "reason_code": d.reason_code,
         "comment": d.comment,
         "disputed_session_ids": d.disputed_session_ids or [],
+        "prior_invoice_status": d.prior_invoice_status,
+        "admin_resolution": d.admin_resolution,
+        "resolved_at": d.resolved_at.isoformat() if d.resolved_at else None,
         "created_at": d.created_at.isoformat() if d.created_at else None,
     }
