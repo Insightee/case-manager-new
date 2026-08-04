@@ -25,6 +25,56 @@ from app.services import invoice_billing_service
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
+# Client-side money must never reach a therapist. Only finance/admin (holders
+# of ``invoice.approve``) may see the client rate, package price, monthly rate,
+# or client billing arrangement. These keys are stripped from therapist-facing
+# preview/breakdown payloads at the API boundary — the payout calculator itself
+# is never touched; it stays the single source of the therapist-share numbers.
+_CLIENT_PRICE_KEYS = frozenset(
+    {
+        "client_rate_per_session_inr",
+        "client_monthly_rate_inr",
+        "package_amount_inr",
+        "client_billing_mode",
+    }
+)
+
+
+def _hide_client_pricing(user: User) -> bool:
+    return not user_has_permission(user, "invoice.approve")
+
+
+def _redact_billing(billing):
+    if not isinstance(billing, dict):
+        return billing
+    return {k: v for k, v in billing.items() if k not in _CLIENT_PRICE_KEYS}
+
+
+def _redact_preview_client_pricing(preview: dict) -> dict:
+    # build_month_preview returns case groups under "cases"; tolerate the legacy
+    # "case_groups" key too. Each group carries client pricing under "billing".
+    groups = preview.get("cases")
+    if groups is None:
+        groups = preview.get("case_groups") or []
+    for group in groups:
+        if isinstance(group, dict) and "billing" in group:
+            group["billing"] = _redact_billing(group["billing"])
+    return preview
+
+
+def _redact_breakdown_client_pricing(data: dict) -> dict:
+    # Persisted invoices expose case billing under "billing_snapshot"; preview-derived
+    # breakdowns (from_preview=True) expose it under "billing". The therapist UI reads
+    # whichever is present, so both must be stripped or client pricing leaks.
+    for case in data.get("cases") or []:
+        if not isinstance(case, dict):
+            continue
+        if "billing_snapshot" in case:
+            case["billing_snapshot"] = _redact_billing(case["billing_snapshot"])
+        if "billing" in case:
+            case["billing"] = _redact_billing(case["billing"])
+    return data
+
 
 def _invoice_read(i: Invoice, db: Optional[Session] = None) -> InvoiceRead:
     therapist_name = None
@@ -85,7 +135,10 @@ def preview_invoice(
     user: User = Depends(require_permission("invoice.generate")),
     db: Session = Depends(get_db),
 ):
-    return invoice_billing_service.build_month_preview(db, user.id, month)
+    preview = invoice_billing_service.build_month_preview(db, user.id, month)
+    if _hide_client_pricing(user):
+        preview = _redact_preview_client_pricing(preview)
+    return preview
 
 
 @router.post("/late-sessions", status_code=status.HTTP_201_CREATED)
@@ -212,6 +265,8 @@ def invoice_breakdown(
     data = invoice_billing_service.invoice_breakdown(db, invoice_id)
     if not data:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    if _hide_client_pricing(user):
+        data = _redact_breakdown_client_pricing(data)
     return data
 
 

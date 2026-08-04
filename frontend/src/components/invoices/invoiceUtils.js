@@ -91,15 +91,23 @@ export function lineTypeLabel(type) {
   return map[type] || type
 }
 
+// Renders whatever pricing fields are present. Admin payloads carry the client
+// figures (client rate / package amount) and see the full line; therapist
+// payloads are redacted at the API boundary, so those parts drop out and the
+// therapist only ever sees their own share — never client-side money.
 export function billingSummary(b) {
   if (!b?.billing_type) return 'Billing not configured'
+  const share = b.pay_share_amount_inr || 0
   if (b.billing_type === 'PER_SESSION') {
-    return `₹${b.client_rate_per_session_inr}/session · ₹${b.pay_share_amount_inr || 0} therapist share`
+    const clientPart =
+      b.client_rate_per_session_inr != null ? `₹${b.client_rate_per_session_inr}/session · ` : ''
+    return `${clientPart}₹${share} therapist share`
   }
   if (b.compensation_mode === 'FIXED_LUMP') {
     return `Package ${b.package_session_count} sessions · ₹${b.therapist_fixed_pay_inr} fixed pay`
   }
-  return `Package ${b.package_session_count} sessions · ₹${b.package_amount_inr} · ₹${b.pay_share_amount_inr || 0} therapist share`
+  const clientPart = b.package_amount_inr != null ? `₹${b.package_amount_inr} · ` : ''
+  return `Package ${b.package_session_count} sessions · ${clientPart}₹${share} therapist share`
 }
 
 export function mapInvoiceForCard(inv) {
