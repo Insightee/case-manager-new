@@ -1,4 +1,5 @@
 import { isLeaveBalanceUpdated, leaveBalanceRemainingLabel } from '../../lib/leaveBalanceDisplay.js'
+import { formatDisplayDate } from '../../lib/datetime.js'
 import { billingSummary, formatInr, lineTypeLabel } from './invoiceUtils.js'
 import { AddLateSessionForm } from './AddLateSessionForm.jsx'
 
@@ -7,7 +8,7 @@ function SessionRow({ line, editable, onToggle, onRemove, pending }) {
   const late = line.flags?.added_late || pending
   return (
     <tr className={excluded ? 'opacity-50' : ''}>
-      <td className="py-2 pr-3 text-sm text-slate-700">{line.session_date}</td>
+      <td className="py-2 pr-3 text-sm text-slate-700">{formatDisplayDate(line.session_date)}</td>
       <td className="py-2 pr-3 text-sm text-slate-600">{line.duration_minutes ?? 60} min</td>
       <td className="py-2 pr-3 text-xs text-slate-500">
         {lineTypeLabel(line.line_type)}
@@ -79,6 +80,7 @@ export function InvoiceBreakdownView({
   onToggleSession,
   onRefresh,
   onRemoveLateSession,
+  hideSummary = false,
 }) {
   if (!data) {
     return <p className="text-sm text-slate-500">No breakdown available.</p>
@@ -107,28 +109,39 @@ export function InvoiceBreakdownView({
           </p>
         </div>
       ) : null}
-      <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-slate-50/80 p-4 sm:grid-cols-2">
-        <div>
-          <p className="text-xs font-semibold uppercase text-slate-500">Subtotal (approved)</p>
-          <p className="text-lg font-bold text-slate-900">{formatInr(data.subtotal_inr)}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase text-slate-500">Leave deduction</p>
-          <p className="text-lg font-bold text-rose-700">−{formatInr(data.leave_deduction_inr)}</p>
-        </div>
-        {pendingCount > 0 ? (
-          <div className="sm:col-span-2">
+      {hideSummary ? (
+        pendingCount > 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
             <p className="text-xs font-semibold uppercase text-amber-700">Pending late sessions</p>
             <p className="text-sm font-bold text-amber-900">
               {pendingCount} session{pendingCount === 1 ? '' : 's'} · {formatInr(data.pending_late_inr)} excluded from payout
             </p>
           </div>
-        ) : null}
-        <div className="border-t border-[#E2E8F0] pt-3 sm:col-span-2">
-          <p className="text-xs font-semibold uppercase text-indigo-600">Net payout</p>
-          <p className="text-2xl font-bold text-indigo-900">{formatInr(data.net_amount_inr ?? data.amount_inr)}</p>
+        ) : null
+      ) : (
+        <div className="grid gap-3 rounded-xl border border-[#E2E8F0] bg-slate-50/80 p-4 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-semibold uppercase text-slate-500">Subtotal (approved)</p>
+            <p className="text-lg font-bold text-slate-900">{formatInr(data.subtotal_inr)}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase text-slate-500">Leave deduction</p>
+            <p className="text-lg font-bold text-rose-700">−{formatInr(data.leave_deduction_inr)}</p>
+          </div>
+          {pendingCount > 0 ? (
+            <div className="sm:col-span-2">
+              <p className="text-xs font-semibold uppercase text-amber-700">Pending late sessions</p>
+              <p className="text-sm font-bold text-amber-900">
+                {pendingCount} session{pendingCount === 1 ? '' : 's'} · {formatInr(data.pending_late_inr)} excluded from payout
+              </p>
+            </div>
+          ) : null}
+          <div className="border-t border-[#E2E8F0] pt-3 sm:col-span-2">
+            <p className="text-xs font-semibold uppercase text-indigo-600">Net payout</p>
+            <p className="text-2xl font-bold text-indigo-900">{formatInr(data.net_amount_inr ?? data.amount_inr)}</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {leaveDetails.length > 0 ? (
         <section>

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { billingSummary } from './invoiceUtils.js'
+import {
+  STATEMENT_NOT_CONFIGURED,
+  billingSummary,
+  statementConfidence,
+  statementLadder,
+} from './invoiceUtils.js'
 
 // Admin payloads carry client money and must keep showing it.
 test('billingSummary shows client rate for admin per-session payload', () => {
@@ -62,4 +67,54 @@ test('billingSummary fixed-lump package shows therapist fixed pay only', () => {
 test('billingSummary handles unconfigured billing', () => {
   assert.equal(billingSummary(null), 'Billing not configured')
   assert.equal(billingSummary({}), 'Billing not configured')
+})
+
+// --- statement composition (T3) ---------------------------------------------
+
+const STATEMENT = {
+  month: '2026-07',
+  month_label: 'July 2026',
+  subtotal_inr: 18000,
+  leave_deduction_inr: 1500,
+  net_amount_inr: 16500,
+  pending_late_count: 0,
+  cases: [{ case_id: 1, therapist_share_inr: 18000 }],
+}
+
+test('statementLadder composes gross → leave → net from the engine payload', () => {
+  const rows = statementLadder(STATEMENT)
+  const byKey = Object.fromEntries(rows.map((r) => [r.key, r]))
+  assert.equal(byKey.gross.amount, 18000)
+  assert.equal(byKey.leave.amount, 1500)
+  assert.equal(byKey.leave.kind, 'deduction')
+  assert.equal(byKey.net.amount, 16500)
+  assert.equal(byKey.net.kind, 'net')
+})
+
+test('statementLadder renders TDS / holdback / payment-date as placeholders', () => {
+  const rows = statementLadder(STATEMENT)
+  for (const key of ['tds', 'holdback', 'payment_date']) {
+    const row = rows.find((r) => r.key === key)
+    assert.ok(row, `${key} row present`)
+    assert.equal(row.amount, null)
+    assert.equal(row.note, STATEMENT_NOT_CONFIGURED)
+  }
+})
+
+test('statementLadder omits leave line when there is no deduction', () => {
+  const rows = statementLadder({ ...STATEMENT, leave_deduction_inr: 0 })
+  assert.equal(rows.find((r) => r.key === 'leave'), undefined)
+})
+
+test('statementLadder carries no client-price fields', () => {
+  const serialized = JSON.stringify(statementLadder(STATEMENT))
+  for (const leak of ['client_rate', 'package_amount', 'client_monthly', 'client_billing_mode']) {
+    assert.doesNotMatch(serialized, new RegExp(leak))
+  }
+})
+
+test('statementConfidence is provisional pre-cutover, never RECONCILED', () => {
+  assert.equal(statementConfidence(STATEMENT, { cutover: false }), 'PARTIAL')
+  assert.equal(statementConfidence({ ...STATEMENT, pending_late_count: 2 }, { cutover: false }), 'ESTIMATED')
+  assert.notEqual(statementConfidence(STATEMENT, { cutover: true }), 'RECONCILED')
 })
