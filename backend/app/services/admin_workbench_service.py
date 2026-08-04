@@ -418,7 +418,10 @@ def widget_section_client_claims(db: Session, user: User, *, limit: int = WIDGET
                 "case_id": case.id,
                 "case_code": case.case_code,
                 "child_name": child.full_name if child else None,
-                "label": f"Payment claim · ₹{float(pay.amount_inr):,.0f}",
+                "label": (
+                    f"Offline · {pay.method.value.replace('_', ' ')} · "
+                    f"₹{float(pay.amount_inr):,.0f} · ref {pay.reference or '—'}"
+                ),
                 "invoice_number": inv.invoice_number,
                 "href": f"/admin/invoices?tab=client&claims=pending&invoiceId={inv.id}",
             }

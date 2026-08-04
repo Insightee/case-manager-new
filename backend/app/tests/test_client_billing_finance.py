@@ -28,10 +28,23 @@ def _invoice_with_lines(parent_headers: dict[str, str]) -> dict | None:
 
 
 def _submit_claim(parent_h: dict, inv_id: int, amount: float) -> int | None:
+    from io import BytesIO
+
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf"
+        b"\xc0\x00\x00\x00\x03\x00\x01\x00\x05\xfe\xd4\xef\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
     r = client.post(
         f"/api/v1/parent/billing/invoices/{inv_id}/payment-claims",
         headers=parent_h,
-        data={"amount_inr": str(amount), "method": "UPI", "reference": "FINANCE-TEST"},
+        data={
+            "amount_inr": str(amount),
+            "method": "UPI",
+            "reference": "FINANCE-TEST",
+            "payment_date": "2026-05-10",
+        },
+        files={"proof": ("proof.png", BytesIO(png), "image/png")},
     )
     if r.status_code != 201:
         return None

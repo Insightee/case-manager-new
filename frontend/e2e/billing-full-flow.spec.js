@@ -7,6 +7,10 @@ import { loginAdmin, loginFinance, loginParent, loginTherapist } from './helpers
 
 const THERAPIST_INVOICE_MONTH = 'May 2026'
 const CLIENT_INVOICE_NUMBER = 'INV-2026-0201'
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 async function resetSession(context, page) {
   await context.clearCookies()
@@ -137,7 +141,13 @@ test.describe('Billing full flow', () => {
 
     await page.getByRole('button', { name: /i paid offline/i }).click()
     await page.getByLabel(/amount \(inr\)/i).fill('2000')
-    await page.getByLabel(/reference \(optional\)/i).fill('E2E-UPI-8839201')
+    await page.getByLabel(/payment date/i).fill('2026-05-10')
+    await page.getByLabel(/reference \/ transaction id/i).fill('E2E-UPI-8839201')
+    await page.locator('.parent-pay__payment-form input[type="file"]').setInputFiles({
+      name: 'e2e-payment-proof.png',
+      mimeType: 'image/png',
+      buffer: TINY_PNG,
+    })
     await page.getByRole('button', { name: /submit for review/i }).click()
     await expect(page.getByText(/submitted for review|payment submitted/i).first()).toBeVisible({ timeout: 15_000 })
 
@@ -151,7 +161,7 @@ test.describe('Billing full flow', () => {
     await expect(page.getByText(/no open disputes|resolved/i).first()).toBeVisible({ timeout: 15_000 })
 
     await page.goto('/admin/invoices?tab=payments&claims=pending')
-    await expect(page.getByText('Claims pending review')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(/offline payment claims|claims pending review/i).first()).toBeVisible({ timeout: 15_000 })
 
     await openAdminInvoice(page, CLIENT_INVOICE_NUMBER)
     await page.getByRole('button', { name: /payments & disputes/i }).click()
