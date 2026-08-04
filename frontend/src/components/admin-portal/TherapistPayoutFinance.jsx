@@ -4,6 +4,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { parseClientInvoiceFilters, buildClientBillingScopeQuery } from '../../lib/invoiceFilters.js'
 import { useBillingRuntimeConfig } from '../../hooks/useBillingRuntimeConfig.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import '../../styles/finance-dashboard-modern.css'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -72,50 +73,53 @@ export function FinanceMondayBrief() {
   const top = brief.thisWeek?.topItems || []
 
   return (
-    <AdminPanel title="Finance snapshot" padded style={{ marginBottom: 16 }}>
-      <p className="admin-muted" style={{ marginTop: 0 }}>
-        {filters.month
-          ? `Outstanding figures for billing month ${filters.month} — same source as Client invoices and Receivables.`
-          : 'Outstanding figures across all billing months — same source as Client invoices and Receivables.'}
-      </p>
-      <div className="client-inv__summary-grid" style={{ marginBottom: 16 }}>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Money in · outstanding</span>
+    <AdminPanel title="Monday briefing" padded className="finance-dash" style={{ marginBottom: 16 }}>
+      <div className="finance-dash__hero">
+        <h2>Good morning — finance snapshot</h2>
+        <p>
+          {filters.month
+            ? `Outstanding figures for billing month ${filters.month} — same source as Client invoices and Receivables.`
+            : 'Figures match receivables and payout queue sources. Tap a card to drill in.'}
+        </p>
+      </div>
+      <div className="finance-dash__grid" style={{ marginBottom: 16 }}>
+        <div className="finance-dash__card finance-dash__card--accent">
+          <span className="finance-dash__card-k">Money in · outstanding</span>
           <strong>{formatCurrency(moneyIn.collectibleOutstandingInr)}</strong>
-          <Link to={brief.links?.receivables || '/admin/invoices?tab=receivables'} className="admin-link-sm">
+          <Link to={brief.links?.receivables || '/admin/invoices?tab=receivables'} className="finance-dash__card-link">
             Receivables →
           </Link>
         </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Overdue</span>
+        <div className="finance-dash__card finance-dash__card--warn">
+          <span className="finance-dash__card-k">Overdue</span>
           <strong>{formatCurrency(moneyIn.overdueInr)}</strong>
-          <span className="client-inv__summary-meta">{moneyIn.overdueCount ?? 0} invoice(s)</span>
+          <span className="finance-dash__card-meta">{moneyIn.overdueCount ?? 0} invoice(s)</span>
         </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Payment claims</span>
+        <div className="finance-dash__card">
+          <span className="finance-dash__card-k">Payment claims</span>
           <strong>{moneyIn.paymentClaimsPending ?? 0}</strong>
-          <Link to={brief.links?.paymentClaims || '/admin/invoices?tab=payments'} className="admin-link-sm">
+          <Link to={brief.links?.paymentClaims || '/admin/invoices?tab=payments'} className="finance-dash__card-link">
             Review →
           </Link>
         </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Client disputes</span>
+        <div className="finance-dash__card">
+          <span className="finance-dash__card-k">Client disputes</span>
           <strong>{moneyIn.openClientDisputes ?? 0}</strong>
-          <Link to={brief.links?.clientDisputes || '/admin/invoices?tab=disputes'} className="admin-link-sm">
+          <Link to={brief.links?.clientDisputes || '/admin/invoices?tab=disputes'} className="finance-dash__card-link">
             Disputes →
           </Link>
         </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Money out · payable now</span>
+        <div className="finance-dash__card finance-dash__card--accent">
+          <span className="finance-dash__card-k">Money out · payable now</span>
           <strong>{formatCurrency(moneyOut.totalPayableInr)}</strong>
-          <Link to={brief.links?.therapistPayoutQueue || '/admin/therapist-payouts?sub=payouts'} className="admin-link-sm">
+          <Link to={brief.links?.therapistPayoutQueue || '/admin/therapist-payouts?sub=payouts'} className="finance-dash__card-link">
             Payout queue →
           </Link>
         </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Statements pending</span>
+        <div className="finance-dash__card">
+          <span className="finance-dash__card-k">Statements pending</span>
           <strong>{moneyOut.statementsPendingApproval ?? 0}</strong>
-          <span className="client-inv__summary-meta">{moneyOut.disputedQueriedCount ?? 0} disputed</span>
+          <span className="finance-dash__card-meta">{moneyOut.disputedQueriedCount ?? 0} disputed</span>
         </div>
       </div>
       {brief.thisWeek?.mostImportant ? (
@@ -254,27 +258,27 @@ export function TherapistPayoutQueuePanel() {
 
   return (
     <>
-      <AdminPanel title="Payout finance queue (money out)">
+      <AdminPanel title="Payout finance queue (money out)" className="finance-dash">
         {totals ? (
-          <div className="client-inv__summary-grid" style={{ marginBottom: 16 }}>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Pending approval</span>
+          <div className="finance-dash__grid" style={{ marginBottom: 16 }}>
+            <div className="finance-dash__card">
+              <span className="finance-dash__card-k">Pending approval</span>
               <strong>{totals.pendingCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Disputed / queried</span>
+            <div className="finance-dash__card finance-dash__card--warn">
+              <span className="finance-dash__card-k">Disputed / queried</span>
               <strong>{totals.disputedCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Clean approved</span>
+            <div className="finance-dash__card finance-dash__card--accent">
+              <span className="finance-dash__card-k">Clean approved</span>
               <strong>{totals.approvedCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Payable now</span>
+            <div className="finance-dash__card finance-dash__card--accent">
+              <span className="finance-dash__card-k">Payable now</span>
               <strong>{formatCurrency(totals.totalPayableNowInr)}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Held (contested)</span>
+            <div className="finance-dash__card">
+              <span className="finance-dash__card-k">Held (contested)</span>
               <strong>{formatCurrency(totals.totalContestedInr)}</strong>
             </div>
           </div>
@@ -495,7 +499,7 @@ export function TherapistPayoutQueuePanel() {
           />
         )}
 
-        <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="finance-dash__sticky-action">
           <button
             type="button"
             className="admin-btn admin-btn--primary"

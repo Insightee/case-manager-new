@@ -747,7 +747,7 @@ def run():
                 parent_user_id=parent_user.id,
                 case_id=case1.id,
                 invoice_type=ClientInvoiceType.POSTPAID,
-                status=ClientInvoiceStatus.GENERATED,
+                status=ClientInvoiceStatus.SENT,
                 billing_month="2026-05",
                 service_type=case1.service_type,
                 product_module=case1.product_module,
@@ -760,7 +760,7 @@ def run():
                 total_inr=4800,
                 amount_paid_inr=0,
                 notes="Postpaid monthly invoice for homecare sessions in May 2026.",
-                sent_at=None,
+                sent_at=datetime.now(timezone.utc),
             )
             db.add(inv_may)
             db.flush()

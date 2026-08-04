@@ -22,6 +22,7 @@ from app.models.client_billing import (
     ClientInvoiceLine,
     ClientPayment,
 )
+from app.models.client_package_cycle import ClientPackageCycle, PackageBillingMode
 from app.models.ledger_billing import BillingLedger, BillingPeriodFlag, Organisation, ProductBillingRule
 from app.models.billing_period_snapshot import BillingMonthClose, CaseBillingPeriodSnapshot
 from app.models.billing_readiness_exception_rule import (
@@ -98,6 +99,8 @@ __all__ = [
     "ClientInvoiceLine",
     "CaseBillingPreference",
     "CarePackage",
+    "ClientPackageCycle",
+    "PackageBillingMode",
     "ClientPayment",
     "BillingDispute",
     "ProductBillingRule",

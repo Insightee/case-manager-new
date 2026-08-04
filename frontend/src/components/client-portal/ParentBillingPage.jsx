@@ -5,6 +5,7 @@ import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import './parent-payments.css'
 import './parent-portal-filters.css'
 import '../../styles/finance-stage2.css'
+import '../../styles/finance-dashboard-modern.css'
 import { formatApiDateIN, formatTimestampDateIN } from '../../lib/datetime.js'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 import { ParentComingSoon } from './ParentComingSoon.jsx'
@@ -367,9 +368,10 @@ function ParentBillingPageFull() {
   const urgentBanner = (summary.overdueCount || 0) > 0
 
   return (
-    <div className="parent-pay finance-stage2">
-      <header className="parent-pay__hero">
+    <div className="parent-pay finance-stage2 finance-dash">
+      <header className="parent-pay__hero finance-dash__hero">
         <h1>Your statements</h1>
+        <p>Review session charges, pay offline or online, and track dispute updates in one place.</p>
       </header>
 
       {provisional ? (
@@ -401,7 +403,7 @@ function ParentBillingPageFull() {
       ) : null}
 
       {dashboard?.summary ? (
-        <ul className="parent-pay__stats parent-pay__stats--compact" aria-label="Payment summary">
+        <ul className="parent-pay__stats parent-pay__stats--compact finance-dash__grid" aria-label="Payment summary">
           <li className="parent-pay__stat parent-pay__stat--due">
             <strong>{formatInr(summary.dueTotalInr)}</strong>
             <span>Balance due</span>
