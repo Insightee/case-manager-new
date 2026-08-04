@@ -93,6 +93,20 @@ def child_ids_for_parent(db: Session, user_id: int) -> list[int]:
     return [c.id for c in _unique_children(list(pg.children))]
 
 
+def parent_portal_case_ids(db: Session, user_id: int) -> list[int]:
+    """Case DB ids visible to a parent in portal nav (active allotment + not hidden)."""
+    child_ids = child_ids_for_parent(db, user_id)
+    if not child_ids:
+        return []
+    cases = db.scalars(
+        select(Case).where(
+            Case.child_id.in_(child_ids),
+            Case.status.in_(PARENT_PORTAL_ACTIVE_CASE_STATUSES),
+        )
+    ).all()
+    return [c.id for c in cases if not is_case_hidden_from_client_portals(c)]
+
+
 def primary_parent_user_id_for_child(db: Session, child_id: int) -> int | None:
     pg = db.scalars(
         select(ParentGuardian)
