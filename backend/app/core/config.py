@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     finance_cutover_complete: bool = False
     # Zoho Books adapter key — empty = sync not configured (Stage 2 seam; never fake success).
     zoho_books_api_key: str = ""
+    # When true and API key set, BookkeepingProvider performs live Zoho push; otherwise no-op.
+    zoho_books_live_push: bool = False
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).

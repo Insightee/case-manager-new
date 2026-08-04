@@ -10,12 +10,14 @@ import { AdminProductRulesTab } from './AdminProductRulesTab.jsx'
 import { AdminSessionLedgerTab } from './AdminSessionLedgerTab.jsx'
 import { AdminPackagesTab } from './AdminPackagesTab.jsx'
 import { AdminDisputesTab } from './AdminDisputesTab.jsx'
+import { AdminReceivablesTab } from './AdminReceivablesTab.jsx'
 import { AdminFinanceOverviewTab } from './AdminFinanceOverviewTab.jsx'
 import { AdminFinanceReportsTab } from './AdminFinanceReportsTab.jsx'
 import './admin-client-invoices.css'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'receivables', label: 'Receivables' },
   { id: 'client', label: 'Client invoices' },
   { id: 'payments', label: 'Client payments' },
   { id: 'rules', label: 'Rules & packages' },
@@ -26,6 +28,7 @@ const TABS = [
 
 const MOBILE_TAB_LABELS = {
   overview: 'Overview',
+  receivables: 'Receivables',
   client: 'Invoices',
   payments: 'Payments',
   rules: 'Rules',
@@ -34,7 +37,7 @@ const MOBILE_TAB_LABELS = {
   disputes: 'Disputes',
 }
 
-const FINANCE_PRIMARY_TABS = ['overview', 'client', 'payments', 'disputes']
+const FINANCE_PRIMARY_TABS = ['overview', 'receivables', 'client', 'payments', 'disputes']
 const FINANCE_OVERFLOW_TABS = ['rules', 'ledger', 'reports']
 
 function financeWidgetFooter(widget) {
@@ -151,6 +154,9 @@ export function AdminInvoicesPage() {
       />
 
       {activeTab === 'overview' ? <AdminFinanceOverviewTab /> : null}
+      {activeTab === 'receivables' ? (
+        <AdminReceivablesTab openInvoiceId={searchParams.get('invoiceId')} />
+      ) : null}
       {activeTab === 'client' ? (
         <AdminClientInvoicesTab openInvoiceId={searchParams.get('invoiceId')} />
       ) : null}

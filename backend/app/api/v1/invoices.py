@@ -22,6 +22,7 @@ from app.schemas.billing import InvoiceAmendRequest, InvoiceSubmitRequest, LateS
 from app.schemas.report import ReviewAction
 from app.services import invoice_service
 from app.services import invoice_billing_service
+from app.services import statement_dispute_service
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -139,6 +140,66 @@ def preview_invoice(
     if _hide_client_pricing(user):
         preview = _redact_preview_client_pricing(preview)
     return preview
+
+
+class StatementDisputeCreate(BaseModel):
+    month: str = Field(..., min_length=1, max_length=32)
+    invoice_id: Optional[int] = None
+    comment: str = Field(..., min_length=1, max_length=2000)
+    session_ids: list[int] = Field(default_factory=list)
+    reason_code: Optional[str] = Field(None, max_length=64)
+
+
+@router.post("/statement/disputes", status_code=status.HTTP_201_CREATED)
+def create_statement_dispute(
+    payload: StatementDisputeCreate,
+    request: Request,
+    user: User = Depends(require_permission("invoice.generate")),
+    db: Session = Depends(get_db),
+):
+    try:
+        dispute = statement_dispute_service.create_statement_dispute(
+            db,
+            therapist_user_id=user.id,
+            month=payload.month,
+            invoice_id=payload.invoice_id,
+            comment=payload.comment,
+            session_ids=payload.session_ids,
+            reason_code=payload.reason_code,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="create",
+        entity_type="statement_dispute",
+        entity_id=dispute.id,
+        **meta,
+    )
+    db.commit()
+    db.refresh(dispute)
+    return statement_dispute_service.dispute_dict(dispute)
+
+
+@router.get("/statement/disputes")
+def list_statement_disputes(
+    month: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Finance/admin (invoice.approve) read every therapist's disputes — this is
+    # the bridge the statement queue reads. Therapists read only their own.
+    if user_has_permission(user, "invoice.approve"):
+        rows = statement_dispute_service.list_statement_disputes(db, month=month)
+    elif user_has_permission(user, "invoice.generate"):
+        rows = statement_dispute_service.list_statement_disputes(
+            db, therapist_user_id=user.id, month=month
+        )
+    else:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return [statement_dispute_service.dispute_dict(r) for r in rows]
 
 
 @router.post("/late-sessions", status_code=status.HTTP_201_CREATED)
