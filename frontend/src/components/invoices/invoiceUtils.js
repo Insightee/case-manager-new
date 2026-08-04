@@ -1,3 +1,5 @@
+import { CONFIDENCE_LEVELS } from '../../lib/financeConfidence.js'
+
 export function isInvoiceAmendable(apiStatus) {
   return apiStatus === 'IN_REVIEW' || apiStatus === 'QUERIED' || apiStatus === 'REJECTED' || apiStatus === 'DRAFT'
 }
@@ -108,6 +110,62 @@ export function billingSummary(b) {
   }
   const clientPart = b.package_amount_inr != null ? `₹${b.package_amount_inr} · ` : ''
   return `Package ${b.package_session_count} sessions · ${clientPart}₹${share} therapist share`
+}
+
+// Deduction lines we intend to show but for which no rule is configured yet.
+// Rendered as visible, labelled placeholders (no computed amount) so the layout
+// is ready the moment finance supplies the rule.
+export const STATEMENT_NOT_CONFIGURED = 'Not yet configured'
+
+/**
+ * Compose the therapist's monthly statement ladder purely from the payout
+ * engine payload — the therapist enters nothing. Reads therapist-side figures
+ * only (subtotal / leave / adjustment / net); never touches client pricing.
+ * TDS, holdback and expected payment date are placeholders until finance
+ * supplies the rules.
+ */
+export function statementLadder(data) {
+  if (!data) return []
+  const placeholder = (key, label) => ({
+    key,
+    label,
+    kind: 'placeholder',
+    amount: null,
+    note: STATEMENT_NOT_CONFIGURED,
+  })
+  const rows = [{ key: 'gross', label: 'Gross earnings', kind: 'earning', amount: data.subtotal_inr ?? 0 }]
+
+  const leave = data.leave_deduction_inr ?? 0
+  if (leave > 0) {
+    rows.push({ key: 'leave', label: 'Leave deduction', kind: 'deduction', amount: leave })
+  }
+  if (data.adjustment_inr != null && data.adjustment_inr !== 0) {
+    const adj = data.adjustment_inr
+    rows.push({
+      key: 'adjustment',
+      label: 'Adjustment',
+      kind: adj < 0 ? 'deduction' : 'earning',
+      amount: Math.abs(adj),
+    })
+  }
+  rows.push(placeholder('tds', 'TDS'))
+  rows.push(placeholder('holdback', 'Holdback'))
+  rows.push({ key: 'net', label: 'Net payable', kind: 'net', amount: data.net_amount_inr ?? data.amount_inr ?? 0 })
+  rows.push(placeholder('payment_date', 'Expected payment date'))
+  return rows
+}
+
+/**
+ * Confidence for a therapist statement. Pre-cutover everything is provisional —
+ * the client may only ever downgrade, never invent RECONCILED.
+ */
+export function statementConfidence(data, { cutover = false } = {}) {
+  if (!cutover) {
+    return (data?.pending_late_count ?? 0) > 0
+      ? CONFIDENCE_LEVELS.ESTIMATED
+      : CONFIDENCE_LEVELS.PARTIAL
+  }
+  return CONFIDENCE_LEVELS.PARTIAL
 }
 
 export function mapInvoiceForCard(inv) {

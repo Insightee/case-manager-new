@@ -77,6 +77,23 @@ def test_redact_preview_strips_each_case_group():
     assert group["therapist_share_inr"] == 900  # non-billing fields untouched
 
 
+def test_redact_preview_strips_cases_key_from_build_month_preview():
+    # build_month_preview returns groups under "cases" (not "case_groups"); the
+    # redactor must strip that shape or the generate/preview drawer leaks pricing.
+    preview = {
+        "cases": [
+            {"case_id": 1, "therapist_share_inr": 600, "billing": case_billing_dict(_package_case())},
+        ]
+    }
+
+    out = _redact_preview_client_pricing(preview)
+
+    billing = out["cases"][0]["billing"]
+    assert _CLIENT_KEYS.isdisjoint(billing), "client-side money leaked via preview 'cases' key"
+    assert billing["pay_share_amount_inr"] == 15000.0
+    assert out["cases"][0]["therapist_share_inr"] == 600
+
+
 def test_redact_breakdown_strips_billing_snapshot():
     data = {
         "cases": [
@@ -90,3 +107,22 @@ def test_redact_breakdown_strips_billing_snapshot():
     assert _CLIENT_KEYS.isdisjoint(snap)
     assert _THERAPIST_KEYS.issubset(snap.keys())
     assert out["cases"][0]["therapist_share_inr"] == 900.0
+
+
+def test_redact_breakdown_strips_preview_branch_billing_key():
+    # Preview-derived breakdowns (from_preview=True) carry billing under "billing",
+    # not "billing_snapshot". The therapist UI reads either key, so redaction must
+    # cover both or client pricing leaks on preview-only invoices.
+    data = {
+        "from_preview": True,
+        "cases": [
+            {"case_id": 1, "therapist_share_inr": 600.0, "billing": case_billing_dict(_package_case())},
+        ],
+    }
+
+    out = _redact_breakdown_client_pricing(data)
+
+    billing = out["cases"][0]["billing"]
+    assert _CLIENT_KEYS.isdisjoint(billing), "client-side money leaked via preview branch"
+    assert _THERAPIST_KEYS.issubset(billing.keys())
+    assert out["cases"][0]["therapist_share_inr"] == 600.0
