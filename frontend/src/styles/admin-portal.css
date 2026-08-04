@@ -679,6 +679,30 @@ button.admin-stat--link {
   font-weight: 600;
 }
 
+.admin-form-grid label.admin-label--stacked .admin-label__caption {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+  line-height: 1.35;
+}
+
+.admin-label__required {
+  color: #ef4444;
+}
+
+.admin-form-grid label.admin-scheduling-hub__range-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.admin-form-grid label.admin-scheduling-hub__range-option input[type='radio'] {
+  flex-shrink: 0;
+  margin: 0;
+}
+
 .admin-form-grid input,
 .admin-form-grid select,
 .admin-form-grid textarea {

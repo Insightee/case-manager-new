@@ -102,8 +102,10 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
           </label>
           {isReassignment ? (
             <>
-              <label style={{ gridColumn: '1 / -1' }}>
-                Reason for change <span style={{ color: '#ef4444' }}>*</span>
+              <label style={{ gridColumn: '1 / -1' }} className="admin-label admin-label--stacked">
+                <span className="admin-label__caption">
+                  Reason for change <span className="admin-label__required" aria-hidden="true">*</span>
+                </span>
                 <input
                   type="text"
                   className="admin-input"

@@ -79,8 +79,10 @@ export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
               onChange={(e) => setStartDate(e.target.value)}
             />
           </label>
-          <label>
-            Reason for change <span style={{ color: '#ef4444' }}>*</span>
+          <label className="admin-label admin-label--stacked">
+            <span className="admin-label__caption">
+              Reason for change <span className="admin-label__required" aria-hidden="true">*</span>
+            </span>
             <input
               type="text"
               className="admin-input"

@@ -136,8 +136,10 @@ function TherapistAssignSection({
               </label>
               {isChanging ? (
                 <>
-                  <label className="admin-label" style={{ gridColumn: '1 / -1' }}>
-                    Reason for change <span style={{ color: '#ef4444' }}>*</span>
+                  <label className="admin-label admin-label--stacked" style={{ gridColumn: '1 / -1' }}>
+                    <span className="admin-label__caption">
+                      Reason for change <span className="admin-label__required" aria-hidden="true">*</span>
+                    </span>
                     <input
                       type="text"
                       className="admin-input"
