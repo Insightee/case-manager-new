@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { InvoiceBreakdownView } from './InvoiceBreakdownView.jsx'
+import { StatementSummary } from './StatementSummary.jsx'
+import { StatementDisputePanel } from './StatementDisputePanel.jsx'
 import { applyLocalExcludes, formatInr } from './invoiceUtils.js'
 
 export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onClose, onSubmitted }) {
@@ -114,14 +116,21 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
               excluded from payout until an admin approves the daily logs.
             </p>
           ) : null}
-          <InvoiceBreakdownView
-            data={preview}
-            editable
-            month={month}
-            onToggleSession={handleToggle}
-            onRefresh={refetchPreview}
-            onRemoveLateSession={handleRemoveLate}
-          />
+          <StatementSummary data={preview} cutover={false} />
+          <div className="mt-6">
+            <InvoiceBreakdownView
+              data={preview}
+              editable
+              month={month}
+              hideSummary
+              onToggleSession={handleToggle}
+              onRefresh={refetchPreview}
+              onRemoveLateSession={handleRemoveLate}
+            />
+          </div>
+          <div className="mt-6">
+            <StatementDisputePanel data={preview} month={month} invoiceId={null} />
+          </div>
           <label className="mt-6 block text-sm font-medium text-slate-700">
             Notes for finance (optional)
             <textarea
