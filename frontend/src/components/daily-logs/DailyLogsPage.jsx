@@ -206,6 +206,10 @@ export function DailyLogsPage() {
     () => sortLogsBySessionDate(filterByMonth(logs)),
     [filterByMonth, logs],
   )
+  const filteredNeedsLog = useMemo(
+    () => needsLog.filter((s) => logMatchesMonth(s, logYear, logMonth)),
+    [needsLog, logYear, logMonth],
+  )
 
   const displayUpcoming = useMemo(() => {
     if (!composerCaseId) return upcoming
@@ -1388,17 +1392,17 @@ export function DailyLogsPage() {
               onClick={() => setLogTab(t.id)}
             >
               {t.label}
-              {t.id === 'needs' && needsLog.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{needsLog.length}</span>
+              {t.id === 'needs' && filteredNeedsLog.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{filteredNeedsLog.length}</span>
               ) : null}
-              {t.id === 'child_absent' && childAbsentLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{childAbsentLogs.length}</span>
+              {t.id === 'child_absent' && filteredChildAbsent.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{filteredChildAbsent.length}</span>
               ) : null}
-              {t.id === 'leave' && leaveLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{leaveLogs.length}</span>
+              {t.id === 'leave' && filteredLeave.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{filteredLeave.length}</span>
               ) : null}
-              {t.id === 'pending' && pendingLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{pendingLogs.length}</span>
+              {t.id === 'pending' && filteredPending.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{filteredPending.length}</span>
               ) : null}
             </button>
           ))}
@@ -1406,11 +1410,11 @@ export function DailyLogsPage() {
 
         <div className="ic-session-log-tab-panel" role="tabpanel">
           {logTab === 'needs' ? (
-            needsLog.length === 0 ? (
-              <p className="ic-empty-hint">No sessions waiting for a log.</p>
+            filteredNeedsLog.length === 0 ? (
+              <p className="ic-empty-hint">No sessions waiting for a log in {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {needsLog.map((s) => (
+                {filteredNeedsLog.map((s) => (
                   <div key={s.id} className="ic-session-log-recent__row">
                     <div style={{ flex: 1 }}>
                       <p className="ic-session-log-recent__title">
