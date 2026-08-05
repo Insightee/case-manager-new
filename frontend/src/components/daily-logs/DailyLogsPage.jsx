@@ -1139,6 +1139,7 @@ export function DailyLogsPage() {
           upcomingSessions={upcoming}
           liveBlocked={!!activeInProgress}
           pendingLogBlocked={pendingLogBlockedForComposer}
+          selectedCaseId={composerCaseId}
           onSelectedCaseChange={setComposerCaseId}
           existingSessionConflict={existingSessionConflict}
           walkInConflict={walkInConflict}
@@ -1196,9 +1197,30 @@ export function DailyLogsPage() {
               {scheduledSessionHint}
             </p>
           ) : null}
-          <h3 className="ic-section-head__title" style={{ marginBottom: 12 }}>
-            Upcoming sessions
-          </h3>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            <h3 className="ic-section-head__title" style={{ margin: 0 }}>
+              Upcoming sessions
+            </h3>
+            {composerCaseId ? (
+              <button
+                type="button"
+                className="ic-btn ic-btn--ghost"
+                style={{ padding: '6px 12px', fontSize: '0.8125rem' }}
+                onClick={() => setComposerCaseId(null)}
+              >
+                Show all clients
+              </button>
+            ) : null}
+          </div>
           {displayUpcoming.length === 0 ? (
             <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>
               {composerCaseId

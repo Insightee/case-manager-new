@@ -41,6 +41,7 @@ function addMinutesToTime(timeStr, mins) {
 export function TherapistSessionComposer({
   lockCaseId = null,
   lockCaseLabel = '',
+  selectedCaseId: selectedCaseIdProp = undefined,
   upcomingSessions = [],
   disabled = false,
   liveBlocked = false,
@@ -60,7 +61,7 @@ export function TherapistSessionComposer({
   const { user } = useAuth()
   const [mode, setMode] = useState('live')
   const [cases, setCases] = useState([])
-  const [caseId, setCaseId] = useState(lockCaseId ? String(lockCaseId) : '')
+  const [internalCaseId, setInternalCaseId] = useState(lockCaseId ? String(lockCaseId) : '')
   const [walkInStart, setWalkInStart] = useState(nowTimeInput)
   const [walkInEnd, setWalkInEnd] = useState(() => addMinutesToTime(nowTimeInput(), 60))
   const [walkInMode, setWalkInMode] = useState('HOME')
@@ -71,8 +72,24 @@ export function TherapistSessionComposer({
   const [migrationInfo, setMigrationInfo] = useState(null)
 
   useEffect(() => {
-    if (lockCaseId) setCaseId(String(lockCaseId))
+    if (lockCaseId) setInternalCaseId(String(lockCaseId))
   }, [lockCaseId])
+
+  const caseId = lockCaseId
+    ? String(lockCaseId)
+    : selectedCaseIdProp !== undefined
+      ? selectedCaseIdProp
+        ? String(selectedCaseIdProp)
+        : ''
+      : internalCaseId
+
+  function setCaseSelection(nextValue) {
+    if (lockCaseId) return
+    if (selectedCaseIdProp === undefined) {
+      setInternalCaseId(nextValue)
+    }
+    onSelectedCaseChange?.(nextValue ? Number(nextValue) : null)
+  }
 
   useEffect(() => {
     apiFetch('/api/v1/leave/migration-info')
@@ -107,10 +124,11 @@ export function TherapistSessionComposer({
   const selectedCaseId = caseId ? Number(caseId) : null
 
   useEffect(() => {
+    if (selectedCaseIdProp !== undefined || lockCaseId) return
     onSelectedCaseChange?.(selectedCaseId)
-  }, [selectedCaseId, onSelectedCaseChange])
+  }, [selectedCaseId, selectedCaseIdProp, lockCaseId, onSelectedCaseChange])
 
-  const blockLive = liveBlocked || disabled || pendingLogBlocked
+  const blockComposerForLiveSession = liveBlocked || disabled
   const absenceAllowedStatuses = new Set(['SCHEDULED', 'IN_PROGRESS'])
   const todaySessionsForCase = useMemo(() => {
     if (!selectedCaseId) return []
@@ -204,6 +222,53 @@ export function TherapistSessionComposer({
     }
   }
 
+  function renderClientPicker({ onChangeExtra } = {}) {
+    if (lockCaseId && lockCaseLabel) {
+      return (
+        <p className="ic-session-composer__locked-client">
+          <span className="ic-session-composer__locked-label">Client</span>
+          {lockCaseLabel}
+        </p>
+      )
+    }
+
+    return (
+      <div className="ic-session-composer__client-pick">
+        <label className="ic-session-composer__field">
+          <span>Client</span>
+          <select
+            value={caseId}
+            onChange={(e) => {
+              setCaseSelection(e.target.value)
+              onChangeExtra?.(e.target.value)
+            }}
+            className="ic-session-composer__input"
+          >
+            <option value="">Choose client…</option>
+            {caseOptions.map((c) => (
+              <option key={c.case_id} value={c.case_id}>
+                {c.child_name || c.case_code}
+                {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        {caseId ? (
+          <button
+            type="button"
+            className="ic-session-composer__clear-client"
+            onClick={() => {
+              setCaseSelection('')
+              onChangeExtra?.('')
+            }}
+          >
+            View all clients
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <section className="ic-session-composer" aria-label="Add or start session">
       <MigrationBackfillBanner migrationInfo={migrationInfo} style={{ marginBottom: 12 }} />
@@ -216,7 +281,7 @@ export function TherapistSessionComposer({
             aria-selected={mode === 'live'}
             className={mode === 'live' ? 'active' : ''}
             onClick={() => setMode('live')}
-            disabled={blockLive}
+            disabled={blockComposerForLiveSession}
           >
             Start now
           </button>
@@ -226,7 +291,7 @@ export function TherapistSessionComposer({
             aria-selected={mode === 'past'}
             className={mode === 'past' ? 'active' : ''}
             onClick={() => setMode('past')}
-            disabled={blockLive}
+            disabled={blockComposerForLiveSession}
           >
             Forgot to log
           </button>
@@ -269,19 +334,13 @@ export function TherapistSessionComposer({
       ) : null}
       */}
 
-      {blockLive && pendingLogBlocked && !liveBlocked ? (
-        <p className="ic-session-composer__live-blocked" role="status">
-          This client&apos;s previous visit still needs a log before you can start another session for them.
-        </p>
-      ) : null}
-
-      {blockLive && liveBlocked ? (
+      {blockComposerForLiveSession && liveBlocked ? (
         <p className="ic-session-composer__live-blocked" role="status">
           A session is in progress — end it above to start another visit.
         </p>
       ) : null}
 
-      {mode === 'past' && !blockLive ? (
+      {mode === 'past' && !blockComposerForLiveSession ? (
         <ForgotSessionForm
           fallbackCases={caseOptions}
           initialCaseId={lockCaseId ? String(lockCaseId) : caseId}
@@ -301,31 +360,9 @@ export function TherapistSessionComposer({
         />
       ) : mode === 'absence' ? (
         <div className="ic-session-composer__body">
-          {lockCaseId && lockCaseLabel ? (
-            <p className="ic-session-composer__locked-client">
-              <span className="ic-session-composer__locked-label">Client</span>
-              {lockCaseLabel}
-            </p>
-          ) : (
-            <label className="ic-session-composer__field">
-              <span>Client</span>
-              <select
-                value={caseId}
-                onChange={(e) => {
-                  setCaseId(e.target.value)
-                  setAbsenceSessionId(null)
-                }}
-                className="ic-session-composer__input"
-              >
-                <option value="">Choose client…</option>
-                {caseOptions.map((c) => (
-                  <option key={c.case_id} value={c.case_id}>
-                    {c.child_name || c.case_code}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          {renderClientPicker({
+            onChangeExtra: () => setAbsenceSessionId(null),
+          })}
           <SessionAbsenceSheet
             sessions={todaySessionsForCase}
             selectedSessionId={absenceSessionId || todaySessionsForCase[0]?.id}
@@ -353,50 +390,24 @@ export function TherapistSessionComposer({
             </p>
           ) : null}
         </div>
-      ) : mode === 'live' && !blockLive ? (
+      ) : mode === 'live' && !blockComposerForLiveSession ? (
         <div className="ic-session-composer__body">
-          {lockCaseId && lockCaseLabel ? (
-            <p className="ic-session-composer__locked-client">
-              <span className="ic-session-composer__locked-label">Client</span>
-              {lockCaseLabel}
-            </p>
-          ) : (
-            <div className="ic-session-composer__client-pick">
-              <label className="ic-session-composer__field">
-                <span>Client</span>
-                <select
-                  value={caseId}
-                  onChange={(e) => setCaseId(e.target.value)}
-                  className="ic-session-composer__input"
-                >
-                  <option value="">Choose client…</option>
-                  {caseOptions.map((c) => (
-                    <option key={c.case_id} value={c.case_id}>
-                      {c.child_name || c.case_code}
-                      {c.case_code && c.child_name ? ` · ${c.case_code}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {/* TODO: re-enable when therapist self-onboarding is allowed again
-              <button
-                type="button"
-                className="ic-session-composer__add-client"
-                onClick={() => setMode('newClient')}
-              >
-                + Add new client
-              </button>
-              */}
-            </div>
-          )}
+          {renderClientPicker()}
 
-          {walkInConflict ? (
+          {pendingLogBlocked ? (
+            <p className="ic-session-composer__live-blocked" role="status">
+              This client&apos;s previous visit still needs a log before you can start another session for them.
+              Choose another client above, complete the log in the banner, or use Forgot to log.
+            </p>
+          ) : null}
+
+          {!pendingLogBlocked && walkInConflict ? (
             <ExistingSessionForDateCard
               conflict={walkInConflict}
               onAction={onExistingSessionAction}
               onDismiss={onDismissWalkInConflict}
             />
-          ) : selectedCaseId ? (
+          ) : !pendingLogBlocked && selectedCaseId ? (
             <>
               <form className="ic-session-composer__walkin" onSubmit={handleWalkIn}>
                 <p className="ic-session-composer__walkin-title">
@@ -444,11 +455,11 @@ export function TherapistSessionComposer({
                 </button>
               </form>
             </>
-          ) : (
+          ) : !selectedCaseId ? (
             <p className="ic-session-composer__hint">
               Select a client for walk-in, or start a scheduled visit in Upcoming sessions below.
             </p>
-          )}
+          ) : null}
         </div>
       ) : null}
     </section>
