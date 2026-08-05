@@ -12,6 +12,7 @@ from app.core.database import Base
 
 class TherapistPayoutBatchStatus(str, enum.Enum):
     PENDING = "PENDING"
+    EXPORTING = "EXPORTING"
     EXPORTED = "EXPORTED"
     PROCESSING = "PROCESSING"
     PAID = "PAID"
@@ -46,6 +47,10 @@ class TherapistPayoutBatch(Base):
 
 class TherapistPayoutTransfer(Base):
     __tablename__ = "therapist_payout_transfers"
+    __table_args__ = (
+        # Belt-and-suspenders: one non-failed transfer per invoice (Postgres partial index in migration).
+        # SQLite tests rely on app-level exclusivity checks in payout_batch_service.
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     batch_id: Mapped[int] = mapped_column(ForeignKey("therapist_payout_batches.id"), nullable=False, index=True)

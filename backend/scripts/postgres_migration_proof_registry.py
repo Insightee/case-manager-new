@@ -307,7 +307,18 @@ def _seed_f2a3b4c5d6e8(db: Session) -> dict[str, Any]:
     from app.models.invoice import Invoice, InvoiceStatus
     from app.models.therapist_payout_settlement import TherapistPayoutBatch, TherapistPayoutTransfer
 
-    inv = db.scalar(select(Invoice).where(Invoice.status == InvoiceStatus.APPROVED).limit(1))
+    existing = db.scalar(
+        select(TherapistPayoutBatch).where(TherapistPayoutBatch.idempotency_key == "MIGRATION-PROOF-PAYOUT-001")
+    )
+    if existing:
+        return {"batch_id": existing.id, "skipped": True}
+
+    inv = db.scalar(
+        select(Invoice)
+        .where(Invoice.status == InvoiceStatus.APPROVED)
+        .where(~Invoice.id.in_(select(TherapistPayoutTransfer.invoice_id)))
+        .limit(1)
+    )
     if not inv:
         inv = db.scalar(select(Invoice).limit(1))
     if not inv:
@@ -335,14 +346,6 @@ def _seed_f2a3b4c5d6e8(db: Session) -> dict[str, Any]:
         status="PENDING",
     )
     db.add(xfer)
-    db.flush()
-    ext = ExternalRef(
-        provider="RAZORPAY_PAYOUT",
-        entity_type="therapist_payout_batch",
-        entity_id=batch.id,
-        external_id="MOCK-BATCH-MIGRATION",
-    )
-    db.add(ext)
     db.flush()
     return {"batch_id": batch.id, "transfer_id": xfer.id}
 

@@ -7,12 +7,18 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_request_meta
-from app.core.feature_flags import require_billing_ledger_writes, require_payout_export_enabled
+from app.core.feature_flags import (
+    require_billing_ledger_writes,
+    require_finance_writable,
+    require_payout_export_enabled,
+    require_payout_release_enabled,
+)
 from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.module_write import ensure_billing_write_access
 from app.core.permissions import require_mutation_permission, require_permission
 from app.models.user import User
+from app.models.therapist_payout_settlement import TherapistPayoutBatch
 from app.services import (
     finance_bulk_service,
     finance_monday_brief_service,
@@ -23,6 +29,7 @@ from app.services import (
     statement_dispute_service,
     therapist_payout_queue_service,
 )
+from app.services.payout_batch_service import IdempotencyMismatchError, InvoiceExportLockedError
 from app.services.export_document_service import export_meta
 from app.services import reports_export_service
 
@@ -83,22 +90,41 @@ class ExportPayoutBatchBody(BaseModel):
 def export_therapist_payout_batch(
     payload: ExportPayoutBatchBody,
     request: Request,
-    user: User = Depends(require_mutation_permission("invoice.approve")),
+    user: User = Depends(require_finance_writable()),
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
     require_billing_ledger_writes()
     require_payout_export_enabled()
     try:
-        result = payout_batch_service.create_export_batch(
+        reserved = payout_batch_service.reserve_export_batch(
             db,
             invoice_ids=payload.invoice_ids,
             idempotency_key=payload.idempotency_key,
             created_by_user_id=user.id,
             billing_month=payload.billing_month,
         )
-    except ValueError as e:
+    except IdempotencyMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except (InvoiceExportLockedError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if reserved.get("alreadyExported"):
+        return reserved
+
+    db.commit()
+    try:
+        result = payout_batch_service.dispatch_export_batch(
+            db, batch_id=reserved["batch"]["id"], actor_user_id=user.id
+        )
+    except Exception as exc:
+        batch = db.get(TherapistPayoutBatch, reserved["batch"]["id"])
+        if batch:
+            batch.status = "FAILED"
+            batch.notes = f"Provider dispatch failed: {exc}"
+        db.commit()
+        raise HTTPException(status_code=502, detail="Payout provider dispatch failed — batch marked FAILED") from exc
+
     meta = get_request_meta(request)
     log_audit(
         db,
@@ -117,11 +143,12 @@ def export_therapist_payout_batch(
 def sync_therapist_payout_batch_status(
     batch_id: int,
     request: Request,
-    user: User = Depends(require_mutation_permission("invoice.approve")),
+    user: User = Depends(require_finance_writable()),
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
     require_billing_ledger_writes()
+    require_payout_release_enabled()
     try:
         result = payout_batch_service.sync_batch_status(db, batch_id=batch_id, actor_user_id=user.id)
     except ValueError as e:

@@ -19,6 +19,12 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _pg_enum_value(enum_name: str, value: str) -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'")
+
+
 def upgrade() -> None:
     if not has_table("therapist_payout_batches"):
         op.create_table(
@@ -60,6 +66,17 @@ def upgrade() -> None:
         )
         op.create_index("ix_therapist_payout_transfers_batch_id", "therapist_payout_transfers", ["batch_id"])
         op.create_index("ix_therapist_payout_transfers_invoice_id", "therapist_payout_transfers", ["invoice_id"])
+        bind = op.get_bind()
+        if bind.dialect.name == "postgresql":
+            op.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_therapist_payout_transfers_active_invoice
+                ON therapist_payout_transfers (invoice_id)
+                WHERE status IN ('PENDING', 'PROCESSING', 'PAID')
+                """
+            )
+
+    _pg_enum_value("invoicestatus", "EXPORTING")
 
     if has_table("therapist_profiles") and not has_column("therapist_profiles", "tds_rate_percent"):
         op.add_column("therapist_profiles", sa.Column("tds_rate_percent", sa.Numeric(6, 2), nullable=True))
@@ -80,6 +97,9 @@ def downgrade() -> None:
     if has_table("therapist_profiles") and has_column("therapist_profiles", "tds_rate_percent"):
         op.drop_column("therapist_profiles", "tds_rate_percent")
     if has_table("therapist_payout_transfers"):
+        bind = op.get_bind()
+        if bind.dialect.name == "postgresql":
+            op.execute("DROP INDEX IF EXISTS uq_therapist_payout_transfers_active_invoice")
         op.drop_table("therapist_payout_transfers")
     if has_table("therapist_payout_batches"):
         op.drop_table("therapist_payout_batches")

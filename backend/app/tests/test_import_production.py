@@ -24,6 +24,13 @@ SCRIPT = BACKEND / "scripts" / "import_production.py"
 @pytest.fixture(scope="module", autouse=True)
 def _seed():
     seed_run()
+    db = SessionLocal()
+    try:
+        from app.seed.finance_walkthrough_fixture import _cleanup_walkthrough_cases
+
+        _cleanup_walkthrough_cases(db)
+    finally:
+        db.close()
 
 
 def _run_import(import_dir: Path, *extra: str) -> subprocess.CompletedProcess:
@@ -162,6 +169,13 @@ def test_import_dry_run_missing_therapist_reports_error(tmp_path: Path):
 
 def test_import_commit_creates_entities(import_bundle: tuple[Path, str]):
     import_dir, suffix = import_bundle
+    db = SessionLocal()
+    try:
+        from app.seed.finance_walkthrough_fixture import _cleanup_walkthrough_cases
+
+        _cleanup_walkthrough_cases(db)
+    finally:
+        db.close()
     proc = _run_import(import_dir, "--commit")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "cases_errors: []" in proc.stdout, proc.stdout
@@ -176,8 +190,11 @@ def test_import_commit_creates_entities(import_bundle: tuple[Path, str]):
         assert child is not None
         case = db.scalars(select(Case).where(Case.external_case_ref == f"CASE-{suffix}")).first()
         assert case is not None
-        assign = db.scalars(select(CaseAssignment).where(CaseAssignment.case_id == case.id)).first()
+        assign = db.scalar(
+            select(CaseAssignment)
+            .join(User, CaseAssignment.therapist_user_id == User.id)
+            .where(CaseAssignment.case_id == case.id, User.email == th_email)
+        )
         assert assign is not None
-        assert assign.therapist_user_id == th.id
     finally:
         db.close()

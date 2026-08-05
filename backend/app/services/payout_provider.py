@@ -100,9 +100,17 @@ class MockRazorpayPayoutProvider:
 
 
 class RazorpayPayoutProvider:
+    """Live Razorpay seam — wire API in cutover.
+
+    Idempotency: pass ``idempotency_key`` as Razorpay's ``X-Payout-Idempotency`` header on
+    composite payout creation so network retries cannot double-pay the same batch.
+    """
+
     name = "RAZORPAY"
 
     def create_batch(self, *, transfers: list[PayoutTransferRequest], idempotency_key: str) -> PayoutBatchResult:
+        # Cutover: POST /v1/payouts/composite with header X-Payout-Idempotency=idempotency_key
+        _ = idempotency_key
         batch_ref = f"RZP-STUB-{secrets.token_hex(6).upper()}"
         return PayoutBatchResult(
             success=True,

@@ -40,7 +40,12 @@ def _invoice_deductions(db: Session, invoice: Invoice) -> list[dict[str, Any]]:
         seen.add(cl.case_id)
         out.extend(
             finance_payout_deduction_service.list_deductions(
-                db, case_id=cl.case_id, billing_month=invoice.month, include_reversed=False
+                db,
+                case_id=cl.case_id,
+                billing_month=invoice.month,
+                therapist_user_id=invoice.therapist_user_id,
+                therapist_invoice_id=invoice.id,
+                include_reversed=False,
             )
         )
     return out

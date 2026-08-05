@@ -16,6 +16,7 @@ class InvoiceStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     IN_REVIEW = "IN_REVIEW"
     APPROVED = "APPROVED"
+    EXPORTING = "EXPORTING"
     PAID = "PAID"
     QUERIED = "QUERIED"
     REJECTED = "REJECTED"
