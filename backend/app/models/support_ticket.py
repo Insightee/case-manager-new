@@ -53,6 +53,8 @@ class SupportTicket(Base):
     parent_resolution_feedback: Mapped[Optional[str]] = mapped_column(Text)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     disputed_session_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sessions.id"), nullable=True, index=True)
+    billing_dispute_id: Mapped[Optional[int]] = mapped_column(ForeignKey("billing_disputes.id"), nullable=True, index=True)
+    client_invoice_id: Mapped[Optional[int]] = mapped_column(ForeignKey("client_invoices.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

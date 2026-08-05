@@ -20,6 +20,7 @@ from app.schemas.client_billing import (
     AdminClientInvoiceUpdate,
     AdminDisputeResolve,
     BillingDisputeCreate,
+    DisputeCorrectionProposalBody,
     ClientInvoiceLinePatch,
     ClientInvoiceLineUpsert,
     ClientPaymentRecord,
@@ -30,7 +31,7 @@ from app.schemas.client_billing import (
 )
 from app.core.config import settings
 from app.core.feature_flags import billing_ledger_writes_enabled, require_billing_ledger_writes
-from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service
+from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service, finance_correction_service
 from app.services import audit_service
 from app.services.bookkeeping_provider import get_bookkeeping_provider
 
@@ -650,9 +651,46 @@ def admin_list_disputes(
                 "message": d.message,
                 "status": d.status.value,
                 "createdAt": d.created_at.isoformat() if d.created_at else None,
+                "supportTicketId": d.support_ticket_id,
+                "caseId": inv.case_id if inv else None,
+                "billingMonth": inv.billing_month if inv else None,
             }
         )
     return result
+
+
+@admin_router.post("/disputes/{dispute_id}/correction-proposal")
+def admin_dispute_correction_proposal(
+    dispute_id: int,
+    payload: DisputeCorrectionProposalBody,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.models.client_billing import BillingDispute, ClientInvoice
+
+    ensure_billing_write_access(user)
+    require_billing_ledger_writes()
+    dispute = db.get(BillingDispute, dispute_id)
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+    inv = db.get(ClientInvoice, dispute.client_invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    try:
+        proposal = finance_correction_service.create_correct_reshare_proposal(
+            db,
+            case_id=inv.case_id,
+            billing_month=inv.billing_month,
+            wrong_side=payload.wrong_side,
+            reason=payload.reason,
+            user_id=user.id,
+            billing_dispute_id=dispute.id,
+        )
+        db.commit()
+        return proposal
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @admin_router.get("/runtime-config")

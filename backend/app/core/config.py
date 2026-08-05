@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     payout_export_enabled: bool = False
     payout_release_enabled: bool = False
     finance_default_tds_rate_percent: float = 10.0
+    # Legacy free-field dispute adjustment — off by default; use finance_correction_service.
+    billing_dispute_legacy_adjustment: bool = False
     # Last day therapists can re-enter past leave for platform migration (ISO date).
     leave_migration_end_date: str = "2026-07-31"
     # Hours after actual_start_at a therapist may void a COMPLETED visit that has no log (168 = 7 days cleanup window).
