@@ -196,14 +196,18 @@ export function BookMeetingModal({
   ])
 
   function addGuestEmail() {
-    const email = guestInput.trim()
-    if (!email || !email.includes('@')) {
+    const email = guestInput.trim().toLowerCase()
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError('Enter a valid guest email')
       return
     }
     if (!guestEmails.includes(email)) setGuestEmails((g) => [...g, email])
     setGuestInput('')
     setError('')
+  }
+
+  function removeGuestEmail(email) {
+    setGuestEmails((g) => g.filter((e) => e !== email))
   }
 
   function set(k, v) {
@@ -444,6 +448,54 @@ export function BookMeetingModal({
                 Add
               </button>
             </div>
+            {guestEmails.length > 0 ? (
+              <ul style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0 0', padding: 0, listStyle: 'none' }}>
+                {guestEmails.map((email) => (
+                  <li
+                    key={email}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: '#eef2ff',
+                      border: '1px solid #c7d2fe',
+                      borderRadius: 999,
+                      padding: '4px 8px 4px 10px',
+                      fontSize: '0.8rem',
+                      color: '#3730a3',
+                    }}
+                  >
+                    <span>{email}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${email}`}
+                      onClick={() => removeGuestEmail(email)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 18,
+                        height: 18,
+                        border: 'none',
+                        borderRadius: '50%',
+                        background: '#c7d2fe',
+                        color: '#3730a3',
+                        fontSize: '0.85rem',
+                        lineHeight: 1,
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>
+                Add external guests who should receive a meeting invite by email.
+              </p>
+            )}
           </label>
 
           <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
