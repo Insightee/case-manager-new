@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch, getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
+  buildClientBillingScopeQuery,
   buildClientInvoiceQuery,
   CLIENT_INVOICE_STATUSES,
   INVOICE_TYPES,
@@ -502,6 +503,7 @@ export function AdminClientInvoicesTab({
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [filterOptions, setFilterOptions] = useState(null)
   const [viewId, setViewId] = useState(openInvoiceId ? Number(openInvoiceId) : null)
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
     apiFetch('/api/v1/admin/client-billing/invoices/filter-options')
@@ -510,22 +512,25 @@ export function AdminClientInvoicesTab({
   }, [])
 
   const load = useCallback(() => {
+    const scopeQs = buildClientBillingScopeQuery(filters)
     const qs = buildClientInvoiceQuery({
       ...filters,
       claimsPending: claimsOnly || filters.claimsPending,
     })
     setLoading(true)
+    setLoadError(null)
     Promise.all([
-      apiFetch('/api/v1/admin/client-billing/summary'),
+      apiFetch(`/api/v1/admin/client-billing/summary${scopeQs}`),
       apiFetch(`/api/v1/admin/client-billing/invoices${qs}`),
     ])
       .then(([s, list]) => {
         setSummary(s)
         setInvoices(Array.isArray(list) ? list : [])
       })
-      .catch(() => {
+      .catch((err) => {
         setSummary(null)
         setInvoices([])
+        setLoadError(err?.message || 'Client billing data is unavailable right now.')
       })
       .finally(() => setLoading(false))
   }, [filters, claimsOnly])
@@ -605,6 +610,12 @@ export function AdminClientInvoicesTab({
         <p className="admin-alert admin-alert--warning" style={{ marginBottom: 12 }}>
           Showing invoices with payment claims awaiting review. Open an invoice to confirm or reject each claim.
         </p>
+      ) : null}
+
+      {loadError ? (
+        <div className="admin-alert admin-alert--warning" style={{ marginBottom: 12 }}>
+          {loadError}
+        </div>
       ) : null}
 
       <div className="client-inv__kpi-grid">

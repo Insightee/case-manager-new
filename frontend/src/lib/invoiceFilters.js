@@ -31,6 +31,22 @@ export function buildClientInvoiceQuery(filters) {
   return qs ? `?${qs}` : ''
 }
 
+/** KPI / receivables scope — same filters as invoice list minus claims-only flags. */
+export function buildClientBillingScopeQuery(filters) {
+  const p = new URLSearchParams()
+  if (filters.month) p.set('month', filters.month)
+  else if (filters.year) p.set('year', String(filters.year))
+  if (filters.dateFrom) p.set('date_from', filters.dateFrom)
+  if (filters.dateTo) p.set('date_to', filters.dateTo)
+  if (filters.status) p.set('status', filters.status)
+  if (filters.invoiceType) p.set('invoice_type', filters.invoiceType)
+  if (filters.module) p.set('module', filters.module)
+  if (filters.search) p.set('search', filters.search)
+  if (filters.caseId) p.set('case_id', filters.caseId)
+  const qs = p.toString()
+  return qs ? `?${qs}` : ''
+}
+
 const CLIENT_FILTER_PARAM_KEYS = {
   year: 'year',
   month: 'month',

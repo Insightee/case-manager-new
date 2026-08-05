@@ -16,6 +16,7 @@ import {
   AdminFilterGrid,
   AdminPanel,
 } from './ui/index.js'
+import { AdminBillingReadinessMasterSheet } from './AdminBillingReadinessMasterSheet.jsx'
 import '../../styles/finance-control-tower.css'
 
 const QUEUE_DEFS = [
@@ -338,7 +339,9 @@ export function AdminFinanceOverviewTab() {
         <ExceptionTable items={exceptions?.items || []} emptyLabel="No open exceptions for this month." />
       )}
 
-      <h3 className="finance-control-tower__section-title">Billing readiness</h3>
+      <AdminBillingReadinessMasterSheet billingMonth={billingMonth} embedded />
+
+      <h3 className="finance-control-tower__section-title">Billing readiness (legacy summary)</h3>
       {billingError ? (
         <div className="finance-control-tower__section-error">Billing readiness unavailable.</div>
       ) : (
