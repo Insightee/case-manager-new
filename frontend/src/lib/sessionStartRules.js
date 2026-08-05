@@ -117,3 +117,20 @@ export function isSameDayDuplicateConflict(detail) {
   const conflict = parseSessionStartConflict(detail)
   return conflict?.recommendedAction === 'DUPLICATE_SAME_DAY'
 }
+
+/** @param {Array<{ id?: number, case_id?: number, scheduled_date?: string }>} needsLogSessions */
+export function blockingLogByCase(needsLogSessions) {
+  /** @type {Record<number, object>} */
+  const map = {}
+  for (const s of needsLogSessions || []) {
+    const cid = s?.case_id
+    if (cid != null && map[cid] == null) map[cid] = s
+  }
+  return map
+}
+
+/** @param {Array<{ id?: number, case_id?: number }>} needsLogSessions */
+export function getBlockingLogForCase(needsLogSessions, caseId) {
+  if (caseId == null) return null
+  return blockingLogByCase(needsLogSessions)[caseId] || null
+}

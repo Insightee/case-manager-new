@@ -60,11 +60,11 @@ def clear_blocking_pending_logs_for_therapist(therapist_email: str = "therapist@
         if not therapist:
             return
         for _ in range(20):
-            blocking = pending_log_gate_service.get_blocking_session(db, therapist.id)
-            if not blocking:
+            blockers = list(pending_log_gate_service.iter_blocking_sessions(db, therapist.id))
+            if not blockers:
                 break
             try:
-                pending_log_gate_service.discard_blocking_draft_log(db, blocking, therapist.id)
+                pending_log_gate_service.discard_blocking_draft_log(db, blockers[0], therapist.id)
                 db.commit()
             except ValueError:
                 db.rollback()

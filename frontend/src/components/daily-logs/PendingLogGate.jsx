@@ -28,7 +28,7 @@ export function PendingLogGate({
           One visit still needs a log
         </h3>
         <p className="ic-pending-log-gate__text">
-          Before you start another session, finish the log for{' '}
+          Before you start another session for this client, finish the log for{' '}
           <strong>{displayName}</strong>
           {when ? ` on ${when}` : ''}
           {timeRange ? ` (${timeRange})` : ''}.

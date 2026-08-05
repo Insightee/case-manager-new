@@ -156,7 +156,10 @@ export function TherapistSessionComposer({
         })
       } catch (err) {
         if (err?.status === 409 && isPendingLogBlock(err.detail)) {
-          setLocalError(err.detail.message || 'Finish your previous visit log before starting another session.')
+          setLocalError(
+            err.detail.message ||
+              'This client\'s previous visit still needs a log before starting another session.',
+          )
           return
         }
         if (err?.status === 409 && isAbsenceConflict(err.detail)) {
@@ -268,7 +271,7 @@ export function TherapistSessionComposer({
 
       {blockLive && pendingLogBlocked && !liveBlocked ? (
         <p className="ic-session-composer__live-blocked" role="status">
-          Finish or remove your previous visit log above before starting another session.
+          This client&apos;s previous visit still needs a log before you can start another session for them.
         </p>
       ) : null}
 

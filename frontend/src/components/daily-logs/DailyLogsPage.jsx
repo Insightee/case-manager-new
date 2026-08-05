@@ -34,7 +34,7 @@ import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
 import { existingVisitForDay, sessionToLogShape } from '../../lib/sessionDayConflict.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { canStartSessionToday, isAbsenceConflict, isPendingLogBlock } from '../../lib/sessionStartRules.js'
+import { canStartSessionToday, getBlockingLogForCase, isAbsenceConflict, isPendingLogBlock } from '../../lib/sessionStartRules.js'
 import { PendingLogGate, discardPendingLogWithDraft } from './PendingLogGate.jsx'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import { ActiveSessionCard } from './ActiveSessionCard.jsx'
@@ -98,8 +98,6 @@ export function DailyLogsPage() {
   const activeInProgress = active?.status === 'IN_PROGRESS' ? active : null
   const stalePrevious = workspace?.stale_previous_sessions || []
   const needsLogRaw = workspace?.needs_log || []
-  const blockingLogSession = workspace?.blocking_log_session || null
-  const pendingLogBlocked = Boolean(blockingLogSession) && !activeInProgress
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
   const needsLog = useMemo(
     () => filterSessionsWithoutAbsence(needsLogRaw, logs),
@@ -213,6 +211,13 @@ export function DailyLogsPage() {
     if (!composerCaseId) return upcoming
     return upcoming.filter((s) => s.case_id === composerCaseId)
   }, [upcoming, composerCaseId])
+
+  const composerBlockingSession = useMemo(
+    () => (composerCaseId ? getBlockingLogForCase(needsLog, composerCaseId) : null),
+    [needsLog, composerCaseId],
+  )
+  const pendingLogBlockedForComposer =
+    Boolean(composerBlockingSession) && !activeInProgress
 
   useEffect(() => {
     setScheduledSessionHint('')
@@ -699,17 +704,18 @@ export function DailyLogsPage() {
   async function handleStart(sessionId, sessionMeta = null, { allowDuplicate = false } = {}) {
     setError('')
     setSuccess('')
-    if (pendingLogBlocked && blockingLogSession?.id !== sessionId) {
-      setError(
-        'Your most recent visit still needs a log. Complete it below or remove the draft visit to continue.',
-      )
-      return
-    }
     const meta =
       sessionMeta ||
       upcoming.find((s) => s.id === sessionId) ||
       needsLog.find((s) => s.id === sessionId) ||
       { id: sessionId, scheduled_date: todayIsoIST() }
+    const caseBlocking = getBlockingLogForCase(needsLog, meta.case_id)
+    if (caseBlocking && caseBlocking.id !== sessionId && !activeInProgress) {
+      setError(
+        'This client\'s most recent visit still needs a log. Complete it below or remove the draft visit to continue.',
+      )
+      return
+    }
     const guard = canStartSessionToday(meta)
     if (!guard.ok) {
       setError(guard.message)
@@ -876,7 +882,10 @@ export function DailyLogsPage() {
       void loadAll({ silent: true })
     } catch (err) {
       if (err?.status === 409 && isPendingLogBlock(err.detail)) {
-        setError(err.detail.message || 'Finish your previous visit log before adding another session.')
+        setError(
+          err.detail.message ||
+            'This client\'s previous visit still needs a log before adding another session.',
+        )
         return
       }
       if (err?.status === 409 && isAbsenceConflict(err.detail)) {
@@ -1011,10 +1020,10 @@ export function DailyLogsPage() {
         <div className="ic-alert ic-alert--success">{success}</div>
       ) : null}
 
-      {pendingLogBlocked && !logSession ? (
+      {composerCaseId && composerBlockingSession && !logSession ? (
         <PendingLogGate
-          session={blockingLogSession}
-          draftSaved={draftIds.has(blockingLogSession.id)}
+          session={composerBlockingSession}
+          draftSaved={draftIds.has(composerBlockingSession.id)}
           busy={discardBusy}
           onCompleteLog={(s) => openLogForm(s, { required: true })}
           onDiscard={handleDiscardPendingLog}
@@ -1129,7 +1138,7 @@ export function DailyLogsPage() {
         <TherapistSessionComposer
           upcomingSessions={upcoming}
           liveBlocked={!!activeInProgress}
-          pendingLogBlocked={pendingLogBlocked}
+          pendingLogBlocked={pendingLogBlockedForComposer}
           onSelectedCaseChange={setComposerCaseId}
           existingSessionConflict={existingSessionConflict}
           walkInConflict={walkInConflict}
@@ -1205,8 +1214,9 @@ export function DailyLogsPage() {
                 const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
                 const isInProgress = s.status === 'IN_PROGRESS'
                 const dayExisting = existingVisitForDay(s, deepLinkContext)
+                const caseBlocking = getBlockingLogForCase(needsLog, s.case_id)
                 const canStartFresh =
-                  !activeInProgress && !pendingLogBlocked && !dayExisting && canStartSessionToday(s).ok
+                  !activeInProgress && !caseBlocking && !dayExisting && canStartSessionToday(s).ok
                 return (
                   <article
                     key={s.id}

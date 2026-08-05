@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { parseChildAbsenceBlock } from '../../lib/sessionStartRules.js'
+import { parseChildAbsenceBlock, parsePendingLogBlock } from '../../lib/sessionStartRules.js'
 import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
 import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
 import { AddToGoogleCalendarButton } from '../shared/AddToGoogleCalendarButton.jsx'
@@ -130,8 +130,11 @@ export function SlotDetailSheet({ open, slot, onClose, onBook, onChanged }) {
       onClose()
       navigate('/therapist/logs')
     } catch (err) {
+      const pendingLog = parsePendingLogBlock(err.detail)
       const block = parseChildAbsenceBlock(err.detail)
-      setError(block?.message || err.message || 'Could not start session')
+      setError(
+        pendingLog?.message || block?.message || err.message || 'Could not start session',
+      )
       setBusy(false)
     }
   }

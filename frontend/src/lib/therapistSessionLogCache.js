@@ -38,8 +38,6 @@ export function applyLogSavedToWorkspace(workspace, sessionId) {
     active_session:
       workspace.active_session?.id === sid ? null : workspace.active_session,
     needs_log: (workspace.needs_log || []).filter((s) => s.id !== sid),
-    blocking_log_session:
-      workspace.blocking_log_session?.id === sid ? null : workspace.blocking_log_session,
     upcoming: (workspace.upcoming || []).map((s) =>
       s.id === sid ? { ...s, has_daily_log: true } : s,
     ),
@@ -85,14 +83,11 @@ export function applySessionCancelledToWorkspace(workspace, cancelled) {
   } else if (inUpcoming) {
     nextUpcoming = upcoming.filter((s) => s.id !== sid)
   }
-  const blocking =
-    workspace.blocking_log_session?.id === sid ? null : workspace.blocking_log_session
   return {
     ...workspace,
     active_session: workspace.active_session?.id === sid ? null : workspace.active_session,
     needs_log: needsLog,
     upcoming: nextUpcoming,
-    blocking_log_session: blocking,
   }
 }
 

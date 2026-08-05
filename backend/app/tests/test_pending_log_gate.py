@@ -1,4 +1,4 @@
-"""Therapist must submit latest visit log before starting another session."""
+"""Therapist must submit latest visit log before starting another session for the same case."""
 
 from __future__ import annotations
 
@@ -34,7 +34,8 @@ def _therapist_headers():
     return login_headers(client, "therapist@demo.com")
 
 
-def test_needs_log_blocks_start():
+def test_needs_log_blocks_start_same_case_only():
+    """Case A missing log blocks Case A starts but not Case B."""
     headers = _therapist_headers()
     db = SessionLocal()
     try:
@@ -85,7 +86,7 @@ def test_needs_log_blocks_start():
             actual_end_at=datetime.combine(block_day, time(10, 0), tzinfo=IST).astimezone(timezone.utc),
         )
         db.add(completed)
-        sched = TherapySession(
+        sched_other = TherapySession(
             case_id=start_case.id,
             therapist_user_id=therapist.id,
             scheduled_date=today,
@@ -94,16 +95,29 @@ def test_needs_log_blocks_start():
             mode=SessionMode.HOME,
             status=SessionStatus.SCHEDULED,
         )
-        db.add(sched)
+        sched_same = TherapySession(
+            case_id=needs_log_case.id,
+            therapist_user_id=therapist.id,
+            scheduled_date=today,
+            start_time=time(16, 0),
+            end_time=time(17, 0),
+            mode=SessionMode.HOME,
+            status=SessionStatus.SCHEDULED,
+        )
+        db.add_all([sched_other, sched_same])
         db.commit()
-        sid = sched.id
+        other_id = sched_other.id
+        same_id = sched_same.id
         blocking_id = completed.id
     finally:
         db.close()
 
-    r = client.post(f"/api/v1/sessions/{sid}/start", headers=headers, json={})
-    assert r.status_code == 409, r.text
-    detail = r.json()["detail"]
+    other_start = client.post(f"/api/v1/sessions/{other_id}/start", headers=headers, json={})
+    assert other_start.status_code == 200, other_start.text
+
+    same_start = client.post(f"/api/v1/sessions/{same_id}/start", headers=headers, json={})
+    assert same_start.status_code == 409, same_start.text
+    detail = same_start.json()["detail"]
     assert detail["code"] == "PENDING_LOG_REQUIRED"
     assert detail["blocking_session_id"] == blocking_id
 
@@ -146,7 +160,7 @@ def test_discard_blocking_log_allows_start():
         )
         db.add(completed)
         sched = TherapySession(
-            case_id=start_case.id,
+            case_id=needs_log_case.id,
             therapist_user_id=therapist.id,
             scheduled_date=today,
             start_time=time(14, 0),
@@ -216,7 +230,7 @@ def test_only_latest_unsubmitted_session_blocks():
             )
         )
         db.commit()
-        blocking = pending_log_gate_service.get_blocking_session(db, therapist.id)
+        blocking = pending_log_gate_service.get_blocking_session(db, therapist.id, case.id)
         if blocking and blocking.scheduled_date > stale_day:
             pytest.skip("Seed data has a more recent completed visit without log")
         assert blocking is not None
@@ -225,9 +239,9 @@ def test_only_latest_unsubmitted_session_blocks():
         db.close()
 
 
-def test_workspace_includes_blocking_log_session():
+def test_workspace_includes_needs_log():
     headers = _therapist_headers()
     ws = client.get("/api/v1/therapist/sessions/workspace", headers=headers)
     assert ws.status_code == 200
     body = ws.json()
-    assert "blocking_log_session" in body
+    assert "needs_log" in body
