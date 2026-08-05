@@ -23,6 +23,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | [DEPLOY.md](./DEPLOY.md) | End-to-end deploy checklist |
 | [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) | Railway API + Vercel frontend pairing, tokens, CORS |
 | [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) | Pre-release verification |
+| [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md) | **Finance cutover** — staged flag enablement (Loops C–E) |
 | [CLOUDFLARE_R2.md](./CLOUDFLARE_R2.md) | R2 object storage for production uploads |
 | [EMAIL_DNS.md](./EMAIL_DNS.md) | ZeptoMail, SMTP, DNS records |
 | [STAGING_SMOKE.md](./STAGING_SMOKE.md) | Post-import session log smoke test |
