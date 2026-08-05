@@ -92,6 +92,8 @@ def list_deductions(
     *,
     case_id: int,
     billing_month: str,
+    therapist_user_id: int | None = None,
+    therapist_invoice_id: int | None = None,
     include_reversed: bool = False,
 ) -> list[dict[str, Any]]:
     ym = billing_composer_service.normalize_billing_month(billing_month)
@@ -99,6 +101,13 @@ def list_deductions(
         FinancePayoutDeduction.case_id == case_id,
         FinancePayoutDeduction.billing_month == ym,
     )
+    if therapist_user_id is not None:
+        stmt = stmt.where(FinancePayoutDeduction.therapist_user_id == therapist_user_id)
+    if therapist_invoice_id is not None:
+        stmt = stmt.where(
+            (FinancePayoutDeduction.therapist_invoice_id.is_(None))
+            | (FinancePayoutDeduction.therapist_invoice_id == therapist_invoice_id)
+        )
     if not include_reversed:
         stmt = stmt.where(FinancePayoutDeduction.status == FinancePayoutDeductionStatus.ACTIVE)
     rows = db.scalars(stmt.order_by(FinancePayoutDeduction.id)).all()

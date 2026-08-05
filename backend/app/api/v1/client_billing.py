@@ -53,6 +53,9 @@ def _billing_runtime_config() -> dict:
         "zohoConfigured": zoho_client_sync.zoho_configured(),
         "zohoBooksLivePush": bool(getattr(settings, "zoho_books_live_push", False)),
         "provisional": not bool(settings.finance_cutover_complete),
+        "payoutExportEnabled": bool(getattr(settings, "payout_export_enabled", False)),
+        "payoutReleaseEnabled": bool(getattr(settings, "payout_release_enabled", False)),
+        "payoutProviderLive": bool(getattr(settings, "payout_provider_live", False)),
     }
 
 

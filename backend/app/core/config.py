@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     zoho_books_live_push: bool = False
     # When false (pilot default), assignment acceptance timestamps are informational only.
     acceptance_gating_enabled: bool = False
+    # Therapist payout money-OUT (Loop C) — export batch mock; release live transfers last (Loop E).
+    payout_provider: str = "MOCK"
+    payout_provider_live: bool = False
+    payout_export_enabled: bool = False
+    payout_release_enabled: bool = False
+    finance_default_tds_rate_percent: float = 10.0
     # Last day therapists can re-enter past leave for platform migration (ISO date).
     leave_migration_end_date: str = "2026-07-31"
     # Hours after actual_start_at a therapist may void a COMPLETED visit that has no log (168 = 7 days cleanup window).

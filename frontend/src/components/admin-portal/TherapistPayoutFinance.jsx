@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, Fragment } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { parseClientInvoiceFilters, buildClientBillingScopeQuery } from '../../lib/invoiceFilters.js'
+import { useBillingRuntimeConfig } from '../../hooks/useBillingRuntimeConfig.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
   AdminCollapsibleFilters,
@@ -141,6 +142,8 @@ export function FinanceMondayBrief() {
 
 export function TherapistPayoutQueuePanel() {
   const { canWriteBilling } = useModuleWrite()
+  const { config: billingConfig } = useBillingRuntimeConfig()
+  const payoutExportEnabled = Boolean(billingConfig?.payoutExportEnabled)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -150,6 +153,7 @@ export function TherapistPayoutQueuePanel() {
   const [resolveNote, setResolveNote] = useState('')
   const [acting, setActing] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
+  const [exportNote, setExportNote] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -201,6 +205,52 @@ export function TherapistPayoutQueuePanel() {
 
   const totals = data?.totals
   const rows = data?.statements || []
+
+  const exportableSelected = rows.filter(
+    (row) =>
+      selected.has(row.invoiceId) &&
+      row.status === 'APPROVED' &&
+      !row.hasOpenDispute &&
+      !row.blocked &&
+      !row.needsReview
+  )
+
+  async function exportBatch() {
+    if (!exportableSelected.length) return
+    setActing(true)
+    setExportNote(null)
+    try {
+      const key = `export-${Date.now()}-${exportableSelected.map((r) => r.invoiceId).join('-')}`
+      const result = await apiFetch('/api/v1/admin/therapist-payouts/export-batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          invoice_ids: exportableSelected.map((r) => r.invoiceId),
+          idempotency_key: key.slice(0, 120),
+        }),
+      })
+      setExportNote(
+        result?.alreadyExported
+          ? 'Batch already exported for this idempotency key — no duplicate transfers.'
+          : `Mock batch exported (${result?.batch?.transferCount ?? 0} transfer(s)).`
+      )
+      setSelected(new Set())
+      load()
+    } catch (err) {
+      setExportNote(err?.message || 'Export could not complete — check settlement ladder.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function syncBatch(batchId) {
+    setActing(true)
+    try {
+      await apiFetch(`/api/v1/admin/therapist-payouts/batches/${batchId}/sync-status`, { method: 'POST' })
+      load()
+    } finally {
+      setActing(false)
+    }
+  }
 
   return (
     <>
@@ -256,9 +306,13 @@ export function TherapistPayoutQueuePanel() {
                       <th>Month</th>
                       <th>Cases</th>
                       <th>Sessions</th>
+                      <th>Gross</th>
+                      <th>TDS</th>
+                      <th>Deductions</th>
                       <th>Net</th>
                       <th>Payable now</th>
                       <th>Contested</th>
+                      <th>Batch</th>
                       <th>Status</th>
                       <th />
                     </tr>
@@ -271,7 +325,7 @@ export function TherapistPayoutQueuePanel() {
                             <input
                               type="checkbox"
                               checked={selected.has(row.invoiceId)}
-                              disabled={row.needsReview || row.hasOpenDispute}
+                              disabled={row.needsReview || row.hasOpenDispute || row.blocked || row.status !== 'APPROVED'}
                               onChange={() => toggleSelect(row.invoiceId)}
                             />
                           </td>
@@ -279,7 +333,29 @@ export function TherapistPayoutQueuePanel() {
                           <td>{row.month}</td>
                           <td>{row.caseCount}</td>
                           <td>{row.sessionCount}</td>
-                          <td>{formatCurrency(row.netInr)}</td>
+                          <td>{formatCurrency(row.grossInr)}</td>
+                          <td>
+                            {row.tdsInr != null ? (
+                              <>
+                                {formatCurrency(row.tdsInr)}
+                                <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                                  {' '}
+                                  ({row.tdsRatePercent ?? '—'}%)
+                                </span>
+                              </>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td>{formatCurrency(row.deductionsInr)}</td>
+                          <td>
+                            {formatCurrency(row.netInr)}
+                            {row.blocked ? (
+                              <span className="admin-chip admin-chip--warn" style={{ marginLeft: 6 }}>
+                                Blocked
+                              </span>
+                            ) : null}
+                          </td>
                           <td>
                             {row.needsReview ? (
                               <span className="admin-chip admin-chip--warn">Needs review</span>
@@ -288,6 +364,26 @@ export function TherapistPayoutQueuePanel() {
                             )}
                           </td>
                           <td>{formatCurrency(row.contestedInr)}</td>
+                          <td>
+                            {row.exportBatchStatus ? (
+                              <>
+                                <span className="admin-chip">{row.exportBatchStatus}</span>
+                                {row.exportBatchStatus === 'FAILED' && row.exportBatchId ? (
+                                  <button
+                                    type="button"
+                                    className="admin-btn admin-btn--ghost admin-btn--sm"
+                                    style={{ marginLeft: 6 }}
+                                    disabled={acting || !canWriteBilling}
+                                    onClick={() => syncBatch(row.exportBatchId)}
+                                  >
+                                    Return to queue
+                                  </button>
+                                ) : null}
+                              </>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
                           <td>
                             <span className={statusPillClass(row.status)}>{row.status}</span>
                           </td>
@@ -305,7 +401,7 @@ export function TherapistPayoutQueuePanel() {
                         </tr>
                         {expandedId === row.invoiceId && row.disputes?.length ? (
                           <tr key={`${row.invoiceId}-disputes`}>
-                            <td colSpan={10}>
+                            <td colSpan={13}>
                               {row.disputes.map((d) => (
                                 <div key={d.id} style={{ marginBottom: 12, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
                                   <p style={{ margin: '0 0 6px' }}>
@@ -400,11 +496,25 @@ export function TherapistPayoutQueuePanel() {
         )}
 
         <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button type="button" className="admin-btn admin-btn--primary" disabled title="Enabled after cutover">
-            Approve &amp; queue payout ({selected.size} selected)
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary"
+            disabled={!payoutExportEnabled || !canWriteBilling || acting || exportableSelected.length === 0}
+            onClick={exportBatch}
+          >
+            Export batch (mock) ({exportableSelected.length} selected)
           </button>
-          <span className="admin-muted">Approve &amp; queue is enabled after cutover — posts nothing live while flags are off.</span>
+          <span className="admin-muted">
+            {payoutExportEnabled
+              ? 'Mock export only — live release stays off until cutover.'
+              : 'Export enabled after cutover (PAYOUT_EXPORT_ENABLED).'}
+          </span>
         </div>
+        {exportNote ? (
+          <p className="admin-muted" style={{ marginTop: 8, marginBottom: 0 }}>
+            {exportNote}
+          </p>
+        ) : null}
       </AdminPanel>
     </>
   )

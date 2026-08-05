@@ -75,3 +75,27 @@ def require_finance_writable() -> Callable:
         return user
 
     return checker
+
+
+def payout_export_enabled() -> bool:
+    return bool(getattr(settings, "payout_export_enabled", False))
+
+
+def payout_release_enabled() -> bool:
+    return bool(getattr(settings, "payout_release_enabled", False))
+
+
+def require_payout_export_enabled() -> None:
+    if not payout_export_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Payout batch export is disabled until cutover (PAYOUT_EXPORT_ENABLED).",
+        )
+
+
+def require_payout_release_enabled() -> None:
+    if not payout_release_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Live payout release is disabled until final cutover (PAYOUT_RELEASE_ENABLED).",
+        )

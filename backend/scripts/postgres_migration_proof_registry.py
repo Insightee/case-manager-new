@@ -212,6 +212,7 @@ register_head(
 
 
 def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
+    from app.models.assignment import CaseAssignment
     from app.models.case import Case
     from app.models.finance_writable import (
         CaseFinanceNote,
@@ -219,13 +220,20 @@ def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
         CaseFinanceNoteType,
         FinanceCorrectionProposal,
         FinanceCorrectionProposalType,
+        FinancePayoutDeduction,
+        FinancePayoutDeductionDirection,
+        FinancePayoutDeductionStatus,
         FinanceProposalStatus,
         FinanceWrongSide,
     )
+    from sqlalchemy import text
 
     case = db.scalar(select(Case).limit(1))
     if not case:
         raise RuntimeError("Need seeded cases — run demo_seed first")
+
+    assignment = db.scalar(select(CaseAssignment).where(CaseAssignment.case_id == case.id).limit(1))
+    therapist_user_id = assignment.therapist_user_id if assignment else 1
 
     proposal = FinanceCorrectionProposal(
         case_id=case.id,
@@ -241,6 +249,20 @@ def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
     db.add(proposal)
     db.flush()
 
+    deduction = FinancePayoutDeduction(
+        case_id=case.id,
+        billing_month="2099-11",
+        therapist_user_id=therapist_user_id,
+        amount_inr=50.0,
+        direction=FinancePayoutDeductionDirection.DEDUCT,
+        note_type=CaseFinanceNoteType.OTHER,
+        reason="Migration proof seed — payout deduction placeholder",
+        status=FinancePayoutDeductionStatus.ACTIVE,
+        created_by_user_id=1,
+    )
+    db.add(deduction)
+    db.flush()
+
     note = CaseFinanceNote(
         case_id=case.id,
         billing_month="2099-11",
@@ -251,7 +273,22 @@ def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
     )
     db.add(note)
     db.flush()
-    return {"proposal_id": proposal.id, "note_id": note.id}
+
+    # Greenfield create_all stamps per-column indexes; e1f2 downgrade drops composite names.
+    db.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_finance_correction_proposals_case_month "
+            "ON finance_correction_proposals (case_id, billing_month)"
+        )
+    )
+    db.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_finance_payout_deductions_case_month "
+            "ON finance_payout_deductions (case_id, billing_month)"
+        )
+    )
+    db.flush()
+    return {"proposal_id": proposal.id, "deduction_id": deduction.id, "note_id": note.id}
 
 
 register_head(
@@ -263,6 +300,65 @@ register_head(
     ],
     columns_added=[],
     seed=_seed_e1f2a3b4c5d7,
+)
+
+
+def _seed_f2a3b4c5d6e8(db: Session) -> dict[str, Any]:
+    from app.models.invoice import Invoice, InvoiceStatus
+    from app.models.therapist_payout_settlement import TherapistPayoutBatch, TherapistPayoutTransfer
+
+    existing = db.scalar(
+        select(TherapistPayoutBatch).where(TherapistPayoutBatch.idempotency_key == "MIGRATION-PROOF-PAYOUT-001")
+    )
+    if existing:
+        return {"batch_id": existing.id, "skipped": True}
+
+    inv = db.scalar(
+        select(Invoice)
+        .where(Invoice.status == InvoiceStatus.APPROVED)
+        .where(~Invoice.id.in_(select(TherapistPayoutTransfer.invoice_id)))
+        .limit(1)
+    )
+    if not inv:
+        inv = db.scalar(select(Invoice).limit(1))
+    if not inv:
+        raise RuntimeError("Need seeded invoices — run demo_seed first")
+
+    batch = TherapistPayoutBatch(
+        billing_month="2099-12",
+        status="EXPORTED",
+        provider="MOCK",
+        idempotency_key="MIGRATION-PROOF-PAYOUT-001",
+        provider_batch_ref="MOCK-BATCH-MIGRATION",
+        created_by_user_id=1,
+    )
+    db.add(batch)
+    db.flush()
+    xfer = TherapistPayoutTransfer(
+        batch_id=batch.id,
+        invoice_id=inv.id,
+        gross_inr=100.0,
+        tds_rate_percent=10.0,
+        tds_inr=10.0,
+        deductions_inr=0,
+        net_inr=90.0,
+        provider_ref="MOCK-XFER-MIGRATION",
+        status="PENDING",
+    )
+    db.add(xfer)
+    db.flush()
+    return {"batch_id": batch.id, "transfer_id": xfer.id}
+
+
+register_head(
+    "f2a3b4c5d6e8",
+    tables_added=["therapist_payout_batches", "therapist_payout_transfers"],
+    columns_added=[
+        ("therapist_profiles", "tds_rate_percent"),
+        ("invoices", "tds_inr"),
+        ("invoices", "net_payable_inr"),
+    ],
+    seed=_seed_f2a3b4c5d6e8,
 )
 
 
