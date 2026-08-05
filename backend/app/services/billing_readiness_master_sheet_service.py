@@ -94,7 +94,7 @@ def _zoho_id(db: Session, client_invoice_id: int | None) -> str:
         return NOT_AVAILABLE
 
 
-def _activity_counts(db: Session, *, case_id: int, billing_month: str) -> dict[str, Any]:
+def _activity_counts(db: Session, *, case_id: int, billing_month: str, case: Case | None = None) -> dict[str, Any]:
     rows = db.scalars(
         select(BillingLedger).where(
             BillingLedger.case_id == case_id,
@@ -104,15 +104,40 @@ def _activity_counts(db: Session, *, case_id: int, billing_month: str) -> dict[s
     sessions_delivered = sum(
         1
         for r in rows
-        if r.event_type == LedgerEventType.SESSION_COMPLETED
+        if r.event_type
+        in (LedgerEventType.SESSION_COMPLETED, LedgerEventType.PACKAGE_CONSUMPTION)
         and r.billable_status in (BillableStatus.BILLABLE, BillableStatus.INVOICED, BillableStatus.PENDING_REVIEW)
     )
+    package_consumed = sum(
+        1 for r in rows if r.event_type == LedgerEventType.PACKAGE_CONSUMPTION
+    )
+    if package_consumed == 0 and case and case.billing_type == BillingType.PACKAGE:
+        from app.models.client_billing import CarePackage
+        from app.models.client_package_cycle import ClientPackageCycle
+
+        cycle = db.scalars(
+            select(ClientPackageCycle)
+            .where(ClientPackageCycle.case_id == case_id)
+            .order_by(ClientPackageCycle.id.desc())
+            .limit(1)
+        ).first()
+        if cycle and cycle.consumed_sessions:
+            package_consumed = int(cycle.consumed_sessions)
+        else:
+            pkg = db.scalars(
+                select(CarePackage).where(CarePackage.case_id == case_id).limit(1)
+            ).first()
+            if pkg and pkg.used_sessions:
+                package_consumed = int(pkg.used_sessions)
+    if package_consumed > sessions_delivered:
+        sessions_delivered = package_consumed
     leaves = sum(1 for r in rows if r.event_type == LedgerEventType.LEAVE_DEDUCTION)
     child_absence = sum(1 for r in rows if r.event_type == LedgerEventType.CHILD_ABSENT)
     extra_sessions = sum(1 for r in rows if r.event_type == LedgerEventType.MANUAL_ADJUSTMENT)
     disputed_sessions = sum(1 for r in rows if r.dispute_status == LedgerDisputeStatus.OPEN)
     return {
         "sessionsDelivered": sessions_delivered,
+        "packageSessionsConsumed": package_consumed,
         "leaves": leaves,
         "childAbsence": child_absence,
         "extraSessions": extra_sessions,
@@ -285,14 +310,22 @@ def _evaluate_exceptions(
         )
 
     severity_rank = {"BLOCK": 2, "WARN": 1, "CLEAR": 0}
-    state = "CLEAR"
+    money_state = "CLEAR"
     held = False
     for hit in hits:
+        if hit["type"] == BillingReadinessExceptionType.REPORTS_NOT_SUBMITTED.value:
+            continue
         sev = hit["severity"]
-        if severity_rank.get(sev, 0) > severity_rank.get(state, 0):
-            state = sev
+        if severity_rank.get(sev, 0) > severity_rank.get(money_state, 0):
+            money_state = sev
         if sev == BillingReadinessExceptionSeverity.BLOCK.value:
             held = True
+
+    state = money_state
+    if money_state == "CLEAR" and any(
+        h["type"] == BillingReadinessExceptionType.REPORTS_NOT_SUBMITTED.value for h in hits
+    ):
+        state = "CLEAR"
 
     hits.sort(
         key=lambda h: next(
@@ -341,7 +374,7 @@ def compose_master_sheet_row(db: Session, *, case: Case, billing_month: str) -> 
     engine_amount = preview.get("overview", {}).get("total")
     engine_amount = round(float(engine_amount), 2) if engine_amount is not None else None
 
-    activity = _activity_counts(db, case_id=case.id, billing_month=ym)
+    activity = _activity_counts(db, case_id=case.id, billing_month=ym, case=case)
     raised = _raised_invoice_metrics(db, inv)
     rules = _load_exception_rules(db)
     exceptions, exception_state, held = _evaluate_exceptions(

@@ -17,7 +17,7 @@ from app.models.finance_writable import (
     FinancePayoutDeductionDirection,
     FinancePayoutDeductionStatus,
 )
-from app.services import billing_composer_service
+from app.services import billing_composer_service, therapist_invoice_case_line_service
 
 
 def default_tds_rate_percent() -> float:
@@ -52,6 +52,9 @@ def compute_payout_ladder(
             add_total += amt
 
     net = round(after_tds - deduct_total + add_total, 2)
+    if net < 0:
+        net = 0.0
+    blocked = deduct_total > after_tds + 0.001
     return {
         "grossInr": gross,
         "tdsRatePercent": rate,
@@ -60,6 +63,8 @@ def compute_payout_ladder(
         "deductionsInr": round(deduct_total, 2),
         "additionsInr": round(add_total, 2),
         "netInr": net,
+        "blocked": blocked,
+        "blockReason": "Deduction exceeds payout after TDS — needs review" if blocked else None,
     }
 
 
@@ -118,6 +123,22 @@ def create_deduction(
     if not reason:
         raise ValueError("A reason is required for each deduction.")
     ym = billing_composer_service.normalize_billing_month(billing_month)
+    gross = therapist_invoice_case_line_service.resolve_case_payout_gross_inr(
+        db, case_id=case_id, billing_month=ym, therapist_user_id=therapist_user_id
+    )
+    existing = list_deductions(db, case_id=case_id, billing_month=ym, include_reversed=False)
+    prospective = [
+        *existing,
+        {
+            "amountInr": round(float(amount_inr), 2),
+            "direction": direction.upper(),
+            "status": FinancePayoutDeductionStatus.ACTIVE.value,
+        },
+    ]
+    ladder = compute_payout_ladder(gross_inr=gross, deductions=prospective)
+    if direction.upper() == "DEDUCT" and ladder.get("blocked"):
+        raise ValueError(ladder.get("blockReason") or "Deduction exceeds available payout")
+
     ded = FinancePayoutDeduction(
         case_id=case_id,
         billing_month=ym,
