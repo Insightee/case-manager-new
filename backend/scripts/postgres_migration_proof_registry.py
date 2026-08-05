@@ -303,6 +303,65 @@ register_head(
 )
 
 
+def _seed_f2a3b4c5d6e8(db: Session) -> dict[str, Any]:
+    from app.models.invoice import Invoice, InvoiceStatus
+    from app.models.therapist_payout_settlement import TherapistPayoutBatch, TherapistPayoutTransfer
+
+    existing = db.scalar(
+        select(TherapistPayoutBatch).where(TherapistPayoutBatch.idempotency_key == "MIGRATION-PROOF-PAYOUT-001")
+    )
+    if existing:
+        return {"batch_id": existing.id, "skipped": True}
+
+    inv = db.scalar(
+        select(Invoice)
+        .where(Invoice.status == InvoiceStatus.APPROVED)
+        .where(~Invoice.id.in_(select(TherapistPayoutTransfer.invoice_id)))
+        .limit(1)
+    )
+    if not inv:
+        inv = db.scalar(select(Invoice).limit(1))
+    if not inv:
+        raise RuntimeError("Need seeded invoices — run demo_seed first")
+
+    batch = TherapistPayoutBatch(
+        billing_month="2099-12",
+        status="EXPORTED",
+        provider="MOCK",
+        idempotency_key="MIGRATION-PROOF-PAYOUT-001",
+        provider_batch_ref="MOCK-BATCH-MIGRATION",
+        created_by_user_id=1,
+    )
+    db.add(batch)
+    db.flush()
+    xfer = TherapistPayoutTransfer(
+        batch_id=batch.id,
+        invoice_id=inv.id,
+        gross_inr=100.0,
+        tds_rate_percent=10.0,
+        tds_inr=10.0,
+        deductions_inr=0,
+        net_inr=90.0,
+        provider_ref="MOCK-XFER-MIGRATION",
+        status="PENDING",
+    )
+    db.add(xfer)
+    db.flush()
+    return {"batch_id": batch.id, "transfer_id": xfer.id}
+
+
+register_head(
+    "f2a3b4c5d6e8",
+    tables_added=["therapist_payout_batches", "therapist_payout_transfers"],
+    columns_added=[
+        ("therapist_profiles", "tds_rate_percent"),
+        ("invoices", "tds_inr"),
+        ("invoices", "net_payable_inr"),
+    ],
+    seed=_seed_f2a3b4c5d6e8,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

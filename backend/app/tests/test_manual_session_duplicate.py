@@ -11,10 +11,12 @@ from sqlalchemy import select
 from app.core.database import SessionLocal
 from app.main import app
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
 from app.models.user import User
 from app.seed.demo_seed import run as seed_run
+from app.tests.session_helpers import clear_blocking_pending_logs_for_therapist
 
 client = TestClient(app)
 
@@ -22,6 +24,7 @@ client = TestClient(app)
 @pytest.fixture(scope="module", autouse=True)
 def setup_db():
     seed_run()
+    clear_blocking_pending_logs_for_therapist()
 
 
 def _login(email: str) -> dict[str, str]:
@@ -191,6 +194,7 @@ def test_manual_session_prefers_completed_over_scheduled_same_day():
 
 
 def test_manual_session_allows_different_date():
+    clear_blocking_pending_logs_for_therapist()
     headers = _login("therapist@demo.com")
     db = SessionLocal()
     past = date(2020, 3, 10)
@@ -210,6 +214,16 @@ def test_manual_session_allows_different_date():
             actual_end_at=datetime.combine(past, time(11, 0), tzinfo=timezone.utc),
         )
         db.add(existing)
+        db.flush()
+        db.add(
+            DailyLog(
+                session_id=existing.id,
+                attendance_status="PRESENT",
+                activities_done="Prior visit logged",
+                approval_status=LogApprovalStatus.APPROVED.value,
+                submitted_at=datetime.now(timezone.utc),
+            )
+        )
         db.commit()
     finally:
         db.close()

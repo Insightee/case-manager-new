@@ -15,8 +15,22 @@ client = TestClient(app)
 
 @pytest.fixture(scope="module", autouse=True)
 def _seed_finance_walkthrough_fixture():
+    db = SessionLocal()
+    try:
+        from app.seed.finance_walkthrough_fixture import _cleanup_walkthrough_cases
+
+        _cleanup_walkthrough_cases(db)
+    finally:
+        db.close()
     fixture_run(force=True)
     yield
+    db = SessionLocal()
+    try:
+        from app.seed.finance_walkthrough_fixture import _cleanup_walkthrough_cases
+
+        _cleanup_walkthrough_cases(db)
+    finally:
+        db.close()
 
 
 def _login(email: str) -> dict[str, str]:

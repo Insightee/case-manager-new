@@ -13,6 +13,7 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
 from app.models.user import User
 from app.services import session_service
+from app.tests.session_helpers import clear_blocking_pending_logs_for_therapist
 
 
 def test_end_session_preserves_scheduled_slot_times():
@@ -53,6 +54,7 @@ def test_end_session_preserves_scheduled_slot_times():
 
 
 def test_start_session_preserves_scheduled_start_time():
+    clear_blocking_pending_logs_for_therapist()
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
