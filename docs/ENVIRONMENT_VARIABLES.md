@@ -236,7 +236,21 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `VITE_ENABLE_CLIENT_BILLING` | unset/false | Parent + therapist billing visibility (Stage 2). Forced off on canonical production. |
 | `VITE_ENABLE_BILLING` | unset/false | Legacy alias for `VITE_ENABLE_CLIENT_BILLING` (one-release fallback). |
 | `ZOHO_BOOKS_API_KEY` | empty | Zoho Books sync seam; empty → visible "not configured" status (never fake success). |
+| `ZOHO_BOOKS_LIVE_PUSH` | `false` | When true and API key set, push/update client invoices to Zoho Books. |
 | `VITE_ENABLE_FINANCE_DASHBOARD_V1` | unset/false | Stage 1 read-only Finance Control Tower on `/admin/invoices?tab=overview`. Forced off on canonical production via `readClientModuleFlag`. |
+
+### Payout money-OUT (Loop C)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PAYOUT_EXPORT_ENABLED` | `false` | Allows therapist payout mock batch export (`POST …/therapist-payouts/export-batch`). |
+| `PAYOUT_RELEASE_ENABLED` | `false` | Allows marking transfers paid / live provider release — **enable last** in [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md). |
+| `PAYOUT_PROVIDER` | `MOCK` | `MOCK` or `RAZORPAY` (stub until live wiring). |
+| `PAYOUT_PROVIDER_LIVE` | `false` | When true with `RAZORPAY`, uses live provider adapter (cutover only). |
+| `FINANCE_DEFAULT_TDS_RATE_PERCENT` | `10` | Default TDS rate when therapist profile has no override. |
+| `BILLING_DISPUTE_LEGACY_ADJUSTMENT` | `false` | When false, admin dispute resolve rejects free-field `adjustment_inr` — use finance correction instead. |
+
+Cutover sequence: see [FINANCE_CUTOVER_RUNBOOK.md](./FINANCE_CUTOVER_RUNBOOK.md).
 
 Staging may set `ENABLE_BILLING=true` (required for Control Tower routers to mount) with `BILLING_LEDGER_WRITES=false` for read-only verification. Enable `VITE_ENABLE_FINANCE_DASHBOARD_V1` only on non-production frontend builds. Production cutover is a separate deliberate event after `monthly_case_review` classification.
 
