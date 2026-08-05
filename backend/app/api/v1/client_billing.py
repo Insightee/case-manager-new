@@ -293,10 +293,30 @@ def parent_payment_receipt(
 
 @admin_router.get("/summary")
 def admin_billing_summary(
+    month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
     user: User = Depends(require_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
-    return client_billing_service.admin_summary(db)
+    return client_billing_service.admin_summary(
+        db,
+        month=month,
+        year=year,
+        date_from=date_from,
+        date_to=date_to,
+        case_id=case_id,
+        status=status,
+        invoice_type=invoice_type,
+        module=module,
+        search=search,
+    )
 
 
 def _invoice_list_params(
@@ -1005,7 +1025,12 @@ def admin_notify_parent_invoice(
 @admin_router.get("/receivables")
 def admin_receivables(
     month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    case_id: Optional[int] = None,
     status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
     overdue_only: bool = Query(False),
@@ -1015,7 +1040,12 @@ def admin_receivables(
     return client_billing_service.admin_receivables_summary(
         db,
         month=month,
+        year=year,
+        date_from=date_from,
+        date_to=date_to,
+        case_id=case_id,
         status=status,
+        invoice_type=invoice_type,
         module=module,
         search=search,
         overdue_only=overdue_only,

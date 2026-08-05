@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, Fragment } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { parseClientInvoiceFilters, buildClientBillingScopeQuery } from '../../lib/invoiceFilters.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
   AdminCollapsibleFilters,
@@ -20,18 +21,49 @@ function statusPillClass(status) {
 }
 
 export function FinanceMondayBrief() {
+  const [searchParams] = useSearchParams()
+  const filters = parseClientInvoiceFilters(searchParams)
   const [brief, setBrief] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
     setLoading(true)
-    apiFetch('/api/v1/admin/finance-overview/monday-brief')
-      .then(setBrief)
-      .catch(() => setBrief(null))
+    setLoadError(null)
+    const scopeQs = buildClientBillingScopeQuery(filters)
+    const briefQs = filters.month ? `?billing_month=${encodeURIComponent(filters.month)}` : ''
+    Promise.all([
+      apiFetch(`/api/v1/admin/client-billing/receivables${scopeQs}`),
+      apiFetch(`/api/v1/admin/finance-overview/monday-brief${briefQs}`),
+    ])
+      .then(([receivables, briefData]) => {
+        const totals = receivables?.totals || {}
+        setBrief({
+          ...briefData,
+          moneyIn: {
+            ...(briefData?.moneyIn || {}),
+            collectibleOutstandingInr: totals.outstandingInr,
+            overdueInr: totals.overdueInr,
+            overdueCount: totals.overdueCount,
+          },
+          receivablesSource: receivables,
+        })
+      })
+      .catch((err) => {
+        setBrief(null)
+        setLoadError(err?.message || 'Finance overview is unavailable right now.')
+      })
       .finally(() => setLoading(false))
-  }, [])
+  }, [searchParams])
 
   if (loading) return <div className="admin-skeleton" style={{ minHeight: 120, marginBottom: 16 }} />
+  if (loadError) {
+    return (
+      <AdminPanel title="Finance snapshot" padded style={{ marginBottom: 16 }}>
+        <AdminEmptyState title="Finance snapshot could not load" description={loadError} />
+      </AdminPanel>
+    )
+  }
   if (!brief) return null
 
   const moneyIn = brief.moneyIn || {}
@@ -39,9 +71,11 @@ export function FinanceMondayBrief() {
   const top = brief.thisWeek?.topItems || []
 
   return (
-    <AdminPanel title="Monday briefing" padded style={{ marginBottom: 16 }}>
+    <AdminPanel title="Finance snapshot" padded style={{ marginBottom: 16 }}>
       <p className="admin-muted" style={{ marginTop: 0 }}>
-        Start-of-week glance — figures match receivables and payout queue sources.
+        {filters.month
+          ? `Outstanding figures for billing month ${filters.month} — same source as Client invoices and Receivables.`
+          : 'Outstanding figures across all billing months — same source as Client invoices and Receivables.'}
       </p>
       <div className="client-inv__summary-grid" style={{ marginBottom: 16 }}>
         <div className="client-inv__summary-card">

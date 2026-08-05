@@ -15,31 +15,49 @@ import { AdminFinanceOverviewTab } from './AdminFinanceOverviewTab.jsx'
 import { FinanceMondayBrief } from './TherapistPayoutFinance.jsx'
 import { AdminFinanceReportsTab } from './AdminFinanceReportsTab.jsx'
 import './admin-client-invoices.css'
+import '../../styles/billing-readiness-master-sheet.css'
 
-const TABS = [
+const PRIMARY_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'receivables', label: 'Receivables' },
   { id: 'client', label: 'Client invoices' },
   { id: 'payments', label: 'Client payments' },
-  { id: 'rules', label: 'Rules & packages' },
-  { id: 'ledger', label: 'Session ledger' },
-  { id: 'reports', label: 'Reports' },
+  { id: 'receivables', label: 'Receivables' },
   { id: 'disputes', label: 'Disputes' },
 ]
 
 const MOBILE_TAB_LABELS = {
   overview: 'Overview',
-  receivables: 'Receivables',
   client: 'Invoices',
   payments: 'Payments',
-  rules: 'Rules',
-  ledger: 'Ledger',
-  reports: 'Reports',
+  receivables: 'Receivables',
   disputes: 'Disputes',
 }
 
-const FINANCE_PRIMARY_TABS = ['overview', 'receivables', 'client', 'payments', 'disputes']
-const FINANCE_OVERFLOW_TABS = ['rules', 'ledger', 'reports']
+const FINANCE_PRIMARY_TABS = ['overview', 'client', 'payments', 'receivables', 'disputes']
+
+const LEGACY_TAB_REDIRECTS = {
+  rules: { tab: 'client', sub: 'rules' },
+  ledger: { tab: 'client', sub: 'ledger' },
+  reports: { tab: 'client', sub: 'reports' },
+}
+
+const BILLING_TOOLS = [
+  { id: 'invoices', label: 'Invoices' },
+  { id: 'rules', label: 'Rules & packages' },
+  { id: 'ledger', label: 'Session ledger' },
+  { id: 'reports', label: 'Reports' },
+]
+
+const PAYMENT_TOOLS = [
+  { id: 'payments', label: 'Payments' },
+  { id: 'rules', label: 'Rules & packages' },
+  { id: 'ledger', label: 'Session ledger' },
+  { id: 'reports', label: 'Reports' },
+]
+
+function defaultBillingSub(parentTab) {
+  return parentTab === 'payments' ? 'payments' : 'invoices'
+}
 
 function financeWidgetFooter(widget) {
   const map = {
@@ -47,6 +65,23 @@ function financeWidgetFooter(widget) {
     client_claims: '/admin/invoices?tab=payments',
   }
   return map[widget.id] || '/admin/invoices/compose?queue=not_invoiced_this_month'
+}
+
+function FinanceInlineNav({ tools, activeId, onChange }) {
+  return (
+    <nav className="admin-finance-inline-nav" aria-label="Invoices and payments tools">
+      {tools.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          className={`admin-finance-inline-nav__link${activeId === t.id ? ' is-active' : ''}`}
+          onClick={() => onChange(t.id)}
+        >
+          {t.label}
+        </button>
+      ))}
+    </nav>
+  )
 }
 
 export function AdminInvoicesPage() {
@@ -60,9 +95,13 @@ export function AdminInvoicesPage() {
   const onComposeRoute = location.pathname.includes('/invoices/compose')
 
   useEffect(() => {
-    if (tabParam !== 'reports') return
-    navigate('/admin/finance-reports', { replace: true })
-  }, [tabParam, navigate])
+    const legacy = LEGACY_TAB_REDIRECTS[tabParam]
+    if (!legacy) return
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', legacy.tab)
+    next.set('sub', legacy.sub)
+    setSearchParams(next, { replace: true })
+  }, [tabParam, searchParams, setSearchParams])
 
   useEffect(() => {
     if (tabParam !== 'therapist') return
@@ -74,7 +113,13 @@ export function AdminInvoicesPage() {
     navigate(`/admin/therapist-payouts?${next.toString()}`, { replace: true })
   }, [tabParam, searchParams, navigate])
 
-  const activeTab = TABS.some((t) => t.id === tabParam) ? tabParam : 'client'
+  const activeTab = PRIMARY_TABS.some((t) => t.id === tabParam) ? tabParam : 'client'
+  const isBillingArea = activeTab === 'client' || activeTab === 'payments'
+  const billingSub = isBillingArea
+    ? searchParams.get('sub') || defaultBillingSub(activeTab)
+    : null
+  const billingTools = activeTab === 'payments' ? PAYMENT_TOOLS : BILLING_TOOLS
+  const billingMainSub = defaultBillingSub(activeTab)
 
   useEffect(() => {
     apiFetch('/api/v1/admin/dashboard/summary')
@@ -85,10 +130,25 @@ export function AdminInvoicesPage() {
   function setTab(tab) {
     const next = new URLSearchParams(searchParams)
     next.set('tab', tab)
+    next.delete('sub')
     if (tab !== 'client' && tab !== 'payments') next.delete('invoiceId')
     if (tab === 'payments') next.set('claims', 'pending')
     else next.delete('claims')
     next.delete('therapist_sub')
+    setSearchParams(next)
+  }
+
+  function setBillingSub(sub) {
+    const next = new URLSearchParams(searchParams)
+    next.set('sub', sub)
+    const mainSub = defaultBillingSub(activeTab)
+    if (sub === mainSub) {
+      next.delete('sub')
+      if (activeTab === 'payments') next.set('claims', 'pending')
+    } else {
+      next.delete('invoiceId')
+      next.delete('claims')
+    }
     setSearchParams(next)
   }
 
@@ -99,7 +159,7 @@ export function AdminInvoicesPage() {
   }
 
   return (
-    <div className="admin-page">
+    <div className="admin-page admin-page--finance">
       <AdminPageHeader
         eyebrow="Finance"
         title={isFinanceHome ? 'Finance home' : 'Billing & invoices'}
@@ -128,11 +188,11 @@ export function AdminInvoicesPage() {
       ) : null}
 
       <PortalTabBar
-        className="admin-page__tabs-scroll admin-desktop-only"
+        className="admin-page__tabs-scroll admin-page__tabs--single admin-desktop-only"
         ariaLabel="Billing sections"
         activeId={activeTab}
         onChange={setTab}
-        tabs={TABS.map((t) => ({
+        tabs={PRIMARY_TABS.map((t) => ({
           id: t.id,
           label: t.label,
           badge:
@@ -145,14 +205,18 @@ export function AdminInvoicesPage() {
         activeId={activeTab}
         onChange={setTab}
         primaryIds={FINANCE_PRIMARY_TABS}
-        overflowIds={FINANCE_OVERFLOW_TABS}
-        tabs={TABS.map((t) => ({
+        overflowIds={[]}
+        tabs={PRIMARY_TABS.map((t) => ({
           id: t.id,
           label: MOBILE_TAB_LABELS[t.id] || t.label,
           badge:
             t.id === 'payments' && claimsPending > 0 ? String(claimsPending) : undefined,
         }))}
       />
+
+      {isBillingArea ? (
+        <FinanceInlineNav tools={billingTools} activeId={billingSub} onChange={setBillingSub} />
+      ) : null}
 
       {activeTab === 'overview' ? (
         <>
@@ -163,21 +227,21 @@ export function AdminInvoicesPage() {
       {activeTab === 'receivables' ? (
         <AdminReceivablesTab openInvoiceId={searchParams.get('invoiceId')} />
       ) : null}
-      {activeTab === 'client' ? (
+      {activeTab === 'client' && billingSub === 'invoices' ? (
         <AdminClientInvoicesTab openInvoiceId={searchParams.get('invoiceId')} />
       ) : null}
-      {activeTab === 'payments' ? (
+      {activeTab === 'payments' && billingSub === 'payments' ? (
         <AdminClientPaymentsTab openInvoiceId={searchParams.get('invoiceId')} />
       ) : null}
-      {activeTab === 'ledger' ? <AdminSessionLedgerTab /> : null}
-      {activeTab === 'rules' ? (
+      {isBillingArea && billingSub === 'ledger' ? <AdminSessionLedgerTab /> : null}
+      {isBillingArea && billingSub === 'rules' ? (
         <div>
           <PortalTabBar
             ariaLabel="Rules subsections"
             activeId={rulesSubTab}
             onChange={(id) => {
               const next = new URLSearchParams(searchParams)
-              next.set('tab', 'rules')
+              next.set('sub', 'rules')
               next.set('rules', id)
               setSearchParams(next)
             }}
@@ -189,7 +253,7 @@ export function AdminInvoicesPage() {
           {rulesSubTab === 'packages' ? <AdminPackagesTab /> : <AdminProductRulesTab />}
         </div>
       ) : null}
-      {activeTab === 'reports' ? <AdminFinanceReportsTab /> : null}
+      {isBillingArea && billingSub === 'reports' ? <AdminFinanceReportsTab /> : null}
       {activeTab === 'disputes' ? <AdminDisputesTab /> : null}
     </div>
   )

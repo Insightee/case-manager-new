@@ -22,7 +22,7 @@ from app.models.client_billing import (
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.ledger_billing import BillableStatus, BillingLedger, BillingPeriodFlag, PeriodFlagKind
 from app.models.user import User
-from app.services import billing_composer_service
+from app.services import billing_composer_service, client_billing_service
 
 Confidence = str  # RECONCILED | PARTIAL | ESTIMATED | INCOMPLETE
 
@@ -278,56 +278,12 @@ def control_tower_summary(db: Session, *, billing_month: str | None = None) -> d
         statuses=[BillableStatus.PENDING_REVIEW, BillableStatus.PENDING_FINANCE],
     )
 
-    invoiced_amt = float(
-        db.scalar(
-            select(func.coalesce(func.sum(ClientInvoice.total_inr), 0)).where(
-                ClientInvoice.billing_month == ym,
-                ClientInvoice.status.notin_([ClientInvoiceStatus.CANCELLED, ClientInvoiceStatus.VOID]),
-            )
-        )
-        or 0
-    )
-    invoiced_n = int(
-        db.scalar(
-            select(func.count(ClientInvoice.id)).where(
-                ClientInvoice.billing_month == ym,
-                ClientInvoice.status.notin_([ClientInvoiceStatus.CANCELLED, ClientInvoiceStatus.VOID]),
-            )
-        )
-        or 0
-    )
-    collected_amt = float(
-        db.scalar(
-            select(func.coalesce(func.sum(ClientPayment.amount_inr), 0))
-            .join(ClientInvoice, ClientPayment.client_invoice_id == ClientInvoice.id)
-            .where(
-                ClientInvoice.billing_month == ym,
-                ClientPayment.payment_status == ClientPaymentStatus.CONFIRMED,
-            )
-        )
-        or 0
-    )
-    outstanding_amt = float(
-        db.scalar(
-            select(
-                func.coalesce(
-                    func.sum(ClientInvoice.total_inr - ClientInvoice.amount_paid_inr),
-                    0,
-                )
-            ).where(
-                ClientInvoice.billing_month == ym,
-                ClientInvoice.status.in_(
-                    [
-                        ClientInvoiceStatus.SENT,
-                        ClientInvoiceStatus.GENERATED,
-                        ClientInvoiceStatus.PARTIALLY_PAID,
-                        ClientInvoiceStatus.OVERDUE,
-                    ]
-                ),
-            )
-        )
-        or 0
-    )
+    receivables = client_billing_service.admin_receivables_summary(db, month=ym)
+    recv_totals = receivables.get("totals") or {}
+    outstanding_amt = float(recv_totals.get("outstandingInr") or 0)
+    collected_amt = float(recv_totals.get("collectedInr") or 0)
+    invoiced_amt = float(recv_totals.get("billedInr") or 0)
+    invoiced_n = int(recv_totals.get("invoiceCount") or 0)
     therapist_payable = float(
         db.scalar(
             select(func.coalesce(func.sum(Invoice.amount_inr), 0)).where(

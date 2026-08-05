@@ -2,12 +2,19 @@
 
 ## Rule: migrations are proven on Postgres, not SQLite
 
-**Acceptance gate for billing (and finance) migrations:** prove on a **throwaway PostgreSQL** database (Docker Compose or local Postgres):
+**Acceptance gate for billing (and finance) migrations:** CI job **`postgres-migration-proof`** in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every PR (and via **workflow_dispatch**). It:
 
-1. `upgrade head` (greenfield stamp or incremental)
-2. **Seed at least one row** into every new/affected table (FK-backed data — not an empty schema)
-3. `downgrade <parent>`
-4. `upgrade head` (must succeed again — enum adds must be idempotent)
+1. Starts **PostgreSQL 16** (matches `docker-compose.yml` / prod stack).
+2. Sets `DATABASE_URL` to the service container.
+3. Asserts **exactly one** Alembic head (`alembic heads`).
+4. Runs **seeded up/down/up** via `backend/scripts/postgres_migration_up_down_up.py`:
+   - `upgrade head` (greenfield `create_all` + stamp on empty DB)
+   - `demo_seed` + `postgres_migration_proof_seed` (one row per head revision table)
+   - `downgrade <parent of head>` — new tables/columns must drop; core tables (`users`, `cases`, `client_invoices`) stay
+   - `upgrade head` twice (re-apply + idempotency)
+5. Runs `app/tests/test_postgres_migration_proof.py` with `MIGRATION_PROOF_REQUIRED=1` (tests **execute**, never skip).
+
+**Manual Postgres proof** (Docker Compose on a laptop) is a **fallback only** when CI is unavailable — not the primary gate.
 
 Greenfield-empty downgrade **does not** meet the gate: it never exercises drops against live rows or FK dependencies.
 
@@ -15,9 +22,9 @@ Do **not** treat any of the following as downgrade proof:
 
 | Harness | Why it is insufficient |
 |---------|-------------------------|
-| `backend/app/tests/conftest.py` alembic bootstrap | Runs `upgrade head` once on a fresh per-process SQLite file; never exercises `downgrade`. |
-| Empty SQLite `alembic upgrade head` (incremental path) | Pre-existing chain friction — see defect **HARNESS-002** below. |
-| Greenfield Postgres `create_all` + stamp in `alembic/env.py` | First `upgrade head` on empty DB skips incremental revisions; downgrade/upgrade of the **latest** revision must still be run explicitly after stamp. |
+| `backend/app/tests/conftest.py` alembic bootstrap | Runs `upgrade head` once on a fresh per-process SQLite file; never exercises `downgrade`. **Resolved-by-CI:** `postgres-migration-proof` job. |
+| Empty SQLite `alembic upgrade head` (incremental path) | Pre-existing chain friction — see **HARNESS-002** below. **Resolved-by-CI:** proof runs on real Postgres. |
+| Greenfield Postgres `create_all` + stamp in `alembic/env.py` | First `upgrade head` on empty DB skips incremental revisions; downgrade/upgrade of the **latest** revision must still be run explicitly after stamp (orchestrator does this). |
 | Downgrade on empty new tables | No rows → FK/CASCADE and data-dependent drops are untested. |
 
 ### Enum idempotency (Postgres)
@@ -28,63 +35,55 @@ Billing migrations that extend Postgres enums **must** use guarded adds, e.g.:
 ALTER TYPE clientinvoicestatus ADD VALUE IF NOT EXISTS 'ISSUED';
 ```
 
-Re-running `upgrade head` after values already exist must succeed because of the guard — not because Alembic silently skipped the revision. Verify with `\dT+ clientinvoicestatus` or `pg_enum` before and after the second upgrade.
+Re-running `upgrade head` after values already exist must succeed because of the guard — not because Alembic silently skipped the revision. CI runs a second `upgrade head` to enforce this.
 
-### Recommended Postgres proof (client billing loop example)
+### Manual fallback (when CI unavailable)
 
 ```bash
 # From repo root — Postgres only, not SQLite; never Railway DATABASE_URL
-docker compose up -d postgres   # or local pg_ctl cluster
+docker compose up -d postgres
 export DATABASE_URL=postgresql+psycopg2://insightcase:insightcase@127.0.0.1:5432/insightcase_migration
+export MIGRATION_PROOF_REQUIRED=1
 export PYTHONPATH=backend:backend/alembic
 
 cd backend
-alembic upgrade head                                    # greenfield: create_all + stamp head
-alembic downgrade m7n8o9p0q1r2                          # exit stamp so next upgrade runs incremental n8o9p0q1r2s3
-alembic upgrade head                                    # creates client_package_cycles, external_refs, gateway cols
-python3 -m app.seed.demo_seed                           # base FK rows (cases, invoices, …)
-python3 -m scripts.postgres_migration_proof_seed        # one row each: client_package_cycles, external_refs, client_payments (gateway cols)
-
-# Confirm seeded rows exist before downgrade
-psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM client_package_cycles;"
-psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM external_refs;"
-psql "$DATABASE_URL" -c "SELECT gateway_provider FROM client_payments WHERE gateway_provider IS NOT NULL LIMIT 1;"
-
-alembic downgrade m7n8o9p0q1r2                          # drops n8o9p0q1r2s3 objects (with data)
-alembic upgrade head                                    # re-applies n8o9p0q1r2s3 (enum IF NOT EXISTS)
-alembic upgrade head                                    # second pass: revision no-op; enum guard already proven
-
-# Optional: verify enum labels include ISSUED, CLOSED
-psql "$DATABASE_URL" -c "SELECT enumlabel FROM pg_enum e JOIN pg_type t ON e.enumtypid=t.oid WHERE t.typname='clientinvoicestatus' ORDER BY 1;"
+python3 scripts/postgres_migration_up_down_up.py
+python3 -m pytest app/tests/test_postgres_migration_proof.py -q
 ```
 
-Record command output in the PR or handover doc. CI may add a dedicated Postgres job later; until then this is a **manual gate** before merge.
+### Adding a new migration head
+
+1. Author additive revision off the single head with `has_table` / `has_column` guards.
+2. Register the head in `backend/scripts/postgres_migration_proof_registry.py`:
+   - `tables_added` / `columns_added` for downgrade assertions
+   - `seed()` inserting ≥1 FK-backed row per new table
+3. Open PR — **`postgres-migration-proof` must go green**.
 
 ---
 
 ## Known harness defects (do not confuse with migration authorship)
 
-### HARNESS-001 — pytest SQLite bootstrap (`conftest.py`)
+### HARNESS-001 — pytest SQLite bootstrap (`conftest.py`) — **Resolved-by-CI**
 
 - **Symptom:** Tests pass after schema change; downgrade never runs.
 - **Impact:** Regressions in `downgrade()` only surface on Postgres proof or production.
-- **Mitigation:** Postgres up/down/up gate above for every additive migration.
+- **Mitigation:** `postgres-migration-proof` CI job (seeded up/down/up on every PR).
 
-### HARNESS-002 — empty SQLite incremental upgrade + `env.py` greenfield split
+### HARNESS-002 — empty SQLite incremental upgrade + `env.py` greenfield split — **Resolved-by-CI**
 
 - **Symptom:** Fresh SQLite file with incremental `alembic upgrade head` (bypassing greenfield stamp) fails with e.g. `duplicate column name: phone` mid-chain.
 - **Root cause:** Long migration history with overlapping column adds; SQLite has no `IF NOT EXISTS` on `ADD COLUMN` in older revisions. Empty Postgres uses `env.py` greenfield path (`create_all` + stamp head) and does not hit the same path.
-- **Impact:** SQLite incremental upgrade is **not** a substitute for Postgres proof. Do not “fix” by editing `env.py` without a dedicated platform ticket.
-- **Tracking:** Same class as finance engine release gate note in `docs/Cursor_Handover_Finance_Engine_Release_Gate.md` § PostgreSQL validation. File follow-up platform work if we need incremental SQLite CI (out of scope for billing loop).
+- **Impact:** SQLite incremental upgrade is **not** a substitute for Postgres proof.
+- **Mitigation:** CI Postgres job is the authoritative migration gate.
 
 ---
 
-## Client billing loop revision
+## Revision registry (examples)
 
-| Revision | Parent | Adds |
-|----------|--------|------|
-| `n8o9p0q1r2s3` | `m7n8o9p0q1r2` | `client_package_cycles`, `external_refs`, gateway cols on `client_payments`, enum values `ISSUED`/`CLOSED` (Postgres `ALTER TYPE … ADD VALUE IF NOT EXISTS`) |
+| Revision | Parent | Adds | Seeder |
+|----------|--------|------|--------|
+| `n8o9p0q1r2s3` | `m7n8o9p0q1r2` | `client_package_cycles`, `external_refs`, gateway cols on `client_payments`, enum `ISSUED`/`CLOSED` | `postgres_migration_proof_registry._seed_n8o9p0q1r2s3` |
+| `c9d0e1f2a3b5` | `b8c9d0e1f2a4` | `billing_month_closes`, `case_billing_period_snapshots`, `client_invoices.billing_snapshot` | `_seed_c9d0e1f2a3b5` |
+| `d0e1f2a3b4c6` | `c9d0e1f2a3b5` | `billing_readiness_exception_rules` | `_seed_d0e1f2a3b4c6` (when head) |
 
-**Enum guard:** `_pg_enum_value()` in the revision executes `ADD VALUE IF NOT EXISTS` per label — re-upgrade is idempotent by design, not by skip.
-
-Downgrade drops new tables/columns; enum values remain on Postgres (documented, same as other finance migrations). Seed script: `backend/scripts/postgres_migration_proof_seed.py`.
+Downgrade drops new tables/columns; enum values may remain on Postgres (documented). Orchestrator: `backend/scripts/postgres_migration_up_down_up.py`. Seed entrypoint: `backend/scripts/postgres_migration_proof_seed.py`.
