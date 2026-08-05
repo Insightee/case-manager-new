@@ -170,6 +170,7 @@ def create_correct_reshare_proposal(
     wrong_side: str,
     reason: str,
     user_id: int,
+    billing_dispute_id: int | None = None,
 ) -> dict[str, Any]:
     reason = (reason or "").strip()
     if not reason:
@@ -214,6 +215,7 @@ def create_correct_reshare_proposal(
         new_payout_amount_inr=preview.get("newPayoutAmountInr"),
         case_share_ratio=ratio,
         record_correction_payload=payload,
+        billing_dispute_id=billing_dispute_id,
         created_by_user_id=user_id,
     )
     db.add(proposal)
@@ -520,6 +522,15 @@ def approve_proposal(db: Session, *, proposal_id: int, user_id: int) -> dict[str
                 user_id=user_id,
             )
 
+    if proposal.billing_dispute_id:
+        from app.services.client_billing_service import resolve_dispute_after_correction
+
+        resolve_dispute_after_correction(
+            db,
+            proposal.billing_dispute_id,
+            resolution=proposal.reason,
+        )
+
     proposal.status = FinanceProposalStatus.APPROVED
     proposal.reviewed_by_user_id = user_id
     proposal.reviewed_at = _now()
@@ -551,6 +562,11 @@ def approve_proposal(db: Session, *, proposal_id: int, user_id: int) -> dict[str
             entity_id=proposal.client_invoice_id,
             new_value={**client_result, "reason": proposal.reason},
             case_id=proposal.case_id,
+        )
+        from app.services.bookkeeping_provider import get_bookkeeping_provider
+
+        get_bookkeeping_provider().update_client_invoice(
+            proposal.client_invoice_id, payload={"event": "correction_approved"}, db=db
         )
     if payout_result:
         log_audit(

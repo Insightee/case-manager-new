@@ -19,6 +19,10 @@ class BookkeepingProvider(Protocol):
         self, invoice_id: int, *, payload: dict[str, Any] | None = None, db=None
     ) -> BookkeepingPushResult: ...
 
+    def update_client_invoice(
+        self, invoice_id: int, *, payload: dict[str, Any] | None = None, db=None
+    ) -> BookkeepingPushResult: ...
+
     def push_client_payment(
         self, payment_id: int, *, payload: dict[str, Any] | None = None, db=None
     ) -> BookkeepingPushResult: ...
@@ -33,6 +37,15 @@ class NoOpBookkeepingProvider:
         return BookkeepingPushResult(
             status="not_configured",
             message="Bookkeeping sync not configured",
+            external_id=None,
+        )
+
+    def update_client_invoice(
+        self, invoice_id: int, *, payload: dict[str, Any] | None = None, db=None
+    ) -> BookkeepingPushResult:
+        return BookkeepingPushResult(
+            status="not_configured",
+            message="Bookkeeping update not configured",
             external_id=None,
         )
 
@@ -69,6 +82,25 @@ class ZohoBookkeepingProvider:
             message=out.get("message", ""),
             external_id=ext,
         )
+
+    def update_client_invoice(
+        self, invoice_id: int, *, payload: dict[str, Any] | None = None, db=None
+    ) -> BookkeepingPushResult:
+        from app.services import external_ref_service, zoho_client_sync
+
+        if not zoho_client_sync.zoho_configured():
+            return BookkeepingPushResult(status="not_configured", message="Zoho not configured", external_id=None)
+        existing = None
+        if db is not None:
+            existing = external_ref_service.get_external_id_db(db, "ZOHO_BOOKS", "client_invoice", invoice_id)
+        if existing:
+            out = zoho_client_sync.sync_client_invoice(invoice_id, payload={**(payload or {}), "mode": "update"})
+            return BookkeepingPushResult(
+                status=out.get("status", "updated"),
+                message=out.get("message", "Zoho invoice update attempted"),
+                external_id=existing,
+            )
+        return self.push_client_invoice(invoice_id, payload=payload, db=db)
 
     def push_client_payment(
         self, payment_id: int, *, payload: dict[str, Any] | None = None, db=None

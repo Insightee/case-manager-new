@@ -40,6 +40,11 @@ class AdminDisputeResolve(BaseModel):
     adjustment_inr: Optional[float] = None
 
 
+class DisputeCorrectionProposalBody(BaseModel):
+    wrong_side: Literal["INVOICE_WRONG", "RECORD_WRONG"] = "INVOICE_WRONG"
+    reason: str = Field(min_length=5)
+
+
 class ClientInvoiceLineCreate(BaseModel):
     session_date: date
     therapist_name: str = Field(min_length=1, max_length=128)

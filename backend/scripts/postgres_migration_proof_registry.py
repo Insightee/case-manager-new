@@ -362,6 +362,44 @@ register_head(
 )
 
 
+def _seed_g2b3c4d5e6f9(db: Session) -> dict[str, Any]:
+    from app.models.client_billing import BillingDispute
+    from app.models.support_ticket import SupportTicket, TicketCategory, TicketStatus, TicketTopic
+
+    dispute = db.scalar(select(BillingDispute).limit(1))
+    if not dispute:
+        raise RuntimeError("Need billing_disputes row — run demo_seed first")
+    ticket = SupportTicket(
+        case_id=1,
+        raised_by_user_id=dispute.parent_user_id,
+        category=TicketCategory.FINANCE,
+        topic=TicketTopic.BILLING_PAYMENT,
+        subject="Migration proof billing dispute",
+        body="Migration proof seed",
+        status=TicketStatus.OPEN,
+        billing_dispute_id=dispute.id,
+        client_invoice_id=dispute.client_invoice_id,
+    )
+    db.add(ticket)
+    db.flush()
+    dispute.support_ticket_id = ticket.id
+    db.flush()
+    return {"ticket_id": ticket.id, "dispute_id": dispute.id}
+
+
+register_head(
+    "g2b3c4d5e6f9",
+    tables_added=[],
+    columns_added=[
+        ("billing_disputes", "support_ticket_id"),
+        ("support_tickets", "billing_dispute_id"),
+        ("support_tickets", "client_invoice_id"),
+        ("finance_correction_proposals", "billing_dispute_id"),
+    ],
+    seed=_seed_g2b3c4d5e6f9,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
