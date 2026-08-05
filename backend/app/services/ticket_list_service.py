@@ -141,6 +141,7 @@ def _ticket_row(
         "assigned_to_user_id": t.assigned_to_user_id,
         "assigned_to_name": assignee.full_name if assignee else None,
         "assignee_role_labels": role_labels(list(assignee.role_names)) if assignee else [],
+        "escalated_to_department": getattr(t, "escalated_to_department", None),
         "escalation_level": getattr(t, "escalation_level", 0) or 0,
         "attachment_count": attachment_count,
         "created_at": t.created_at.isoformat(),

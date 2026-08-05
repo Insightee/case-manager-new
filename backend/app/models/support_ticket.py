@@ -48,6 +48,7 @@ class SupportTicket(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[TicketStatus] = mapped_column(Enum(TicketStatus), default=TicketStatus.OPEN, index=True)
     escalation_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    escalated_to_department: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     parent_satisfaction_rating: Mapped[Optional[int]] = mapped_column(Integer)
     parent_resolution_feedback: Mapped[Optional[str]] = mapped_column(Text)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

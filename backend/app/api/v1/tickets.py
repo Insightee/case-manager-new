@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -71,6 +71,7 @@ class TicketEscalateRequest(BaseModel):
     reason: Optional[str] = None
     target_role: Optional[str] = None
     assign_to_user_id: Optional[int] = None
+    escalate_to_department: Optional[str] = None
 
 
 def _parse_category(raw: str) -> TicketCategory:
@@ -104,6 +105,21 @@ def download_ticket_attachment(
     if not att_svc.can_access_attachment(db, user, att):
         raise HTTPException(status_code=404, detail="Attachment not found")
     return att_svc.download_response(att)
+
+
+@router.get("/escalation-targets")
+def ticket_escalation_targets(
+    search: Optional[str] = Query(None),
+    department: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.ticket_escalation_targets_service import escalation_targets_payload
+
+    is_staff = user_has_permission(user, "ticket.manage") or user_has_permission(user, "admin.override")
+    if not is_staff and "THERAPIST" not in user.role_names:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
+    return escalation_targets_payload(db, search=search, department=department)
 
 
 @router.get("/{ticket_id}")
@@ -286,6 +302,7 @@ def close_ticket_endpoint(
 def escalate_ticket_endpoint(
     ticket_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     payload: TicketEscalateRequest = TicketEscalateRequest(),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -295,27 +312,61 @@ def escalate_ticket_endpoint(
         raise HTTPException(status_code=404, detail="Ticket not found")
     prev_assignee = ticket.assigned_to_user_id
     try:
-        ticket_flow.escalate_ticket_for_user(
+        result = ticket_flow.escalate_ticket_for_user(
             db,
             user,
             ticket,
             reason=payload.reason,
             target_role=payload.target_role,
             assign_to_user_id=payload.assign_to_user_id,
+            escalate_to_department=payload.escalate_to_department,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if ticket.assigned_to_user_id and ticket.assigned_to_user_id != prev_assignee:
-        from app.services import ticket_notify_service as ticket_notify
+    from app.services import ticket_notify_service as ticket_notify
 
-        ticket_notify.notify_ticket_assigned(
+    notified_ids = result.get("notified_user_ids") or []
+    if notified_ids:
+        ticket_notify.notify_ticket_escalated_to_department(
+            db,
+            ticket,
+            user_ids=notified_ids,
+            actor_user_id=user.id,
+            department_id=result.get("escalated_to_department") or ticket.escalated_to_department or "",
+            actor=user,
+            background_tasks=background_tasks,
+        )
+    elif ticket.assigned_to_user_id and ticket.assigned_to_user_id != prev_assignee:
+        ticket_notify.notify_ticket_escalated_to_user(
             db,
             ticket,
             assignee_user_id=ticket.assigned_to_user_id,
             actor_user_id=user.id,
+            actor=user,
+            background_tasks=background_tasks,
         )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="escalate", entity_type="support_ticket", entity_id=ticket.id, **meta)
+    db.commit()
+    return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
+
+
+@router.post("/{ticket_id}/pick-up")
+def pick_up_ticket_endpoint(
+    ticket_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket or not ticket_detail_service._can_view_ticket(db, user, ticket):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        ticket_flow.pick_up_department_ticket(db, user, ticket)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    meta = get_request_meta(request)
+    log_audit(db, actor_user_id=user.id, action="pick_up", entity_type="support_ticket", entity_id=ticket.id, **meta)
     db.commit()
     return ticket_detail_service.get_ticket_detail(db, user, ticket.id)
 
