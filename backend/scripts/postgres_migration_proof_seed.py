@@ -27,8 +27,13 @@ def _resolve_head_revision() -> str:
 def run(*, head_revision: str | None = None) -> dict[str, object]:
     head = head_revision or _resolve_head_revision()
     meta = head_config(head)
-    if not meta or not meta.get("seed"):
-        return {"head": head, "seeded": False, "reason": "no registered seeder for head"}
+    if not meta:
+        raise RuntimeError(
+            f"Alembic head {head} is not registered in postgres_migration_proof_registry.py — "
+            "add tables_added/columns_added and a seed() before merging."
+        )
+    if not meta.get("seed"):
+        raise RuntimeError(f"Alembic head {head} is registered without a seed() function")
 
     db = SessionLocal()
     try:
@@ -40,5 +45,9 @@ def run(*, head_revision: str | None = None) -> dict[str, object]:
 
 
 if __name__ == "__main__":
-    out = run()
+    try:
+        out = run()
+    except Exception as exc:
+        print(f"Migration proof seed FAILED: {exc}", file=__import__("sys").stderr)
+        raise SystemExit(1) from exc
     print("Seeded migration proof rows:", out)
