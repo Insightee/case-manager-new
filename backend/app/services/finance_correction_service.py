@@ -23,7 +23,7 @@ from app.models.finance_writable import (
 from app.models.invoice import Invoice
 from app.models.invoice_line import InvoiceCaseLine
 from app.models.ledger_billing import BillingLedger, BillableStatus, LedgerEventType, LedgerSourceType
-from app.services import billing_composer_service, finance_payout_preview_service
+from app.services import billing_composer_service, finance_payout_preview_service, therapist_invoice_case_line_service
 
 
 def _now() -> datetime:
@@ -67,18 +67,9 @@ def _find_client_invoice(db: Session, *, case_id: int, billing_month: str) -> Cl
 def _find_therapist_invoice_for_case(
     db: Session, *, case_id: int, billing_month: str
 ) -> tuple[Invoice | None, InvoiceCaseLine | None]:
-    ym = billing_composer_service.normalize_billing_month(billing_month)
-    row = db.scalars(
-        select(InvoiceCaseLine)
-        .join(Invoice, InvoiceCaseLine.invoice_id == Invoice.id)
-        .where(InvoiceCaseLine.case_id == case_id, Invoice.month == ym)
-        .order_by(Invoice.id.desc())
-        .limit(1)
-    ).first()
-    if not row:
-        return None, None
-    inv = db.get(Invoice, row.invoice_id)
-    return inv, row
+    return therapist_invoice_case_line_service.find_therapist_invoice_case_line(
+        db, case_id=case_id, billing_month=billing_month
+    )
 
 
 def _current_payout_inr(db: Session, *, case_id: int, billing_month: str) -> float:
@@ -512,6 +503,14 @@ def approve_proposal(db: Session, *, proposal_id: int, user_id: int) -> dict[str
                     user_id=user_id,
                 )
         if proposal.new_payout_amount_inr is not None:
+            case = db.get(Case, proposal.case_id)
+            if case:
+                therapist_invoice_case_line_service.ensure_therapist_invoice_case_line(
+                    db,
+                    case=case,
+                    billing_month=proposal.billing_month,
+                    payout_inr=float(proposal.new_payout_amount_inr),
+                )
             payout_result = _apply_payout_correction(
                 db,
                 case_id=proposal.case_id,

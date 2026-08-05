@@ -15,6 +15,7 @@ from app.services import (
     case_finance_note_service,
     finance_correction_service,
     finance_payout_deduction_service,
+    therapist_invoice_case_line_service,
 )
 
 router = APIRouter(
@@ -233,7 +234,12 @@ def list_deductions(
     items = finance_payout_deduction_service.list_deductions(
         db, case_id=case_id, billing_month=billing_month, include_reversed=include_reversed
     )
-    gross = 0.0
+    gross = therapist_invoice_case_line_service.resolve_case_payout_gross_inr(
+        db,
+        case_id=case_id,
+        billing_month=billing_month,
+        therapist_user_id=items[0]["therapistUserId"] if items else None,
+    )
     ladder = finance_payout_deduction_service.compute_payout_ladder(gross_inr=gross, deductions=items)
     return {"items": items, "payoutLadder": ladder, "order": "Gross → TDS → deductions → Net"}
 

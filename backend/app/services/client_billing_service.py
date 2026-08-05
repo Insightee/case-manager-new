@@ -285,12 +285,13 @@ def get_dashboard(
     invoices = list_invoices(
         db, user, month=month, case_id=case_id, service=service, payment_bucket=payment_bucket
     )
+    scope_invoices = invoices if (month or case_id or service or payment_bucket) else all_invoices
+    due_total = sum(i["balanceInr"] for i in scope_invoices if i["balanceInr"] > 0)
+    needs_payment = [i for i in scope_invoices if i["balanceInr"] > 0]
     invoices = _sort_invoices_for_parent_view(invoices)
     packages = list_packages(db, user)
-    due_total = sum(i["balanceInr"] for i in all_invoices if i["balanceInr"] > 0)
-    needs_payment = [i for i in all_invoices if i["balanceInr"] > 0]
     overdue_ct = sum(1 for i in needs_payment if i.get("isOverdue"))
-    disputed = sum(1 for i in all_invoices if i.get("hasDispute"))
+    disputed = sum(1 for i in scope_invoices if i.get("hasDispute"))
     months = sorted({i["billingMonth"] for i in all_invoices}, reverse=True)
     children = sorted({f"{i['childName']}|{i['caseDbId']}" for i in all_invoices if i.get("childName")})
     services = sorted({i["serviceType"] for i in all_invoices})
