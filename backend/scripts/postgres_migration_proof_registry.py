@@ -212,6 +212,7 @@ register_head(
 
 
 def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
+    from app.models.assignment import CaseAssignment
     from app.models.case import Case
     from app.models.finance_writable import (
         CaseFinanceNote,
@@ -219,13 +220,20 @@ def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
         CaseFinanceNoteType,
         FinanceCorrectionProposal,
         FinanceCorrectionProposalType,
+        FinancePayoutDeduction,
+        FinancePayoutDeductionDirection,
+        FinancePayoutDeductionStatus,
         FinanceProposalStatus,
         FinanceWrongSide,
     )
+    from sqlalchemy import text
 
     case = db.scalar(select(Case).limit(1))
     if not case:
         raise RuntimeError("Need seeded cases — run demo_seed first")
+
+    assignment = db.scalar(select(CaseAssignment).where(CaseAssignment.case_id == case.id).limit(1))
+    therapist_user_id = assignment.therapist_user_id if assignment else 1
 
     proposal = FinanceCorrectionProposal(
         case_id=case.id,
@@ -241,6 +249,20 @@ def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
     db.add(proposal)
     db.flush()
 
+    deduction = FinancePayoutDeduction(
+        case_id=case.id,
+        billing_month="2099-11",
+        therapist_user_id=therapist_user_id,
+        amount_inr=50.0,
+        direction=FinancePayoutDeductionDirection.DEDUCT,
+        note_type=CaseFinanceNoteType.OTHER,
+        reason="Migration proof seed — payout deduction placeholder",
+        status=FinancePayoutDeductionStatus.ACTIVE,
+        created_by_user_id=1,
+    )
+    db.add(deduction)
+    db.flush()
+
     note = CaseFinanceNote(
         case_id=case.id,
         billing_month="2099-11",
@@ -251,7 +273,22 @@ def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
     )
     db.add(note)
     db.flush()
-    return {"proposal_id": proposal.id, "note_id": note.id}
+
+    # Greenfield create_all stamps per-column indexes; e1f2 downgrade drops composite names.
+    db.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_finance_correction_proposals_case_month "
+            "ON finance_correction_proposals (case_id, billing_month)"
+        )
+    )
+    db.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_finance_payout_deductions_case_month "
+            "ON finance_payout_deductions (case_id, billing_month)"
+        )
+    )
+    db.flush()
+    return {"proposal_id": proposal.id, "deduction_id": deduction.id, "note_id": note.id}
 
 
 register_head(
