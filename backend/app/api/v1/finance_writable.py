@@ -32,6 +32,7 @@ class CorrectResharePreviewBody(BaseModel):
 
 class CorrectReshareCreateBody(CorrectResharePreviewBody):
     reason: str = Field(..., min_length=1)
+    billing_dispute_id: Optional[int] = None
 
 
 class LinkedAmountEditBody(BaseModel):
@@ -109,6 +110,7 @@ def create_correct_reshare(
             wrong_side=body.wrong_side,
             reason=body.reason,
             user_id=user.id,
+            billing_dispute_id=body.billing_dispute_id,
         )
         db.commit()
         return result

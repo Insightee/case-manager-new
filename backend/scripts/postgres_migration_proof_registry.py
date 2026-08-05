@@ -362,6 +362,104 @@ register_head(
 )
 
 
+def _seed_g2b3c4d5e6f9(db: Session) -> dict[str, Any]:
+    from datetime import date
+
+    from app.models.case import Case
+    from app.models.client_billing import (
+        BillingDispute,
+        BillingDisputeStatus,
+        ClientInvoice,
+        ClientInvoiceStatus,
+        ClientInvoiceType,
+    )
+    from app.models.support_ticket import SupportTicket, TicketCategory, TicketStatus, TicketTopic
+
+    dispute = db.scalar(
+        select(BillingDispute).where(BillingDispute.reason_code == "MIGRATION-PROOF-DISPUTE")
+    )
+    if not dispute:
+        inv = db.scalar(
+            select(ClientInvoice).where(ClientInvoice.invoice_number == "MIGRATION-PROOF-DISPUTE-INV")
+        )
+        if not inv:
+            inv = db.scalar(select(ClientInvoice).limit(1))
+        if not inv:
+            case = db.scalar(select(Case).limit(1))
+            if not case:
+                raise RuntimeError("Need seeded cases — run demo_seed first")
+            inv = ClientInvoice(
+                invoice_number="MIGRATION-PROOF-DISPUTE-INV",
+                parent_user_id=1,
+                case_id=case.id,
+                invoice_type=ClientInvoiceType.POSTPAID,
+                status=ClientInvoiceStatus.GENERATED,
+                billing_month="2099-10",
+                service_type=case.service_type or "Migration proof",
+                product_module=case.product_module or "homecare",
+                due_date=date(2099, 10, 15),
+                subtotal_inr=100.0,
+                tax_inr=0,
+                discount_inr=0,
+                package_deduction_inr=0,
+                adjustment_inr=0,
+                total_inr=100.0,
+                amount_paid_inr=0,
+                notes="Migration proof seed — minimal client invoice for dispute linkage",
+            )
+            db.add(inv)
+            db.flush()
+
+        dispute = BillingDispute(
+            client_invoice_id=inv.id,
+            parent_user_id=inv.parent_user_id,
+            reason_code="MIGRATION-PROOF-DISPUTE",
+            message="Migration proof seed — billing dispute placeholder",
+            status=BillingDisputeStatus.OPEN,
+        )
+        db.add(dispute)
+        db.flush()
+
+    existing_ticket = db.scalar(
+        select(SupportTicket).where(SupportTicket.billing_dispute_id == dispute.id).limit(1)
+    )
+    if existing_ticket:
+        if dispute.support_ticket_id != existing_ticket.id:
+            dispute.support_ticket_id = existing_ticket.id
+            db.flush()
+        return {"ticket_id": existing_ticket.id, "dispute_id": dispute.id, "skipped": True}
+
+    ticket = SupportTicket(
+        case_id=inv.case_id if (inv := db.get(ClientInvoice, dispute.client_invoice_id)) else 1,
+        raised_by_user_id=dispute.parent_user_id,
+        category=TicketCategory.FINANCE,
+        topic=TicketTopic.BILLING_PAYMENT,
+        subject="Migration proof billing dispute",
+        body="Migration proof seed",
+        status=TicketStatus.OPEN,
+        billing_dispute_id=dispute.id,
+        client_invoice_id=dispute.client_invoice_id,
+    )
+    db.add(ticket)
+    db.flush()
+    dispute.support_ticket_id = ticket.id
+    db.flush()
+    return {"ticket_id": ticket.id, "dispute_id": dispute.id}
+
+
+register_head(
+    "g2b3c4d5e6f9",
+    tables_added=[],
+    columns_added=[
+        ("billing_disputes", "support_ticket_id"),
+        ("support_tickets", "billing_dispute_id"),
+        ("support_tickets", "client_invoice_id"),
+        ("finance_correction_proposals", "billing_dispute_id"),
+    ],
+    seed=_seed_g2b3c4d5e6f9,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

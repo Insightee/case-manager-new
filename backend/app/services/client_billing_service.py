@@ -491,18 +491,47 @@ def create_dispute(
     db.flush()
 
     case = db.get(Case, inv.case_id)
+    dispute_resolution_note = ""
     if case and case.case_manager_user_id:
         session_note = ""
         if len(target_line_ids) > 1 or (len(target_line_ids) == 1 and target_line_ids[0] is not None):
             session_note = f" ({len(target_line_ids)} session{'s' if len(target_line_ids) != 1 else ''})"
+        dispute_resolution_note = f"{inv.invoice_number}{session_note}: {message[:200]}"
         notification_service.create_notification(
             db,
             user_id=case.case_manager_user_id,
             title="Invoice dispute raised",
-            body=f"{inv.invoice_number}{session_note}: {message[:200]}",
+            body=dispute_resolution_note,
             entity_type="client_invoice",
             entity_id=inv.id,
         )
+
+    from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage, TicketStatus, TicketTopic
+    from app.services import ticket_escalation_service as ticket_esc
+
+    first = created[0]
+    line_note = ""
+    if first.client_invoice_line_id:
+        line_note = f" (line #{first.client_invoice_line_id})"
+    ticket = SupportTicket(
+        case_id=inv.case_id,
+        raised_by_user_id=user.id,
+        category=TicketCategory.FINANCE,
+        topic=TicketTopic.BILLING_PAYMENT,
+        subject=f"Billing dispute — {inv.invoice_number}{line_note}",
+        body=message,
+        status=TicketStatus.OPEN,
+        product_module=case.product_module if case else inv.product_module,
+        client_invoice_id=inv.id,
+        billing_dispute_id=first.id,
+    )
+    ticket_esc.assign_ticket(db, ticket, case)
+    db.add(ticket)
+    db.flush()
+    db.add(TicketMessage(ticket_id=ticket.id, author_user_id=user.id, body=message))
+    for dispute in created:
+        dispute.support_ticket_id = ticket.id
+    db.flush()
 
     first = created[0]
     return {
@@ -510,6 +539,7 @@ def create_dispute(
         "ids": [d.id for d in created],
         "count": len(created),
         "status": first.status.value.lower(),
+        "supportTicketId": ticket.id,
     }
 
 
@@ -578,6 +608,10 @@ def resolve_dispute(
     dispute.admin_resolution = resolution
     dispute.resolved_at = datetime.now(timezone.utc)
     if adjustment_inr is not None and inv:
+        if not getattr(settings, "billing_dispute_legacy_adjustment", False):
+            raise ValueError(
+                "Direct adjustment is disabled — resolve via finance correction (correct-and-reshare)."
+            )
         inv.adjustment_inr = float(inv.adjustment_inr or 0) + adjustment_inr
         recalculate_client_invoice(db, inv.id)
         db.refresh(inv)
@@ -594,6 +628,22 @@ def resolve_dispute(
             entity_id=dispute.id,
         )
     return dispute
+
+
+def resolve_dispute_after_correction(
+    db: Session,
+    dispute_id: int,
+    *,
+    resolution: str,
+) -> BillingDispute:
+    """Close dispute after finance correction — no free-field adjustment."""
+    return resolve_dispute(
+        db,
+        dispute_id,
+        BillingDisputeStatus.RESOLVED.value,
+        resolution,
+        adjustment_inr=None,
+    )
 
 
 def notify_parent_invoice_issued(

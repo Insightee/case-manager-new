@@ -205,6 +205,7 @@ class BillingDispute(Base):
         Enum(BillingDisputeStatus), default=BillingDisputeStatus.OPEN
     )
     admin_resolution: Mapped[Optional[str]] = mapped_column(Text)
+    support_ticket_id: Mapped[Optional[int]] = mapped_column(ForeignKey("support_tickets.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 

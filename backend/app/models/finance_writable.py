@@ -75,6 +75,7 @@ class FinanceCorrectionProposal(Base):
     new_payout_amount_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     case_share_ratio: Mapped[Optional[float]] = mapped_column(Numeric(16, 8))
     record_correction_payload: Mapped[Optional[dict]] = mapped_column(JSON)
+    billing_dispute_id: Mapped[Optional[int]] = mapped_column(ForeignKey("billing_disputes.id"), nullable=True)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     reviewed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
