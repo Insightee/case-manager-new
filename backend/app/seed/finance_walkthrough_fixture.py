@@ -5,7 +5,7 @@ import os
 from datetime import date, datetime, time, timezone
 
 BILLING_MONTH = "2026-08"
-FIXTURE_CASE_CODES = tuple(f"IC-WK-{i:03d}" for i in range(1, 11))
+FIXTURE_CASE_CODES = tuple(f"IC-WK-{i:03d}" for i in range(1, 15))
 
 from sqlalchemy import select
 
@@ -33,7 +33,14 @@ from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine, SessionLineSource, SessionLineType
 from app.models.ledger_billing import BillableStatus, BillingLedger, LedgerEventType, LedgerSourceType
-from app.models.finance_writable import CaseFinanceNote, CaseFinanceNoteScope, CaseFinanceNoteType
+from app.models.finance_writable import (
+    CaseFinanceNote,
+    CaseFinanceNoteScope,
+    CaseFinanceNoteType,
+    FinancePayoutDeduction,
+    FinancePayoutDeductionDirection,
+    FinancePayoutDeductionStatus,
+)
 from app.models.parent import ParentGuardian
 from app.models.therapist_statement_dispute import TherapistStatementDispute
 from app.models.user import User
@@ -173,15 +180,10 @@ def _cleanup_walkthrough_cases(db) -> None:
     from app.models.client_billing import ClientInvoiceLine
     from app.models.finance_writable import CaseFinanceNote, FinanceCorrectionProposal, FinancePayoutDeduction
 
-    case_ids = [
-        c.id for c in db.scalars(select(Case.id).where(Case.case_code.like("IC-WK-%"))).all()
-    ]
+    case_ids = list(db.scalars(select(Case.id).where(Case.case_code.like("IC-WK-%"))).all())
     if not case_ids:
         return
-    inv_ids = [
-        i.id
-        for i in db.scalars(select(ClientInvoice.id).where(ClientInvoice.case_id.in_(case_ids))).all()
-    ]
+    inv_ids = list(db.scalars(select(ClientInvoice.id).where(ClientInvoice.case_id.in_(case_ids))).all())
     if inv_ids:
         db.query(ClientInvoiceLine).filter(ClientInvoiceLine.client_invoice_id.in_(inv_ids)).delete(
             synchronize_session=False
@@ -195,6 +197,26 @@ def _cleanup_walkthrough_cases(db) -> None:
     db.query(FinancePayoutDeduction).filter(FinancePayoutDeduction.case_id.in_(case_ids)).delete(
         synchronize_session=False
     )
+    from app.models.therapist_payout_settlement import TherapistPayoutTransfer
+
+    therapist_inv_ids = list(
+        db.scalars(
+            select(Invoice.id)
+            .join(InvoiceCaseLine, InvoiceCaseLine.invoice_id == Invoice.id)
+            .where(InvoiceCaseLine.case_id.in_(case_ids))
+        ).all()
+    )
+    if therapist_inv_ids:
+        xfer_ids = list(
+            db.scalars(
+                select(TherapistPayoutTransfer.id).where(TherapistPayoutTransfer.invoice_id.in_(therapist_inv_ids))
+            ).all()
+        )
+        if xfer_ids:
+            db.query(TherapistPayoutTransfer).filter(TherapistPayoutTransfer.id.in_(xfer_ids)).delete(
+                synchronize_session=False
+            )
+        db.query(Invoice).filter(Invoice.id.in_(therapist_inv_ids)).delete(synchronize_session=False)
     db.query(CaseFinanceNote).filter(CaseFinanceNote.case_id.in_(case_ids)).delete(synchronize_session=False)
     db.query(Case).filter(Case.id.in_(case_ids)).delete(synchronize_session=False)
     db.commit()
@@ -311,6 +333,22 @@ def run(*, force: bool = False) -> dict:
         c_payout = add_child_case(
             "IC-WK-010", "Priya", "T.", product_module="shadow_support", service_type="Shadow Support",
             billing_type=BillingType.PER_SESSION, rate=1000, pay_share=600,
+        )
+        c_payout_11 = add_child_case(
+            "IC-WK-011", "Payout", "Eleven", product_module="homecare", service_type="Homecare",
+            billing_type=BillingType.PER_SESSION, rate=10000, pay_share=10000,
+        )
+        c_payout_12 = add_child_case(
+            "IC-WK-012", "Payout", "Twelve", product_module="homecare", service_type="Homecare",
+            billing_type=BillingType.PER_SESSION, rate=3333, pay_share=3333,
+        )
+        c_payout_13 = add_child_case(
+            "IC-WK-013", "Payout", "Thirteen", product_module="homecare", service_type="Homecare",
+            billing_type=BillingType.PER_SESSION, rate=10000, pay_share=10000,
+        )
+        c_payout_14 = add_child_case(
+            "IC-WK-014", "Payout", "Fourteen", product_module="homecare", service_type="Homecare",
+            billing_type=BillingType.PER_SESSION, rate=1000, pay_share=1000,
         )
 
         # --- Ledger activity (2026-08) ---
@@ -490,6 +528,45 @@ def run(*, force: bool = False) -> dict:
             )
         )
         t_inv_ok = _therapist_invoice(db, therapist_id=therapist.id, case=c_payout, share_inr=1800, status=InvoiceStatus.IN_REVIEW)
+        t_inv_11 = _therapist_invoice(
+            db, therapist_id=therapist.id, case=c_payout_11, share_inr=10000, status=InvoiceStatus.APPROVED,
+        )
+        t_inv_12 = _therapist_invoice(
+            db, therapist_id=therapist.id, case=c_payout_12, share_inr=3333, status=InvoiceStatus.APPROVED,
+        )
+        t_inv_13 = _therapist_invoice(
+            db, therapist_id=therapist.id, case=c_payout_13, share_inr=10000, status=InvoiceStatus.APPROVED,
+        )
+        t_inv_14 = _therapist_invoice(
+            db, therapist_id=therapist.id, case=c_payout_14, share_inr=1000, status=InvoiceStatus.APPROVED,
+        )
+        db.add(
+            FinancePayoutDeduction(
+                case_id=c_payout_13.id,
+                billing_month=BILLING_MONTH,
+                therapist_user_id=therapist.id,
+                therapist_invoice_id=t_inv_13.id,
+                amount_inr=500,
+                direction=FinancePayoutDeductionDirection.DEDUCT,
+                reason="Walkthrough fixture: post-TDS deduction",
+                note_type=CaseFinanceNoteType.OTHER,
+                created_by_user_id=finance.id if finance else case_mgr.id,
+            )
+        )
+        db.add(
+            FinancePayoutDeduction(
+                case_id=c_payout_14.id,
+                billing_month=BILLING_MONTH,
+                therapist_user_id=therapist.id,
+                therapist_invoice_id=t_inv_14.id,
+                amount_inr=1000,
+                direction=FinancePayoutDeductionDirection.DEDUCT,
+                reason="Walkthrough fixture: over-deduct blocked",
+                note_type=CaseFinanceNoteType.OTHER,
+                created_by_user_id=finance.id if finance else case_mgr.id,
+                status=FinancePayoutDeductionStatus.ACTIVE,
+            )
+        )
         t_inv_queried = _therapist_invoice(
             db, therapist_id=therapist.id, case=c_clean, share_inr=2400, status=InvoiceStatus.QUERIED,
         )
@@ -518,6 +595,10 @@ def run(*, force: bool = False) -> dict:
             {"code": "IC-WK-008", "condition": "PAID", "invoice": "INV-WK-008 ₹3600 PAID"},
             {"code": "IC-WK-009", "condition": "PENDING_PAYMENT_CLAIM", "invoice": "INV-WK-009", "claim": "₹500 UPI pending"},
             {"code": "IC-WK-010", "condition": "PAYOUT_IN_REVIEW", "therapistInvoiceId": t_inv_ok.id},
+            {"code": "IC-WK-011", "condition": "PAYOUT_APPROVED", "therapistInvoiceId": t_inv_11.id, "gross": 10000, "net": 9000},
+            {"code": "IC-WK-012", "condition": "PAYOUT_NONROUND_TDS", "therapistInvoiceId": t_inv_12.id, "gross": 3333},
+            {"code": "IC-WK-013", "condition": "PAYOUT_DEDUCTION", "therapistInvoiceId": t_inv_13.id, "deduction": 500},
+            {"code": "IC-WK-014", "condition": "PAYOUT_BLOCKED", "therapistInvoiceId": t_inv_14.id},
             {"code": "(therapist)", "condition": "QUERIED_STATEMENT", "invoiceId": t_inv_queried.id, "status": "QUERIED"},
         ]
         report["logins"] = {

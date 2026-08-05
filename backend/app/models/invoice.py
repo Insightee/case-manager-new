@@ -31,6 +31,8 @@ class Invoice(Base):
     subtotal_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     leave_deduction_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), default=0)
     adjustment_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), default=0)
+    tds_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
+    net_payable_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     paid_amount_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     sessions_count: Mapped[int] = mapped_column(Integer, default=0)
     notes: Mapped[Optional[str]] = mapped_column(Text)

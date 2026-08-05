@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_request_meta
+from app.api.deps import get_request_meta
+from app.core.feature_flags import require_billing_ledger_writes, require_payout_export_enabled
 from app.core.audit import log_audit
 from app.core.database import get_db
 from app.core.module_write import ensure_billing_write_access
@@ -17,6 +18,8 @@ from app.services import (
     finance_monday_brief_service,
     finance_overview_service,
     finance_reports_service,
+    payout_batch_service,
+    payout_settlement_service,
     statement_dispute_service,
     therapist_payout_queue_service,
 )
@@ -55,6 +58,85 @@ def therapist_payout_queue(
     return therapist_payout_queue_service.admin_payout_queue_summary(
         db, month=month, status=status, search=search
     )
+
+
+@router.get("/therapist-payouts/settlement-preview")
+def therapist_payout_settlement_preview(
+    invoice_id: int = Query(...),
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    _ = user
+    try:
+        return payout_settlement_service.settlement_preview(db, invoice_id=invoice_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+class ExportPayoutBatchBody(BaseModel):
+    invoice_ids: list[int] = Field(min_length=1)
+    idempotency_key: str = Field(..., min_length=8, max_length=128)
+    billing_month: Optional[str] = None
+
+
+@router.post("/therapist-payouts/export-batch")
+def export_therapist_payout_batch(
+    payload: ExportPayoutBatchBody,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    require_billing_ledger_writes()
+    require_payout_export_enabled()
+    try:
+        result = payout_batch_service.create_export_batch(
+            db,
+            invoice_ids=payload.invoice_ids,
+            idempotency_key=payload.idempotency_key,
+            created_by_user_id=user.id,
+            billing_month=payload.billing_month,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="export_therapist_payout_batch",
+        entity_type="therapist_payout_batch",
+        entity_id=result["batch"]["id"],
+        new_value={"invoiceIds": payload.invoice_ids, "alreadyExported": result.get("alreadyExported")},
+        **meta,
+    )
+    db.commit()
+    return result
+
+
+@router.post("/therapist-payouts/batches/{batch_id}/sync-status")
+def sync_therapist_payout_batch_status(
+    batch_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    require_billing_ledger_writes()
+    try:
+        result = payout_batch_service.sync_batch_status(db, batch_id=batch_id, actor_user_id=user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="sync_therapist_payout_batch",
+        entity_type="therapist_payout_batch",
+        entity_id=batch_id,
+        **meta,
+    )
+    db.commit()
+    return result
 
 
 class StatementDisputeResolveBody(BaseModel):
