@@ -27,6 +27,18 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 ## [Unreleased]
 
 ### Added
+- Reusable finance walkthrough fixture (`app/seed/finance_walkthrough_fixture.py`) — 10 IC-WK-* cases for money regression tests.
+- `test_finance_money_fixes.py` — correction approve, package drawdown, payout ladder floor, cross-surface outstanding, parent scope, notes, CLEAR pill.
+
+### Fixed
+- Finance correction approve creates therapist invoice case line when missing (INVOICE_WRONG linked payout).
+- Package drawdown counts in master sheet activity (`PACKAGE_CONSUMPTION` + cycle fallback).
+- Payout deduction ladder resolves gross from therapist case line; blocks deductions exceeding after-TDS gross; net never negative.
+- Finance control tower outstanding uses `admin_receivables_summary` composed source.
+- Parent billing dashboard summary respects month/filter scope (no all-time inflation in scoped views).
+- Master sheet CLEAR pill for money-clean rows (reports WARN listed but does not override CLEAR).
+
+### Added
 - Case close/reopen: required free-text reason and user-chosen termination/reopen date (past dates allowed); Admin and HR can close and reopen; reopen returns the case to pending allotment for therapist reassignment; close/reopen events appear on the case activity timeline.
 - Support tickets: searchable case picker (client name, therapist name, or case code) so shadow (`SS`) and other cases are findable beyond the first 100 alphabetically.
 - `GET /api/v1/cases` `search` query param; case list responses include active `therapist_name`.
