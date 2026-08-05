@@ -211,6 +211,61 @@ register_head(
 )
 
 
+def _seed_e1f2a3b4c5d7(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.finance_writable import (
+        CaseFinanceNote,
+        CaseFinanceNoteScope,
+        CaseFinanceNoteType,
+        FinanceCorrectionProposal,
+        FinanceCorrectionProposalType,
+        FinanceProposalStatus,
+        FinanceWrongSide,
+    )
+
+    case = db.scalar(select(Case).limit(1))
+    if not case:
+        raise RuntimeError("Need seeded cases — run demo_seed first")
+
+    proposal = FinanceCorrectionProposal(
+        case_id=case.id,
+        billing_month="2099-11",
+        proposal_type=FinanceCorrectionProposalType.CORRECT_RESHARE,
+        wrong_side=FinanceWrongSide.INVOICE_WRONG,
+        status=FinanceProposalStatus.REJECTED,
+        reason="Migration proof seed — rejected placeholder",
+        old_client_amount_inr=100.0,
+        new_client_amount_inr=100.0,
+        created_by_user_id=1,
+    )
+    db.add(proposal)
+    db.flush()
+
+    note = CaseFinanceNote(
+        case_id=case.id,
+        billing_month="2099-11",
+        note_scope=CaseFinanceNoteScope.CRM,
+        note_type=CaseFinanceNoteType.OTHER,
+        reason="Migration proof CRM note seed",
+        author_user_id=1,
+    )
+    db.add(note)
+    db.flush()
+    return {"proposal_id": proposal.id, "note_id": note.id}
+
+
+register_head(
+    "e1f2a3b4c5d7",
+    tables_added=[
+        "finance_correction_proposals",
+        "finance_payout_deductions",
+        "case_finance_notes",
+    ],
+    columns_added=[],
+    seed=_seed_e1f2a3b4c5d7,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

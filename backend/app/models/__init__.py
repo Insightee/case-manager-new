@@ -29,6 +29,11 @@ from app.models.billing_readiness_exception_rule import (
     BillingReadinessExceptionSeverity,
     BillingReadinessExceptionType,
 )
+from app.models.finance_writable import (
+    CaseFinanceNote,
+    FinanceCorrectionProposal,
+    FinancePayoutDeduction,
+)
 from app.models.billing_step6 import BillingCalcException, CaseClientRatePeriod
 from app.models.child import Child
 from app.models.daily_log import DailyLog

@@ -59,3 +59,19 @@ def require_finance_control_tower_read() -> Callable:
         return user
 
     return checker
+
+
+def require_finance_writable() -> Callable:
+    """Loop 2 finance writable: FINANCE + SUPER_ADMIN; proposals require human confirm."""
+    from app.api.deps import get_current_user
+
+    def checker(user: User = Depends(get_current_user)) -> User:
+        names = set(user.role_names or [])
+        if not names.intersection(_CONTROL_TOWER_ROLES):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Finance corrections are limited to Finance and Super Admin roles.",
+            )
+        return user
+
+    return checker

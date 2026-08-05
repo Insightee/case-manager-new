@@ -19,7 +19,7 @@ from app.models.client_billing import ClientInvoice, ClientInvoiceLine, ClientIn
 from app.models.ledger_billing import BillableStatus, BillingLedger, LedgerDisputeStatus, LedgerEventType
 from app.models.report import MonthlyReport, ReportStatus
 from app.models.user import User
-from app.services import billing_composer_service
+from app.services import billing_composer_service, case_finance_note_service
 
 NOT_CONFIGURED = "Not yet configured"
 NOT_AVAILABLE = "Not yet available"
@@ -378,6 +378,10 @@ def compose_master_sheet_row(db: Session, *, case: Case, billing_month: str) -> 
     if first_assign:
         start_date = first_assign.isoformat()
 
+    notes_by_scope = case_finance_note_service.latest_notes_by_scope(
+        db, case_id=case.id, billing_month=ym
+    )
+
     return {
         "caseId": case.id,
         "caseCode": case.case_code,
@@ -411,9 +415,9 @@ def compose_master_sheet_row(db: Session, *, case: Case, billing_month: str) -> 
             "raisedInvoiceSource": "client_invoices",
         },
         "comments": {
-            "crm": NOT_AVAILABLE,
-            "hr": NOT_AVAILABLE,
-            "notes": case.notes or NOT_AVAILABLE,
+            "crm": notes_by_scope.get("crm") or NOT_AVAILABLE,
+            "hr": notes_by_scope.get("hr") or NOT_AVAILABLE,
+            "notes": notes_by_scope.get("finance") or case.notes or NOT_AVAILABLE,
         },
         "exceptionState": exception_state,
         "exceptions": exceptions,

@@ -302,6 +302,56 @@
   margin-right: 4px;
 }
 
-.app-shell--admin .portal-tabs.admin-page__tabs--single .portal-tabs__tab.is-active {
-  box-shadow: inset 0 -3px 0 0 #0f3d2e;
+.brms-correction {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.brms-correction__block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.brms-correction__confirm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 8px 16px;
+  margin: 10px 0;
+}
+
+.brms-correction__sides {
+  border: none;
+  margin: 8px 0;
+  padding: 0;
+}
+
+.brms-correction__side {
+  display: block;
+  margin: 6px 0;
+  font-size: 0.875rem;
+}
+
+.brms-correction__reason textarea,
+.brms-correction__deduction textarea {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.brms-correction__error {
+  color: #b91c1c;
+}
+
+.brms-correction__ok {
+  color: #0f3d2e;
+}
+
+.brms-correction__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
