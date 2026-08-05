@@ -13,6 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
+from app.core.departments import staff_departments_for_api
 from app.core.audit import log_audit
 from app.core.config import settings
 from app.core.db_errors import commit_or_http
@@ -160,6 +161,7 @@ def _user_to_read(u: User, *, db: Session | None = None, login_meta: dict | None
         is_active=u.is_active,
         is_view_only=getattr(u, "is_view_only", False),
         roles=u.role_names,
+        department=u.department,
         region=u.region,
         module_assignments=u.module_assignments or [],
         module_access_grants=getattr(u, "module_access_grants", None) or {},
@@ -229,6 +231,7 @@ def rbac_catalog(
     return {
         "assignable_roles": list(ASSIGNABLE_STAFF_ROLES),
         "deprecated_roles": sorted(DEPRECATED_STAFF_ROLES),
+        "staff_departments": staff_departments_for_api(),
         **rbac_catalog_payload(db),
     }
 
@@ -1640,6 +1643,7 @@ def _directory_item_from_user(u: User, meta: dict) -> "UserDirectoryItem":
         email=u.email,
         full_name=u.full_name or u.email,
         roles=[str(r).upper() for r in (u.role_names or [])],
+        department=u.department,
         phone=u.phone,
         is_active=bool(u.is_active),
         module_assignments=u.module_assignments or [],
@@ -1746,6 +1750,8 @@ def update_user(
         )
     if payload.region is not None:
         target.region = payload.region
+    if "department" in payload.model_dump(exclude_unset=True):
+        target.department = payload.department
     if payload.is_active is not None:
         target.is_active = payload.is_active
     user_updates = payload.model_dump(exclude_unset=True)
@@ -1790,6 +1796,7 @@ def create_user(
         full_name=payload.full_name,
         role_names=payload.role_names,
         region=payload.region,
+        department=payload.department,
         external_employee_id=payload.external_employee_id,
     )
     _apply_access_payload(
@@ -1996,6 +2003,8 @@ def invite_therapist(
         invite_meta["org_capability_grants"] = payload.org_capability_grants
     if payload.feature_overrides:
         invite_meta["feature_overrides"] = payload.feature_overrides
+    if payload.department:
+        invite_meta["department"] = payload.department
     invite = InviteToken(
         email=payload.email.lower(),
         role_name=role,

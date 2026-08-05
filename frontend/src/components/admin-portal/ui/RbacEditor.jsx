@@ -14,6 +14,7 @@ import {
   sharedClinicalFeatures,
   splitGrants,
 } from '../../../lib/rbacEditorUtils.js'
+import { normalizeStaffDepartments } from '../../../lib/staffDepartments.js'
 
 export { splitGrants, mergeGrants, ORG_IDS }
 
@@ -93,6 +94,9 @@ function GlobalFeatureCheckbox({ featureId, label, serviceIds, overrides, onOver
 export function RbacEditor({
   catalog = [],
   assignableRoles = [],
+  staffDepartments = [],
+  selectedDepartment = null,
+  onDepartmentChange,
   roleDefaults = {},
   selectedRoles = [],
   onRoleChange,
@@ -119,6 +123,23 @@ export function RbacEditor({
     if (assignableRoles.length) return assignableRoles
     return STAFF_ROLE_ORDER.map((id) => ({ id, label: id.replace(/_/g, ' ') }))
   }, [assignableRoles])
+
+  const departmentOptions = useMemo(
+    () => normalizeStaffDepartments(staffDepartments),
+    [staffDepartments],
+  )
+
+  const activeDepartment = selectedDepartment ? String(selectedDepartment).toUpperCase() : null
+
+  function selectDepartment(departmentId) {
+    if (!onDepartmentChange || disabled) return
+    const id = departmentId ? String(departmentId).toUpperCase() : null
+    if (activeDepartment === id) {
+      onDepartmentChange(null)
+      return
+    }
+    onDepartmentChange(id)
+  }
 
   const suggested = useMemo(() => {
     let service = {}
@@ -278,6 +299,32 @@ export function RbacEditor({
 
   return (
     <div className="rbac-editor">
+      {onDepartmentChange ? (
+        <div className="rbac-editor__section" aria-disabled={disabled || undefined}>
+          <p className="rbac-editor__legend">Department</p>
+          <p className="admin-muted rbac-editor__hint" style={{ marginTop: 0 }}>
+            Team tag for directory and routing — separate from role permissions.
+          </p>
+          <div className="admin-chip-row">
+            {departmentOptions.map((dept) => {
+              const id = dept.id || dept
+              const active = activeDepartment === String(id).toUpperCase()
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`admin-chip admin-chip--btn ${active ? 'is-active' : ''}`}
+                  onClick={() => selectDepartment(String(id))}
+                  disabled={disabled}
+                >
+                  {dept.label || String(id).replace(/_/g, ' ')}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <div className="rbac-editor__section" aria-disabled={disabled || undefined}>
         <p className="rbac-editor__legend">Role</p>
         {allowMultiRole ? (

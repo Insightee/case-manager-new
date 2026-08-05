@@ -12,9 +12,11 @@ import {
   PeopleListPagination,
 } from './ui/index.js'
 import { accountStatusLabel, accountStatusTone } from '../../lib/accountStatus.js'
+import { staffDepartmentLabel } from '../../lib/staffDepartments.js'
 
 export function AdminStaffDirectoryReadOnly({
   staff,
+  staffDepartments = [],
   staffTotal = 0,
   staffPage = 1,
   onStaffPageChange,
@@ -71,6 +73,7 @@ export function AdminStaffDirectoryReadOnly({
                       <tr>
                         <th>Name</th>
                         <th>Email</th>
+                        <th>Department</th>
                         <th>Role</th>
                         <th>Status</th>
                       </tr>
@@ -80,6 +83,7 @@ export function AdminStaffDirectoryReadOnly({
                         <tr key={u.id}>
                           <td>{u.full_name}</td>
                           <td>{u.email}</td>
+                          <td>{staffDepartmentLabel(u.department, staffDepartments) || '—'}</td>
                           <td>{(u.roles || []).map((r) => r.replace(/_/g, ' ')).join(', ') || '—'}</td>
                           <td>
                             <StatusBadge tone={accountStatusTone(accountStatusLabel(u))}>
@@ -106,6 +110,8 @@ export function AdminStaffDirectoryReadOnly({
                         }
                       >
                         <p className="admin-muted" style={{ margin: 0 }}>
+                          {staffDepartmentLabel(u.department, staffDepartments) || 'No department'}
+                          {' · '}
                           {(u.roles || []).map((r) => r.replace(/_/g, ' ')).join(', ') || '—'}
                         </p>
                       </AdminTaskCard>

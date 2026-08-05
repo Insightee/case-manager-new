@@ -1,6 +1,7 @@
 import { accountStatusLabel, clientAccountStatus } from './accountStatus.js'
 import { moduleAccessSummary } from './rbacDisplay.js'
 import { sortClientsAlphabetical, sortStaffAlphabetical, sortTherapists } from './peopleDirectoryList.js'
+import { staffDepartmentLabel } from './staffDepartments.js'
 
 export function escapeCsvCell(value) {
   const text = value == null ? '' : String(value)
@@ -56,16 +57,17 @@ function formatClientCases(family) {
   return codes.length ? codes.join(', ') : '—'
 }
 
-export function staffCsvRows(staff, { catalog = [], grantsFromAssignments, includeAccess = false } = {}) {
+export function staffCsvRows(staff, { catalog = [], grantsFromAssignments, includeAccess = false, staffDepartments = [] } = {}) {
   const sorted = sortStaffAlphabetical(staff || [])
   const headers = includeAccess
-    ? ['Name', 'Email', 'Role', 'Access', 'Status']
-    : ['Name', 'Email', 'Role', 'Status']
+    ? ['Name', 'Email', 'Department', 'Role', 'Access', 'Status']
+    : ['Name', 'Email', 'Department', 'Role', 'Status']
 
   const rows = sorted.map((user) => {
     const base = {
       Name: user.full_name || '—',
       Email: user.email || '—',
+      Department: staffDepartmentLabel(user.department, staffDepartments) || '—',
       Role: formatRoles(user.roles),
       Status: accountStatusLabel(user),
     }

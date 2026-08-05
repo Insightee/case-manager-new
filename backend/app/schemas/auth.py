@@ -120,7 +120,6 @@ class MeUpdate(BaseModel):
     home_longitude: Optional[float] = None
     bio: Optional[str] = None
     job_title: Optional[str] = None
-    department: Optional[str] = None
     timezone: Optional[str] = None
     ui_preferences: Optional[dict] = None
     notification_preferences: Optional[dict] = None

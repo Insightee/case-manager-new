@@ -72,6 +72,7 @@ export function AdminPeoplePage() {
   const [catalog, setCatalog] = useState([])
   const [roleDefaults, setRoleDefaults] = useState({})
   const [assignableRoles, setAssignableRoles] = useState([])
+  const [staffDepartments, setStaffDepartments] = useState([])
   const [deprecatedRoles, setDeprecatedRoles] = useState([])
   const [metaLoading, setMetaLoading] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
@@ -213,6 +214,7 @@ export function AdminPeoplePage() {
         setCatalog(meta.catalog)
         setRoleDefaults(meta.roleDefaults)
         setAssignableRoles(meta.assignableRoles)
+        setStaffDepartments(meta.staffDepartments)
         setDeprecatedRoles(meta.deprecatedRoles)
       })
       .catch(() => {})
@@ -611,6 +613,7 @@ export function AdminPeoplePage() {
               catalog={catalog}
               roleDefaults={roleDefaults}
               assignableRoles={assignableRoles}
+              staffDepartments={staffDepartments}
               deprecatedRoles={deprecatedRoles}
               staff={staff}
               staffTotal={staffTotal}
@@ -629,6 +632,7 @@ export function AdminPeoplePage() {
           {tab === 'staff' && canReadStaffDirectory && !canManageUsers ? (
             <AdminStaffDirectoryReadOnly
               staff={staff}
+              staffDepartments={staffDepartments}
               staffTotal={staffTotal}
               staffPage={staffPage}
               onStaffPageChange={setStaffPage}

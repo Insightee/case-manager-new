@@ -109,6 +109,7 @@ export async function fetchStaffMeta() {
     roleDefaults: rbacMeta?.role_defaults ?? moduleMeta.role_defaults ?? {},
     assignableRoles: rbacMeta?.assignable_roles ?? [],
     deprecatedRoles: rbacMeta?.deprecated_roles ?? [],
+    staffDepartments: rbacMeta?.staff_departments ?? [],
   }
 }
 

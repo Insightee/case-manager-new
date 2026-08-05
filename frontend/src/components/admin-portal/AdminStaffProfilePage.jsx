@@ -3,12 +3,12 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { AvatarUpload } from '../shared/AvatarUpload.jsx'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
+import { staffDepartmentLabel } from '../../lib/staffDepartments.js'
 
 function initialForm(user) {
   return {
     bio: user?.bio || '',
     job_title: user?.job_title || '',
-    department: user?.department || '',
     timezone: user?.timezone || '',
     ui_compact_mode: Boolean(user?.ui_preferences?.compact_mode),
     ui_dense_tables: Boolean(user?.ui_preferences?.dense_tables),
@@ -45,7 +45,6 @@ export function AdminStaffProfilePage() {
         body: JSON.stringify({
           bio: form.bio,
           job_title: form.job_title,
-          department: form.department,
           timezone: form.timezone,
           ui_preferences: {
             compact_mode: form.ui_compact_mode,
@@ -114,9 +113,9 @@ export function AdminStaffProfilePage() {
             Department
             <input
               className="admin-input"
-              value={form.department}
-              onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
-              placeholder="Operations"
+              value={staffDepartmentLabel(user?.department) || '—'}
+              readOnly
+              disabled
             />
           </label>
           <label>
