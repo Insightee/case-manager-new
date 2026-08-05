@@ -29,6 +29,9 @@ All notable changes to InsighteCase are documented here. Format follows [Keep a 
 ### Added
 - Reusable finance walkthrough fixture (`app/seed/finance_walkthrough_fixture.py`) — 10 IC-WK-* cases for money regression tests.
 - `test_finance_money_fixes.py` — correction approve, package drawdown, payout ladder floor, cross-surface outstanding, parent scope, notes, CLEAR pill.
+- Loop C: therapist payout settlement (TDS ladder, mock Razorpay batch export, idempotent transfers) — draft PR.
+- Loop D: billing dispute → support ticket + finance correction resolve path — draft PR.
+- `docs/FINANCE_CUTOVER_RUNBOOK.md` — per-surface flag enablement and sign-off gates (Loop E).
 
 ### Fixed
 - Finance correction approve creates therapist invoice case line when missing (INVOICE_WRONG linked payout).
