@@ -460,6 +460,26 @@ register_head(
 )
 
 
+def _seed_f3a4b5c6d7e9(db: Session) -> dict[str, Any]:
+    from app.models.support_ticket import SupportTicket
+
+    ticket = db.scalar(select(SupportTicket).limit(1))
+    if not ticket:
+        raise RuntimeError("Need seeded support tickets — run demo_seed first")
+    if not ticket.escalated_to_department:
+        ticket.escalated_to_department = "OPERATIONS"
+        db.flush()
+    return {"ticket_id": ticket.id, "escalated_to_department": ticket.escalated_to_department}
+
+
+register_head(
+    "f3a4b5c6d7e9",
+    tables_added=[],
+    columns_added=[("support_tickets", "escalated_to_department")],
+    seed=_seed_f3a4b5c6d7e9,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
