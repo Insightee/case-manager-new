@@ -479,11 +479,17 @@ register_head(
     seed=_seed_f3a4b5c6d7e9,
 )
 
+
+def _seed_h4i5j6k7l8m9(db: Session) -> dict[str, Any]:
+    """Merge-only head — schema ownership stays on parent revisions."""
+    return {"merge_only": True}
+
+
 register_head(
     "h4i5j6k7l8m9",
     tables_added=[],
-    columns_added=[("support_tickets", "escalated_to_department")],
-    seed=_seed_f3a4b5c6d7e9,
+    columns_added=[],
+    seed=_seed_h4i5j6k7l8m9,
 )
 
 
