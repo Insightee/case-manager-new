@@ -32,12 +32,16 @@ def get_ticket_detail(db: Session, user: User, ticket_id: int) -> dict:
     raiser = db.get(User, ticket.raised_by_user_id)
     assignee = db.get(User, ticket.assigned_to_user_id) if ticket.assigned_to_user_id else None
     case = case_service.get_case(db, ticket.case_id) if ticket.case_id else None
+    therapist_name = None
+    if ticket.case_id:
+        therapist_name = case_service._active_therapist_names(db, [ticket.case_id]).get(ticket.case_id)
     row = ticket_list_service._ticket_row(
         ticket,
         att_svc.count_for_ticket(db, ticket.id),
         assignee=assignee,
         raiser=raiser,
         case=case,
+        therapist_name=therapist_name,
     )
 
     attachments = att_svc.list_for_ticket(db, ticket.id)

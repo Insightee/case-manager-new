@@ -3,14 +3,16 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.module_access import get_allowed_case_product_modules
 from app.core.pagination import paginate_query, paginated_response
 from app.core.permissions import user_has_permission
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
-from app.models.support_ticket import SupportTicket, TicketCategory
+from app.models.child import Child
+from app.models.support_ticket import SupportTicket, TicketCategory, TicketStatus
 from app.models.ticket_attachment import TicketAttachment
 from app.models.user import User
 from app.services import case_service, ticket_escalation_service as ticket_esc
@@ -26,21 +28,86 @@ def staff_may_see_ticket(db: Session, user: User, ticket: SupportTicket) -> bool
     return may_read_support_ticket(db, user, ticket)
 
 
+def _apply_ticket_search(stmt, search: str | None):
+    """Filter tickets by subject, id, case/client/therapist names, or raiser/assignee."""
+    q = (search or "").strip()
+    if not q:
+        return stmt
+    pattern = f"%{q}%"
+    child_full = func.trim(Child.first_name + " " + Child.last_name)
+    clauses = [
+        SupportTicket.subject.ilike(pattern),
+        SupportTicket.body.ilike(pattern),
+    ]
+    if q.isdigit():
+        clauses.append(SupportTicket.id == int(q))
+
+    case_match = exists(
+        select(Case.id)
+        .outerjoin(Child, Child.id == Case.child_id)
+        .where(
+            Case.id == SupportTicket.case_id,
+            or_(
+                Case.case_code.ilike(pattern),
+                Child.first_name.ilike(pattern),
+                Child.last_name.ilike(pattern),
+                child_full.ilike(pattern),
+                exists(
+                    select(CaseAssignment.id)
+                    .join(User, User.id == CaseAssignment.therapist_user_id)
+                    .where(
+                        CaseAssignment.case_id == Case.id,
+                        CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+                        User.full_name.ilike(pattern),
+                    )
+                ),
+            ),
+        )
+    )
+    clauses.append(case_match)
+
+    raiser_match = exists(
+        select(User.id).where(
+            User.id == SupportTicket.raised_by_user_id,
+            User.full_name.ilike(pattern),
+        )
+    )
+    clauses.append(raiser_match)
+
+    assignee_match = exists(
+        select(User.id).where(
+            User.id == SupportTicket.assigned_to_user_id,
+            User.full_name.ilike(pattern),
+        )
+    )
+    clauses.append(assignee_match)
+
+    return stmt.where(or_(*clauses))
+
+
 def list_tickets_for_user(
     db: Session,
     user: User,
     *,
     category: Optional[TicketCategory] = None,
     product_module: Optional[str] = None,
+    status: Optional[TicketStatus] = None,
+    search: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
 ) -> dict:
-    stmt = select(SupportTicket).order_by(SupportTicket.created_at.desc())
+    stmt = select(SupportTicket).order_by(
+        SupportTicket.created_at.desc(),
+        SupportTicket.id.desc(),
+    )
 
     if category:
         stmt = stmt.where(SupportTicket.category == category)
     if product_module:
         stmt = stmt.where(SupportTicket.product_module == product_module)
+    if status:
+        stmt = stmt.where(SupportTicket.status == status)
+    stmt = _apply_ticket_search(stmt, search)
 
     if support_scope(user, db) == "none":
         stmt = stmt.where(SupportTicket.raised_by_user_id == user.id)
@@ -72,9 +139,12 @@ def list_tickets_for_user(
     rows, total = paginate_query(db, stmt, page=page, page_size=page_size)
     case_ids = {t.case_id for t in rows if t.case_id}
     cases_by_id: dict[int, Case] = {}
+    therapist_by_case: dict[int, str] = {}
     if case_ids:
-        cases = db.scalars(select(Case).where(Case.id.in_(case_ids))).all()
+        case_id_list = list(case_ids)
+        cases = db.scalars(select(Case).where(Case.id.in_(case_id_list))).all()
         cases_by_id = {c.id: c for c in cases}
+        therapist_by_case = case_service._active_therapist_names(db, case_id_list)
 
     assignee_ids = {t.assigned_to_user_id for t in rows if t.assigned_to_user_id}
     raiser_ids = {t.raised_by_user_id for t in rows}
@@ -100,13 +170,15 @@ def list_tickets_for_user(
             continue
         assignee = users_by_id.get(t.assigned_to_user_id) if t.assigned_to_user_id else None
         raiser = users_by_id.get(t.raised_by_user_id)
+        case = cases_by_id.get(t.case_id) if t.case_id else None
         items.append(
             _ticket_row(
                 t,
                 att_counts.get(t.id, 0),
                 assignee=assignee,
                 raiser=raiser,
-                case=cases_by_id.get(t.case_id) if t.case_id else None,
+                case=case,
+                therapist_name=therapist_by_case.get(t.case_id) if t.case_id else None,
             )
         )
 
@@ -120,6 +192,7 @@ def _ticket_row(
     assignee: User | None = None,
     raiser: User | None = None,
     case: Case | None = None,
+    therapist_name: str | None = None,
 ) -> dict:
     from app.services import case_service
     from app.services.ticket_participant_service import primary_portal_label, role_labels, user_summary
@@ -150,4 +223,7 @@ def _ticket_row(
     if case:
         row["case_code"] = case.case_code
         row["child_name"] = case_service.case_child_display_name(case)
+        row["therapist_name"] = therapist_name
+    else:
+        row["therapist_name"] = None
     return row

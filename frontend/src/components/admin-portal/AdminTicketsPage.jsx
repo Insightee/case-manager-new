@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
 import { createStaffTicket } from '../../lib/ticketFormUtils.js'
+import { formatTimestampDateIN } from '../../lib/datetime.js'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue.js'
 import { PoliciesBotButton } from '../support/PoliciesBotButton.jsx'
 import { TicketFileInput } from '../support/TicketFileInput.jsx'
 import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetailPanel.jsx'
@@ -17,13 +18,19 @@ import {
   AdminSearchInput,
   StatusBadge,
   ServiceFilterSelect,
+  PeopleListPagination,
 } from './ui/index.js'
+
+const PAGE_SIZE = 25
 
 export function AdminTicketsPage({ embedded = false }) {
   const [searchParams] = useSearchParams()
   const deepLinkTicketId = searchParams.get('ticket')
   const handledDeepLink = useRef(null)
   const [tickets, setTickets] = useState([])
+  const [listMeta, setListMeta] = useState({ total: 0, pages: 1 })
+  const [openCount, setOpenCount] = useState(0)
+  const [page, setPage] = useState(1)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [createForm, setCreateForm] = useState({ subject: '', body: '', category: 'OTHER', case_id: '' })
   const [createFiles, setCreateFiles] = useState([])
@@ -31,6 +38,7 @@ export function AdminTicketsPage({ embedded = false }) {
   const [createError, setCreateError] = useState('')
   const [createSuccess, setCreateSuccess] = useState('')
   const [search, setSearch] = useState('')
+  const searchDebounced = useDebouncedValue(search)
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [moduleFilter, setModuleFilter] = useState('')
   const [loading, setLoading] = useState(true)
@@ -38,33 +46,46 @@ export function AdminTicketsPage({ embedded = false }) {
   const [detail, setDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
-  async function load() {
+  useEffect(() => {
+    setPage(1)
+  }, [searchDebounced, statusFilter, moduleFilter])
+
+  const loadOpenCount = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams({ status: 'OPEN', page_size: '1' })
+      if (moduleFilter) qs.set('product_module', moduleFilter)
+      const data = await apiFetch(`/api/v1/tickets?${qs.toString()}`)
+      setOpenCount(data.total ?? 0)
+    } catch {
+      setOpenCount(0)
+    }
+  }, [moduleFilter])
+
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const qs = new URLSearchParams({ page_size: '100' })
+      const qs = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) })
       if (moduleFilter) qs.set('product_module', moduleFilter)
-      setTickets(unwrapList(await apiFetch(`/api/v1/tickets?${qs.toString()}`)))
+      if (statusFilter !== 'ALL') qs.set('status', statusFilter)
+      if (searchDebounced.trim()) qs.set('search', searchDebounced.trim())
+      const data = await apiFetch(`/api/v1/tickets?${qs.toString()}`)
+      setTickets(data.items || [])
+      setListMeta({ total: data.total ?? 0, pages: data.pages ?? 1 })
     } catch {
       setTickets([])
+      setListMeta({ total: 0, pages: 1 })
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, moduleFilter, statusFilter, searchDebounced])
 
   useEffect(() => {
     load()
-  }, [moduleFilter])
+  }, [load])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return tickets.filter((t) => {
-      if (statusFilter !== 'ALL' && t.status !== statusFilter) return false
-      if (!q) return true
-      return t.subject?.toLowerCase().includes(q) || String(t.id).includes(q)
-    })
-  }, [tickets, search, statusFilter])
-
-  const openCount = tickets.filter((t) => t.status === 'OPEN').length
+  useEffect(() => {
+    loadOpenCount()
+  }, [loadOpenCount])
 
   async function openTicket(t) {
     if (expandedId === t.id) {
@@ -89,15 +110,27 @@ export function AdminTicketsPage({ embedded = false }) {
     if (!deepLinkTicketId || loading) return
     const id = Number(deepLinkTicketId)
     if (!Number.isFinite(id) || handledDeepLink.current === id) return
+
     const ticket = tickets.find((t) => t.id === id)
-    if (!ticket) return
+    if (ticket) {
+      handledDeepLink.current = id
+      openTicket(ticket)
+      return
+    }
+
     handledDeepLink.current = id
-    openTicket(ticket)
+    setExpandedId(id)
+    setDetailLoading(true)
+    loadStaffTicketDetail(id)
+      .then(setDetail)
+      .catch(() => setDetail(null))
+      .finally(() => setDetailLoading(false))
   }, [deepLinkTicketId, loading, tickets])
 
   async function onDetailUpdated(updated) {
     setDetail(updated)
-    load()
+    await load()
+    await loadOpenCount()
   }
 
   async function submitCreateTicket(e) {
@@ -117,7 +150,9 @@ export function AdminTicketsPage({ embedded = false }) {
       setCreateFiles([])
       setShowCreateForm(false)
       setCreateSuccess('Ticket created successfully.')
+      setPage(1)
       await load()
+      await loadOpenCount()
     } catch (err) {
       setCreateError(err.message || 'Could not create ticket')
     } finally {
@@ -125,9 +160,16 @@ export function AdminTicketsPage({ embedded = false }) {
     }
   }
 
+  const rangeStart = listMeta.total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const rangeEnd = Math.min(page * PAGE_SIZE, listMeta.total)
+
   const filterControls = (
     <>
-      <AdminSearchInput value={search} onChange={setSearch} placeholder="Search subject or ID…" />
+      <AdminSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Search therapist, client, subject, or ID…"
+      />
       <select
         className="admin-search__input"
         style={{ flex: '0 0 auto', width: 'auto', minWidth: 140, paddingLeft: 12, backgroundImage: 'none' }}
@@ -169,7 +211,7 @@ export function AdminTicketsPage({ embedded = false }) {
       ) : null}
 
       <AdminPanel
-        title={`${filtered.length} tickets`}
+        title={`${listMeta.total} tickets`}
         padded={false}
         actions={
           embedded ? (
@@ -182,13 +224,18 @@ export function AdminTicketsPage({ embedded = false }) {
         <div className="admin-panel__body">
           <AdminCollapsibleFilters
             quickSearch={
-              <AdminSearchInput value={search} onChange={setSearch} placeholder="Search subject or ID…" />
+              <AdminSearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Search therapist, client, subject, or ID…"
+              />
             }
             activeChips={[
               statusFilter !== 'ALL' ? statusFilter.replace('_', ' ') : null,
               moduleFilter || null,
+              searchDebounced.trim() ? `Search: ${searchDebounced.trim()}` : null,
             ].filter(Boolean)}
-            activeCount={[statusFilter !== 'ALL', moduleFilter].filter(Boolean).length}
+            activeCount={[statusFilter !== 'ALL', moduleFilter, searchDebounced.trim()].filter(Boolean).length}
           >
             <AdminToolbar className="admin-toolbar--mobile-compact admin-collapsible-filters__grid">
               {filterControls}
@@ -270,50 +317,62 @@ export function AdminTicketsPage({ embedded = false }) {
 
           {loading ? (
             <div className="admin-skeleton" />
-          ) : filtered.length === 0 ? (
+          ) : tickets.length === 0 ? (
             <AdminEmptyState
               title="No tickets"
               description="No support tickets match this filter. Tickets raised from the therapist or client portals appear here — try All statuses, or create a test ticket as therapist@demo.com."
             />
           ) : (
-            <ul className="admin-queue">
-              {filtered.map((t) => (
-                <li key={t.id} className="admin-queue__item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%' }}>
-                    <button
-                      type="button"
-                      aria-expanded={expandedId === t.id}
-                      onClick={() => toggleExpand(t)}
-                      style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                    >
-                      <p className="admin-queue__title">{t.subject}</p>
-                      <p className="admin-queue__meta">
-                        #{t.id}
-                        {t.raised_by_name
-                          ? ` · ${t.raised_by_name}${t.raised_by_portal ? ` (${t.raised_by_portal})` : ''}`
-                          : ''}
-                        {t.assigned_to_name ? ` → ${t.assigned_to_name}` : ' · Unassigned'}
-                        {t.case_code
-                          ? ` · ${t.case_code}${t.child_name ? ` (${t.child_name})` : ''}`
-                          : ''}
-                        {t.product_module ? ` · ${t.product_module}` : ''}
-                        {t.attachment_count > 0 ? ` · ${t.attachment_count} attachment(s)` : ''}
-                      </p>
-                    </button>
-                    <StatusBadge status={t.status} />
-                  </div>
-                  {expandedId === t.id ? (
-                    <div style={{ marginTop: 12, width: '100%' }}>
-                      {detailLoading ? (
-                        <p className="admin-queue__meta">Loading…</p>
-                      ) : detail ? (
-                        <TicketDetailPanel ticket={detail} showResolve onUpdated={onDetailUpdated} />
-                      ) : null}
+            <>
+              <ul className="admin-queue">
+                {tickets.map((t) => (
+                  <li key={t.id} className="admin-queue__item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%' }}>
+                      <button
+                        type="button"
+                        aria-expanded={expandedId === t.id}
+                        onClick={() => toggleExpand(t)}
+                        style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        <p className="admin-queue__title">{t.subject}</p>
+                        <p className="admin-queue__meta">
+                          #{t.id}
+                          {t.created_at ? ` · ${formatTimestampDateIN(t.created_at)}` : ''}
+                          {t.raised_by_name
+                            ? ` · ${t.raised_by_name}${t.raised_by_portal ? ` (${t.raised_by_portal})` : ''}`
+                            : ''}
+                          {t.assigned_to_name ? ` → ${t.assigned_to_name}` : ' · Unassigned'}
+                          {t.case_code
+                            ? ` · ${t.case_code}${t.child_name ? ` (${t.child_name})` : ''}`
+                            : ''}
+                          {t.therapist_name ? ` · ${t.therapist_name}` : ''}
+                          {t.product_module ? ` · ${t.product_module}` : ''}
+                          {t.attachment_count > 0 ? ` · ${t.attachment_count} attachment(s)` : ''}
+                        </p>
+                      </button>
+                      <StatusBadge status={t.status} />
                     </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+                    {expandedId === t.id ? (
+                      <div style={{ marginTop: 12, width: '100%' }}>
+                        {detailLoading ? (
+                          <p className="admin-queue__meta">Loading…</p>
+                        ) : detail ? (
+                          <TicketDetailPanel ticket={detail} showResolve onUpdated={onDetailUpdated} />
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              <PeopleListPagination
+                page={page}
+                totalPages={listMeta.pages}
+                total={listMeta.total}
+                rangeStart={rangeStart}
+                rangeEnd={rangeEnd}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </div>
       </AdminPanel>

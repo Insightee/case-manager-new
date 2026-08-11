@@ -85,13 +85,22 @@ def _parse_category(raw: str) -> TicketCategory:
 def list_tickets(
     category: Optional[TicketCategory] = None,
     product_module: Optional[str] = None,
+    status: Optional[TicketStatus] = None,
+    search: Optional[str] = Query(None, min_length=1, max_length=128),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return ticket_list_service.list_tickets_for_user(
-        db, user, category=category, product_module=product_module, page=page, page_size=page_size
+        db,
+        user,
+        category=category,
+        product_module=product_module,
+        status=status,
+        search=search,
+        page=page,
+        page_size=page_size,
     )
 
 
