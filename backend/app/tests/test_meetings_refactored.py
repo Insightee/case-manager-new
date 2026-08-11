@@ -135,7 +135,9 @@ def test_availability_engine():
     assert res.status_code == 200
     data = res.json()
     assert "slots" in data
-    assert len(data["slots"]) == 9  # 9 slots from 9:00 to 17:00
+    assert len(data["slots"]) == 23  # 30-min grid from 09:00 to 20:00
+    assert data["slots"][0]["time"] == "09:00"
+    assert data["slots"][-1]["time"] == "20:00"
 
 
 def test_reschedule_flow():
