@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState, Fragment } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useBillingRuntimeConfig } from '../../hooks/useBillingRuntimeConfig.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import { formatInr, normalizeConfidence } from '../../lib/financeConfidence.js'
+import { isFinanceDashboardV1Enabled } from '../../lib/productFeatureFlags.js'
+import '../../styles/finance-dashboard-modern.css'
+import '../../styles/finance-control-tower.css'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -12,6 +17,24 @@ import {
   StatusBadge,
   formatCurrency,
 } from './ui/index.js'
+import { ConfidenceBadge } from './ui/ConfidenceBadge.jsx'
+
+const FINANCE_SUMMARY_FIELDS = [
+  { key: 'potentialBillable', label: 'Potential billable' },
+  { key: 'invoiced', label: 'Invoiced' },
+  { key: 'collected', label: 'Collected' },
+  { key: 'outstanding', label: 'Outstanding' },
+  { key: 'therapistPayable', label: 'Therapist payable' },
+  { key: 'exceptionImpact', label: 'Exception impact' },
+]
+
+function summaryMoneyLabel(mv) {
+  if (!mv || mv.value == null) return null
+  const amt = formatInr(mv.value)
+  if (!amt) return null
+  const conf = normalizeConfidence(mv.confidence)
+  return `${amt} · ${conf.charAt(0)}${conf.slice(1).toLowerCase()}`
+}
 
 function statusPillClass(status) {
   const key = (status || '').toLowerCase()
@@ -20,93 +43,120 @@ function statusPillClass(status) {
 }
 
 export function FinanceMondayBrief() {
-  const [brief, setBrief] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const flagOn = isFinanceDashboardV1Enabled()
+  const monthFromUrl = searchParams.get('month')
+  const billingMonth = monthFromUrl || new Date().toISOString().slice(0, 7)
+  const [financeSummary, setFinanceSummary] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  const setMonth = useCallback(
+    (ym) => {
+      const next = new URLSearchParams(searchParams)
+      next.set('tab', 'overview')
+      next.set('month', ym)
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+
   useEffect(() => {
+    if (!flagOn) {
+      setFinanceSummary(null)
+      setLoadError(null)
+      setLoading(false)
+      return undefined
+    }
+    let cancelled = false
     setLoading(true)
-    apiFetch('/api/v1/admin/finance-overview/monday-brief')
-      .then(setBrief)
-      .catch(() => setBrief(null))
-      .finally(() => setLoading(false))
-  }, [])
+    setLoadError(null)
+    const q = `billing_month=${encodeURIComponent(billingMonth)}`
+    apiFetch(`/api/v1/admin/finance-control-tower/summary?${q}`)
+      .then((data) => {
+        if (cancelled) return
+        setFinanceSummary(data?.financeSummary || null)
+        setLoadError(null)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setFinanceSummary(null)
+        setLoadError(err?.message || 'Finance summary unavailable')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [billingMonth, flagOn])
+
+  if (!flagOn) {
+    return (
+      <AdminEmptyState
+        title="Finance snapshot is not enabled"
+        description="Set VITE_ENABLE_FINANCE_DASHBOARD_V1=true to load monthly finance summary here. Client invoices and payments tabs stay available."
+      />
+    )
+  }
 
   if (loading) return <div className="admin-skeleton" style={{ minHeight: 120, marginBottom: 16 }} />
-  if (!brief) return null
-
-  const moneyIn = brief.moneyIn || {}
-  const moneyOut = brief.moneyOut || {}
-  const top = brief.thisWeek?.topItems || []
 
   return (
-    <AdminPanel title="Monday briefing" padded style={{ marginBottom: 16 }}>
-      <p className="admin-muted" style={{ marginTop: 0 }}>
-        Start-of-week glance — figures match receivables and payout queue sources.
-      </p>
-      <div className="client-inv__summary-grid" style={{ marginBottom: 16 }}>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Money in · outstanding</span>
-          <strong>{formatCurrency(moneyIn.collectibleOutstandingInr)}</strong>
-          <Link to={brief.links?.receivables || '/admin/invoices?tab=receivables'} className="admin-link-sm">
-            Receivables →
-          </Link>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Overdue</span>
-          <strong>{formatCurrency(moneyIn.overdueInr)}</strong>
-          <span className="client-inv__summary-meta">{moneyIn.overdueCount ?? 0} invoice(s)</span>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Payment claims</span>
-          <strong>{moneyIn.paymentClaimsPending ?? 0}</strong>
-          <Link to={brief.links?.paymentClaims || '/admin/invoices?tab=payments'} className="admin-link-sm">
-            Review →
-          </Link>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Client disputes</span>
-          <strong>{moneyIn.openClientDisputes ?? 0}</strong>
-          <Link to={brief.links?.clientDisputes || '/admin/invoices?tab=disputes'} className="admin-link-sm">
-            Disputes →
-          </Link>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Money out · payable now</span>
-          <strong>{formatCurrency(moneyOut.totalPayableInr)}</strong>
-          <Link to={brief.links?.therapistPayoutQueue || '/admin/therapist-payouts?sub=payouts'} className="admin-link-sm">
-            Payout queue →
-          </Link>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Statements pending</span>
-          <strong>{moneyOut.statementsPendingApproval ?? 0}</strong>
-          <span className="client-inv__summary-meta">{moneyOut.disputedQueriedCount ?? 0} disputed</span>
-        </div>
+    <AdminPanel title="Finance snapshot" padded className="finance-dash" style={{ marginBottom: 16 }}>
+      <div className="finance-control-tower__toolbar" style={{ marginBottom: 16 }}>
+        <label className="finance-control-tower__month-field">
+          <span className="client-inv__filter-label">Billing month</span>
+          <input
+            type="month"
+            className="client-inv__filter-input finance-control-tower__month-input"
+            value={billingMonth}
+            onChange={(e) => setMonth(e.target.value)}
+            aria-label="Billing month"
+          />
+        </label>
       </div>
-      {brief.thisWeek?.mostImportant ? (
-        <p style={{ margin: 0 }}>
-          <strong>Focus:</strong> {brief.thisWeek.mostImportant.label}
-        </p>
-      ) : top.length === 0 ? (
-        <p className="admin-muted" style={{ margin: 0 }}>Nothing urgent this week.</p>
+      {loadError ? (
+        <AdminEmptyState
+          title="Finance summary could not load"
+          description={
+            loadError.includes('Finance Control Tower is limited')
+              ? 'This summary is available to Finance and Super Admin roles.'
+              : loadError
+          }
+        />
+      ) : financeSummary ? (
+        <div className="finance-control-tower__summary-grid">
+          {FINANCE_SUMMARY_FIELDS.map((field) => {
+            const mv = financeSummary[field.key]
+            const label = summaryMoneyLabel(mv)
+            return (
+              <div key={field.key} className="finance-control-tower__summary-item">
+                <div className="finance-control-tower__summary-label">{field.label}</div>
+                <div className="finance-control-tower__summary-value">{label || '—'}</div>
+                <ConfidenceBadge
+                  confidence={mv?.confidence}
+                  reason={mv?.confidenceReason}
+                  materialSourceMissing={mv?.value == null}
+                />
+              </div>
+            )
+          })}
+        </div>
       ) : (
-        <ul className="admin-muted" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-          {top.map((item) => (
-            <li key={item.kind}>
-              <Link to={item.href}>{item.label}</Link>
-            </li>
-          ))}
-        </ul>
+        <AdminEmptyState
+          title="No finance summary for this month"
+          description="Try another billing month or check back after invoices and sessions are recorded."
+        />
       )}
-      <p className="admin-muted" style={{ marginTop: 12, marginBottom: 0, fontSize: '0.85rem' }}>
-        {moneyOut.approveDisabledNote}
-      </p>
     </AdminPanel>
   )
 }
 
 export function TherapistPayoutQueuePanel() {
   const { canWriteBilling } = useModuleWrite()
+  const { config: billingConfig } = useBillingRuntimeConfig()
+  const payoutExportEnabled = Boolean(billingConfig?.payoutExportEnabled)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -116,6 +166,7 @@ export function TherapistPayoutQueuePanel() {
   const [resolveNote, setResolveNote] = useState('')
   const [acting, setActing] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
+  const [exportNote, setExportNote] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -168,29 +219,75 @@ export function TherapistPayoutQueuePanel() {
   const totals = data?.totals
   const rows = data?.statements || []
 
+  const exportableSelected = rows.filter(
+    (row) =>
+      selected.has(row.invoiceId) &&
+      row.status === 'APPROVED' &&
+      !row.hasOpenDispute &&
+      !row.blocked &&
+      !row.needsReview
+  )
+
+  async function exportBatch() {
+    if (!exportableSelected.length) return
+    setActing(true)
+    setExportNote(null)
+    try {
+      const key = `export-${Date.now()}-${exportableSelected.map((r) => r.invoiceId).join('-')}`
+      const result = await apiFetch('/api/v1/admin/therapist-payouts/export-batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          invoice_ids: exportableSelected.map((r) => r.invoiceId),
+          idempotency_key: key.slice(0, 120),
+        }),
+      })
+      setExportNote(
+        result?.alreadyExported
+          ? 'Batch already exported for this idempotency key — no duplicate transfers.'
+          : `Mock batch exported (${result?.batch?.transferCount ?? 0} transfer(s)).`
+      )
+      setSelected(new Set())
+      load()
+    } catch (err) {
+      setExportNote(err?.message || 'Export could not complete — check settlement ladder.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function syncBatch(batchId) {
+    setActing(true)
+    try {
+      await apiFetch(`/api/v1/admin/therapist-payouts/batches/${batchId}/sync-status`, { method: 'POST' })
+      load()
+    } finally {
+      setActing(false)
+    }
+  }
+
   return (
     <>
-      <AdminPanel title="Payout finance queue (money out)">
+      <AdminPanel title="Payout finance queue (money out)" className="finance-dash">
         {totals ? (
-          <div className="client-inv__summary-grid" style={{ marginBottom: 16 }}>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Pending approval</span>
+          <div className="finance-dash__grid" style={{ marginBottom: 16 }}>
+            <div className="finance-dash__card">
+              <span className="finance-dash__card-k">Pending approval</span>
               <strong>{totals.pendingCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Disputed / queried</span>
+            <div className="finance-dash__card finance-dash__card--warn">
+              <span className="finance-dash__card-k">Disputed / queried</span>
               <strong>{totals.disputedCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Clean approved</span>
+            <div className="finance-dash__card finance-dash__card--accent">
+              <span className="finance-dash__card-k">Clean approved</span>
               <strong>{totals.approvedCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Payable now</span>
+            <div className="finance-dash__card finance-dash__card--accent">
+              <span className="finance-dash__card-k">Payable now</span>
               <strong>{formatCurrency(totals.totalPayableNowInr)}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Held (contested)</span>
+            <div className="finance-dash__card">
+              <span className="finance-dash__card-k">Held (contested)</span>
               <strong>{formatCurrency(totals.totalContestedInr)}</strong>
             </div>
           </div>
@@ -222,9 +319,13 @@ export function TherapistPayoutQueuePanel() {
                       <th>Month</th>
                       <th>Cases</th>
                       <th>Sessions</th>
+                      <th>Gross</th>
+                      <th>TDS</th>
+                      <th>Deductions</th>
                       <th>Net</th>
                       <th>Payable now</th>
                       <th>Contested</th>
+                      <th>Batch</th>
                       <th>Status</th>
                       <th />
                     </tr>
@@ -237,7 +338,7 @@ export function TherapistPayoutQueuePanel() {
                             <input
                               type="checkbox"
                               checked={selected.has(row.invoiceId)}
-                              disabled={row.needsReview || row.hasOpenDispute}
+                              disabled={row.needsReview || row.hasOpenDispute || row.blocked || row.status !== 'APPROVED'}
                               onChange={() => toggleSelect(row.invoiceId)}
                             />
                           </td>
@@ -245,7 +346,29 @@ export function TherapistPayoutQueuePanel() {
                           <td>{row.month}</td>
                           <td>{row.caseCount}</td>
                           <td>{row.sessionCount}</td>
-                          <td>{formatCurrency(row.netInr)}</td>
+                          <td>{formatCurrency(row.grossInr)}</td>
+                          <td>
+                            {row.tdsInr != null ? (
+                              <>
+                                {formatCurrency(row.tdsInr)}
+                                <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                                  {' '}
+                                  ({row.tdsRatePercent ?? '—'}%)
+                                </span>
+                              </>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td>{formatCurrency(row.deductionsInr)}</td>
+                          <td>
+                            {formatCurrency(row.netInr)}
+                            {row.blocked ? (
+                              <span className="admin-chip admin-chip--warn" style={{ marginLeft: 6 }}>
+                                Blocked
+                              </span>
+                            ) : null}
+                          </td>
                           <td>
                             {row.needsReview ? (
                               <span className="admin-chip admin-chip--warn">Needs review</span>
@@ -254,6 +377,26 @@ export function TherapistPayoutQueuePanel() {
                             )}
                           </td>
                           <td>{formatCurrency(row.contestedInr)}</td>
+                          <td>
+                            {row.exportBatchStatus ? (
+                              <>
+                                <span className="admin-chip">{row.exportBatchStatus}</span>
+                                {row.exportBatchStatus === 'FAILED' && row.exportBatchId ? (
+                                  <button
+                                    type="button"
+                                    className="admin-btn admin-btn--ghost admin-btn--sm"
+                                    style={{ marginLeft: 6 }}
+                                    disabled={acting || !canWriteBilling}
+                                    onClick={() => syncBatch(row.exportBatchId)}
+                                  >
+                                    Return to queue
+                                  </button>
+                                ) : null}
+                              </>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
                           <td>
                             <span className={statusPillClass(row.status)}>{row.status}</span>
                           </td>
@@ -271,7 +414,7 @@ export function TherapistPayoutQueuePanel() {
                         </tr>
                         {expandedId === row.invoiceId && row.disputes?.length ? (
                           <tr key={`${row.invoiceId}-disputes`}>
-                            <td colSpan={10}>
+                            <td colSpan={13}>
                               {row.disputes.map((d) => (
                                 <div key={d.id} style={{ marginBottom: 12, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
                                   <p style={{ margin: '0 0 6px' }}>
@@ -365,12 +508,26 @@ export function TherapistPayoutQueuePanel() {
           />
         )}
 
-        <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button type="button" className="admin-btn admin-btn--primary" disabled title="Enabled after cutover">
-            Approve &amp; queue payout ({selected.size} selected)
+        <div className="finance-dash__sticky-action">
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary"
+            disabled={!payoutExportEnabled || !canWriteBilling || acting || exportableSelected.length === 0}
+            onClick={exportBatch}
+          >
+            Export batch (mock) ({exportableSelected.length} selected)
           </button>
-          <span className="admin-muted">Approve &amp; queue is enabled after cutover — posts nothing live while flags are off.</span>
+          <span className="admin-muted">
+            {payoutExportEnabled
+              ? 'Mock export only — live release stays off until cutover.'
+              : 'Export enabled after cutover (PAYOUT_EXPORT_ENABLED).'}
+          </span>
         </div>
+        {exportNote ? (
+          <p className="admin-muted" style={{ marginTop: 8, marginBottom: 0 }}>
+            {exportNote}
+          </p>
+        ) : null}
       </AdminPanel>
     </>
   )

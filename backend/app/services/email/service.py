@@ -964,3 +964,35 @@ def send_payment_reminder_email(
         },
         recipient_role="parent",
     )
+
+
+def enqueue_ticket_escalated_email(
+    background_tasks: BackgroundTasks,
+    db: Session,
+    *,
+    to: str,
+    full_name: str,
+    ticket_subject: str,
+    ticket_url: str,
+    actor_name: str,
+    department_label: str | None,
+    entity_id: int,
+    event: EmailEvent,
+) -> int | None:
+    return enqueue_email_event(
+        background_tasks,
+        db,
+        event=event,
+        to=to,
+        template_key="ticket_escalated",
+        payload={
+            "full_name": full_name,
+            "ticket_subject": ticket_subject,
+            "ticket_url": ticket_url,
+            "actor_name": actor_name,
+            "department_label": department_label,
+        },
+        recipient_role="staff",
+        entity_type="support_ticket",
+        entity_id=entity_id,
+    )

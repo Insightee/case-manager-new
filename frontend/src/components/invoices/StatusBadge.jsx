@@ -2,6 +2,8 @@ const variants = {
   queried: 'bg-amber-50 text-amber-950 ring-amber-200',
   rejected: 'bg-red-50 text-red-900 ring-red-200',
   in_review: 'bg-sky-50 text-sky-900 ring-sky-200',
+  approved: 'bg-indigo-50 text-indigo-900 ring-indigo-200',
+  draft: 'bg-slate-100 text-slate-700 ring-slate-200',
   paid: 'bg-emerald-50 text-emerald-900 ring-emerald-200',
   issue: 'bg-orange-50 text-orange-900 ring-orange-200',
 }
@@ -10,6 +12,8 @@ const labels = {
   queried: 'Queried',
   rejected: 'Rejected',
   in_review: 'In Review',
+  approved: 'Approved',
+  draft: 'Draft',
   paid: 'Paid',
   issue: 'Issue',
 }

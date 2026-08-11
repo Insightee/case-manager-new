@@ -7,9 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.invoice import Invoice, InvoiceStatus
+from app.models.therapist_payout_settlement import TherapistPayoutTransfer
 from app.models.therapist_statement_dispute import TherapistStatementDispute
 from app.models.user import User
-from app.services import invoice_billing_service, statement_dispute_service
+from app.services import invoice_billing_service, payout_settlement_service, statement_dispute_service
 
 _OPEN_DISPUTE_STATUSES = {"OPEN", "UNDER_REVIEW"}
 _QUEUE_STATUSES = (
@@ -82,6 +83,15 @@ def _open_disputes_for_invoice(
     return out
 
 
+def _latest_transfer_for_invoice(db: Session, invoice_id: int) -> TherapistPayoutTransfer | None:
+    return db.scalar(
+        select(TherapistPayoutTransfer)
+        .where(TherapistPayoutTransfer.invoice_id == invoice_id)
+        .order_by(TherapistPayoutTransfer.id.desc())
+        .limit(1)
+    )
+
+
 def _statement_row(
     db: Session,
     invoice: Invoice,
@@ -92,9 +102,15 @@ def _statement_row(
     session_map = _session_amount_map(breakdown)
     cases = breakdown.get("cases") or [] if breakdown else []
     sessions = int(breakdown.get("sessions_count") or invoice.sessions_count or 0) if breakdown else int(invoice.sessions_count or 0)
-    gross = float(breakdown.get("subtotal_inr") or invoice.subtotal_inr or invoice.amount_inr or 0) if breakdown else float(invoice.subtotal_inr or invoice.amount_inr or 0)
-    deductions = float(breakdown.get("leave_deduction_inr") or invoice.leave_deduction_inr or 0) if breakdown else float(invoice.leave_deduction_inr or 0)
-    net = float(invoice.amount_inr or 0)
+
+    settlement = payout_settlement_service.compute_invoice_settlement(db, invoice)
+    gross = settlement["grossInr"]
+    deductions = settlement["deductionsInr"]
+    net = settlement["netInr"]
+    tds_inr = settlement["tdsInr"]
+    tds_rate = settlement["tdsRatePercent"]
+    blocked = settlement["blocked"]
+    blocked_reason = settlement.get("blockedReason")
 
     held_ids: list[int] = []
     for d in open_disputes:
@@ -108,6 +124,7 @@ def _statement_row(
     )
 
     dispute_payloads = [statement_dispute_service.dispute_dict(d) for d in open_disputes]
+    xfer = _latest_transfer_for_invoice(db, invoice.id)
 
     return {
         "invoiceId": invoice.id,
@@ -118,8 +135,9 @@ def _statement_row(
         "sessionCount": sessions,
         "grossInr": round(gross, 2),
         "deductionsInr": round(deductions, 2),
-        "tdsInr": None,
-        "tdsNote": "Not yet configured",
+        "tdsInr": round(tds_inr, 2),
+        "tdsRatePercent": tds_rate,
+        "tdsNote": f"TDS {tds_rate}%",
         "holdbackInr": None,
         "holdbackNote": "Not yet configured",
         "expectedPaymentDate": None,
@@ -128,7 +146,12 @@ def _statement_row(
         "status": invoice.status.value,
         "payableNowInr": balances["payableNowInr"],
         "contestedInr": balances["contestedInr"],
-        "needsReview": balances["needsReview"],
+        "needsReview": balances["needsReview"] or blocked,
+        "blocked": blocked,
+        "blockedReason": blocked_reason,
+        "exportBatchStatus": xfer.status if xfer else None,
+        "exportTransferId": xfer.id if xfer else None,
+        "exportBatchId": xfer.batch_id if xfer else None,
         "disputes": dispute_payloads,
         "hasOpenDispute": bool(dispute_payloads),
     }

@@ -4,7 +4,7 @@ import enum
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -99,6 +99,7 @@ class ClientInvoice(Base):
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     approved_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
     payment_policy_snapshot: Mapped[Optional[str]] = mapped_column(Text)
+    billing_snapshot: Mapped[Optional[dict]] = mapped_column(JSON)
     gateway_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     gateway_payment_url: Mapped[Optional[str]] = mapped_column(String(512))
     organisation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("organisations.id"), index=True)
@@ -204,6 +205,7 @@ class BillingDispute(Base):
         Enum(BillingDisputeStatus), default=BillingDisputeStatus.OPEN
     )
     admin_resolution: Mapped[Optional[str]] = mapped_column(Text)
+    support_ticket_id: Mapped[Optional[int]] = mapped_column(ForeignKey("support_tickets.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 

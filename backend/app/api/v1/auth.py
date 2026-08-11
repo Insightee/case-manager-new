@@ -221,6 +221,8 @@ def accept_invite(payload: AcceptInviteRequest, request: Request, db: Session = 
             feature_overrides=invite_meta.get("feature_overrides"),
             view_only=bool(invite_meta.get("view_only", False)),
         )
+        if invite_meta.get("department"):
+            user.department = invite_meta["department"]
     if invite.role_name == "PARENT":
         from app.models.child import Child
         from app.models.parent import ParentGuardian
@@ -365,8 +367,6 @@ def update_me(
         user.bio = payload.bio.strip() or None
     if payload.job_title is not None:
         user.job_title = payload.job_title.strip() or None
-    if payload.department is not None:
-        user.department = payload.department.strip() or None
     if payload.timezone is not None:
         user.timezone = payload.timezone.strip() or None
     if payload.ui_preferences is not None:

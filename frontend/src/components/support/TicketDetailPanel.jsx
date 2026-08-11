@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
-import { unwrapList } from '../../lib/listApi.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { replyStaffTicket } from '../../lib/ticketFormUtils.js'
@@ -8,6 +7,7 @@ import { TicketAttachmentList } from './TicketAttachmentList.jsx'
 import { formatTimestampDateIN } from '../../lib/datetime.js'
 import { TicketFileInput } from './TicketFileInput.jsx'
 import { TicketFlowDialog } from './TicketFlowDialog.jsx'
+import { TicketEscalatePicker } from './TicketEscalatePicker.jsx'
 
 export async function loadStaffTicketDetail(ticketId) {
   return apiFetch(`/api/v1/tickets/${ticketId}`)
@@ -21,26 +21,6 @@ const STATUS_META = {
 }
 
 const MIN_MESSAGE_CHARS = 3
-
-const STAFF_ROLES = new Set([
-  'SUPER_ADMIN',
-  'ADMIN',
-  'MODULE_ADMIN',
-  'CASE_MANAGER',
-  'SUPERVISOR',
-  'HR',
-  'FINANCE',
-])
-
-const ROLE_MATCH = {
-  SUPER_ADMIN: ['SUPER_ADMIN'],
-  MODULE_ADMIN: ['MODULE_ADMIN', 'ADMIN'],
-  ADMIN: ['ADMIN', 'MODULE_ADMIN', 'SUPER_ADMIN'],
-  HR: ['HR'],
-  FINANCE: ['FINANCE'],
-  CASE_MANAGER: ['CASE_MANAGER', 'SUPERVISOR'],
-  SUPERVISOR: ['SUPERVISOR', 'CASE_MANAGER'],
-}
 
 function StatusPill({ status }) {
   const meta = STATUS_META[status] || STATUS_META.OPEN
@@ -168,12 +148,10 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
   const [reply, setReply] = useState('')
   const [replyFiles, setReplyFiles] = useState([])
   const [internalNote, setInternalNote] = useState(false)
-  const [staffUsers, setStaffUsers] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [dialog, setDialog] = useState(null)
   const [assignBanner, setAssignBanner] = useState(null)
-  const [escalateRole, setEscalateRole] = useState(null)
 
   const isRaiser = ticket?.is_raiser ?? ticket?.raised_by_user_id === user?.id
   const isTerminal = ticket?.status === 'CLOSED'
@@ -188,24 +166,6 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
     full_name: ticket?.assigned_to_name,
     role_labels: ticket?.assignee_role_labels,
   }
-
-  useEffect(() => {
-    if (!showResolve) return
-    apiFetch('/api/v1/admin/users?page_size=100')
-      .then((users) => {
-        const list = unwrapList(users)
-        setStaffUsers(list.filter((u) => u.roles?.some((r) => STAFF_ROLES.has(r)) && u.is_active !== false))
-      })
-      .catch(() => setStaffUsers([]))
-  }, [showResolve])
-
-  const usersForRole = useMemo(() => {
-    const map = {}
-    for (const [role, match] of Object.entries(ROLE_MATCH)) {
-      map[role] = staffUsers.filter((u) => u.roles?.some((r) => match.includes(r)))
-    }
-    return map
-  }, [staffUsers])
 
   if (!ticket?.messages) {
     return <p style={{ fontSize: '0.875rem', color: '#9ca3af', padding: '12px 0' }}>Loading thread…</p>
@@ -313,29 +273,46 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
     { key: 'CLOSED', label: 'Closed', onClick: () => handleStatusPick('CLOSED') },
   ]
 
-  const escalationTargets = ticket.escalation_targets || []
-  const escalateRoleUsers = escalateRole ? usersForRole[escalateRole] || [] : []
-
-  async function escalateToUser(userId, role) {
-    setEscalateRole(null)
+  async function handleEscalate(payload) {
     setBusy(true)
     setError('')
     try {
       const updated = await apiFetch(`${apiBase}/${ticket.id}/escalate`, {
         method: 'POST',
-        body: JSON.stringify(
-          userId ? { assign_to_user_id: userId } : { target_role: role },
-        ),
+        body: JSON.stringify(payload),
       })
       onUpdated?.(updated)
-      const assigneeName = updated?.assignee?.full_name || updated?.assigned_to_name
-      if (assigneeName) setAssignBanner(`Escalated — now assigned to ${assigneeName}`)
+      if (updated?.escalated_to_department_label) {
+        setAssignBanner(`Escalated — routed to ${updated.escalated_to_department_label} queue`)
+      } else {
+        const assigneeName = updated?.assignee?.full_name || updated?.assigned_to_name
+        if (assigneeName) setAssignBanner(`Escalated — now assigned to ${assigneeName}`)
+      }
     } catch (err) {
       setError(err.message || 'Could not escalate ticket')
+      throw err
     } finally {
       setBusy(false)
     }
   }
+
+  async function pickUpTicket() {
+    setBusy(true)
+    setError('')
+    try {
+      const updated = await apiFetch(`${apiBase}/${ticket.id}/pick-up`, { method: 'POST' })
+      onUpdated?.(updated)
+      setAssignBanner('You picked up this ticket from the department queue.')
+    } catch (err) {
+      setError(err.message || 'Could not pick up ticket')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const assignedLabel = ticket.escalated_to_department_label
+    ? `${ticket.escalated_to_department_label} queue (unassigned)`
+    : participantLine(assignee)
 
   const ticketLevelAttachments = (ticket.attachments || []).filter((a) => !a.message_id)
 
@@ -365,6 +342,20 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
               : ''}
           </span>
         ) : null}
+        {ticket.escalated_to_department_label ? (
+          <span
+            style={{
+              fontSize: '0.7rem',
+              background: '#ede9fe',
+              color: '#5b21b6',
+              fontWeight: 700,
+              padding: '2px 7px',
+              borderRadius: 6,
+            }}
+          >
+            {ticket.escalated_to_department_label} queue
+          </span>
+        ) : null}
       </div>
 
       <div
@@ -379,7 +370,7 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
         }}
       >
         <TicketMetaRow label="Raised by">{participantLine(raisedBy)}</TicketMetaRow>
-        <TicketMetaRow label="Assigned to">{participantLine(assignee)}</TicketMetaRow>
+        <TicketMetaRow label="Assigned to">{assignedLabel}</TicketMetaRow>
         {ticket.topic_label ? <TicketMetaRow label="Topic">{ticket.topic_label}</TicketMetaRow> : null}
         {ticket.category_label ? <TicketMetaRow label="Category">{ticket.category_label}</TicketMetaRow> : null}
         {ticket.case_code || ticket.child_name ? (
@@ -410,6 +401,35 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
           <span>{assignBanner}</span>
           <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setAssignBanner(null)}>
             Dismiss
+          </button>
+        </div>
+      ) : null}
+
+      {ticket.can_pick_up ? (
+        <div
+          style={{
+            background: '#f5f3ff',
+            border: '1px solid #ddd6fe',
+            borderRadius: 10,
+            padding: '10px 12px',
+            marginBottom: 12,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: '0.8rem', color: '#5b21b6' }}>
+            This ticket is waiting in the <strong>{ticket.escalated_to_department_label}</strong> queue.
+          </span>
+          <button
+            type="button"
+            className="admin-btn admin-btn--primary admin-btn--sm"
+            disabled={busy}
+            onClick={pickUpTicket}
+          >
+            Pick up ticket
           </button>
         </div>
       ) : null}
@@ -541,52 +561,6 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
               {error}
             </p>
           ) : null}
-          {staffWrite && escalateRole ? (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 12,
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: 10,
-              }}
-            >
-              <p style={{ fontSize: '0.75rem', fontWeight: 600, margin: '0 0 8px', color: '#475569' }}>
-                Escalate to — choose a person
-              </p>
-              {escalateRoleUsers.length === 0 ? (
-                <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0 0 8px' }}>No active users for this role.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-                  {escalateRoleUsers.map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      className="admin-btn admin-btn--ghost admin-btn--sm"
-                      style={{ justifyContent: 'flex-start' }}
-                      disabled={busy}
-                      onClick={() => escalateToUser(u.id, escalateRole)}
-                    >
-                      {u.full_name}
-                      <span style={{ color: '#94a3b8', marginLeft: 6 }}>{u.email}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button
-                type="button"
-                className="admin-btn admin-btn--ghost admin-btn--sm"
-                disabled={busy}
-                onClick={() => escalateToUser(null, escalateRole)}
-              >
-                Auto-assign by role
-              </button>
-              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" style={{ marginLeft: 8 }} onClick={() => setEscalateRole(null)}>
-                Cancel
-              </button>
-            </div>
-          ) : null}
-
 
           <div className="ticket-compose__actions" style={{ flexWrap: 'wrap', marginTop: 12, gap: 8, alignItems: 'center' }}>
             {staffWrite ? (
@@ -596,34 +570,13 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
                   items={statusMenuItems}
                   disabled={busy}
                 />
-                {escalationTargets.length > 0 && (ticket.can_escalate_staff || ticket.can_escalate) ? (
-                  <ActionMenu
-                    label="Escalate to"
-                    items={[
-                      ...escalationTargets.map((t) => ({
-                        key: t.role,
-                        label: t.label,
-                        onClick: () => {
-                          setEscalateRole(t.role)
-                        },
-                      })),
-                      {
-                        key: 'auto',
-                        label: 'Next level (auto)',
-                        onClick: () =>
-                          setDialog({
-                            action: 'escalate',
-                            title: 'Escalate ticket',
-                            description: 'Route using the standard escalation path.',
-                            confirmLabel: 'Escalate',
-                            requireNote: false,
-                            noteLabel: 'Reason (optional)',
-                          }),
-                      },
-                    ]}
-                    disabled={busy}
-                  />
-                ) : null}
+                <TicketEscalatePicker
+                  apiBase={apiBase}
+                  disabled={busy}
+                  busy={busy}
+                  canEscalate={ticket.can_escalate_staff || ticket.can_escalate}
+                  onEscalate={handleEscalate}
+                />
                 <button type="button" className="ticket-compose__send" disabled={busy || !replyOk} onClick={sendReply}>
                   {busy ? 'Sending…' : 'Send reply'}
                 </button>

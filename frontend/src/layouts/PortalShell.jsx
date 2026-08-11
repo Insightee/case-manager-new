@@ -130,7 +130,7 @@ function NavLinks({ items, className, linkClassName, onNavigate, showIcons }) {
               }
             >
               {showIcons && item.icon ? <NavIcon name={item.icon} /> : null}
-              <span>{item.label}</span>
+              <span className="app-sidebar__link-label">{item.label}</span>
             </NavLink>
           </span>
         )
@@ -227,6 +227,20 @@ export function PortalShell({ portal }) {
   const location = useLocation()
   const [accountOpen, setAccountOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const financeRoute =
+    portal === 'admin'
+      && (location.pathname.startsWith('/admin/invoices')
+        || location.pathname.startsWith('/admin/finance-reports')
+        || location.pathname.startsWith('/admin/therapist-payouts'))
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('insightecase.financeSidebarCollapsed') === '1'
+  })
+
+  useEffect(() => {
+    if (!financeRoute) return
+    window.localStorage.setItem('insightecase.financeSidebarCollapsed', sidebarCollapsed ? '1' : '0')
+  }, [financeRoute, sidebarCollapsed])
   const { activeElapsedSeconds, syncState } = useAppUsageTracker({
     enabled: portal === 'admin' && !!user?.id,
     userId: user?.id,
@@ -294,7 +308,13 @@ export function PortalShell({ portal }) {
     portal === 'therapist' || portal === 'parent' || useMenu
 
   const showNavIcons = portal === 'admin'
-  const shellClass = portal === 'admin' ? 'app-shell app-shell--admin' : 'app-shell'
+  const shellClass = [
+    portal === 'admin' ? 'app-shell app-shell--admin' : 'app-shell',
+    financeRoute ? 'app-shell--finance-workspace' : '',
+    financeRoute && sidebarCollapsed ? 'app-shell--sidebar-collapsed' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
   const firstName = user?.full_name?.split(/\s+/)[0] || 'Account'
   const profilePath =
     portal === 'parent'
@@ -506,6 +526,16 @@ export function PortalShell({ portal }) {
             </div>
           </div>
           <div className="app-sidebar__brand-actions">
+            {financeRoute ? (
+              <button
+                type="button"
+                className="app-sidebar__collapse-toggle admin-desktop-only"
+                aria-pressed={sidebarCollapsed}
+                onClick={() => setSidebarCollapsed((v) => !v)}
+              >
+                {sidebarCollapsed ? '»' : '«'}
+              </button>
+            ) : null}
             <PortalInstallButton variant="sidebar" />
             <NotificationBell portal={portal} />
           </div>

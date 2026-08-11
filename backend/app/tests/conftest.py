@@ -16,7 +16,10 @@ os.environ.setdefault("APP_ENV", "test")
 # Production defaults keep billing off; CI/unit suite exercises billing routes and ledger math.
 os.environ["ENABLE_BILLING"] = "true"
 os.environ["BILLING_LEDGER_WRITES"] = "true"
-os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
+
+_MIGRATION_PROOF_CI = os.environ.get("MIGRATION_PROOF_REQUIRED", "").lower() in ("1", "true", "yes")
+if not _MIGRATION_PROOF_CI:
+    os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
 
 _BOOTSTRAP_DONE = False
 
@@ -49,7 +52,8 @@ def _bootstrap_test_database() -> None:
     _BOOTSTRAP_DONE = True
 
 
-_bootstrap_test_database()
+if not _MIGRATION_PROOF_CI:
+    _bootstrap_test_database()
 
 
 def api_items(data):

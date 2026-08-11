@@ -70,7 +70,7 @@ def get_booking_slots(
         raise HTTPException(status_code=403, detail="Access denied")
 
     from app.services import parent_service
-    from app.api.v1.meetings import check_conflicts, time, timedelta
+    from app.api.v1.meetings import check_conflicts, meeting_availability_slots_grid, timedelta
 
     parent_uid = parent_service.primary_parent_user_id_for_child(db, case.child_id) if case.child_id else None
     
@@ -88,10 +88,7 @@ def get_booking_slots(
     if parent_uid:
         attendees.append(parent_uid)
 
-    slots_grid = [
-        time(9, 0), time(10, 0), time(11, 0), time(12, 0),
-        time(13, 0), time(14, 0), time(15, 0), time(16, 0), time(17, 0)
-    ]
+    slots_grid = meeting_availability_slots_grid()
 
     results = []
     has_available = False

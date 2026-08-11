@@ -20,6 +20,7 @@ from app.schemas.client_billing import (
     AdminClientInvoiceUpdate,
     AdminDisputeResolve,
     BillingDisputeCreate,
+    DisputeCorrectionProposalBody,
     ClientInvoiceLinePatch,
     ClientInvoiceLineUpsert,
     ClientPaymentRecord,
@@ -30,7 +31,7 @@ from app.schemas.client_billing import (
 )
 from app.core.config import settings
 from app.core.feature_flags import billing_ledger_writes_enabled, require_billing_ledger_writes
-from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service
+from app.services import billing_composer_service, client_billing_service, client_invoice_draft_service, finance_correction_service
 from app.services import audit_service
 from app.services.bookkeeping_provider import get_bookkeeping_provider
 
@@ -53,6 +54,9 @@ def _billing_runtime_config() -> dict:
         "zohoConfigured": zoho_client_sync.zoho_configured(),
         "zohoBooksLivePush": bool(getattr(settings, "zoho_books_live_push", False)),
         "provisional": not bool(settings.finance_cutover_complete),
+        "payoutExportEnabled": bool(getattr(settings, "payout_export_enabled", False)),
+        "payoutReleaseEnabled": bool(getattr(settings, "payout_release_enabled", False)),
+        "payoutProviderLive": bool(getattr(settings, "payout_provider_live", False)),
     }
 
 
@@ -207,16 +211,17 @@ async def parent_submit_payment_claim(
     request: Request,
     amount_inr: float = Form(...),
     method: str = Form(...),
-    reference: Optional[str] = Form(None),
+    reference: str = Form(...),
+    payment_date: str = Form(..., description="YYYY-MM-DD when payment was made"),
     notes: Optional[str] = Form(None),
-    proof: Optional[UploadFile] = File(None),
+    proof: UploadFile = File(...),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_parent(user)
     try:
         payment = await client_billing_service.submit_payment_claim(
-            db, user, invoice_id, amount_inr, method, reference, notes, proof
+            db, user, invoice_id, amount_inr, method, reference, payment_date, notes, proof
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -293,10 +298,30 @@ def parent_payment_receipt(
 
 @admin_router.get("/summary")
 def admin_billing_summary(
+    month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    case_id: Optional[int] = None,
+    status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
+    module: Optional[str] = None,
+    search: Optional[str] = None,
     user: User = Depends(require_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
-    return client_billing_service.admin_summary(db)
+    return client_billing_service.admin_summary(
+        db,
+        month=month,
+        year=year,
+        date_from=date_from,
+        date_to=date_to,
+        case_id=case_id,
+        status=status,
+        invoice_type=invoice_type,
+        module=module,
+        search=search,
+    )
 
 
 def _invoice_list_params(
@@ -627,9 +652,46 @@ def admin_list_disputes(
                 "message": d.message,
                 "status": d.status.value,
                 "createdAt": d.created_at.isoformat() if d.created_at else None,
+                "supportTicketId": d.support_ticket_id,
+                "caseId": inv.case_id if inv else None,
+                "billingMonth": inv.billing_month if inv else None,
             }
         )
     return result
+
+
+@admin_router.post("/disputes/{dispute_id}/correction-proposal")
+def admin_dispute_correction_proposal(
+    dispute_id: int,
+    payload: DisputeCorrectionProposalBody,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    from app.models.client_billing import BillingDispute, ClientInvoice
+
+    ensure_billing_write_access(user)
+    require_billing_ledger_writes()
+    dispute = db.get(BillingDispute, dispute_id)
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+    inv = db.get(ClientInvoice, dispute.client_invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    try:
+        proposal = finance_correction_service.create_correct_reshare_proposal(
+            db,
+            case_id=inv.case_id,
+            billing_month=inv.billing_month,
+            wrong_side=payload.wrong_side,
+            reason=payload.reason,
+            user_id=user.id,
+            billing_dispute_id=dispute.id,
+        )
+        db.commit()
+        return proposal
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @admin_router.get("/runtime-config")
@@ -1005,7 +1067,12 @@ def admin_notify_parent_invoice(
 @admin_router.get("/receivables")
 def admin_receivables(
     month: Optional[str] = None,
+    year: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    case_id: Optional[int] = None,
     status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
     module: Optional[str] = None,
     search: Optional[str] = None,
     overdue_only: bool = Query(False),
@@ -1015,7 +1082,12 @@ def admin_receivables(
     return client_billing_service.admin_receivables_summary(
         db,
         month=month,
+        year=year,
+        date_from=date_from,
+        date_to=date_to,
+        case_id=case_id,
         status=status,
+        invoice_type=invoice_type,
         module=module,
         search=search,
         overdue_only=overdue_only,
@@ -1199,6 +1271,14 @@ def admin_reject_payment_claim(
     log_audit(db, actor_user_id=user.id, action="reject_payment", entity_type="client_payment", entity_id=payment_id, **meta)
     db.commit()
     return {"status": "rejected"}
+
+
+@admin_router.get("/payment-claims")
+def admin_list_payment_claims(
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    return client_billing_service.list_pending_payment_claims(db, user)
 
 
 @admin_router.get("/payments/{payment_id}/proof")

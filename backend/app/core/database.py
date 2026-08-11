@@ -381,6 +381,8 @@ def ensure_sqlite_schema_patches() -> None:
                 conn.execute(text("ALTER TABLE support_tickets ADD COLUMN parent_resolution_feedback TEXT"))
             if "resolved_at" not in t_cols:
                 conn.execute(text("ALTER TABLE support_tickets ADD COLUMN resolved_at DATETIME"))
+            if "escalated_to_department" not in t_cols:
+                conn.execute(text("ALTER TABLE support_tickets ADD COLUMN escalated_to_department VARCHAR(64)"))
 
     if not insp.has_table("ticket_attachments"):
         with engine.begin() as conn:

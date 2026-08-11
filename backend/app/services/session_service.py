@@ -187,7 +187,12 @@ def start_session(
     assert_therapist_may_start_session(db, session.case_id)
     from app.services.pending_log_gate_service import assert_may_start_new_session
 
-    assert_may_start_new_session(db, therapist_user_id, excluding_session_id=session.id)
+    assert_may_start_new_session(
+        db,
+        therapist_user_id,
+        case_id=session.case_id,
+        excluding_session_id=session.id,
+    )
     start_svc.resolve_start_conflict(db, session, therapist_user_id, allow_duplicate=allow_duplicate)
 
     today = today_ist()
@@ -477,7 +482,7 @@ def complete_forgotten_session(
         raise ValueError("Only scheduled visits can be completed from Forgot to log")
     from app.services.pending_log_gate_service import assert_may_start_new_session
 
-    assert_may_start_new_session(db, therapist_user_id)
+    assert_may_start_new_session(db, therapist_user_id, case_id=session.case_id)
     today = today_ist()
     if session.scheduled_date > today:
         raise ValueError("Cannot complete future visits this way")
@@ -517,7 +522,7 @@ def create_manual_session(
         raise ValueError("End time must be after start time")
     from app.services.pending_log_gate_service import assert_may_start_new_session
 
-    assert_may_start_new_session(db, therapist_user_id)
+    assert_may_start_new_session(db, therapist_user_id, case_id=case_id)
     mins = duration_minutes_between(actual_start_at, actual_end_at)
     validate_session_duration_minutes(mins)
     session = TherapySession(

@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { apiFetch, getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
+import { apiFetch, apiDownload, getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import {
+  buildClientBillingScopeQuery,
   buildClientInvoiceQuery,
   CLIENT_INVOICE_STATUSES,
   INVOICE_TYPES,
   parseClientInvoiceFilters,
   writeClientInvoiceFiltersToParams,
 } from '../../lib/invoiceFilters.js'
+import { formatPaymentMethod, paymentStatusLabel } from '../../lib/paymentMethodLabels.js'
+import { formatApiDateIN } from '../../lib/datetime.js'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -42,6 +45,111 @@ function statusPillClass(status) {
 function displayStatus(inv) {
   if (inv.isOverdue && inv.balanceInr > 0) return 'OVERDUE'
   return (inv.status || '').toUpperCase()
+}
+
+function formatPaidAt(iso) {
+  if (!iso) return '—'
+  return formatApiDateIN(String(iso).slice(0, 10)) || String(iso).slice(0, 10)
+}
+
+function PaymentClaimReviewCard({
+  payment,
+  invoiceNumber,
+  childName,
+  canWriteBilling,
+  acting,
+  rejectPayId,
+  rejectPayNote,
+  onRejectNoteChange,
+  onStartReject,
+  onCancelReject,
+  onConfirm,
+  onReject,
+  onViewProof,
+  onOpenInvoice,
+}) {
+  const isRejecting = rejectPayId === payment.id
+  return (
+    <article className="client-inv__claim-card">
+      <div className="client-inv__claim-card-top">
+        <div className="client-inv__claim-card-main">
+          <p className="client-inv__claim-card-title">
+            {formatCurrency(payment.amountInr)}
+            <span className="client-inv__claim-card-status">{paymentStatusLabel(payment.paymentStatus)}</span>
+          </p>
+          <p className="client-inv__claim-card-meta">
+            {invoiceNumber}
+            {childName ? ` · ${childName}` : ''}
+          </p>
+          <dl className="client-inv__claim-card-grid">
+            <div>
+              <dt>Payment mode</dt>
+              <dd>{formatPaymentMethod(payment.method)}</dd>
+            </div>
+            <div>
+              <dt>Reference</dt>
+              <dd>{payment.reference || '—'}</dd>
+            </div>
+            <div>
+              <dt>Payment date</dt>
+              <dd>{formatPaidAt(payment.paidAt)}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="client-inv__claim-card-actions">
+          {payment.hasProof ? (
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => onViewProof(payment)}>
+              View receipt
+            </button>
+          ) : null}
+          {onOpenInvoice ? (
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={onOpenInvoice}>
+              Open invoice
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {canWriteBilling && payment.paymentStatus === 'pending_review' ? (
+        isRejecting ? (
+          <div className="client-inv__claim-card-review">
+            <textarea
+              className="client-inv__filter-input"
+              style={{ width: '100%', minHeight: 50 }}
+              placeholder="Reason if rejecting"
+              value={rejectPayNote}
+              onChange={(e) => onRejectNoteChange(e.target.value)}
+            />
+            <div className="admin-btn-group" style={{ marginTop: 8 }}>
+              <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={acting} onClick={() => onConfirm(payment.id)}>
+                Confirm payment
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn--sm"
+                disabled={acting || !rejectPayNote.trim()}
+                onClick={() => onReject(payment.id)}
+              >
+                Reject
+              </button>
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={onCancelReject}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="admin-btn-group client-inv__claim-card-review">
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" disabled={acting} onClick={() => onConfirm(payment.id)}>
+              Confirm
+            </button>
+            <button type="button" className="admin-btn admin-btn--sm" disabled={acting} onClick={() => onStartReject(payment.id)}>
+              Reject…
+            </button>
+          </div>
+        )
+      ) : null}
+      {payment.rejectionNote ? <p className="client-inv__claim-card-note">{payment.rejectionNote}</p> : null}
+    </article>
+  )
 }
 
 async function downloadExport(path, filename) {
@@ -170,6 +278,17 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
       onRefresh()
     } finally {
       setActing(false)
+    }
+  }
+
+  async function viewPaymentProof(payment) {
+    try {
+      await apiDownload(
+        `/api/v1/admin/client-billing/payments/${payment.id}/proof`,
+        payment.proofFileName || `payment-proof-${payment.id}`,
+      )
+    } catch (err) {
+      alert(err?.message || 'Could not open payment receipt')
     }
   }
 
@@ -321,71 +440,25 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
                   <p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>No payments recorded.</p>
                 ) : (
                   detail.payments.map((p) => (
-                    <div key={p.id} className="client-inv__dispute-card" style={{ marginBottom: 8 }}>
-                      <p style={{ fontSize: '0.85rem', margin: '4px 0' }}>
-                        {formatCurrency(p.amountInr)} · {p.method} ·{' '}
-                        {(p.paymentStatus || 'confirmed').replaceAll('_', ' ')}
-                        {p.paidAt ? ` · ${p.paidAt.slice(0, 10)}` : ''}
-                      </p>
-                      {p.hasProof ? (
-                        <a
-                          href={`${getApiBaseUrl()}/api/v1/admin/client-billing/payments/${p.id}/proof`}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ fontSize: '0.8rem' }}
-                        >
-                          View proof
-                        </a>
-                      ) : null}
-                      {canWriteBilling && p.paymentStatus === 'pending_review' ? (
-                        rejectPayId === p.id ? (
-                          <div style={{ marginTop: 8 }}>
-                            <textarea
-                              className="client-inv__filter-input"
-                              style={{ width: '100%', minHeight: 50 }}
-                              placeholder="Reason if rejecting"
-                              value={rejectPayNote}
-                              onChange={(e) => setRejectPayNote(e.target.value)}
-                            />
-                            <div className="admin-btn-group" style={{ marginTop: 8 }}>
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn--primary admin-btn--sm"
-                                disabled={acting}
-                                onClick={() => confirmPaymentClaim(p.id)}
-                              >
-                                Confirm payment
-                              </button>
-                              <button
-                                type="button"
-                                className="admin-btn admin-btn--sm"
-                                disabled={acting || !rejectPayNote.trim()}
-                                onClick={() => rejectPaymentClaim(p.id)}
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="admin-btn-group" style={{ marginTop: 8 }}>
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn--primary admin-btn--sm"
-                              disabled={acting}
-                              onClick={() => confirmPaymentClaim(p.id)}
-                            >
-                              Confirm
-                            </button>
-                            <button type="button" className="admin-btn admin-btn--sm" onClick={() => setRejectPayId(p.id)}>
-                              Reject…
-                            </button>
-                          </div>
-                        )
-                      ) : null}
-                      {p.rejectionNote ? (
-                        <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 4 }}>{p.rejectionNote}</p>
-                      ) : null}
-                    </div>
+                    <PaymentClaimReviewCard
+                      key={p.id}
+                      payment={p}
+                      invoiceNumber={detail.invoiceNumber}
+                      childName={detail.childName}
+                      canWriteBilling={canWriteBilling}
+                      acting={acting}
+                      rejectPayId={rejectPayId}
+                      rejectPayNote={rejectPayNote}
+                      onRejectNoteChange={setRejectPayNote}
+                      onStartReject={setRejectPayId}
+                      onCancelReject={() => {
+                        setRejectPayId(null)
+                        setRejectPayNote('')
+                      }}
+                      onConfirm={confirmPaymentClaim}
+                      onReject={rejectPaymentClaim}
+                      onViewProof={viewPaymentProof}
+                    />
                   ))
                 )}
                 <h4 style={{ fontSize: '0.85rem', margin: '16px 0 8px' }}>Disputes</h4>
@@ -502,6 +575,12 @@ export function AdminClientInvoicesTab({
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [filterOptions, setFilterOptions] = useState(null)
   const [viewId, setViewId] = useState(openInvoiceId ? Number(openInvoiceId) : null)
+  const [loadError, setLoadError] = useState(null)
+  const [pendingClaims, setPendingClaims] = useState([])
+  const [claimsLoading, setClaimsLoading] = useState(false)
+  const [claimRejectId, setClaimRejectId] = useState(null)
+  const [claimRejectNote, setClaimRejectNote] = useState('')
+  const [claimActing, setClaimActing] = useState(false)
 
   useEffect(() => {
     apiFetch('/api/v1/admin/client-billing/invoices/filter-options')
@@ -510,22 +589,25 @@ export function AdminClientInvoicesTab({
   }, [])
 
   const load = useCallback(() => {
+    const scopeQs = buildClientBillingScopeQuery(filters)
     const qs = buildClientInvoiceQuery({
       ...filters,
       claimsPending: claimsOnly || filters.claimsPending,
     })
     setLoading(true)
+    setLoadError(null)
     Promise.all([
-      apiFetch('/api/v1/admin/client-billing/summary'),
+      apiFetch(`/api/v1/admin/client-billing/summary${scopeQs}`),
       apiFetch(`/api/v1/admin/client-billing/invoices${qs}`),
     ])
       .then(([s, list]) => {
         setSummary(s)
         setInvoices(Array.isArray(list) ? list : [])
       })
-      .catch(() => {
+      .catch((err) => {
         setSummary(null)
         setInvoices([])
+        setLoadError(err?.message || 'Client billing data is unavailable right now.')
       })
       .finally(() => setLoading(false))
   }, [filters, claimsOnly])
@@ -533,6 +615,60 @@ export function AdminClientInvoicesTab({
   useEffect(() => {
     load()
   }, [load])
+
+  const loadPendingClaims = useCallback(() => {
+    if (!paymentsMode) return
+    setClaimsLoading(true)
+    apiFetch('/api/v1/admin/client-billing/payment-claims')
+      .then((rows) => setPendingClaims(Array.isArray(rows) ? rows : []))
+      .catch(() => setPendingClaims([]))
+      .finally(() => setClaimsLoading(false))
+  }, [paymentsMode])
+
+  useEffect(() => {
+    loadPendingClaims()
+  }, [loadPendingClaims, invoices])
+
+  async function confirmQueuedClaim(paymentId) {
+    setClaimActing(true)
+    try {
+      await apiFetch(`/api/v1/admin/client-billing/payments/${paymentId}/confirm`, { method: 'POST' })
+      load()
+      loadPendingClaims()
+    } catch (err) {
+      alert(err?.message || 'Could not confirm payment claim')
+    } finally {
+      setClaimActing(false)
+    }
+  }
+
+  async function rejectQueuedClaim(paymentId) {
+    if (!claimRejectNote.trim()) return
+    setClaimActing(true)
+    try {
+      await apiFetch(`/api/v1/admin/client-billing/payments/${paymentId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ note: claimRejectNote.trim() }),
+      })
+      setClaimRejectId(null)
+      setClaimRejectNote('')
+      load()
+      loadPendingClaims()
+    } finally {
+      setClaimActing(false)
+    }
+  }
+
+  async function viewQueuedProof(payment) {
+    try {
+      await apiDownload(
+        `/api/v1/admin/client-billing/payments/${payment.id}/proof`,
+        payment.proofFileName || `payment-proof-${payment.id}`,
+      )
+    } catch (err) {
+      alert(err?.message || 'Could not open payment receipt')
+    }
+  }
 
   useEffect(() => {
     const next = writeClientInvoiceFiltersToParams(searchParams, filters)
@@ -605,6 +741,49 @@ export function AdminClientInvoicesTab({
         <p className="admin-alert admin-alert--warning" style={{ marginBottom: 12 }}>
           Showing invoices with payment claims awaiting review. Open an invoice to confirm or reject each claim.
         </p>
+      ) : null}
+
+      {loadError ? (
+        <div className="admin-alert admin-alert--warning" style={{ marginBottom: 12 }}>
+          {loadError}
+        </div>
+      ) : null}
+
+      {paymentsMode ? (
+        <section className="client-inv__claims-queue" aria-label="Offline payment claims awaiting review">
+          <div className="client-inv__claims-queue-head">
+            <h3>Offline payment claims</h3>
+            <p>Review parent-submitted receipts with payment mode, reference, and payment date before confirming.</p>
+          </div>
+          {claimsLoading ? (
+            <p className="admin-muted">Loading payment claims…</p>
+          ) : pendingClaims.length === 0 ? (
+            <p className="admin-muted">No offline payment claims awaiting review.</p>
+          ) : (
+            pendingClaims.map((claim) => (
+              <PaymentClaimReviewCard
+                key={claim.id}
+                payment={claim}
+                invoiceNumber={claim.invoiceNumber}
+                childName={claim.childName}
+                canWriteBilling={canWriteBilling}
+                acting={claimActing}
+                rejectPayId={claimRejectId}
+                rejectPayNote={claimRejectNote}
+                onRejectNoteChange={setClaimRejectNote}
+                onStartReject={setClaimRejectId}
+                onCancelReject={() => {
+                  setClaimRejectId(null)
+                  setClaimRejectNote('')
+                }}
+                onConfirm={confirmQueuedClaim}
+                onReject={rejectQueuedClaim}
+                onViewProof={viewQueuedProof}
+                onOpenInvoice={() => setViewId(claim.invoiceId)}
+              />
+            ))
+          )}
+        </section>
       ) : null}
 
       <div className="client-inv__kpi-grid">

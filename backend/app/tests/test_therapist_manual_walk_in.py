@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.core.timezone import today_ist
 from app.main import app
 from app.seed.demo_seed import run as seed_run
+from app.tests.session_helpers import clear_blocking_pending_logs_for_therapist
 
 client = TestClient(app)
 
@@ -15,6 +16,7 @@ client = TestClient(app)
 @pytest.fixture(scope="module", autouse=True)
 def setup_db():
     seed_run()
+    clear_blocking_pending_logs_for_therapist()
 
 
 def _login(email: str = "therapist@demo.com") -> str:

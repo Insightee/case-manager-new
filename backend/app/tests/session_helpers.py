@@ -60,11 +60,11 @@ def clear_blocking_pending_logs_for_therapist(therapist_email: str = "therapist@
         if not therapist:
             return
         for _ in range(20):
-            blocking = pending_log_gate_service.get_blocking_session(db, therapist.id)
-            if not blocking:
+            blockers = list(pending_log_gate_service.iter_blocking_sessions(db, therapist.id))
+            if not blockers:
                 break
             try:
-                pending_log_gate_service.discard_blocking_draft_log(db, blocking, therapist.id)
+                pending_log_gate_service.discard_blocking_draft_log(db, blockers[0], therapist.id)
                 db.commit()
             except ValueError:
                 db.rollback()
@@ -73,9 +73,28 @@ def clear_blocking_pending_logs_for_therapist(therapist_email: str = "therapist@
         db.close()
 
 
+def clear_pending_absences_for_therapist(therapist_email: str = "therapist@demo.com") -> None:
+    """Remove pending child-absence gates left by earlier tests in the shared CI database."""
+    from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus
+
+    db = SessionLocal()
+    try:
+        therapist = db.scalars(select(User).where(User.email == therapist_email)).first()
+        if not therapist:
+            return
+        db.query(SessionAbsenceRequest).filter(
+            SessionAbsenceRequest.therapist_user_id == therapist.id,
+            SessionAbsenceRequest.status == SessionAbsenceStatus.PENDING_APPROVAL,
+        ).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+
+
 def end_active_sessions_for_therapist(therapist_email: str = "therapist@demo.com") -> None:
     """End any IN_PROGRESS sessions left by earlier tests in the shared CI database."""
     clear_blocking_pending_logs_for_therapist(therapist_email)
+    clear_pending_absences_for_therapist(therapist_email)
     db = SessionLocal()
     try:
         therapist = db.scalars(select(User).where(User.email == therapist_email)).first()

@@ -9,7 +9,9 @@ from app.core.permissions import user_has_permission
 from app.models.support_ticket import SupportTicket, TicketMessage, TicketStatus
 from app.models.user import User
 from app.services import case_service, ticket_escalation_service as ticket_esc
+from app.services.ticket_escalation_targets_service import list_staff_in_department, user_can_pick_up_department_ticket
 from app.services.ticket_participant_service import primary_portal_label, role_label
+from app.core.departments import staff_department_label, validate_staff_department
 
 
 def _is_staff(user: User, ticket: SupportTicket) -> bool:
@@ -61,11 +63,22 @@ def ticket_flow_flags(db: Session, user: User, ticket: SupportTicket) -> dict:
     can_reply = ticket.status != TicketStatus.CLOSED
 
     next_role = roles[level + 1] if level < max_level else None
+    dept_id = getattr(ticket, "escalated_to_department", None)
+    dept_label = staff_department_label(dept_id) if dept_id else None
+    can_pick_up = (
+        staff
+        and not closed
+        and bool(dept_id)
+        and user_can_pick_up_department_ticket(user, dept_id)
+    )
 
     return {
         "is_raiser": is_raiser,
         "can_escalate": can_escalate,
         "can_escalate_staff": can_escalate_staff,
+        "can_pick_up": can_pick_up,
+        "escalated_to_department": dept_id,
+        "escalated_to_department_label": dept_label,
         "can_accept": can_accept,
         "can_close": can_close_raiser or can_close_staff,
         "can_close_raiser": can_close_raiser,
@@ -195,6 +208,7 @@ def escalate_ticket_for_user(
     reason: str | None = None,
     target_role: str | None = None,
     assign_to_user_id: int | None = None,
+    escalate_to_department: str | None = None,
 ) -> dict:
     flags = ticket_flow_flags(db, user, ticket)
     staff = _is_staff(user, ticket)
@@ -203,26 +217,70 @@ def escalate_ticket_for_user(
 
     case = case_service.get_case(db, ticket.case_id) if ticket.case_id else None
 
-    if staff and (target_role or assign_to_user_id):
+    if staff and (target_role or assign_to_user_id or escalate_to_department):
+        extra = f" Reason: {reason.strip()}" if reason and reason.strip() else ""
+        roles = ticket_esc.escalation_roles(ticket.topic)
+        ticket.escalation_level = min((ticket.escalation_level or 0) + 1, max(len(roles) - 1, 0))
+        ticket.status = TicketStatus.IN_PROGRESS
+
+        if escalate_to_department:
+            dept_id = validate_staff_department(escalate_to_department)
+            if not dept_id:
+                raise ValueError("Choose a department to escalate to")
+            members = list_staff_in_department(db, dept_id)
+            if not members:
+                label = staff_department_label(dept_id) or dept_id
+                raise ValueError(f"No active staff in {label}")
+            ticket.escalated_to_department = dept_id
+            ticket.assigned_to_user_id = None
+            label = staff_department_label(dept_id) or dept_id.replace("_", " ").title()
+            _add_system_message(
+                db,
+                ticket,
+                user.id,
+                f"[Escalated] Routed to {label} department queue — any team member can pick this up.{extra}",
+            )
+            return {
+                "escalated_to_department": dept_id,
+                "notified_user_ids": [m.id for m in members],
+                "escalation_level": ticket.escalation_level,
+            }
+
         if assign_to_user_id:
+            from app.services.ticket_escalation_targets_service import list_staff_escalation_targets
+
             target_user = db.get(User, assign_to_user_id)
-            if not target_user or not target_user.is_active:
+            allowed_ids = {u.id for u in list_staff_escalation_targets(db, limit=5000)}
+            if not target_user or not target_user.is_active or target_user.id not in allowed_ids:
                 raise ValueError("Selected user is not available")
             ticket.assigned_to_user_id = assign_to_user_id
+            ticket.escalated_to_department = None
             dest = f"{target_user.full_name} ({primary_portal_label(list(target_user.role_names))})"
-        elif target_role:
+            _add_system_message(
+                db,
+                ticket,
+                user.id,
+                f"[Escalated] Assigned to {dest}.{extra}",
+            )
+            return {"assigned_to_user_id": ticket.assigned_to_user_id, "escalation_level": ticket.escalation_level}
+
+        if target_role:
             uid = ticket_esc.find_assignee_for_role(db, target_role, case)
             if not uid:
                 raise ValueError(f"No active user found for {role_label(target_role)}")
             ticket.assigned_to_user_id = uid
+            ticket.escalated_to_department = None
             target_user = db.get(User, uid)
             dest = f"{target_user.full_name if target_user else role_label(target_role)} ({role_label(target_role)})"
-        else:
-            dest = "support"
-        roles = ticket_esc.escalation_roles(ticket.topic)
-        ticket.escalation_level = min((ticket.escalation_level or 0) + 1, max(len(roles) - 1, 0))
-        ticket.status = TicketStatus.IN_PROGRESS
-        extra = f" Reason: {reason.strip()}" if reason and reason.strip() else ""
+            _add_system_message(
+                db,
+                ticket,
+                user.id,
+                f"[Escalated] Assigned to {dest}.{extra}",
+            )
+            return {"assigned_to_user_id": ticket.assigned_to_user_id, "escalation_level": ticket.escalation_level}
+
+        dest = "support"
         _add_system_message(
             db,
             ticket,
@@ -247,6 +305,24 @@ def escalate_ticket_for_user(
         f"[Escalated] {who} escalated to level {level} ({role_label.replace('_', ' ')}).{extra}",
     )
     return result
+
+
+def pick_up_department_ticket(db: Session, user: User, ticket: SupportTicket) -> dict:
+    flags = ticket_flow_flags(db, user, ticket)
+    if not flags.get("can_pick_up"):
+        raise ValueError("This ticket is not in your department queue")
+    dept_id = ticket.escalated_to_department
+    label = staff_department_label(dept_id) or dept_id
+    ticket.assigned_to_user_id = user.id
+    ticket.escalated_to_department = None
+    ticket.status = TicketStatus.IN_PROGRESS
+    _add_system_message(
+        db,
+        ticket,
+        user.id,
+        f"[Picked up] {user.full_name} took this ticket from the {label} queue.",
+    )
+    return {"assigned_to_user_id": user.id}
 
 
 def reopen_ticket_by_raiser(

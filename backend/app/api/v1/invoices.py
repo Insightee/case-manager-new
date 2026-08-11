@@ -23,6 +23,8 @@ from app.schemas.report import ReviewAction
 from app.services import invoice_service
 from app.services import invoice_billing_service
 from app.services import statement_dispute_service
+from app.services import therapist_statement_pdf_service
+from app.services import invoice_ledger_service
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -128,6 +130,39 @@ def list_invoices(
     if user_has_permission(user, "invoice.generate") and not user_has_permission(user, "invoice.approve"):
         invoices = [i for i in invoices if i.therapist_user_id == user.id]
     return [_invoice_read(i, db) for i in invoices]
+
+
+@router.get("/ledger")
+def therapist_ledger(
+    year: Optional[int] = Query(None, ge=2000, le=2100),
+    month: Optional[str] = Query(None, description="Short month label e.g. Jul"),
+    case_id: Optional[int] = Query(None, ge=1),
+    status: Optional[str] = Query(None, description="Invoice status e.g. PAID, IN_REVIEW"),
+    therapist_user_id: Optional[int] = Query(None, ge=1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "invoice.approve") and not user_has_permission(user, "invoice.generate"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    if user_has_permission(user, "invoice.approve") and not user_has_feature(user, "invoices"):
+        raise HTTPException(status_code=403, detail="Billing module access required")
+
+    target_therapist_id = user.id
+    if user_has_permission(user, "invoice.approve") and therapist_user_id is not None:
+        target_therapist_id = therapist_user_id
+    elif user_has_permission(user, "invoice.generate") and not user_has_permission(user, "invoice.approve"):
+        if therapist_user_id is not None and therapist_user_id != user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        target_therapist_id = user.id
+
+    return invoice_ledger_service.therapist_ledger_payload(
+        db,
+        target_therapist_id,
+        year=year,
+        month=month,
+        case_id=case_id,
+        status=status,
+    )
 
 
 @router.get("/preview")
@@ -423,6 +458,31 @@ def export_preview_csv(
         content=content,
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="invoice-preview-{month}.csv"'},
+    )
+
+
+@router.get("/{invoice_id}/pdf")
+def export_invoice_pdf(
+    invoice_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if user_has_permission(user, "invoice.generate") and not user_has_permission(user, "invoice.approve"):
+        if invoice.therapist_user_id != user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif not user_has_permission(user, "invoice.approve") and not user_has_permission(user, "invoice.generate"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    therapist = db.get(User, invoice.therapist_user_id)
+    if not therapist:
+        raise HTTPException(status_code=404, detail="Therapist not found")
+    content, filename = therapist_statement_pdf_service.build_therapist_statement_pdf(db, invoice, therapist)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

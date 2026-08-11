@@ -8,11 +8,14 @@ import {
   applyLogSavedToCaseLogs,
   applyLogSavedToSessions,
   patchCachesAfterLogSave,
+  patchCachesAfterPendingLogDiscarded,
   patchCachesAfterSessionCancel,
   patchCachesAfterSessionEnd,
 } from '../../lib/therapistSessionLogCache.js'
+import { isPendingLogBlock } from '../../lib/sessionStartRules.js'
 import { formatScheduleWhen } from '../../lib/therapistSchedule.js'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
+import { PendingLogGate, discardPendingLogWithDraft } from '../daily-logs/PendingLogGate.jsx'
 import { SubmitSessionLogForm } from '../daily-logs/SubmitSessionLogForm.jsx'
 import { SessionLogHistoryRow } from '../daily-logs/SessionLogHistoryRow.jsx'
 import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
@@ -53,6 +56,7 @@ export function CaseSessionsPanel({
   const [historyMonth, setHistoryMonth] = useState('ALL')
   const [historyYear, setHistoryYear] = useState(() => String(new Date().getFullYear()))
   const [cancelSessionBusy, setCancelSessionBusy] = useState(false)
+  const [discardBusy, setDiscardBusy] = useState(false)
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -94,6 +98,13 @@ export function CaseSessionsPanel({
     () => sessions.filter((s) => s.status === 'COMPLETED' && !s.has_daily_log),
     [sessions],
   )
+  const blockingLogSession = useMemo(() => {
+    if (!needsLog.length) return null
+    return [...needsLog].sort((a, b) =>
+      String(b.scheduled_date || '').localeCompare(String(a.scheduled_date || '')),
+    )[0]
+  }, [needsLog])
+  const pendingLogBlocked = Boolean(blockingLogSession) && !active
   const past = useMemo(
     () =>
       sessions
@@ -252,7 +263,31 @@ export function CaseSessionsPanel({
       void load({ silent: true })
       onScheduleChange?.()
     } catch (err) {
+      if (err?.status === 409 && isPendingLogBlock(err.detail)) {
+        setError(
+          err.detail.message ||
+            'This client\'s previous visit still needs a log before adding another session.',
+        )
+        return
+      }
       setError(err.message || 'Could not add session')
+    }
+  }
+
+  async function handleDiscardPendingLog(session) {
+    if (!session?.id) return
+    setDiscardBusy(true)
+    setError('')
+    try {
+      const cancelled = await discardPendingLogWithDraft(session.id)
+      patchCachesAfterPendingLogDiscarded(cancelled)
+      setSuccess('Draft visit removed — you can start a new session for this client.')
+      void load({ silent: true })
+      onScheduleChange?.()
+    } catch (err) {
+      setError(err.message || 'Could not remove the draft visit')
+    } finally {
+      setDiscardBusy(false)
     }
   }
 
@@ -267,6 +302,15 @@ export function CaseSessionsPanel({
 
       {error ? <p className="ic-session-composer__error">{error}</p> : null}
       {success ? <p className="ic-case-sessions__success">{success}</p> : null}
+
+      {blockingLogSession && !logSession ? (
+        <PendingLogGate
+          session={blockingLogSession}
+          busy={discardBusy}
+          onCompleteLog={(s) => openLogForm(s, { required: true })}
+          onDiscard={handleDiscardPendingLog}
+        />
+      ) : null}
 
       {scheduleItems.length > 0 ? (
         <section className="ic-case-sessions__block ic-case-sessions__block--upcoming">
@@ -343,6 +387,7 @@ export function CaseSessionsPanel({
           lockCaseLabel={childLabel || `${childName} · ${caseCode}`}
           upcomingSessions={upcomingAll}
           disabled={!!active}
+          pendingLogBlocked={pendingLogBlocked}
           onSessionStarted={() => void load({ silent: true })}
           onManualSession={handleManual}
           onError={setError}

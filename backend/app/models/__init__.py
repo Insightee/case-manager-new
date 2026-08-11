@@ -22,7 +22,19 @@ from app.models.client_billing import (
     ClientInvoiceLine,
     ClientPayment,
 )
+from app.models.client_package_cycle import ClientPackageCycle, PackageBillingMode
 from app.models.ledger_billing import BillingLedger, BillingPeriodFlag, Organisation, ProductBillingRule
+from app.models.billing_period_snapshot import BillingMonthClose, CaseBillingPeriodSnapshot
+from app.models.billing_readiness_exception_rule import (
+    BillingReadinessExceptionRule,
+    BillingReadinessExceptionSeverity,
+    BillingReadinessExceptionType,
+)
+from app.models.finance_writable import (
+    CaseFinanceNote,
+    FinanceCorrectionProposal,
+    FinancePayoutDeduction,
+)
 from app.models.billing_step6 import BillingCalcException, CaseClientRatePeriod
 from app.models.child import Child
 from app.models.daily_log import DailyLog
@@ -60,6 +72,12 @@ from app.models.slot import BookingSource, SlotStatus, TherapistSlot
 from app.models.support_ticket import SupportTicket, TicketCategory, TicketMessage
 from app.models.ticket_attachment import TicketAttachment
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
+from app.models.therapist_payout_settlement import (
+    TherapistPayoutBatch,
+    TherapistPayoutBatchStatus,
+    TherapistPayoutTransfer,
+    TherapistPayoutTransferStatus,
+)
 from app.models.email_log import EmailLog, EmailLogStatus
 from app.models.email_suppression import EmailSuppression
 from app.models.password_reset import PasswordResetToken
@@ -81,11 +99,15 @@ __all__ = [
     "ClientInvoiceLine",
     "CaseBillingPreference",
     "CarePackage",
+    "ClientPackageCycle",
+    "PackageBillingMode",
     "ClientPayment",
     "BillingDispute",
     "ProductBillingRule",
     "BillingLedger",
     "BillingPeriodFlag",
+    "BillingMonthClose",
+    "CaseBillingPeriodSnapshot",
     "BillingCalcException",
     "CaseClientRatePeriod",
     "Organisation",

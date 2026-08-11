@@ -34,7 +34,7 @@ import { resolveSessionDeepLink } from '../../lib/sessionDeepLink.js'
 import { existingVisitForDay, sessionToLogShape } from '../../lib/sessionDayConflict.js'
 import { redirectForSessionConflict, startClinicalSession } from '../../lib/sessionApi.js'
 import { todayIsoIST } from '../../lib/datetime.js'
-import { canStartSessionToday, isAbsenceConflict, isPendingLogBlock } from '../../lib/sessionStartRules.js'
+import { canStartSessionToday, getBlockingLogForCase, isAbsenceConflict, isPendingLogBlock } from '../../lib/sessionStartRules.js'
 import { PendingLogGate, discardPendingLogWithDraft } from './PendingLogGate.jsx'
 import { EditActualTimesModal } from './EditActualTimesModal.jsx'
 import { ActiveSessionCard } from './ActiveSessionCard.jsx'
@@ -98,8 +98,6 @@ export function DailyLogsPage() {
   const activeInProgress = active?.status === 'IN_PROGRESS' ? active : null
   const stalePrevious = workspace?.stale_previous_sessions || []
   const needsLogRaw = workspace?.needs_log || []
-  const blockingLogSession = workspace?.blocking_log_session || null
-  const pendingLogBlocked = Boolean(blockingLogSession) && !activeInProgress
   const logs = Array.isArray(logsQuery.data) ? logsQuery.data : unwrapList(logsQuery.data || [])
   const needsLog = useMemo(
     () => filterSessionsWithoutAbsence(needsLogRaw, logs),
@@ -208,11 +206,22 @@ export function DailyLogsPage() {
     () => sortLogsBySessionDate(filterByMonth(logs)),
     [filterByMonth, logs],
   )
+  const filteredNeedsLog = useMemo(
+    () => needsLog.filter((s) => logMatchesMonth(s, logYear, logMonth)),
+    [needsLog, logYear, logMonth],
+  )
 
   const displayUpcoming = useMemo(() => {
     if (!composerCaseId) return upcoming
     return upcoming.filter((s) => s.case_id === composerCaseId)
   }, [upcoming, composerCaseId])
+
+  const composerBlockingSession = useMemo(
+    () => (composerCaseId ? getBlockingLogForCase(needsLog, composerCaseId) : null),
+    [needsLog, composerCaseId],
+  )
+  const pendingLogBlockedForComposer =
+    Boolean(composerBlockingSession) && !activeInProgress
 
   useEffect(() => {
     setScheduledSessionHint('')
@@ -699,17 +708,18 @@ export function DailyLogsPage() {
   async function handleStart(sessionId, sessionMeta = null, { allowDuplicate = false } = {}) {
     setError('')
     setSuccess('')
-    if (pendingLogBlocked && blockingLogSession?.id !== sessionId) {
-      setError(
-        'Your most recent visit still needs a log. Complete it below or remove the draft visit to continue.',
-      )
-      return
-    }
     const meta =
       sessionMeta ||
       upcoming.find((s) => s.id === sessionId) ||
       needsLog.find((s) => s.id === sessionId) ||
       { id: sessionId, scheduled_date: todayIsoIST() }
+    const caseBlocking = getBlockingLogForCase(needsLog, meta.case_id)
+    if (caseBlocking && caseBlocking.id !== sessionId && !activeInProgress) {
+      setError(
+        'This client\'s most recent visit still needs a log. Complete it below or remove the draft visit to continue.',
+      )
+      return
+    }
     const guard = canStartSessionToday(meta)
     if (!guard.ok) {
       setError(guard.message)
@@ -876,7 +886,10 @@ export function DailyLogsPage() {
       void loadAll({ silent: true })
     } catch (err) {
       if (err?.status === 409 && isPendingLogBlock(err.detail)) {
-        setError(err.detail.message || 'Finish your previous visit log before adding another session.')
+        setError(
+          err.detail.message ||
+            'This client\'s previous visit still needs a log before adding another session.',
+        )
         return
       }
       if (err?.status === 409 && isAbsenceConflict(err.detail)) {
@@ -1011,10 +1024,10 @@ export function DailyLogsPage() {
         <div className="ic-alert ic-alert--success">{success}</div>
       ) : null}
 
-      {pendingLogBlocked && !logSession ? (
+      {composerCaseId && composerBlockingSession && !logSession ? (
         <PendingLogGate
-          session={blockingLogSession}
-          draftSaved={draftIds.has(blockingLogSession.id)}
+          session={composerBlockingSession}
+          draftSaved={draftIds.has(composerBlockingSession.id)}
           busy={discardBusy}
           onCompleteLog={(s) => openLogForm(s, { required: true })}
           onDiscard={handleDiscardPendingLog}
@@ -1129,7 +1142,8 @@ export function DailyLogsPage() {
         <TherapistSessionComposer
           upcomingSessions={upcoming}
           liveBlocked={!!activeInProgress}
-          pendingLogBlocked={pendingLogBlocked}
+          pendingLogBlocked={pendingLogBlockedForComposer}
+          selectedCaseId={composerCaseId}
           onSelectedCaseChange={setComposerCaseId}
           existingSessionConflict={existingSessionConflict}
           walkInConflict={walkInConflict}
@@ -1187,9 +1201,30 @@ export function DailyLogsPage() {
               {scheduledSessionHint}
             </p>
           ) : null}
-          <h3 className="ic-section-head__title" style={{ marginBottom: 12 }}>
-            Upcoming sessions
-          </h3>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            <h3 className="ic-section-head__title" style={{ margin: 0 }}>
+              Upcoming sessions
+            </h3>
+            {composerCaseId ? (
+              <button
+                type="button"
+                className="ic-btn ic-btn--ghost"
+                style={{ padding: '6px 12px', fontSize: '0.8125rem' }}
+                onClick={() => setComposerCaseId(null)}
+              >
+                Show all clients
+              </button>
+            ) : null}
+          </div>
           {displayUpcoming.length === 0 ? (
             <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>
               {composerCaseId
@@ -1205,8 +1240,9 @@ export function DailyLogsPage() {
                 const durMins = actualDurationMinsIST(s.actual_start_at, s.actual_end_at)
                 const isInProgress = s.status === 'IN_PROGRESS'
                 const dayExisting = existingVisitForDay(s, deepLinkContext)
+                const caseBlocking = getBlockingLogForCase(needsLog, s.case_id)
                 const canStartFresh =
-                  !activeInProgress && !pendingLogBlocked && !dayExisting && canStartSessionToday(s).ok
+                  !activeInProgress && !caseBlocking && !dayExisting && canStartSessionToday(s).ok
                 return (
                   <article
                     key={s.id}
@@ -1356,17 +1392,17 @@ export function DailyLogsPage() {
               onClick={() => setLogTab(t.id)}
             >
               {t.label}
-              {t.id === 'needs' && needsLog.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{needsLog.length}</span>
+              {t.id === 'needs' && filteredNeedsLog.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{filteredNeedsLog.length}</span>
               ) : null}
-              {t.id === 'child_absent' && childAbsentLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{childAbsentLogs.length}</span>
+              {t.id === 'child_absent' && filteredChildAbsent.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{filteredChildAbsent.length}</span>
               ) : null}
-              {t.id === 'leave' && leaveLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{leaveLogs.length}</span>
+              {t.id === 'leave' && filteredLeave.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{filteredLeave.length}</span>
               ) : null}
-              {t.id === 'pending' && pendingLogs.length > 0 ? (
-                <span className="ic-session-log-tabs__count">{pendingLogs.length}</span>
+              {t.id === 'pending' && filteredPending.length > 0 ? (
+                <span className="ic-session-log-tabs__count">{filteredPending.length}</span>
               ) : null}
             </button>
           ))}
@@ -1374,11 +1410,11 @@ export function DailyLogsPage() {
 
         <div className="ic-session-log-tab-panel" role="tabpanel">
           {logTab === 'needs' ? (
-            needsLog.length === 0 ? (
-              <p className="ic-empty-hint">No sessions waiting for a log.</p>
+            filteredNeedsLog.length === 0 ? (
+              <p className="ic-empty-hint">No sessions waiting for a log in {MONTHS[logMonth]} {logYear}.</p>
             ) : (
               <div className="ic-session-log-recent">
-                {needsLog.map((s) => (
+                {filteredNeedsLog.map((s) => (
                   <div key={s.id} className="ic-session-log-recent__row">
                     <div style={{ flex: 1 }}>
                       <p className="ic-session-log-recent__title">

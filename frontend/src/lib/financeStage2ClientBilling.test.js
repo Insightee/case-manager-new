@@ -70,4 +70,13 @@ describe('Stage 2 client billing static contracts', () => {
     assert.match(css, /--font-headline/)
     assert.match(css, /--font-mono/)
   })
+
+  it('failed client-billing load shows error banner instead of silent zero KPIs', () => {
+    const tab = read('src/components/admin-portal/AdminClientInvoicesTab.jsx')
+    assert.match(tab, /loadError/)
+    assert.match(tab, /Client billing data is unavailable/)
+    assert.match(tab, /admin-alert--warning/)
+    assert.match(tab, /setLoadError/)
+    assert.doesNotMatch(tab, /catch\s*\(\s*\(\)\s*=>\s*setSummary\s*\(\s*null\s*\)/)
+  })
 })

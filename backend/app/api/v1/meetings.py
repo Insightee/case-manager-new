@@ -182,6 +182,19 @@ def _validate_meeting_duration(duration: int) -> None:
         raise HTTPException(status_code=400, detail="Meeting duration must be 30, 45, 60, or 90 minutes")
 
 
+def meeting_availability_slots_grid() -> list[time]:
+    """30-minute start times from 09:00 through 20:00."""
+    anchor = date(2000, 1, 1)
+    start = datetime.combine(anchor, time(9, 0))
+    end = datetime.combine(anchor, time(20, 0))
+    slots: list[time] = []
+    cur = start
+    while cur <= end:
+        slots.append(cur.time())
+        cur += timedelta(minutes=30)
+    return slots
+
+
 def _all_case_product_modules(db: Session) -> set[str]:
     from app.core.rbac_access import build_module_registry
     allowed: set[str] = set()
@@ -512,11 +525,7 @@ def get_meetings_availability(
         attendees.append(mentor_id)
     attendees.extend(admin_ids)
 
-    # 1-hour grid from 09:00 to 18:00
-    slots_grid = [
-        time(9, 0), time(10, 0), time(11, 0), time(12, 0),
-        time(13, 0), time(14, 0), time(15, 0), time(16, 0), time(17, 0)
-    ]
+    slots_grid = meeting_availability_slots_grid()
 
     results = []
     has_available = False

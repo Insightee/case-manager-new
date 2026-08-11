@@ -18,3 +18,4 @@ class EmailEvent(str, Enum):
     SESSION_LOG_REVIEWED = "session_log_reviewed"
     LEAVE_APPROVED = "leave_approved"
     SECURITY_ALERT = "security_alert"
+    TICKET_ESCALATED = "ticket_escalated"

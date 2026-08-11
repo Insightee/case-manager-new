@@ -111,6 +111,8 @@ def generate_draft_from_ledger(
             service_label=case.service_type,
             session_status=status_label,
             amount_inr=float(row.total_inr),
+            unit_rate_inr=float(row.rate_inr),
+            quantity=float(row.quantity or 1),
             billing_ledger_id=row.id,
             gst_rate_percent=row.gst_rate_percent,
             gst_amount_inr=row.gst_amount_inr,

@@ -158,8 +158,10 @@ def test_payout_queue_payable_now_split():
         row = next(s for s in body["statements"] if s["invoiceId"] == inv.id)
         assert row["status"] == "QUERIED"
         assert row["contestedInr"] == session_amount
-        assert row["payableNowInr"] == round(float(inv.amount_inr) - session_amount, 2)
-        assert row["needsReview"] is False
+        # Queue payable-now uses settlement ladder net (gross from case lines), not legacy amount_inr.
+        expected_net = round(float(session_amount) * 0.9, 2)  # 10% default TDS on gross 300
+        assert row["payableNowInr"] == max(0.0, round(expected_net - session_amount, 2))
+        assert row["needsReview"] is True  # QUERIED statements are blocked until resolved
     finally:
         db.close()
 
@@ -187,6 +189,13 @@ def test_rbac_blocks_parent_and_therapist():
 
 
 def test_monday_brief_matches_source_endpoints():
+    db = SessionLocal()
+    try:
+        from app.seed.finance_walkthrough_fixture import _cleanup_walkthrough_cases
+
+        _cleanup_walkthrough_cases(db)
+    finally:
+        db.close()
     seed_run()
     finance_h = _login("finance@demo.com")
     brief = client.get("/api/v1/admin/finance-overview/monday-brief", headers=finance_h).json()

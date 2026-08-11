@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { buildClientBillingScopeQuery, parseClientInvoiceFilters } from '../../lib/invoiceFilters.js'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -19,26 +20,35 @@ function statusPillClass(inv) {
 }
 
 export function AdminReceivablesTab({ openInvoiceId = null }) {
+  const [searchParams] = useSearchParams()
+  const scopeFilters = useMemo(() => parseClientInvoiceFilters(searchParams), [searchParams])
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [search, setSearch] = useState('')
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [drawerId, setDrawerId] = useState(openInvoiceId ? Number(openInvoiceId) : null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     try {
       const params = new URLSearchParams()
+      const scopeQs = buildClientBillingScopeQuery(scopeFilters)
+      if (scopeQs.startsWith('?')) {
+        new URLSearchParams(scopeQs.slice(1)).forEach((value, key) => params.set(key, value))
+      }
       if (search.trim()) params.set('search', search.trim())
       if (overdueOnly) params.set('overdue_only', 'true')
       const qs = params.toString()
       setData(await apiFetch(`/api/v1/admin/client-billing/receivables${qs ? `?${qs}` : ''}`))
-    } catch {
+    } catch (err) {
       setData(null)
+      setLoadError(err?.message || 'Receivables are unavailable right now.')
     } finally {
       setLoading(false)
     }
-  }, [search, overdueOnly])
+  }, [scopeFilters, search, overdueOnly])
 
   useEffect(() => {
     load()
@@ -54,6 +64,9 @@ export function AdminReceivablesTab({ openInvoiceId = null }) {
   return (
     <>
       <AdminPanel title="Receivables (money in)">
+        {loadError ? (
+          <AdminEmptyState title="Receivables could not load" description={loadError} />
+        ) : null}
         {totals ? (
           <div className="client-inv__summary-grid" style={{ marginBottom: 16 }}>
             <div className="client-inv__summary-card">

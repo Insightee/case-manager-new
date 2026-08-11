@@ -11,6 +11,7 @@ from app.core.database import Base
 
 class ExternalProvider(str, enum.Enum):
     ZOHO_BOOKS = "ZOHO_BOOKS"
+    RAZORPAY_PAYOUT = "RAZORPAY_PAYOUT"
 
 
 class ExternalRef(Base):

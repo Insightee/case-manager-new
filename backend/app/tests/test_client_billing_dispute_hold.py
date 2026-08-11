@@ -96,10 +96,23 @@ def test_partial_dispute_allows_payment_on_remainder():
     if collectible <= 0:
         return
     pay_amt = min(100, collectible)
+    from io import BytesIO
+
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf"
+        b"\xc0\x00\x00\x00\x03\x00\x01\x00\x05\xfe\xd4\xef\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
     claim = client.post(
         f"/api/v1/parent/billing/invoices/{inv_id}/payment-claims",
         headers=headers,
-        data={"amount_inr": str(pay_amt), "method": "UPI", "reference": "DISPUTE-HOLD-TEST"},
+        data={
+            "amount_inr": str(pay_amt),
+            "method": "UPI",
+            "reference": "DISPUTE-HOLD-TEST",
+            "payment_date": "2026-05-10",
+        },
+        files={"proof": ("proof.png", BytesIO(png), "image/png")},
     )
     assert claim.status_code == 201, claim.text
     assert claim.json().get("paymentStatus") == "pending_review"
@@ -135,7 +148,17 @@ def test_all_lines_held_collectible_zero_pay_blocked():
     claim = client.post(
         f"/api/v1/parent/billing/invoices/{inv_id}/payment-claims",
         headers=headers,
-        data={"amount_inr": "100", "method": "UPI", "reference": "SHOULD-BLOCK"},
+        data={
+            "amount_inr": "100",
+            "method": "UPI",
+            "reference": "SHOULD-BLOCK",
+            "payment_date": "2026-05-10",
+        },
+        files={"proof": ("proof.png", __import__("io").BytesIO(
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf"
+            b"\xc0\x00\x00\x00\x03\x00\x01\x00\x05\xfe\xd4\xef\x00\x00\x00\x00IEND\xaeB`\x82"
+        ), "image/png")},
     )
     assert claim.status_code == 400
 

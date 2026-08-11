@@ -164,7 +164,7 @@ export function InvoiceComposerPreviewPanel({
           ) : null}
           {w.action === 'review_ledger' && preview.case?.caseId ? (
             <Link
-              to={`/admin/invoices?tab=ledger&case_id=${preview.case.caseId}`}
+              to={`/admin/invoices?tab=client&sub=ledger&case_id=${preview.case.caseId}`}
               className="admin-btn admin-btn--ghost admin-btn--sm"
             >
               Session ledger

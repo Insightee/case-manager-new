@@ -1152,6 +1152,23 @@
   gap: 8px;
 }
 
+.ic-session-composer__clear-client {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ic-primary);
+  cursor: pointer;
+  min-height: 44px;
+  line-height: 44px;
+}
+
+.ic-session-composer__clear-client:hover {
+  text-decoration: underline;
+}
+
 .ic-session-composer__add-client {
   align-self: flex-start;
   padding: 0;

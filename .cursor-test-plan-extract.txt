@@ -1,0 +1,182 @@
+﻿InsighteCase
+Finance & Billing ΓÇö Test Plan
+For the tech / QA team ┬╖ Test against seeded data, adversarially ┬╖ Nothing here moves real money (gateways mocked)
+Purpose & how to test
+This is a money module. The bugs that matter are silent ΓÇö a wrong number that looks plausible, a payout to the wrong person, a family shown the wrong bill. Happy-path clicking will not find them. The tests below are built to disagree with the system on realistic data.
+Test on the seeded fixture, not an empty demo. The IC-WK case fixture is the standard ΓÇö it contains the edge conditions (mismatches, held disputes, package drawdown, transition months). Every bug you find should become a new case in that fixture so it stays caught.
+Environment: test/local only, never the production (Railway) database. All external gateways (Zoho, Razorpay) are MOCKED and flag-gated ΓÇö do not test live integration here (see Out of Scope).
+Priority: P1 = money-correctness or data-exposure (a wrong balance, a wrong payout, a leak). P2 = important but lower blast radius. Fix and re-test P1 before P2.
+Test cases
+A. Money-out correctness (therapist payouts) ΓÇö highest priority
+ID
+Test scenario / seed condition
+Expected result
+Pri
+TP-01
+Seed IC-WK-014: a deduction larger than gross pay. Attempt to export the payout.
+Export is BLOCKED, marked needs_review. ZERO payout transfer rows created (check before and after). Net is never shown or stored as negative.
+P1
+TP-02
+Seed one approved statement. Export it (key A). Attempt to export the same statement again with a different key (B).
+Second export REJECTED ΓÇö the invoice is locked once exported. Exactly one transfer exists. No double-pay.
+P1
+TP-03
+Seed a transition/handover month: therapists A and B on the same case, same month. Give A a deduction. Settle both.
+A's payout reflects A's deduction. B's payout does NOT. Deductions never cross therapists.
+P1
+TP-04
+Export a batch, then mock one transfer as FAILED.
+The failed invoice returns to the queue (APPROVED), re-eligible for a later batch. Never silently lost or left stuck.
+P1
+TP-05
+Seed gross Γé╣10,000, TDS 10%, a Γé╣500 deduction.
+Net = 10,000 ΓêÆ 1,000 (TDS) ΓêÆ 500 = Γé╣8,500. Deductions apply AFTER TDS.
+P1
+TP-06
+Seed a therapist at 0% TDS, and a case with a non-round share ratio (e.g. 23000/28000).
+0% ΓåÆ net = gross ΓêÆ deductions, no error, not ΓÇ£not configured.ΓÇ¥ Non-round ΓåÆ correct rounding, and no rupee drift accumulates across repeated corrections.
+P2
+B. Money-in & linked corrections
+ID
+Test scenario / seed condition
+Expected result
+Pri
+TP-07
+Seed a case where the therapist invoice disagrees with the app's activity, with a stored share ratio. Finance picks INVOICE_WRONG and edits the client amount.
+A confirm screen shows all FOUR numbers (old/new client, old/new payout). Approve updates client invoice AND therapist payout by the case's own ratio, with a reason on both. Reject moves nothing.
+P1
+TP-08
+During a linked correction, force a failure on the second write (payout side).
+The first write (client side) rolls back. No partial state where the client is revised but the payout is stale.
+P1
+TP-09
+Seed a case with NO stored share ratio. Attempt a linked correction.
+Blocked, marked needs_review. The system never guesses the payout.
+P1
+TP-10
+Seed a mismatch. Test INVOICE_WRONG (fix invoice to match record) and RECORD_WRONG (record was wrong, invoice stands) separately.
+Opposite cascades ΓÇö different amounts move. Both are audited with actor and reason.
+P1
+C. Cross-surface consistency (this has broken twice)
+ID
+Test scenario / seed condition
+Expected result
+Pri
+TP-11
+Seed a month with several cases and one known outstanding invoice. Open the Overview cards, the invoices list, the receivables tab, and the parent's own view.
+The SAME outstanding number appears on every surface. Any disagreement is a bug.
+P1
+TP-12
+Seed an invoice with one disputed/held line.
+Collectible = total ΓêÆ held line, shown identically on every surface including the parent view. The remainder is payable.
+P1
+TP-13
+Simulate an API/load failure on a finance screen.
+The screen shows an error state ΓÇö NEVER Γé╣0 (Γé╣0 reads as ΓÇ£nothing owedΓÇ¥ and is dangerous).
+P2
+D. Boundaries & finalisation locks
+ID
+Test scenario / seed condition
+Expected result
+Pri
+TP-14
+Seed a session delivered on the last day of the month but approved on the 1st of the next.
+It falls in the correct billing month once, not double-counted across months and not lost in the gap.
+P2
+TP-15
+Close a payout cycle. After 30 days from credit, attempt to add a retrospective session or change a count.
+Rejected ΓÇö the cycle is final. But a claim RAISED within 30 days stays open until resolved, even past day 30.
+P2
+TP-16
+Prepaid invoice: attempt a dispute on day 46. Postpaid: attempt on day 31.
+Both rejected ΓÇö windows are 45 days (prepaid, from payment) and 30 (postpaid, from invoice). A dispute raised in time stays open.
+P2
+TP-17
+Seed a Γé╣0 invoice (fully absent month) and a case where a deduction exactly equals gross (net = 0).
+Γé╣0 invoice handled as payable-nothing, not an error. Net = 0 is a valid zero payout, not treated as blocked-negative.
+P2
+E. Role visibility (the leak class that started this build)
+ID
+Test scenario / seed condition
+Expected result
+Pri
+TP-18
+Log in as a therapist. View statements, breakdowns, previews.
+No client rate, package price, or margin appears anywhere ΓÇö in the UI or the underlying data payload.
+P1
+TP-19
+Log in as a parent. Attempt to view another family's invoice and any margin.
+Own case only. No margin, no other family's data, even by direct URL.
+P1
+TP-20
+Seed a user who is BOTH a therapist and a parent (their own child is a client). View their child's invoice under each role.
+The therapist role does not expose client pricing on their own child's invoice. Roles do not leak into each other.
+P1
+TP-21
+Log in as finance/admin.
+Full client detail including margin is visible (this is allowed for finance).
+P2
+F. Mocked gateway & payment claims
+ID
+Test scenario / seed condition
+Expected result
+Pri
+TP-22
+With the payout release flag OFF, run a status sync (the mock always reports ΓÇ£paidΓÇ¥).
+No invoice flips to PAID. Nothing marks paid while release is off.
+P1
+TP-23
+As a parent, submit ΓÇ£I paid offlineΓÇ¥ with a reference and date.
+Claim is PENDING_REVIEW. Balance does NOT move. The claim never self-marks the invoice paid.
+P1
+TP-24
+As finance, confirm a payment claim; then re-confirm the same one; separately, reject another.
+Confirm moves the balance (PARTIALLY_PAID / PAID correctly). Re-confirm is a no-op ΓÇö balance and status unchanged. Reject returns to the parent with a reason.
+P2
+TP-25
+Push the same invoice to (mocked) Zoho twice.
+Same external id both times ΓÇö no duplicate Zoho invoice. A push failure never blocks or rolls back the local invoice.
+P2
+G. Disputes
+ID
+Test scenario / seed condition
+Expected result
+Pri
+TP-26
+As a parent, dispute a specific invoice line.
+A grievance/support ticket is auto-created and linked to the dispute. The disputed line is held; the rest stays payable.
+P2
+TP-27
+As finance, resolve a dispute with a correction.
+The hold clears, collectible recomputes, the invoice is modified through the correction flow (audited), and the resolution is visible to the parent.
+P2
+H. Master sheet & exceptions
+ID
+Test scenario / seed condition
+Expected result
+Pri
+TP-28
+Seed a clean case, a session-count mismatch, a leave mismatch, and a status-conflict case.
+Exception pills read CLEAR / WARN / BLOCK correctly per the rules table. A genuinely clean row reads CLEAR (not a stray WARN).
+P2
+TP-29
+Spot-check a case: compare the master-sheet ΓÇ£engine amountΓÇ¥ to the invoice composer's amount for the same case.
+They match exactly. The readiness sheet cannot diverge from what actually gets billed.
+P1
+TP-30
+Seed a package with 8 of 10 sessions consumed, plus 2 extra sessions beyond the package.
+Shows drawdown (8/10), no false BLOCK for ΓÇ£0 sessions.ΓÇ¥ The 2 extra sessions are billed to the client as extras, on top of the package.
+P2
+Reporting defects
+For each defect, report:
+Money impact first ΓÇö a wrong balance or wrong payout outranks any cosmetic issue. Rank by rupees at risk, not by how visible it is.
+The exact seed condition to reproduce (which IC-WK case, or the constructed data), so a fix can be tested against the same case.
+Expected vs actual numbers ΓÇö the actual value seen, not ΓÇ£looks wrong.ΓÇ¥
+Empty vs broken ΓÇö distinguish ΓÇ£shows nothing because nothing was seededΓÇ¥ (not a bug) from ΓÇ£shows nothing despite seeded dataΓÇ¥ (a bug).
+Out of scope for this round
+Do not test or report these as broken ΓÇö they are deliberately not done yet:
+Live Zoho / Razorpay ΓÇö both are mocked behind flags. A mocked ΓÇ£paidΓÇ¥ is not a real payment. Live wiring is a later, separate step.
+Transition payout amounts, notice-period pay, reassignment margin thresholds ΓÇö parked pending business sign-off on the rates. The transition recording structure may exist, but the money amounts are not final.
+Mobile layout & final visual design ΓÇö hardening passes not yet done; admin finance screens are desktop-first by design.
+Full security review of non-payout surfaces ΓÇö only the payout path has been security-reviewed so far.
+The goal of this round: find the money-logic bugs on mocked gateways, before live integration. Those are the ones cheapest to fix now and most expensive to find after cutover.

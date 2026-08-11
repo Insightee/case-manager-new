@@ -27,12 +27,14 @@ import {
   moduleAccessSummary,
   primaryLandingHint,
 } from '../../lib/rbacDisplay.js'
+import { staffDepartmentLabel } from '../../lib/staffDepartments.js'
 
 const EMPTY_FORM = {
   email: '',
   full_name: '',
   password: 'demo123',
   role_names: ['CASE_MANAGER'],
+  department: null,
   region: '',
   module_assignments: [],
   module_access_grants: {},
@@ -44,6 +46,7 @@ export function AdminStaffManageSection({
   catalog,
   roleDefaults,
   assignableRoles = [],
+  staffDepartments = [],
   deprecatedRoles = [],
   staff,
   staffTotal = 0,
@@ -65,6 +68,7 @@ export function AdminStaffManageSection({
   const [editOverrides, setEditOverrides] = useState({})
   const [editViewOnly, setEditViewOnly] = useState(false)
   const [editRoles, setEditRoles] = useState([])
+  const [editDepartment, setEditDepartment] = useState(null)
   const [showCreatePassword, setShowCreatePassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [rowBusy, setRowBusy] = useState(null)
@@ -92,6 +96,7 @@ export function AdminStaffManageSection({
         catalog,
         grantsFromAssignments,
         includeAccess: true,
+        staffDepartments,
       })
     } catch (err) {
       onError?.(err.message || 'Could not export staff CSV')
@@ -149,6 +154,7 @@ export function AdminStaffManageSection({
             email: form.email,
             full_name: form.full_name?.trim() || undefined,
             role_name: role,
+            department: form.department || undefined,
             send_email: true,
             ...access,
           }),
@@ -175,6 +181,7 @@ export function AdminStaffManageSection({
             password: form.password,
             full_name: form.full_name,
             role_names: form.role_names,
+            department: form.department || undefined,
             region: form.region || null,
             ...access,
           }),
@@ -217,6 +224,7 @@ export function AdminStaffManageSection({
         method: 'PATCH',
         body: JSON.stringify({
           role_names: editRoles,
+          department: editDepartment,
           ...access,
         }),
       })
@@ -355,6 +363,9 @@ export function AdminStaffManageSection({
             <RbacEditor
               catalog={catalog}
               assignableRoles={assignableRoles}
+              staffDepartments={staffDepartments}
+              selectedDepartment={form.department}
+              onDepartmentChange={(department) => setForm((prev) => ({ ...prev, department }))}
               roleDefaults={roleDefaults}
               selectedRoles={form.role_names}
               onRoleChange={setRoles}
@@ -450,6 +461,7 @@ export function AdminStaffManageSection({
                     <th style={{ width: 36 }} aria-label="Select" />
                     <th>Name</th>
                     <th>Email</th>
+                    <th>Department</th>
                     <th>Role</th>
                     <th>Access</th>
                     <th>Status</th>
@@ -472,6 +484,13 @@ export function AdminStaffManageSection({
                         </td>
                         <td>
                           <span className="admin-table__primary">{u.email}</span>
+                        </td>
+                        <td>
+                          {staffDepartmentLabel(u.department, staffDepartments) ? (
+                            <span className="admin-chip">{staffDepartmentLabel(u.department, staffDepartments)}</span>
+                          ) : (
+                            <span className="admin-muted">—</span>
+                          )}
                         </td>
                         <td>
                           <div className="admin-chip-row">
@@ -532,6 +551,7 @@ export function AdminStaffManageSection({
                                   setEditOverrides(u.feature_overrides ?? {})
                                   setEditViewOnly(u.is_view_only ?? false)
                                   setEditRoles([...(u.roles || [])])
+                                  setEditDepartment(u.department || null)
                                 }
                               }}
                             >
@@ -552,7 +572,7 @@ export function AdminStaffManageSection({
                       </tr>
                       {editingId === u.id ? (
                         <tr>
-                          <td colSpan={8} style={{ padding: '12px 16px', background: '#f8fafc' }}>
+                          <td colSpan={9} style={{ padding: '12px 16px', background: '#f8fafc' }}>
                             {hasDeprecatedStaffRole(u.roles) ? (
                               <p className="admin-alert admin-alert--warn rbac-editor__hint">
                                 Legacy role detected. Prefer Module Admin, Case Manager, or Finance when re-provisioning access.
@@ -561,6 +581,9 @@ export function AdminStaffManageSection({
                             <RbacEditor
                               catalog={catalog}
                               assignableRoles={assignableRoles}
+                              staffDepartments={staffDepartments}
+                              selectedDepartment={editDepartment}
+                              onDepartmentChange={setEditDepartment}
                               roleDefaults={roleDefaults}
                               selectedRoles={editRoles}
                               onRoleChange={setEditRoles}
@@ -631,6 +654,7 @@ export function AdminStaffManageSection({
                                   setEditOverrides(u.feature_overrides ?? {})
                                   setEditViewOnly(u.is_view_only ?? false)
                                   setEditRoles([...(u.roles || [])])
+                                  setEditDepartment(u.department || null)
                                 }
                               }}
                             >
@@ -649,6 +673,11 @@ export function AdminStaffManageSection({
                           </div>
                         }
                       >
+                        {staffDepartmentLabel(u.department, staffDepartments) ? (
+                          <p className="admin-muted" style={{ margin: '0 0 8px' }}>
+                            {staffDepartmentLabel(u.department, staffDepartments)}
+                          </p>
+                        ) : null}
                         <div className="admin-chip-row" style={{ marginBottom: 8 }}>
                           {(u.roles || []).map((r) => {
                             const id = String(r).toUpperCase()
@@ -682,6 +711,9 @@ export function AdminStaffManageSection({
                             <RbacEditor
                               catalog={catalog}
                               assignableRoles={assignableRoles}
+                              staffDepartments={staffDepartments}
+                              selectedDepartment={editDepartment}
+                              onDepartmentChange={setEditDepartment}
                               roleDefaults={roleDefaults}
                               selectedRoles={editRoles}
                               onRoleChange={setEditRoles}

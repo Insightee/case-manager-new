@@ -74,6 +74,7 @@ def render_template(template_key: str, payload: dict[str, Any], *, locale: str =
         "session_log_reviewed": _session_log_reviewed,
         "leave_approved_parent": _leave_approved_parent,
         "leave_approved_therapist": _leave_approved_therapist,
+        "ticket_escalated": _ticket_escalated,
     }
     fn = renderers.get(template_key)
     if not fn:
@@ -416,6 +417,40 @@ def _leave_approved_therapist(payload: dict[str, Any], *, locale: str = "en") ->
         f"<p>Your leave from <strong>{escape(str(date_range))}</strong> has been approved.</p>"
         f"<p><strong>{cancelled_count}</strong> booked session(s) were cancelled and clients were notified.</p>"
         f"{_button(portal_url, 'View leave') if portal_url else ''}"
+    )
+    html = _layout(title=subject, body_html=body, locale=locale)
+    return subject, text, html
+
+
+def _ticket_escalated(payload: dict[str, Any], *, locale: str = "en") -> tuple[str, str, str]:
+    full_name = payload.get("full_name", "there")
+    ticket_subject = payload.get("ticket_subject", "Support ticket")
+    ticket_url = (payload.get("ticket_url") or "").strip()
+    actor_name = payload.get("actor_name", "A colleague")
+    department_label = payload.get("department_label")
+    if department_label:
+        subject = f"Ticket escalated to {department_label}: {ticket_subject}"
+        routed_html = f"escalated to the <strong>{escape(str(department_label))}</strong> department queue"
+        routed_text = f"escalated to the {department_label} department queue"
+        detail = "Anyone in your department can pick this up in the portal."
+    else:
+        subject = f"Ticket escalated to you: {ticket_subject}"
+        routed_html = "escalated directly to you"
+        routed_text = "escalated directly to you"
+        detail = "Please open the ticket and respond when you can."
+    text = (
+        f"Hi {full_name},\n\n"
+        f"{actor_name} {routed_text}.\n\n"
+        f"Ticket: {ticket_subject}\n"
+        f"{detail}\n\n"
+        + (f"Open ticket: {ticket_url}\n" if ticket_url else "")
+    )
+    body = (
+        f"<p>Hi {escape(str(full_name))},</p>"
+        f"<p><strong>{escape(str(actor_name))}</strong> {routed_html}.</p>"
+        f"<p><strong>Ticket:</strong> {escape(str(ticket_subject))}</p>"
+        f"<p>{escape(detail)}</p>"
+        f"{_button(ticket_url, 'Open ticket') if ticket_url else ''}"
     )
     html = _layout(title=subject, body_html=body, locale=locale)
     return subject, text, html
