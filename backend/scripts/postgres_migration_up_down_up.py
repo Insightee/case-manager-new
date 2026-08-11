@@ -67,6 +67,31 @@ def _run_alembic(*args: str) -> None:
     )
 
 
+def _linear_merge_parent(script: ScriptDirectory, head: str, parents: tuple[str, ...]) -> str:
+    """Pick the merge parent that subsumes sibling branch work (for downgrade proof)."""
+    for tip in parents:
+        if not any(
+            tip != other and tip in _revision_ancestor_ids(script, other)
+            for other in parents
+        ):
+            return tip
+    return parents[0]
+
+
+def _revision_ancestor_ids(script: ScriptDirectory, revision_id: str) -> set[str]:
+    rev = script.get_revision(revision_id)
+    if rev is None:
+        return set()
+    down = rev.down_revision
+    if down is None:
+        return set()
+    parent_ids = down if isinstance(down, (tuple, list)) else (down,)
+    result = set(parent_ids)
+    for parent in parent_ids:
+        result |= _revision_ancestor_ids(script, parent)
+    return result
+
+
 def _head_and_parent() -> tuple[str, str]:
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
@@ -79,7 +104,7 @@ def _head_and_parent() -> tuple[str, str]:
     if parent is None:
         raise RuntimeError(f"Head revision {head} has no down_revision — cannot run downgrade proof")
     if isinstance(parent, tuple):
-        raise RuntimeError(f"Head {head} has merge parent {parent} — resolve to single lineage first")
+        parent = _linear_merge_parent(script, head, parent)
     return head, parent
 
 

@@ -479,6 +479,13 @@ register_head(
     seed=_seed_f3a4b5c6d7e9,
 )
 
+register_head(
+    "h4i5j6k7l8m9",
+    tables_added=[],
+    columns_added=[("support_tickets", "escalated_to_department")],
+    seed=_seed_f3a4b5c6d7e9,
+)
+
 
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
