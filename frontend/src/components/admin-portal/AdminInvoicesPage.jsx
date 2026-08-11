@@ -41,19 +41,16 @@ const LEGACY_TAB_REDIRECTS = {
   reports: { tab: 'client', sub: 'reports' },
 }
 
-const BILLING_TOOLS = [
-  { id: 'invoices', label: 'Invoices' },
-  { id: 'rules', label: 'Rules & packages' },
-  { id: 'ledger', label: 'Session ledger' },
-  { id: 'reports', label: 'Reports' },
-]
-
-const PAYMENT_TOOLS = [
-  { id: 'payments', label: 'Payments' },
-  { id: 'rules', label: 'Rules & packages' },
-  { id: 'ledger', label: 'Session ledger' },
-  { id: 'reports', label: 'Reports' },
-]
+function billingSubTabs(parentTab) {
+  const mainLabel = parentTab === 'payments' ? 'Client payments' : 'Client invoices'
+  const mainId = parentTab === 'payments' ? 'payments' : 'invoices'
+  return [
+    { id: mainId, label: mainLabel },
+    { id: 'rules', label: 'Rules & packages' },
+    { id: 'ledger', label: 'Session ledger' },
+    { id: 'reports', label: 'Reports' },
+  ]
+}
 
 function defaultBillingSub(parentTab) {
   return parentTab === 'payments' ? 'payments' : 'invoices'
@@ -65,23 +62,6 @@ function financeWidgetFooter(widget) {
     client_claims: '/admin/invoices?tab=payments',
   }
   return map[widget.id] || '/admin/invoices/compose?queue=not_invoiced_this_month'
-}
-
-function FinanceInlineNav({ tools, activeId, onChange }) {
-  return (
-    <nav className="admin-finance-inline-nav" aria-label="Invoices and payments tools">
-      {tools.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          className={`admin-finance-inline-nav__link${activeId === t.id ? ' is-active' : ''}`}
-          onClick={() => onChange(t.id)}
-        >
-          {t.label}
-        </button>
-      ))}
-    </nav>
-  )
 }
 
 export function AdminInvoicesPage() {
@@ -118,8 +98,6 @@ export function AdminInvoicesPage() {
   const billingSub = isBillingArea
     ? searchParams.get('sub') || defaultBillingSub(activeTab)
     : null
-  const billingTools = activeTab === 'payments' ? PAYMENT_TOOLS : BILLING_TOOLS
-  const billingMainSub = defaultBillingSub(activeTab)
 
   useEffect(() => {
     apiFetch('/api/v1/admin/dashboard/summary')
@@ -215,7 +193,13 @@ export function AdminInvoicesPage() {
       />
 
       {isBillingArea ? (
-        <FinanceInlineNav tools={billingTools} activeId={billingSub} onChange={setBillingSub} />
+        <PortalTabBar
+          className="admin-page__tabs-scroll admin-page__subtabs"
+          ariaLabel="Invoices and payments tools"
+          activeId={billingSub}
+          onChange={setBillingSub}
+          tabs={billingSubTabs(activeTab)}
+        />
       ) : null}
 
       {activeTab === 'overview' ? (

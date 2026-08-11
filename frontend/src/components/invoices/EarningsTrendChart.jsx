@@ -37,16 +37,14 @@ export function EarningsTrendChart({ data }) {
 
       <div className="mt-6 flex h-40 items-end gap-1.5 sm:gap-2" role="img" aria-label="Bar chart of monthly amounts">
         {data.map((d) => {
-          const h = Math.round((d.amountINR / max) * 100)
+          const barPx = Math.max(Math.round((d.amountINR / max) * 144), 10)
           return (
-            <div key={d.month} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-              <div className="flex w-full flex-1 items-end justify-center">
-                <div
-                  className="w-full max-w-[48px] rounded-t-lg bg-gradient-to-t from-indigo-600 to-indigo-400 opacity-90 transition-all hover:opacity-100"
-                  style={{ height: `${Math.max(h, 8)}%` }}
-                  title={`${d.month}: ${formatK(d.amountINR)}`}
-                />
-              </div>
+            <div key={d.month} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
+              <div
+                className="w-full max-w-[48px] rounded-t-lg bg-gradient-to-t from-indigo-600 to-indigo-400 opacity-90 transition-all hover:opacity-100"
+                style={{ height: `${barPx}px` }}
+                title={`${d.month}: ${formatK(d.amountINR)}`}
+              />
               <span className="max-w-full truncate text-center text-[10px] font-medium text-slate-500 sm:text-xs">
                 {d.month.replace(/\d{4}/, '').trim()}
               </span>

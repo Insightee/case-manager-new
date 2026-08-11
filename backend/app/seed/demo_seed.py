@@ -665,6 +665,42 @@ def run():
             )
 
         if not db.scalars(select(Invoice).where(Invoice.therapist_user_id == therapist.id)).first():
+            therapist.external_employee_id = therapist.external_employee_id or "1406"
+            therapist.job_title = therapist.job_title or "Senior Therapist"
+            db.add(
+                Invoice(
+                    therapist_user_id=therapist.id,
+                    month="Jul 2026",
+                    amount_inr=42500,
+                    subtotal_inr=45000,
+                    leave_deduction_inr=2500,
+                    sessions_count=32,
+                    status=InvoiceStatus.PAID,
+                    paid_amount_inr=42500,
+                )
+            )
+            db.add(
+                Invoice(
+                    therapist_user_id=therapist.id,
+                    month="Jun 2026",
+                    amount_inr=38000,
+                    subtotal_inr=40000,
+                    leave_deduction_inr=2000,
+                    sessions_count=28,
+                    status=InvoiceStatus.PAID,
+                    paid_amount_inr=38000,
+                )
+            )
+            db.add(
+                Invoice(
+                    therapist_user_id=therapist.id,
+                    month="May 2026",
+                    amount_inr=36000,
+                    subtotal_inr=36000,
+                    sessions_count=26,
+                    status=InvoiceStatus.APPROVED,
+                )
+            )
             db.add(
                 Invoice(
                     therapist_user_id=therapist.id,
@@ -747,7 +783,7 @@ def run():
                 parent_user_id=parent_user.id,
                 case_id=case1.id,
                 invoice_type=ClientInvoiceType.POSTPAID,
-                status=ClientInvoiceStatus.GENERATED,
+                status=ClientInvoiceStatus.SENT,
                 billing_month="2026-05",
                 service_type=case1.service_type,
                 product_module=case1.product_module,
@@ -760,7 +796,7 @@ def run():
                 total_inr=4800,
                 amount_paid_inr=0,
                 notes="Postpaid monthly invoice for homecare sessions in May 2026.",
-                sent_at=None,
+                sent_at=datetime.now(timezone.utc),
             )
             db.add(inv_may)
             db.flush()

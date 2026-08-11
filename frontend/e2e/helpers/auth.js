@@ -53,38 +53,41 @@ export async function navigateTherapist(page, label) {
 }
 
 /** @param {import('@playwright/test').Page} page */
+async function waitForPortalShell(page) {
+  const shellReady = page
+    .getByRole('navigation', { name: 'Portal navigation' })
+    .or(page.getByRole('button', { name: /Open navigation menu/i }))
+    .first()
+  await shellReady.waitFor({ state: 'visible', timeout: 20_000 })
+}
+
+/** @param {import('@playwright/test').Page} page */
 export async function loginParent(page) {
   await page.goto('/clientlogin')
   await page.getByRole('textbox', { name: 'Email' }).fill('parent@demo.com')
   await page.getByLabel('Password').fill('demo123')
   await page.getByRole('button', { name: 'Sign in' }).click()
   await page.waitForURL(/\/parent/)
-  await portalNav(page).waitFor()
+  await waitForPortalShell(page)
 }
 
 /** @param {import('@playwright/test').Page} page */
 export async function loginAdmin(page) {
-  await page.goto('/adminlogin')
-  await page.getByRole('textbox', { name: 'Email' }).fill('superadmin@demo.com')
-  await page.getByLabel('Password').fill('demo123')
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await login(page, { email: 'superadmin@demo.com', path: '/adminlogin' })
   await page.waitForURL(/\/admin/)
-  await portalNav(page).waitFor()
+  await waitForPortalShell(page)
 }
 
 /** @param {import('@playwright/test').Page} page */
 export async function loginCaseManager(page) {
-  await page.goto('/adminlogin')
-  await page.getByRole('textbox', { name: 'Email' }).fill('casemanager@demo.com')
-  await page.getByLabel('Password').fill('demo123')
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await login(page, { email: 'casemanager@demo.com', path: '/adminlogin' })
   await page.waitForURL(/\/admin/)
-  await portalNav(page).waitFor()
+  await waitForPortalShell(page)
 }
 
 /** @param {import('@playwright/test').Page} page */
 export async function loginFinance(page) {
   await login(page, { email: 'finance@demo.com', path: '/adminlogin' })
   await page.waitForURL(/\/admin/)
-  await portalNav(page).waitFor()
+  await waitForPortalShell(page)
 }

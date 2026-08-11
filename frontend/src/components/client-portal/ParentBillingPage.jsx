@@ -5,7 +5,9 @@ import { apiFetch, apiDownload, apiUpload } from '../../lib/apiClient.js'
 import './parent-payments.css'
 import './parent-portal-filters.css'
 import '../../styles/finance-stage2.css'
+import '../../styles/finance-dashboard-modern.css'
 import { formatApiDateIN, formatTimestampDateIN } from '../../lib/datetime.js'
+import { formatPaymentMethod } from '../../lib/paymentMethodLabels.js'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './ParentFilterBar.jsx'
 import { ParentComingSoon } from './ParentComingSoon.jsx'
 import { PARENT_BILLING_COMING_SOON } from '../../lib/parentPortalFeatureFlags.js'
@@ -147,15 +149,9 @@ function ParentBillingPageFull() {
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState('UPI')
   const [payRef, setPayRef] = useState('')
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [payNotes, setPayNotes] = useState('')
   const [payProof, setPayProof] = useState(null)
-  const [provisional, setProvisional] = useState(false)
-
-  useEffect(() => {
-    apiFetch('/api/v1/parent/billing/runtime-config')
-      .then((cfg) => setProvisional(Boolean(cfg?.provisional)))
-      .catch(() => setProvisional(true))
-  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -268,19 +264,35 @@ function ParentBillingPageFull() {
   async function submitPaymentClaim(e) {
     e?.preventDefault?.()
     if (!selected || !payAmount) return
+    const ref = payRef.trim()
+    if (!ref) {
+      setError('Please add the payment reference or UPI transaction ID.')
+      return
+    }
+    if (!payDate) {
+      setError('Please select the date you made the payment.')
+      return
+    }
+    if (!payProof) {
+      setError('Please upload a payment screenshot or receipt.')
+      return
+    }
     setActing(true)
     setError('')
     try {
       const fd = new FormData()
       fd.append('amount_inr', payAmount)
       fd.append('method', payMethod)
-      if (payRef) fd.append('reference', payRef)
+      fd.append('reference', ref)
+      fd.append('payment_date', payDate)
       if (payNotes) fd.append('notes', payNotes)
-      if (payProof) fd.append('proof', payProof)
+      fd.append('proof', payProof)
       await apiUpload(`/api/v1/parent/billing/invoices/${selected.id}/payment-claims`, fd)
       setMessage('Payment submitted for review. Finance will confirm once verified.')
       setPaymentOpen(false)
       setPayProof(null)
+      setPayRef('')
+      setPayDate(new Date().toISOString().slice(0, 10))
       const detail = await apiFetch(`/api/v1/parent/billing/invoices/${selected.id}`)
       setSelected(detail)
       await load()
@@ -367,17 +379,11 @@ function ParentBillingPageFull() {
   const urgentBanner = (summary.overdueCount || 0) > 0
 
   return (
-    <div className="parent-pay finance-stage2">
-      <header className="parent-pay__hero">
+    <div className="parent-pay finance-stage2 finance-dash">
+      <header className="parent-pay__hero finance-dash__hero">
         <h1>Your statements</h1>
+        <p>Review session charges, pay offline or online, and track dispute updates in one place.</p>
       </header>
-
-      {provisional ? (
-        <div className="finance-stage2-banner finance-stage2-banner--mint" role="status">
-          These amounts are from your care plan statements. If something looks off, you can raise a dispute from any
-          open invoice.
-        </div>
-      ) : null}
 
       {error ? (
         <p className="parent-pay__alert parent-pay__alert--error" role="alert">
@@ -386,43 +392,65 @@ function ParentBillingPageFull() {
       ) : null}
       {message ? <p className="parent-pay__alert parent-pay__alert--success">{message}</p> : null}
 
-      {(summary.needsPaymentCount || 0) > 0 && (summary.dueTotalInr || 0) > 0 ? (
-        <section className={`parent-pay__banner ${urgentBanner ? 'parent-pay__banner--urgent' : ''}`}>
-          <div className="parent-pay__banner-main">
-            <h2>{urgentBanner ? 'Payment overdue' : 'Payment required'}</h2>
-            <p>
-              {urgentBanner
-                ? `${summary.overdueCount} overdue · ${summary.needsPaymentCount} open`
-                : `${summary.needsPaymentCount} invoice(s) with balance due`}
-            </p>
-          </div>
-          <strong className="parent-pay__banner-amount">{formatInr(summary.dueTotalInr)}</strong>
-        </section>
-      ) : null}
-
       {dashboard?.summary ? (
-        <ul className="parent-pay__stats parent-pay__stats--compact" aria-label="Payment summary">
-          <li className="parent-pay__stat parent-pay__stat--due">
-            <strong>{formatInr(summary.dueTotalInr)}</strong>
-            <span>Balance due</span>
-          </li>
-          <li className="parent-pay__stat">
-            <strong>{summary.needsPaymentCount ?? 0}</strong>
-            <span>Needs payment</span>
-          </li>
-          <li className="parent-pay__stat parent-pay__stat--overdue">
-            <strong>{summary.overdueCount ?? 0}</strong>
-            <span>Overdue</span>
-          </li>
-          <li className="parent-pay__stat">
-            <strong>{summary.invoiceCount ?? 0}</strong>
-            <span>All invoices</span>
-          </li>
-          <li className="parent-pay__stat">
-            <strong>{summary.activePackages ?? 0}</strong>
-            <span>Active packages</span>
-          </li>
-        </ul>
+        <section className="parent-pay__summary" aria-label="Billing overview">
+          {(summary.needsPaymentCount || 0) > 0 && (summary.dueTotalInr || 0) > 0 ? (
+            <article
+              className={`parent-pay__summary-feature ${urgentBanner ? 'parent-pay__summary-feature--urgent' : 'parent-pay__summary-feature--due'}`}
+            >
+              <div className="parent-pay__summary-feature-icon" aria-hidden>
+                {urgentBanner ? '!' : '₹'}
+              </div>
+              <div className="parent-pay__summary-feature-body">
+                <p className="parent-pay__summary-feature-kicker">
+                  {urgentBanner ? 'Action needed' : 'Payment due'}
+                </p>
+                <h2>{urgentBanner ? 'Payment overdue' : 'Balance outstanding'}</h2>
+                <p>
+                  {urgentBanner
+                    ? `${summary.overdueCount} overdue · ${summary.needsPaymentCount} open invoice${summary.needsPaymentCount === 1 ? '' : 's'}`
+                    : `${summary.needsPaymentCount} invoice${summary.needsPaymentCount === 1 ? '' : 's'} awaiting payment`}
+                </p>
+              </div>
+              <div className="parent-pay__summary-feature-amount-wrap">
+                <span className="parent-pay__summary-feature-amount-label">Total due</span>
+                <strong className="parent-pay__summary-feature-amount">{formatInr(summary.dueTotalInr)}</strong>
+              </div>
+            </article>
+          ) : null}
+
+          <ul className="parent-pay__summary-grid finance-dash__grid">
+            {!((summary.needsPaymentCount || 0) > 0 && (summary.dueTotalInr || 0) > 0) ? (
+              <li className="finance-dash__card finance-dash__card--accent">
+                <span className="finance-dash__card-k">Balance due</span>
+                <strong>{formatInr(summary.dueTotalInr)}</strong>
+                <span className="finance-dash__card-meta">Across open invoices</span>
+              </li>
+            ) : null}
+            <li className="finance-dash__card">
+              <span className="finance-dash__card-k">Needs payment</span>
+              <strong>{summary.needsPaymentCount ?? 0}</strong>
+              <span className="finance-dash__card-meta">Open balances</span>
+            </li>
+            <li className={`finance-dash__card ${(summary.overdueCount ?? 0) > 0 ? 'finance-dash__card--warn' : ''}`}>
+              <span className="finance-dash__card-k">Overdue</span>
+              <strong>{summary.overdueCount ?? 0}</strong>
+              <span className="finance-dash__card-meta">
+                {(summary.overdueCount ?? 0) > 0 ? 'Past due date' : 'All current'}
+              </span>
+            </li>
+            <li className="finance-dash__card">
+              <span className="finance-dash__card-k">All invoices</span>
+              <strong>{summary.invoiceCount ?? 0}</strong>
+              <span className="finance-dash__card-meta">Statement history</span>
+            </li>
+            <li className="finance-dash__card">
+              <span className="finance-dash__card-k">Active packages</span>
+              <strong>{summary.activePackages ?? 0}</strong>
+              <span className="finance-dash__card-meta">Session packs</span>
+            </li>
+          </ul>
+        </section>
       ) : null}
 
       {showDueStrip ? (
@@ -657,10 +685,6 @@ function ParentBillingPageFull() {
             </div>
 
             <div className="parent-pay__dialog-body">
-              <p className="parent-pay__help">
-                Here&apos;s your {formatMonth(selected.billingMonth)} statement. Payments are usually coordinated with
-                your case coordinator (UPI, bank transfer, or as agreed). Use Download PDF for your records.
-              </p>
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -868,8 +892,9 @@ function ParentBillingPageFull() {
                                 : p.paymentStatus}
                         </span>
                         <p className="parent-pay__pay-line finance-stage2-mono">
-                          ₹{p.amountInr?.toLocaleString('en-IN')} · {p.method}
+                          ₹{p.amountInr?.toLocaleString('en-IN')} · {formatPaymentMethod(p.method)}
                           {p.reference ? ` · ${p.reference}` : ''}
+                          {p.paidAt ? ` · ${formatApiDateIN(String(p.paidAt).slice(0, 10)) || p.paidAt.slice(0, 10)}` : ''}
                         </p>
                         {p.rejectionNote ? <p className="parent-pay__muted">{p.rejectionNote}</p> : null}
                         {p.paymentStatus === 'confirmed' ? (
@@ -904,6 +929,9 @@ function ParentBillingPageFull() {
               {paymentOpen ? (
                 <section className="parent-pay__payment-form">
                   <h3>I paid offline</h3>
+                  <p className="parent-pay__help">
+                    Upload your payment proof so finance can verify and confirm the receipt.
+                  </p>
                   <form onSubmit={submitPaymentClaim}>
                     <label className="parent-pay__field">
                       Amount (INR)
@@ -916,8 +944,8 @@ function ParentBillingPageFull() {
                       />
                     </label>
                     <label className="parent-pay__field">
-                      Method
-                      <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+                      Payment mode
+                      <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} required>
                         <option value="UPI">UPI</option>
                         <option value="BANK_TRANSFER">Bank transfer</option>
                         <option value="CASH">Cash</option>
@@ -925,14 +953,25 @@ function ParentBillingPageFull() {
                       </select>
                     </label>
                     <label className="parent-pay__field">
-                      Reference (optional)
-                      <input value={payRef} onChange={(e) => setPayRef(e.target.value)} />
+                      Payment date
+                      <input
+                        type="date"
+                        required
+                        max={new Date().toISOString().slice(0, 10)}
+                        value={payDate}
+                        onChange={(e) => setPayDate(e.target.value)}
+                      />
                     </label>
                     <label className="parent-pay__field">
-                      Payment screenshot (optional)
+                      Reference / transaction ID
+                      <input value={payRef} onChange={(e) => setPayRef(e.target.value)} required />
+                    </label>
+                    <label className="parent-pay__field">
+                      Payment screenshot
                       <input
                         type="file"
                         accept="image/*,application/pdf"
+                        required
                         onChange={(e) => setPayProof(e.target.files?.[0] || null)}
                       />
                     </label>

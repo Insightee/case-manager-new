@@ -26,6 +26,25 @@
   color: var(--fct-text);
 }
 
+.finance-control-tower__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.finance-control-tower__month-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: min(100%, 220px);
+}
+
+.finance-control-tower__month-input {
+  min-height: 44px;
+}
+
 .finance-control-tower__meta {
   display: flex;
   flex-wrap: wrap;

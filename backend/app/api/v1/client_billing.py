@@ -211,16 +211,17 @@ async def parent_submit_payment_claim(
     request: Request,
     amount_inr: float = Form(...),
     method: str = Form(...),
-    reference: Optional[str] = Form(None),
+    reference: str = Form(...),
+    payment_date: str = Form(..., description="YYYY-MM-DD when payment was made"),
     notes: Optional[str] = Form(None),
-    proof: Optional[UploadFile] = File(None),
+    proof: UploadFile = File(...),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_parent(user)
     try:
         payment = await client_billing_service.submit_payment_claim(
-            db, user, invoice_id, amount_inr, method, reference, notes, proof
+            db, user, invoice_id, amount_inr, method, reference, payment_date, notes, proof
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1270,6 +1271,14 @@ def admin_reject_payment_claim(
     log_audit(db, actor_user_id=user.id, action="reject_payment", entity_type="client_payment", entity_id=payment_id, **meta)
     db.commit()
     return {"status": "rejected"}
+
+
+@admin_router.get("/payment-claims")
+def admin_list_payment_claims(
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    return client_billing_service.list_pending_payment_claims(db, user)
 
 
 @admin_router.get("/payments/{payment_id}/proof")

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState, Fragment } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { parseClientInvoiceFilters, buildClientBillingScopeQuery } from '../../lib/invoiceFilters.js'
 import { useBillingRuntimeConfig } from '../../hooks/useBillingRuntimeConfig.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
+import { formatInr, normalizeConfidence } from '../../lib/financeConfidence.js'
+import { isFinanceDashboardV1Enabled } from '../../lib/productFeatureFlags.js'
+import '../../styles/finance-dashboard-modern.css'
+import '../../styles/finance-control-tower.css'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -14,6 +17,24 @@ import {
   StatusBadge,
   formatCurrency,
 } from './ui/index.js'
+import { ConfidenceBadge } from './ui/ConfidenceBadge.jsx'
+
+const FINANCE_SUMMARY_FIELDS = [
+  { key: 'potentialBillable', label: 'Potential billable' },
+  { key: 'invoiced', label: 'Invoiced' },
+  { key: 'collected', label: 'Collected' },
+  { key: 'outstanding', label: 'Outstanding' },
+  { key: 'therapistPayable', label: 'Therapist payable' },
+  { key: 'exceptionImpact', label: 'Exception impact' },
+]
+
+function summaryMoneyLabel(mv) {
+  if (!mv || mv.value == null) return null
+  const amt = formatInr(mv.value)
+  if (!amt) return null
+  const conf = normalizeConfidence(mv.confidence)
+  return `${amt} · ${conf.charAt(0)}${conf.slice(1).toLowerCase()}`
+}
 
 function statusPillClass(status) {
   const key = (status || '').toLowerCase()
@@ -22,120 +43,112 @@ function statusPillClass(status) {
 }
 
 export function FinanceMondayBrief() {
-  const [searchParams] = useSearchParams()
-  const filters = parseClientInvoiceFilters(searchParams)
-  const [brief, setBrief] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const flagOn = isFinanceDashboardV1Enabled()
+  const monthFromUrl = searchParams.get('month')
+  const billingMonth = monthFromUrl || new Date().toISOString().slice(0, 7)
+  const [financeSummary, setFinanceSummary] = useState(null)
   const [loadError, setLoadError] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const setMonth = useCallback(
+    (ym) => {
+      const next = new URLSearchParams(searchParams)
+      next.set('tab', 'overview')
+      next.set('month', ym)
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
 
   useEffect(() => {
+    if (!flagOn) {
+      setFinanceSummary(null)
+      setLoadError(null)
+      setLoading(false)
+      return undefined
+    }
+    let cancelled = false
     setLoading(true)
     setLoadError(null)
-    const scopeQs = buildClientBillingScopeQuery(filters)
-    const briefQs = filters.month ? `?billing_month=${encodeURIComponent(filters.month)}` : ''
-    Promise.all([
-      apiFetch(`/api/v1/admin/client-billing/receivables${scopeQs}`),
-      apiFetch(`/api/v1/admin/finance-overview/monday-brief${briefQs}`),
-    ])
-      .then(([receivables, briefData]) => {
-        const totals = receivables?.totals || {}
-        setBrief({
-          ...briefData,
-          moneyIn: {
-            ...(briefData?.moneyIn || {}),
-            collectibleOutstandingInr: totals.outstandingInr,
-            overdueInr: totals.overdueInr,
-            overdueCount: totals.overdueCount,
-          },
-          receivablesSource: receivables,
-        })
+    const q = `billing_month=${encodeURIComponent(billingMonth)}`
+    apiFetch(`/api/v1/admin/finance-control-tower/summary?${q}`)
+      .then((data) => {
+        if (cancelled) return
+        setFinanceSummary(data?.financeSummary || null)
+        setLoadError(null)
       })
       .catch((err) => {
-        setBrief(null)
-        setLoadError(err?.message || 'Finance overview is unavailable right now.')
+        if (cancelled) return
+        setFinanceSummary(null)
+        setLoadError(err?.message || 'Finance summary unavailable')
       })
-      .finally(() => setLoading(false))
-  }, [searchParams])
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [billingMonth, flagOn])
 
-  if (loading) return <div className="admin-skeleton" style={{ minHeight: 120, marginBottom: 16 }} />
-  if (loadError) {
+  if (!flagOn) {
     return (
-      <AdminPanel title="Finance snapshot" padded style={{ marginBottom: 16 }}>
-        <AdminEmptyState title="Finance snapshot could not load" description={loadError} />
-      </AdminPanel>
+      <AdminEmptyState
+        title="Finance snapshot is not enabled"
+        description="Set VITE_ENABLE_FINANCE_DASHBOARD_V1=true to load monthly finance summary here. Client invoices and payments tabs stay available."
+      />
     )
   }
-  if (!brief) return null
 
-  const moneyIn = brief.moneyIn || {}
-  const moneyOut = brief.moneyOut || {}
-  const top = brief.thisWeek?.topItems || []
+  if (loading) return <div className="admin-skeleton" style={{ minHeight: 120, marginBottom: 16 }} />
 
   return (
-    <AdminPanel title="Finance snapshot" padded style={{ marginBottom: 16 }}>
-      <p className="admin-muted" style={{ marginTop: 0 }}>
-        {filters.month
-          ? `Outstanding figures for billing month ${filters.month} — same source as Client invoices and Receivables.`
-          : 'Outstanding figures across all billing months — same source as Client invoices and Receivables.'}
-      </p>
-      <div className="client-inv__summary-grid" style={{ marginBottom: 16 }}>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Money in · outstanding</span>
-          <strong>{formatCurrency(moneyIn.collectibleOutstandingInr)}</strong>
-          <Link to={brief.links?.receivables || '/admin/invoices?tab=receivables'} className="admin-link-sm">
-            Receivables →
-          </Link>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Overdue</span>
-          <strong>{formatCurrency(moneyIn.overdueInr)}</strong>
-          <span className="client-inv__summary-meta">{moneyIn.overdueCount ?? 0} invoice(s)</span>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Payment claims</span>
-          <strong>{moneyIn.paymentClaimsPending ?? 0}</strong>
-          <Link to={brief.links?.paymentClaims || '/admin/invoices?tab=payments'} className="admin-link-sm">
-            Review →
-          </Link>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Client disputes</span>
-          <strong>{moneyIn.openClientDisputes ?? 0}</strong>
-          <Link to={brief.links?.clientDisputes || '/admin/invoices?tab=disputes'} className="admin-link-sm">
-            Disputes →
-          </Link>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Money out · payable now</span>
-          <strong>{formatCurrency(moneyOut.totalPayableInr)}</strong>
-          <Link to={brief.links?.therapistPayoutQueue || '/admin/therapist-payouts?sub=payouts'} className="admin-link-sm">
-            Payout queue →
-          </Link>
-        </div>
-        <div className="client-inv__summary-card">
-          <span className="client-inv__summary-k">Statements pending</span>
-          <strong>{moneyOut.statementsPendingApproval ?? 0}</strong>
-          <span className="client-inv__summary-meta">{moneyOut.disputedQueriedCount ?? 0} disputed</span>
-        </div>
+    <AdminPanel title="Finance snapshot" padded className="finance-dash" style={{ marginBottom: 16 }}>
+      <div className="finance-control-tower__toolbar" style={{ marginBottom: 16 }}>
+        <label className="finance-control-tower__month-field">
+          <span className="client-inv__filter-label">Billing month</span>
+          <input
+            type="month"
+            className="client-inv__filter-input finance-control-tower__month-input"
+            value={billingMonth}
+            onChange={(e) => setMonth(e.target.value)}
+            aria-label="Billing month"
+          />
+        </label>
       </div>
-      {brief.thisWeek?.mostImportant ? (
-        <p style={{ margin: 0 }}>
-          <strong>Focus:</strong> {brief.thisWeek.mostImportant.label}
-        </p>
-      ) : top.length === 0 ? (
-        <p className="admin-muted" style={{ margin: 0 }}>Nothing urgent this week.</p>
+      {loadError ? (
+        <AdminEmptyState
+          title="Finance summary could not load"
+          description={
+            loadError.includes('Finance Control Tower is limited')
+              ? 'This summary is available to Finance and Super Admin roles.'
+              : loadError
+          }
+        />
+      ) : financeSummary ? (
+        <div className="finance-control-tower__summary-grid">
+          {FINANCE_SUMMARY_FIELDS.map((field) => {
+            const mv = financeSummary[field.key]
+            const label = summaryMoneyLabel(mv)
+            return (
+              <div key={field.key} className="finance-control-tower__summary-item">
+                <div className="finance-control-tower__summary-label">{field.label}</div>
+                <div className="finance-control-tower__summary-value">{label || '—'}</div>
+                <ConfidenceBadge
+                  confidence={mv?.confidence}
+                  reason={mv?.confidenceReason}
+                  materialSourceMissing={mv?.value == null}
+                />
+              </div>
+            )
+          })}
+        </div>
       ) : (
-        <ul className="admin-muted" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-          {top.map((item) => (
-            <li key={item.kind}>
-              <Link to={item.href}>{item.label}</Link>
-            </li>
-          ))}
-        </ul>
+        <AdminEmptyState
+          title="No finance summary for this month"
+          description="Try another billing month or check back after invoices and sessions are recorded."
+        />
       )}
-      <p className="admin-muted" style={{ marginTop: 12, marginBottom: 0, fontSize: '0.85rem' }}>
-        {moneyOut.approveDisabledNote}
-      </p>
     </AdminPanel>
   )
 }
@@ -254,27 +267,27 @@ export function TherapistPayoutQueuePanel() {
 
   return (
     <>
-      <AdminPanel title="Payout finance queue (money out)">
+      <AdminPanel title="Payout finance queue (money out)" className="finance-dash">
         {totals ? (
-          <div className="client-inv__summary-grid" style={{ marginBottom: 16 }}>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Pending approval</span>
+          <div className="finance-dash__grid" style={{ marginBottom: 16 }}>
+            <div className="finance-dash__card">
+              <span className="finance-dash__card-k">Pending approval</span>
               <strong>{totals.pendingCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Disputed / queried</span>
+            <div className="finance-dash__card finance-dash__card--warn">
+              <span className="finance-dash__card-k">Disputed / queried</span>
               <strong>{totals.disputedCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Clean approved</span>
+            <div className="finance-dash__card finance-dash__card--accent">
+              <span className="finance-dash__card-k">Clean approved</span>
               <strong>{totals.approvedCount ?? 0}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Payable now</span>
+            <div className="finance-dash__card finance-dash__card--accent">
+              <span className="finance-dash__card-k">Payable now</span>
               <strong>{formatCurrency(totals.totalPayableNowInr)}</strong>
             </div>
-            <div className="client-inv__summary-card">
-              <span className="client-inv__summary-k">Held (contested)</span>
+            <div className="finance-dash__card">
+              <span className="finance-dash__card-k">Held (contested)</span>
               <strong>{formatCurrency(totals.totalContestedInr)}</strong>
             </div>
           </div>
@@ -495,7 +508,7 @@ export function TherapistPayoutQueuePanel() {
           />
         )}
 
-        <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="finance-dash__sticky-action">
           <button
             type="button"
             className="admin-btn admin-btn--primary"

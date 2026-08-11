@@ -1410,9 +1410,20 @@ def admin_summary(
 
 
 MAX_PROOF_BYTES = 5 * 1024 * 1024
-ALLOWED_PROOF_MIME = frozenset(
-    {"image/jpeg", "image/png", "image/webp", "application/pdf"}
-)
+ALLOWED_PROOF_MIME = frozenset({"image/jpeg", "image/png", "image/webp", "application/pdf"})
+
+
+def _parse_parent_payment_date(raw: str) -> datetime:
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError("Payment date is required")
+    try:
+        paid_day = date.fromisoformat(text[:10])
+    except ValueError as exc:
+        raise ValueError("Payment date must be YYYY-MM-DD") from exc
+    if paid_day > date.today():
+        raise ValueError("Payment date cannot be in the future")
+    return datetime(paid_day.year, paid_day.month, paid_day.day, 12, 0, tzinfo=timezone.utc)
 
 
 async def _save_payment_proof(file: UploadFile, payment_id: int) -> tuple[str, str]:
@@ -1443,9 +1454,10 @@ async def submit_payment_claim(
     invoice_id: int,
     amount_inr: float,
     method: str,
-    reference: Optional[str],
+    reference: str,
+    payment_date: str,
     notes: Optional[str],
-    proof_file: Optional[UploadFile],
+    proof_file: UploadFile,
 ) -> ClientPayment:
     inv_detail = get_invoice_detail(db, user, invoice_id)
     balance = float(inv_detail.get("balanceInr") or 0)
@@ -1453,6 +1465,12 @@ async def submit_payment_claim(
         raise ValueError("Amount must be greater than zero")
     if amount_inr > balance + 0.01:
         raise ValueError("Amount exceeds invoice balance")
+    ref = (reference or "").strip()
+    if not ref:
+        raise ValueError("Payment reference is required")
+    if not proof_file or not proof_file.filename:
+        raise ValueError("Payment screenshot is required")
+    paid_at = _parse_parent_payment_date(payment_date)
     inv = db.get(ClientInvoice, invoice_id)
     if not inv:
         raise ValueError("Invoice not found")
@@ -1460,17 +1478,17 @@ async def submit_payment_claim(
         client_invoice_id=inv.id,
         amount_inr=amount_inr,
         method=PaymentMethod(method),
-        reference=reference,
+        reference=ref,
         notes=notes,
+        paid_at=paid_at,
         submitted_by_user_id=user.id,
         payment_status=ClientPaymentStatus.PENDING_REVIEW,
     )
     db.add(payment)
     db.flush()
-    if proof_file and proof_file.filename:
-        path, name = await _save_payment_proof(proof_file, payment.id)
-        payment.proof_file_path = path
-        payment.proof_file_name = name
+    path, name = await _save_payment_proof(proof_file, payment.id)
+    payment.proof_file_path = path
+    payment.proof_file_name = name
     notification_service.create_notification(
         db,
         user_id=user.id,
@@ -1613,6 +1631,42 @@ def payment_proof_download(db: Session, user: User, payment_id: int, *, admin: b
         filename=payment.proof_file_name or "proof",
         media_type="application/octet-stream",
     )
+
+
+def list_pending_payment_claims(db: Session, user: User) -> list[dict]:
+    from app.services.admin_scope_service import apply_case_scope
+
+    stmt = (
+        select(ClientPayment, ClientInvoice, Case, Child)
+        .join(ClientInvoice, ClientPayment.client_invoice_id == ClientInvoice.id)
+        .join(Case, ClientInvoice.case_id == Case.id)
+        .join(Child, Case.child_id == Child.id)
+        .where(ClientPayment.payment_status == ClientPaymentStatus.PENDING_REVIEW)
+        .order_by(ClientPayment.paid_at.desc())
+        .limit(100)
+    )
+    stmt = apply_case_scope(stmt, user)
+    rows = db.execute(stmt).all()
+    out: list[dict] = []
+    for pay, inv, case, child in rows:
+        out.append(
+            {
+                "id": pay.id,
+                "invoiceId": inv.id,
+                "invoiceNumber": inv.invoice_number,
+                "caseId": case.case_code,
+                "childName": child.full_name if child else None,
+                "amountInr": float(pay.amount_inr),
+                "method": pay.method.value,
+                "reference": pay.reference,
+                "paidAt": pay.paid_at.isoformat() if pay.paid_at else None,
+                "paymentStatus": pay.payment_status.value.lower(),
+                "hasProof": bool(pay.proof_file_path),
+                "proofFileName": pay.proof_file_name,
+                "notes": pay.notes,
+            }
+        )
+    return out
 
 
 def client_invoice_pdf_bytes(inv_detail: dict) -> bytes:

@@ -24,6 +24,7 @@ venv/
 *.db
 *.sqlite3
 insightcase.db
+backend/insightcase.e2e.db
 *.db-shm
 *.db-wal
 
