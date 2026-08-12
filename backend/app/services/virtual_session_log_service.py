@@ -71,6 +71,12 @@ def serialize_virtual_log(
         "case_id": session.case_id,
         "case_code": case.case_code if case else None,
         "child_name": case.child.full_name if (case and case.child) else None,
+        "therapist_user_id": session.therapist_user_id,
+        "therapist_name": (
+            db.scalar(select(User.full_name).where(User.id == session.therapist_user_id))
+            if session.therapist_user_id
+            else None
+        ),
         "scheduled_date": session.scheduled_date,
         "actual_start_at": session.actual_start_at,
         "actual_end_at": session.actual_end_at,

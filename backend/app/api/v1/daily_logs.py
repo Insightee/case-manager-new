@@ -34,12 +34,28 @@ from app.models.session import Session as TherapySession, SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus
 from app.models.support_ticket import SupportTicket, TicketStatus
 from app.models.document_comment import DocumentComment, DocumentEntityType
+from app.models.user import User
 
 router = APIRouter(prefix="/daily-logs", tags=["daily-logs"])
 
 
 class LogRejectAction(BaseModel):
     comment: str
+
+
+def _therapist_names_by_id(db: Session, user_ids: set[int]) -> dict[int, str | None]:
+    if not user_ids:
+        return {}
+    return dict(db.execute(select(User.id, User.full_name).where(User.id.in_(user_ids))).all())
+
+
+def _log_to_read_for_db(db: Session, log, **kwargs) -> dict:
+    therapist_name = None
+    if log.session:
+        therapist_name = _therapist_names_by_id(db, {log.session.therapist_user_id}).get(
+            log.session.therapist_user_id
+        )
+    return log_service.log_to_read(log, therapist_name=therapist_name, **kwargs)
 
 
 def _log_case_scope(db: Session, user: User, log) -> None:
@@ -124,7 +140,15 @@ def list_daily_logs(
         res = [DailyLogFinanceRead(**log_service.log_to_read(l, include_clinical=False)) for l in logs]
         combined = res + virtual_logs_out
     else:
-        log_dicts = [log_service.log_to_read(l) for l in logs]
+        therapist_ids = {l.session.therapist_user_id for l in logs if l.session}
+        therapist_names = _therapist_names_by_id(db, therapist_ids)
+        log_dicts = [
+            log_service.log_to_read(
+                l,
+                therapist_name=therapist_names.get(l.session.therapist_user_id) if l.session else None,
+            )
+            for l in logs
+        ]
         log_service.attach_comment_counts(db, log_dicts + virtual_dicts_for_counts, parent_visible_only=False)
         res = [DailyLogRead(**d) for d in log_dicts]
         combined = res + [DailyLogRead(**v) for v in virtual_dicts_for_counts]
@@ -210,7 +234,7 @@ def get_daily_log(
             raise HTTPException(status_code=403, detail="Log access denied")
     else:
         _log_case_scope(db, user, log)
-    read = log_service.log_to_read(log)
+    read = _log_to_read_for_db(db, log)
     log_service.attach_comment_counts(db, [read], parent_visible_only=False)
     return DailyLogRead(**read)
 
@@ -261,7 +285,7 @@ def create_daily_log(
                 log.id,
             )
             db.rollback()
-    return DailyLogRead(**log_service.log_to_read(log))
+    return DailyLogRead(**_log_to_read_for_db(db, log))
 
 
 @router.patch("/{log_id}", response_model=DailyLogRead)
@@ -282,7 +306,7 @@ def update_daily_log(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()
-    return DailyLogRead(**log_service.log_to_read(log))
+    return DailyLogRead(**_log_to_read_for_db(db, log))
 
 
 @router.post("/{log_id}/resubmit", response_model=DailyLogRead)
@@ -306,7 +330,7 @@ def resubmit_daily_log(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="resubmit", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()
-    return DailyLogRead(**log_service.log_to_read(log))
+    return DailyLogRead(**_log_to_read_for_db(db, log))
 
 
 @router.post("/{log_id}/approve")

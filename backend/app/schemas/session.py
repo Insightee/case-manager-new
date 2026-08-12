@@ -61,6 +61,7 @@ class SessionRead(BaseModel):
     case_code: Optional[str] = None
     child_name: Optional[str] = None
     therapist_user_id: int
+    therapist_name: Optional[str] = None
     scheduled_date: date
     start_time: Optional[time]
     end_time: Optional[time]

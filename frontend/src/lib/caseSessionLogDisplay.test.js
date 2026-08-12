@@ -29,6 +29,17 @@ test('formatCaseSessionLogCardMeta prioritizes session and log ids', () => {
   assert.match(meta, /2 comments/)
 })
 
+test('formatCaseSessionLogCardMeta shows therapist name when available', () => {
+  const meta = formatCaseSessionLogCardMeta(
+    { id: 11056, therapist_user_id: 672, therapist_name: 'Dr. Neha Sharma' },
+    { id: 5494 },
+  )
+  assert.match(meta, /Session #11056/)
+  assert.match(meta, /Dr\. Neha Sharma/)
+  assert.doesNotMatch(meta, /Therapist #672/)
+  assert.match(meta, /Log #5494/)
+})
+
 test('formatCaseSessionLogCardMeta works for orphan logs', () => {
   const meta = formatCaseSessionLogCardMeta(null, {
     id: 4032,

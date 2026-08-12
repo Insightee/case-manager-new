@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Iterable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
@@ -37,7 +37,19 @@ from app.services.session_absence_service import ChildAbsenceBlockError
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
-def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead:
+def _therapist_names_by_id(db: Session, user_ids: Iterable[int]) -> dict[int, str | None]:
+    ids = {uid for uid in user_ids if uid is not None}
+    if not ids:
+        return {}
+    return dict(db.execute(select(User.id, User.full_name).where(User.id.in_(ids))).all())
+
+
+def _session_read(
+    s: TherapySession,
+    case: Optional[Case] = None,
+    *,
+    therapist_name: str | None = None,
+) -> SessionRead:
     child_name = None
     if case and case.child:
         child_name = case.child.full_name
@@ -50,6 +62,7 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
         case_code=case.case_code if case else None,
         child_name=child_name,
         therapist_user_id=s.therapist_user_id,
+        therapist_name=therapist_name,
         scheduled_date=s.scheduled_date,
         start_time=s.start_time,
         end_time=s.end_time,
@@ -86,6 +99,11 @@ def _session_read(s: TherapySession, case: Optional[Case] = None) -> SessionRead
     )
 
 
+def _session_read_for_db(db: Session, s: TherapySession, case: Optional[Case] = None) -> SessionRead:
+    names = _therapist_names_by_id(db, [s.therapist_user_id])
+    return _session_read(s, case, therapist_name=names.get(s.therapist_user_id))
+
+
 def _therapist_only_update(user: User, session: TherapySession) -> None:
     if user_has_permission(user, "case.read.all"):
         return
@@ -114,13 +132,20 @@ def list_sessions(
         stmt = stmt.where(TherapySession.therapist_user_id == user.id)
     stmt = stmt.order_by(TherapySession.scheduled_date.desc())
     sessions, total = paginate_query(db, stmt, page=page, page_size=page_size)
+    therapist_names = _therapist_names_by_id(db, (s.therapist_user_id for s in sessions))
     result = []
     for s in sessions:
         case = s.case or db.get(Case, s.case_id)
         if case and case_scope_check(db, user, case):
             if s.status == SessionStatus.IN_PROGRESS:
                 s = session_service.auto_end_if_stale(db, s)
-            result.append(_session_read(s, case))
+            result.append(
+                _session_read(
+                    s,
+                    case,
+                    therapist_name=therapist_names.get(s.therapist_user_id),
+                )
+            )
     db.commit()
     return paginated_response([r.model_dump() for r in result], total, page, page_size)
 
@@ -135,7 +160,12 @@ def upcoming_sessions(
         raise HTTPException(status_code=403, detail="Therapist access required")
     therapist_id = user.id
     sessions = session_service.list_upcoming_sessions(db, therapist_id, days=days)
-    return [_session_read(s, s.case) for s in sessions if s.case and case_scope_check(db, user, s.case)]
+    therapist_names = _therapist_names_by_id(db, (s.therapist_user_id for s in sessions))
+    return [
+        _session_read(s, s.case, therapist_name=therapist_names.get(s.therapist_user_id))
+        for s in sessions
+        if s.case and case_scope_check(db, user, s.case)
+    ]
 
 
 @router.get("/active", response_model=Optional[SessionRead])
@@ -147,7 +177,7 @@ def active_session(
     db.commit()
     if not session:
         return None
-    return _session_read(session, session.case)
+    return _session_read_for_db(db, session, session.case)
 
 
 @router.post("", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
@@ -166,7 +196,7 @@ def create_session(
         if existing_idem:
             session = db.get(TherapySession, existing_idem.session_id)
             if session:
-                return _session_read(session, session.case)
+                return _session_read_for_db(db, session, session.case)
 
     case = case_service.get_case(db, payload.case_id)
     if not case or not case_scope_check(db, user, case):
@@ -225,7 +255,7 @@ def create_session(
     log_audit(db, actor_user_id=user.id, action="create", entity_type="session", entity_id=session.id, new_value=payload.model_dump(), **meta)
     db.commit()
     db.refresh(session)
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.post("/manual", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
@@ -267,7 +297,7 @@ def create_manual_session(
     log_audit(db, actor_user_id=user.id, action="create_manual", entity_type="session", entity_id=session.id, **meta)
     db.commit()
     db.refresh(session)
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.post("/manual-walk-in", response_model=ManualWalkInSessionResponse, status_code=status.HTTP_201_CREATED)
@@ -312,7 +342,7 @@ def create_manual_walk_in_session(
     db.refresh(session)
     case = case_service.get_case(db, case.id)
     return ManualWalkInSessionResponse(
-        session=_session_read(session, case),
+        session=_session_read_for_db(db, session, case),
         case_id=case.id,
         case_code=case.case_code,
         invite_url=result.get("invite_url"),
@@ -365,7 +395,7 @@ def complete_forgotten_session_route(
     )
     db.commit()
     db.refresh(session)
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.get("/{session_id}", response_model=SessionRead)
@@ -384,7 +414,7 @@ def get_session(
     case = session.case
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Access denied")
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.post("/{session_id}/cancel-accidental-start", response_model=SessionRead)
@@ -481,7 +511,7 @@ def cancel_accidental_start(
     )
     db.commit()
     db.refresh(session)
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.patch("/{session_id}", response_model=SessionRead)
@@ -504,7 +534,7 @@ def update_session(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="session", entity_id=session.id, **meta)
     db.commit()
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 class _LocationBody(BaseModel):
@@ -568,7 +598,7 @@ def start_session(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="start", entity_type="session", entity_id=session.id, **meta)
     db.commit()
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.post("/{session_id}/end", response_model=SessionRead)
@@ -600,7 +630,7 @@ def end_session(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="end", entity_type="session", entity_id=session.id, **meta)
     db.commit()
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.patch("/{session_id}/actual-times", response_model=SessionRead)
@@ -643,7 +673,7 @@ def patch_actual_times(
         **meta,
     )
     db.commit()
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.post("/{session_id}/cancel", response_model=SessionRead)
@@ -686,7 +716,7 @@ def cancel_session_route(
         **meta,
     )
     db.commit()
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.post("/{session_id}/discard-pending-log", response_model=SessionRead)
@@ -732,7 +762,7 @@ def discard_pending_log_route(
         **meta,
     )
     db.commit()
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)
 
 
 @router.post("/{session_id}/void-before-log", response_model=SessionRead)
@@ -776,4 +806,4 @@ def void_session_before_log_route(
         **meta,
     )
     db.commit()
-    return _session_read(session, case)
+    return _session_read_for_db(db, session, case)

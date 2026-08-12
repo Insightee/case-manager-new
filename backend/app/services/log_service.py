@@ -247,7 +247,12 @@ def attach_comment_counts(
         item["open_parent_comment_count"] = open_parent
 
 
-def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
+def log_to_read(
+    log: DailyLog,
+    include_clinical: bool = True,
+    *,
+    therapist_name: str | None = None,
+) -> dict:
     session = log.session
     case = session.case if session and getattr(session, "case", None) else None
     data = {
@@ -271,6 +276,8 @@ def log_to_read(log: DailyLog, include_clinical: bool = True) -> dict:
     }
     if session:
         data["scheduled_date"] = session.scheduled_date
+        data["therapist_user_id"] = session.therapist_user_id
+        data["therapist_name"] = therapist_name
         data["actual_start_at"] = ensure_utc_aware(session.actual_start_at)
         data["actual_end_at"] = ensure_utc_aware(session.actual_end_at)
         data["edited_start_at"] = ensure_utc_aware(getattr(session, "edited_start_at", None))

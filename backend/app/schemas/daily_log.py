@@ -38,6 +38,8 @@ class DailyLogRead(BaseModel):
     case_id: Optional[int] = None
     case_code: Optional[str] = None
     child_name: Optional[str] = None
+    therapist_user_id: Optional[int] = None
+    therapist_name: Optional[str] = None
     scheduled_date: Optional[date] = None
     actual_start_at: Optional[datetime] = None
     actual_end_at: Optional[datetime] = None
