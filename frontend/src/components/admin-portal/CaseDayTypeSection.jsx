@@ -93,10 +93,7 @@ export function CaseDayTypeSection({ caseItem, readOnly, canEdit, onCaseUpdated 
 
   return (
     <article className="admin-scheduling-hub__day-type card">
-      <h3>School day type</h3>
-      <p className="admin-muted" style={{ marginBottom: 12 }}>
-        Half day covers support before class 1 (~4 hours). Full day covers from class 1 through the school day.
-      </p>
+      <h3 style={{ fontWeight: 700, marginBottom: 12 }}>School day type</h3>
       {currentDayType ? (
         <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
           Current: <strong>{dayTypeLabel(currentDayType)}</strong>
