@@ -20,6 +20,7 @@ import {
 } from '../../lib/adminCasePipeline.js'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
 import { moduleLabel } from '../../lib/moduleLabels.js'
+import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
 import { paginateList } from '../../lib/peopleDirectoryList.js'
 import {
   AdminCollapsibleFilters,
@@ -525,12 +526,18 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                     ) : null}
                     <td>
                       <span className="admin-table__primary">{row.case_code}</span>
-                      <span className="admin-table__meta">{row.status?.replaceAll('_', ' ')}</span>
+                      <span className="admin-table__meta admin-cases-pipeline__case-meta">
+                        {row.day_type ? <CaseDayTypeBadge dayType={row.day_type} /> : null}
+                        <span>{row.status?.replaceAll('_', ' ')}</span>
+                      </span>
                     </td>
                     <td>{row.parent_name || '—'}</td>
                     <td>{row.child_name || '—'}</td>
                     <td>
-                      <span className="admin-chip">{moduleLabel(row.product_module) || '—'}</span>
+                      <span className="admin-cases-pipeline__programme">
+                        <span className="admin-chip">{moduleLabel(row.product_module) || '—'}</span>
+                        {row.day_type ? <CaseDayTypeBadge dayType={row.day_type} /> : null}
+                      </span>
                     </td>
                     <td>
                       {row.case_manager_name || (

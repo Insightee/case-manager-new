@@ -10,6 +10,7 @@ import { CaseSchedulingHub } from './CaseSchedulingHub.jsx'
 import { useClinicalProductModules } from '../../hooks/useClinicalProductModules.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { filterServiceCategoriesForModule } from '../../lib/accountStatus.js'
+import { productRequiresDayType } from '../../lib/dayTypeLabels.js'
 import { billingSummary } from '../invoices/invoiceUtils.js'
 import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 import './admin-allotment-wizard.css'
@@ -54,6 +55,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
     [clinicalOptions],
   )
   const [productModule, setProductModule] = useState('homecare')
+  const [dayType, setDayType] = useState('')
   const canSubmitAllot = canCreateProductCase(productModule)
   const [caseCode, setCaseCode] = useState('')
   const [caseCodeLoading, setCaseCodeLoading] = useState(false)
@@ -271,6 +273,9 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
     try {
       if (!serviceType.trim()) throw new Error('Select a service type')
       if (!therapistId) throw new Error('Select a therapist')
+      if (productRequiresDayType(productModule) && !dayType) {
+        throw new Error('Select half day or full day for this case')
+      }
       const cid = await ensureChildId()
       const payload = {
         child_id: cid,
@@ -281,6 +286,9 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
         compensation_mode: billing.compensation_mode,
         pay_share_amount_inr: Number(billing.pay_share_amount_inr),
         therapist_user_id: Number(therapistId),
+      }
+      if (productRequiresDayType(productModule)) {
+        payload.day_type = dayType
       }
       if (billing.product_billing_rule_id) {
         payload.product_billing_rule_id = Number(billing.product_billing_rule_id)
@@ -484,7 +492,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
               id="allot-module"
               className="admin-input"
               value={productModule}
-              onChange={(e) => setProductModule(e.target.value)}
+              onChange={(e) => {
+                setProductModule(e.target.value)
+                setDayType('')
+              }}
             >
               {moduleOptions.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -528,6 +539,25 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
               )}
             </select>
           </label>
+          {productRequiresDayType(productModule) ? (
+            <label htmlFor="allot-day-type">
+              School day type
+              <select
+                id="allot-day-type"
+                className="admin-input"
+                value={dayType}
+                onChange={(e) => setDayType(e.target.value)}
+                required
+              >
+                <option value="">Select half day or full day…</option>
+                <option value="HALF_DAY">Half day — before class 1 (~4 hours)</option>
+                <option value="FULL_DAY">Full day — from class 1</option>
+              </select>
+              <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                Required for shadow support and B2B cases.
+              </span>
+            </label>
+          ) : null}
           {productsForModule.length > 0 ? (
             <label style={{ gridColumn: '1 / -1' }}>
               Commercial product (billing rule)

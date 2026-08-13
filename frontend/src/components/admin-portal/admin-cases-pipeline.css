@@ -1,3 +1,17 @@
+.admin-cases-pipeline__case-meta,
+.admin-cases-pipeline__programme {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-cases-pipeline__case-meta .admin-badge,
+.admin-cases-pipeline__programme .admin-badge {
+  font-size: 0.6875rem;
+  padding: 2px 8px;
+}
+
 .admin-cases-pipeline__tabs {
   display: flex;
   flex-wrap: wrap;

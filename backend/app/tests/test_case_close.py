@@ -52,6 +52,7 @@ def _create_active_case(admin_headers: dict, therapist_id: int) -> int:
             "client_rate_per_session_inr": 1200,
             "pay_share_amount_inr": 720,
             "therapist_user_id": therapist_id,
+            "day_type": "FULL_DAY",
         },
     )
     assert allot.status_code == 201, allot.text

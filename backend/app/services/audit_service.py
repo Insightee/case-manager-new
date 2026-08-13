@@ -24,6 +24,7 @@ ACTION_LABELS: dict[str, str] = {
     "approve_session_log": "Approved session log",
     "reject_session_log": "Rejected session log",
     "client_status_change": "Client status changed",
+    "update_day_type": "Day type changed",
 }
 
 
@@ -41,20 +42,33 @@ def _entity_label(entity_type: str, action: str) -> str:
 
 def _serialize_audit_item(ev: AuditEvent) -> dict[str, Any]:
     actor = ev.actor if ev.actor_user_id else None
-    return {
+    old_value = _parse_json(ev.old_value)
+    new_value = _parse_json(ev.new_value)
+    action_label = _entity_label(ev.entity_type, ev.action)
+    detail = None
+    if ev.action == "update_day_type":
+        from app.services.case_day_type_service import audit_detail_for_change
+
+        action_label = "Day type changed"
+        if isinstance(new_value, dict):
+            detail = audit_detail_for_change(new_value)
+    item = {
         "id": ev.id,
         "actor_user_id": ev.actor_user_id,
         "actor_name": actor.full_name if actor else "System",
         "actor_email": actor.email if actor else None,
         "action": ev.action,
-        "action_label": _entity_label(ev.entity_type, ev.action),
+        "action_label": action_label,
         "entity_type": ev.entity_type,
         "entity_id": ev.entity_id,
         "case_id": ev.case_id,
-        "old_value": _parse_json(ev.old_value),
-        "new_value": _parse_json(ev.new_value),
+        "old_value": old_value,
+        "new_value": new_value,
         "created_at": ev.created_at.isoformat() if ev.created_at else None,
     }
+    if detail:
+        item["detail"] = detail
+    return item
 
 
 def list_audit_events(

@@ -203,6 +203,7 @@ def case_to_read(
         "therapist_name": therapist_name,
         "service_type": case.service_type,
         "product_module": case.product_module,
+        "day_type": case.day_type.value if case.day_type else None,
         "status": case.status,
         "status_effective_date": case.status_effective_date,
         "status_reason": case.status_reason,

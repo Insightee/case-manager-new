@@ -13,6 +13,7 @@ class AdminCasePipelineCard(BaseModel):
     parent_name: Optional[str] = None
     service_type: str
     product_module: str
+    day_type: Optional[str] = None
     status: str
     pipeline_column: str
     case_manager_user_id: Optional[int] = None

@@ -5,6 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.models.case import CaseDayType
 from app.schemas.case import CaseCreate
 from app.schemas.billing import CaseBillingFields
 from app.schemas.case import CaseServiceAddressFields
@@ -31,6 +32,7 @@ class CaseAllotRequest(CaseBillingFields, CaseServiceAddressFields):
     child_id: int
     service_type: str
     product_module: str
+    day_type: Optional[CaseDayType] = None
     case_code: Optional[str] = None
     client_billing_mode: Optional[str] = None
     case_manager_user_id: Optional[int] = None

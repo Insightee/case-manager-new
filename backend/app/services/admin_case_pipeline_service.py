@@ -246,6 +246,7 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
             "parent_name": parent_names_by_child.get(case.child_id),
             "service_type": case.service_type,
             "product_module": case.product_module,
+            "day_type": case.day_type.value if case.day_type else None,
             "status": case.status.value,
             "pipeline_column": column,
             "case_manager_user_id": cm_user_id,

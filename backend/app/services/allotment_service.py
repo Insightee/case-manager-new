@@ -12,8 +12,9 @@ from app.models.therapist_profile import TherapistProfile, TherapistProfileStatu
 from app.models.user import User
 from app.services import assignment_service, case_code_service, case_service
 from app.core.billing_validation import apply_billing_payload
-from app.models.case import Case, CaseStatus, ClientBillingMode
+from app.models.case import Case, CaseStatus, ClientBillingMode, CaseDayType
 from app.services import address_service
+from app.services.case_day_type_service import validate_allotment_day_type
 
 _SERVICE_ADDRESS_KEYS = frozenset(
     {
@@ -99,6 +100,8 @@ def allot_case(
     case_code = (data.pop("case_code", None) or "").strip()
     product_module = case_code_service.normalize_product_module(data["product_module"])
     data["product_module"] = product_module
+    day_type_raw = data.pop("day_type", None)
+    data["day_type"] = validate_allotment_day_type(product_module, day_type_raw)
     if not case_code:
         case_code = case_code_service.generate_case_code(db, product_module)
     else:

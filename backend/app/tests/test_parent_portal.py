@@ -85,6 +85,7 @@ def test_parent_cases_hide_closed_and_suspended():
             "client_rate_per_session_inr": 1200,
             "pay_share_amount_inr": 720,
             "therapist_user_id": therapist_id,
+            "day_type": "HALF_DAY",
         },
     )
     assert allot.status_code == 201, allot.text

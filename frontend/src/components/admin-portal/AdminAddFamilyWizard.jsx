@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AddressFormFields, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
+import { productRequiresDayType } from '../../lib/dayTypeLabels.js'
 
 const MODULES = [
   { id: 'homecare', label: 'Homecare' },
@@ -47,6 +48,7 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
   const [emailRoleError, setEmailRoleError] = useState('')
   const [checkingEmail, setCheckingEmail] = useState(false)
   const [productModule, setProductModule] = useState('homecare')
+  const [dayType, setDayType] = useState('')
   const [caseCode, setCaseCode] = useState('')
   const [serviceType, setServiceType] = useState('Homecare')
   const [serviceAddr, setServiceAddr] = useState(emptyAddress())
@@ -210,6 +212,9 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
       pay_share_pct: Number(billing.pay_share_pct),
       therapist_user_id: Number(therapistId),
     }
+    if (productRequiresDayType(productModule)) {
+      payload.day_type = dayType
+    }
     if (billing.billing_type === 'PER_SESSION') {
       payload.client_rate_per_session_inr = Number(billing.client_rate_per_session_inr)
     } else {
@@ -243,6 +248,9 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
         const childId = await submitChildToExistingParent()
         if (createCase) {
           if (!therapistId) throw new Error('Select a therapist')
+          if (productRequiresDayType(productModule) && !dayType) {
+            throw new Error('Select half day or full day for this case')
+          }
           const result = await submitAllot(childId)
           onComplete?.({ mode: 'existing', childId, case: result.case })
         } else {
@@ -264,6 +272,9 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
       const childId = await submitFamily()
       if (createCase) {
         if (!therapistId) throw new Error('Select a therapist')
+        if (productRequiresDayType(productModule) && !dayType) {
+          throw new Error('Select half day or full day for this case')
+        }
         const result = await submitAllot(childId)
         onComplete?.({ childId, case: result.case, inviteUrl })
       } else {
@@ -564,7 +575,10 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
         <div className="admin-form-grid" style={{ maxWidth: 520 }}>
           <label>
             Module
-            <select className="admin-input" value={productModule} onChange={(e) => setProductModule(e.target.value)}>
+            <select className="admin-input" value={productModule} onChange={(e) => {
+              setProductModule(e.target.value)
+              setDayType('')
+            }}>
               {MODULES.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
@@ -590,6 +604,16 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
               ))}
             </datalist>
           </label>
+          {productRequiresDayType(productModule) ? (
+            <label>
+              School day type
+              <select className="admin-input" value={dayType} onChange={(e) => setDayType(e.target.value)} required>
+                <option value="">Select half day or full day…</option>
+                <option value="HALF_DAY">Half day</option>
+                <option value="FULL_DAY">Full day</option>
+              </select>
+            </label>
+          ) : null}
           {productModule === 'homecare' ? (
             <div style={{ gridColumn: '1 / -1' }}>
               <p className="admin-drawer__subtitle">Service address (optional)</p>

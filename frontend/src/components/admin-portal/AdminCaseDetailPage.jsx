@@ -21,6 +21,7 @@ import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { IepBuilderPanel } from './IepBuilderPanel.jsx'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
 import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
+import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
 import './admin-case-detail-mobile.css'
 
 const TABS = [
@@ -202,6 +203,7 @@ export function AdminCaseDetailPage() {
           <strong>{activeAssignment?.therapist_name || 'Unassigned'}</strong>
           {' · '}
           {caseRow.service_type} · <span className="admin-chip">{caseRow.product_module}</span>{' '}
+          {caseRow.day_type ? <CaseDayTypeBadge dayType={caseRow.day_type} /> : null}
           <StatusBadge status={caseRow.status} />
         </p>
       </header>

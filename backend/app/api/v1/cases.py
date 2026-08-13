@@ -18,10 +18,11 @@ from app.core.permissions import (
 )
 from app.models.case import Case, CaseStatus, ClientBillingMode
 from app.models.user import User
-from app.schemas.case import CaseCreate, CaseRead, CaseUpdate
+from app.schemas.case import CaseCreate, CaseDayTypeUpdate, CaseRead, CaseUpdate
 from app.schemas.pagination import PaginatedList
 from app.core.billing_validation import apply_billing_payload
 from app.services import address_service, case_code_service, case_service
+from app.services import case_day_type_service
 from app.services import case_status_request_service as csr_svc
 from app.services import observation_checklist_service as obs_svc
 from app.schemas.clinical import ClinicalProfileUpdate, ObservationChecklistSave
@@ -113,6 +114,11 @@ def create_case(
     service_data = {k: data.pop(k) for k in list(data.keys()) if k in _SERVICE_ADDRESS_KEYS}
     product_module = data.get("product_module", "homecare")
     ensure_product_module_write_access(user, product_module, db)
+    day_type_raw = data.pop("day_type", None)
+    try:
+        data["day_type"] = case_day_type_service.validate_allotment_day_type(product_module, day_type_raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     case_code = (data.get("case_code") or "").strip()
     if not case_code:
         data["case_code"] = case_code_service.generate_case_code(db, product_module)
@@ -201,6 +207,49 @@ def update_case(
             )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="case", entity_id=case.id, old_value=old, new_value=payload.model_dump(exclude_unset=True), **meta)
+    db.commit()
+    db.refresh(case)
+    return CaseRead(**case_service.case_to_read(case, db))
+
+
+@router.patch("/{case_id}/day-type", response_model=CaseRead)
+def update_case_day_type(
+    case_id: int,
+    payload: CaseDayTypeUpdate,
+    request: Request,
+    user: User = Depends(require_mutation_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Case access denied")
+    ensure_case_write_access(user, case, db)
+    try:
+        case, meta = case_day_type_service.update_case_day_type(
+            db,
+            case=case,
+            actor_user_id=user.id,
+            day_type=payload.day_type,
+            reason=payload.reason,
+            update_billing=payload.update_billing,
+            billing_update=payload.billing_update,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if meta.get("changed"):
+        audit_meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="update_day_type",
+            entity_type="case",
+            entity_id=case.id,
+            old_value={"day_type": meta.get("old_day_type")},
+            new_value=meta,
+            **audit_meta,
+        )
     db.commit()
     db.refresh(case)
     return CaseRead(**case_service.case_to_read(case, db))

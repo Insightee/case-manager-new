@@ -15,6 +15,7 @@ import { filterUpcomingSessions, formatSessionWhen } from '../../lib/sessionDisp
 import { formatDisplayDateTime } from '../../lib/datetime.js'
 import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
+import { CaseDayTypeSection } from './CaseDayTypeSection.jsx'
 import './admin-scheduling-hub.css'
 
 function addDaysIso(iso, days) {
@@ -549,6 +550,13 @@ export function CaseSchedulingHub({
         onAssigned={() => {
           onDone?.()
         }}
+      />
+
+      <CaseDayTypeSection
+        caseItem={caseItem}
+        readOnly={isViewOnly}
+        canEdit={canEditBilling}
+        onCaseUpdated={onCaseUpdated}
       />
 
       {/* ── Section 2: Billing Review ── */}

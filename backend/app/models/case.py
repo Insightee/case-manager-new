@@ -36,6 +36,14 @@ class ClientBillingMode(str, enum.Enum):
     POSTPAID = "POSTPAID"
 
 
+class CaseDayType(str, enum.Enum):
+    HALF_DAY = "HALF_DAY"
+    FULL_DAY = "FULL_DAY"
+
+
+DAY_TYPE_PRODUCT_MODULES: frozenset[str] = frozenset({"shadow_support", "b2b"})
+
+
 class Case(Base):
     __tablename__ = "cases"
 
@@ -45,6 +53,7 @@ class Case(Base):
     child_id: Mapped[int] = mapped_column(ForeignKey("children.id"), nullable=False, index=True)
     service_type: Mapped[str] = mapped_column(String(128), nullable=False)
     product_module: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    day_type: Mapped[Optional[CaseDayType]] = mapped_column(Enum(CaseDayType), nullable=True, index=True)
     status: Mapped[CaseStatus] = mapped_column(Enum(CaseStatus), default=CaseStatus.PENDING_ALLOTMENT, index=True)
     status_effective_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     status_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

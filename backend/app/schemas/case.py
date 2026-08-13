@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from app.models.case import CaseStatus
+from app.models.case import CaseStatus, CaseDayType
 from app.models.case_service import CaseServiceStatus
 from app.schemas.address import AddressRead
 from app.schemas.billing import CaseBillingFields
@@ -29,6 +29,7 @@ class CaseCreate(CaseBillingFields, CaseServiceAddressFields):
     client_billing_mode: Optional[str] = None
     service_type: str
     product_module: str
+    day_type: Optional[CaseDayType] = None
     case_manager_user_id: Optional[int] = None
     region: Optional[str] = None
     operational_stage: Optional[str] = None
@@ -39,6 +40,7 @@ class CaseUpdate(CaseBillingFields, CaseServiceAddressFields):
     client_billing_mode: Optional[str] = None
     service_type: Optional[str] = None
     product_module: Optional[str] = None
+    day_type: Optional[CaseDayType] = None
     status: Optional[CaseStatus] = None
     case_manager_user_id: Optional[int] = None
     region: Optional[str] = None
@@ -55,6 +57,7 @@ class CaseRead(CaseBillingFields):
     therapist_name: Optional[str] = None
     service_type: str
     product_module: str
+    day_type: Optional[CaseDayType] = None
     status: CaseStatus
     case_manager_user_id: Optional[int]
     case_manager_name: Optional[str] = None
@@ -79,6 +82,13 @@ class CaseRead(CaseBillingFields):
     status_changed_by_user_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class CaseDayTypeUpdate(BaseModel):
+    day_type: CaseDayType
+    reason: Optional[str] = None
+    update_billing: bool = False
+    billing_update: Optional[dict] = None
 
 
 class AssignmentCreate(BaseModel):

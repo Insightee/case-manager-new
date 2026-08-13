@@ -1,4 +1,5 @@
 import { StatusBadge } from './ui/index.js'
+import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
 
 export function AdminCaseDetailMobileHeader({ caseRow, activeAssignment }) {
   const therapistLabel =
@@ -10,6 +11,7 @@ export function AdminCaseDetailMobileHeader({ caseRow, activeAssignment }) {
       <h1 className="admin-case-detail-summary__name">{caseRow.child_name}</h1>
       <p className="admin-case-detail-summary__code">{caseRow.case_code}</p>
       <div className="admin-case-detail-summary__row">
+        {caseRow.day_type ? <CaseDayTypeBadge dayType={caseRow.day_type} /> : null}
         <StatusBadge status={caseRow.status} />
         {caseRow.operational_stage ? (
           <span className="admin-chip" title="Operational stage">
