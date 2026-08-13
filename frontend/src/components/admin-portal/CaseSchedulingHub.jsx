@@ -16,6 +16,7 @@ import { formatDisplayDateTime } from '../../lib/datetime.js'
 import { mapSlotToCalendarEvent } from '../../lib/googleCalendar.js'
 import { BookingSuccessSheet } from '../shared/BookingSuccessSheet.jsx'
 import { CaseDayTypeSection } from './CaseDayTypeSection.jsx'
+import { TransitionTherapistSection } from './TransitionTherapistSection.jsx'
 import './admin-scheduling-hub.css'
 
 function addDaysIso(iso, days) {
@@ -29,12 +30,19 @@ function addDaysIso(iso, days) {
 function TherapistAssignSection({
   caseItem,
   assignments,
+  activeTransition,
   canAssign,
   readOnly,
   onAssigned,
 }) {
-  const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || null
-  const assignedTherapistId = activeAssignment ? String(activeAssignment.therapist_user_id) : ''
+  const activeAssignments = (assignments || []).filter((a) => a.status === 'ACTIVE')
+  const primaryAssignment = activeTransition
+    ? activeAssignments.find((a) => a.therapist_user_id === activeTransition.outgoing_therapist_user_id)
+      || activeAssignments[0]
+      || null
+    : activeAssignments[0] || null
+  const assignedTherapistId = primaryAssignment ? String(primaryAssignment.therapist_user_id) : ''
+  const transitionBlocked = Boolean(activeTransition)
 
   const [selectedId, setSelectedId] = useState(assignedTherapistId)
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -56,10 +64,14 @@ function TherapistAssignSection({
   }, [selectedId, assignedTherapistId])
 
   const isChanging = selectedId && selectedId !== assignedTherapistId
-  const isNew = !activeAssignment && selectedId
+  const isNew = !primaryAssignment && selectedId
 
   async function handleSave() {
     if (!selectedId || !caseItem?.id) return
+    if (transitionBlocked) {
+      setError('A transition handover is in progress. Wait for it to finish before changing the therapist.')
+      return
+    }
     if (isChanging && !isReassignmentReasonValid(reason)) {
       setError('Please add a reason for this reassignment (at least 5 characters).')
       return
@@ -102,11 +114,11 @@ function TherapistAssignSection({
     <article className="admin-scheduling-hub__therapist card">
       <h3>Therapist assignment</h3>
 
-      {activeAssignment ? (
+      {primaryAssignment ? (
         <p className="admin-scheduling-hub__assigned">
           Currently assigned:{' '}
-          <strong>{activeAssignment.therapist_name || `Therapist #${activeAssignment.therapist_user_id}`}</strong>
-          {activeAssignment.start_date ? ` · since ${activeAssignment.start_date}` : ''}
+          <strong>{primaryAssignment.therapist_name || `Therapist #${primaryAssignment.therapist_user_id}`}</strong>
+          {primaryAssignment.start_date ? ` · since ${primaryAssignment.start_date}` : ''}
         </p>
       ) : (
         <p className="admin-scheduling-hub__billing-note">
@@ -114,14 +126,28 @@ function TherapistAssignSection({
         </p>
       )}
 
+      {activeTransition ? (
+        <p className="admin-scheduling-hub__billing-note" style={{ marginTop: 8 }}>
+          Handover with{' '}
+          <strong>{activeTransition.incoming_therapist_name || `Therapist #${activeTransition.incoming_therapist_user_id}`}</strong>
+          {' '}on {(activeTransition.transition_dates || []).join(', ')}. Both therapists submit logs during this period.
+        </p>
+      ) : null}
+
+      {transitionBlocked ? (
+        <p className="admin-muted" style={{ fontSize: '0.85rem', marginTop: 8 }}>
+          Change therapist is paused while the transition handover is active.
+        </p>
+      ) : null}
+
       {!canAssign ? (
         <p className="admin-muted" style={{ fontSize: '0.85rem' }}>
           You don't have permission to change therapist assignments.
         </p>
-      ) : (
+      ) : !transitionBlocked ? (
         <div className="admin-form-grid" style={{ maxWidth: 480, marginTop: 12 }}>
           <label className="admin-label" style={{ gridColumn: '1 / -1' }}>
-            {activeAssignment ? 'Change therapist' : 'Assign therapist'}
+            {primaryAssignment ? 'Change therapist' : 'Assign therapist'}
             <AdminTherapistPicker
               mode="allotment"
               productModule={caseItem.product_module}
@@ -222,7 +248,16 @@ function TherapistAssignSection({
             </div>
           ) : null}
         </div>
-      )}
+      ) : null}
+
+      <TransitionTherapistSection
+        caseItem={caseItem}
+        activeTransition={activeTransition}
+        canAssign={canAssign}
+        readOnly={readOnly}
+        primaryTherapistId={assignedTherapistId}
+        onChanged={onAssigned}
+      />
 
       {/* Assignment history */}
       {assignments?.length > 0 ? (
@@ -355,8 +390,14 @@ export function CaseSchedulingHub({
   const { isViewOnly } = useAuth()
   const readOnly = !canBook || isViewOnly
 
-  const activeAssignment = assignments?.find((a) => a.status === 'ACTIVE') || null
-  const assignedTherapistId = activeAssignment ? String(activeAssignment.therapist_user_id) : ''
+  const [activeTransition, setActiveTransition] = useState(null)
+  const activeAssignments = (assignments || []).filter((a) => a.status === 'ACTIVE')
+  const primaryAssignment = activeTransition
+    ? activeAssignments.find((a) => a.therapist_user_id === activeTransition.outgoing_therapist_user_id)
+      || activeAssignments[0]
+      || null
+    : activeAssignments[0] || null
+  const assignedTherapistId = primaryAssignment ? String(primaryAssignment.therapist_user_id) : ''
 
   // Schedule state
   const [therapistId, setTherapistId] = useState('')
@@ -420,10 +461,17 @@ export function CaseSchedulingHub({
   }, [loadUpcoming, onDone, calendarRefresh])
 
   useEffect(() => {
+    if (!caseItem?.id) return
+    apiFetch(`/api/v1/cases/${caseItem.id}/transitions/active`)
+      .then((row) => setActiveTransition(row || null))
+      .catch(() => setActiveTransition(null))
+  }, [caseItem?.id, onDone])
+
+  useEffect(() => {
     if (assignedTherapistId) setTherapistId(assignedTherapistId)
     const today = new Date().toISOString().slice(0, 10)
     setRecurStart(today)
-  }, [assignedTherapistId, activeAssignment?.id])
+  }, [assignedTherapistId, primaryAssignment?.id])
 
   useEffect(() => {
     if (!caseItem?.product_module) return
@@ -545,9 +593,15 @@ export function CaseSchedulingHub({
       <TherapistAssignSection
         caseItem={caseItem}
         assignments={assignments}
+        activeTransition={activeTransition}
         canAssign={canAssign}
         readOnly={isViewOnly}
         onAssigned={() => {
+          if (caseItem?.id) {
+            apiFetch(`/api/v1/cases/${caseItem.id}/transitions/active`)
+              .then((row) => setActiveTransition(row || null))
+              .catch(() => setActiveTransition(null))
+          }
           onDone?.()
         }}
       />

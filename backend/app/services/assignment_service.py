@@ -251,6 +251,13 @@ def replace_assignment_in_service(
     notes: str | None = None,
 ) -> CaseAssignment:
     from app.core.billing_validation import case_billing_dict
+    from app.services import therapist_transition_service
+
+    if therapist_transition_service.active_transition_for_case(db, case_id):
+        raise ValueError(
+            "A therapist transition is in progress on this case. "
+            "Wait for the handover to finish or complete it before reassigning."
+        )
 
     case = db.get(Case, case_id)
     if not case:

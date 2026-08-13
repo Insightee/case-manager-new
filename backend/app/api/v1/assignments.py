@@ -67,6 +67,9 @@ def list_case_assignments(
     case = case_service.get_case(db, case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+    from app.services import therapist_transition_service
+
+    therapist_transition_service.complete_due_transitions(db)
     rows = assignment_service.list_assignments(db, case_id)
     billing = case_billing_dict(case) if case else None
     result = []
@@ -75,6 +78,7 @@ def list_case_assignments(
         data = assignment_service.assignment_to_read_dict(a, therapist.full_name if therapist else None)
         data["case_billing"] = billing
         result.append(AssignmentRead(**data))
+    db.commit()
     return result
 
 

@@ -139,6 +139,7 @@ def case_timeline(db: Session, user: User, case_id: int, *, limit: int = 40) -> 
         events.append(item)
 
     from app.models.assignment import CaseAssignmentStatus
+    from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionStatus
 
     all_assignments = db.scalars(
         select(CaseAssignment)
@@ -207,6 +208,51 @@ def case_timeline(db: Session, user: User, case_id: int, *, limit: int = 40) -> 
                     "created_at": a.start_date.isoformat() if a.start_date else None,
                     "entity_type": "case_assignment",
                     "entity_id": str(a.id),
+                }
+            )
+
+    transitions = list(
+        db.scalars(
+            select(CaseTherapistTransition)
+            .where(CaseTherapistTransition.case_id == case_id)
+            .order_by(CaseTherapistTransition.created_at.desc())
+        ).all()
+    )
+    for tr in transitions:
+        outgoing = therapists.get(tr.outgoing_therapist_user_id)
+        incoming = therapists.get(tr.incoming_therapist_user_id)
+        outgoing_label = outgoing.full_name if outgoing else str(tr.outgoing_therapist_user_id)
+        incoming_label = incoming.full_name if incoming else str(tr.incoming_therapist_user_id)
+        dates_label = ", ".join(str(d) for d in (tr.transition_dates or []))
+        if tr.status == CaseTherapistTransitionStatus.COMPLETED:
+            events.append(
+                {
+                    "source": "transition",
+                    "id": f"transition-{tr.id}-completed",
+                    "action_label": f"Transition completed: {outgoing_label} → {incoming_label}",
+                    "detail": f"Handover dates: {dates_label}. Billing updated for incoming therapist.",
+                    "created_at": tr.completed_at.isoformat() if tr.completed_at else None,
+                    "entity_type": "case_therapist_transition",
+                    "entity_id": str(tr.id),
+                }
+            )
+        elif tr.status in (
+            CaseTherapistTransitionStatus.ACTIVE,
+            CaseTherapistTransitionStatus.SCHEDULED,
+        ):
+            events.append(
+                {
+                    "source": "transition",
+                    "id": f"transition-{tr.id}-active",
+                    "action_label": f"Transition handover started: {outgoing_label} + {incoming_label}",
+                    "detail": (
+                        f"Both therapists submit logs on {dates_label}. "
+                        f"Flat pay ₹{float(tr.full_day_pay_inr):.0f} full day / "
+                        f"₹{float(tr.half_day_pay_inr):.0f} half day until handover completes."
+                    ),
+                    "created_at": tr.created_at.isoformat() if tr.created_at else None,
+                    "entity_type": "case_therapist_transition",
+                    "entity_id": str(tr.id),
                 }
             )
 

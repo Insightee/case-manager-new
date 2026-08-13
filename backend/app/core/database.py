@@ -1001,6 +1001,49 @@ def ensure_sqlite_schema_patches() -> None:
                 )
             )
 
+    if not insp.has_table("case_therapist_transitions"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE case_therapist_transitions ("
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "  case_id INTEGER NOT NULL,"
+                    "  case_service_id INTEGER NOT NULL,"
+                    "  outgoing_therapist_user_id INTEGER NOT NULL,"
+                    "  incoming_therapist_user_id INTEGER NOT NULL,"
+                    "  outgoing_assignment_id INTEGER NOT NULL,"
+                    "  incoming_assignment_id INTEGER NOT NULL,"
+                    "  transition_dates JSON NOT NULL,"
+                    "  status VARCHAR(32) NOT NULL,"
+                    "  pending_billing_update JSON NOT NULL,"
+                    "  full_day_pay_inr NUMERIC(12, 2) NOT NULL DEFAULT 500,"
+                    "  half_day_pay_inr NUMERIC(12, 2) NOT NULL DEFAULT 350,"
+                    "  notes TEXT,"
+                    "  created_by_user_id INTEGER NOT NULL,"
+                    "  completed_at DATETIME,"
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                    "  FOREIGN KEY(case_id) REFERENCES cases(id),"
+                    "  FOREIGN KEY(case_service_id) REFERENCES case_services(id),"
+                    "  FOREIGN KEY(outgoing_therapist_user_id) REFERENCES users(id),"
+                    "  FOREIGN KEY(incoming_therapist_user_id) REFERENCES users(id),"
+                    "  FOREIGN KEY(outgoing_assignment_id) REFERENCES case_assignments(id),"
+                    "  FOREIGN KEY(incoming_assignment_id) REFERENCES case_assignments(id),"
+                    "  FOREIGN KEY(created_by_user_id) REFERENCES users(id)"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_case_therapist_transitions_case_id "
+                    "ON case_therapist_transitions (case_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_case_therapist_transitions_status "
+                    "ON case_therapist_transitions (status)"
+                )
+            )
 
 def _sqlite_portal_indexes(conn_ctx=engine) -> None:
     """Idempotent composite indexes for portal query hardening (SQLite dev/test)."""
