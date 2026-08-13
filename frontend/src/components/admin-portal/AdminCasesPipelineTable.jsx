@@ -534,10 +534,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                     <td>{row.parent_name || '—'}</td>
                     <td>{row.child_name || '—'}</td>
                     <td>
-                      <span className="admin-cases-pipeline__programme">
-                        <span className="admin-chip">{moduleLabel(row.product_module) || '—'}</span>
-                        {row.day_type ? <CaseDayTypeBadge dayType={row.day_type} /> : null}
-                      </span>
+                      <span className="admin-chip">{moduleLabel(row.product_module) || '—'}</span>
                     </td>
                     <td>
                       {row.case_manager_name || (
