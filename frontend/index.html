@@ -27,21 +27,47 @@
       rel="stylesheet"
     />
     <title>InsighteCase</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f1f5f9;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+
+      .route-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        min-height: 100dvh;
+        padding: 2rem 1.25rem;
+        color: #64748b;
+        font-size: 0.9375rem;
+      }
+
+      .route-loading__spinner {
+        width: 22px;
+        height: 22px;
+        border: 2px solid #e2e8f0;
+        border-top-color: #4f46e5;
+        border-radius: 50%;
+        animation: route-loading-spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+
+      @keyframes route-loading-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root">
-      <div
-        style="
-          display: flex;
-          min-height: 100dvh;
-          align-items: center;
-          justify-content: center;
-          font-family: Inter, system-ui, sans-serif;
-          color: #64748b;
-          background: #f1f5f9;
-        "
-      >
-        Loading InsighteCase…
+      <div class="route-loading" role="status" aria-live="polite">
+        <span class="route-loading__spinner" aria-hidden="true"></span>
+        <span>Loading…</span>
       </div>
     </div>
     <script type="module" src="/src/main.jsx"></script>
