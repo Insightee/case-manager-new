@@ -334,12 +334,12 @@ export function TherapistLeavePage() {
                 <p style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#9ca3af', marginTop: 2 }}>{unpaidBreakdown}</p>
               ) : null}
             </div>
+            <div className="therapist-leave-page__stat-card">
+              <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a16207' }}>{loading ? '…' : pendingCount}</p>
+            </div>
           </>
         )}
-        <div className="therapist-leave-page__stat-card">
-          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Pending</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a16207' }}>{loading ? '…' : pendingCount}</p>
-        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
