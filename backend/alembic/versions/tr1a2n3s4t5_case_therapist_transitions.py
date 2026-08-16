@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "tr1a2n3s4t5"
 down_revision: Union[str, None] = "z8a9b0c1d2e3"
@@ -28,6 +29,8 @@ def upgrade() -> None:
 
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
+        # Create the type once via DO-block; use postgresql.ENUM(create_type=False)
+        # so op.create_table does not emit a second CREATE TYPE (sa.Enum does).
         bind.execute(
             sa.text(
                 """
@@ -40,7 +43,7 @@ def upgrade() -> None:
                 """
             )
         )
-        status_col = sa.Enum(
+        status_col = postgresql.ENUM(
             "SCHEDULED",
             "ACTIVE",
             "COMPLETED",
