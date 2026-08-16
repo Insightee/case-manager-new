@@ -9,6 +9,10 @@ from app.core.module_access import get_allowed_case_product_modules
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.attachment import Attachment
 from app.models.case import Case, CaseStatus
+from app.models.case_therapist_transition import (
+    CaseTherapistTransition,
+    CaseTherapistTransitionStatus,
+)
 from app.models.incident import Incident, IncidentStatus, OPEN_INCIDENT_STATUSES
 from app.models.report import MonthlyReport, ReportStatus
 from app.models.session import Session as TherapySession
@@ -208,6 +212,21 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
             .group_by(Incident.case_id)
         ).all()
     )
+    transition_case_ids = set(
+        db.scalars(
+            select(CaseTherapistTransition.case_id)
+            .where(
+                CaseTherapistTransition.case_id.in_(case_ids),
+                CaseTherapistTransition.status.in_(
+                    [
+                        CaseTherapistTransitionStatus.SCHEDULED,
+                        CaseTherapistTransitionStatus.ACTIVE,
+                    ]
+                ),
+            )
+            .distinct()
+        ).all()
+    )
 
     buckets: dict[str, list] = {col[0]: [] for col in PIPELINE_COLUMNS}
 
@@ -247,6 +266,7 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
             "service_type": case.service_type,
             "product_module": case.product_module,
             "day_type": case.day_type.value if case.day_type else None,
+            "in_transition": case.id in transition_case_ids,
             "status": case.status.value,
             "pipeline_column": column,
             "case_manager_user_id": cm_user_id,

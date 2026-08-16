@@ -55,6 +55,7 @@ class CaseRead(CaseBillingFields):
     child_id: int
     child_name: Optional[str] = None
     therapist_name: Optional[str] = None
+    in_transition: bool = False
     service_type: str
     product_module: str
     day_type: Optional[CaseDayType] = None

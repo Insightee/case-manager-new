@@ -8,12 +8,14 @@ import {
   formatCaseSessionLogCardTitle,
 } from '../../lib/caseSessionLogDisplay.js'
 import { sessionHasTimeEdit } from '../../lib/sessionTimes.js'
+import { TransitionLogBadge } from '../daily-logs/TransitionLogBadge.jsx'
 
 function SessionLogBadges({ session, log }) {
   return (
     <>
       {session ? <StatusBadge status={session.status} /> : null}
       {log ? <StatusBadge status={log.approval_status} /> : null}
+      <TransitionLogBadge log={log} />
       {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
       {log?.resubmitted_at ? (
         <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>

@@ -137,10 +137,15 @@ export function AdminCaseDetailPage() {
 
   const activeAssignment = assignments.find((a) => a.status === 'ACTIVE') || null
   const canEditCase = Boolean(
-    caseRow && can('case.update') && !isViewOnly && canWriteProduct(caseRow.product_module),
+    caseRow &&
+      !caseRow.in_transition &&
+      can('case.update') &&
+      !isViewOnly &&
+      canWriteProduct(caseRow.product_module),
   )
   const canManageStatus = Boolean(
     caseRow &&
+      !caseRow.in_transition &&
       !isViewOnly &&
       (can('admin.override') ||
         can('case.status_manage') ||
@@ -182,6 +187,11 @@ export function AdminCaseDetailPage() {
 
   return (
     <div className="admin-page admin-case-detail-page">
+      {caseRow.in_transition ? (
+        <p className="admin-alert admin-alert--info">
+          Therapist handover in progress. Case changes are paused; transition logs, transition-date management, and incident reporting remain available.
+        </p>
+      ) : null}
       <p style={{ marginBottom: 8 }}>
         <Link to="/admin/cases" className="admin-btn admin-btn--ghost admin-btn--sm">
           ← Cases

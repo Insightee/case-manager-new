@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
+import { TransitionLogBadge } from './TransitionLogBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import {
@@ -279,6 +280,7 @@ export function SessionLogReadOnly({
               approvalStatus={log?.approval_status}
               attendanceStatus={log?.attendance_status}
             />
+            <TransitionLogBadge log={log} />
           </div>
           {onClose ? (
             <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose}>

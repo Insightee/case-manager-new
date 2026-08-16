@@ -61,6 +61,9 @@ class CmLogReviewSessionSummary(BaseModel):
 class CmLogReviewLogRow(BaseModel):
     id: int
     session_id: int
+    transition_id: Optional[int] = None
+    transition_day_id: Optional[int] = None
+    is_transition_log: bool = False
     case_id: Optional[int] = None
     case_code: Optional[str] = None
     child_name: Optional[str] = None

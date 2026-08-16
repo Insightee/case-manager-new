@@ -1,19 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
 import { ReassignmentBillingConfirm } from './ReassignmentBillingConfirm.jsx'
+import { TransitionDateCalendar } from './TransitionDateCalendar.jsx'
+import { productRequiresDayType } from '../../lib/dayTypeLabels.js'
 
 const TRANSITION_DAY_COUNT = 3
 
 function defaultTransitionDates() {
-  const today = new Date()
-  const dates = []
-  for (let i = 0; i < TRANSITION_DAY_COUNT; i += 1) {
-    const d = new Date(today)
-    d.setDate(d.getDate() + i)
-    dates.push(d.toISOString().slice(0, 10))
-  }
-  return dates
+  return []
 }
 
 function formatDates(dates) {
@@ -36,25 +31,14 @@ export function TransitionTherapistSection({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-
-  useEffect(() => {
-    if (!expanded) {
-      setIncomingId('')
-      setTransitionDates(defaultTransitionDates())
-      setBillingReady(false)
-      setBillingPayload(null)
-      setError('')
-      setSuccess('')
-    }
-  }, [expanded])
-
-  useEffect(() => {
-    setBillingReady(false)
-    setBillingPayload(null)
-  }, [incomingId])
+  const [editingDates, setEditingDates] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancellationReason, setCancellationReason] = useState('')
 
   const blocked = Boolean(activeTransition)
   const canStart = canAssign && !readOnly && primaryTherapistId && !blocked
+  const dayTypeRequired = productRequiresDayType(caseItem?.product_module)
+  const dayTypeMissing = dayTypeRequired && !caseItem?.day_type
 
   const statusLine = useMemo(() => {
     if (!activeTransition) return null
@@ -63,12 +47,36 @@ export function TransitionTherapistSection({
     return `${outgoing} + ${incoming} · ${formatDates(activeTransition.transition_dates)} · ${activeTransition.status}`
   }, [activeTransition])
 
-  function updateDate(index, value) {
-    setTransitionDates((prev) => prev.map((d, i) => (i === index ? value : d)))
+  function openTransitionForm() {
+    if (dayTypeMissing) {
+      setError('Choose the school day type before adding a transition therapist.')
+      document.getElementById('case-school-day-type')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    setError('')
+    setSuccess('')
+    setExpanded(true)
+  }
+
+  function resetTransitionDraft() {
+    setIncomingId('')
+    setTransitionDates(defaultTransitionDates())
+    setBillingReady(false)
+    setBillingPayload(null)
+  }
+
+  function closeTransitionForm() {
+    setExpanded(false)
+    resetTransitionDraft()
+    setError('')
   }
 
   async function handleSubmit() {
     if (!caseItem?.id || !incomingId) return
+    if (dayTypeMissing) {
+      setError('Choose the school day type before starting the transition.')
+      return
+    }
     if (String(incomingId) === String(primaryTherapistId)) {
       setError('The transition therapist must be different from the current therapist.')
       return
@@ -78,7 +86,7 @@ export function TransitionTherapistSection({
       return
     }
     const uniqueDates = new Set(transitionDates)
-    if (uniqueDates.size !== TRANSITION_DAY_COUNT) {
+    if (transitionDates.length !== TRANSITION_DAY_COUNT || uniqueDates.size !== TRANSITION_DAY_COUNT) {
       setError('Please choose three different transition dates.')
       return
     }
@@ -96,9 +104,59 @@ export function TransitionTherapistSection({
       })
       setSuccess('Transition handover started. Both therapists can submit logs on the selected dates.')
       setExpanded(false)
+      resetTransitionDraft()
       onChanged?.()
     } catch (err) {
       setError(err.message || 'Could not start transition')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function beginDateEdit() {
+    setTransitionDates([...(activeTransition?.transition_dates || [])].sort())
+    setEditingDates(true)
+    setError('')
+    setSuccess('')
+  }
+
+  async function saveDateEdit() {
+    if (!activeTransition?.id || transitionDates.length !== TRANSITION_DAY_COUNT) {
+      setError('Please choose exactly three transition dates.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await apiFetch(`/api/v1/cases/${caseItem.id}/transitions/${activeTransition.id}/dates`, {
+        method: 'PATCH',
+        body: JSON.stringify({ transition_dates: transitionDates }),
+      })
+      setEditingDates(false)
+      setSuccess('Transition dates updated. Dates with submitted logs remain protected.')
+      onChanged?.()
+    } catch (err) {
+      setError(err.message || 'Could not update transition dates')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function cancelTransition() {
+    if (!activeTransition?.id) return
+    setBusy(true)
+    setError('')
+    try {
+      await apiFetch(`/api/v1/cases/${caseItem.id}/transitions/${activeTransition.id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: cancellationReason.trim() || null }),
+      })
+      setCancelling(false)
+      setCancellationReason('')
+      setSuccess('Transition cancelled. The original therapist remains assigned.')
+      onChanged?.()
+    } catch (err) {
+      setError(err.message || 'Could not cancel transition')
     } finally {
       setBusy(false)
     }
@@ -111,10 +169,65 @@ export function TransitionTherapistSection({
         Run a {TRANSITION_DAY_COUNT}-day handover where both therapists submit logs. Flat pay ₹500 full day / ₹350 half day during transition.
         Billing for the incoming therapist applies after handover completes.
       </p>
+      {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
+      {success ? <p className="admin-alert admin-alert--success">{success}</p> : null}
 
       {activeTransition ? (
         <div className="admin-alert admin-alert--success" style={{ marginBottom: 10 }}>
           <strong>Handover in progress.</strong> {statusLine}
+        </div>
+      ) : null}
+
+      {activeTransition && canAssign && !readOnly ? (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={beginDateEdit}>
+            Edit transition dates
+          </button>
+          {activeTransition.can_cancel ? (
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setCancelling(true)}>
+              Cancel transition
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {editingDates && activeTransition ? (
+        <div style={{ marginBottom: 12 }}>
+          <TransitionDateCalendar
+            caseId={caseItem.id}
+            incomingTherapistId={activeTransition.incoming_therapist_user_id}
+            outgoingTherapistId={activeTransition.outgoing_therapist_user_id}
+            value={transitionDates}
+            onChange={setTransitionDates}
+            lockedDates={activeTransition.locked_dates || []}
+            disabled={busy || readOnly}
+            requiredCount={TRANSITION_DAY_COUNT}
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={saveDateEdit} disabled={busy || transitionDates.length !== TRANSITION_DAY_COUNT}>
+              {busy ? 'Saving…' : 'Save transition dates'}
+            </button>
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setEditingDates(false)} disabled={busy}>
+              Keep current dates
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {cancelling && activeTransition ? (
+        <div className="admin-alert admin-alert--warning" style={{ marginBottom: 10 }}>
+          <label className="admin-label">
+            Cancellation note (optional)
+            <textarea className="admin-input" rows={2} value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} />
+          </label>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={cancelTransition} disabled={busy}>
+              {busy ? 'Cancelling…' : 'Confirm cancellation'}
+            </button>
+            <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setCancelling(false)} disabled={busy}>
+              Keep transition
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -131,7 +244,7 @@ export function TransitionTherapistSection({
       ) : null}
 
       {canStart && !expanded ? (
-        <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={() => setExpanded(true)}>
+        <button type="button" className="admin-btn admin-btn--secondary admin-btn--sm" onClick={openTransitionForm}>
           Add transition therapist
         </button>
       ) : null}
@@ -145,7 +258,12 @@ export function TransitionTherapistSection({
               productModule={caseItem.product_module}
               caseId={caseItem.id}
               value={incomingId}
-              onChange={setIncomingId}
+              onChange={(value) => {
+                setIncomingId(value)
+                setBillingReady(false)
+                setBillingPayload(null)
+                setTransitionDates(defaultTransitionDates())
+              }}
               disabled={readOnly}
             />
           </label>
@@ -154,20 +272,15 @@ export function TransitionTherapistSection({
             <p className="admin-label__caption" style={{ marginBottom: 6 }}>
               Transition dates ({TRANSITION_DAY_COUNT} days)
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {transitionDates.map((d, index) => (
-                <label key={`transition-date-${index}`} className="admin-label" style={{ minWidth: 150 }}>
-                  Day {index + 1}
-                  <input
-                    type="date"
-                    className="admin-input"
-                    value={d}
-                    onChange={(e) => updateDate(index, e.target.value)}
-                    disabled={readOnly}
-                  />
-                </label>
-              ))}
-            </div>
+            <TransitionDateCalendar
+              caseId={caseItem.id}
+              incomingTherapistId={incomingId}
+              outgoingTherapistId={primaryTherapistId}
+              value={transitionDates}
+              onChange={setTransitionDates}
+              disabled={readOnly || busy}
+              requiredCount={TRANSITION_DAY_COUNT}
+            />
           </div>
 
           {incomingId ? (
@@ -187,19 +300,16 @@ export function TransitionTherapistSection({
             />
           ) : null}
 
-          {error ? <p className="admin-alert admin-alert--error" style={{ gridColumn: '1 / -1' }}>{error}</p> : null}
-          {success ? <p className="admin-alert admin-alert--success" style={{ gridColumn: '1 / -1' }}>{success}</p> : null}
-
           <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
               className="admin-btn admin-btn--primary"
               onClick={handleSubmit}
-              disabled={busy || !incomingId || !billingReady}
+              disabled={busy || !incomingId || !billingReady || transitionDates.length !== TRANSITION_DAY_COUNT}
             >
               {busy ? 'Starting…' : 'Start transition handover'}
             </button>
-            <button type="button" className="admin-btn admin-btn--ghost" onClick={() => setExpanded(false)} disabled={busy}>
+            <button type="button" className="admin-btn admin-btn--ghost" onClick={closeTransitionForm} disabled={busy}>
               Cancel
             </button>
           </div>

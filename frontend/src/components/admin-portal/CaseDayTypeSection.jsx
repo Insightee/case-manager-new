@@ -92,7 +92,7 @@ export function CaseDayTypeSection({ caseItem, readOnly, canEdit, onCaseUpdated 
   }
 
   return (
-    <article className="admin-scheduling-hub__day-type card">
+    <article id="case-school-day-type" className="admin-scheduling-hub__day-type card">
       <h3 style={{ fontWeight: 700, marginBottom: 12 }}>School day type</h3>
       {currentDayType ? (
         <p className="admin-muted" style={{ fontSize: '0.85rem', marginBottom: 12 }}>

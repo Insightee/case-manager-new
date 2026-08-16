@@ -2,21 +2,26 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.billing_validation import apply_billing_payload, case_billing_dict, validate_case_billing
+from app.core.timezone import today_ist
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case
+from app.models.daily_log import DailyLog
+from app.models.leave import LeaveStatus, TherapistLeave
 from app.models.case_therapist_transition import (
     TRANSITION_DEFAULT_DAY_COUNT,
     TRANSITION_HALF_DAY_PAY_INR,
     TRANSITION_FULL_DAY_PAY_INR,
     CaseTherapistTransition,
+    CaseTherapistTransitionDay,
     CaseTherapistTransitionStatus,
 )
+from app.models.session import Session as TherapySession
 from app.models.user import User
-from app.services import assignment_service, case_service_service
+from app.services import assignment_service, case_day_type_service, case_service_service
 
 OPEN_TRANSITION_STATUSES = frozenset(
     {
@@ -26,7 +31,12 @@ OPEN_TRANSITION_STATUSES = frozenset(
 )
 
 
-def _parse_transition_dates(raw_dates: list[str]) -> list[date]:
+def _parse_transition_dates(
+    raw_dates: list[str],
+    *,
+    today: date | None = None,
+    allowed_past_dates: set[date] | None = None,
+) -> list[date]:
     if len(raw_dates) != TRANSITION_DEFAULT_DAY_COUNT:
         raise ValueError(f"Please choose exactly {TRANSITION_DEFAULT_DAY_COUNT} transition dates.")
     parsed: list[date] = []
@@ -38,11 +48,85 @@ def _parse_transition_dates(raw_dates: list[str]) -> list[date]:
     if len(set(parsed)) != len(parsed):
         raise ValueError("Transition dates must be unique.")
     parsed.sort()
+    ref = today or today_ist()
+    permitted = allowed_past_dates or set()
+    if any(value < ref and value not in permitted for value in parsed):
+        raise ValueError("Choose today or a future date for the transition.")
     return parsed
 
 
+def _day_type_value(case: Case) -> str:
+    if case_day_type_service.product_requires_day_type(case.product_module) and not case.day_type:
+        raise ValueError("Select half day or full day before starting a therapist transition.")
+    return case.day_type.value if case.day_type else "FULL_DAY"
+
+
+def _transition_pay_rate(day_type: str) -> float:
+    if day_type == "HALF_DAY":
+        return float(TRANSITION_HALF_DAY_PAY_INR)
+    return float(TRANSITION_FULL_DAY_PAY_INR)
+
+
+def _leave_applies_to_case(leave: TherapistLeave, case_id: int) -> bool:
+    scoped_ids = {int(value) for value in (leave.case_ids or [])}
+    if leave.case_id is not None:
+        scoped_ids.add(int(leave.case_id))
+    return not scoped_ids or case_id in scoped_ids
+
+
+def unavailable_transition_dates(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_ids: set[int],
+    start_date: date,
+    end_date: date,
+) -> dict[str, list[int]]:
+    if not therapist_user_ids:
+        return {}
+    leaves = db.scalars(
+        select(TherapistLeave).where(
+            TherapistLeave.therapist_user_id.in_(therapist_user_ids),
+            TherapistLeave.status.in_([LeaveStatus.PENDING, LeaveStatus.APPROVED]),
+            TherapistLeave.start_date <= end_date,
+            TherapistLeave.end_date >= start_date,
+        )
+    ).all()
+    unavailable: dict[str, list[int]] = {}
+    for leave in leaves:
+        if not _leave_applies_to_case(leave, case_id):
+            continue
+        current = max(start_date, leave.start_date)
+        last = min(end_date, leave.end_date)
+        while current <= last:
+            unavailable.setdefault(current.isoformat(), []).append(leave.therapist_user_id)
+            current = current.fromordinal(current.toordinal() + 1)
+    return unavailable
+
+
+def _validate_therapist_leave_dates(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_ids: set[int],
+    dates: list[date],
+) -> None:
+    unavailable = unavailable_transition_dates(
+        db,
+        case_id=case_id,
+        therapist_user_ids=therapist_user_ids,
+        start_date=min(dates),
+        end_date=max(dates),
+    )
+    conflicts = [d.isoformat() for d in dates if d.isoformat() in unavailable]
+    if conflicts:
+        raise ValueError(
+            f"One of the therapists has pending or approved leave on: {', '.join(conflicts)}."
+        )
+
+
 def _transition_status_for_dates(dates: list[date], *, today: date | None = None) -> CaseTherapistTransitionStatus:
-    ref = today or date.today()
+    ref = today or today_ist()
     if ref < dates[0]:
         return CaseTherapistTransitionStatus.SCHEDULED
     if ref <= dates[-1]:
@@ -96,6 +180,57 @@ def _validate_pending_billing(case: Case, billing_update: dict) -> None:
     validate_case_billing(probe)
 
 
+def _submitted_log_dates_for_participants(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_ids: set[int],
+    dates: list[date],
+) -> set[date]:
+    return set(
+        db.scalars(
+            select(TherapySession.scheduled_date)
+            .join(DailyLog, DailyLog.session_id == TherapySession.id)
+            .where(
+                TherapySession.case_id == case_id,
+                TherapySession.therapist_user_id.in_(therapist_user_ids),
+                TherapySession.scheduled_date.in_(dates),
+                DailyLog.submitted_at.is_not(None),
+            )
+        ).all()
+    )
+
+
+def submitted_transition_dates(db: Session, transition_id: int) -> set[date]:
+    linked_dates = set(
+        db.scalars(
+            select(CaseTherapistTransitionDay.transition_date)
+            .join(
+                DailyLog,
+                DailyLog.transition_day_id == CaseTherapistTransitionDay.id,
+            )
+            .where(
+                CaseTherapistTransitionDay.transition_id == transition_id,
+                DailyLog.submitted_at.is_not(None),
+            )
+        ).all()
+    )
+    transition = db.get(CaseTherapistTransition, transition_id)
+    if not transition:
+        return linked_dates
+    dates = [date.fromisoformat(str(value)[:10]) for value in transition.transition_dates]
+    participant_dates = _submitted_log_dates_for_participants(
+        db,
+        case_id=transition.case_id,
+        therapist_user_ids={
+            transition.outgoing_therapist_user_id,
+            transition.incoming_therapist_user_id,
+        },
+        dates=dates,
+    )
+    return linked_dates | participant_dates
+
+
 def create_transition(
     db: Session,
     *,
@@ -115,6 +250,7 @@ def create_transition(
 
     dates = _parse_transition_dates(transition_dates)
     _validate_pending_billing(case, billing_update)
+    day_type = _day_type_value(case)
 
     case_service = case_service_service.ensure_default_case_service(db, case)
     outgoing = db.scalars(
@@ -128,6 +264,22 @@ def create_transition(
         raise ValueError("Assign a primary therapist before starting a transition handover.")
     if outgoing.therapist_user_id == incoming_therapist_user_id:
         raise ValueError("The transition therapist must be different from the current therapist.")
+    participant_ids = {outgoing.therapist_user_id, incoming_therapist_user_id}
+    _validate_therapist_leave_dates(
+        db,
+        case_id=case_id,
+        therapist_user_ids=participant_ids,
+        dates=dates,
+    )
+    existing_log_dates = _submitted_log_dates_for_participants(
+        db,
+        case_id=case_id,
+        therapist_user_ids=participant_ids,
+        dates=dates,
+    )
+    if existing_log_dates:
+        labels = ", ".join(sorted(item.isoformat() for item in existing_log_dates))
+        raise ValueError(f"Transition dates cannot already have submitted therapist logs: {labels}.")
 
     incoming = assignment_service.add_assignment_to_service(
         db,
@@ -149,12 +301,166 @@ def create_transition(
         transition_dates=[d.isoformat() for d in dates],
         status=_transition_status_for_dates(dates),
         pending_billing_update=billing_update,
+        day_type=day_type,
         full_day_pay_inr=TRANSITION_FULL_DAY_PAY_INR,
         half_day_pay_inr=TRANSITION_HALF_DAY_PAY_INR,
         notes=notes,
         created_by_user_id=created_by_user_id,
     )
     db.add(transition)
+    db.flush()
+    pay_rate = _transition_pay_rate(day_type)
+    for transition_date in dates:
+        db.add(
+            CaseTherapistTransitionDay(
+                transition_id=transition.id,
+                transition_date=transition_date,
+                day_type=day_type,
+                pay_rate_inr=pay_rate,
+            )
+        )
+    db.flush()
+    return transition
+
+
+def transition_day_for_session(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_id: int,
+    scheduled_date: date,
+) -> tuple[CaseTherapistTransition, CaseTherapistTransitionDay] | None:
+    transitions = db.scalars(
+        select(CaseTherapistTransition).where(
+            CaseTherapistTransition.case_id == case_id,
+            CaseTherapistTransition.status.in_(OPEN_TRANSITION_STATUSES),
+            or_(
+                CaseTherapistTransition.outgoing_therapist_user_id == therapist_user_id,
+                CaseTherapistTransition.incoming_therapist_user_id == therapist_user_id,
+            ),
+        )
+    ).all()
+    for transition in transitions:
+        transition_dates = {
+            date.fromisoformat(str(value)[:10]) for value in (transition.transition_dates or [])
+        }
+        if scheduled_date not in transition_dates:
+            continue
+        day = db.scalars(
+            select(CaseTherapistTransitionDay).where(
+                CaseTherapistTransitionDay.transition_id == transition.id,
+                CaseTherapistTransitionDay.transition_date == scheduled_date,
+            )
+        ).first()
+        if not day:
+            case = db.get(Case, case_id)
+            case_day_type = case.day_type.value if case and case.day_type else None
+            day_type = transition.day_type or case_day_type or "FULL_DAY"
+            if not transition.day_type:
+                transition.day_type = day_type
+            day = CaseTherapistTransitionDay(
+                transition_id=transition.id,
+                transition_date=scheduled_date,
+                day_type=day_type,
+                pay_rate_inr=_transition_pay_rate(day_type),
+            )
+            db.add(day)
+            db.flush()
+        return transition, day
+    return None
+
+
+def update_transition_dates(
+    db: Session,
+    transition: CaseTherapistTransition,
+    *,
+    transition_dates: list[str],
+) -> CaseTherapistTransition:
+    if transition.status not in OPEN_TRANSITION_STATUSES:
+        raise ValueError("Only an open therapist transition can be rescheduled.")
+    locked_dates = submitted_transition_dates(db, transition.id)
+    dates = _parse_transition_dates(
+        transition_dates,
+        allowed_past_dates=locked_dates,
+    )
+    if not locked_dates.issubset(set(dates)):
+        labels = ", ".join(sorted(value.isoformat() for value in locked_dates))
+        raise ValueError(f"Dates with submitted transition logs cannot be changed: {labels}.")
+
+    participant_ids = {
+        transition.outgoing_therapist_user_id,
+        transition.incoming_therapist_user_id,
+    }
+    editable_dates = [value for value in dates if value not in locked_dates]
+    if editable_dates:
+        _validate_therapist_leave_dates(
+            db,
+            case_id=transition.case_id,
+            therapist_user_ids=participant_ids,
+            dates=editable_dates,
+        )
+    existing_log_dates = _submitted_log_dates_for_participants(
+        db,
+        case_id=transition.case_id,
+        therapist_user_ids=participant_ids,
+        dates=editable_dates,
+    )
+    if existing_log_dates:
+        labels = ", ".join(sorted(value.isoformat() for value in existing_log_dates))
+        raise ValueError(f"New transition dates cannot already have submitted logs: {labels}.")
+
+    existing_days = {
+        item.transition_date: item
+        for item in db.scalars(
+            select(CaseTherapistTransitionDay).where(
+                CaseTherapistTransitionDay.transition_id == transition.id
+            )
+        ).all()
+    }
+    for transition_date, day in existing_days.items():
+        if transition_date not in dates:
+            db.delete(day)
+    day_type = transition.day_type or "FULL_DAY"
+    for transition_date in dates:
+        if transition_date not in existing_days:
+            db.add(
+                CaseTherapistTransitionDay(
+                    transition_id=transition.id,
+                    transition_date=transition_date,
+                    day_type=day_type,
+                    pay_rate_inr=_transition_pay_rate(day_type),
+                )
+            )
+
+    transition.transition_dates = [value.isoformat() for value in dates]
+    transition.status = _transition_status_for_dates(dates)
+    incoming = db.get(CaseAssignment, transition.incoming_assignment_id)
+    if incoming and not locked_dates:
+        incoming.start_date = dates[0]
+    db.flush()
+    return transition
+
+
+def cancel_transition(
+    db: Session,
+    transition: CaseTherapistTransition,
+    *,
+    actor_user_id: int,
+    reason: str | None = None,
+) -> CaseTherapistTransition:
+    if transition.status not in OPEN_TRANSITION_STATUSES:
+        raise ValueError("Only an open therapist transition can be cancelled.")
+    if submitted_transition_dates(db, transition.id):
+        raise ValueError("This transition can no longer be cancelled because a transition log exists.")
+    incoming = db.get(CaseAssignment, transition.incoming_assignment_id)
+    if incoming and incoming.status == CaseAssignmentStatus.ACTIVE:
+        incoming.status = CaseAssignmentStatus.ENDED
+        incoming.end_date = incoming.start_date
+        incoming.reason_for_change = "Transition handover cancelled"
+    transition.status = CaseTherapistTransitionStatus.CANCELLED
+    transition.cancelled_by_user_id = actor_user_id
+    transition.cancelled_at = datetime.now(timezone.utc)
+    transition.cancellation_reason = (reason or "").strip() or None
     db.flush()
     return transition
 
@@ -193,7 +499,7 @@ def complete_transition(
 
 
 def complete_due_transitions(db: Session, *, today: date | None = None) -> list[CaseTherapistTransition]:
-    ref = today or date.today()
+    ref = today or today_ist()
     rows = list(
         db.scalars(
             select(CaseTherapistTransition).where(
@@ -214,6 +520,26 @@ def complete_due_transitions(db: Session, *, today: date | None = None) -> list[
     return completed
 
 
+def complete_due_transition_for_case(
+    db: Session,
+    case_id: int,
+    *,
+    today: date | None = None,
+) -> CaseTherapistTransition | None:
+    transition = active_transition_for_case(db, case_id)
+    if not transition:
+        return None
+    ref = today or today_ist()
+    dates = [date.fromisoformat(str(value)[:10]) for value in transition.transition_dates]
+    if ref > max(dates):
+        return complete_transition(db, transition)
+    expected = _transition_status_for_dates(dates, today=ref)
+    if transition.status != expected:
+        transition.status = expected
+        db.flush()
+    return transition
+
+
 def transition_to_read_dict(db: Session, transition: CaseTherapistTransition) -> dict:
     user_ids = {
         transition.outgoing_therapist_user_id,
@@ -227,6 +553,7 @@ def transition_to_read_dict(db: Session, transition: CaseTherapistTransition) ->
     outgoing = users.get(transition.outgoing_therapist_user_id)
     incoming = users.get(transition.incoming_therapist_user_id)
     creator = users.get(transition.created_by_user_id)
+    locked_dates = submitted_transition_dates(db, transition.id)
     return {
         "id": transition.id,
         "case_id": transition.case_id,
@@ -240,11 +567,16 @@ def transition_to_read_dict(db: Session, transition: CaseTherapistTransition) ->
         "transition_dates": list(transition.transition_dates or []),
         "status": transition.status.value,
         "pending_billing_update": transition.pending_billing_update,
+        "day_type": transition.day_type,
         "full_day_pay_inr": float(transition.full_day_pay_inr),
         "half_day_pay_inr": float(transition.half_day_pay_inr),
+        "locked_dates": sorted(value.isoformat() for value in locked_dates),
+        "can_cancel": transition.status in OPEN_TRANSITION_STATUSES and not locked_dates,
         "notes": transition.notes,
         "created_by_user_id": transition.created_by_user_id,
         "created_by_name": creator.full_name if creator else None,
         "completed_at": transition.completed_at.isoformat() if transition.completed_at else None,
+        "cancelled_at": transition.cancelled_at.isoformat() if transition.cancelled_at else None,
+        "cancellation_reason": transition.cancellation_reason,
         "created_at": transition.created_at.isoformat() if transition.created_at else None,
     }

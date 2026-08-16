@@ -217,6 +217,9 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
           ) : null}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          {localLog.is_transition_log ? (
+            <span className="session-card__badge session-card__badge--neutral">Transition log</span>
+          ) : null}
           <span className={`session-card__badge ${isTherapistLeave ? 'session-card__badge--neutral' : ''}`}>
             {badgeLabel}
           </span>

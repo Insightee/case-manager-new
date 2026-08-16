@@ -608,7 +608,7 @@ export function CaseSchedulingHub({
 
       <CaseDayTypeSection
         caseItem={caseItem}
-        readOnly={isViewOnly}
+        readOnly={isViewOnly || Boolean(activeTransition)}
         canEdit={canEditBilling}
         onCaseUpdated={onCaseUpdated}
       />
@@ -616,7 +616,7 @@ export function CaseSchedulingHub({
       {/* ── Section 2: Billing Review ── */}
       <BillingReviewSection
         caseItem={caseItem}
-        canEdit={canEditBilling}
+        canEdit={canEditBilling && !activeTransition}
         onSaved={(updated) => onCaseUpdated?.(updated)}
       />
 
@@ -627,7 +627,11 @@ export function CaseSchedulingHub({
           Set up a weekly recurring schedule. Use one-off booking below when you need a single extra session.
         </p>
 
-        {!therapistId ? (
+        {activeTransition ? (
+          <p className="admin-scheduling-hub__billing-note">
+            Scheduling changes are paused during the therapist handover. Existing sessions and transition logs remain available.
+          </p>
+        ) : !therapistId ? (
           <p className="admin-scheduling-hub__billing-note">
             Assign or confirm a therapist above to continue scheduling.
           </p>

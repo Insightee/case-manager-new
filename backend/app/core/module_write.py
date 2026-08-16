@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.module_access import is_view_only_user, module_bypass, user_has_feature
 from app.core.modules import MODULE_BY_ID
 from app.core.rbac_access import build_module_registry, user_can_write_module, user_module_enabled
 from app.models.case import Case
+from app.models.case_therapist_transition import (
+    CaseTherapistTransition,
+    CaseTherapistTransitionStatus,
+)
 from app.models.user import User
+from app.services import therapist_transition_service
 
 CLINICAL_PROGRAMME_IDS = frozenset({"homecare", "shadow_support"})
 
@@ -100,7 +106,51 @@ def user_can_write_feature(
     return False
 
 
-def ensure_case_write_access(user: User, case: Case, db: Session | None = None) -> None:
+def ensure_case_transition_allows_write(
+    case: Case,
+    db: Session,
+    *,
+    allow_during_transition: bool = False,
+) -> None:
+    if allow_during_transition:
+        return
+    therapist_transition_service.complete_due_transition_for_case(db, case.id)
+    open_transition = db.scalars(
+        select(CaseTherapistTransition.id)
+        .where(
+            CaseTherapistTransition.case_id == case.id,
+            CaseTherapistTransition.status.in_(
+                [
+                    CaseTherapistTransitionStatus.SCHEDULED,
+                    CaseTherapistTransitionStatus.ACTIVE,
+                ]
+            ),
+        )
+        .limit(1)
+    ).first()
+    if open_transition:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This case is in a therapist transition. Other case changes are paused "
+                "until the handover is completed or cancelled."
+            ),
+        )
+
+
+def ensure_case_write_access(
+    user: User,
+    case: Case,
+    db: Session | None = None,
+    *,
+    allow_during_transition: bool = False,
+) -> None:
+    if db is not None:
+        ensure_case_transition_allows_write(
+            case,
+            db,
+            allow_during_transition=allow_during_transition,
+        )
     if module_bypass(user):
         return
     if is_view_only_user(user):
@@ -160,7 +210,7 @@ def ensure_log_review_write_access(user: User, case: Case, db: Session | None = 
         _raise_read_only()
     if _assigned_cm_on_caseload(user, case):
         return
-    ensure_case_write_access(user, case, db)
+    ensure_case_write_access(user, case, db, allow_during_transition=True)
     ensure_feature_write_access(user, "session_logs", product_module=case.product_module, db=db)
 
 

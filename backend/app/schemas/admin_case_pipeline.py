@@ -14,6 +14,7 @@ class AdminCasePipelineCard(BaseModel):
     service_type: str
     product_module: str
     day_type: Optional[str] = None
+    in_transition: bool = False
     status: str
     pipeline_column: str
     case_manager_user_id: Optional[int] = None

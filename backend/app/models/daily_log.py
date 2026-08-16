@@ -30,6 +30,12 @@ class DailyLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), unique=True, nullable=False)
+    transition_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("case_therapist_transitions.id"), nullable=True, index=True
+    )
+    transition_day_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("case_therapist_transition_days.id"), nullable=True, index=True
+    )
     attendance_status: Mapped[str] = mapped_column(String(64), nullable=False)
     activities_done: Mapped[Optional[str ]] = mapped_column(Text)
     session_notes: Mapped[Optional[str]] = mapped_column(Text)
@@ -56,3 +62,5 @@ class DailyLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session = relationship("Session", back_populates="daily_log")
+    transition = relationship("CaseTherapistTransition", foreign_keys=[transition_id])
+    transition_day = relationship("CaseTherapistTransitionDay", foreign_keys=[transition_day_id])

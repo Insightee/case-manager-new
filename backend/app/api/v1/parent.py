@@ -241,6 +241,8 @@ def _parent_session_log_read(db: Session, log: DailyLog, case: Case | None, ther
 
     return ParentSessionLogRead(
         id=log.id,
+        transition_id=log.transition_id,
+        is_transition_log=bool(log.transition_id),
         case_id=s.case_id if s else 0,
         case_code=case.case_code if case else None,
         child_name=case.child.full_name if case and case.child else None,
@@ -270,6 +272,7 @@ def _parent_session_log_read(db: Session, log: DailyLog, case: Case | None, ther
         attendance_label=fields.get("attendance_label"),
         what_we_did=fields.get("what_we_did"),
         what_is_next=fields.get("what_is_next"),
+        status_label="Transition log" if log.transition_id else None,
         parent_display_status=display_status,
         can_parent_comment=True,
         comment_count=len(comments_list),

@@ -12,6 +12,7 @@ from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.module_write import ensure_case_transition_allows_write
 from app.core.permissions import user_has_permission
 from app.models.case import Case
 from app.models.session import Session as TherapySession
@@ -211,6 +212,10 @@ def book_slot(
         source = BookingSource.ADMIN
     else:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+    case = db.get(Case, payload.case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_transition_allows_write(case, db)
     try:
         slot = appt_booking.book_with_session(
             db,
@@ -260,6 +265,10 @@ def cancel_slot_booking(
         raise HTTPException(status_code=403, detail="Access denied")
     slot_snapshot = db.get(TherapistSlot, slot_id)
     case_id_before = slot_snapshot.case_id if slot_snapshot else None
+    if case_id_before:
+        case = db.get(Case, case_id_before)
+        if case:
+            ensure_case_transition_allows_write(case, db)
     try:
         slot = sched.cancel_booking_with_reason(
             db,
@@ -337,6 +346,10 @@ def assign_recurring(
     can_self = user_has_permission(user, "slot.book") and payload.therapist_user_id == user.id
     if not can_admin and not can_self:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+    case = db.get(Case, payload.case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_transition_allows_write(case, db)
     try:
         record = sched.assign_recurring_schedule(
             db,

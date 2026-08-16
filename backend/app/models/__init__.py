@@ -8,7 +8,7 @@ from app.models.audit_event import AuditEvent
 from app.models.case import BillingType, Case, CompensationMode
 from app.models.case_service import CaseService, CaseServiceStatus
 from app.models.case_billing_preference import CaseBillingPreference
-from app.models.case_therapist_transition import CaseTherapistTransition
+from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionDay
 from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.iep_plan import IepPlan, IepPlanStatus
@@ -115,6 +115,8 @@ __all__ = [
     "CaseClientStatusAudit",
     "CaseService",
     "CaseServiceStatus",
+    "CaseTherapistTransition",
+    "CaseTherapistTransitionDay",
     "BillingType",
     "CompensationMode",
     "CaseManagerMeeting",

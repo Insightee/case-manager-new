@@ -82,7 +82,7 @@ def test_create_transition_adds_second_active_assignment():
     t1, t2 = _pick_two_therapists(ah)
     _prepare_case_with_therapist(case_id, t1, ah)
 
-    start = date(2026, 9, 1)
+    start = date.today() + timedelta(days=10)
     dates = [(start + timedelta(days=i)).isoformat() for i in range(3)]
 
     created = client.post(
@@ -129,7 +129,7 @@ def test_reassignment_blocked_during_active_transition():
     t1, t2 = _pick_two_therapists(ah)
     _prepare_case_with_therapist(case_id, t1, ah)
 
-    start = date(2026, 10, 1)
+    start = date.today() + timedelta(days=20)
     dates = [(start + timedelta(days=i)).isoformat() for i in range(3)]
     created = client.post(
         f"/api/v1/cases/{case_id}/transitions",
@@ -170,7 +170,7 @@ def test_transition_completes_and_applies_billing():
     t1, t2 = _pick_two_therapists(ah)
     _prepare_case_with_therapist(case_id, t1, ah)
 
-    start = date(2026, 8, 1)
+    start = date.today() + timedelta(days=30)
     dates = [(start + timedelta(days=i)).isoformat() for i in range(3)]
 
     created = client.post(
@@ -207,7 +207,7 @@ def test_transition_completes_and_applies_billing():
         assert transition.status == CaseTherapistTransitionStatus.COMPLETED
         outgoing = db.get(CaseAssignment, transition.outgoing_assignment_id)
         assert outgoing.status == CaseAssignmentStatus.TRANSFERRED
-        assert outgoing.end_date == date(2026, 8, 3)
+        assert outgoing.end_date == start + timedelta(days=2)
     finally:
         db.close()
 

@@ -14,6 +14,7 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.visibility import VisibilityStatus
 from app.core.timezone import ensure_utc_aware, today_ist
+from app.services import therapist_transition_service
 
 
 def _normalize_attendance(value: str | AttendanceStatus) -> str:
@@ -116,8 +117,30 @@ def create_daily_log(db: Session, **kwargs) -> tuple[DailyLog, bool]:
         raise ValueError("Late reason is required for sessions from past days")
 
     attendance = _normalize_attendance(kwargs.get("attendance_status", AttendanceStatus.PRESENT))
+    transition_match = therapist_transition_service.transition_day_for_session(
+        db,
+        case_id=session.case_id,
+        therapist_user_id=session.therapist_user_id,
+        scheduled_date=session.scheduled_date,
+    )
+    if transition_match:
+        existing_transition_log = db.scalars(
+            select(DailyLog)
+            .join(TherapySession, TherapySession.id == DailyLog.session_id)
+            .where(
+                DailyLog.transition_day_id == transition_match[1].id,
+                TherapySession.therapist_user_id == session.therapist_user_id,
+            )
+            .limit(1)
+        ).first()
+        if existing_transition_log:
+            raise ValueError(
+                "A transition log from this therapist already exists for this handover day."
+            )
     log = DailyLog(
         session_id=kwargs["session_id"],
+        transition_id=transition_match[0].id if transition_match else None,
+        transition_day_id=transition_match[1].id if transition_match else None,
         attendance_status=attendance,
         session_notes=kwargs.get("session_notes"),
         activities_done=kwargs.get("activities_done"),
@@ -258,6 +281,9 @@ def log_to_read(
     data = {
         "id": log.id,
         "session_id": log.session_id,
+        "transition_id": log.transition_id,
+        "transition_day_id": log.transition_day_id,
+        "is_transition_log": bool(log.transition_id),
         "case_id": session.case_id if session else None,
         "case_code": case.case_code if case else (session.case.case_code if session and getattr(session, "case", None) else None),
         "attendance_status": log.attendance_status,
@@ -293,7 +319,16 @@ def log_to_read(
         data["session_notes"] = log.session_notes
         data["observations"] = log.observations
         data["parent_notes"] = log.parent_notes
-    if log.late_addition:
+    if log.transition_id:
+        data["source"] = "transition"
+        status = log.approval_status.value if hasattr(log.approval_status, "value") else str(log.approval_status)
+        if status == "PENDING":
+            data["status_label"] = "Transition log — pending review"
+        elif status == "APPROVED":
+            data["status_label"] = "Transition log — approved"
+        elif status == "REJECTED":
+            data["status_label"] = "Transition log — rejected"
+    elif log.late_addition:
         data["source"] = "forgotten"
         status = log.approval_status.value if hasattr(log.approval_status, "value") else str(log.approval_status)
         if status == "PENDING":

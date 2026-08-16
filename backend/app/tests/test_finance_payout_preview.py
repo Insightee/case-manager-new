@@ -280,6 +280,10 @@ def test_finance_payout_preview_report_json():
         assert "Case End Date" in row
         assert "Calendar Days" in row
         assert "Predicted Subtotal" in row
+        assert "Transition Days" in row
+        assert "Transition Day Type" in row
+        assert "Transition Days Total Amount" in row
+        assert "Predicted Total" in row
         assert "Per Session Share" in row
 
 
