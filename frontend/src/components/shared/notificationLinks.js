@@ -93,6 +93,16 @@ export function resolveNotificationLink(entityType, entityId, portal) {
 /** Resolve session-log notifications to the exact log (admin needs case lookup). */
 export async function resolveNotificationLinkAsync(entityType, entityId, portal, apiFetch) {
   const et = (entityType || '').toLowerCase()
+  if (et === 'billing_approval_request' && entityId != null && portal === 'admin') {
+    try {
+      const request = await apiFetch(`/api/v1/billing-approvals/${entityId}`)
+      if (request?.caseId) {
+        return `/admin/cases/${request.caseId}?tab=billing&billing_approval=${entityId}`
+      }
+    } catch {
+      return '/admin/cases'
+    }
+  }
   if ((et === 'daily_log' || et === 'session') && entityId != null) {
     const logId = Number(entityId)
     if (Number.isFinite(logId)) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -6,6 +6,7 @@ import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseBillingActionsCard } from './CaseBillingActionsCard.jsx'
+import { BillingApprovalPanel } from './BillingApprovalPanel.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { PortalTabBar, StatusBadge } from './ui/index.js'
 import { AdminCaseReportsPanel } from './AdminCaseReportsPanel.jsx'
@@ -33,7 +34,7 @@ const TABS = [
   { id: 'iep', label: 'IEP builder', perm: 'iep.read' },
   { id: 'documents', label: 'Documents' },
   { id: 'cm-meetings', label: 'Meetings' },
-  { id: 'billing', label: 'Billing', perm: 'case.update' },
+  { id: 'billing', label: 'Billing', perms: ['case.update', 'case.billing.update'] },
   { id: 'scheduling', label: 'Assign & Schedule', perm: 'slot.book_any' },
 ]
 
@@ -43,6 +44,7 @@ export function AdminCaseDetailPage() {
   const tab = searchParams.get('tab') || 'overview'
   const highlightSessionId = searchParams.get('session_id')
   const highlightIncidentId = searchParams.get('incident_id')
+  const billingApprovalRequestId = searchParams.get('billing_approval')
   const { can, canWriteProduct, isViewOnly, user } = useAuth()
   const { canReviewLogs } = useModuleWrite()
   const [caseRow, setCaseRow] = useState(null)
@@ -125,9 +127,17 @@ export function AdminCaseDetailPage() {
   async function saveBilling(payload) {
     setBillingErr('')
     setBillingMsg('')
-    const updated = await apiFetch(`/api/v1/cases/${caseId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+    const updated = await apiFetch(`/api/v1/cases/${caseId}/billing`, { method: 'PATCH', body: JSON.stringify(payload) })
     setCaseRow(updated)
-    setBillingMsg('Billing saved.')
+    if (updated.billing_approval_status === 'PENDING') {
+      setSearchParams(
+        { tab: 'billing', billing_approval: String(updated.billing_approval_request_id) },
+        { replace: true },
+      )
+      setBillingMsg('Approval requested. Current billing remains active until Nicky approves it.')
+    } else {
+      setBillingMsg('Billing saved.')
+    }
   }
 
   async function saveServiceAddress(payload) {
@@ -142,6 +152,12 @@ export function AdminCaseDetailPage() {
       can('case.update') &&
       !isViewOnly &&
       canWriteProduct(caseRow.product_module),
+  )
+  const canEditBilling = Boolean(
+    caseRow &&
+      !caseRow.in_transition &&
+      !isViewOnly &&
+      (can('case.billing.update') || canEditCase),
   )
   const canManageStatus = Boolean(
     caseRow &&
@@ -165,7 +181,9 @@ export function AdminCaseDetailPage() {
       !isViewOnly &&
       (canReviewLogs(caseRow.product_module) || isAssignedCaseManager),
   )
-  const visibleTabs = TABS.filter((t) => !t.perm || can(t.perm))
+  const visibleTabs = TABS.filter(
+    (t) => (!t.perm || can(t.perm)) && (!t.perms || t.perms.some((permission) => can(permission))),
+  )
   const visibleTabIds = visibleTabs.map((t) => t.id)
 
   function openScheduleTab() {
@@ -312,12 +330,15 @@ export function AdminCaseDetailPage() {
 
       {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
 
-      {tab === 'billing' && can('case.update') && (
+      {tab === 'billing' && (can('case.update') || can('case.billing.update')) && (
         <section className="admin-layout admin-layout--stack">
+          {billingApprovalRequestId ? (
+            <BillingApprovalPanel requestId={billingApprovalRequestId} onApplied={load} />
+          ) : null}
           {(can('invoice.approve') || can('case.update')) && caseRow?.id ? (
             <CaseBillingActionsCard caseId={caseRow.id} />
           ) : null}
-          {!canEditCase ? (
+          {!canEditBilling ? (
             <p className="admin-alert" style={{ color: '#b45309' }}>
               View-only access — you cannot change billing for this module.
             </p>
@@ -327,7 +348,7 @@ export function AdminCaseDetailPage() {
           <CaseBillingForm
             caseItem={caseRow}
             onSave={saveBilling}
-            readOnly={!canEditCase}
+            readOnly={!canEditBilling}
             onError={setBillingErr}
           />
           <CaseServiceAddressForm caseItem={caseRow} onSave={saveServiceAddress} readOnly={!canEditCase} />

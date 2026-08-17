@@ -35,6 +35,7 @@ ALL_PERMISSIONS = [
     "case.read.scoped",
     "case.create",
     "case.update",
+    "case.billing.update",
     "case.status_manage",
     "case.assign",
     "session.read",
@@ -161,6 +162,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
     RoleName.HR: [
         "case.read.all",
+        "case.billing.update",
         "case.status_manage",
         "session.read",
         "therapist.read",

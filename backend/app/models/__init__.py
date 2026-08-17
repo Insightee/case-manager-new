@@ -36,6 +36,7 @@ from app.models.finance_writable import (
     FinancePayoutDeduction,
 )
 from app.models.billing_step6 import BillingCalcException, CaseClientRatePeriod
+from app.models.billing_approval_request import BillingApprovalRequest, BillingApprovalStatus
 from app.models.child import Child
 from app.models.daily_log import DailyLog
 from app.models.case_document import (
@@ -111,6 +112,8 @@ __all__ = [
     "CaseBillingPeriodSnapshot",
     "BillingCalcException",
     "CaseClientRatePeriod",
+    "BillingApprovalRequest",
+    "BillingApprovalStatus",
     "Organisation",
     "Case",
     "CaseClientStatusAudit",

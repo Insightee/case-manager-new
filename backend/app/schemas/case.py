@@ -81,6 +81,9 @@ class CaseRead(CaseBillingFields):
     status_effective_date: Optional[date] = None
     status_reason: Optional[str] = None
     status_changed_by_user_id: Optional[int] = None
+    billing_approval_status: Optional[str] = None
+    billing_approval_request_id: Optional[int] = None
+    projected_profit_inr: Optional[float] = None
 
     model_config = {"from_attributes": True}
 

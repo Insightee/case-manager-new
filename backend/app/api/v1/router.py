@@ -11,6 +11,7 @@ from app.api.v1 import (
     admin_support,
     assignment_acceptance,
     assignments,
+    billing_approvals,
     therapist_transitions,
     attachments,
     auth,
@@ -49,6 +50,7 @@ api_router.include_router(notifications.router)
 api_router.include_router(meetings.router)
 api_router.include_router(meetings.compat_router)
 api_router.include_router(cases.router)
+api_router.include_router(billing_approvals.router)
 api_router.include_router(case_services.router)
 api_router.include_router(assignments.router)
 api_router.include_router(therapist_transitions.router)

@@ -232,6 +232,8 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `ENABLE_BILLING` | `false` | Gates admin/parent billing + finance_ops + ledger-billing + finance-control-tower routers (`require_billing`). Keep off on production until cutover. |
 | `BILLING_LEDGER_WRITES` | `false` | Gates session/log ledger upserts (`sync_session_status`, approve, period charges). Merge of engine code must not silently write ledger rows. |
 | `BILLING_LEDGER_DRAFTS` | `true` | Existing ledger draft behaviour. |
+| `BILLING_APPROVAL_APPROVER_EMAIL` | `nicky.lalu@gmail.com` | Designated user who receives and reviews low-margin billing requests. |
+| `BILLING_MINIMUM_PROFIT_INR` | `5000` | Proposed case billing below this Insighte profit requires approval before it is applied. |
 | `FINANCE_CUTOVER_COMPLETE` | `false` | When false, Finance Control Tower shows the provisional banner and never labels engine amounts `RECONCILED`. |
 | `VITE_ENABLE_CLIENT_BILLING` | unset/false | Parent + therapist billing visibility (Stage 2). Forced off on canonical production. |
 | `VITE_ENABLE_BILLING` | unset/false | Legacy alias for `VITE_ENABLE_CLIENT_BILLING` (one-release fallback). |
