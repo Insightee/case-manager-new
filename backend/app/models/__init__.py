@@ -78,6 +78,7 @@ from app.models.therapist_payout_settlement import (
     TherapistPayoutTransfer,
     TherapistPayoutTransferStatus,
 )
+from app.models.therapist_payout_flag import TherapistPayoutFlag
 from app.models.email_log import EmailLog, EmailLogStatus
 from app.models.email_suppression import EmailSuppression
 from app.models.password_reset import PasswordResetToken
@@ -174,4 +175,5 @@ __all__ = [
     "MemoAuditLog",
     "TherapistProfile",
     "TherapistProfileStatus",
+    "TherapistPayoutFlag",
 ]

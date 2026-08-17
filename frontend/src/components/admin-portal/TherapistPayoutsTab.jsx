@@ -328,6 +328,11 @@ export function TherapistPayoutsTab() {
                                 {inv.therapist_name || `Therapist #${inv.therapist_user_id}`}
                               </span>
                               <span className="admin-table__meta">Invoice {inv.id}</span>
+                              {inv.therapist_payout_flagged ? (
+                                <span className="admin-chip admin-chip--warn" style={{ marginTop: 4 }}>
+                                  This therapist was flagged
+                                </span>
+                              ) : null}
                               {warn ? (
                                 <span className="admin-table__meta" style={{ color: '#b45309' }}>
                                   {warn}
@@ -392,7 +397,14 @@ export function TherapistPayoutsTab() {
                   <AdminTaskCard
                     title={inv.therapist_name || `Therapist #${inv.therapist_user_id}`}
                     meta={`${inv.month} · ${inv.sessions_count ?? 0} sessions · ${formatCurrency(inv.amount_inr)}`}
-                    badges={<StatusBadge status={inv.status} />}
+                    badges={
+                      <>
+                        <StatusBadge status={inv.status} />
+                        {inv.therapist_payout_flagged ? (
+                          <span className="admin-chip admin-chip--warn">This therapist was flagged</span>
+                        ) : null}
+                      </>
+                    }
                     actions={
                       <div className="admin-btn-group">
                         {canWriteBilling && inv.status === 'IN_REVIEW' ? (
@@ -450,6 +462,11 @@ export function TherapistPayoutsTab() {
             <h2 style={{ marginTop: 0 }}>Record payment</h2>
             {employmentWarning(paymentTarget) ? (
               <p className="admin-alert admin-alert--warning">{employmentWarning(paymentTarget)}</p>
+            ) : null}
+            {paymentTarget.therapist_payout_flagged ? (
+              <p className="admin-alert admin-alert--warning">
+                <strong>This therapist was flagged.</strong> Review the payout before recording final payment. The flag clears after this payment is processed.
+              </p>
             ) : null}
             <p style={{ fontSize: '0.875rem', color: '#64748b' }}>
               {paymentTarget.therapist_name || `#${paymentTarget.therapist_user_id}`} · {paymentTarget.month}

@@ -99,6 +99,7 @@ class AssignmentCreate(BaseModel):
     reason_for_change: Optional[str] = None
     notes: Optional[str] = None
     billing_update: Optional[dict] = None
+    flag_outgoing_therapist: bool = False
 
 
 class AssignmentBookingUpdate(BaseModel):

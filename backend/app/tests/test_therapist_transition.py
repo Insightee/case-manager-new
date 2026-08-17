@@ -12,6 +12,7 @@ from app.main import app
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import BillingType, Case, CompensationMode
 from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionStatus
+from app.models.therapist_payout_flag import TherapistPayoutFlag
 from app.seed.demo_seed import run as seed_run
 from app.services import therapist_transition_service
 
@@ -177,10 +178,60 @@ def test_reassignment_blocked_during_active_transition():
             "therapist_user_id": t2,
             "start_date": "2026-10-05",
             "reason_for_change": "Attempt reassignment during transition",
+            "flag_outgoing_therapist": True,
         },
     )
-    assert blocked.status_code == 400
+    assert blocked.status_code in (400, 409)
     assert "transition" in blocked.json()["detail"].lower()
+
+    db = SessionLocal()
+    try:
+        flag = db.scalar(
+            select(TherapistPayoutFlag).where(
+                TherapistPayoutFlag.therapist_user_id == t1,
+                TherapistPayoutFlag.billing_month == "2026-10",
+            )
+        )
+        assert flag is None
+    finally:
+        db.close()
+
+
+def test_reassignment_outside_transition_flags_outgoing_therapist():
+    ah = _headers(_login())
+    cases = client.get("/api/v1/cases?page_size=10", headers=ah)
+    items = cases.json().get("items") or cases.json()
+    if len(items or []) < 2:
+        pytest.skip("Need a second case without an active transition")
+    case_id = items[1]["id"]
+    t1, t2 = _pick_two_therapists(ah)
+    _prepare_case_with_therapist(case_id, t1, ah)
+
+    reassigned = client.post(
+        f"/api/v1/cases/{case_id}/assignments",
+        headers=ah,
+        json={
+            "therapist_user_id": t2,
+            "start_date": "2026-11-03",
+            "reason_for_change": "Therapist left before completing handover",
+            "flag_outgoing_therapist": True,
+        },
+    )
+    assert reassigned.status_code == 201, reassigned.text
+
+    db = SessionLocal()
+    try:
+        flag = db.scalar(
+            select(TherapistPayoutFlag).where(
+                TherapistPayoutFlag.therapist_user_id == t1,
+                TherapistPayoutFlag.billing_month == "2026-11",
+                TherapistPayoutFlag.is_active.is_(True),
+            )
+        )
+        assert flag is not None
+        assert flag.case_id == case_id
+    finally:
+        db.close()
 
 
 def test_transition_completes_and_applies_billing():

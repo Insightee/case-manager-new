@@ -177,6 +177,7 @@ def replace_service_assignment(
             start_date=payload.start_date or date.today(),
             reason_for_change=payload.reason_for_change,
             notes=payload.notes,
+            flag_outgoing_therapist=payload.flag_outgoing_therapist,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

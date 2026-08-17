@@ -16,7 +16,11 @@ from app.models.therapist_payout_settlement import (
     TherapistPayoutTransfer,
     TherapistPayoutTransferStatus,
 )
-from app.services import external_ref_service, payout_settlement_service
+from app.services import (
+    external_ref_service,
+    payout_settlement_service,
+    therapist_payout_flag_service,
+)
 from app.services.payout_provider import PayoutTransferRequest, get_payout_provider
 
 _PROVIDER = ExternalProvider.RAZORPAY_PAYOUT.value
@@ -328,6 +332,9 @@ def sync_batch_status(
             if inv:
                 inv.status = InvoiceStatus.PAID
                 inv.paid_amount_inr = xfer.net_inr
+                therapist_payout_flag_service.clear_flags_for_paid_invoice(
+                    db, inv
+                )
             paid_count += 1
         elif raw_status == "paid" and not release_ok:
             xfer.status = TherapistPayoutTransferStatus.PROCESSING.value

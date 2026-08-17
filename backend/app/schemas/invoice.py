@@ -32,6 +32,7 @@ class InvoiceRead(BaseModel):
     notes: Optional[str] = None
     therapist_employment_status: Optional[str] = None
     therapist_is_active: Optional[bool] = None
+    therapist_payout_flagged: bool = False
 
     model_config = {"from_attributes": True}
 

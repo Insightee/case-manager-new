@@ -8,7 +8,11 @@ import { SlotDetailSheet } from '../scheduling/SlotDetailSheet.jsx'
 import { ScheduleWeekdayPicker } from '../scheduling/ScheduleWeekdayPicker.jsx'
 import { ONGOING_MATERIALIZE_WEEKS } from '../scheduling/scheduleTemplateUtils.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
-import { ReassignmentBillingConfirm, isReassignmentReasonValid } from './ReassignmentBillingConfirm.jsx'
+import {
+  FlagOutgoingTherapistCheckbox,
+  ReassignmentBillingConfirm,
+  isReassignmentReasonValid,
+} from './ReassignmentBillingConfirm.jsx'
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { billingSummary } from '../invoices/invoiceUtils.js'
 import { filterUpcomingSessions, formatSessionWhen } from '../../lib/sessionDisplay.js'
@@ -47,6 +51,7 @@ function TherapistAssignSection({
   const [selectedId, setSelectedId] = useState(assignedTherapistId)
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [reason, setReason] = useState('')
+  const [flagOutgoingTherapist, setFlagOutgoingTherapist] = useState(false)
   const [billingReady, setBillingReady] = useState(false)
   const [billingPayload, setBillingPayload] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -90,6 +95,7 @@ function TherapistAssignSection({
       }
       if (isChanging) {
         body.reason_for_change = reason.trim()
+        body.flag_outgoing_therapist = flagOutgoingTherapist
         if (billingPayload) {
           body.billing_update = billingPayload
         }
@@ -100,6 +106,7 @@ function TherapistAssignSection({
       })
       setSuccess(isNew ? 'Therapist assigned.' : 'Therapist reassigned.')
       setReason('')
+      setFlagOutgoingTherapist(false)
       setBillingReady(false)
       setBillingPayload(null)
       onAssigned?.()
@@ -185,6 +192,11 @@ function TherapistAssignSection({
                       disabled={readOnly}
                     />
                   </label>
+                  <FlagOutgoingTherapistCheckbox
+                    checked={flagOutgoingTherapist}
+                    onChange={setFlagOutgoingTherapist}
+                    disabled={readOnly}
+                  />
                   <ReassignmentBillingConfirm
                     caseItem={caseItem}
                     billingReady={billingReady}

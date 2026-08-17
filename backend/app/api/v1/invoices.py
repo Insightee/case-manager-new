@@ -25,6 +25,7 @@ from app.services import invoice_billing_service
 from app.services import statement_dispute_service
 from app.services import therapist_statement_pdf_service
 from app.services import invoice_ledger_service
+from app.services import therapist_payout_flag_service
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -79,7 +80,12 @@ def _redact_breakdown_client_pricing(data: dict) -> dict:
     return data
 
 
-def _invoice_read(i: Invoice, db: Optional[Session] = None) -> InvoiceRead:
+def _invoice_read(
+    i: Invoice,
+    db: Optional[Session] = None,
+    *,
+    therapist_payout_flagged: bool = False,
+) -> InvoiceRead:
     therapist_name = None
     employment_status = None
     is_active = None
@@ -106,6 +112,7 @@ def _invoice_read(i: Invoice, db: Optional[Session] = None) -> InvoiceRead:
         notes=i.notes,
         therapist_employment_status=employment_status,
         therapist_is_active=is_active,
+        therapist_payout_flagged=therapist_payout_flagged,
     )
 
 
@@ -129,7 +136,24 @@ def list_invoices(
     )
     if user_has_permission(user, "invoice.generate") and not user_has_permission(user, "invoice.approve"):
         invoices = [i for i in invoices if i.therapist_user_id == user.id]
-    return [_invoice_read(i, db) for i in invoices]
+    can_review_payouts = user_has_permission(user, "invoice.approve")
+    flagged_keys = (
+        therapist_payout_flag_service.active_flagged_keys(db, invoices)
+        if can_review_payouts
+        else set()
+    )
+    return [
+        _invoice_read(
+            i,
+            db,
+            therapist_payout_flagged=(
+                therapist_payout_flag_service.is_invoice_flagged(i, flagged_keys)
+                if can_review_payouts
+                else False
+            ),
+        )
+        for i in invoices
+    ]
 
 
 @router.get("/ledger")
@@ -430,6 +454,8 @@ def update_payment(
     old = {"paid_amount_inr": float(invoice.paid_amount_inr) if invoice.paid_amount_inr else None}
     invoice.paid_amount_inr = payload.paid_amount_inr
     invoice.status = payload.status
+    if payload.status == InvoiceStatus.PAID:
+        therapist_payout_flag_service.clear_flags_for_paid_invoice(db, invoice)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="payment_override", entity_type="invoice", entity_id=invoice.id, old_value=old, new_value=payload.model_dump(), **meta)
     db.commit()

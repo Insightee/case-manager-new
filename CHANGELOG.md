@@ -4,6 +4,7 @@
 - Alembic `tr1a2n3s4t5` Postgres deploy: use `postgresql.ENUM(create_type=False)` so `case_therapist_transitions` does not re-create `casetherapisttransitionstatus` after the DO-block.
 
 ### Added
+- Reassignment payout flags: admins can privately flag an outgoing therapist while changing therapist, so finance sees a payout warning for that billing month; the flag clears automatically once the payout is paid and stays hidden from therapists.
 - Tech support tickets: `TECH` category for therapist, parent, and staff ticket forms; new tickets route unassigned to the Tech department queue for any Tech staff member to pick up.
 - Transition log identity: therapists see handover-day context before submission and persistent role/day labels afterward; Case Managers see the submitting therapist and outgoing/incoming role during approval.
 - Therapist My Cases: “Under transition” badge on case cards (and table view) when a therapist handover is scheduled or active.

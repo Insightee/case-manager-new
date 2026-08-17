@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
-import { isReassignmentReasonValid } from './ReassignmentBillingConfirm.jsx'
+import {
+  FlagOutgoingTherapistCheckbox,
+  isReassignmentReasonValid,
+} from './ReassignmentBillingConfirm.jsx'
 
 export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
   const [therapistId, setTherapistId] = useState('')
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [reason, setReason] = useState('')
+  const [flagOutgoingTherapist, setFlagOutgoingTherapist] = useState(false)
   const [busy, setBusy] = useState(false)
   const [results, setResults] = useState(null)
   const [error, setError] = useState('')
@@ -38,6 +42,7 @@ export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
             therapist_user_id: Number(therapistId),
             start_date: startDate,
             reason_for_change: reason.trim(),
+            flag_outgoing_therapist: flagOutgoingTherapist,
           }),
         })
         succeeded.push(card.case_code)
@@ -91,6 +96,10 @@ export function AdminBulkAssignModal({ open, caseCards, onClose, onDone }) {
               placeholder="e.g. Caseload rebalance across pipeline"
             />
           </label>
+          <FlagOutgoingTherapistCheckbox
+            checked={flagOutgoingTherapist}
+            onChange={setFlagOutgoingTherapist}
+          />
           {error ? <p className="admin-alert admin-alert--error">{error}</p> : null}
           {results ? (
             <div style={{ fontSize: '0.85rem' }}>
