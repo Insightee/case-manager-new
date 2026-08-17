@@ -7,6 +7,7 @@ import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
 import { formatLogCommentCount } from '../../lib/sessionLogComments.js'
 import { LogCommentCountPill } from '../shared/LogCommentCountBadge.jsx'
 import { TransitionLogBadge } from './TransitionLogBadge.jsx'
+import { DownloadApprovedLogButton } from '../shared/DownloadApprovedLogButton.jsx'
 
 function formatTime(t) {
   if (!t) return '—'
@@ -99,6 +100,7 @@ export function SessionLogHistoryRow({
               {loading ? 'Loading…' : expanded ? 'Hide details' : 'Show details'}
             </button>
           ) : null}
+          <DownloadApprovedLogButton log={logSummary} variant={variant === 'admin' ? 'admin' : 'therapist'} />
         </div>
       </div>
       {loadError ? <p className="ic-session-composer__error">{loadError}</p> : null}

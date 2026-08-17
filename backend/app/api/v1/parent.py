@@ -52,6 +52,7 @@ from app.services import (
     parent_service,
     parent_ticket_service,
     parent_therapist_leave_service,
+    session_log_pdf_service,
     slot_calendar_service,
     ticket_attachment_service as att_svc,
     ticket_escalation_service as ticket_esc,
@@ -72,6 +73,24 @@ def _parent_case_or_404(db: Session, user: User, case_id: int) -> Case:
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
     return case
+
+
+def _parent_owned_log_or_404(db: Session, user: User, log_id: int) -> DailyLog:
+    if log_id <= 0:
+        raise HTTPException(status_code=404, detail="Session log not found")
+    child_ids = parent_service.child_ids_for_parent(db, user.id)
+    log = db.scalars(
+        select(DailyLog)
+        .join(TherapySession)
+        .where(DailyLog.id == log_id)
+        .options(selectinload(DailyLog.session).selectinload(TherapySession.case).selectinload(Case.child))
+    ).first()
+    if not log or not log.session:
+        raise HTTPException(status_code=404, detail="Session log not found")
+    case = log.session.case
+    if not case or case.child_id not in child_ids:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return log
 
 
 class ParentSupportRequest(BaseModel):
@@ -521,6 +540,46 @@ def parent_session_logs(
     combined = result + virtual_logs_out
     combined.sort(key=lambda x: x.scheduled_date, reverse=True)
     return combined
+
+
+@router.get("/session-logs/{log_id}/download")
+def parent_session_log_download(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import Response
+
+    from app.services.export_document_service import export_meta
+
+    _require_parent(user)
+    log = _parent_owned_log_or_404(db, user, log_id)
+    status_value = log.approval_status.value if hasattr(log.approval_status, "value") else str(log.approval_status)
+    if status_value != LogApprovalStatus.APPROVED.value:
+        raise HTTPException(status_code=400, detail=session_log_pdf_service.NOT_APPROVED_DOWNLOAD_MESSAGE)
+    session = log.session
+    case = session.case if session else None
+    therapist = db.get(User, session.therapist_user_id) if session else None
+    meta = export_meta(user)
+    pdf = session_log_pdf_service.build_session_log_pdf(
+        log=log,
+        session=session,
+        case=case,
+        therapist_name=therapist.full_name if therapist else None,
+        audience="parent",
+        generated_by=meta["generated_by"],
+        generated_at=meta["generated_at"],
+    )
+    filename = session_log_pdf_service.session_log_pdf_filename(
+        case_code=case.case_code if case else None,
+        scheduled=session.scheduled_date if session else None,
+        log_id=log.id,
+    )
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/therapist-leaves", response_model=list[ParentTherapistLeaveDayRead])

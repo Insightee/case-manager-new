@@ -5,6 +5,7 @@ import { formatParentLogClockFootnote, formatParentLogSessionTime } from '../../
 import { formatLogCommentCount } from '../../lib/sessionLogComments.js'
 import { logCommentFieldStyle, logCommentSendButtonStyle } from '../../lib/logCommentComposerStyles.js'
 import { SessionLogParentBody } from './SessionLogParentBody.jsx'
+import { DownloadApprovedLogButton } from '../shared/DownloadApprovedLogButton.jsx'
 
 function formatSubmittedAt(iso) {
   if (!iso) return ''
@@ -237,6 +238,7 @@ export function SessionCard({ log, onSaved, onDispute, defaultExpanded = true })
               {localLog.parent_display_status}
             </span>
           )}
+          <DownloadApprovedLogButton log={localLog} variant="parent" />
         </div>
       </header>
 

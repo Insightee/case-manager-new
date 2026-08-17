@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import { RejectWithComment, StatusBadge } from './ui/index.js'
+import { DownloadApprovedLogButton } from '../shared/DownloadApprovedLogButton.jsx'
 import { LogCommentCountPill, LogOpenParentCommentBadge } from '../shared/LogCommentCountBadge.jsx'
 import {
   caseSessionLogCardTone,
@@ -27,6 +28,7 @@ function SessionLogBadges({ session, log }) {
       {session?.duplicate_day_session || log?.duplicate_day_session ? (
         <span className="admin-badge admin-badge--warning sessions-dash__pill">Same-day duplicate</span>
       ) : null}
+      <DownloadApprovedLogButton log={log} variant="admin" />
     </>
   )
 }

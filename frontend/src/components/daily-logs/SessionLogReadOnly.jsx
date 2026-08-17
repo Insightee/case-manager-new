@@ -11,6 +11,7 @@ import {
   sessionHasTimeEdit,
 } from '../../lib/sessionTimes.js'
 import { logCommentFieldStyle, logCommentSendButtonStyle } from '../../lib/logCommentComposerStyles.js'
+import { DownloadApprovedLogButton } from '../shared/DownloadApprovedLogButton.jsx'
 import './session-log-detail.css'
 
 export const SESSION_LOG_READONLY_FIELDS = [
@@ -283,11 +284,14 @@ export function SessionLogReadOnly({
             />
             <TransitionLogBadge log={log} />
           </div>
-          {onClose ? (
-            <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose}>
-              Close
-            </button>
-          ) : null}
+          <div className={isAdmin ? 'admin-session-log-detail__head-actions' : 'ic-session-log-readonly__head-actions'}>
+            <DownloadApprovedLogButton log={log} variant={isAdmin ? 'admin' : 'therapist'} />
+            {onClose ? (
+              <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose}>
+                Close
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {!isAdmin && log?.approval_status === 'APPROVED' ? (

@@ -26,6 +26,7 @@ import {
 } from '../../lib/datetime.js'
 import { isLogEditable, isLogResubmittable } from '../../lib/sessionLogUtils.js'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
+import { DownloadApprovedLogButton } from '../shared/DownloadApprovedLogButton.jsx'
 import { TherapistSessionComposer } from '../therapist/TherapistSessionComposer.jsx'
 import { SubmitSessionLogForm } from './SubmitSessionLogForm.jsx'
 import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
@@ -678,6 +679,7 @@ export function DailyLogsPage() {
             View log
           </button>
         ) : null}
+        {!isVirtual ? <DownloadApprovedLogButton log={l} variant="therapist" /> : null}
       </div>
     )
   }

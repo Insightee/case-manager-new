@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -26,7 +27,7 @@ from app.schemas.daily_log import (
     LogCommentCreate,
     LogCommentRead,
 )
-from app.services import billing_ledger_service, case_service, log_comment_notify_service, log_service, session_log_service
+from app.services import billing_ledger_service, case_service, log_comment_notify_service, log_service, session_log_pdf_service, session_log_service
 from app.services import virtual_session_log_service as virtual_logs
 
 from sqlalchemy import select
@@ -72,6 +73,27 @@ def _therapist_lists_own_logs_only(user: User) -> bool:
     if user_has_permission(user, "daily_log.review") or user_has_permission(user, "case.read.all"):
         return False
     return user_has_permission(user, "daily_log.create")
+
+
+def _ensure_daily_log_readable(db: Session, user: User, log) -> None:
+    own_logs_only = _therapist_lists_own_logs_only(user)
+    if own_logs_only:
+        if not log.session or log.session.therapist_user_id != user.id:
+            raise HTTPException(status_code=403, detail="Log access denied")
+    else:
+        _log_case_scope(db, user, log)
+
+
+def _approval_status_value(log) -> str:
+    status = log.approval_status
+    if hasattr(status, "value"):
+        status = status.value
+    return str(status or "").upper()
+
+
+def _require_approved_log(log) -> None:
+    if _approval_status_value(log) != LogApprovalStatus.APPROVED.value:
+        raise HTTPException(status_code=400, detail=session_log_pdf_service.NOT_APPROVED_DOWNLOAD_MESSAGE)
 
 
 @router.get("")
@@ -228,15 +250,52 @@ def get_daily_log(
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
-    own_logs_only = _therapist_lists_own_logs_only(user)
-    if own_logs_only:
-        if not log.session or log.session.therapist_user_id != user.id:
-            raise HTTPException(status_code=403, detail="Log access denied")
-    else:
-        _log_case_scope(db, user, log)
+    _ensure_daily_log_readable(db, user, log)
     read = _log_to_read_for_db(db, log)
     log_service.attach_comment_counts(db, [read], parent_visible_only=False)
     return DailyLogRead(**read)
+
+
+@router.get("/{log_id}/download")
+def download_daily_log_pdf(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.review"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    if user_has_permission(user, "session.read") and not user_has_feature(user, "session_logs", db) and not user_has_permission(user, "daily_log.create"):
+        raise HTTPException(status_code=403, detail="Session logs module access required")
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _ensure_daily_log_readable(db, user, log)
+    _require_approved_log(log)
+    from app.services.export_document_service import export_meta
+
+    session = log.session
+    case = case_service.get_case(db, session.case_id) if session else None
+    therapist = db.get(User, session.therapist_user_id) if session else None
+    meta = export_meta(user)
+    pdf = session_log_pdf_service.build_session_log_pdf(
+        log=log,
+        session=session,
+        case=case,
+        therapist_name=therapist.full_name if therapist else None,
+        audience="staff",
+        generated_by=meta["generated_by"],
+        generated_at=meta["generated_at"],
+    )
+    filename = session_log_pdf_service.session_log_pdf_filename(
+        case_code=case.case_code if case else None,
+        scheduled=session.scheduled_date if session else None,
+        log_id=log.id,
+    )
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
