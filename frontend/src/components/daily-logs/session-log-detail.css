@@ -1,0 +1,198 @@
+/**
+ * Styles for SessionLogReadOnly and its badges.
+ * Imported by the component itself so every surface that renders a log detail
+ * (therapist cases, daily logs, admin session panels, CM log review) gets the
+ * same label/value formatting regardless of which page CSS is loaded.
+ */
+
+/* Therapist / parent variant */
+.ic-session-log-readonly {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+
+.ic-session-log-readonly__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ic-session-log-readonly__head h3 {
+  margin: 0 0 4px;
+  font-size: 1.125rem;
+}
+
+.ic-session-log-readonly__meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.ic-session-log-readonly__notice {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  font-size: 0.875rem;
+  color: #166534;
+}
+
+.ic-session-log-readonly__notice--warn {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.ic-session-log-readonly__dl {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.ic-session-log-readonly__dl > div {
+  display: grid;
+  gap: 4px;
+}
+
+.ic-session-log-readonly__dl dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.ic-session-log-readonly__dl dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Admin / case manager variant */
+.admin-session-log-detail {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.admin-session-log-detail__head h3 {
+  margin: 0 0 4px;
+  font-size: 0.9375rem;
+}
+
+.admin-session-log-detail__meta {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.admin-session-log-detail__notice {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.admin-session-log-detail__notice--warn {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.admin-session-log-detail__notice--info {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+.admin-session-log-detail__dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.admin-session-log-detail__dl > div {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-session-log-detail__dl dt {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.admin-session-log-detail__dl dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: #0f172a;
+}
+
+/* Status badges rendered inside the log detail header */
+.ic-log-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ic-log-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.ic-log-badge--done {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.ic-log-badge--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.ic-log-badge--approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.ic-log-badge--rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.ic-log-badge--attendance {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.ic-log-badge--attendance-late {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.ic-log-badge--attendance-absent {
+  background: #f3f4f6;
+  color: #6b7280;
+}

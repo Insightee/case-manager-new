@@ -11,6 +11,7 @@ import {
   sessionHasTimeEdit,
 } from '../../lib/sessionTimes.js'
 import { logCommentFieldStyle, logCommentSendButtonStyle } from '../../lib/logCommentComposerStyles.js'
+import './session-log-detail.css'
 
 export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'attendance_status', label: 'Attendance' },
