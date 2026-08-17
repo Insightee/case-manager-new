@@ -30,7 +30,7 @@ def _therapist_name_for_case(db: Session, case_id: int) -> str | None:
     return row[0] if row else None
 
 
-def _session_summary(session: TherapySession) -> dict:
+def _session_summary(session: TherapySession, *, therapist_name: str | None = None) -> dict:
     return {
         "id": session.id,
         "status": session.status.value if hasattr(session.status, "value") else str(session.status),
@@ -43,6 +43,7 @@ def _session_summary(session: TherapySession) -> dict:
         "actual_times_edit_reason": getattr(session, "actual_times_edit_reason", None),
         "duplicate_day_session": bool(getattr(session, "is_additional_visit", False)),
         "therapist_user_id": session.therapist_user_id,
+        "therapist_name": therapist_name,
     }
 
 
@@ -52,6 +53,7 @@ def build_cm_log_review_queue(db: Session, user: User) -> dict:
 
     stmt = (
         select(DailyLog, TherapySession, Case, Child)
+        .options(selectinload(DailyLog.transition))
         .join(TherapySession, DailyLog.session_id == TherapySession.id)
         .join(Case, TherapySession.case_id == Case.id)
         .join(Child, Case.child_id == Child.id)
@@ -63,16 +65,32 @@ def build_cm_log_review_queue(db: Session, user: User) -> dict:
 
     cases_map: dict[int, dict] = {}
     all_log_dicts: list[dict] = []
+    user_ids = {session.therapist_user_id for _, session, _, _ in rows}
+    for log, _, _, _ in rows:
+        if log.transition:
+            user_ids.add(log.transition.outgoing_therapist_user_id)
+            user_ids.add(log.transition.incoming_therapist_user_id)
+    user_names = (
+        dict(db.execute(select(User.id, User.full_name).where(User.id.in_(user_ids))).all())
+        if user_ids
+        else {}
+    )
 
     for log, session, case, child in rows:
-        log_dict = log_service.log_to_read(log)
+        log_dict = log_service.log_to_read(
+            log,
+            therapist_name=user_names.get(session.therapist_user_id),
+        )
         status = log_dict.get("approval_status")
         if hasattr(status, "value"):
             log_dict["approval_status"] = status.value
         att = log_dict.get("attendance_status")
         if hasattr(att, "value"):
             log_dict["attendance_status"] = att.value
-        log_dict["session"] = _session_summary(session)
+        log_dict["session"] = _session_summary(
+            session,
+            therapist_name=user_names.get(session.therapist_user_id),
+        )
         all_log_dicts.append(log_dict)
 
         bucket = cases_map.get(case.id)
@@ -84,11 +102,20 @@ def build_cm_log_review_queue(db: Session, user: User) -> dict:
                 "service_type": case.service_type,
                 "product_module": case.product_module,
                 "therapist_name": _therapist_name_for_case(db, case.id),
+                "transition_outgoing_therapist_name": None,
+                "transition_incoming_therapist_name": None,
                 "status": case.status.value if hasattr(case.status, "value") else str(case.status),
                 "pending_count": 0,
                 "logs": [],
             }
             cases_map[case.id] = bucket
+        if log.transition:
+            bucket["transition_outgoing_therapist_name"] = user_names.get(
+                log.transition.outgoing_therapist_user_id
+            )
+            bucket["transition_incoming_therapist_name"] = user_names.get(
+                log.transition.incoming_therapist_user_id
+            )
         bucket["logs"].append(log_dict)
         bucket["pending_count"] = len(bucket["logs"])
 

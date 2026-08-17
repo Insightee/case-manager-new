@@ -370,6 +370,60 @@ def transition_day_for_session(
     return None
 
 
+def transition_context_for_session(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_id: int,
+    scheduled_date: date,
+) -> dict | None:
+    """Return read-only handover context for a therapist session."""
+    transitions = db.scalars(
+        select(CaseTherapistTransition).where(
+            CaseTherapistTransition.case_id == case_id,
+            CaseTherapistTransition.status.in_(OPEN_TRANSITION_STATUSES),
+            or_(
+                CaseTherapistTransition.outgoing_therapist_user_id == therapist_user_id,
+                CaseTherapistTransition.incoming_therapist_user_id == therapist_user_id,
+            ),
+        )
+    ).all()
+    for transition in transitions:
+        transition_dates = sorted(
+            date.fromisoformat(str(value)[:10]) for value in (transition.transition_dates or [])
+        )
+        if scheduled_date not in transition_dates:
+            continue
+        role = (
+            "outgoing"
+            if transition.outgoing_therapist_user_id == therapist_user_id
+            else "incoming"
+        )
+        participant_ids = {
+            transition.outgoing_therapist_user_id,
+            transition.incoming_therapist_user_id,
+        }
+        users = {
+            user.id: user
+            for user in db.scalars(select(User).where(User.id.in_(participant_ids))).all()
+        }
+        outgoing = users.get(transition.outgoing_therapist_user_id)
+        incoming = users.get(transition.incoming_therapist_user_id)
+        case = db.get(Case, case_id)
+        case_day_type = case.day_type.value if case and case.day_type else None
+        return {
+            "is_transition_session": True,
+            "transition_id": transition.id,
+            "transition_role": role,
+            "transition_day_number": transition_dates.index(scheduled_date) + 1,
+            "transition_day_count": len(transition_dates),
+            "transition_day_type": transition.day_type or case_day_type,
+            "outgoing_therapist_name": outgoing.full_name if outgoing else None,
+            "incoming_therapist_name": incoming.full_name if incoming else None,
+        }
+    return None
+
+
 def update_transition_dates(
     db: Session,
     transition: CaseTherapistTransition,

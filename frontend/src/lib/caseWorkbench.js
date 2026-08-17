@@ -20,6 +20,7 @@ export function matchesCaseSearch(caseRow, query) {
     caseRow.stage,
     caseRow.nextDue,
     caseRow.status,
+    caseRow.inTransition ? 'transition under transition in transition handover' : '',
   ]
     .map(norm)
     .join(' ')
@@ -197,6 +198,7 @@ export function buildCaseWorkbench({ cases = [], sessions = [], logs: _logs = []
       needsLogCount: needsLog.length,
       upcomingCount: upcoming.length,
       status: c.status,
+      inTransition: Boolean(c.in_transition || c.inTransition),
       mapsUrl: c.maps_url,
       serviceAddress: c.service_address,
       borderAccent: critical ? 'yellow' : needsLog.length ? 'yellow' : nextBooking ? 'teal' : 'blue',

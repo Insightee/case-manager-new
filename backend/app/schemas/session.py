@@ -95,6 +95,17 @@ class SessionRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SessionTransitionContext(BaseModel):
+    is_transition_session: bool = False
+    transition_id: Optional[int] = None
+    transition_role: Optional[str] = None
+    transition_day_number: Optional[int] = None
+    transition_day_count: Optional[int] = None
+    transition_day_type: Optional[str] = None
+    outgoing_therapist_name: Optional[str] = None
+    incoming_therapist_name: Optional[str] = None
+
+
 class SessionActualTimesUpdate(BaseModel):
     actual_start_at: datetime
     actual_end_at: datetime

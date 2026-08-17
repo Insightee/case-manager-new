@@ -462,6 +462,34 @@
   color: #047857;
 }
 
+.ic-badge--transition {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.ic-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ic-card__badges .ic-badge {
+  margin-top: 0;
+}
+
+.ic-table-stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ic-table-stage .ic-badge {
+  margin-top: 0;
+}
+
 /* Case card */
 .ic-card {
   position: relative;
@@ -2615,6 +2643,12 @@
   background: #fef2f2;
   border-color: #fecaca;
   color: #991b1b;
+}
+
+.ic-session-log-panel__banner--transition {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #3730a3;
 }
 
 .ic-session-log-panel__error {

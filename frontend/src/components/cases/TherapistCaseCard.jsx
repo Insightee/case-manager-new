@@ -59,7 +59,12 @@ export function TherapistCaseCard({ data }) {
           {data.critical ? <span className="ic-critical" title="Urgent" /> : null}
         </div>
       </div>
-      <StatusBadge variant={data.badgeVariant}>{data.stage}</StatusBadge>
+      <div className="ic-card__badges">
+        <StatusBadge variant={data.badgeVariant}>{data.stage}</StatusBadge>
+        {data.inTransition ? (
+          <span className="ic-badge ic-badge--transition">Under transition</span>
+        ) : null}
+      </div>
       {data.parentSignupPending ? (
         <span className="ic-card__intake-badge">Pending parent signup</span>
       ) : null}

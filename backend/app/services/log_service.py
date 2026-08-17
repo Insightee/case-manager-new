@@ -321,6 +321,20 @@ def log_to_read(
         data["parent_notes"] = log.parent_notes
     if log.transition_id:
         data["source"] = "transition"
+        transition = log.transition
+        if transition and session:
+            data["transition_role"] = (
+                "outgoing"
+                if session.therapist_user_id == transition.outgoing_therapist_user_id
+                else "incoming"
+            )
+            transition_dates = sorted(
+                date.fromisoformat(str(value)[:10])
+                for value in (transition.transition_dates or [])
+            )
+            data["transition_day_count"] = len(transition_dates)
+            if session.scheduled_date in transition_dates:
+                data["transition_day_number"] = transition_dates.index(session.scheduled_date) + 1
         status = log.approval_status.value if hasattr(log.approval_status, "value") else str(log.approval_status)
         if status == "PENDING":
             data["status_label"] = "Transition log — pending review"

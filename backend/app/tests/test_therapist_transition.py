@@ -105,6 +105,29 @@ def test_create_transition_adds_second_active_assignment():
     assert body["incoming_therapist_user_id"] == t2
     assert len(body["transition_dates"]) == 3
 
+    db = SessionLocal()
+    try:
+        outgoing_context = therapist_transition_service.transition_context_for_session(
+            db,
+            case_id=case_id,
+            therapist_user_id=t1,
+            scheduled_date=start + timedelta(days=1),
+        )
+        incoming_context = therapist_transition_service.transition_context_for_session(
+            db,
+            case_id=case_id,
+            therapist_user_id=t2,
+            scheduled_date=start + timedelta(days=1),
+        )
+        assert outgoing_context["transition_role"] == "outgoing"
+        assert incoming_context["transition_role"] == "incoming"
+        assert outgoing_context["transition_day_number"] == 2
+        assert outgoing_context["transition_day_count"] == 3
+        assert outgoing_context["outgoing_therapist_name"]
+        assert outgoing_context["incoming_therapist_name"]
+    finally:
+        db.close()
+
     assignments = client.get(f"/api/v1/cases/{case_id}/assignments", headers=ah)
     assert assignments.status_code == 200
     active = [a for a in assignments.json() if a["status"] == "ACTIVE"]

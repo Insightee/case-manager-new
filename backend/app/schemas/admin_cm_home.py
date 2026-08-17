@@ -56,6 +56,7 @@ class CmLogReviewSessionSummary(BaseModel):
     actual_times_edit_reason: Optional[str] = None
     duplicate_day_session: bool = False
     therapist_user_id: Optional[int] = None
+    therapist_name: Optional[str] = None
 
 
 class CmLogReviewLogRow(BaseModel):
@@ -64,9 +65,14 @@ class CmLogReviewLogRow(BaseModel):
     transition_id: Optional[int] = None
     transition_day_id: Optional[int] = None
     is_transition_log: bool = False
+    transition_role: Optional[str] = None
+    transition_day_number: Optional[int] = None
+    transition_day_count: Optional[int] = None
     case_id: Optional[int] = None
     case_code: Optional[str] = None
     child_name: Optional[str] = None
+    therapist_user_id: Optional[int] = None
+    therapist_name: Optional[str] = None
     approval_status: str
     submitted_at: Optional[datetime] = None
     resubmitted_at: Optional[datetime] = None
@@ -92,6 +98,8 @@ class CmLogReviewCaseRow(BaseModel):
     service_type: str
     product_module: str
     therapist_name: Optional[str] = None
+    transition_outgoing_therapist_name: Optional[str] = None
+    transition_incoming_therapist_name: Optional[str] = None
     status: str
     pending_count: int = 0
     logs: list[CmLogReviewLogRow] = Field(default_factory=list)

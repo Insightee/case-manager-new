@@ -29,6 +29,7 @@ class TherapistCaseBoardRow(BaseModel):
     caseManagerName: Optional[str] = None
     caseManagerEmail: Optional[str] = None
     parentSignupPending: bool = False
+    inTransition: bool = False
 
 
 class TherapistCaseBoardSection(BaseModel):
