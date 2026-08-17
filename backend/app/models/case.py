@@ -104,5 +104,6 @@ class Case(Base):
 
     child = relationship("Child", back_populates="cases")
     assignments = relationship("CaseAssignment", back_populates="case")
+    therapist_transitions = relationship("CaseTherapistTransition", back_populates="case")
     services = relationship("CaseService", back_populates="case")
     sessions = relationship("Session", back_populates="case")

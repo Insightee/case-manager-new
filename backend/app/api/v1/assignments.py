@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.billing_validation import apply_billing_payload, case_billing_dict
+from app.core.billing_validation import case_billing_dict
 from app.core.module_write import ensure_case_write_access
 from app.core.permissions import case_scope_check, require_mutation_permission
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
@@ -16,14 +16,32 @@ from app.models.case import CaseStatus
 from app.models.case_service import CaseService
 from app.models.user import User
 from app.schemas.case import AssignmentBookingUpdate, AssignmentCreate, AssignmentRead
-from app.services import assignment_service, case_service
+from app.services import assignment_service, billing_approval_service, case_service
 
 router = APIRouter(prefix="/cases/{case_id}/assignments", tags=["assignments"])
 
 
-def _apply_post_assignment_billing(case, payload: AssignmentCreate, user_id: int) -> None:
-    if payload.billing_update:
-        apply_billing_payload(case, payload.billing_update, user_id)
+def _apply_post_assignment_billing(db, case, payload: AssignmentCreate, user):
+    if not payload.billing_update:
+        return None
+    try:
+        return billing_approval_service.apply_or_request(
+            db,
+            case=case,
+            proposed=payload.billing_update,
+            requester=user,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _assignment_read(db, assignment, case, billing_approval=None) -> AssignmentRead:
+    therapist = db.get(User, assignment.therapist_user_id)
+    data = assignment_service.assignment_to_read_dict(
+        assignment, therapist.full_name if therapist else None
+    )
+    data["case_billing"] = case_billing_dict(case)
+    return AssignmentRead(**billing_approval_service.stamp_read(data, billing_approval))
 
 
 def _create_case_assignment(db, case, case_id: int, payload: AssignmentCreate, user_id: int):
@@ -51,10 +69,10 @@ def _create_case_assignment(db, case, case_id: int, payload: AssignmentCreate, u
                 start_date=payload.start_date or date.today(),
                 reason_for_change=payload.reason_for_change,
                 notes=payload.notes,
+                flag_outgoing_therapist=payload.flag_outgoing_therapist,
             )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _apply_post_assignment_billing(case, payload, user_id)
     return assignment
 
 
@@ -67,6 +85,9 @@ def list_case_assignments(
     case = case_service.get_case(db, case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
+    from app.services import therapist_transition_service
+
+    therapist_transition_service.complete_due_transitions(db)
     rows = assignment_service.list_assignments(db, case_id)
     billing = case_billing_dict(case) if case else None
     result = []
@@ -75,6 +96,7 @@ def list_case_assignments(
         data = assignment_service.assignment_to_read_dict(a, therapist.full_name if therapist else None)
         data["case_billing"] = billing
         result.append(AssignmentRead(**data))
+    db.commit()
     return result
 
 
@@ -93,6 +115,7 @@ def assign_therapist(
         raise HTTPException(status_code=403, detail="Case access denied")
     ensure_case_write_access(user, case, db)
     assignment = _create_case_assignment(db, case, case_id, payload, user.id)
+    billing_approval = _apply_post_assignment_billing(db, case, payload, user)
     if case.status == CaseStatus.PENDING_ALLOTMENT:
         from app.services import client_status_service
 
@@ -115,12 +138,7 @@ def assign_therapist(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="assign", entity_type="case_assignment", entity_id=assignment.id, new_value=payload.model_dump(), **meta)
     db.commit()
-    therapist = db.get(User, assignment.therapist_user_id)
-    data = assignment_service.assignment_to_read_dict(
-        assignment, therapist.full_name if therapist else None
-    )
-    data["case_billing"] = case_billing_dict(case)
-    return AssignmentRead(**data)
+    return _assignment_read(db, assignment, case, billing_approval)
 
 
 @router.get("/services/{service_id}/assignments", response_model=list[AssignmentRead])
@@ -208,17 +226,15 @@ def replace_service_assignment(
             start_date=payload.start_date or date.today(),
             reason_for_change=payload.reason_for_change,
             notes=payload.notes,
+            flag_outgoing_therapist=payload.flag_outgoing_therapist,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _apply_post_assignment_billing(case, payload, user.id)
+    billing_approval = _apply_post_assignment_billing(db, case, payload, user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="replace_service_assignment", entity_type="case_assignment", entity_id=assignment.id, new_value=payload.model_dump(), **meta)
     db.commit()
-    therapist = db.get(User, assignment.therapist_user_id)
-    data = assignment_service.assignment_to_read_dict(assignment, therapist.full_name if therapist else None)
-    data["case_billing"] = case_billing_dict(case)
-    return AssignmentRead(**data)
+    return _assignment_read(db, assignment, case, billing_approval)
 
 
 @router.post("/services/{service_id}/assignments/{assignment_id}/end", response_model=AssignmentRead)

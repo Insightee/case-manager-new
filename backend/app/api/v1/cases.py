@@ -9,9 +9,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.module_write import ensure_case_write_access, ensure_product_module_write_access
+from app.core.module_write import (
+    ensure_case_transition_allows_write,
+    ensure_case_write_access,
+    ensure_product_module_write_access,
+)
 from app.core.permissions import (
     case_scope_check,
+    require_any_permission,
     require_mutation_permission,
     require_permission,
     user_has_permission,
@@ -19,9 +24,9 @@ from app.core.permissions import (
 from app.models.case import Case, CaseStatus, ClientBillingMode
 from app.models.user import User
 from app.schemas.case import CaseCreate, CaseDayTypeUpdate, CaseRead, CaseUpdate
+from app.schemas.billing import CaseBillingFields
 from app.schemas.pagination import PaginatedList
-from app.core.billing_validation import apply_billing_payload
-from app.services import address_service, case_code_service, case_service
+from app.services import address_service, billing_approval_service, case_code_service, case_service
 from app.services import case_day_type_service
 from app.services import case_status_request_service as csr_svc
 from app.services import observation_checklist_service as obs_svc
@@ -32,6 +37,23 @@ from app.services import client_status_service
 from app.schemas.iep_plan import IepPlanSuggestionCreate
 
 router = APIRouter(prefix="/cases", tags=["cases"])
+
+
+def _apply_case_billing(db: Session, case: Case, billing_data: dict | None, user: User):
+    try:
+        return billing_approval_service.apply_or_request(
+            db,
+            case=case,
+            proposed=billing_data,
+            requester=user,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def _case_read(db: Session, case: Case, billing_approval=None) -> CaseRead:
+    result = case_service.case_to_read(case, db)
+    return CaseRead(**billing_approval_service.stamp_read(result, billing_approval))
 
 
 class CaseStatusRequestCreate(BaseModel):
@@ -108,6 +130,7 @@ def create_case(
     data = payload.model_dump()
     billing_data = {k: data.pop(k) for k in list(data.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
+        "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
@@ -136,12 +159,27 @@ def create_case(
         address_service.apply_service_address_to_case(case, service_data)
     db.add(case)
     db.flush()
-    apply_billing_payload(case, billing_data, user.id)
+    billing_approval = _apply_case_billing(db, case, billing_data, user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="case", entity_id=case.id, new_value=payload.model_dump(), **meta)
+    if billing_approval:
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="request_low_margin_billing_approval",
+            entity_type="billing_approval_request",
+            entity_id=billing_approval.id,
+            case_id=case.id,
+            old_value=billing_approval.previous_billing,
+            new_value={
+                "proposed_billing": billing_approval.proposed_billing,
+                "projected_profit_inr": float(billing_approval.projected_profit_inr),
+            },
+            **meta,
+        )
     db.commit()
     db.refresh(case)
-    return CaseRead(**case_service.case_to_read(case, db))
+    return _case_read(db, case, billing_approval)
 
 
 @router.get("/{case_id}", response_model=CaseRead)
@@ -173,6 +211,7 @@ def update_case(
     updates = payload.model_dump(exclude_unset=True)
     billing_data = {k: updates.pop(k) for k in list(updates.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
+        "client_monthly_rate_inr",
         "package_session_count", "package_amount_inr", "compensation_mode", "pay_share_amount_inr",
         "therapist_fixed_pay_inr", "billing_notes",
     )}
@@ -182,7 +221,7 @@ def update_case(
     if service_data:
         address_service.validate_service_address_payload(service_data, case)
         address_service.apply_service_address_to_case(case, service_data)
-    apply_billing_payload(case, billing_data, user.id)
+    billing_approval = _apply_case_billing(db, case, billing_data, user)
     if "status" in updates:
         new_status = case.status.value if hasattr(case.status, "value") else str(case.status)
         old_status_val = old_status.value if hasattr(old_status, "value") else str(old_status)
@@ -207,9 +246,72 @@ def update_case(
             )
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="case", entity_id=case.id, old_value=old, new_value=payload.model_dump(exclude_unset=True), **meta)
+    if billing_approval:
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="request_low_margin_billing_approval",
+            entity_type="billing_approval_request",
+            entity_id=billing_approval.id,
+            case_id=case.id,
+            old_value=billing_approval.previous_billing,
+            new_value={
+                "proposed_billing": billing_approval.proposed_billing,
+                "projected_profit_inr": float(billing_approval.projected_profit_inr),
+            },
+            **meta,
+        )
     db.commit()
     db.refresh(case)
-    return CaseRead(**case_service.case_to_read(case, db))
+    return _case_read(db, case, billing_approval)
+
+
+@router.patch("/{case_id}/billing", response_model=CaseRead)
+def update_case_billing(
+    case_id: int,
+    payload: CaseBillingFields,
+    request: Request,
+    user: User = Depends(require_any_permission("case.update", "case.billing.update")),
+    db: Session = Depends(get_db),
+):
+    case = case_service.get_case(db, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Case access denied")
+    if user.is_view_only:
+        raise HTTPException(status_code=403, detail="View-only access — billing changes are not allowed")
+    ensure_case_transition_allows_write(case, db)
+
+    proposed = payload.model_dump(exclude_unset=True)
+    if not proposed:
+        raise HTTPException(status_code=400, detail="Please add the billing details you want to update.")
+    previous = billing_approval_service.merged_billing(case, {})
+    merged = billing_approval_service.validate_proposed_billing(case, proposed)
+    billing_approval = _apply_case_billing(db, case, proposed, user)
+
+    meta = get_request_meta(request)
+    action = "request_low_margin_billing_approval" if billing_approval else "update_billing"
+    entity_type = "billing_approval_request" if billing_approval else "case"
+    entity_id = billing_approval.id if billing_approval else case.id
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        case_id=case.id,
+        old_value=previous,
+        new_value={
+            "proposed_billing": merged,
+            "projected_profit_inr": float(billing_approval_service.projected_profit_inr(merged)),
+            "applied": billing_approval is None,
+        },
+        **meta,
+    )
+    db.commit()
+    db.refresh(case)
+    return _case_read(db, case, billing_approval)
 
 
 @router.patch("/{case_id}/day-type", response_model=CaseRead)

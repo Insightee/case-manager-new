@@ -12,6 +12,10 @@ from app.core.billing_validation import case_billing_dict
 from app.services.address_service import case_service_address_read
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
+from app.models.case_therapist_transition import (
+    CaseTherapistTransition,
+    CaseTherapistTransitionStatus,
+)
 from app.models.child import Child
 from app.models.user import User
 from app.services.admin_scope_service import team_case_access_clause
@@ -43,6 +47,19 @@ def _apply_case_search(stmt, search: str | None):
             User.full_name.ilike(pattern),
         )
     )
+    transition_match = False
+    if q.lower() in {"transition", "in transition", "handover"}:
+        transition_match = exists(
+            select(CaseTherapistTransition.id).where(
+                CaseTherapistTransition.case_id == Case.id,
+                CaseTherapistTransition.status.in_(
+                    [
+                        CaseTherapistTransitionStatus.SCHEDULED,
+                        CaseTherapistTransitionStatus.ACTIVE,
+                    ]
+                ),
+            )
+        )
     return (
         stmt.outerjoin(Child, Child.id == Case.child_id)
         .where(
@@ -54,6 +71,7 @@ def _apply_case_search(stmt, search: str | None):
                 Child.last_name.ilike(pattern),
                 child_full.ilike(pattern),
                 therapist_match,
+                transition_match,
             )
         )
         .distinct()
@@ -77,6 +95,27 @@ def _active_therapist_names(db: Session, case_ids: list[int]) -> dict[int, str]:
         if case_id not in out and name:
             out[int(case_id)] = name
     return out
+
+
+def _cases_in_transition(db: Session, case_ids: list[int]) -> set[int]:
+    if not case_ids:
+        return set()
+    return {
+        int(case_id)
+        for case_id in db.scalars(
+            select(CaseTherapistTransition.case_id)
+            .where(
+                CaseTherapistTransition.case_id.in_(case_ids),
+                CaseTherapistTransition.status.in_(
+                    [
+                        CaseTherapistTransitionStatus.SCHEDULED,
+                        CaseTherapistTransitionStatus.ACTIVE,
+                    ]
+                ),
+            )
+            .distinct()
+        ).all()
+    }
 
 
 def list_cases_for_user(
@@ -154,10 +193,12 @@ def list_cases_for_user(
         total = len(rows)
 
     therapist_by_case = _active_therapist_names(db, [c.id for c in rows])
+    transition_case_ids = _cases_in_transition(db, [c.id for c in rows])
     items = []
     for c in rows:
         item = case_to_read(c, db, resolve_therapist=False)
         item["therapist_name"] = therapist_by_case.get(c.id)
+        item["in_transition"] = c.id in transition_case_ids
         items.append(item)
     return paginated_response(items, total, page, page_size)
 
@@ -194,6 +235,7 @@ def case_to_read(
         cm_name, cm_email = case_manager_contact(db, case)
         if resolve_therapist:
             therapist_name = _active_therapist_names(db, [case.id]).get(case.id)
+    in_transition = bool(db and case.id in _cases_in_transition(db, [case.id]))
     return {
         "id": case.id,
         "case_code": case.case_code,
@@ -201,6 +243,7 @@ def case_to_read(
         "child_id": case.child_id,
         "child_name": case.child.full_name if case.child else None,
         "therapist_name": therapist_name,
+        "in_transition": in_transition,
         "service_type": case.service_type,
         "product_module": case.product_module,
         "day_type": case.day_type.value if case.day_type else None,

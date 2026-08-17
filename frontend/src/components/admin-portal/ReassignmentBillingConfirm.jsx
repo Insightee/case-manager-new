@@ -75,3 +75,32 @@ export const REASSIGNMENT_REASON_MIN = 5
 export function isReassignmentReasonValid(reason) {
   return String(reason || '').trim().length >= REASSIGNMENT_REASON_MIN
 }
+
+export function FlagOutgoingTherapistCheckbox({ checked, onChange, disabled = false }) {
+  return (
+    <label
+      className="admin-label"
+      style={{
+        alignItems: 'flex-start',
+        display: 'flex',
+        gap: 10,
+        gridColumn: '1 / -1',
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        style={{ height: 18, marginTop: 2, width: 18 }}
+      />
+      <span>
+        <strong>Flag this therapist</strong>
+        <span className="admin-muted" style={{ display: 'block', marginTop: 3 }}>
+          Show a private reminder to the payout team for this billing cycle. It
+          clears after payment is processed.
+        </span>
+      </span>
+    </label>
+  )
+}

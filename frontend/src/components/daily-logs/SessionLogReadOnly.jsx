@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
+import { TransitionLogBadge } from './TransitionLogBadge.jsx'
 import { formatSessionTimeRange } from '../../lib/sessionLogUtils.js'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import {
@@ -10,6 +11,7 @@ import {
   sessionHasTimeEdit,
 } from '../../lib/sessionTimes.js'
 import { logCommentFieldStyle, logCommentSendButtonStyle } from '../../lib/logCommentComposerStyles.js'
+import './session-log-detail.css'
 
 export const SESSION_LOG_READONLY_FIELDS = [
   { key: 'attendance_status', label: 'Attendance' },
@@ -279,6 +281,7 @@ export function SessionLogReadOnly({
               approvalStatus={log?.approval_status}
               attendanceStatus={log?.attendance_status}
             />
+            <TransitionLogBadge log={log} />
           </div>
           {onClose ? (
             <button type="button" className="ic-btn ic-btn--ghost" onClick={onClose}>

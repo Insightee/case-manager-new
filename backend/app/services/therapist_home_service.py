@@ -31,6 +31,7 @@ from app.schemas.therapist_home import (
 from app.services import assignment_acceptance_service as accept_svc
 from app.services import parent_service, session_service
 from app.services.address_service import case_service_address_read
+from app.services.case_service import _cases_in_transition
 from app.services import therapist_portal_queries as tpq
 from app.services.invite_on_start_service import _pending_intake_invite
 from sqlalchemy.orm import Session
@@ -131,6 +132,8 @@ def build_cases_board(
         for u in db.scalars(select(User).where(User.id.in_(cm_ids))).all():
             cm_users[u.id] = u
 
+    transition_case_ids = _cases_in_transition(db, [c.id for c in cases])
+
     enriched: list[TherapistCaseBoardRow] = []
     for c in cases:
         needs_log_n = needs_log_by_case.get(c.id, 0)
@@ -200,6 +203,7 @@ def build_cases_board(
                 caseManagerName=cm.full_name if cm else None,
                 caseManagerEmail=cm.email if cm else None,
                 parentSignupPending=parent_pending,
+                inTransition=c.id in transition_case_ids,
             )
         )
 

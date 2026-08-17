@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminTherapistPicker } from './AdminTherapistPicker.jsx'
-import { ReassignmentBillingConfirm, isReassignmentReasonValid } from './ReassignmentBillingConfirm.jsx'
+import {
+  FlagOutgoingTherapistCheckbox,
+  ReassignmentBillingConfirm,
+  isReassignmentReasonValid,
+} from './ReassignmentBillingConfirm.jsx'
 
 export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
   const [therapistId, setTherapistId] = useState('')
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [reason, setReason] = useState('')
+  const [flagOutgoingTherapist, setFlagOutgoingTherapist] = useState(false)
   const [billingReady, setBillingReady] = useState(false)
   const [billingPayload, setBillingPayload] = useState(null)
   const [caseItem, setCaseItem] = useState(null)
@@ -18,6 +23,7 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
   useEffect(() => {
     if (!open || !caseCard?.id) return
     setReason('')
+    setFlagOutgoingTherapist(false)
     setBillingReady(false)
     setBillingPayload(null)
     setError('')
@@ -56,6 +62,7 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
       }
       if (isReassignment) {
         body.reason_for_change = reason.trim()
+        body.flag_outgoing_therapist = flagOutgoingTherapist
         if (billingPayload) {
           body.billing_update = billingPayload
         }
@@ -119,6 +126,10 @@ export function AdminCaseAssignDrawer({ open, caseCard, onClose, onDone }) {
                   placeholder="e.g. Caseload rebalance, therapist resigned"
                 />
               </label>
+              <FlagOutgoingTherapistCheckbox
+                checked={flagOutgoingTherapist}
+                onChange={setFlagOutgoingTherapist}
+              />
               {caseItem ? (
                 <ReassignmentBillingConfirm
                   caseItem={caseItem}

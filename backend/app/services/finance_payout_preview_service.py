@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import BillingType, Case, CompensationMode
+from app.models.case_therapist_transition import CaseTherapistTransitionDay
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
@@ -274,11 +275,27 @@ def _therapist_segments_for_case(
             TherapySession.scheduled_date >= start,
             TherapySession.scheduled_date <= end,
             DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
+            DailyLog.transition_id.is_(None),
         )
         .group_by(TherapySession.therapist_user_id)
     ).all()
 
     therapist_ids = {int(r[0]) for r in log_rows}
+    transition_therapist_ids = {
+        int(value)
+        for value in db.scalars(
+            select(TherapySession.therapist_user_id)
+            .join(DailyLog, DailyLog.session_id == TherapySession.id)
+            .where(
+                TherapySession.case_id == case_id,
+                TherapySession.scheduled_date >= start,
+                TherapySession.scheduled_date <= end,
+                DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
+                DailyLog.transition_id.is_not(None),
+            )
+            .distinct()
+        ).all()
+    }
     hour_only = _therapists_with_hours_in_month(db, case_id, start, end) - therapist_ids
 
     segments: list[TherapistCaseSegment] = []
@@ -297,7 +314,7 @@ def _therapist_segments_for_case(
             )
         )
 
-    for therapist_id in hour_only:
+    for therapist_id in hour_only | (transition_therapist_ids - therapist_ids):
         segments.append(
             TherapistCaseSegment(
                 therapist_user_id=therapist_id,
@@ -357,6 +374,21 @@ def _first_session_ever_for_therapist(
     )
 
 
+def _first_approved_normal_log_for_therapist(
+    db: Session, case_id: int, therapist_user_id: int
+) -> date | None:
+    return db.scalar(
+        select(func.min(TherapySession.scheduled_date))
+        .join(DailyLog, DailyLog.session_id == TherapySession.id)
+        .where(
+            TherapySession.case_id == case_id,
+            TherapySession.therapist_user_id == therapist_user_id,
+            DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
+            DailyLog.transition_id.is_(None),
+        )
+    )
+
+
 def _last_approved_log_for_therapist(
     db: Session, case_id: int, therapist_user_id: int
 ) -> date | None:
@@ -368,8 +400,47 @@ def _last_approved_log_for_therapist(
             TherapySession.case_id == case_id,
             TherapySession.therapist_user_id == therapist_user_id,
             DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
+            DailyLog.transition_id.is_(None),
         )
     )
+
+
+def _transition_pay_for_therapist(
+    db: Session,
+    *,
+    case_id: int,
+    therapist_user_id: int,
+    start: date,
+    end: date,
+) -> tuple[int, str, float]:
+    rows = db.execute(
+        select(
+            CaseTherapistTransitionDay.id,
+            CaseTherapistTransitionDay.day_type,
+            CaseTherapistTransitionDay.pay_rate_inr,
+        )
+        .join(DailyLog, DailyLog.transition_day_id == CaseTherapistTransitionDay.id)
+        .join(TherapySession, TherapySession.id == DailyLog.session_id)
+        .where(
+            TherapySession.case_id == case_id,
+            TherapySession.therapist_user_id == therapist_user_id,
+            TherapySession.scheduled_date >= start,
+            TherapySession.scheduled_date <= end,
+            DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
+        )
+    ).all()
+    unique_days = {
+        int(day_id): (day_type, rate)
+        for day_id, day_type, rate in rows
+    }
+    day_types = {str(day_type or "FULL_DAY") for day_type, _ in unique_days.values()}
+    labels = {
+        "HALF_DAY": "Half day",
+        "FULL_DAY": "Full day",
+    }
+    day_type_label = ", ".join(sorted(labels.get(value, value.replace("_", " ").title()) for value in day_types))
+    total = round(sum(float(rate or 0) for _, rate in unique_days.values()), 2)
+    return len(unique_days), day_type_label, total
 
 
 def _employment_start(db: Session, therapist_user_id: int) -> date | None:
@@ -395,6 +466,7 @@ def _approved_sessions_for_therapist(
                 TherapySession.scheduled_date >= start,
                 TherapySession.scheduled_date <= end,
                 DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
+                DailyLog.transition_id.is_(None),
             )
         )
         or 0
@@ -483,6 +555,9 @@ def payout_preview_row(
     case_end_date: date | None,
     leave: dict[str, int],
     leave_credits: int,
+    transition_days: int,
+    transition_day_type: str,
+    transition_total: float,
 ) -> dict[str, Any]:
     share = therapist_share_inr(case)
     lumpsum = client_lumpsum_inr(case)
@@ -518,6 +593,10 @@ def payout_preview_row(
         "Therapist Share": round(share, 2) if share else "",
         "Per Session Share": per_sess if per_sess else "",
         "Predicted Subtotal": subtotal if subtotal else "",
+        "Transition Days": transition_days,
+        "Transition Day Type": transition_day_type,
+        "Transition Days Total Amount": transition_total if transition_total else "",
+        "Predicted Total": round(subtotal + transition_total, 2) if subtotal or transition_total else "",
     }
 
 
@@ -553,8 +632,15 @@ def payout_preview_rows(
                 db, case.id, segment.therapist_user_id, start, end
             )
             hours = _hours_for_therapist(db, case.id, segment.therapist_user_id, ym)
+            transition_days, transition_day_type, transition_total = _transition_pay_for_therapist(
+                db,
+                case_id=case.id,
+                therapist_user_id=segment.therapist_user_id,
+                start=start,
+                end=end,
+            )
 
-            if approved == 0 and hours <= 0:
+            if approved == 0 and hours <= 0 and transition_days == 0:
                 continue
 
             assignment_start = _assignment_start_for_therapist(
@@ -566,8 +652,14 @@ def payout_preview_rows(
                 reference_date=segment.first_log,
             )
             employment_start = _employment_start(db, segment.therapist_user_id)
-            case_start = _first_session_ever_for_therapist(
-                db, case.id, segment.therapist_user_id
+            case_start = (
+                _first_approved_normal_log_for_therapist(
+                    db, case.id, segment.therapist_user_id
+                )
+                if segment.is_incoming_replacement and transition_days
+                else _first_session_ever_for_therapist(
+                    db, case.id, segment.therapist_user_id
+                )
             )
             case_end = (
                 _last_approved_log_for_therapist(
@@ -589,6 +681,11 @@ def payout_preview_rows(
                 month_start=start,
                 month_end=end,
             )
+            if transition_days and (
+                (segment.is_outgoing_replacement and segment.last_log is None)
+                or (segment.is_incoming_replacement and segment.first_log is None)
+            ):
+                calendar_days = 0
 
             leave = _leave_for_case_row(db, therapist.id, case, ym)
             balance = leave_policy_service.get_leave_balance(db, therapist, year=year, as_of=end)
@@ -596,7 +693,6 @@ def payout_preview_rows(
                 balance.get("leave_credit_pending", balance.get("paid_remaining", 0)) or 0
             )
             billable = _billable_sessions_for_segment(case, approved, approved_absence)
-
             rows.append(
                 payout_preview_row(
                     case,
@@ -612,6 +708,9 @@ def payout_preview_rows(
                     case_end_date=case_end,
                     leave=leave,
                     leave_credits=leave_credits,
+                    transition_days=transition_days,
+                    transition_day_type=transition_day_type,
+                    transition_total=transition_total,
                 )
             )
 

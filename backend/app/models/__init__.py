@@ -8,7 +8,7 @@ from app.models.audit_event import AuditEvent
 from app.models.case import BillingType, Case, CompensationMode
 from app.models.case_service import CaseService, CaseServiceStatus
 from app.models.case_billing_preference import CaseBillingPreference
-from app.models.case_status_request import CaseStatusRequest, CaseStatusRequestStatus
+from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionDay
 from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.iep_plan import IepPlan, IepPlanStatus
@@ -36,6 +36,7 @@ from app.models.finance_writable import (
     FinancePayoutDeduction,
 )
 from app.models.billing_step6 import BillingCalcException, CaseClientRatePeriod
+from app.models.billing_approval_request import BillingApprovalRequest, BillingApprovalStatus
 from app.models.child import Child
 from app.models.daily_log import DailyLog
 from app.models.case_document import (
@@ -78,6 +79,7 @@ from app.models.therapist_payout_settlement import (
     TherapistPayoutTransfer,
     TherapistPayoutTransferStatus,
 )
+from app.models.therapist_payout_flag import TherapistPayoutFlag
 from app.models.email_log import EmailLog, EmailLogStatus
 from app.models.email_suppression import EmailSuppression
 from app.models.password_reset import PasswordResetToken
@@ -110,11 +112,15 @@ __all__ = [
     "CaseBillingPeriodSnapshot",
     "BillingCalcException",
     "CaseClientRatePeriod",
+    "BillingApprovalRequest",
+    "BillingApprovalStatus",
     "Organisation",
     "Case",
     "CaseClientStatusAudit",
     "CaseService",
     "CaseServiceStatus",
+    "CaseTherapistTransition",
+    "CaseTherapistTransitionDay",
     "BillingType",
     "CompensationMode",
     "CaseManagerMeeting",
@@ -172,4 +178,5 @@ __all__ = [
     "MemoAuditLog",
     "TherapistProfile",
     "TherapistProfileStatus",
+    "TherapistPayoutFlag",
 ]

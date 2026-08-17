@@ -21,6 +21,7 @@ class TicketStatus(str, enum.Enum):
 class TicketCategory(str, enum.Enum):
     FINANCE = "FINANCE"
     HR = "HR"
+    TECH = "TECH"
     SERVICE = "SERVICE"
     POSH = "POSH"
     CPP = "CPP"

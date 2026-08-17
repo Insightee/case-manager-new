@@ -284,6 +284,7 @@ export function filterPipelineRows(rows, filters = {}) {
         r.next_action,
         r.operational_stage,
         r.status,
+        r.in_transition ? 'transition in transition handover' : '',
       ]
         .filter(Boolean)
         .join(' ')
@@ -364,6 +365,26 @@ export async function activateCaseAllotment(caseId) {
  * Primary + secondary actions for a pipeline row (no navigation on row click).
  */
 export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true }) {
+  if (row.in_transition) {
+    const actions = [
+      {
+        id: 'transition',
+        label: 'Manage transition',
+        variant: 'primary',
+        href: `/admin/cases/${row.id}?tab=scheduling`,
+      },
+      { id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` },
+    ]
+    if (row.open_incidents > 0) {
+      actions.push({
+        id: 'incidents',
+        label: `Incidents (${row.open_incidents})`,
+        variant: 'ghost',
+        href: '/admin/support?tab=incidents',
+      })
+    }
+    return actions
+  }
   const actions = []
   const col = row.pipeline_column
   const write = canWrite && canAssign

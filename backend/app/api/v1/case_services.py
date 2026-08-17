@@ -177,13 +177,22 @@ def replace_service_assignment(
             start_date=payload.start_date or date.today(),
             reason_for_change=payload.reason_for_change,
             notes=payload.notes,
+            flag_outgoing_therapist=payload.flag_outgoing_therapist,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if payload.billing_update:
-        from app.core.billing_validation import apply_billing_payload
+        from app.services import billing_approval_service
 
-        apply_billing_payload(case, payload.billing_update, user.id)
+        try:
+            billing_approval_service.apply_or_request(
+                db,
+                case=case,
+                proposed=payload.billing_update,
+                requester=user,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="replace_service_assignment", entity_type="case_assignment", entity_id=assignment.id, new_value=payload.model_dump(), **meta)
     db.commit()

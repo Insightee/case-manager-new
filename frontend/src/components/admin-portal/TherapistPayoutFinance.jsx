@@ -230,6 +230,15 @@ export function TherapistPayoutQueuePanel() {
 
   async function exportBatch() {
     if (!exportableSelected.length) return
+    const flaggedSelected = exportableSelected.filter((row) => row.therapistPayoutFlagged)
+    if (
+      flaggedSelected.length > 0
+      && !window.confirm(
+        `${flaggedSelected.length} selected therapist payout(s) are flagged. Review them before final payout. Continue with export?`
+      )
+    ) {
+      return
+    }
     setActing(true)
     setExportNote(null)
     try {
@@ -342,7 +351,14 @@ export function TherapistPayoutQueuePanel() {
                               onChange={() => toggleSelect(row.invoiceId)}
                             />
                           </td>
-                          <td>{row.therapistName}</td>
+                          <td>
+                            {row.therapistName}
+                            {row.therapistPayoutFlagged ? (
+                              <span className="admin-chip admin-chip--warn" style={{ display: 'block', marginTop: 4, width: 'fit-content' }}>
+                                This therapist was flagged
+                              </span>
+                            ) : null}
+                          </td>
                           <td>{row.month}</td>
                           <td>{row.caseCount}</td>
                           <td>{row.sessionCount}</td>
@@ -485,6 +501,9 @@ export function TherapistPayoutQueuePanel() {
                 meta={
                   <>
                     <StatusBadge status={row.status} />
+                    {row.therapistPayoutFlagged ? (
+                      <span className="admin-chip admin-chip--warn">This therapist was flagged</span>
+                    ) : null}
                     {row.needsReview ? (
                       <span className="admin-chip admin-chip--warn">Needs review</span>
                     ) : (

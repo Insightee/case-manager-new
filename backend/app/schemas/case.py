@@ -55,6 +55,7 @@ class CaseRead(CaseBillingFields):
     child_id: int
     child_name: Optional[str] = None
     therapist_name: Optional[str] = None
+    in_transition: bool = False
     service_type: str
     product_module: str
     day_type: Optional[CaseDayType] = None
@@ -80,6 +81,9 @@ class CaseRead(CaseBillingFields):
     status_effective_date: Optional[date] = None
     status_reason: Optional[str] = None
     status_changed_by_user_id: Optional[int] = None
+    billing_approval_status: Optional[str] = None
+    billing_approval_request_id: Optional[int] = None
+    projected_profit_inr: Optional[float] = None
 
     model_config = {"from_attributes": True}
 
@@ -98,6 +102,7 @@ class AssignmentCreate(BaseModel):
     reason_for_change: Optional[str] = None
     notes: Optional[str] = None
     billing_update: Optional[dict] = None
+    flag_outgoing_therapist: bool = False
 
 
 class AssignmentBookingUpdate(BaseModel):
@@ -134,6 +139,9 @@ class AssignmentRead(BaseModel):
     requires_acceptance: bool = False
     parent_accepted: bool = True
     therapist_accepted: bool = True
+    billing_approval_status: Optional[str] = None
+    billing_approval_request_id: Optional[int] = None
+    projected_profit_inr: Optional[float] = None
 
     model_config = {"from_attributes": True}
 

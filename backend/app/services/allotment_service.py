@@ -7,13 +7,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.service_access import therapist_eligible_for_product_module
 from app.core.permissions import RoleName
+from app.models.case import Case, CaseStatus, ClientBillingMode, CaseDayType
 from app.models.role import Role
 from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
-from app.services import assignment_service, case_code_service, case_service
-from app.core.billing_validation import apply_billing_payload
-from app.models.case import Case, CaseStatus, ClientBillingMode, CaseDayType
-from app.services import address_service
+from app.services import address_service, assignment_service, billing_approval_service, case_code_service, case_service
 from app.services.case_day_type_service import validate_allotment_day_type
 
 _SERVICE_ADDRESS_KEYS = frozenset(
@@ -115,7 +113,12 @@ def allot_case(
         address_service.apply_service_address_to_case(case, service_data)
     db.add(case)
     db.flush()
-    apply_billing_payload(case, billing_data, actor.id)
+    billing_approval_service.apply_or_request(
+        db,
+        case=case,
+        proposed=billing_data,
+        requester=actor,
+    )
     assignment = assignment_service.create_assignment(
         db,
         case_id=case.id,

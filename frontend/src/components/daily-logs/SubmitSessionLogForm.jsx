@@ -70,6 +70,48 @@ export function SubmitSessionLogForm({
   const serverAutosaveTimer = useRef(null)
   const [serverAutosaveState, setServerAutosaveState] = useState('idle')
   const [dirtySinceServerSave, setDirtySinceServerSave] = useState(false)
+  const [transitionContext, setTransitionContext] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    if (existingLog?.is_transition_log || existingLog?.transition_id) {
+      setTransitionContext({
+        is_transition_session: true,
+        transition_role: existingLog.transition_role,
+        transition_day_number: existingLog.transition_day_number,
+        transition_day_count: existingLog.transition_day_count,
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+    if (!session?.id) {
+      setTransitionContext(null)
+      return () => {
+        cancelled = true
+      }
+    }
+    apiFetch(`/api/v1/sessions/${session.id}/transition-context`)
+      .then((context) => {
+        if (!cancelled) {
+          setTransitionContext(context?.is_transition_session ? context : null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTransitionContext(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    existingLog?.id,
+    existingLog?.is_transition_log,
+    existingLog?.transition_id,
+    existingLog?.transition_role,
+    existingLog?.transition_day_number,
+    existingLog?.transition_day_count,
+    session?.id,
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -363,6 +405,18 @@ export function SubmitSessionLogForm({
           </button>
         ) : null}
       </header>
+
+      {transitionContext ? (
+        <p className="ic-session-log-panel__banner ic-session-log-panel__banner--transition" role="status">
+          <strong>
+            Transition day {transitionContext.transition_day_number || '—'} of{' '}
+            {transitionContext.transition_day_count || 3}
+          </strong>
+          {' · '}
+          You are the {transitionContext.transition_role || 'participating'} therapist. This log will be recorded as a
+          transition log.
+        </p>
+      ) : null}
 
       {showBrief ? (
         <SessionBrief

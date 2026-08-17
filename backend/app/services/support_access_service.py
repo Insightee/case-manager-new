@@ -128,6 +128,12 @@ def may_read_support_ticket(db: Session, user: User, ticket) -> bool:
         return True
     if not can_view_support_tickets(user, db):
         return False
+    if (
+        ticket.escalated_to_department
+        and user.department
+        and ticket.escalated_to_department == user.department
+    ):
+        return True
     if is_finance_desk_user(user):
         return ticket_esc.ticket_visible_to_finance_desk(ticket, user_id=user.id)
     if is_hr_desk_user(user):

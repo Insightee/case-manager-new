@@ -35,6 +35,12 @@ class DailyLogUpdate(BaseModel):
 class DailyLogRead(BaseModel):
     id: int
     session_id: int
+    transition_id: Optional[int] = None
+    transition_day_id: Optional[int] = None
+    is_transition_log: bool = False
+    transition_role: Optional[str] = None
+    transition_day_number: Optional[int] = None
+    transition_day_count: Optional[int] = None
     case_id: Optional[int] = None
     case_code: Optional[str] = None
     child_name: Optional[str] = None
@@ -76,6 +82,12 @@ class DailyLogRead(BaseModel):
 class DailyLogFinanceRead(BaseModel):
     id: int
     session_id: int
+    transition_id: Optional[int] = None
+    transition_day_id: Optional[int] = None
+    is_transition_log: bool = False
+    transition_role: Optional[str] = None
+    transition_day_number: Optional[int] = None
+    transition_day_count: Optional[int] = None
     case_id: Optional[int] = None
     attendance_status: str
     activities_done: Optional[str] = None
@@ -90,6 +102,11 @@ class DailyLogFinanceRead(BaseModel):
 
 class ParentSessionLogRead(BaseModel):
     id: int
+    transition_id: Optional[int] = None
+    is_transition_log: bool = False
+    transition_role: Optional[str] = None
+    transition_day_number: Optional[int] = None
+    transition_day_count: Optional[int] = None
     case_id: int
     case_code: Optional[str] = None
     child_name: Optional[str] = None

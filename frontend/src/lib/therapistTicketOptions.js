@@ -2,6 +2,7 @@
 export const THERAPIST_REQUEST_TYPES = [
   { value: 'CASE_MANAGER', label: 'Case manager', topic: 'CASE_MANAGER', category: 'SERVICE' },
   { value: 'FINANCE', label: 'Finance / billing', topic: 'BILLING_PAYMENT', category: 'FINANCE' },
+  { value: 'TECH', label: 'Tech / app support', topic: 'OTHER', category: 'TECH' },
   { value: 'HR', label: 'HR', topic: 'OTHER', category: 'HR' },
   { value: 'SERVICE', label: 'Client related', topic: 'OTHER', category: 'SERVICE' },
   { value: 'POSH', label: 'POSH', topic: 'OTHER', category: 'POSH' },

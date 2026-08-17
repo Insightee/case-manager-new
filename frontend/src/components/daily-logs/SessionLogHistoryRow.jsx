@@ -4,8 +4,9 @@ import { SessionLogReadOnly } from './SessionLogReadOnly.jsx'
 import { SessionLogStatusBadge } from './SessionLogStatusBadge.jsx'
 import { formatDisplayDate } from '../../lib/datetime.js'
 import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
-import { formatLogCommentCount, enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
+import { formatLogCommentCount } from '../../lib/sessionLogComments.js'
 import { LogCommentCountPill } from '../shared/LogCommentCountBadge.jsx'
+import { TransitionLogBadge } from './TransitionLogBadge.jsx'
 
 function formatTime(t) {
   if (!t) return '—'
@@ -68,10 +69,13 @@ export function SessionLogHistoryRow({
             {formatSessionWhen(session)} · {session.status}
           </span>
           {logSummary ? (
-            <SessionLogStatusBadge
-              approvalStatus={logSummary.approval_status}
-              attendanceStatus={logSummary.attendance_status}
-            />
+            <>
+              <SessionLogStatusBadge
+                approvalStatus={logSummary.approval_status}
+                attendanceStatus={logSummary.attendance_status}
+              />
+              <TransitionLogBadge log={logSummary} />
+            </>
           ) : null}
         </div>
         <div className="ic-session-history-row__actions">

@@ -7,6 +7,10 @@ import { buildSessionLogMeta } from '../../lib/sessionLogComments.js'
 import { formatSessionLogRowTitle, sessionHasTimeEdit } from '../../lib/sessionTimes.js'
 import { SessionLogReadOnly } from '../daily-logs/SessionLogReadOnly.jsx'
 import {
+  TransitionLogBadge,
+  transitionRoleLabel,
+} from '../daily-logs/TransitionLogBadge.jsx'
+import {
   AdminEmptyState,
   AdminPageHeader,
   RejectWithComment,
@@ -40,6 +44,11 @@ function LogStackItem({ log, session, active, onSelect }) {
         {buildSessionLogMeta(session, log)}
         {log.resubmitted_at ? ' · Resubmitted' : ''}
       </span>
+      {log.is_transition_log ? (
+        <span className="admin-cm-log-review__stack-meta">
+          {transitionRoleLabel(log.transition_role) || 'Transition therapist'}
+        </span>
+      ) : null}
     </button>
   )
 }
@@ -259,7 +268,12 @@ export function AdminCmLogReviewPage() {
                       {selectedCase.case_code}
                       {' · '}
                       {selectedCase.service_type}
-                      {selectedCase.therapist_name ? ` · ${selectedCase.therapist_name}` : ''}
+                      {selectedCase.transition_outgoing_therapist_name &&
+                      selectedCase.transition_incoming_therapist_name
+                        ? ` · Transition: ${selectedCase.transition_outgoing_therapist_name} → ${selectedCase.transition_incoming_therapist_name}`
+                        : selectedCase.therapist_name
+                          ? ` · ${selectedCase.therapist_name}`
+                          : ''}
                     </p>
                   </div>
                   <div className="admin-cm-log-review__case-badges">
@@ -295,11 +309,16 @@ export function AdminCmLogReviewPage() {
                       </h3>
                       <p className="admin-cm-log-review__focus-meta">
                         Submitted {formatDisplayDate(activeLog.submitted_at?.slice?.(0, 10) || activeLog.submitted_at)}
+                        {activeLog.therapist_name ? ` by ${activeLog.therapist_name}` : ''}
+                        {activeLog.transition_role
+                          ? ` · ${transitionRoleLabel(activeLog.transition_role)}`
+                          : ''}
                         {activeLog.resubmitted_at ? ' · Resubmitted after changes' : ''}
                       </p>
                     </div>
                     <div className="admin-cm-log-review__focus-badges">
                       <StatusBadge status={activeLog.approval_status} />
+                      <TransitionLogBadge log={activeLog} />
                       {hasTimeEdit ? (
                         <span className="admin-badge admin-badge--warning">Times edited</span>
                       ) : null}

@@ -393,73 +393,7 @@
   color: #0f172a;
 }
 
-.admin-session-log-detail {
-  margin-top: 10px;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-}
-
-.admin-session-log-detail__head h3 {
-  margin: 0 0 4px;
-  font-size: 0.9375rem;
-}
-
-.admin-session-log-detail__meta {
-  margin: 0 0 8px;
-  font-size: 0.75rem;
-  color: #64748b;
-}
-
-.admin-session-log-detail__notice {
-  margin: 0 0 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 0.8125rem;
-  background: #fffbeb;
-  border: 1px solid #fcd34d;
-  color: #92400e;
-}
-
-.admin-session-log-detail__notice--warn {
-  background: #fffbeb;
-  border-color: #fcd34d;
-  color: #92400e;
-}
-
-.admin-session-log-detail__notice--info {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: #1e40af;
-}
-
-.admin-session-log-detail__dl {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-}
-
-.admin-session-log-detail__dl > div {
-  display: grid;
-  gap: 3px;
-}
-
-.admin-session-log-detail__dl dt {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #64748b;
-}
-
-.admin-session-log-detail__dl dd {
-  margin: 0;
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  color: #0f172a;
-}
+/* .admin-session-log-detail* live in daily-logs/session-log-detail.css */
 
 .log-comment-count-pill {
   display: inline-flex;

@@ -528,6 +528,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                       <span className="admin-table__primary">{row.case_code}</span>
                       <span className="admin-table__meta admin-cases-pipeline__case-meta">
                         {row.day_type ? <CaseDayTypeBadge dayType={row.day_type} /> : null}
+                        {row.in_transition ? <span className="admin-badge admin-badge--info">In transition</span> : null}
                         <span>{row.status?.replaceAll('_', ' ')}</span>
                       </span>
                     </td>

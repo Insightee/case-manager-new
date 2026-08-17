@@ -9,11 +9,13 @@ from sqlalchemy import select
 from app.core.database import SessionLocal
 from app.main import app
 from app.models.audit_event import AuditEvent
+from app.models.assignment import CaseAssignment
 from app.models.case import Case
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.invoice_line import InvoiceCaseLine, InvoiceSessionLine, SessionLineSource, SessionLineType
 from app.models.user import User
 from app.models.therapist_statement_dispute import TherapistStatementDispute
+from app.models.therapist_payout_flag import TherapistPayoutFlag
 from app.seed.demo_seed import run as seed_run
 from app.services import statement_dispute_service, therapist_payout_queue_service
 from app.services.therapist_payout_queue_service import _compute_statement_balances
@@ -162,6 +164,84 @@ def test_payout_queue_payable_now_split():
         expected_net = round(float(session_amount) * 0.9, 2)  # 10% default TDS on gross 300
         assert row["payableNowInr"] == max(0.0, round(expected_net - session_amount, 2))
         assert row["needsReview"] is True  # QUERIED statements are blocked until resolved
+    finally:
+        db.close()
+
+
+def test_monthly_payout_flag_is_private_and_clears_when_paid():
+    seed_run()
+    db = SessionLocal()
+    try:
+        inv, _, _ = _invoice_with_session_line(
+            db, session_id=9011
+        )
+        assignment = db.scalar(select(CaseAssignment).limit(1))
+        admin = db.scalar(
+            select(User).where(User.email == "superadmin@demo.com")
+        )
+        assert assignment is not None
+        assert admin is not None
+        flag = TherapistPayoutFlag(
+            therapist_user_id=inv.therapist_user_id,
+            billing_month="2099-06",
+            case_id=assignment.case_id,
+            outgoing_assignment_id=assignment.id,
+            flagged_by_user_id=admin.id,
+            reason="Therapist left before completing transition",
+            is_active=True,
+        )
+        db.add(flag)
+        db.commit()
+        invoice_id = inv.id
+        flag_id = flag.id
+    finally:
+        db.close()
+
+    finance_h = _login("finance@demo.com")
+    queue = client.get(
+        "/api/v1/admin/therapist-payouts/queue?month=2099-06",
+        headers=finance_h,
+    )
+    assert queue.status_code == 200, queue.text
+    row = next(
+        item
+        for item in queue.json()["statements"]
+        if item["invoiceId"] == invoice_id
+    )
+    assert row["therapistPayoutFlagged"] is True
+
+    therapist_h = _login("therapist@demo.com")
+    therapist_invoices = client.get(
+        "/api/v1/invoices?month=2099-06", headers=therapist_h
+    )
+    assert therapist_invoices.status_code == 200, therapist_invoices.text
+    therapist_row = next(
+        item for item in therapist_invoices.json() if item["id"] == invoice_id
+    )
+    assert therapist_row["therapist_payout_flagged"] is False
+
+    db = SessionLocal()
+    try:
+        invoice = db.get(Invoice, invoice_id)
+        invoice.status = InvoiceStatus.APPROVED
+        db.commit()
+    finally:
+        db.close()
+
+    admin_h = _login("superadmin@demo.com")
+    paid = client.patch(
+        f"/api/v1/invoices/{invoice_id}/payment",
+        headers=admin_h,
+        json={"paid_amount_inr": 1000, "status": "PAID"},
+    )
+    assert paid.status_code == 200, paid.text
+
+    db = SessionLocal()
+    try:
+        cleared = db.get(TherapistPayoutFlag, flag_id)
+        assert cleared.is_active is False
+        assert cleared.cleared_invoice_id == invoice_id
+        assert cleared.cleared_at is not None
     finally:
         db.close()
 

@@ -10,7 +10,12 @@ from app.models.invoice import Invoice, InvoiceStatus
 from app.models.therapist_payout_settlement import TherapistPayoutTransfer
 from app.models.therapist_statement_dispute import TherapistStatementDispute
 from app.models.user import User
-from app.services import invoice_billing_service, payout_settlement_service, statement_dispute_service
+from app.services import (
+    invoice_billing_service,
+    payout_settlement_service,
+    statement_dispute_service,
+    therapist_payout_flag_service,
+)
 
 _OPEN_DISPUTE_STATUSES = {"OPEN", "UNDER_REVIEW"}
 _QUEUE_STATUSES = (
@@ -97,6 +102,7 @@ def _statement_row(
     invoice: Invoice,
     therapist: User | None,
     open_disputes: list[TherapistStatementDispute],
+    therapist_payout_flagged: bool = False,
 ) -> dict:
     breakdown = invoice_billing_service.invoice_breakdown(db, invoice.id)
     session_map = _session_amount_map(breakdown)
@@ -154,6 +160,7 @@ def _statement_row(
         "exportBatchId": xfer.batch_id if xfer else None,
         "disputes": dispute_payloads,
         "hasOpenDispute": bool(dispute_payloads),
+        "therapistPayoutFlagged": therapist_payout_flagged,
     }
 
 
@@ -192,6 +199,7 @@ def admin_payout_queue_summary(
             invoices = filtered
 
     all_disputes = list(db.scalars(select(TherapistStatementDispute)).all())
+    flagged_keys = therapist_payout_flag_service.active_flagged_keys(db, invoices)
 
     rows: list[dict] = []
     totals = {
@@ -209,7 +217,15 @@ def admin_payout_queue_summary(
         open_disputes = _open_disputes_for_invoice(
             all_disputes, inv.id, inv.month, inv.therapist_user_id
         )
-        row = _statement_row(db, inv, therapists.get(inv.therapist_user_id), open_disputes)
+        row = _statement_row(
+            db,
+            inv,
+            therapists.get(inv.therapist_user_id),
+            open_disputes,
+            therapist_payout_flagged=therapist_payout_flag_service.is_invoice_flagged(
+                inv, flagged_keys
+            ),
+        )
         rows.append(row)
 
         totals["statementCount"] += 1

@@ -84,9 +84,16 @@ def compute_session_line_amount(case: Case, line_type: SessionLineType) -> float
 
 
 def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int, float]:
-    included = sum(1 for s in session_lines if s.get("included") and s.get("line_type") == SessionLineType.INCLUDED.value)
-    additional = sum(1 for s in session_lines if s.get("included") and s.get("line_type") == SessionLineType.ADDITIONAL.value)
-    per_session = sum(1 for s in session_lines if s.get("included") and s.get("line_type") == SessionLineType.PER_SESSION.value)
+    regular_lines = [
+        line for line in session_lines if not (line.get("flags") or {}).get("transition_log")
+    ]
+    transition_total = sum(
+        float(line["amount_inr"])
+        for line in session_lines
+        if line.get("included") and (line.get("flags") or {}).get("transition_log")
+    )
+    included = sum(1 for s in regular_lines if s.get("included") and s.get("line_type") == SessionLineType.INCLUDED.value)
+    additional = sum(1 for s in regular_lines if s.get("included") and s.get("line_type") == SessionLineType.ADDITIONAL.value)
 
     if case.billing_type == BillingType.PER_SESSION:
         total = sum(s["amount_inr"] for s in session_lines if s.get("included"))
@@ -95,8 +102,6 @@ def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int
     pkg_count = int(case.package_session_count) if case.package_session_count else 0
     if pkg_count <= 0:
         raise ValueError("MISSING_PACKAGE_COUNT")
-    active_lines = [s for s in session_lines if s.get("included")]
-
     if case.compensation_mode == CompensationMode.FIXED_LUMP:
         fixed = float(case.therapist_fixed_pay_inr or 0)
         per_unit = fixed / pkg_count
@@ -105,13 +110,13 @@ def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int
         else:
             included_amt = included * per_unit
         additional_amt = additional * per_unit
-        total = round(included_amt + additional_amt, 2)
+        total = round(included_amt + additional_amt + transition_total, 2)
         return included, additional, total
 
     per_sess = float(case.pay_share_amount_inr or 0) / pkg_count
     included_amt = included * per_sess
     additional_amt = additional * per_sess
-    total = round(included_amt + additional_amt, 2)
+    total = round(included_amt + additional_amt + transition_total, 2)
     return included, additional, total
 
 
@@ -178,12 +183,14 @@ def fetch_billable_sessions(
         log = s.daily_log
         if not (log and s.case and s.case.billing_type):
             continue
-        ok, code = therapist_active_on_session_date(
-            db,
-            case_id=s.case_id,
-            therapist_user_id=therapist_user_id,
-            on_date=s.scheduled_date,
-        )
+        ok, code = (True, None)
+        if not log.transition_id:
+            ok, code = therapist_active_on_session_date(
+                db,
+                case_id=s.case_id,
+                therapist_user_id=therapist_user_id,
+                on_date=s.scheduled_date,
+            )
         if not ok:
             # Persist exception when ledger writes are on; never silently include mis-attributed pay.
             try:
@@ -226,7 +233,18 @@ def session_line_dict(
     extra_flags: dict | None = None,
 ) -> dict:
     flags = dict(extra_flags or {})
-    amount = compute_session_line_amount(case, line_type)
+    if log.transition_day_id and log.transition_day:
+        amount = round(float(log.transition_day.pay_rate_inr), 2)
+        flags.update(
+            {
+                "transition_log": True,
+                "transition_id": log.transition_id,
+                "transition_day_id": log.transition_day_id,
+                "transition_day_type": log.transition_day.day_type,
+            }
+        )
+    else:
+        amount = compute_session_line_amount(case, line_type)
     return {
         "session_id": session.id,
         "daily_log_id": log.id,
@@ -247,9 +265,14 @@ def session_line_dict(
 
 def build_case_session_lines(case: Case, items: list[tuple[TherapySession, DailyLog]]) -> list[dict]:
     lines: list[dict] = []
-    for idx, (session, log) in enumerate(sorted(items, key=lambda x: (x[0].scheduled_date, x[0].start_time or time.min))):
+    ordered = sorted(items, key=lambda x: (x[0].scheduled_date, x[0].start_time or time.min))
+    regular_items = [(session, log) for session, log in ordered if not log.transition_id]
+    transition_items = [(session, log) for session, log in ordered if log.transition_id]
+    for idx, (session, log) in enumerate(regular_items):
         line_type = _line_type_for_index(case, idx)
         lines.append(session_line_dict(session, log, case, line_type))
+    for session, log in transition_items:
+        lines.append(session_line_dict(session, log, case, SessionLineType.PER_SESSION))
     return lines
 
 

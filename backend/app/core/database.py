@@ -1001,6 +1001,122 @@ def ensure_sqlite_schema_patches() -> None:
                 )
             )
 
+    if not insp.has_table("case_therapist_transitions"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE case_therapist_transitions ("
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "  case_id INTEGER NOT NULL,"
+                    "  case_service_id INTEGER NOT NULL,"
+                    "  outgoing_therapist_user_id INTEGER NOT NULL,"
+                    "  incoming_therapist_user_id INTEGER NOT NULL,"
+                    "  outgoing_assignment_id INTEGER NOT NULL,"
+                    "  incoming_assignment_id INTEGER NOT NULL,"
+                    "  transition_dates JSON NOT NULL,"
+                    "  status VARCHAR(32) NOT NULL,"
+                    "  pending_billing_update JSON NOT NULL,"
+                    "  day_type VARCHAR(16),"
+                    "  full_day_pay_inr NUMERIC(12, 2) NOT NULL DEFAULT 500,"
+                    "  half_day_pay_inr NUMERIC(12, 2) NOT NULL DEFAULT 350,"
+                    "  notes TEXT,"
+                    "  created_by_user_id INTEGER NOT NULL,"
+                    "  cancelled_by_user_id INTEGER,"
+                    "  cancelled_at DATETIME,"
+                    "  cancellation_reason TEXT,"
+                    "  completed_at DATETIME,"
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                    "  FOREIGN KEY(case_id) REFERENCES cases(id),"
+                    "  FOREIGN KEY(case_service_id) REFERENCES case_services(id),"
+                    "  FOREIGN KEY(outgoing_therapist_user_id) REFERENCES users(id),"
+                    "  FOREIGN KEY(incoming_therapist_user_id) REFERENCES users(id),"
+                    "  FOREIGN KEY(outgoing_assignment_id) REFERENCES case_assignments(id),"
+                    "  FOREIGN KEY(incoming_assignment_id) REFERENCES case_assignments(id),"
+                    "  FOREIGN KEY(created_by_user_id) REFERENCES users(id),"
+                    "  FOREIGN KEY(cancelled_by_user_id) REFERENCES users(id)"
+                    ")"
+                )
+            )
+    else:
+        transition_cols = {
+            item["name"] for item in inspect(engine).get_columns("case_therapist_transitions")
+        }
+        transition_column_sql = {
+            "day_type": "VARCHAR(16)",
+            "cancelled_by_user_id": "INTEGER",
+            "cancelled_at": "DATETIME",
+            "cancellation_reason": "TEXT",
+        }
+        with engine.begin() as conn:
+            for column_name, column_type in transition_column_sql.items():
+                if column_name not in transition_cols:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE case_therapist_transitions "
+                            f"ADD COLUMN {column_name} {column_type}"
+                        )
+                    )
+
+    if not inspect(engine).has_table("case_therapist_transition_days"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE case_therapist_transition_days ("
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "  transition_id INTEGER NOT NULL,"
+                    "  transition_date DATE NOT NULL,"
+                    "  day_type VARCHAR(16),"
+                    "  pay_rate_inr NUMERIC(12, 2) NOT NULL,"
+                    "  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                    "  FOREIGN KEY(transition_id) REFERENCES case_therapist_transitions(id),"
+                    "  UNIQUE(transition_id, transition_date)"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_case_therapist_transition_days_transition_id "
+                    "ON case_therapist_transition_days (transition_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_case_therapist_transition_days_transition_date "
+                    "ON case_therapist_transition_days (transition_date)"
+                )
+            )
+
+    if inspect(engine).has_table("daily_logs"):
+        daily_log_cols = {item["name"] for item in inspect(engine).get_columns("daily_logs")}
+        with engine.begin() as conn:
+            if "transition_id" not in daily_log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN transition_id INTEGER"))
+            if "transition_day_id" not in daily_log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN transition_day_id INTEGER"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_daily_logs_transition_id "
+                    "ON daily_logs (transition_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_daily_logs_transition_day_id "
+                    "ON daily_logs (transition_day_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_case_therapist_transitions_case_id "
+                    "ON case_therapist_transitions (case_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_case_therapist_transitions_status "
+                    "ON case_therapist_transitions (status)"
+                )
+            )
 
 def _sqlite_portal_indexes(conn_ctx=engine) -> None:
     """Idempotent composite indexes for portal query hardening (SQLite dev/test)."""

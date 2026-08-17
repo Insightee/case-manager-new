@@ -24,13 +24,19 @@ from app.schemas.session import (
     SessionActualTimesUpdate,
     SessionCreate,
     SessionRead,
+    SessionTransitionContext,
     SessionUpdate,
 )
 from app.core.session_rules import auto_end_label as auto_end_label_for_reason
 from app.core.session_rules import scheduled_end_at_utc
 from app.core.session_start import PendingLogRequiredError, SessionStartConflict
 from app.core.timezone import ensure_utc_aware
-from app.services import case_service, session_service, therapist_intake_service
+from app.services import (
+    case_service,
+    session_service,
+    therapist_intake_service,
+    therapist_transition_service,
+)
 from app.services import manual_session_conflict_service as manual_conflict
 from app.services.session_absence_service import ChildAbsenceBlockError
 
@@ -396,6 +402,27 @@ def complete_forgotten_session_route(
     db.commit()
     db.refresh(session)
     return _session_read_for_db(db, session, case)
+
+
+@router.get("/{session_id}/transition-context", response_model=SessionTransitionContext)
+def get_session_transition_context(
+    session_id: int,
+    user: User = Depends(require_permission("session.read")),
+    db: Session = Depends(get_db),
+):
+    session = db.get(TherapySession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    case = case_service.get_case(db, session.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=403, detail="Access denied")
+    context = therapist_transition_service.transition_context_for_session(
+        db,
+        case_id=session.case_id,
+        therapist_user_id=session.therapist_user_id,
+        scheduled_date=session.scheduled_date,
+    )
+    return SessionTransitionContext(**context) if context else SessionTransitionContext()
 
 
 @router.get("/{session_id}", response_model=SessionRead)

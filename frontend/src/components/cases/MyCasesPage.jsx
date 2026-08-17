@@ -223,7 +223,14 @@ export function MyCasesPage() {
                           '—'
                         )}
                       </td>
-                      <td>{c.stage}</td>
+                      <td>
+                        <div className="ic-table-stage">
+                          <span>{c.stage}</span>
+                          {c.inTransition ? (
+                            <span className="ic-badge ic-badge--transition">Under transition</span>
+                          ) : null}
+                        </div>
+                      </td>
                       <td>{c.nextDue}</td>
                     </tr>
                   ))

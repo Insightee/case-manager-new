@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.assignment import BookingMode, CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
 from app.models.therapist_profile import TherapistProfile
-from app.services import case_service_service
+from app.services import case_service_service, therapist_payout_flag_service
 
 # Cases linked to an active therapist assignment that should mirror therapist primary CM.
 CASE_CM_SYNC_STATUSES = frozenset(
@@ -182,6 +182,7 @@ def create_assignment(
     start_date: date,
     reason_for_change: str | None = None,
     notes: str | None = None,
+    flag_outgoing_therapist: bool = False,
 ) -> CaseAssignment:
     case = db.get(Case, case_id)
     if not case:
@@ -197,6 +198,7 @@ def create_assignment(
         start_date=start_date,
         reason_for_change=reason_for_change,
         notes=notes,
+        flag_outgoing_therapist=flag_outgoing_therapist,
     )
 
 
@@ -249,8 +251,16 @@ def replace_assignment_in_service(
     start_date: date,
     reason_for_change: str | None = None,
     notes: str | None = None,
+    flag_outgoing_therapist: bool = False,
 ) -> CaseAssignment:
     from app.core.billing_validation import case_billing_dict
+    from app.services import therapist_transition_service
+
+    if therapist_transition_service.active_transition_for_case(db, case_id):
+        raise ValueError(
+            "A therapist transition is in progress on this case. "
+            "Wait for the handover to finish or complete it before reassigning."
+        )
 
     case = db.get(Case, case_id)
     if not case:
@@ -271,6 +281,16 @@ def replace_assignment_in_service(
         for a in active:
             if a.therapist_user_id == therapist_user_id:
                 raise ValueError("This therapist is already actively assigned to this case")
+            if flag_outgoing_therapist:
+                therapist_payout_flag_service.create_reassignment_flag(
+                    db,
+                    therapist_user_id=a.therapist_user_id,
+                    effective_date=start_date,
+                    case_id=case_id,
+                    outgoing_assignment_id=a.id,
+                    flagged_by_user_id=assigned_by_user_id,
+                    reason=reassignment_reason,
+                )
             a.status = CaseAssignmentStatus.TRANSFERRED
             a.end_date = start_date
             a.reason_for_change = reassignment_reason

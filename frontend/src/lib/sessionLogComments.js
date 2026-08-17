@@ -10,14 +10,16 @@ export function logCommentMetaSuffix(log) {
   return label ? ` · ${label}` : ''
 }
 
-/** @param {{ id?: number, therapist_user_id?: number, therapist_name?: string } | null | undefined} session @param {{ comment_count?: number } | null | undefined} log */
+/** @param {{ id?: number, therapist_user_id?: number, therapist_name?: string } | null | undefined} session @param {{ comment_count?: number, therapist_name?: string, therapist_user_id?: number } | null | undefined} log */
 export function buildSessionLogMeta(session, log) {
   if (!session) return ''
   let meta = `Session #${session.id}`
-  if (session.therapist_name) {
-    meta += ` · ${session.therapist_name}`
-  } else if (session.therapist_user_id) {
-    meta += ` · Therapist #${session.therapist_user_id}`
+  const therapistName = session.therapist_name || log?.therapist_name
+  if (therapistName) {
+    meta += ` · ${therapistName}`
+  } else {
+    const therapistId = session.therapist_user_id ?? log?.therapist_user_id
+    if (therapistId) meta += ` · Therapist #${therapistId}`
   }
   return meta + logCommentMetaSuffix(log)
 }

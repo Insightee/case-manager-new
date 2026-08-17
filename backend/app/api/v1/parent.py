@@ -241,6 +241,8 @@ def _parent_session_log_read(db: Session, log: DailyLog, case: Case | None, ther
 
     return ParentSessionLogRead(
         id=log.id,
+        transition_id=log.transition_id,
+        is_transition_log=bool(log.transition_id),
         case_id=s.case_id if s else 0,
         case_code=case.case_code if case else None,
         child_name=case.child.full_name if case and case.child else None,
@@ -270,6 +272,7 @@ def _parent_session_log_read(db: Session, log: DailyLog, case: Case | None, ther
         attendance_label=fields.get("attendance_label"),
         what_we_did=fields.get("what_we_did"),
         what_is_next=fields.get("what_is_next"),
+        status_label="Transition log" if log.transition_id else None,
         parent_display_status=display_status,
         can_parent_comment=True,
         comment_count=len(comments_list),
@@ -1467,11 +1470,13 @@ def parent_portal_info():
         "ticket_topics": [
             {"id": t.value, "label": ticket_esc.TOPIC_LABELS[t]}
             for t in TicketTopic
-        ],
+        ]
+        + [{"id": "TECH", "label": "Tech / app support"}],
         "escalation_matrix": {
             t.value: {"levels": ticket_esc.ESCALATION_MATRIX[t]}
             for t in TicketTopic
-        },
+        }
+        | {"TECH": {"levels": ["Tech department queue"]}},
     }
 
 
@@ -1521,10 +1526,14 @@ async def parent_support(
     case = None
     if case_id is not None:
         case = _parent_case_or_404(db, user, case_id)
-    topic = ticket_esc.topic_from_str(topic_raw)
+    is_tech_request = str(topic_raw).strip().upper() == "TECH"
+    topic = TicketTopic.OTHER if is_tech_request else ticket_esc.topic_from_str(topic_raw)
     ticket = SupportTicket(
         raised_by_user_id=user.id,
         case_id=case_id,
+        category=TicketCategory.TECH if is_tech_request else ticket_esc.TOPIC_CATEGORY.get(
+            topic, TicketCategory.OTHER
+        ),
         topic=topic,
         subject=subject,
         body=message,
