@@ -1470,11 +1470,13 @@ def parent_portal_info():
         "ticket_topics": [
             {"id": t.value, "label": ticket_esc.TOPIC_LABELS[t]}
             for t in TicketTopic
-        ],
+        ]
+        + [{"id": "TECH", "label": "Tech / app support"}],
         "escalation_matrix": {
             t.value: {"levels": ticket_esc.ESCALATION_MATRIX[t]}
             for t in TicketTopic
-        },
+        }
+        | {"TECH": {"levels": ["Tech department queue"]}},
     }
 
 
@@ -1524,10 +1526,14 @@ async def parent_support(
     case = None
     if case_id is not None:
         case = _parent_case_or_404(db, user, case_id)
-    topic = ticket_esc.topic_from_str(topic_raw)
+    is_tech_request = str(topic_raw).strip().upper() == "TECH"
+    topic = TicketTopic.OTHER if is_tech_request else ticket_esc.topic_from_str(topic_raw)
     ticket = SupportTicket(
         raised_by_user_id=user.id,
         case_id=case_id,
+        category=TicketCategory.TECH if is_tech_request else ticket_esc.TOPIC_CATEGORY.get(
+            topic, TicketCategory.OTHER
+        ),
         topic=topic,
         subject=subject,
         body=message,

@@ -7,7 +7,7 @@ import { TicketDetailPanel, loadStaffTicketDetail } from '../support/TicketDetai
 import { PeopleListPagination } from '../admin-portal/ui/PeopleListPagination.jsx'
 import '../support/support-tickets.css'
 
-const CATEGORIES = ['', 'FINANCE', 'HR', 'SERVICE', 'POSH', 'CPP', 'OTHER']
+const CATEGORIES = ['', 'FINANCE', 'HR', 'TECH', 'SERVICE', 'POSH', 'CPP', 'OTHER']
 const PAGE_SIZE = 25
 
 const STATUS_COLORS = {
@@ -18,7 +18,7 @@ const STATUS_COLORS = {
 }
 
 const CAT_COLORS = {
-  FINANCE: '#dbeafe', HR: '#fce7f3', SERVICE: '#d1fae5', POSH: '#fde8d8', CPP: '#ede9fe', OTHER: '#f3f4f6',
+  FINANCE: '#dbeafe', HR: '#fce7f3', TECH: '#e0e7ff', SERVICE: '#d1fae5', POSH: '#fde8d8', CPP: '#ede9fe', OTHER: '#f3f4f6',
 }
 
 export function HRTicketsPage() {

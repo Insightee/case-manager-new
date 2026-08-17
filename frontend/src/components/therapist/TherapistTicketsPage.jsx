@@ -25,6 +25,7 @@ const STATUS_META = {
 const CAT_COLORS = {
   FINANCE: '#dbeafe',
   HR: '#fce7f3',
+  TECH: '#e0e7ff',
   SERVICE: '#d1fae5',
   POSH: '#fde8d8',
   CPP: '#ede9fe',
@@ -32,6 +33,7 @@ const CAT_COLORS = {
 }
 
 function topicToRequestType(topic) {
+  if (topic === 'OTHER') return 'OTHER'
   const match = THERAPIST_REQUEST_TYPES.find((t) => t.topic === topic)
   return match?.value || 'OTHER'
 }

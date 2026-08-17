@@ -266,6 +266,7 @@ export function AdminTicketsPage({ embedded = false }) {
                   >
                     <option value="FINANCE">FINANCE</option>
                     <option value="HR">HR</option>
+                    <option value="TECH">TECH</option>
                     <option value="SERVICE">SERVICE</option>
                     <option value="POSH">POSH</option>
                     <option value="CPP">CPP</option>

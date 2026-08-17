@@ -281,6 +281,11 @@ def assign_ticket(db: Session, ticket: SupportTicket, case: Case | None = None) 
     normalize_ticket_routing(ticket)
     level = min(ticket.escalation_level or 0, max(len(escalation_roles(ticket.topic)) - 1, 0))
 
+    if ticket.category == TicketCategory.TECH and level == 0:
+        ticket.escalated_to_department = "TECH"
+        ticket.assigned_to_user_id = None
+        return
+
     if ticket.category == TicketCategory.HR and level == 0:
         assignee = resolve_hr_desk_assignee(db)
         if assignee:
