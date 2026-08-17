@@ -21,7 +21,7 @@ from app.models.case_therapist_transition import (
 )
 from app.models.session import Session as TherapySession
 from app.models.user import User
-from app.services import assignment_service, case_day_type_service, case_service_service
+from app.services import assignment_service, billing_approval_service, case_day_type_service, case_service_service
 
 OPEN_TRANSITION_STATUSES = frozenset(
     {
@@ -544,7 +544,20 @@ def complete_transition(
         outgoing.reason_for_change = "Transition handover completed"
         outgoing.billing_snapshot = case_billing_dict(case)
 
-    apply_billing_payload(case, transition.pending_billing_update, actor_user_id or transition.created_by_user_id)
+    requester = db.get(User, actor_user_id or transition.created_by_user_id)
+    if requester is None:
+        apply_billing_payload(case, transition.pending_billing_update, actor_user_id or transition.created_by_user_id)
+    else:
+        try:
+            billing_approval_service.apply_or_request(
+                db,
+                case=case,
+                proposed=transition.pending_billing_update,
+                requester=requester,
+            )
+        except ValueError as exc:
+            if "already pending" not in str(exc).lower():
+                raise
 
     transition.status = CaseTherapistTransitionStatus.COMPLETED
     transition.completed_at = datetime.now(timezone.utc)

@@ -2721,10 +2721,9 @@ def admin_bulk_import_clients(
     user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    from app.services import family_admin_service, case_code_service, address_service, assignment_service, case_service
+    from app.services import family_admin_service, case_code_service, address_service, assignment_service, case_service, billing_approval_service
     from app.models.parent import ParentGuardian
     from app.models.case import Case, ClientBillingMode
-    from app.core.billing_validation import apply_billing_payload
     from sqlalchemy.orm import selectinload
     from app.services.allotment_service import _SERVICE_ADDRESS_KEYS
 
@@ -2873,7 +2872,12 @@ def admin_bulk_import_clients(
                             address_service.apply_service_address_to_case(case, service_addr_data)
                         db.flush()
                         if billing_data:
-                            apply_billing_payload(case, billing_data, user.id)
+                            billing_approval_service.apply_or_request(
+                                db,
+                                case=case,
+                                proposed=billing_data,
+                                requester=user,
+                            )
                     else:
                         # Create new case
                         case_ref = (row.case_reference or "").strip()
@@ -2897,7 +2901,12 @@ def admin_bulk_import_clients(
                         db.add(case)
                         db.flush()
                         if billing_data:
-                            apply_billing_payload(case, billing_data, user.id)
+                            billing_approval_service.apply_or_request(
+                                db,
+                                case=case,
+                                proposed=billing_data,
+                                requester=user,
+                            )
 
                     case_code = case.case_code
 

@@ -4,9 +4,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core.billing_validation import apply_billing_payload
 from app.models.case import DAY_TYPE_PRODUCT_MODULES, Case, CaseDayType
-from app.services import case_code_service
+from app.models.user import User
+from app.services import billing_approval_service, case_code_service
 
 
 def product_requires_day_type(product_module: str | None) -> bool:
@@ -79,11 +79,21 @@ def update_case_day_type(
         raise ValueError("Please add a reason for changing day type (at least 5 characters).")
 
     billing_updated = False
+    billing_approval_requested = False
     if update_billing:
         if not billing_update:
             raise ValueError("Update billing details before saving the day type change.")
-        apply_billing_payload(case, billing_update, actor_user_id)
-        billing_updated = True
+        actor = db.get(User, actor_user_id)
+        if actor is None:
+            raise ValueError("The person making this change could not be found.")
+        approval = billing_approval_service.apply_or_request(
+            db,
+            case=case,
+            proposed=billing_update,
+            requester=actor,
+        )
+        billing_updated = approval is None
+        billing_approval_requested = approval is not None
 
     case.day_type = new_type
     db.flush()
@@ -93,6 +103,7 @@ def update_case_day_type(
         "new_day_type": new_type.value,
         "reason": trimmed_reason or None,
         "billing_updated": billing_updated,
+        "billing_approval_requested": billing_approval_requested,
     }
 
 
@@ -104,4 +115,6 @@ def audit_detail_for_change(meta: dict[str, Any]) -> str:
         parts.append(f"Reason: {meta['reason']}")
     if meta.get("billing_updated"):
         parts.append("Billing updated")
+    if meta.get("billing_approval_requested"):
+        parts.append("Low-margin billing sent for approval")
     return " · ".join(parts)

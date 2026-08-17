@@ -83,6 +83,31 @@ def requires_approval(billing: dict) -> bool:
     return projected_profit_inr(billing) < Decimal(str(settings.billing_minimum_profit_inr))
 
 
+def stamp_read(payload: dict, row: BillingApprovalRequest | None) -> dict:
+    if not row:
+        return payload
+    payload["billing_approval_status"] = row.status.value
+    payload["billing_approval_request_id"] = row.id
+    payload["projected_profit_inr"] = float(row.projected_profit_inr)
+    return payload
+
+
+def apply_or_request(
+    db: Session,
+    *,
+    case: Case,
+    proposed: dict | None,
+    requester: User,
+) -> BillingApprovalRequest | None:
+    if not proposed or not any(value is not None for value in proposed.values()):
+        return None
+    merged = validate_proposed_billing(case, proposed)
+    if requires_approval(merged) and not is_designated_approver(db, requester):
+        return request_approval(db, case=case, proposed=proposed, requester=requester)
+    apply_billing_payload(case, proposed, requester.id)
+    return None
+
+
 def get_pending_for_case(db: Session, case_id: int) -> BillingApprovalRequest | None:
     return db.scalars(
         select(BillingApprovalRequest).where(

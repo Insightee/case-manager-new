@@ -131,3 +131,55 @@ def test_rejected_low_margin_change_keeps_current_billing():
     case_after = client.get(f"/api/v1/cases/{case_id}", headers=approver_headers)
     assert case_after.status_code == 200
     assert case_after.json()["package_amount_inr"] == 24000
+
+
+def test_reassignment_low_margin_billing_stays_pending():
+    approver_headers = login_headers(client, "superadmin@demo.com")
+    admin_headers = login_headers(client, "admin@demo.com")
+    case_id = api_first_case_id(client, approver_headers)
+
+    with SessionLocal() as db:
+        for pending in db.scalars(
+            select(BillingApprovalRequest).where(
+                BillingApprovalRequest.case_id == case_id,
+                BillingApprovalRequest.status == BillingApprovalStatus.PENDING,
+            )
+        ).all():
+            pending.status = BillingApprovalStatus.REJECTED
+        db.commit()
+
+    therapists = client.get(
+        "/api/v1/admin/allotment/therapists?product_module=homecare&approved_only=false",
+        headers=approver_headers,
+    )
+    assert therapists.status_code == 200, therapists.text
+    rows = therapists.json() if isinstance(therapists.json(), list) else therapists.json().get("items", [])
+    ids = [row.get("therapist_user_id") or row.get("user_id") for row in rows]
+    ids = [tid for tid in ids if tid]
+    if len(set(ids)) < 2:
+        return
+    t1, t2 = list(dict.fromkeys(ids))[:2]
+
+    current = client.get(f"/api/v1/cases/{case_id}/assignments", headers=approver_headers)
+    assert current.status_code == 200
+    active = next((row for row in current.json() if row.get("status") == "ACTIVE"), None)
+    incoming = t2 if not active or active["therapist_user_id"] != t2 else t1
+
+    assigned = client.post(
+        f"/api/v1/cases/{case_id}/assignments",
+        headers=admin_headers,
+        json={
+            "therapist_user_id": incoming,
+            "start_date": "2026-08-17",
+            "reason_for_change": "Incoming therapist needs a new rate card",
+            "billing_update": _package_payload(client_amount=22000, therapist_amount=18000),
+        },
+    )
+    assert assigned.status_code == 201, assigned.text
+    body = assigned.json()
+    assert body["billing_approval_status"] == "PENDING"
+    assert body["projected_profit_inr"] == 4000
+
+    case_after = client.get(f"/api/v1/cases/{case_id}", headers=approver_headers)
+    assert case_after.status_code == 200
+    assert case_after.json()["package_amount_inr"] != 22000

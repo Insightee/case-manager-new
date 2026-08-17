@@ -139,6 +139,9 @@ class AssignmentRead(BaseModel):
     requires_acceptance: bool = False
     parent_accepted: bool = True
     therapist_accepted: bool = True
+    billing_approval_status: Optional[str] = None
+    billing_approval_request_id: Optional[int] = None
+    projected_profit_inr: Optional[float] = None
 
     model_config = {"from_attributes": True}
 

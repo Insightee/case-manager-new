@@ -26,7 +26,6 @@ from app.models.user import User
 from app.schemas.case import CaseCreate, CaseDayTypeUpdate, CaseRead, CaseUpdate
 from app.schemas.billing import CaseBillingFields
 from app.schemas.pagination import PaginatedList
-from app.core.billing_validation import apply_billing_payload
 from app.services import address_service, billing_approval_service, case_code_service, case_service
 from app.services import case_day_type_service
 from app.services import case_status_request_service as csr_svc
@@ -38,6 +37,23 @@ from app.services import client_status_service
 from app.schemas.iep_plan import IepPlanSuggestionCreate
 
 router = APIRouter(prefix="/cases", tags=["cases"])
+
+
+def _apply_case_billing(db: Session, case: Case, billing_data: dict | None, user: User):
+    try:
+        return billing_approval_service.apply_or_request(
+            db,
+            case=case,
+            proposed=billing_data,
+            requester=user,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def _case_read(db: Session, case: Case, billing_approval=None) -> CaseRead:
+    result = case_service.case_to_read(case, db)
+    return CaseRead(**billing_approval_service.stamp_read(result, billing_approval))
 
 
 class CaseStatusRequestCreate(BaseModel):
@@ -143,24 +159,7 @@ def create_case(
         address_service.apply_service_address_to_case(case, service_data)
     db.add(case)
     db.flush()
-    billing_approval = None
-    if any(value is not None for value in billing_data.values()):
-        merged = billing_approval_service.validate_proposed_billing(case, billing_data)
-        if (
-            billing_approval_service.requires_approval(merged)
-            and not billing_approval_service.is_designated_approver(db, user)
-        ):
-            try:
-                billing_approval = billing_approval_service.request_approval(
-                    db,
-                    case=case,
-                    proposed=billing_data,
-                    requester=user,
-                )
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-        else:
-            apply_billing_payload(case, billing_data, user.id)
+    billing_approval = _apply_case_billing(db, case, billing_data, user)
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="create", entity_type="case", entity_id=case.id, new_value=payload.model_dump(), **meta)
     if billing_approval:
@@ -180,16 +179,7 @@ def create_case(
         )
     db.commit()
     db.refresh(case)
-    result = case_service.case_to_read(case, db)
-    if billing_approval:
-        result.update(
-            {
-                "billing_approval_status": billing_approval.status.value,
-                "billing_approval_request_id": billing_approval.id,
-                "projected_profit_inr": float(billing_approval.projected_profit_inr),
-            }
-        )
-    return CaseRead(**result)
+    return _case_read(db, case, billing_approval)
 
 
 @router.get("/{case_id}", response_model=CaseRead)
@@ -231,24 +221,7 @@ def update_case(
     if service_data:
         address_service.validate_service_address_payload(service_data, case)
         address_service.apply_service_address_to_case(case, service_data)
-    billing_approval = None
-    if billing_data:
-        merged = billing_approval_service.validate_proposed_billing(case, billing_data)
-        if (
-            billing_approval_service.requires_approval(merged)
-            and not billing_approval_service.is_designated_approver(db, user)
-        ):
-            try:
-                billing_approval = billing_approval_service.request_approval(
-                    db,
-                    case=case,
-                    proposed=billing_data,
-                    requester=user,
-                )
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-        else:
-            apply_billing_payload(case, billing_data, user.id)
+    billing_approval = _apply_case_billing(db, case, billing_data, user)
     if "status" in updates:
         new_status = case.status.value if hasattr(case.status, "value") else str(case.status)
         old_status_val = old_status.value if hasattr(old_status, "value") else str(old_status)
@@ -290,16 +263,7 @@ def update_case(
         )
     db.commit()
     db.refresh(case)
-    result = case_service.case_to_read(case, db)
-    if billing_approval:
-        result.update(
-            {
-                "billing_approval_status": billing_approval.status.value,
-                "billing_approval_request_id": billing_approval.id,
-                "projected_profit_inr": float(billing_approval.projected_profit_inr),
-            }
-        )
-    return CaseRead(**result)
+    return _case_read(db, case, billing_approval)
 
 
 @router.patch("/{case_id}/billing", response_model=CaseRead)
@@ -324,22 +288,7 @@ def update_case_billing(
         raise HTTPException(status_code=400, detail="Please add the billing details you want to update.")
     previous = billing_approval_service.merged_billing(case, {})
     merged = billing_approval_service.validate_proposed_billing(case, proposed)
-    billing_approval = None
-    if (
-        billing_approval_service.requires_approval(merged)
-        and not billing_approval_service.is_designated_approver(db, user)
-    ):
-        try:
-            billing_approval = billing_approval_service.request_approval(
-                db,
-                case=case,
-                proposed=proposed,
-                requester=user,
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    else:
-        apply_billing_payload(case, proposed, user.id)
+    billing_approval = _apply_case_billing(db, case, proposed, user)
 
     meta = get_request_meta(request)
     action = "request_low_margin_billing_approval" if billing_approval else "update_billing"
@@ -362,16 +311,7 @@ def update_case_billing(
     )
     db.commit()
     db.refresh(case)
-    result = case_service.case_to_read(case, db)
-    if billing_approval:
-        result.update(
-            {
-                "billing_approval_status": billing_approval.status.value,
-                "billing_approval_request_id": billing_approval.id,
-                "projected_profit_inr": float(billing_approval.projected_profit_inr),
-            }
-        )
-    return CaseRead(**result)
+    return _case_read(db, case, billing_approval)
 
 
 @router.patch("/{case_id}/day-type", response_model=CaseRead)

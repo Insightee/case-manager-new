@@ -100,11 +100,15 @@ function TherapistAssignSection({
           body.billing_update = billingPayload
         }
       }
-      await apiFetch(`/api/v1/cases/${caseItem.id}/assignments`, {
+      const assigned = await apiFetch(`/api/v1/cases/${caseItem.id}/assignments`, {
         method: 'POST',
         body: JSON.stringify(body),
       })
-      setSuccess(isNew ? 'Therapist assigned.' : 'Therapist reassigned.')
+      if (assigned?.billing_approval_status === 'PENDING') {
+        setSuccess('Therapist reassigned. New billing is waiting for Nicky’s approval.')
+      } else {
+        setSuccess(isNew ? 'Therapist assigned.' : 'Therapist reassigned.')
+      }
       setReason('')
       setFlagOutgoingTherapist(false)
       setBillingReady(false)
