@@ -1,11 +1,5 @@
 import { apiDownload } from './apiClient.js'
 
-export function confirmIncludeLogContent() {
-  return window.confirm(
-    'Include full log text in the spreadsheet?\n\nOK — include content\nCancel — summary only (therapist, date, time, and status)',
-  )
-}
-
 export function buildCaseSessionLogExportQuery({
   viewMode,
   selectedMonth,

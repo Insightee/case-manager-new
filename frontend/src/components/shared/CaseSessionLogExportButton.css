@@ -1,3 +1,8 @@
+.case-log-export {
+  position: relative;
+  display: inline-flex;
+}
+
 .case-log-export-btn {
   display: inline-flex;
   align-items: center;
@@ -27,6 +32,126 @@
   flex-shrink: 0;
 }
 
+.case-log-export__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(20rem, calc(100vw - 24px));
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+}
+
+.case-log-export__title {
+  margin: 0 0 4px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.case-log-export__hint {
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.case-log-export__fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.case-log-export__legend {
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.case-log-export__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.case-log-export__option + .case-log-export__option {
+  margin-top: 8px;
+}
+
+.case-log-export__option:has(input:checked) {
+  border-color: #6366f1;
+  background: #eef2ff;
+}
+
+.case-log-export__option input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.case-log-export__option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8125rem;
+  color: #475569;
+}
+
+.case-log-export__option-copy strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.case-log-export__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.case-log-export__action {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.case-log-export__action--ghost {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+}
+
+.case-log-export__action--ghost:hover:not(:disabled) {
+  background: #f8fafc;
+}
+
+.case-log-export__action--primary {
+  border: 1px solid #4f46e5;
+  background: #4f46e5;
+  color: #fff;
+}
+
+.case-log-export__action--primary:hover:not(:disabled) {
+  background: #4338ca;
+  border-color: #4338ca;
+}
+
+.case-log-export__action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .case-sessions-logs-filters__actions {
   display: flex;
   align-items: flex-end;
@@ -34,10 +159,17 @@
   margin-top: 8px;
 }
 
-.ic-case-history-head .case-log-export-btn {
+.ic-case-history-head .case-log-export {
   margin-left: auto;
 }
 
 .parent-portal-filters__export {
   align-self: end;
+}
+
+@media (max-width: 640px) {
+  .case-log-export__panel {
+    right: auto;
+    left: 0;
+  }
 }
