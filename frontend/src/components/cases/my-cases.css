@@ -3258,3 +3258,42 @@
   border-radius: 12px;
   padding: 14px 16px;
 }
+
+.ic-session-evidence {
+  margin-top: 8px;
+  display: grid;
+  gap: 16px;
+}
+
+.ic-session-evidence__title {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.ic-session-evidence__card {
+  border: 1px solid var(--ic-border, #e2e8f0);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ic-session-evidence__statement {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.ic-session-evidence .ic-segment {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.ic-session-evidence .ic-segment button {
+  flex: 1;
+  min-height: 44px;
+  min-width: 44px;
+}

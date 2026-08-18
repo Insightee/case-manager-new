@@ -172,6 +172,7 @@ def list_daily_logs(
             for l in logs
         ]
         log_service.attach_comment_counts(db, log_dicts + virtual_dicts_for_counts, parent_visible_only=False)
+        log_service.attach_structured_evidence(db, log_dicts)
         res = [DailyLogRead(**d) for d in log_dicts]
         combined = res + [DailyLogRead(**v) for v in virtual_dicts_for_counts]
     combined.sort(key=lambda x: x.scheduled_date or datetime.min.date(), reverse=True)
@@ -253,6 +254,7 @@ def get_daily_log(
     _ensure_daily_log_readable(db, user, log)
     read = _log_to_read_for_db(db, log)
     log_service.attach_comment_counts(db, [read], parent_visible_only=False)
+    log_service.attach_structured_evidence(db, [read])
     return DailyLogRead(**read)
 
 
@@ -306,7 +308,9 @@ def create_daily_log(
     db: Session = Depends(get_db),
 ):
     try:
-        log, created = log_service.create_daily_log(db, **payload.model_dump())
+        log, created = log_service.create_daily_log(
+            db, created_by_user_id=user.id, **payload.model_dump()
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if created:
@@ -344,7 +348,9 @@ def create_daily_log(
                 log.id,
             )
             db.rollback()
-    return DailyLogRead(**_log_to_read_for_db(db, log))
+    read = _log_to_read_for_db(db, log)
+    log_service.attach_structured_evidence(db, [read])
+    return DailyLogRead(**read)
 
 
 @router.patch("/{log_id}", response_model=DailyLogRead)
@@ -359,13 +365,17 @@ def update_daily_log(
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     try:
-        log = log_service.update_daily_log(db, log, user.id, **payload.model_dump(exclude_unset=True))
+        log = log_service.update_daily_log(
+            db, log, user.id, created_by_user_id=user.id, **payload.model_dump(exclude_unset=True)
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="update", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()
-    return DailyLogRead(**_log_to_read_for_db(db, log))
+    read = _log_to_read_for_db(db, log)
+    log_service.attach_structured_evidence(db, [read])
+    return DailyLogRead(**read)
 
 
 @router.post("/{log_id}/resubmit", response_model=DailyLogRead)
@@ -380,7 +390,9 @@ def resubmit_daily_log(
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     try:
-        log = log_service.resubmit_daily_log(db, log, user.id, **payload.model_dump(exclude_unset=True))
+        log = log_service.resubmit_daily_log(
+            db, log, user.id, created_by_user_id=user.id, **payload.model_dump(exclude_unset=True)
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     from app.services import session_log_service
@@ -389,7 +401,9 @@ def resubmit_daily_log(
     meta = get_request_meta(request)
     log_audit(db, actor_user_id=user.id, action="resubmit", entity_type="daily_log", entity_id=log.id, **meta)
     db.commit()
-    return DailyLogRead(**_log_to_read_for_db(db, log))
+    read = _log_to_read_for_db(db, log)
+    log_service.attach_structured_evidence(db, [read])
+    return DailyLogRead(**read)
 
 
 @router.post("/{log_id}/approve")

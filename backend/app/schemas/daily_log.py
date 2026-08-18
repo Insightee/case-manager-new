@@ -9,6 +9,20 @@ from pydantic import BaseModel, Field
 from app.models.daily_log import AttendanceStatus, LogApprovalStatus
 
 
+class SessionGoalEntryIn(BaseModel):
+    goal_id: int
+    participation: str
+    support_level: str
+    achievement: str
+    note: Optional[str] = None
+
+
+class StrategyUseEventIn(BaseModel):
+    strategy_id: int
+    response: str
+    note: Optional[str] = None
+
+
 class DailyLogCreate(BaseModel):
     session_id: int
     attendance_status: AttendanceStatus
@@ -19,6 +33,8 @@ class DailyLogCreate(BaseModel):
     follow_ups: Optional[str] = None
     parent_notes: Optional[str] = None
     late_reason: Optional[str] = None
+    goal_entries: Optional[list[SessionGoalEntryIn]] = None
+    strategy_events: Optional[list[StrategyUseEventIn]] = None
 
 
 class DailyLogUpdate(BaseModel):
@@ -30,6 +46,8 @@ class DailyLogUpdate(BaseModel):
     follow_ups: Optional[str] = None
     parent_notes: Optional[str] = None
     late_reason: Optional[str] = None
+    goal_entries: Optional[list[SessionGoalEntryIn]] = None
+    strategy_events: Optional[list[StrategyUseEventIn]] = None
 
 
 class DailyLogRead(BaseModel):
@@ -76,7 +94,7 @@ class DailyLogRead(BaseModel):
     comment_count: int = 0
     open_parent_comment_count: int = 0
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "extra": "allow"}
 
 
 class DailyLogFinanceRead(BaseModel):

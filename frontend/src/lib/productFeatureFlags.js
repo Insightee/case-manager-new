@@ -131,6 +131,13 @@ export function isReportBuilderEnabled() {
   return ENABLE_REPORT_BUILDER
 }
 
+/** IEP goal/strategy taps on SubmitSessionLogForm. Forced off on canonical production. */
+export const ENABLE_STRUCTURED_EVIDENCE = readClientModuleFlag('VITE_ENABLE_STRUCTURED_EVIDENCE')
+
+export function isStructuredEvidenceEnabled() {
+  return ENABLE_STRUCTURED_EVIDENCE
+}
+
 /** Banner copy when therapist/parent reports or billing are deferred. */
 export function clientPortalModuleRolloutMessage() {
   const deferred = []

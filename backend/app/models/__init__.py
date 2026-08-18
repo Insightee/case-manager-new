@@ -12,7 +12,9 @@ from app.models.case_therapist_transition import CaseTherapistTransition, CaseTh
 from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
 from app.models.iep_plan import IepPlan, IepPlanStatus
+from app.models.iep_identity import IepGoalItem, IepStrategyItem
 from app.models.iep_plan_suggestion import IepPlanSuggestion
+from app.models.session_evidence import SessionGoalEntry, StrategyUseEvent
 from app.models.case_manager_meeting import CaseManagerMeeting, MeetingStatus, MeetingType
 from app.models.meeting_action import MeetingAction
 from app.models.client_billing import (
@@ -133,6 +135,10 @@ __all__ = [
     "AppUsageChunk",
     "TherapySession",
     "DailyLog",
+    "IepGoalItem",
+    "IepStrategyItem",
+    "SessionGoalEntry",
+    "StrategyUseEvent",
     "ObservationReport",
     "MonthlyReport",
     "ReportCategory",
