@@ -532,6 +532,87 @@ register_head(
 )
 
 
+def _seed_s4e5v6i7d8e9(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.daily_log import DailyLog
+    from app.models.iep_identity import IepGoalItem, IepStrategyItem
+    from app.models.iep_plan import IepPlan
+    from app.models.session_evidence import SessionGoalEntry, StrategyUseEvent
+    from app.models.user import User
+
+    existing = db.scalar(
+        select(SessionGoalEntry.id).where(SessionGoalEntry.participation == "engaged").limit(1)
+    )
+    if existing:
+        return {"goal_entry_id": existing, "skipped": True}
+
+    log = db.scalar(select(DailyLog).limit(1))
+    case = db.scalar(select(Case).limit(1))
+    author = db.scalar(select(User).limit(1))
+    if not log or not case or not author:
+        raise RuntimeError("Need seeded daily_logs, cases, and users — run demo_seed first")
+
+    plan = db.scalar(select(IepPlan).where(IepPlan.case_id == case.id).limit(1))
+    if not plan:
+        plan = IepPlan(
+            case_id=case.id,
+            version="migration-proof-v1",
+            status="DRAFT",
+            sections_json='{"schema_version":2,"learning_environments":[]}',
+            created_by_user_id=author.id,
+        )
+        db.add(plan)
+        db.flush()
+
+    goal = IepGoalItem(
+        iep_plan_id=plan.id,
+        statement="Migration proof goal — request help with words",
+    )
+    strategy = IepStrategyItem(
+        iep_plan_id=plan.id,
+        statement="Migration proof strategy — visual schedule",
+    )
+    db.add(goal)
+    db.add(strategy)
+    db.flush()
+
+    goal_entry = SessionGoalEntry(
+        daily_log_id=log.id,
+        goal_id=goal.id,
+        participation="engaged",
+        support_level="independent",
+        achievement="progressing",
+        created_by_user_id=author.id,
+    )
+    strat_event = StrategyUseEvent(
+        daily_log_id=log.id,
+        strategy_id=strategy.id,
+        response="helpful",
+    )
+    db.add(goal_entry)
+    db.add(strat_event)
+    db.flush()
+    return {
+        "goal_item_id": goal.id,
+        "strategy_item_id": strategy.id,
+        "goal_entry_id": goal_entry.id,
+        "strategy_event_id": strat_event.id,
+    }
+
+
+register_head(
+    "s4e5v6i7d8e9",
+    tables_added=[
+        "iep_goal_items",
+        "iep_strategy_items",
+        "session_goal_entries",
+        "strategy_use_events",
+    ],
+    columns_added=[],
+    seed=_seed_s4e5v6i7d8e9,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
