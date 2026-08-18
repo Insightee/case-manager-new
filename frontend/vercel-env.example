@@ -2,6 +2,7 @@
 # Production: VITE_API_URL only — reports/billing gated in code on insighte.org
 # Preview/Staging: add VITE_APP_ENV=staging, VITE_ENABLE_REPORTS=true, VITE_ENABLE_CLIENT_BILLING=true
 # (legacy VITE_ENABLE_BILLING still accepted for one release)
+# Structured session evidence: VITE_ENABLE_STRUCTURED_EVIDENCE=true (also set backend ENABLE_STRUCTURED_EVIDENCE)
 VITE_API_URL=https://case-manager-new-production.up.railway.app
 # Temporary leave-migration UI (default on if unset). Set false after migration to restore credits UI:
 # VITE_HIDE_THERAPIST_LEAVE_CREDITS_UI=false

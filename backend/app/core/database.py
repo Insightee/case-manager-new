@@ -1118,6 +1118,63 @@ def ensure_sqlite_schema_patches() -> None:
                 )
             )
 
+    _sqlite_structured_evidence_tables(insp)
+
+
+def _sqlite_structured_evidence_tables(insp) -> None:
+    if insp.has_table("iep_goal_items"):
+        return
+    if not insp.has_table("iep_plans") or not insp.has_table("daily_logs"):
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS iep_goal_items ("
+                "id INTEGER PRIMARY KEY, iep_plan_id INTEGER NOT NULL REFERENCES iep_plans(id),"
+                "statement VARCHAR(500) NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                "retired_at DATETIME, UNIQUE(iep_plan_id, statement))"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS iep_strategy_items ("
+                "id INTEGER PRIMARY KEY, iep_plan_id INTEGER NOT NULL REFERENCES iep_plans(id),"
+                "statement VARCHAR(500) NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                "retired_at DATETIME, UNIQUE(iep_plan_id, statement))"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS session_goal_entries ("
+                "id INTEGER PRIMARY KEY, daily_log_id INTEGER NOT NULL REFERENCES daily_logs(id) ON DELETE CASCADE,"
+                "goal_id INTEGER NOT NULL REFERENCES iep_goal_items(id),"
+                "participation VARCHAR(32) NOT NULL, support_level VARCHAR(32) NOT NULL,"
+                "achievement VARCHAR(32) NOT NULL, note TEXT, created_by_user_id INTEGER REFERENCES users(id),"
+                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS strategy_use_events ("
+                "id INTEGER PRIMARY KEY, daily_log_id INTEGER NOT NULL REFERENCES daily_logs(id) ON DELETE CASCADE,"
+                "strategy_id INTEGER NOT NULL REFERENCES iep_strategy_items(id),"
+                "response VARCHAR(32) NOT NULL, note TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_iep_goal_items_iep_plan_id ON iep_goal_items (iep_plan_id)"))
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_iep_strategy_items_iep_plan_id ON iep_strategy_items (iep_plan_id)")
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_session_goal_entries_daily_log_id ON session_goal_entries (daily_log_id)"
+            )
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_strategy_use_events_daily_log_id ON strategy_use_events (daily_log_id)")
+        )
+
+
 def _sqlite_portal_indexes(conn_ctx=engine) -> None:
     """Idempotent composite indexes for portal query hardening (SQLite dev/test)."""
     if not settings.is_sqlite or not settings.is_development:

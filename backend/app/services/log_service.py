@@ -4,17 +4,29 @@ from datetime import date, datetime, timedelta, timezone
 
 LOG_EDIT_WINDOW = timedelta(hours=24)
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.orm import Session, lazyload, selectinload
 
+from app.core.config import settings
 from app.models.case import Case
 from app.models.document_comment import DocumentComment, DocumentEntityType
 from app.models.daily_log import AttendanceStatus, DailyLog, LogApprovalStatus
+from app.models.iep_identity import IepGoalItem, IepStrategyItem
+from app.models.iep_plan import IepPlan
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
+from app.models.session_evidence import SessionGoalEntry, StrategyUseEvent
 from app.models.visibility import VisibilityStatus
 from app.core.timezone import ensure_utc_aware, today_ist
 from app.services import therapist_transition_service
+
+PARTICIPATION_VALUES = frozenset({"engaged", "mixed", "supported"})
+SUPPORT_LEVEL_VALUES = frozenset({"independent", "occasional", "consistent"})
+ACHIEVEMENT_VALUES = frozenset({"emerging", "progressing", "demonstrated"})
+STRATEGY_RESPONSE_VALUES = frozenset({"helpful", "partly_helpful", "rejected", "needs_adaptation"})
+_MISSING_IEP_ITEM = "Looks like that goal is no longer on the active IEP. Refresh and try again."
+_MISSING_STRATEGY_ITEM = "Looks like that strategy is no longer on the active IEP. Refresh and try again."
+_INCOMPLETE_TAP = "Looks like we still need a few details before we can save this."
 
 
 def _normalize_attendance(value: str | AttendanceStatus) -> str:
@@ -93,8 +105,160 @@ def list_logs(
     return logs
 
 
+def _session_case_id(db: Session, log: DailyLog) -> int:
+    session = log.session or db.get(TherapySession, log.session_id)
+    if not session:
+        raise ValueError("Session not found")
+    return session.case_id
+
+
+def _goal_on_case(db: Session, goal_id: int, case_id: int) -> IepGoalItem:
+    row = db.scalar(
+        select(IepGoalItem)
+        .join(IepPlan, IepGoalItem.iep_plan_id == IepPlan.id)
+        .where(IepGoalItem.id == goal_id, IepPlan.case_id == case_id)
+    )
+    if row is None or row.retired_at is not None:
+        raise ValueError(_MISSING_IEP_ITEM)
+    return row
+
+
+def _strategy_on_case(db: Session, strategy_id: int, case_id: int) -> IepStrategyItem:
+    row = db.scalar(
+        select(IepStrategyItem)
+        .join(IepPlan, IepStrategyItem.iep_plan_id == IepPlan.id)
+        .where(IepStrategyItem.id == strategy_id, IepPlan.case_id == case_id)
+    )
+    if row is None or row.retired_at is not None:
+        raise ValueError(_MISSING_STRATEGY_ITEM)
+    return row
+
+
+def _as_entry_dict(item) -> dict:
+    if isinstance(item, dict):
+        return item
+    return item.model_dump() if hasattr(item, "model_dump") else dict(item)
+
+
+def _replace_goal_entries(db: Session, log: DailyLog, entries: list, created_by_user_id: int | None) -> None:
+    case_id = _session_case_id(db, log)
+    db.execute(delete(SessionGoalEntry).where(SessionGoalEntry.daily_log_id == log.id))
+    seen: set[int] = set()
+    for raw in entries:
+        item = _as_entry_dict(raw)
+        goal_id = int(item["goal_id"])
+        if goal_id in seen:
+            continue
+        seen.add(goal_id)
+        participation = str(item.get("participation") or "")
+        support_level = str(item.get("support_level") or "")
+        achievement = str(item.get("achievement") or "")
+        if (
+            participation not in PARTICIPATION_VALUES
+            or support_level not in SUPPORT_LEVEL_VALUES
+            or achievement not in ACHIEVEMENT_VALUES
+        ):
+            raise ValueError(_INCOMPLETE_TAP)
+        _goal_on_case(db, goal_id, case_id)
+        note = item.get("note")
+        db.add(
+            SessionGoalEntry(
+                daily_log_id=log.id,
+                goal_id=goal_id,
+                participation=participation,
+                support_level=support_level,
+                achievement=achievement,
+                note=(str(note).strip() or None) if note is not None else None,
+                created_by_user_id=created_by_user_id,
+            )
+        )
+
+
+def _replace_strategy_events(db: Session, log: DailyLog, events: list) -> None:
+    case_id = _session_case_id(db, log)
+    db.execute(delete(StrategyUseEvent).where(StrategyUseEvent.daily_log_id == log.id))
+    seen: set[int] = set()
+    for raw in events:
+        item = _as_entry_dict(raw)
+        strategy_id = int(item["strategy_id"])
+        if strategy_id in seen:
+            continue
+        seen.add(strategy_id)
+        response = str(item.get("response") or "")
+        if response not in STRATEGY_RESPONSE_VALUES:
+            raise ValueError(_INCOMPLETE_TAP)
+        _strategy_on_case(db, strategy_id, case_id)
+        note = item.get("note")
+        db.add(
+            StrategyUseEvent(
+                daily_log_id=log.id,
+                strategy_id=strategy_id,
+                response=response,
+                note=(str(note).strip() or None) if note is not None else None,
+            )
+        )
+
+
+def _maybe_replace_evidence(db: Session, log: DailyLog, kwargs: dict, created_by_user_id: int | None = None) -> None:
+    actor_id = kwargs.pop("created_by_user_id", created_by_user_id)
+    goal_entries = kwargs.pop("goal_entries", None)
+    strategy_events = kwargs.pop("strategy_events", None)
+    if not settings.enable_structured_evidence:
+        return
+    if goal_entries is None and strategy_events is None:
+        return
+    if goal_entries is not None:
+        _replace_goal_entries(db, log, goal_entries, actor_id)
+    if strategy_events is not None:
+        _replace_strategy_events(db, log, strategy_events)
+
+
+def _goal_entry_read(row: SessionGoalEntry) -> dict:
+    return {
+        "id": row.id,
+        "goal_id": row.goal_id,
+        "participation": row.participation,
+        "support_level": row.support_level,
+        "achievement": row.achievement,
+        "note": row.note,
+    }
+
+
+def _strategy_event_read(row: StrategyUseEvent) -> dict:
+    return {
+        "id": row.id,
+        "strategy_id": row.strategy_id,
+        "response": row.response,
+        "note": row.note,
+    }
+
+
+def attach_structured_evidence(db: Session, reads: list[dict]) -> None:
+    if not settings.enable_structured_evidence:
+        return
+    log_ids = [int(item["id"]) for item in reads if item.get("id")]
+    if not log_ids:
+        return
+    goal_rows = db.scalars(select(SessionGoalEntry).where(SessionGoalEntry.daily_log_id.in_(log_ids))).all()
+    strat_rows = db.scalars(select(StrategyUseEvent).where(StrategyUseEvent.daily_log_id.in_(log_ids))).all()
+    by_log: dict[int, dict[str, list]] = {lid: {"goal_entries": [], "strategy_events": []} for lid in log_ids}
+    for row in goal_rows:
+        by_log[row.daily_log_id]["goal_entries"].append(_goal_entry_read(row))
+    for row in strat_rows:
+        by_log[row.daily_log_id]["strategy_events"].append(_strategy_event_read(row))
+    for item in reads:
+        payload = by_log.get(int(item["id"]))
+        if not payload:
+            continue
+        item["goal_entries"] = payload["goal_entries"]
+        item["strategy_events"] = payload["strategy_events"]
+
+
 def create_daily_log(db: Session, **kwargs) -> tuple[DailyLog, bool]:
     """Create a daily log. Returns (log, created). Idempotent on session_id."""
+    created_by_user_id = kwargs.pop("created_by_user_id", None)
+    goal_entries = kwargs.pop("goal_entries", None)
+    strategy_events = kwargs.pop("strategy_events", None)
     # Case uses lazy="joined" on TherapySession; lock only sessions (Postgres rejects
     # FOR UPDATE on the nullable side of an outer join to cases).
     session = db.scalars(
@@ -156,6 +320,18 @@ def create_daily_log(db: Session, **kwargs) -> tuple[DailyLog, bool]:
     )
     db.add(log)
     db.flush()
+    log.session = session
+    _maybe_replace_evidence(
+        db,
+        log,
+        {
+            "goal_entries": goal_entries,
+            "strategy_events": strategy_events,
+            "created_by_user_id": created_by_user_id,
+        },
+        created_by_user_id=created_by_user_id,
+    )
+    db.flush()
     return log, True
 
 
@@ -170,6 +346,7 @@ def update_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwarg
     elif not is_log_editable(log):
         raise ValueError("Logs can only be edited within 24 hours of submission")
 
+    _maybe_replace_evidence(db, log, kwargs, created_by_user_id=therapist_user_id)
     _apply_log_field_updates(log, kwargs)
     db.flush()
     return log
@@ -198,6 +375,7 @@ def resubmit_daily_log(db: Session, log: DailyLog, therapist_user_id: int, **kwa
     if not is_log_resubmittable(log):
         raise ValueError("Only rejected logs can be resubmitted")
 
+    _maybe_replace_evidence(db, log, kwargs, created_by_user_id=therapist_user_id)
     _apply_log_field_updates(log, kwargs)
     _validate_log_for_submission(log)
     log.approval_status = LogApprovalStatus.PENDING.value

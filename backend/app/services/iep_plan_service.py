@@ -6,12 +6,14 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.attachment import Attachment
 from app.models.case import Case
 from app.models.child import Child
+from app.models.iep_identity import IepGoalItem, IepStrategyItem
 from app.models.iep_plan import IepPlan, IepPlanStatus
 from app.models.iep_plan_suggestion import IepPlanSuggestion
 from app.models.therapist_profile import TherapistProfile
@@ -128,6 +130,97 @@ def _dump_sections(sections: IepPlanSections) -> str:
     if not sections.schema_version:
         sections.schema_version = 2
     return sections.model_dump_json()
+
+
+_STATEMENT_SPLIT = re.compile(r"[\n;•]+")
+
+
+def normalize_iep_statement(raw: str) -> str:
+    return re.sub(r"\s+", " ", (raw or "").strip())[:500]
+
+
+def _split_statements(blob: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in _STATEMENT_SPLIT.split(blob or ""):
+        norm = normalize_iep_statement(part)
+        if len(norm) < 2 or norm in seen:
+            continue
+        seen.add(norm)
+        out.append(norm)
+    return out
+
+
+def _collect_iep_statements(sections: IepPlanSections) -> tuple[list[str], list[str]]:
+    goal_blobs = [sections.talent_development.goals, sections.other_areas_of_need.goals]
+    strat_blobs = [sections.talent_development.strategies, sections.other_areas_of_need.strategies]
+    for row in sections.learning_environments:
+        goal_blobs.append(row.goals)
+        strat_blobs.append(row.strategies)
+    goals: list[str] = []
+    seen_g: set[str] = set()
+    for blob in goal_blobs:
+        for stmt in _split_statements(blob):
+            if stmt not in seen_g:
+                seen_g.add(stmt)
+                goals.append(stmt)
+    strats: list[str] = []
+    seen_s: set[str] = set()
+    for blob in strat_blobs:
+        for stmt in _split_statements(blob):
+            if stmt not in seen_s:
+                seen_s.add(stmt)
+                strats.append(stmt)
+    return goals, strats
+
+
+def _upsert_identity_rows(db: Session, model, plan_id: int, statements: list[str]):
+    # V1 debt: a reworded statement creates a second row (see docs/plans/session-structured-evidence-v1-debt.md).
+    now = datetime.now(timezone.utc)
+    rows = list(db.scalars(select(model).where(model.iep_plan_id == plan_id)).all())
+    by_stmt = {row.statement: row for row in rows}
+    wanted = set(statements)
+    for stmt in statements:
+        existing = by_stmt.get(stmt)
+        if existing:
+            if existing.retired_at is not None:
+                existing.retired_at = None
+            continue
+        try:
+            with db.begin_nested():
+                row = model(iep_plan_id=plan_id, statement=stmt)
+                db.add(row)
+                db.flush()
+            by_stmt[stmt] = row
+        except IntegrityError:
+            winner = db.scalars(
+                select(model).where(model.iep_plan_id == plan_id, model.statement == stmt)
+            ).first()
+            if winner is None:
+                raise
+            if winner.retired_at is not None:
+                winner.retired_at = None
+            by_stmt[stmt] = winner
+    for stmt, row in by_stmt.items():
+        if stmt not in wanted and row.retired_at is None:
+            row.retired_at = now
+    db.flush()
+    return [
+        {"id": row.id, "statement": row.statement}
+        for row in db.scalars(
+            select(model).where(model.iep_plan_id == plan_id, model.retired_at.is_(None)).order_by(model.id)
+        ).all()
+    ]
+
+
+def register_iep_identity_items(db: Session, plan: IepPlan) -> tuple[list[dict], list[dict]]:
+    """Lazy, idempotent registry upsert from sections_json. Empty IEP → empty lists."""
+    sections = _parse_sections(plan.sections_json)
+    goals, strats = _collect_iep_statements(sections)
+    return (
+        _upsert_identity_rows(db, IepGoalItem, plan.id, goals),
+        _upsert_identity_rows(db, IepStrategyItem, plan.id, strats),
+    )
 
 
 def observation_text_for_case(db: Session, case_id: int) -> str:

@@ -13,6 +13,7 @@ import {
 import { formatDisplayDate, formatTimeIST } from '../../lib/datetime.js'
 import { SessionBrief } from './SessionBrief.jsx'
 import { SessionCancelConfirmDialog } from './SessionCancelConfirmDialog.jsx'
+import { ENABLE_STRUCTURED_EVIDENCE } from '../../lib/productFeatureFlags.js'
 
 const ATTENDANCE = [
   { value: 'PRESENT', label: 'Present' },
@@ -47,6 +48,86 @@ const emptyLogForm = {
   late_reason: '',
 }
 
+const PARTICIPATION_OPTS = [
+  { value: 'engaged', label: 'Engaged' },
+  { value: 'mixed', label: 'Mixed' },
+  { value: 'supported', label: 'Supported' },
+]
+const SUPPORT_OPTS = [
+  { value: 'independent', label: 'Independent' },
+  { value: 'occasional', label: 'Occasional' },
+  { value: 'consistent', label: 'Consistent' },
+]
+const ACHIEVEMENT_OPTS = [
+  { value: 'emerging', label: 'Emerging' },
+  { value: 'progressing', label: 'Progressing' },
+  { value: 'demonstrated', label: 'Demonstrated' },
+]
+const STRATEGY_OPTS = [
+  { value: 'helpful', label: 'Helpful' },
+  { value: 'partly_helpful', label: 'Partly helpful' },
+  { value: 'rejected', label: 'Not this time' },
+  { value: 'needs_adaptation', label: 'Needs adapting' },
+]
+
+function evidencePayload(goalTaps, strategyTaps) {
+  if (!ENABLE_STRUCTURED_EVIDENCE) return {}
+  const goal_entries = Object.entries(goalTaps)
+    .filter(([, t]) => t.participation && t.support_level && t.achievement)
+    .map(([goalId, t]) => ({
+      goal_id: Number(goalId),
+      participation: t.participation,
+      support_level: t.support_level,
+      achievement: t.achievement,
+      note: t.note || undefined,
+    }))
+  const strategy_events = Object.entries(strategyTaps)
+    .filter(([, t]) => t.response)
+    .map(([strategyId, t]) => ({
+      strategy_id: Number(strategyId),
+      response: t.response,
+      note: t.note || undefined,
+    }))
+  return { goal_entries, strategy_events }
+}
+
+function tapsFromExisting(existingLog) {
+  const goalTaps = {}
+  for (const row of existingLog?.goal_entries || []) {
+    goalTaps[row.goal_id] = {
+      participation: row.participation || '',
+      support_level: row.support_level || '',
+      achievement: row.achievement || '',
+      note: row.note || '',
+    }
+  }
+  const strategyTaps = {}
+  for (const row of existingLog?.strategy_events || []) {
+    strategyTaps[row.strategy_id] = { response: row.response || '', note: row.note || '' }
+  }
+  return { goalTaps, strategyTaps }
+}
+
+function TapGroup({ label, options, value, onChange }) {
+  return (
+    <div className="ic-session-evidence__taps">
+      <span className="ic-session-log-field__hint">{label}</span>
+      <div className="ic-segment" role="group" aria-label={label}>
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={value === opt.value ? 'active' : ''}
+            onClick={() => onChange(opt.value)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function SubmitSessionLogForm({
   session,
   existingLog = null,
@@ -71,6 +152,10 @@ export function SubmitSessionLogForm({
   const [serverAutosaveState, setServerAutosaveState] = useState('idle')
   const [dirtySinceServerSave, setDirtySinceServerSave] = useState(false)
   const [transitionContext, setTransitionContext] = useState(null)
+  const [goalItems, setGoalItems] = useState([])
+  const [strategyItems, setStrategyItems] = useState([])
+  const [goalTaps, setGoalTaps] = useState({})
+  const [strategyTaps, setStrategyTaps] = useState({})
 
   useEffect(() => {
     let cancelled = false
@@ -118,6 +203,9 @@ export function SubmitSessionLogForm({
     async function hydrate() {
       if (existingLog) {
         setForm(logToFormState(existingLog))
+        const taps = tapsFromExisting(existingLog)
+        setGoalTaps(taps.goalTaps)
+        setStrategyTaps(taps.strategyTaps)
         return
       }
       if (!session?.id) {
@@ -129,6 +217,8 @@ export function SubmitSessionLogForm({
       if (draft?.fields) {
         setForm({ ...emptyLogForm, ...draft.fields })
         setDraftNote('Restored from device draft')
+        if (draft.fields.goalTaps) setGoalTaps(draft.fields.goalTaps)
+        if (draft.fields.strategyTaps) setStrategyTaps(draft.fields.strategyTaps)
       } else {
         setForm(emptyLogForm)
       }
@@ -138,6 +228,27 @@ export function SubmitSessionLogForm({
       cancelled = true
     }
   }, [existingLog?.id, session?.id])
+
+  useEffect(() => {
+    if (!ENABLE_STRUCTURED_EVIDENCE) return undefined
+    const caseId = session?.case_id || existingLog?.case_id
+    if (!caseId) return undefined
+    let cancelled = false
+    apiFetch(`/api/v1/cases/${caseId}/iep-plan`)
+      .then((plan) => {
+        if (cancelled) return
+        setGoalItems(plan?.goal_items || [])
+        setStrategyItems(plan?.strategy_items || [])
+      })
+      .catch(() => {
+        if (cancelled) return
+        setGoalItems([])
+        setStrategyItems([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.case_id, existingLog?.case_id])
 
   useEffect(() => {
     let cancelled = false
@@ -167,13 +278,13 @@ export function SubmitSessionLogForm({
     if (!session?.id || isEdit) return undefined
     if (draftTimer.current) clearTimeout(draftTimer.current)
     draftTimer.current = setTimeout(() => {
-      saveLogDraft(session.id, { ...form, sync_status: 'local' }).catch(() => {})
+      saveLogDraft(session.id, { ...form, goalTaps, strategyTaps, sync_status: 'local' }).catch(() => {})
       setDraftNote('Saved on this device')
     }, 500)
     return () => {
       if (draftTimer.current) clearTimeout(draftTimer.current)
     }
-  }, [form, session?.id, isEdit])
+  }, [form, goalTaps, strategyTaps, session?.id, isEdit])
 
   const isLateSession = useMemo(() => {
     if (!session?.scheduled_date) return false
@@ -195,6 +306,7 @@ export function SubmitSessionLogForm({
           body: JSON.stringify({
             ...form,
             late_reason: form.late_reason || undefined,
+            ...evidencePayload(goalTaps, strategyTaps),
           }),
         })
         setServerAutosaveState('synced')
@@ -206,7 +318,7 @@ export function SubmitSessionLogForm({
     return () => {
       if (serverAutosaveTimer.current) clearTimeout(serverAutosaveTimer.current)
     }
-  }, [isEdit, existingLog?.id, pendingEdit, dirtySinceServerSave, form])
+  }, [isEdit, existingLog?.id, pendingEdit, dirtySinceServerSave, form, goalTaps, strategyTaps])
 
   async function handleResubmit(e) {
     e.preventDefault()
@@ -222,6 +334,7 @@ export function SubmitSessionLogForm({
       const body = {
         ...form,
         late_reason: form.late_reason || undefined,
+        ...evidencePayload(goalTaps, strategyTaps),
       }
       const saved = await apiFetch(`/api/v1/daily-logs/${existingLog.id}/resubmit`, {
         method: 'POST',
@@ -246,6 +359,7 @@ export function SubmitSessionLogForm({
         body: JSON.stringify({
           ...form,
           late_reason: form.late_reason || undefined,
+          ...evidencePayload(goalTaps, strategyTaps),
         }),
       })
       setServerAutosaveState('synced')
@@ -264,7 +378,7 @@ export function SubmitSessionLogForm({
 
   async function persistLocalDraft(syncStatus = 'local') {
     if (!session?.id || isEdit) return
-    await saveLogDraft(session.id, { ...form, sync_status: syncStatus })
+    await saveLogDraft(session.id, { ...form, goalTaps, strategyTaps, sync_status: syncStatus })
     setDraftNote(syncStatus === 'pending_sync' ? 'Saved on device — will sync when online' : 'Draft saved on this device')
   }
 
@@ -306,6 +420,7 @@ export function SubmitSessionLogForm({
       const body = {
         ...form,
         late_reason: form.late_reason || undefined,
+        ...evidencePayload(goalTaps, strategyTaps),
       }
       let saved
       if (isEdit) {
@@ -326,6 +441,8 @@ export function SubmitSessionLogForm({
       if (session?.id) {
         await saveLogDraft(session.id, {
           ...form,
+          goalTaps,
+          strategyTaps,
           sync_status: 'pending_sync',
           sync_payload: { session_id: session.id, ...body },
         }).catch(() => {})
@@ -498,6 +615,67 @@ export function SubmitSessionLogForm({
             </label>
           ))}
         </div>
+
+        {ENABLE_STRUCTURED_EVIDENCE && (goalItems.length > 0 || strategyItems.length > 0) ? (
+          <section className="ic-session-evidence" aria-label="Session evidence">
+            {goalItems.length > 0 ? (
+              <div className="ic-session-evidence__block">
+                <h3 className="ic-session-evidence__title">IEP goals this session</h3>
+                <p className="ic-session-log-field__hint">Tap how the child participated, the support used, and what showed up. Notes are optional.</p>
+                {goalItems.map((item) => {
+                  const taps = goalTaps[item.id] || {}
+                  const patch = (key, value) => {
+                    setGoalTaps((prev) => ({ ...prev, [item.id]: { ...prev[item.id], [key]: value } }))
+                    setDirtySinceServerSave(true)
+                  }
+                  return (
+                    <article key={item.id} className="ic-session-evidence__card">
+                      <p className="ic-session-evidence__statement">{item.statement}</p>
+                      <TapGroup label="Participation" options={PARTICIPATION_OPTS} value={taps.participation} onChange={(v) => patch('participation', v)} />
+                      <TapGroup label="Support" options={SUPPORT_OPTS} value={taps.support_level} onChange={(v) => patch('support_level', v)} />
+                      <TapGroup label="What showed up" options={ACHIEVEMENT_OPTS} value={taps.achievement} onChange={(v) => patch('achievement', v)} />
+                      <label className="ic-session-log-field">
+                        <span className="ic-session-log-field__hint">Note (optional)</span>
+                        <textarea
+                          rows={2}
+                          value={taps.note || ''}
+                          onChange={(e) => patch('note', e.target.value)}
+                        />
+                      </label>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : null}
+            {strategyItems.length > 0 ? (
+              <div className="ic-session-evidence__block">
+                <h3 className="ic-session-evidence__title">Strategies used</h3>
+                <p className="ic-session-log-field__hint">How did this strategy land today?</p>
+                {strategyItems.map((item) => {
+                  const taps = strategyTaps[item.id] || {}
+                  const patch = (key, value) => {
+                    setStrategyTaps((prev) => ({ ...prev, [item.id]: { ...prev[item.id], [key]: value } }))
+                    setDirtySinceServerSave(true)
+                  }
+                  return (
+                    <article key={item.id} className="ic-session-evidence__card">
+                      <p className="ic-session-evidence__statement">{item.statement}</p>
+                      <TapGroup label="Response" options={STRATEGY_OPTS} value={taps.response} onChange={(v) => patch('response', v)} />
+                      <label className="ic-session-log-field">
+                        <span className="ic-session-log-field__hint">Note (optional)</span>
+                        <textarea
+                          rows={2}
+                          value={taps.note || ''}
+                          onChange={(e) => patch('note', e.target.value)}
+                        />
+                      </label>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {isLateSession ? (
           <label className="ic-session-log-field ic-session-log-field--warn">

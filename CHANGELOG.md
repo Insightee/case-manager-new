@@ -6,6 +6,7 @@
 ### Added
 - Case-centric filtered session log Excel export on admin case logs, therapist case history, and parent session updates (when a child is selected); default summary columns with optional full log content, excluding internal notes for parents.
 - Approved session logs can be downloaded as a PDF by case managers, therapists, and parents; pending or rejected logs stay view-only.
+- Structured session evidence (flagged off): `iep_goal_items` / `iep_strategy_items` identity registry, `session_goal_entries` / `strategy_use_events` taps on daily-log create/update/resubmit. Alembic `s4e5v6i7d8e9` (parents `ba5p6p7r8v9`). Gate: `ENABLE_STRUCTURED_EVIDENCE` / `VITE_ENABLE_STRUCTURED_EVIDENCE`. Reword-merge debt: `docs/plans/session-structured-evidence-v1-debt.md`.
 - Reassignment payout flags: admins can privately flag an outgoing therapist while changing therapist, so finance sees a payout warning for that billing month; the flag clears automatically once the payout is paid and stays hidden from therapists.
 - Tech support tickets: `TECH` category for therapist, parent, and staff ticket forms; new tickets route unassigned to the Tech department queue for any Tech staff member to pick up.
 - Transition log identity: therapists see handover-day context before submission and persistent role/day labels afterward; Case Managers see the submitting therapist and outgoing/incoming role during approval.
@@ -17,6 +18,9 @@
 - Stage 1 read-only Finance Control Tower: `GET /api/v1/admin/finance-control-tower/*` (SUPER_ADMIN/FINANCE), `VITE_ENABLE_FINANCE_DASHBOARD_V1`, `FINANCE_CUTOVER_COMPLETE`, ConfidenceBadge + Overview tab rebuild.
 - Gate 1 local/CI validation tests for Control Tower zero-write / RBAC / write-path matrix (`test_finance_control_tower_gate1_validation.py`).
 - Stage 2 client billing: engine-aware invoice composer (`blockingExceptions` / `canBuild` / `postableDraftCharges` / confidence), Zoho Books sync stub seam, `VITE_ENABLE_CLIENT_BILLING` (+ legacy `VITE_ENABLE_BILLING` fallback), admin/parent billing runtime-config endpoints, Forest Light reskin for parent billing + composer.
+
+### Fixed
+- IEP identity registration: unique conflict on `(iep_plan_id, statement)` rolls back to a savepoint and re-selects so concurrent GET `/iep-plan` does not 500.
 
 ### Docs
 - `docs/Cursor_Handover_Finance_Module_Build_Readiness.md`

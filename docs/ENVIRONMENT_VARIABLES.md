@@ -30,6 +30,7 @@ Detail: [RAILWAY_VERCEL.md](./RAILWAY_VERCEL.md) · Deploy checklist: [DEPLOY.md
 | `VITE_API_URL` | Vercel yes; local optional | *(empty)* | Vercel only | Public API base URL, **no trailing slash**. Local dev: leave empty to proxy `/api` → `http://localhost:8000`. |
 | `VITE_POLICIES_BOT_URL` | no | — | Frontend | Fallback policies-bot URL if `/api/v1/support/info` does not return one. |
 | `VITE_HIDE_THERAPIST_LEAVE_CREDITS_UI` | no | on (unless `false`) | Frontend | Temporary: therapist leave page shows only **Leaves taken** (hides leave-credit balance, pending-request count, and paid/unpaid controls — therapists confused "Pending" with credit). Backend logic unchanged. Set to `false` to restore the full UI. |
+| `VITE_ENABLE_STRUCTURED_EVIDENCE` | no | unset/false | Frontend | IEP goal/strategy taps on `SubmitSessionLogForm`. Forced off on canonical production. Pair with backend `ENABLE_STRUCTURED_EVIDENCE`. |
 
 **Do not** set on Vercel: `DATABASE_URL`, `JWT_*`, `SMTP_*`, `R2_*`, or any backend-only var.
 
@@ -240,6 +241,7 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `ZOHO_BOOKS_API_KEY` | empty | Zoho Books sync seam; empty → visible "not configured" status (never fake success). |
 | `ZOHO_BOOKS_LIVE_PUSH` | `false` | When true and API key set, push/update client invoices to Zoho Books. |
 | `VITE_ENABLE_FINANCE_DASHBOARD_V1` | unset/false | Stage 1 read-only Finance Control Tower on `/admin/invoices?tab=overview`. Forced off on canonical production via `readClientModuleFlag`. |
+| `ENABLE_STRUCTURED_EVIDENCE` | `false` | Session-log IEP identity registry + evidence taps. Flag off → zero registry writes; evidence payload ignored. |
 
 ### Payout money-OUT (Loop C)
 

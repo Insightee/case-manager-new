@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.module_write import (
     ensure_case_transition_allows_write,
@@ -584,6 +585,13 @@ def get_case_iep_plan(
     plan = iep_svc.get_latest_plan(db, case_id)
     if not plan:
         raise HTTPException(status_code=404, detail="IEP plan not found")
+    if settings.enable_structured_evidence:
+        goal_items, strategy_items = iep_svc.register_iep_identity_items(db, plan)
+        data = iep_svc.plan_to_dict(db, plan, user)
+        data["goal_items"] = goal_items
+        data["strategy_items"] = strategy_items
+        db.commit()
+        return data
     return iep_svc.plan_to_dict(db, plan, user)
 
 
