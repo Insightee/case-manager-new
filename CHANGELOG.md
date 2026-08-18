@@ -31,6 +31,7 @@
 - `docs/Cursor_Handover_Finance_Merge_Local_Runbook.md` (`FINANCE_MERGE_LOCAL_RUNBOOK_GREEN`)
 - `docs/Cursor_Handover_Clinical_Reports_Structure.md` (clinical reports schema / UI / generation / storage)
 - `docs/Cursor_Handover_Admin_Operational_Reports.md` (Finance / HR / CRM admin Reports exports)
+- `docs/Cursor_Handover_Production_Readonly_Postgres.md` + `docs/sql/create_production_readonly_role.sql`
 
 # Changelog
 
