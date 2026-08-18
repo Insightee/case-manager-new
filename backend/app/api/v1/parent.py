@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -540,6 +540,43 @@ def parent_session_logs(
     combined = result + virtual_logs_out
     combined.sort(key=lambda x: x.scheduled_date, reverse=True)
     return combined
+
+
+@router.get("/session-logs/export/xlsx")
+def parent_session_logs_export_xlsx(
+    case_id: int,
+    view_mode: str = Query("all", pattern="^(month|day|all)$"),
+    month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    day: Optional[str] = Query(None, alias="date", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    attendance_filter: Optional[str] = Query(None, alias="attendance"),
+    include_content: bool = Query(False),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import Response
+
+    from app.services import case_session_log_export_service as export_svc
+
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    try:
+        content, filename = export_svc.export_parent_case_session_logs_xlsx(
+            db,
+            case_id=case_id,
+            user=user,
+            view_mode=view_mode,
+            month=month,
+            day=day,
+            attendance_filter=attendance_filter,
+            include_content=include_content,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/session-logs/{log_id}/download")

@@ -2,6 +2,7 @@ import {
   CASE_SESSION_LOG_STATUS_FILTERS,
   CASE_SESSION_LOG_VIEW_MODES,
 } from '../../lib/caseSessionLogFilters.js'
+import { CaseSessionLogExportButton } from '../shared/CaseSessionLogExportButton.jsx'
 
 export function CaseSessionLogsFilterBar({
   viewMode,
@@ -12,6 +13,8 @@ export function CaseSessionLogsFilterBar({
   onSelectedMonthChange,
   onSelectedDateChange,
   onStatusFilterChange,
+  exportCaseId,
+  exportCaseCode,
 }) {
   return (
     <div className="case-sessions-logs-filters" aria-label="Filter session logs">
@@ -78,6 +81,18 @@ export function CaseSessionLogsFilterBar({
           </span>
         </label>
       </div>
+      {exportCaseId ? (
+        <div className="case-sessions-logs-filters__actions">
+          <CaseSessionLogExportButton
+            caseId={exportCaseId}
+            caseCode={exportCaseCode}
+            viewMode={viewMode}
+            selectedMonth={selectedMonth}
+            selectedDate={selectedDate}
+            statusFilter={statusFilter}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }

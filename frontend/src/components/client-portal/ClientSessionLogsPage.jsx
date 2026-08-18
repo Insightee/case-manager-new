@@ -7,6 +7,7 @@ import { ParentFilterBar, ParentFilterField, ParentFilterSelect } from './Parent
 import { buildSessionDisputeState, SessionCard } from './SessionCard.jsx'
 import { formatDisplayDateLabel, formatDisplayDateTime, todayIsoIST } from '../../lib/datetime.js'
 import { MEETING_OUTCOME_LABELS } from '../meetings/meetingConstants.js'
+import { CaseSessionLogExportButton } from '../shared/CaseSessionLogExportButton.jsx'
 import './parent-session-updates.css'
 
 function sessionDateIso(value) {
@@ -484,9 +485,23 @@ export function ClientSessionLogsPage() {
         className="parent-portal-filters--compact"
         gridClass={filterGridClass}
         actions={
-          <Link to="/parent/book" className="parent-portal-filters__link">
-            Schedule →
-          </Link>
+          <>
+            {caseId ? (
+              <CaseSessionLogExportButton
+                caseId={Number(caseId)}
+                caseCode={caseOptions.find((c) => String(c.id) === String(caseId))?.caseId}
+                parent
+                viewMode={viewMode}
+                selectedMonth={selectedMonth}
+                selectedDate={selectedDate}
+                attendanceFilter={attendanceFilter}
+                className="parent-portal-filters__export"
+              />
+            ) : null}
+            <Link to="/parent/book" className="parent-portal-filters__link">
+              Schedule →
+            </Link>
+          </>
         }
       >
         {caseOptions.length > 0 ? (

@@ -4,6 +4,7 @@
 - Alembic `tr1a2n3s4t5` Postgres deploy: use `postgresql.ENUM(create_type=False)` so `case_therapist_transitions` does not re-create `casetherapisttransitionstatus` after the DO-block.
 
 ### Added
+- Case-centric filtered session log Excel export on admin case logs, therapist case history, and parent session updates (when a child is selected); default summary columns with optional full log content, excluding internal notes for parents.
 - Approved session logs can be downloaded as a PDF by case managers, therapists, and parents; pending or rejected logs stay view-only.
 - Reassignment payout flags: admins can privately flag an outgoing therapist while changing therapist, so finance sees a payout warning for that billing month; the flag clears automatically once the payout is paid and stays hidden from therapists.
 - Tech support tickets: `TECH` category for therapist, parent, and staff ticket forms; new tickets route unassigned to the Tech department queue for any Tech staff member to pick up.

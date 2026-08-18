@@ -1,0 +1,43 @@
+.case-log-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.case-log-export-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.case-log-export-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.case-log-export-btn svg {
+  flex-shrink: 0;
+}
+
+.case-sessions-logs-filters__actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.ic-case-history-head .case-log-export-btn {
+  margin-left: auto;
+}
+
+.parent-portal-filters__export {
+  align-self: end;
+}

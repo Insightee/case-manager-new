@@ -21,6 +21,7 @@ import { SessionLogHistoryRow } from '../daily-logs/SessionLogHistoryRow.jsx'
 import { formatDisplayDateTimeRange } from '../../lib/datetime.js'
 import { formatSessionDisplayRange } from '../../lib/sessionLogUtils.js'
 import { enrichLogsWithCommentCounts } from '../../lib/sessionLogComments.js'
+import { CaseSessionLogExportButton } from '../shared/CaseSessionLogExportButton.jsx'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -135,6 +136,11 @@ export function CaseSessionsPanel({
     if (historyMonth === 'ALL') return historyYear
     return `${MONTHS[Number(historyMonth)]} ${historyYear}`
   }, [historyMonth, historyYear])
+
+  const historyExportViewMode = historyMonth === 'ALL' ? 'all' : 'month'
+  const historyExportMonth =
+    historyMonth === 'ALL' ? undefined : `${historyYear}-${String(Number(historyMonth) + 1).padStart(2, '0')}`
+  const historyExportYear = historyMonth === 'ALL' ? historyYear : undefined
 
   function openLogForm(session, { required = false, log = null } = {}) {
     setError('')
@@ -459,6 +465,14 @@ export function CaseSessionsPanel({
                   ))}
                 </select>
               </label>
+              <CaseSessionLogExportButton
+                caseId={caseId}
+                caseCode={caseCode}
+                viewMode={historyExportViewMode}
+                selectedMonth={historyExportMonth}
+                year={historyExportYear}
+                className="ic-case-history-export"
+              />
             </div>
           </div>
         ) : (

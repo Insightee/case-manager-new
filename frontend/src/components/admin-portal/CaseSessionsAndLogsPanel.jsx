@@ -303,6 +303,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
         onSelectedMonthChange={setSelectedMonth}
         onSelectedDateChange={handleSelectedDateChange}
         onStatusFilterChange={setStatusFilter}
+        exportCaseId={caseId}
       />
       <p className="case-sessions-logs__intro admin-portal-lead" style={{ margin: '0 0 12px', fontSize: '0.8125rem', color: '#64748b' }}>
         Sessions appear when scheduled. Daily logs appear after the therapist submits notes. When times were
@@ -319,7 +320,6 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
       {orphanItems.length > 0 ? (
         <div style={{ marginTop: 16 }}>
           <p className="admin-queue__meta" style={{ marginBottom: 8 }}>
-            Orphan logs (session record missing)
           </p>
           <SessionLogList items={orphanItems} highlightRef={highlightRef} sharedExpandProps={sharedExpandProps} />
         </div>
