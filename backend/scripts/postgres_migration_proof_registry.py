@@ -493,6 +493,45 @@ register_head(
 )
 
 
+def _seed_ba5p6p7r8v9(db: Session) -> dict[str, Any]:
+    from app.models.billing_approval_request import BillingApprovalRequest, BillingApprovalStatus
+    from app.models.case import Case
+    from app.models.user import User
+
+    existing = db.scalar(
+        select(BillingApprovalRequest.id).where(
+            BillingApprovalRequest.projected_profit_inr == 4999.00
+        )
+    )
+    if existing:
+        return {"request_id": existing, "skipped": True}
+
+    case = db.scalar(select(Case).limit(1))
+    requester = db.scalar(select(User).where(User.email == "casemanager@demo.com"))
+    if not case or not requester:
+        raise RuntimeError("Need seeded cases and case manager — run demo_seed first")
+
+    row = BillingApprovalRequest(
+        case_id=case.id,
+        status=BillingApprovalStatus.PENDING,
+        previous_billing={"proof": "migration_proof", "client_rate_per_session_inr": 5000},
+        proposed_billing={"proof": "migration_proof", "client_rate_per_session_inr": 4500},
+        projected_profit_inr=4999.00,
+        requested_by_user_id=requester.id,
+    )
+    db.add(row)
+    db.flush()
+    return {"request_id": row.id}
+
+
+register_head(
+    "ba5p6p7r8v9",
+    tables_added=["billing_approval_requests"],
+    columns_added=[],
+    seed=_seed_ba5p6p7r8v9,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

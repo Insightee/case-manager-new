@@ -1,10 +1,10 @@
 .log-download-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
+  line-height: 0;
+  flex-shrink: 0;
 }
 
 .log-download-btn:disabled {
@@ -13,13 +13,13 @@
 }
 
 .log-download-btn--admin {
-  padding: 4px 9px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border-radius: 999px;
   border: 1px solid #c7d2fe;
   background: #eef2ff;
   color: #4338ca;
-  font-size: 0.6875rem;
-  font-weight: 700;
 }
 
 .log-download-btn--admin:hover:not(:disabled) {
@@ -28,13 +28,13 @@
 
 .log-download-btn--staff,
 .log-download-btn--therapist {
-  padding: 6px 10px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
   background: #fff;
   color: #374151;
-  font-size: 0.8125rem;
-  font-weight: 600;
 }
 
 .log-download-btn--staff:hover:not(:disabled),
@@ -43,13 +43,13 @@
 }
 
 .log-download-btn--parent {
-  padding: 4px 9px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border-radius: 999px;
   border: 1px solid #c7d2fe;
   background: #eef2ff;
   color: #4338ca;
-  font-size: 0.6875rem;
-  font-weight: 700;
 }
 
 .log-download-btn--parent:hover:not(:disabled) {

@@ -42,10 +42,11 @@ export function DownloadApprovedLogButton({ log, variant = 'staff', className = 
       className={rootClass}
       onClick={handleClick}
       disabled={busy}
-      aria-label="Download approved log"
+      aria-label={busy ? 'Downloading approved log' : 'Download approved log'}
+      aria-busy={busy}
+      title={busy ? 'Downloading…' : 'Download log'}
     >
       <DownloadIcon />
-      {busy ? 'Downloading…' : 'Download'}
     </button>
   )
 }
