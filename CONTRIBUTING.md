@@ -13,7 +13,7 @@ Thank you for working on InsighteCase. This repo is built by a small team on a *
 3. **CI must pass** before merge — backend pytest, Alembic single head, frontend build (see [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)).
 4. **Never commit secrets** — no `.env`, tokens, or SMTP keys. Use [docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md).
 5. **Update [CHANGELOG.md](./CHANGELOG.md)** under `[Unreleased]` for every merged PR (author or merger).
-6. **Schema changes** — one Alembic revision per PR; rebase on `main` before adding migrations to avoid two heads.
+6. **Schema changes** — one Alembic revision per PR; rebase on `main` before adding migrations to avoid two heads. Use auto-generated hex revision IDs from `alembic revision`; hand-authored mnemonic IDs are banned.
 7. **RBAC changes** — update or add tests in `test_rbac_access.py` or the feature’s test module.
 
 ---
@@ -71,6 +71,7 @@ npm run dev
 cd backend && python3 -m pytest app/tests -q
 cd frontend && npm run build
 # If you touched alembic/versions/:
+cd backend && PYTHONPATH=.:alembic python3 scripts/check_alembic_integrity.py
 cd backend && PYTHONPATH=.:alembic python3 -m alembic heads   # exactly ONE (head)
 ```
 
@@ -125,7 +126,7 @@ See [docs/RAILWAY_VERCEL.md](./docs/RAILWAY_VERCEL.md).
 | Area | Paths | Requirement |
 |------|-------|-------------|
 | RBAC / modules | `backend/app/core/permissions.py`, `modules.py` | Tests + reviewer who owns RBAC |
-| Migrations | `backend/alembic/versions/` | Single head; coordinate in Slack/chat before merging two migration PRs |
+| Migrations | `backend/alembic/versions/` | Single head; auto-generated revision IDs only; run `scripts/check_alembic_integrity.py` |
 | Billing | `invoice_*`, `client_billing_*` | Run billing-related tests |
 | Support hub | `support_access_service.py`, `AdminSupportHubPage.jsx` | Run `test_support_access.py`, `test_support_history.py` |
 | Deploy / env | `.env*`, Railway/Vercel scripts | No secrets in diff; update ENVIRONMENT_VARIABLES.md if adding vars |
