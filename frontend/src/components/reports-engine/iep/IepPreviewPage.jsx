@@ -20,6 +20,8 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
     loadWorkspace,
     approveReport,
     shareWithParent,
+    downloadPdf,
+    saving,
     stakeholderApprove,
     stakeholderRequestReview,
     sendForStakeholderApproval,
@@ -69,6 +71,16 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
       {error ? <p className="text-sm text-error mb-4">{error}</p> : null}
 
       <div className="flex flex-wrap gap-2 mb-6">
+        {(workspace?.report_id || summary?.report_id) ? (
+          <button
+            type="button"
+            className="min-h-[44px] px-4 rounded-xl border font-semibold text-sm"
+            disabled={saving}
+            onClick={() => downloadPdf(`IEP_${caseCode || caseId}.pdf`)}
+          >
+            {saving ? 'Preparing…' : 'Download PDF'}
+          </button>
+        ) : null}
         {variant !== 'parent' ? (
           <>
             <button

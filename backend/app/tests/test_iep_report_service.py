@@ -280,6 +280,38 @@ def test_iep_available_goals_and_strategies():
     assert "items" in r.json()
 
 
+def test_iep_pdf_download_for_staff_and_parent():
+    therapist = _login("therapist@demo.com")
+    admin = _login("superadmin@demo.com")
+    parent = _login("parent@demo.com")
+    th = {"Authorization": f"Bearer {therapist}"}
+    ah = {"Authorization": f"Bearer {admin}"}
+    ph = {"Authorization": f"Bearer {parent}"}
+    report_id = _start_iep(th)
+    _seed_iep_sections(report_id, th)
+    client.post(f"/api/v1/reports/{report_id}/iep/goals", headers=th, json=GOAL_PAYLOAD)
+
+    draft = client.get(f"/api/v1/reports/{report_id}/iep/pdf", headers=th)
+    assert draft.status_code == 200, draft.text
+    assert draft.headers.get("content-type", "").startswith("application/pdf")
+    assert draft.content.startswith(b"%PDF")
+
+    hidden = client.get(f"/api/v1/reports/{report_id}/iep/pdf", headers=ph)
+    assert hidden.status_code == 404
+
+    client.post(f"/api/v1/reports/{report_id}/submit", headers=th)
+    shared = client.post(f"/api/v1/reports/{report_id}/share-with-parent", headers=ah)
+    assert shared.status_code == 200, shared.text
+
+    family = client.get(f"/api/v1/reports/{report_id}/iep/pdf", headers=ph)
+    assert family.status_code == 200, family.text
+    assert family.content.startswith(b"%PDF")
+
+    cm = client.get(f"/api/v1/reports/{report_id}/iep/pdf", headers=ah)
+    assert cm.status_code == 200
+    assert cm.content.startswith(b"%PDF")
+
+
 def test_parent_clinical_iep_input():
     therapist = _login("therapist@demo.com")
     admin = _login("superadmin@demo.com")

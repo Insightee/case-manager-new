@@ -1,5 +1,3 @@
-import { DEFERRED_ACTIONS } from '../../../lib/clinicalUiContract.js'
-
 /** Shared builder chrome — IEP + observation. Matches Stitch header/footer. */
 export function ClinicalBuilderShell({
   title,
@@ -10,6 +8,7 @@ export function ClinicalBuilderShell({
   onSaveDraft,
   onPreview,
   onSubmit,
+  onDownloadPdf,
   onAddGoal,
   addGoalLabel = 'Add goal / strategy',
   children,
@@ -25,11 +24,11 @@ export function ClinicalBuilderShell({
           <button type="button" className="cr-btn" onClick={onPreview}>
             Preview report
           </button>
-          {!DEFERRED_ACTIONS.has('download_pdf') ? null : (
-            <button type="button" className="cr-btn" disabled title="Coming soon">
-              Download PDF
+          {onDownloadPdf ? (
+            <button type="button" className="cr-btn" disabled={saving} onClick={onDownloadPdf}>
+              {saving ? 'Preparing…' : 'Download PDF'}
             </button>
-          )}
+          ) : null}
           {!readOnly ? (
             <button type="button" className="cr-btn" disabled={saving} onClick={onSaveDraft}>
               {saving ? 'Saving…' : 'Save'}
@@ -63,6 +62,11 @@ export function ClinicalBuilderShell({
         <button type="button" className="cr-btn" onClick={onPreview}>
           Preview
         </button>
+        {onDownloadPdf ? (
+          <button type="button" className="cr-btn" disabled={saving} onClick={onDownloadPdf}>
+            Download PDF
+          </button>
+        ) : null}
         {!readOnly && onSubmit ? (
           <button
             type="button"

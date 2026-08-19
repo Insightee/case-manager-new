@@ -44,6 +44,7 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
     stakeholderRequestReview,
     cmResendForApproval,
     shareWithParent,
+    downloadPdf,
     AUTO_SAVE_MS,
   } = useIepReport(caseId)
 
@@ -159,6 +160,7 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
         onSaveDraft={saveDraft}
         onPreview={goPreview}
         onSubmit={submitReport}
+        onDownloadPdf={() => downloadPdf(`IEP_${caseCode || caseId}.pdf`)}
         onAddGoal={() => {
           setStrategyGoal(null)
           setGoalModal(true)

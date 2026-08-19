@@ -719,6 +719,27 @@ def iep_preview(
     return report_engine_service.serialize_report_workspace(db, report, case)
 
 
+@router.get("/reports/{report_id}/iep/pdf")
+def iep_pdf(report_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from fastapi.responses import Response
+
+    report = _report_or_404(db, report_id)
+    case = _case_for_user(db, user, report.case_id)
+    parent = report_engine_service.user_is_parent(user)
+    if parent and not report_engine_service.parent_may_view_report(report):
+        raise HTTPException(status_code=404, detail="Report not found")
+    try:
+        data, filename = report_engine_service.iep_pdf_bytes(db, report, case, parent_safe=parent)
+    except Exception as exc:
+        logger.exception("iep_pdf failed report_id=%s", report_id)
+        raise HTTPException(status_code=503, detail="Could not download this IEP") from exc
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/reports/{report_id}/iep/pending-changes")
 def iep_pending_changes(report_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     report = _report_or_404(db, report_id)

@@ -38,4 +38,4 @@ export const IEP_LEARNING_ENVIRONMENTS = CORE_ENVIRONMENTS.map((e) => ({ id: e.i
 /** @deprecated use IEP_LEARNING_ENVIRONMENTS */
 export const ENVIRONMENT_TABS = IEP_LEARNING_ENVIRONMENTS
 
-export const DEFERRED_ACTIONS = new Set(['download_pdf', 'share', 'duplicate'])
+export const DEFERRED_ACTIONS = new Set(['duplicate'])

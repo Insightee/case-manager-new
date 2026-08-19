@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiFetch } from '../../../lib/apiClient.js'
+import { apiDownload, apiFetch } from '../../../lib/apiClient.js'
 import { AI_ENABLED } from '../../../lib/reportsRevampFlags.js'
 import { normalizeClinicalApiError } from '../shared/ClinicalReportNotice.jsx'
 
@@ -234,6 +234,22 @@ export function useIepReport(caseId) {
     }
   }
 
+  async function downloadPdf(filename) {
+    const id = workspace?.report_id || summary?.report_id
+    if (!id) return
+    setSaving(true)
+    setError('')
+    try {
+      const name = filename || `IEP_${workspace?.case_code || id}.pdf`
+      await apiDownload(`/api/v1/reports/${id}/iep/pdf`, name)
+    } catch (err) {
+      setError(err.message || 'Could not download this IEP')
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function saveDraft() {
     if (!workspace?.report_id) return null
     setSaving(true)
@@ -324,6 +340,7 @@ export function useIepReport(caseId) {
     submitReport,
     approveReport,
     shareWithParent,
+    downloadPdf,
     saveDraft,
     generateSuggestions,
     sendForStakeholderApproval,

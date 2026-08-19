@@ -19,7 +19,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
   const portal = searchParams.get('portal')
   const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'iep', view, variant, portal })
 
-  const { summary, loading, error, saving, startReport, generateFromObservation, refresh, shareWithParent, submitReport } = useIepReport(caseId)
+  const { summary, loading, error, saving, startReport, generateFromObservation, refresh, shareWithParent, submitReport, downloadPdf } = useIepReport(caseId)
 
   async function handleStart() {
     try {
@@ -54,7 +54,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
   const canContinue = !isParent && hasReport && summary?.can_edit
   const canPreview = hasReport && (isParent ? summary?.can_preview : summary?.has_active_approved_iep || summary?.can_preview)
   const canShare = isAdmin && summary?.can_share_with_parent
-  const canSubmit = !isParent && hasReport && summary?.can_submit
+  const canDownload = hasReport && (isParent ? summary?.can_preview : true)
 
   async function handleShare() {
     try {
@@ -183,6 +183,16 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
               onClick={handleShare}
             >
               Share with family
+            </button>
+          ) : null}
+          {canDownload ? (
+            <button
+              type="button"
+              className="inline-flex items-center justify-center min-h-[44px] px-6 py-2 rounded-xl border border-outline-variant/50 font-semibold text-sm"
+              disabled={saving}
+              onClick={() => downloadPdf(`IEP_${caseCode || caseId}.pdf`)}
+            >
+              Download PDF
             </button>
           ) : null}
           {canPreview ? (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_lib
 import json
 from datetime import date
 
@@ -643,6 +644,81 @@ def serialize_parent_safe_observation(db: Session, report: ClinicalReport, case:
         "approved_at": ws["approved_at"],
         "preview_note": "Parent-safe preview — internal notes excluded.",
     }
+
+
+def _esc_html(value: object) -> str:
+    return html_lib.escape(str(value or "")).replace("\n", "<br/>")
+
+
+def _iep_section_narrative(sec: dict) -> str:
+    text = sec.get("narrative_text") or ""
+    if isinstance(text, str) and text.startswith("{"):
+        try:
+            parsed = json.loads(text)
+            text = "\n\n".join(v for v in parsed.values() if isinstance(v, str))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    return text
+
+
+def iep_workspace_to_html(payload: dict) -> str:
+    parts = [f"<h1>{_esc_html(payload.get('title') or 'IEP Support Plan')}</h1>"]
+    child = payload.get("child_name") or ""
+    code = payload.get("case_code") or ""
+    if child or code:
+        parts.append(f"<p>{_esc_html(child)} · {_esc_html(code)}</p>")
+    for sec in payload.get("sections") or []:
+        label = sec.get("label") or sec.get("key") or "Section"
+        parts.append(f"<h2>{_esc_html(label)}</h2>")
+        narrative = _iep_section_narrative(sec)
+        if narrative.strip():
+            parts.append(f"<p>{_esc_html(narrative)}</p>")
+        structured = sec.get("structured_data") or {}
+        goals = structured.get("goals") if isinstance(structured, dict) else None
+        if isinstance(goals, list):
+            for i, goal in enumerate(goals, start=1):
+                if not isinstance(goal, dict):
+                    continue
+                heading = goal.get("parent_facing_wording") or goal.get("title") or goal.get("goal_statement") or f"Goal {i}"
+                parts.append(f"<h3>{_esc_html(heading)}</h3>")
+                statement = goal.get("goal_statement") or ""
+                if statement and statement != heading:
+                    parts.append(f"<p>{_esc_html(statement)}</p>")
+                baseline = goal.get("baseline_current_state") or ""
+                desired = goal.get("desired_state") or ""
+                if baseline:
+                    parts.append(f"<p>Baseline: {_esc_html(baseline)}</p>")
+                if desired:
+                    parts.append(f"<p>Desired: {_esc_html(desired)}</p>")
+        domains = structured.get("domains") if isinstance(structured, dict) else None
+        if isinstance(domains, list) and domains:
+            labels = ", ".join(str(d) for d in domains if d)
+            if labels:
+                parts.append(f"<p>Domains: {_esc_html(labels)}</p>")
+    return "".join(parts) or "<p>IEP support plan</p>"
+
+
+def iep_pdf_bytes(db: Session, report: ClinicalReport, case: Case, *, parent_safe: bool) -> tuple[bytes, str]:
+    from app.services.report_pdf_service import build_report_pdf_bytes
+
+    payload = (
+        serialize_parent_safe_iep(db, report, case)
+        if parent_safe
+        else serialize_report_workspace(db, report, case)
+    )
+    child_name = payload.get("child_name") or (case.child.full_name if case.child else "")
+    case_code = payload.get("case_code") or case.case_code or ""
+    pdf = build_report_pdf_bytes(
+        title=payload.get("title") or "IEP Support Plan",
+        child_name=child_name,
+        case_code=case_code,
+        category="IEP",
+        month_label=(payload.get("status") or "").replace("_", " "),
+        body_html=iep_workspace_to_html(payload),
+        plan_next_month=None,
+    )
+    filename = f"IEP_{case_code or report.id}.pdf"
+    return pdf, filename
 
 
 def case_dashboard(db: Session, case_id: int) -> dict:
