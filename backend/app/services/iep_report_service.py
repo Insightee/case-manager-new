@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.clinical_measurement_criteria import (
@@ -329,32 +330,32 @@ def generate_iep_draft_from_observation(db: Session, report: ClinicalReport, use
 
 
 def _list_session_log_goals(db: Session, case_id: int) -> list[dict]:
-    from app.models.session_evidence import SessionGoalEntry
     from app.models.daily_log import DailyLog
+    from app.models.iep_identity import IepGoalItem
     from app.models.session import Session as TherapySession
+    from app.models.session_evidence import SessionGoalEntry
 
-    rows = list(
-        db.scalars(
-            select(SessionGoalEntry)
-            .join(DailyLog, SessionGoalEntry.daily_log_id == DailyLog.id)
-            .join(TherapySession, DailyLog.session_id == TherapySession.id)
-            .where(TherapySession.case_id == case_id)
-            .order_by(SessionGoalEntry.id.desc())
-            .limit(20)
-        ).all()
-    )
+    rows = db.execute(
+        select(SessionGoalEntry, IepGoalItem)
+        .join(IepGoalItem, SessionGoalEntry.goal_id == IepGoalItem.id)
+        .join(DailyLog, SessionGoalEntry.daily_log_id == DailyLog.id)
+        .join(TherapySession, DailyLog.session_id == TherapySession.id)
+        .where(TherapySession.case_id == case_id)
+        .order_by(SessionGoalEntry.id.desc())
+        .limit(20)
+    ).all()
     seen: set[str] = set()
     out: list[dict] = []
-    for row in rows:
-        label = (row.goal_label or "").strip()
+    for entry, goal_item in rows:
+        label = (goal_item.statement or "").strip()
         if not label or label.lower() in seen:
             continue
         seen.add(label.lower())
         out.append(
             {
-                "id": row.id,
+                "id": entry.id,
                 "label": label,
-                "domain_key": row.domain_key or "general",
+                "domain_key": "general",
                 "source": "session_log",
                 "goal_statement": label,
             }
@@ -363,22 +364,34 @@ def _list_session_log_goals(db: Session, case_id: int) -> list[dict]:
 
 
 def list_available_goals_for_iep(db: Session, case_id: int) -> dict:
-    obs = report_engine_service.get_active_observation_report(db, case_id)
-    obs_candidates: list[dict] = []
-    if obs:
-        c = observation_report_service.list_candidates(db, obs.id)
-        obs_candidates = c.get("goals", []) + c.get("suggested_goals", [])
-    repo = goal_repository_service.list_goal_candidates(db, case_id)
-    engine = build_goals_engine_payload(db, case_id)
-    session_log_goals = _list_session_log_goals(db, case_id)
-    return {
-        "observation_candidates": obs_candidates,
-        "repository_goals": repo,
-        "case_goals": engine.get("goals", []),
-        "org_pool_goals": engine.get("org_pool_goals", []),
-        "session_log_goals": session_log_goals,
-        "active_iep_cards": engine.get("iep_goals", []),
+    empty = {
+        "observation_candidates": [],
+        "repository_goals": [],
+        "case_goals": [],
+        "org_pool_goals": [],
+        "session_log_goals": [],
+        "active_iep_cards": [],
     }
+    try:
+        obs = report_engine_service.get_active_observation_report(db, case_id)
+        obs_candidates: list[dict] = []
+        if obs:
+            c = observation_report_service.list_candidates(db, obs.id)
+            obs_candidates = c.get("goals", []) + c.get("suggested_goals", [])
+        repo = goal_repository_service.list_goal_candidates(db, case_id)
+        engine = build_goals_engine_payload(db, case_id)
+        session_log_goals = _list_session_log_goals(db, case_id)
+        return {
+            "observation_candidates": obs_candidates,
+            "repository_goals": repo,
+            "case_goals": engine.get("goals", []),
+            "org_pool_goals": engine.get("org_pool_goals", []),
+            "session_log_goals": session_log_goals,
+            "active_iep_cards": engine.get("iep_goals", []),
+        }
+    except ProgrammingError:
+        db.rollback()
+        return empty
 
 
 def list_available_strategies_for_iep(

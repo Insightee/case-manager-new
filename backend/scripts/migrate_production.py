@@ -21,6 +21,7 @@ from sqlalchemy import inspect, text
 from app.core.config import settings
 from app.core.database import engine
 from app.db.alembic_version_cleanup import all_stored_revisions, compact_stale_version_rows, current_revision
+from app.db.goal_repository_schema_repair import repair_goal_repository_columns
 
 import app.models  # noqa: F401
 
@@ -48,6 +49,8 @@ _REQUIRED_AT_HEAD: dict[str, tuple[str, ...]] = {
     "email_suppressions": ("email",),
     "email_logs": ("attempt_count", "entity_type"),
     "invite_tokens": ("email_delivery_status",),
+    "goal_repository_items": ("source_daily_log_id", "goal_statement", "source_clinical_report_id"),
+    "strategy_repository_items": ("domain_key", "linked_goal_card_id", "source_clinical_report_id"),
 }
 
 
@@ -96,23 +99,35 @@ _DAILY_LOGS_REPAIR_DDL: tuple[tuple[str, str], ...] = (
 )
 
 
-def _repair_daily_logs_columns() -> list[str]:
-    """Postgres-only idempotent column adds when Alembic skipped due to 'heads' stamp."""
+def _repair_table_columns(table: str, ddl_spec: tuple[tuple[str, str], ...]) -> list[str]:
     if settings.is_sqlite:
         return []
     insp = inspect(engine)
-    if not insp.has_table("daily_logs"):
+    if not insp.has_table(table):
         return []
-    existing = {c["name"] for c in insp.get_columns("daily_logs")}
+    existing = {c["name"] for c in insp.get_columns(table)}
     added: list[str] = []
     with engine.begin() as conn:
-        for col, ddl in _DAILY_LOGS_REPAIR_DDL:
+        for col, ddl in ddl_spec:
             if col in existing:
                 continue
-            conn.execute(text(f"ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS {col} {ddl}"))
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ddl}"))
             added.append(col)
     if added:
-        print(f"Repaired daily_logs columns: {added}")
+        print(f"Repaired {table} columns: {added}")
+    return added
+
+
+def _repair_daily_logs_columns() -> list[str]:
+    """Postgres-only idempotent column adds when Alembic skipped due to 'heads' stamp."""
+    return _repair_table_columns("daily_logs", _DAILY_LOGS_REPAIR_DDL)
+
+
+def _repair_goal_repository_columns() -> list[str]:
+    """Repair goal/strategy repository tables when c7r8e9p0o1r2 created minimal schema."""
+    added = repair_goal_repository_columns()
+    if added:
+        print(f"Repaired goal/strategy repository columns: {added}")
     return added
 
 
@@ -171,8 +186,9 @@ def main() -> None:
     compact_stale_version_rows(engine, script)
     _reconcile_heads_literal(cfg, script)
     _repair_daily_logs_columns()
+    _repair_goal_repository_columns()
     current = current_revision(engine, script)
-    missing = _missing_required_columns(insp)
+    missing = _missing_required_columns(inspect(engine))
     if current == head and not missing:
         print(f"Database already at head ({head}).")
         return
@@ -194,6 +210,7 @@ def main() -> None:
     missing_after = _missing_required_columns(inspect(engine))
     if missing_after:
         _repair_daily_logs_columns()
+        _repair_goal_repository_columns()
         missing_after = _missing_required_columns(inspect(engine))
     if missing_after:
         raise RuntimeError(

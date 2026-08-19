@@ -477,7 +477,11 @@ def generate_iep_draft(report_id: int, user: User = Depends(get_current_user), d
 @router.get("/cases/{case_id}/reports/iep/summary")
 def iep_summary(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     case = _case_for_user(db, user, case_id)
-    return report_engine_service.iep_summary(db, case, user)
+    try:
+        return report_engine_service.iep_summary(db, case, user)
+    except Exception as exc:
+        logger.exception("iep_summary failed case_id=%s", case_id)
+        raise HTTPException(status_code=503, detail="Could not load IEP summary") from exc
 
 
 @router.post("/cases/{case_id}/reports/iep/start")

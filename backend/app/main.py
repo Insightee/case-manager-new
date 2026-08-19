@@ -16,6 +16,7 @@ from app.core.production_checks import validate_production_settings
 from app.core.request_middleware import RequestIdMiddleware
 from app.core.security import ping_redis_for_health, verify_redis_at_startup, warm_redis_connection
 from app.db.bootstrap import bootstrap_schema
+from app.db.goal_repository_schema_repair import repair_goal_repository_columns
 
 app = FastAPI(title="InsighteCase API", version="0.1.0")
 
@@ -144,11 +145,26 @@ def _apply_sqlite_patches_if_needed() -> None:
     _sqlite_patches_applied = True
 
 
+def _repair_postgres_schema_drift() -> None:
+    if settings.is_sqlite:
+        return
+    import logging
+
+    log = logging.getLogger("insightcase")
+    try:
+        added = repair_goal_repository_columns()
+        if added:
+            log.warning("Repaired goal/strategy repository schema drift: %s", added)
+    except Exception as exc:
+        log.error("Goal repository schema repair failed: %s", exc)
+
+
 @app.on_event("startup")
 def _on_startup() -> None:
     validate_production_settings()
     verify_redis_at_startup()
     bootstrap_schema()
+    _repair_postgres_schema_drift()
     _apply_sqlite_patches_if_needed()
     _maybe_seed_demo_on_empty_db()
     _verify_sqlite_writable()
