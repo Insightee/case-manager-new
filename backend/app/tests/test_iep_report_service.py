@@ -75,6 +75,28 @@ def test_iep_summary_and_start():
     assert r.json()["report_type"] == "iep"
 
 
+def test_iep_start_unexpected_error_is_json_503(monkeypatch):
+    token = _login("therapist@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    case_id = _case_id()
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("simulated start failure")
+
+    monkeypatch.setattr("app.services.iep_report_service.start_iep", boom)
+    r = client.post(f"/api/v1/cases/{case_id}/reports/iep/start", headers=headers)
+    assert r.status_code == 503
+    assert r.json()["detail"] == "Could not start IEP"
+
+
+def test_parent_cannot_start_iep():
+    token = _login("parent@demo.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    case_id = _case_id()
+    r = client.post(f"/api/v1/cases/{case_id}/reports/iep/start", headers=headers)
+    assert r.status_code in (403, 404)
+
+
 def test_iep_generate_draft_manual_without_observation_warning():
     token = _login("therapist@demo.com")
     headers = {"Authorization": f"Bearer {token}"}

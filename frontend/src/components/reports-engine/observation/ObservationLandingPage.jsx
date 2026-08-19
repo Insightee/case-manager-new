@@ -106,7 +106,8 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
           {!hasReport || summary.can_edit ? (
             <button
               type="button"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-lush-forest text-white font-bold shadow-lg hover:opacity-90 transition-all min-h-[44px] disabled:opacity-50"
+              className="cr-btn cr-btn--primary inline-flex items-center gap-2 font-bold shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
+              style={{ backgroundColor: '#0b1c16', color: '#fff' }}
               disabled={saving}
               onClick={hasReport ? () => navigate(sectionPath('builder')) : handleStart}
             >

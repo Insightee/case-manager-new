@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
+from app.core.module_access import is_view_only_user
+from app.core.permissions import RoleName
 from app.models.user import User
 from app.services import (
     case_service,
@@ -30,10 +32,35 @@ def _case_for_user(db: Session, user: User, case_id: int):
     return cases_case_for_user(db, user, case_id)
 
 
-def _case_for_user_write(db: Session, user: User, case_id: int):
-    from app.api.v1.cases import _case_for_user_write as cases_write
+_CLINICAL_REPORT_WRITE_ROLES = frozenset(
+    {
+        RoleName.SUPER_ADMIN.value,
+        RoleName.MODULE_ADMIN.value,
+        RoleName.ADMIN.value,
+        RoleName.CASE_MANAGER.value,
+        RoleName.SUPERVISOR.value,
+        RoleName.THERAPIST.value,
+    }
+)
 
-    return cases_write(db, user, case_id)
+
+def _case_for_user_write(db: Session, user: User, case_id: int):
+    """Assigned-case write for clinical reports — not staff programme-module grants.
+
+    Therapists and case managers start/edit IEP and observation reports on cases
+    they can already see. Programme-module write (homecare/shadow_support) is the
+    admin case-edit gate and would 403 therapists; it also auto-completes overdue
+    therapist handovers, which must not block report start.
+    """
+    case = _case_for_user(db, user, case_id)
+    if is_view_only_user(user):
+        raise HTTPException(status_code=403, detail="View-only access — changes are not allowed")
+    if not _CLINICAL_REPORT_WRITE_ROLES.intersection(user.role_names or []):
+        raise HTTPException(
+            status_code=403,
+            detail="You can view this case but cannot edit clinical reports.",
+        )
+    return case
 
 
 def _report_or_404(db: Session, report_id: int):
@@ -172,11 +199,13 @@ def observation_summary(case_id: int, user: User = Depends(get_current_user), db
 
 @router.post("/cases/{case_id}/reports/observation/start")
 def start_observation(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    case = _case_for_user_write(db, user, case_id)
     try:
+        case = _case_for_user_write(db, user, case_id)
         report = observation_report_service.start_observation(db, case, user)
         db.commit()
         return report_engine_service.serialize_report_workspace(db, report, case)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as exc:
@@ -486,13 +515,18 @@ def iep_summary(case_id: int, user: User = Depends(get_current_user), db: Sessio
 
 @router.post("/cases/{case_id}/reports/iep/start")
 def start_iep(case_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    case = _case_for_user_write(db, user, case_id)
     try:
+        case = _case_for_user_write(db, user, case_id)
         report = iep_report_service.start_iep(db, case, user)
         db.commit()
         return report_engine_service.serialize_report_workspace(db, report, case)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as exc:
+        logger.exception("start_iep failed case_id=%s", case_id)
+        raise HTTPException(status_code=503, detail="Could not start IEP") from exc
 
 
 @router.get("/cases/{case_id}/reports/iep/available-goals")

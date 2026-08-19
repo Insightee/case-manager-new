@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 
@@ -6,6 +6,16 @@ from app.core.timezone import today_ist
 from app.models.case import BillingType, Case, CaseDayType, CompensationMode
 from app.models.invoice_line import SessionLineType
 from app.services import invoice_billing_service, therapist_transition_service
+
+
+def test_coerced_transition_dates_skips_invalid_values() -> None:
+    assert therapist_transition_service.coerced_transition_dates(None) == []
+    assert therapist_transition_service.coerced_transition_dates([]) == []
+    assert therapist_transition_service.coerced_transition_dates(["not-a-date", None, 12]) == []
+    assert therapist_transition_service.coerced_transition_dates(["2026-08-01", "bad", "2026-08-02"]) == [
+        date(2026, 8, 1),
+        date(2026, 8, 2),
+    ]
 
 
 def test_transition_dates_reject_past_days() -> None:

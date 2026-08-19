@@ -103,7 +103,8 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
           {!hasReport ? (
             <button
               type="button"
-              className="inline-flex items-center justify-center min-h-[44px] px-6 py-2 rounded-xl bg-lush-forest text-white font-bold text-sm"
+              className="cr-btn cr-btn--primary inline-flex items-center justify-center font-bold text-sm"
+              style={{ backgroundColor: '#0b1c16', color: '#fff' }}
               disabled={saving}
               onClick={handleStart}
             >

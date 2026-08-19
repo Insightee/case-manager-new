@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -17,6 +18,8 @@ from app.models.case_service import CaseService
 from app.models.user import User
 from app.schemas.case import AssignmentBookingUpdate, AssignmentCreate, AssignmentRead
 from app.services import assignment_service, billing_approval_service, case_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cases/{case_id}/assignments", tags=["assignments"])
 
@@ -87,7 +90,11 @@ def list_case_assignments(
         raise HTTPException(status_code=404, detail="Case not found")
     from app.services import therapist_transition_service
 
-    therapist_transition_service.complete_due_transitions(db)
+    try:
+        therapist_transition_service.complete_due_transitions(db)
+    except Exception:
+        logger.exception("Skipping due therapist transitions for case_id=%s", case_id)
+        db.rollback()
     rows = assignment_service.list_assignments(db, case_id)
     billing = case_billing_dict(case) if case else None
     result = []

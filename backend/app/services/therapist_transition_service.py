@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 
 from sqlalchemy import or_, select
@@ -29,6 +30,22 @@ OPEN_TRANSITION_STATUSES = frozenset(
         CaseTherapistTransitionStatus.ACTIVE,
     }
 )
+
+logger = logging.getLogger(__name__)
+
+
+def coerced_transition_dates(raw_dates) -> list[date]:
+    """Parse handover dates; skip invalid values instead of crashing callers."""
+    if not raw_dates:
+        return []
+    out: list[date] = []
+    for value in raw_dates:
+        try:
+            parsed = date.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            continue
+        out.append(parsed)
+    return out
 
 
 def _parse_transition_dates(
@@ -534,8 +551,8 @@ def complete_transition(
     if not case:
         raise ValueError("Case not found")
 
-    dates = [date.fromisoformat(str(d)[:10]) for d in transition.transition_dates]
-    last_date = max(dates)
+    dates = coerced_transition_dates(transition.transition_dates)
+    last_date = max(dates) if dates else today_ist()
 
     outgoing = db.get(CaseAssignment, transition.outgoing_assignment_id)
     if outgoing and outgoing.status == CaseAssignmentStatus.ACTIVE:
@@ -544,20 +561,33 @@ def complete_transition(
         outgoing.reason_for_change = "Transition handover completed"
         outgoing.billing_snapshot = case_billing_dict(case)
 
-    requester = db.get(User, actor_user_id or transition.created_by_user_id)
-    if requester is None:
-        apply_billing_payload(case, transition.pending_billing_update, actor_user_id or transition.created_by_user_id)
-    else:
-        try:
-            billing_approval_service.apply_or_request(
-                db,
-                case=case,
-                proposed=transition.pending_billing_update,
-                requester=requester,
-            )
-        except ValueError as exc:
-            if "already pending" not in str(exc).lower():
-                raise
+    billing_payload = transition.pending_billing_update or {}
+    actor_id = actor_user_id or transition.created_by_user_id
+    try:
+        requester = db.get(User, actor_id) if actor_id else None
+        if requester is None:
+            apply_billing_payload(case, billing_payload, actor_id)
+        else:
+            try:
+                billing_approval_service.apply_or_request(
+                    db,
+                    case=case,
+                    proposed=billing_payload,
+                    requester=requester,
+                )
+            except ValueError as exc:
+                if "already pending" not in str(exc).lower():
+                    logger.warning(
+                        "Transition %s billing approval skipped (%s); applying payload directly",
+                        transition.id,
+                        exc,
+                    )
+                    apply_billing_payload(case, billing_payload, requester.id)
+    except Exception:
+        logger.exception(
+            "Transition %s billing apply failed; completing handover without billing write",
+            transition.id,
+        )
 
     transition.status = CaseTherapistTransitionStatus.COMPLETED
     transition.completed_at = datetime.now(timezone.utc)
@@ -576,12 +606,20 @@ def complete_due_transitions(db: Session, *, today: date | None = None) -> list[
     )
     completed: list[CaseTherapistTransition] = []
     for row in rows:
-        dates = [date.fromisoformat(str(d)[:10]) for d in row.transition_dates]
-        if ref <= dates[-1]:
-            if row.status != _transition_status_for_dates(dates, today=ref):
-                row.status = _transition_status_for_dates(dates, today=ref)
+        dates = sorted(coerced_transition_dates(row.transition_dates))
+        if not dates:
+            logger.warning("Skipping therapist transition %s: no valid handover dates", row.id)
             continue
-        completed.append(complete_transition(db, row))
+        if ref <= dates[-1]:
+            expected = _transition_status_for_dates(dates, today=ref)
+            if row.status != expected:
+                row.status = expected
+            continue
+        try:
+            with db.begin_nested():
+                completed.append(complete_transition(db, row))
+        except Exception:
+            logger.exception("Could not auto-complete therapist transition %s", row.id)
     if completed:
         db.flush()
     return completed
@@ -597,9 +635,17 @@ def complete_due_transition_for_case(
     if not transition:
         return None
     ref = today or today_ist()
-    dates = [date.fromisoformat(str(value)[:10]) for value in transition.transition_dates]
+    dates = sorted(coerced_transition_dates(transition.transition_dates))
+    if not dates:
+        logger.warning("Skipping therapist transition %s for case %s: no valid handover dates", transition.id, case_id)
+        return transition
     if ref > max(dates):
-        return complete_transition(db, transition)
+        try:
+            with db.begin_nested():
+                return complete_transition(db, transition)
+        except Exception:
+            logger.exception("Could not auto-complete therapist transition %s for case %s", transition.id, case_id)
+            return transition
     expected = _transition_status_for_dates(dates, today=ref)
     if transition.status != expected:
         transition.status = expected
