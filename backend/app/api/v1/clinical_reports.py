@@ -691,6 +691,10 @@ def clinical_generate_goal_strategy_drafts(
 
 @router.post("/reports/{report_id}/iep/generate-suggestions")
 def iep_generate_suggestions(report_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.core.config import settings
+
+    if not getattr(settings, "iep_review_suggestions_enabled", False):
+        raise HTTPException(status_code=403, detail="IEP review suggestions are not enabled in this environment.")
     report = _report_or_404(db, report_id)
     case = _case_for_user(db, user, report.case_id)
     return iep_report_service.generate_iep_suggestions(db, report, case)

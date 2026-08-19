@@ -16,6 +16,8 @@ import { ReportCard } from './ReportCard.jsx'
 import { SectionHeader } from './SectionHeader.jsx'
 import { PortalComingSoon } from '../shared/PortalComingSoon.jsx'
 import { isReportsModuleEnabled } from '../../lib/productFeatureFlags.js'
+import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
+import { TherapistReportsHomeView } from './TherapistReportsHomeView.jsx'
 
 const DEFAULT_CHECKLIST = [
   { id: 'c1', label: 'Review all session logs for the month', done: false },
@@ -84,7 +86,52 @@ export function MonthlyReportsPage() {
   if (!isReportsModuleEnabled()) {
     return <PortalComingSoon variant="therapistReports" />
   }
+  if (isReportsRevampActive('therapist')) {
+    return <MonthlyReportsRevampPage />
+  }
   return <MonthlyReportsPageContent />
+}
+
+function MonthlyReportsRevampPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const caseFilterId = searchParams.get('case_id')
+  const openCreate = searchParams.get('create') === '1'
+  const { data: homeData } = useTherapistHome()
+
+  const assignedCases = useMemo(() => {
+    if (!homeData?.cases_board?.allCases) return []
+    return homeData.cases_board.allCases.map((c) => ({
+      id: c.id,
+      case_code: c.caseId,
+      child_name: c.child,
+    }))
+  }, [homeData])
+
+  const filteredCase = useMemo(() => {
+    if (!caseFilterId) return null
+    const id = Number(caseFilterId)
+    if (!Number.isFinite(id)) return null
+    return assignedCases.find((c) => c.id === id) || {
+      id,
+      child_name: 'Client',
+      case_code: `Case #${id}`,
+    }
+  }, [assignedCases, caseFilterId])
+
+  return (
+    <TherapistReportsHomeView
+      fixedCaseId={caseFilterId}
+      caseCode={filteredCase?.case_code}
+      childName={filteredCase?.child_name}
+      openCreateOnMount={openCreate}
+      onCreateConsumed={() => {
+        const params = new URLSearchParams(searchParams)
+        params.delete('create')
+        setSearchParams(params, { replace: true })
+      }}
+      onClearCaseFilter={() => setSearchParams({}, { replace: true })}
+    />
+  )
 }
 
 function MonthlyReportsPageContent() {

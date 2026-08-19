@@ -329,7 +329,7 @@ def generate_iep_draft_from_observation(db: Session, report: ClinicalReport, use
 
 
 def _list_session_log_goals(db: Session, case_id: int) -> list[dict]:
-    from app.models.clinical_evidence import SessionGoalEntry
+    from app.models.session_evidence import SessionGoalEntry
     from app.models.daily_log import DailyLog
     from app.models.session import Session as TherapySession
 
@@ -827,7 +827,7 @@ def sync_approved_iep_goals_to_active_case_plan(db: Session, report: ClinicalRep
 
 
 def get_iep_goal_progress_snapshot(db: Session, case_id: int, month_start: date, month_end: date) -> dict:
-    from app.models.clinical_evidence import SessionGoalEntry, StrategyUseEvent
+    from app.models.session_evidence import SessionGoalEntry, StrategyUseEvent
     from app.models.daily_log import DailyLog
     from app.models.session import Session as TherapySession
 

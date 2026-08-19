@@ -41,8 +41,9 @@ from app.api.v1 import (
     case_services,
     session_absence,
     memos,
+    clinical_reports,
 )
-from app.core.feature_flags import require_billing
+from app.core.feature_flags import require_billing, require_clinical_reports_engine
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -104,3 +105,7 @@ api_router.include_router(files.router)
 api_router.include_router(case_documents.router)
 api_router.include_router(case_documents.documents_router)
 api_router.include_router(memos.router)
+api_router.include_router(
+    clinical_reports.router,
+    dependencies=[Depends(require_clinical_reports_engine)],
+)

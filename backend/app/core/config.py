@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     session_void_window_hours: int = 168
     # Session log IEP evidence taps. Default off — no registry writes, payload ignored.
     enable_structured_evidence: bool = False
+    # Observation / IEP clinical report engine (builder UI + /api/v1 clinical-reports routes).
+    enable_clinical_reports_engine: bool = False
+    iep_review_suggestions_enabled: bool = False
 
     storage_provider: str = "local"
     storage_prefix: str = "insightcase"

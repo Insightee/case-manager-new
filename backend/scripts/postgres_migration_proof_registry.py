@@ -613,6 +613,69 @@ register_head(
 )
 
 
+def _seed_c7r8e9p0o1r2(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.clinical_report import ClinicalReport, ClinicalReportType
+    from app.models.goal_repository import GoalRepositoryItem
+    from app.models.user import User
+
+    existing = db.scalar(select(ClinicalReport.id).limit(1))
+    if existing:
+        return {"clinical_report_id": existing, "skipped": True}
+
+    case = db.scalar(select(Case).limit(1))
+    author = db.scalar(select(User).limit(1))
+    if not case or not author:
+        raise RuntimeError("Need seeded cases and users — run demo_seed first")
+
+    report = ClinicalReport(
+        case_id=case.id,
+        child_id=case.child_id,
+        report_type=ClinicalReportType.OBSERVATION.value,
+        title="Migration proof observation",
+        status="draft",
+        created_by_id=author.id,
+        assigned_therapist_id=author.id,
+    )
+    db.add(report)
+    db.flush()
+
+    goal = GoalRepositoryItem(
+        case_id=case.id,
+        created_by_user_id=author.id,
+        domain_key="general",
+        label="Migration proof repository goal",
+        status="local",
+        source_clinical_report_id=report.id,
+    )
+    db.add(goal)
+    db.flush()
+    return {"clinical_report_id": report.id, "goal_repository_item_id": goal.id}
+
+
+register_head(
+    "c7r8e9p0o1r2",
+    tables_added=[
+        "goal_repository_items",
+        "strategy_repository_items",
+        "clinical_reports",
+        "clinical_report_versions",
+        "clinical_report_sections",
+        "clinical_report_evidence",
+        "clinical_report_review_events",
+        "iep_goal_cards",
+        "iep_support_priorities",
+        "goal_evidence_events",
+    ],
+    columns_added=[
+        ("observation_checklists", "clinical_report_id"),
+        ("goal_repository_items", "source_clinical_report_id"),
+        ("strategy_repository_items", "source_clinical_report_id"),
+    ],
+    seed=_seed_c7r8e9p0o1r2,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

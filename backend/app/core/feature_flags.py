@@ -99,3 +99,8 @@ def require_payout_release_enabled() -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Live payout release is disabled until final cutover (PAYOUT_RELEASE_ENABLED).",
         )
+
+
+def require_clinical_reports_engine() -> None:
+    if not getattr(settings, "enable_clinical_reports_engine", False):
+        _feature_unavailable()

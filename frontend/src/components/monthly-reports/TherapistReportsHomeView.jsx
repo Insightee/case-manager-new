@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { isReportsEngineActive } from '../../lib/reportsRevampFlags.js'
 import { useTherapistHome, useTherapistReportsPipeline } from '../../hooks/useTherapistHome.js'
 import { CreateDraftModal } from './CreateDraftModal.jsx'
 import { ReportsSectionHeader } from '../reports-hub/ReportsSectionHeader.jsx'
@@ -8,9 +8,6 @@ import { ReportsDashboardSummary } from '../reports-hub/ReportsDashboardSummary.
 import { ReportsDashboardFilters } from '../reports-hub/ReportsDashboardFilters.jsx'
 import { ReportsDashboardCard } from '../reports-hub/ReportsDashboardCard.jsx'
 import { ReportsDashboardBottomRow } from '../reports-hub/ReportsDashboardBottomRow.jsx'
-import { ClinicalCaseHeader } from '../clinical-ui/ClinicalCaseHeader.jsx'
-import { ChangeCaseSheet } from '../case-profile/ChangeCaseSheet.jsx'
-import '../cases/my-cases.css'
 import '../../styles/reports-dashboard.css'
 
 const DEFAULT_FILTERS = { status: 'all', type: 'all', case: 'all' }
@@ -242,26 +239,50 @@ export function TherapistReportsHomeView({
     appliedFilters.case !== 'all' ||
     Boolean(q)
 
-  function goToCaseReports(item) {
+  function openReportItem(item) {
     const caseDbId = item.caseDbId
     if (!caseDbId) return
+
+    const reportId = item.id
+    const hasRealReport =
+      reportId &&
+      !String(reportId).startsWith('missing-') &&
+      !item.isPlaceholder
+
+    if (hasRealReport) {
+      navigate(`/therapist/reports/edit/${reportId}`)
+      return
+    }
+
+    if (item.isPlaceholder || item.attentionType === 'not_started') {
+      navigate(`/therapist/reports?case_id=${caseDbId}&create=1`)
+      return
+    }
+
     if (embedded && String(caseDbId) === String(caseFilterId)) {
       setSearchParams({ tab: 'reports', section: 'monthly' }, { replace: false })
       return
     }
-    if (isReportsRevampActive('therapist')) {
-      navigate(`/therapist/cases/${caseDbId}?tab=reports&section=dashboard`)
-      return
-    }
+
     navigate(`/therapist/reports?case_id=${caseDbId}`)
+  }
+
+  function applySummaryFilter(key) {
+    const map = {
+      draft: 'draft',
+      underReview: 'under_review',
+      published: 'published',
+      overdue: 'attention',
+      total: 'all',
+    }
+    const status = map[key] || 'all'
+    const next = { ...DEFAULT_FILTERS, status }
+    setFilterDraft(next)
+    setAppliedFilters(next)
   }
 
   function navigateToCase(caseRow) {
     if (!caseRow?.id) return
-    if (isReportsRevampActive('therapist')) {
-      navigate(`/therapist/cases/${caseRow.id}?tab=reports&section=dashboard`)
-      return
-    }
     setSearchParams({ case_id: String(caseRow.id) }, { replace: true })
   }
 
@@ -277,9 +298,6 @@ export function TherapistReportsHomeView({
 
   const displayChild = childName || selectedCase?.child || 'Client'
   const displayCode = caseCode || selectedCase?.caseId || (caseFilterId ? `Case #${caseFilterId}` : '')
-  const displayService =
-    selectedCase?.service || selectedCase?.productModule || selectedCase?.focusLine || null
-  const displayStatus = selectedCase?.stage || selectedCase?.status || null
 
   if (loading) {
     return <p className="reports-dashboard-loading">Loading reports…</p>
@@ -312,52 +330,109 @@ export function TherapistReportsHomeView({
             : 'Monitor and manage clinical documentation across all active cases.'
         }
         action={(
-          <button type="button" className="reports-dashboard-create-btn" onClick={() => setDraftOpen(true)}>
-            + Create New Draft
+          <button type="button" className="reports-dashboard-create-btn reports-dashboard-create-btn--header" onClick={() => setDraftOpen(true)}>
+            + Create draft
           </button>
         )}
       />
 
       {!embedded ? (
         <div className="reports-dashboard-case-header">
-          <ClinicalCaseHeader
-            childName={scopedToCase ? displayChild : 'All clients'}
-            caseCode={scopedToCase ? displayCode : null}
-            serviceType={
-              scopedToCase
-                ? displayService
-                : 'Pick a client to focus reports — or browse all cases below.'
-            }
-            status={scopedToCase ? displayStatus : null}
-            onChangeCase={() => setChangeCaseOpen(true)}
-            changeCaseLabel={scopedToCase ? 'Change case' : 'Pick client'}
-          />
-          <ChangeCaseSheet
-            open={changeCaseOpen}
-            cases={assignedCases}
-            currentCaseId={caseFilterId}
-            onSelect={handlePickCase}
-            onClose={() => setChangeCaseOpen(false)}
-            onViewAll={scopedToCase && onClearCaseFilter ? handleViewAllClients : undefined}
-          />
+          <div className="reports-dashboard-case-header__inner">
+            <div>
+              <p className="reports-dashboard-case-header__label">
+                {scopedToCase ? 'Focused client' : 'Caseload'}
+              </p>
+              <h2 className="reports-dashboard-case-header__title">
+                {scopedToCase ? displayChild : 'All clients'}
+              </h2>
+              {scopedToCase && displayCode ? (
+                <p className="reports-dashboard-case-header__meta">{displayCode}</p>
+              ) : (
+                <p className="reports-dashboard-case-header__meta">
+                  Pick a client to focus reports — or browse all cases below.
+                </p>
+              )}
+            </div>
+            <div className="reports-dashboard-case-header__actions">
+              <button
+                type="button"
+                className="reports-dashboard-create-btn reports-dashboard-create-btn--ghost"
+                onClick={() => setChangeCaseOpen((open) => !open)}
+              >
+                {scopedToCase ? 'Change case' : 'Pick client'}
+              </button>
+              {scopedToCase && onClearCaseFilter ? (
+                <button
+                  type="button"
+                  className="reports-dashboard-create-btn reports-dashboard-create-btn--ghost"
+                  onClick={handleViewAllClients}
+                >
+                  View all
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {changeCaseOpen ? (
+            <div className="reports-dashboard-case-picker">
+              <label className="reports-dashboard-case-picker__label" htmlFor="reports-case-picker">
+                Select client
+              </label>
+              <select
+                id="reports-case-picker"
+                className="reports-dashboard-case-picker__select"
+                value={caseFilterId || ''}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (!value) {
+                    handleViewAllClients()
+                    return
+                  }
+                  const row = assignedCases.find((c) => String(c.id) === value)
+                  if (row) handlePickCase(row)
+                }}
+              >
+                <option value="">All clients</option>
+                {assignedCases.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.child} ({c.caseId})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          {scopedToCase && isReportsEngineActive() ? (
+            <div className="reports-dashboard-builder-links">
+              <Link
+                to={`/therapist/reports/cases/${caseFilterId}/observation`}
+                className="reports-dashboard-builder-links__link"
+              >
+                Observation report
+              </Link>
+              <Link
+                to={`/therapist/reports/cases/${caseFilterId}/iep`}
+                className="reports-dashboard-builder-links__link"
+              >
+                IEP report
+              </Link>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      <ReportsDashboardSummary counts={summaryCounts} embedded={scopedToCase} />
+      <ReportsDashboardSummary counts={summaryCounts} embedded={scopedToCase} onFilter={applySummaryFilter} />
 
-      {scopedToCase ? (
-        <label className="reports-dashboard-search">
-          <span className="material-symbols-outlined reports-dashboard-search__icon" aria-hidden="true">search</span>
-          <input
-            className="reports-dashboard-search__input"
-            type="search"
-            placeholder="Search month or case ID…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search reports"
-          />
-        </label>
-      ) : null}
+      <label className="reports-dashboard-search">
+        <span className="material-symbols-outlined reports-dashboard-search__icon" aria-hidden="true">search</span>
+        <input
+          className="reports-dashboard-search__input"
+          type="search"
+          placeholder={scopedToCase ? 'Search month or case ID…' : 'Search client, case ID, or month…'}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search reports"
+        />
+      </label>
 
       <ReportsDashboardFilters
         draft={filterDraft}
@@ -384,15 +459,15 @@ export function TherapistReportsHomeView({
         </div>
 
         {filteredItems.length === 0 ? (
-          <div className="clinical-empty-state cp-card">
-            <p className="clinical-empty-state__title">
+          <div className="reports-dashboard-empty">
+            <p className="reports-dashboard-empty__title">
               {hasActiveFilters
                 ? 'No reports match your search or filters'
                 : scopedToCase
                   ? 'No reports yet for this client'
                   : 'No reports yet'}
             </p>
-            <p className="clinical-empty-state__body">
+            <p className="reports-dashboard-empty__body">
               {hasActiveFilters
                 ? 'Try clearing filters or widening your search.'
                 : scopedToCase
@@ -412,7 +487,7 @@ export function TherapistReportsHomeView({
                 key={item.id}
                 item={item}
                 caseMeta={caseMetaById.get(item.caseDbId)}
-                onViewReports={goToCaseReports}
+                onViewReports={openReportItem}
               />
             ))}
           </div>
@@ -420,6 +495,14 @@ export function TherapistReportsHomeView({
       </section>
 
       {!scopedToCase ? <ReportsDashboardBottomRow upcomingReports={upcomingReports} /> : null}
+
+      {!embedded ? (
+        <div className="reports-dashboard-mobile-footer">
+          <button type="button" className="reports-dashboard-create-btn reports-dashboard-create-btn--block" onClick={() => setDraftOpen(true)}>
+            + Create draft
+          </button>
+        </div>
+      ) : null}
     </>
   )
 

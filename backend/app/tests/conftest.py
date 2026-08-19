@@ -16,6 +16,7 @@ os.environ.setdefault("APP_ENV", "test")
 # Production defaults keep billing off; CI/unit suite exercises billing routes and ledger math.
 os.environ["ENABLE_BILLING"] = "true"
 os.environ["BILLING_LEDGER_WRITES"] = "true"
+os.environ["ENABLE_CLINICAL_REPORTS_ENGINE"] = "true"
 
 _MIGRATION_PROOF_CI = os.environ.get("MIGRATION_PROOF_REQUIRED", "").lower() in ("1", "true", "yes")
 if not _MIGRATION_PROOF_CI:

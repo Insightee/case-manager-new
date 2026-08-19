@@ -51,6 +51,13 @@ function handleCardKeyDown(e, onActivate) {
   }
 }
 
+function ctaLabel(item) {
+  if (item.bucket === 'published' || item.status === 'published') return 'View report'
+  if (item.isPlaceholder || item.attentionType === 'not_started') return 'Start draft'
+  if (item.status === 'draft' || item.status === 'under_review') return 'Continue'
+  return 'Open'
+}
+
 export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
   const status = statusMeta(item)
   const urgency = urgencyLabel(item)
@@ -58,6 +65,7 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
   const reportType = item.reportTypeLabel || 'MONTHLY REPORT'
   const cmName = caseMeta?.caseManagerName || 'Unassigned'
   const tone = avatarTone(item.child)
+  const actionLabel = ctaLabel(item)
 
   function openReports() {
     onViewReports?.(item)
@@ -70,7 +78,7 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
       tabIndex={0}
       onClick={openReports}
       onKeyDown={(e) => handleCardKeyDown(e, openReports)}
-      aria-label={`${item.child}, ${reportType}, ${status.label}. View reports.`}
+      aria-label={`${item.child}, ${reportType}, ${status.label}. ${actionLabel}.`}
     >
       <div className="reports-dashboard-card__head">
         <div className="reports-dashboard-card__identity">
@@ -80,8 +88,8 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
           <div className="reports-dashboard-card__identity-text">
             <p className="reports-dashboard-card__name">{item.child}</p>
             <p className="reports-dashboard-card__meta">
-              {caseMeta?.age ? `${caseMeta.age} yrs · ` : ''}
-              Case ID: {item.caseId}
+              {item.month ? `${item.month} · ` : ''}
+              Case {item.caseId}
             </p>
           </div>
         </div>
@@ -95,7 +103,12 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
         </div>
       </div>
 
-      <p className="reports-dashboard-card__type">{reportType}</p>
+      <p className="reports-dashboard-card__type">
+        {reportType}
+        {caseMeta?.service || caseMeta?.productModule
+          ? ` · ${caseMeta.service || caseMeta.productModule}`
+          : ''}
+      </p>
 
       <div className="reports-dashboard-card__progress">
         <div className="reports-dashboard-card__progress-labels">
@@ -117,7 +130,7 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
           Updated: {item.lastUpdated || item.month || '—'}
         </p>
         <span className="reports-dashboard-card__cta" aria-hidden="true">
-          View Reports
+          {actionLabel}
           <span className="material-symbols-outlined">arrow_forward</span>
         </span>
       </div>

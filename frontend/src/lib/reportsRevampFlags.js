@@ -1,17 +1,29 @@
 /**
  * Feature flags for Reports & Clinical Documentation revamp.
- * Default ON for local/WIP — set VITE_REPORTS_REVAMP=false to compare legacy case profile.
+ * Default OFF — enable with VITE_REPORTS_REVAMP=true (staging/local only).
  */
 
-const revampEnv = import.meta.env.VITE_REPORTS_REVAMP
-const revampOptOut = revampEnv === 'false'
-const revampOptIn = revampEnv === 'true' || !revampOptOut
+import {
+  isCanonicalProductionFrontend,
+  isReportsModuleEnabled,
+  isRolloutEnvironment,
+} from './productFeatureFlags.js'
+
+function readReportsRevampFlag() {
+  if (isCanonicalProductionFrontend()) return false
+  const raw = import.meta.env.VITE_REPORTS_REVAMP
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  return isRolloutEnvironment() && isReportsModuleEnabled()
+}
+
+const revampOptIn = readReportsRevampFlag()
 
 export const REPORTS_REVAMP_ENABLED = revampOptIn
 
 export const REPORTS_REVAMP_THERAPIST = revampOptIn
 
-export const REPORTS_REVAMP_ADMIN_CASE = revampOptIn
+export const REPORTS_REVAMP_ADMIN_CASE = false
 
 export const REPORTS_REVAMP_PARENT = false
 
@@ -25,7 +37,6 @@ export const AI_ENABLED = false
 
 export const AI_PROVIDER = 'mock'
 
-/** Phase 2 — default false until rollout (Step 12). Enable per rollout checklist. */
 export const CLINICAL_QUALITY_DASHBOARD = false
 
 export const MONTHLY_EVIDENCE_V2 = false

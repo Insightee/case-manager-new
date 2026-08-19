@@ -83,7 +83,13 @@ def test_report_engine_return_reopens_therapist_edit():
         case_id = case.id
 
     ws = client.get(f"/api/v1/cases/{case_id}/reports/observation", headers=headers)
-    report_id = ws.json()["report_id"]
+    assert ws.status_code == 200, ws.text
+    if ws.json().get("status") == ClinicalReportStatus.LOCKED.value:
+        start = client.post(f"/api/v1/cases/{case_id}/reports/observation/start", headers=headers)
+        assert start.status_code == 200, start.text
+        report_id = start.json()["report_id"]
+    else:
+        report_id = ws.json()["report_id"]
     _fill_required_sections(report_id, headers)
     client.post(f"/api/v1/reports/{report_id}/submit", headers=headers)
 

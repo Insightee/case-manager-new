@@ -11,6 +11,15 @@ from app.models.case_billing_preference import CaseBillingPreference
 from app.models.case_therapist_transition import CaseTherapistTransition, CaseTherapistTransitionDay
 from app.models.case_client_status_audit import CaseClientStatusAudit
 from app.models.clinical import CaseClinicalProfile, ObservationChecklist, ObservationChecklistStatus
+from app.models.clinical_evidence import GoalEvidenceEvent, IepGoalCard, IepSupportPriority
+from app.models.clinical_report import (
+    ClinicalReport,
+    ClinicalReportEvidence,
+    ClinicalReportReviewEvent,
+    ClinicalReportSection,
+    ClinicalReportVersion,
+)
+from app.models.goal_repository import GoalRepositoryItem, StrategyRepositoryItem
 from app.models.iep_plan import IepPlan, IepPlanStatus
 from app.models.iep_identity import IepGoalItem, IepStrategyItem
 from app.models.iep_plan_suggestion import IepPlanSuggestion
@@ -139,6 +148,19 @@ __all__ = [
     "IepStrategyItem",
     "SessionGoalEntry",
     "StrategyUseEvent",
+    "ClinicalReport",
+    "ClinicalReportSection",
+    "ClinicalReportVersion",
+    "ClinicalReportEvidence",
+    "ClinicalReportReviewEvent",
+    "GoalRepositoryItem",
+    "StrategyRepositoryItem",
+    "IepGoalCard",
+    "IepSupportPriority",
+    "GoalEvidenceEvent",
+    "CaseClinicalProfile",
+    "ObservationChecklist",
+    "ObservationChecklistStatus",
     "ObservationReport",
     "MonthlyReport",
     "ReportCategory",

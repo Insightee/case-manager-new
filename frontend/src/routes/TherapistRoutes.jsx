@@ -3,6 +3,7 @@ import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
 import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
 import { DailyLogsPage } from '../components/daily-logs/DailyLogsPage.jsx'
 import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReportsPage.jsx'
+import { TherapistClinicalReportPage } from '../components/monthly-reports/TherapistClinicalReportPage.jsx'
 import { ReportEditPage } from '../components/reports/ReportEditPage.jsx'
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
 import { TherapistDashboardPage } from '../pages/TherapistDashboardPage.jsx'
@@ -20,6 +21,8 @@ export function TherapistRoutes() {
       <Route path="cases/:caseId" element={<CaseDetailPage />} />
       <Route path="logs" element={<DailyLogsPage />} />
       <Route path="reports" element={<MonthlyReportsPage />} />
+      <Route path="reports/cases/:caseId/observation" element={<TherapistClinicalReportPage reportKind="observation" />} />
+      <Route path="reports/cases/:caseId/iep" element={<TherapistClinicalReportPage reportKind="iep" />} />
       <Route path="reports/edit/:reportId" element={<ReportEditPage />} />
       <Route path="invoices" element={<InvoicesPage />} />
       <Route path="tickets" element={<TherapistTicketsPage />} />

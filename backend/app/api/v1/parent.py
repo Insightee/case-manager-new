@@ -1307,6 +1307,38 @@ def parent_iep_plan_suggestion(
     return {"status": plan.status, "suggestions": iep_svc.plan_to_dict(db, plan, user, include_context=False)["suggestions"]}
 
 
+@router.post("/cases/{case_id}/iep-inputs")
+def parent_clinical_iep_input(
+    case_id: int,
+    payload: IepPlanSuggestionCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.core.feature_flags import require_clinical_reports_engine
+    from app.models.clinical_report import ClinicalReportStatus
+    from app.services import iep_report_service as iep_svc
+    from app.services import report_engine_service as re_svc
+
+    require_clinical_reports_engine()
+    _require_parent(user)
+    _parent_case_or_404(db, user, case_id)
+    report = re_svc.get_active_iep_report(db, case_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="IEP plan not available")
+    if report.status not in (
+        ClinicalReportStatus.APPROVED.value,
+        ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value,
+        ClinicalReportStatus.LOCKED.value,
+    ):
+        raise HTTPException(status_code=404, detail="IEP plan not available for input")
+    try:
+        entry = iep_svc.submit_parent_input(db, report, user, payload.body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return entry
+
+
 @router.get("/reports")
 def parent_reports(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_parent(user)

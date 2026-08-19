@@ -60,13 +60,13 @@ function readEnvFlag(key, { rolloutDefault = false } = {}) {
 }
 
 /** Therapist/parent reports — off on canonical production. */
-function readClientModuleFlag(key) {
+function readClientModuleFlag(key, { rolloutDefault = false } = {}) {
   if (isCanonicalProductionFrontend()) return false
-  return readEnvFlag(key, { rolloutDefault: false })
+  return readEnvFlag(key, { rolloutDefault })
 }
 
-/** Monthly reports hub, parent reports, admin report review UI */
-export const ENABLE_REPORTS = readClientModuleFlag('VITE_ENABLE_REPORTS')
+/** Monthly reports hub, parent reports, admin report review UI — on in local/staging unless opted out. */
+export const ENABLE_REPORTS = readClientModuleFlag('VITE_ENABLE_REPORTS', { rolloutDefault: true })
 
 /**
  * Client billing visibility (parent Payments + therapist Invoices).

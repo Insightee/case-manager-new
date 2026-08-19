@@ -36,7 +36,20 @@ Mirror backup: `~/backups/insighte-case-mirror-20260817.git` (~55 MB). Verified 
 - `cursor/finance-confidence-helper-0d7e` (draft PR #18 — conflicting, needs owner)
 - `fix/alembic-guardrails` (open PR #43)
 
-### Slice 1 landed on main
+### Slice 2 — therapist reports tab + observation/IEP builders (2026-08-19)
+
+Branch: `feat/therapist-reports-carve` (from `dev` @ `c05c74be`)
+
+| Area | Files carved | Flag (default off) |
+|------|----------------|-------------------|
+| Therapist reports dashboard UI | `TherapistReportsHomeView.jsx`, `reports-hub/*`, `reports-dashboard.css` | `VITE_REPORTS_REVAMP` |
+| Observation + IEP builders | `reports-engine/*`, clinical lib/helpers, minimal `clinical-ui/*` | `VITE_REPORTS_REVAMP` + `ENABLE_CLINICAL_REPORTS_ENGINE` |
+| Backend engine | `clinical_reports.py`, report engine services/models, Alembic `c7r8e9p0o1r2` | `ENABLE_CLINICAL_REPORTS_ENGINE` |
+
+**Explicitly excluded:** case profile v2, therapist dashboard overhaul, session-log Forest Light, AI/insights routes, `observation_checklist_service` engine bridge (legacy checklist unchanged).
+
+**Therapist routes added:** `/therapist/reports/cases/:caseId/observation`, `/therapist/reports/cases/:caseId/iep` — no case-profile tab rework.
+
 
 | PR | What |
 |----|------|
