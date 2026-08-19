@@ -676,6 +676,76 @@ register_head(
 )
 
 
+def _seed_d8r9e0p1o2r3(db: Session) -> dict[str, Any]:
+    from app.models.case import Case
+    from app.models.goal_repository import GoalRepositoryItem, StrategyRepositoryItem
+    from app.models.user import User
+
+    case = db.scalar(select(Case).limit(1))
+    author = db.scalar(select(User).limit(1))
+    if not case or not author:
+        raise RuntimeError("Need seeded cases and users — run demo_seed first")
+
+    goal = db.scalar(select(GoalRepositoryItem).limit(1))
+    if not goal:
+        goal = GoalRepositoryItem(
+            case_id=case.id,
+            created_by_user_id=author.id,
+            domain_key="general",
+            label="Migration proof repository goal",
+            status="local",
+        )
+        db.add(goal)
+    goal.goal_statement = goal.goal_statement or "Migration proof goal statement"
+    goal.source = goal.source or "iep"
+    goal.scope = goal.scope or "case"
+
+    strategy = db.scalar(select(StrategyRepositoryItem).limit(1))
+    if not strategy:
+        strategy = StrategyRepositoryItem(
+            case_id=case.id,
+            created_by_user_id=author.id,
+            label="Migration proof strategy",
+            status="local",
+        )
+        db.add(strategy)
+    strategy.domain_key = strategy.domain_key or "general"
+    strategy.expected_outcome = strategy.expected_outcome or "Migration proof outcome"
+    db.flush()
+    return {"goal_id": goal.id, "strategy_id": strategy.id}
+
+
+register_head(
+    "d8r9e0p1o2r3",
+    tables_added=[],
+    columns_added=[
+        ("goal_repository_items", "source_daily_log_id"),
+        ("goal_repository_items", "source_session_id"),
+        ("goal_repository_items", "review_note"),
+        ("goal_repository_items", "core_domains_json"),
+        ("goal_repository_items", "core_environments_json"),
+        ("goal_repository_items", "baseline_state"),
+        ("goal_repository_items", "desired_state"),
+        ("goal_repository_items", "goal_statement"),
+        ("goal_repository_items", "lifecycle_status"),
+        ("goal_repository_items", "source"),
+        ("goal_repository_items", "scope"),
+        ("strategy_repository_items", "domain_key"),
+        ("strategy_repository_items", "environment_context"),
+        ("strategy_repository_items", "linked_goal_card_id"),
+        ("strategy_repository_items", "source_daily_log_id"),
+        ("strategy_repository_items", "review_note"),
+        ("strategy_repository_items", "core_domains_json"),
+        ("strategy_repository_items", "core_environments_json"),
+        ("strategy_repository_items", "strategy_steps_json"),
+        ("strategy_repository_items", "expected_outcome"),
+        ("strategy_repository_items", "source"),
+        ("strategy_repository_items", "scope"),
+    ],
+    seed=_seed_d8r9e0p1o2r3,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

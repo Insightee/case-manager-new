@@ -110,10 +110,10 @@ def _seed_iep(db, case_id: int, author_id: int) -> IepPlan:
     return plan
 
 
-def test_alembic_single_head_is_evidence_revision():
+def test_alembic_single_head_is_goal_repository_repair():
     cfg = Config(str(_BACKEND / "alembic.ini"))
     heads = ScriptDirectory.from_config(cfg).get_heads()
-    assert heads == ["s4e5v6i7d8e9"]
+    assert heads == ["d8r9e0p1o2r3"]
 
 
 def test_structured_evidence_revision_upgrade_and_downgrade(tmp_path):
