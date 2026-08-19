@@ -137,6 +137,48 @@ def monthly_iep_context(
     }
 
 
+@router.get("/monthly/existing")
+def get_existing_monthly_report(
+    case_id: int = Query(..., ge=1),
+    month: str = Query(..., min_length=1),
+    category: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    case = case_service.get_case(db, case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise HTTPException(status_code=404, detail="Case not found")
+    cat = category or ReportCategory.CLIENT_MONTHLY.value
+    existing = report_service.find_monthly_report_for_period(db, case_id=case_id, month=month, category=cat)
+    if not existing:
+        return {"exists": False}
+    status_val = existing.status.value if hasattr(existing.status, "value") else str(existing.status)
+    return {
+        "exists": True,
+        "report_id": existing.id,
+        "status": status_val,
+        "can_delete": existing.status in (ReportStatus.DRAFT, ReportStatus.REJECTED),
+        "can_continue": existing.status in (ReportStatus.DRAFT, ReportStatus.REJECTED, ReportStatus.UNDER_REVIEW),
+    }
+
+
+@router.delete("/monthly/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_monthly_report(
+    report_id: int,
+    user: User = Depends(require_permission("monthly_report.create")),
+    db: Session = Depends(get_db),
+):
+    report = db.get(MonthlyReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    try:
+        report_service.delete_monthly_report_draft(db, report, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    commit_or_http(db)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/monthly/{report_id}", response_model=MonthlyReportRead)
 def get_monthly_report(
     report_id: int,
@@ -161,20 +203,44 @@ def create_monthly_report(
     case = case_service.get_case(db, payload.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=404, detail="Case not found")
-    report = MonthlyReport(
-        case_id=payload.case_id,
-        therapist_user_id=user.id,
-        month=payload.month,
-        summary=payload.summary,
-        body_html=payload.body_html,
-        plan_next_month=payload.plan_next_month,
-        category=payload.category or ReportCategory.CLIENT_MONTHLY.value,
-    )
-    if report.category in {ReportCategory.INCIDENT_DOCUMENT.value, ReportCategory.IEP_PLAN.value}:
+    category = payload.category or ReportCategory.CLIENT_MONTHLY.value
+    if category in {ReportCategory.INCIDENT_DOCUMENT.value, ReportCategory.IEP_PLAN.value}:
         raise HTTPException(
             status_code=400,
             detail="Incident and IEP plan documents are managed outside the reports hub",
         )
+    month_label = (payload.month or "").strip()
+    if not month_label:
+        raise HTTPException(status_code=400, detail="Pick a reporting month before saving this draft.")
+    try:
+        report_service.assert_can_create_monthly_report(
+            db,
+            case_id=payload.case_id,
+            month=month_label,
+            category=category,
+        )
+    except ValueError as exc:
+        existing = report_service.find_monthly_report_for_period(
+            db,
+            case_id=payload.case_id,
+            month=month_label,
+            category=category,
+        )
+        detail: dict = {"message": str(exc)}
+        if existing:
+            detail["existing_report_id"] = existing.id
+            detail["existing_status"] = existing.status.value if hasattr(existing.status, "value") else str(existing.status)
+            detail["can_delete"] = existing.status in (ReportStatus.DRAFT, ReportStatus.REJECTED)
+        raise HTTPException(status_code=409, detail=detail) from exc
+    report = MonthlyReport(
+        case_id=payload.case_id,
+        therapist_user_id=user.id,
+        month=month_label,
+        summary=payload.summary,
+        body_html=payload.body_html,
+        plan_next_month=payload.plan_next_month,
+        category=category,
+    )
     db.add(report)
     db.flush()
     commit_or_http(db)

@@ -1,4 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
+import '../../../styles/clinical-report-ui.css'
 import '../../../styles/forest-light-iep.css'
 import { IepLandingPage } from './IepLandingPage.jsx'
 import { IepBuilderPage } from './IepBuilderPage.jsx'

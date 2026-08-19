@@ -1,5 +1,6 @@
 // Visual source: docs/design/stitch/observation-report/observation_report_comprehensive_clinical_workspace/
 import { useSearchParams } from 'react-router-dom'
+import '../../../styles/clinical-report-ui.css'
 import '../../../styles/forest-light-observation.css'
 import { ObservationLandingPage } from './ObservationLandingPage.jsx'
 import { ObservationBuilderPage } from './ObservationBuilderPage.jsx'

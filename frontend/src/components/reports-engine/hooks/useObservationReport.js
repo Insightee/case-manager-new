@@ -62,7 +62,14 @@ export function useObservationReport(caseId) {
       else if (mode === 'workspace') await loadWorkspace()
       else if (mode === 'preview') await loadPreview()
     } catch (err) {
-      setError(err.message || 'Could not load observation report')
+      const msg = err.message || 'Could not load observation report'
+      if (/not available in this environment/i.test(msg)) {
+        setError(
+          'Observation reports need the clinical reports engine on this API. Use local backend with ENABLE_CLINICAL_REPORTS_ENGINE=true, or deploy the latest backend to staging.',
+        )
+      } else {
+        setError(msg)
+      }
     } finally {
       setLoading(false)
     }

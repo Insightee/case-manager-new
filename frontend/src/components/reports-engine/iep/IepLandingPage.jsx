@@ -1,4 +1,5 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { useIepReport } from '../hooks/useIepReport.js'
 import { StitchIcon, StitchWorkspaceSubhead } from '../observation/stitch/ObservationStitchBlocks.jsx'
 
@@ -14,10 +15,8 @@ const STATUS_LABELS = {
 export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapist' }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const basePath =
-    variant === 'admin' || searchParams.get('portal') === 'admin'
-      ? `/admin/cases/${caseId}`
-      : `/therapist/cases/${caseId}`
+  const portal = searchParams.get('portal')
+  const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'iep', view, variant, portal })
 
   const { summary, loading, error, saving, startReport, generateFromObservation, refresh } = useIepReport(caseId)
 
@@ -27,7 +26,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
       if (summary?.observation_approved) {
         await generateFromObservation()
       }
-      navigate(`${basePath}?tab=reports&section=iep&view=builder`)
+      navigate(sectionPath('builder'))
     } catch {
       /* hook surfaces error */
     }
@@ -37,7 +36,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
     try {
       if (!summary?.has_report) await startReport()
       await generateFromObservation()
-      navigate(`${basePath}?tab=reports&section=iep&view=builder`)
+      navigate(sectionPath('builder'))
     } catch {
       /* hook surfaces error */
     }
@@ -126,7 +125,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
           ) : null}
           {hasReport && summary?.can_edit ? (
             <Link
-              to={`${basePath}?tab=reports&section=iep&view=builder`}
+              to={sectionPath('builder')}
               className="inline-flex items-center justify-center min-h-[44px] px-6 py-2 rounded-xl border border-outline-variant/50 bg-surface-container font-semibold text-sm no-underline text-inherit"
             >
               Continue Draft
@@ -134,7 +133,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
           ) : null}
           {hasReport && summary?.has_active_approved_iep ? (
             <Link
-              to={`${basePath}?tab=reports&section=iep&view=preview`}
+              to={sectionPath('preview')}
               className="inline-flex items-center justify-center min-h-[44px] px-6 py-2 rounded-xl border border-outline-variant/50 font-semibold text-sm no-underline text-inherit"
             >
               Preview Approved IEP

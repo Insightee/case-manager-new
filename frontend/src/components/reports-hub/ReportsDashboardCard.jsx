@@ -58,7 +58,7 @@ function ctaLabel(item) {
   return 'Open'
 }
 
-export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
+export function ReportsDashboardCard({ item, caseMeta, onViewReports, onDeleteDraft }) {
   const status = statusMeta(item)
   const urgency = urgencyLabel(item)
   const pct = progressPct(item)
@@ -66,9 +66,20 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
   const cmName = caseMeta?.caseManagerName || 'Unassigned'
   const tone = avatarTone(item.child)
   const actionLabel = ctaLabel(item)
+  const canDelete =
+    onDeleteDraft &&
+    item.id &&
+    !String(item.id).startsWith('missing-') &&
+    !item.isPlaceholder &&
+    (item.status === 'draft' || item.status === 'rejected' || item.attentionType === 'rejected')
 
   function openReports() {
     onViewReports?.(item)
+  }
+
+  function handleDeleteClick(e) {
+    e.stopPropagation()
+    onDeleteDraft?.(item)
   }
 
   return (
@@ -129,10 +140,21 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports }) {
         <p className="reports-dashboard-card__updated">
           Updated: {item.lastUpdated || item.month || '—'}
         </p>
-        <span className="reports-dashboard-card__cta" aria-hidden="true">
-          {actionLabel}
-          <span className="material-symbols-outlined">arrow_forward</span>
-        </span>
+        <div className="reports-dashboard-card__footer-actions">
+          {canDelete ? (
+            <button
+              type="button"
+              className="reports-dashboard-card__delete"
+              onClick={handleDeleteClick}
+            >
+              Remove draft
+            </button>
+          ) : null}
+          <span className="reports-dashboard-card__cta" aria-hidden="true">
+            {actionLabel}
+            <span className="material-symbols-outlined">arrow_forward</span>
+          </span>
+        </div>
       </div>
     </article>
   )

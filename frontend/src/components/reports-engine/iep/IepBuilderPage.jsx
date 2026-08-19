@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { StudentGoalCreateModal } from '../../clinical/goals-strategy/StudentGoalCreateModal.jsx'
 import { StitchWorkspaceSubhead } from '../observation/stitch/ObservationStitchBlocks.jsx'
 import { useIepReport } from '../hooks/useIepReport.js'
@@ -16,7 +17,7 @@ function sectionData(sections, key) {
 
 export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapist' }) {
   const navigate = useNavigate()
-  const basePath = variant === 'admin' ? `/admin/cases/${caseId}` : `/therapist/cases/${caseId}`
+  const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'iep', view, variant })
   const isAdmin = variant === 'admin'
 
   const {
@@ -134,8 +135,8 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
   const statusLabel = (workspace?.status || 'draft').replace(/_/g, ' ').toUpperCase()
 
   const goPreview = useCallback(() => {
-    navigate(`${basePath}?tab=reports&section=iep&view=preview`)
-  }, [navigate, basePath])
+    navigate(sectionPath('preview'))
+  }, [navigate, caseId, variant])
 
   if (loading && !workspace) {
     return <p className="text-sm text-on-surface-variant clinical-report-ui">Loading IEP builder…</p>

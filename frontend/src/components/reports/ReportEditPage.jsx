@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { generateReportFromLogs } from '../../lib/reportGenerateFromLogs.js'
 import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../../lib/reportCategories.js'
+import { buildReportMonthOptions } from '../../lib/reportMonthOptions.js'
 import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
 import { ReportEditor } from './ReportEditor.jsx'
 import { ReportReferenceDocsPanel } from './ReportReferenceDocsPanel.jsx'
@@ -70,6 +71,18 @@ export function ReportEditPage() {
   const subCategoryRef = useRef('')
   const monthRef = useRef('')
   const isMobile = useIsMobilePortal()
+  const monthOptions = useMemo(() => {
+    const options = buildReportMonthOptions()
+    if (month && !options.includes(month)) {
+      return [month, ...options]
+    }
+    return options
+  }, [month])
+
+  const canRemoveDraft =
+    report &&
+    !isAdminEditor &&
+    (report.status === 'DRAFT' || report.status === 'REJECTED')
 
   const editable =
     report &&
@@ -260,6 +273,25 @@ export function ReportEditPage() {
     }
   }
 
+  async function handleDeleteDraft() {
+    if (!canRemoveDraft) return
+    const ok = window.confirm(
+      `Remove this draft for ${report.child_name} (${report.month})? You can create a fresh draft afterward.`,
+    )
+    if (!ok) return
+    setSaving(true)
+    setError('')
+    try {
+      await apiFetch(`/api/v1/reports/monthly/${reportId}`, { method: 'DELETE' })
+      clearLocalDraft()
+      navigate(base)
+    } catch (err) {
+      setError(err.message || 'Could not remove this draft')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleDownload() {
     await apiDownload(`/api/v1/reports/monthly/${reportId}/download`, `report_${month || reportId}.pdf`)
   }
@@ -334,12 +366,18 @@ export function ReportEditPage() {
     <>
       <label className="report-edit-field text-sm font-medium text-slate-700">
         Month
-        <input
+        <select
           className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           value={month}
           onChange={(e) => setMonth(e.target.value)}
           disabled={!editable}
-        />
+        >
+          {monthOptions.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
       </label>
       <label className="report-edit-field text-sm font-medium text-slate-700">
         Category
@@ -410,18 +448,30 @@ export function ReportEditPage() {
               {report.case_code} · {categoryLabel(category)} · {report.status}
             </p>
           </div>
-          <ReportSaveMenu
-            saving={saving}
-            editable={editable}
-            onSaveCloud={() => persist(false)}
-            onSaveLocal={() => saveLocalDraft(false)}
-            onDownloadPdf={handleDownload}
-            onGenerateFromLogs={() => handleGenerateFromLogs('replace')}
-            generatingFromLogs={generatingFromLogs}
-            workflowLabel={submitLabel}
-            onWorkflow={handleSubmit}
-            variant="desktop"
-          />
+          <div className="flex flex-col items-end gap-2">
+            <ReportSaveMenu
+              saving={saving}
+              editable={editable}
+              onSaveCloud={() => persist(false)}
+              onSaveLocal={() => saveLocalDraft(false)}
+              onDownloadPdf={handleDownload}
+              onGenerateFromLogs={() => handleGenerateFromLogs('replace')}
+              generatingFromLogs={generatingFromLogs}
+              workflowLabel={submitLabel}
+              onWorkflow={handleSubmit}
+              variant="desktop"
+            />
+            {canRemoveDraft ? (
+              <button
+                type="button"
+                className="text-sm font-semibold text-red-700 hover:underline"
+                disabled={saving}
+                onClick={handleDeleteDraft}
+              >
+                Remove draft
+              </button>
+            ) : null}
+          </div>
         </div>
       )}
 

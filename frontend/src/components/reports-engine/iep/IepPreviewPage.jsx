@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
+import { clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { IEP_DOMAIN_TABS } from '../../../lib/iepObservationAlign.js'
 import { useIepReport } from '../hooks/useIepReport.js'
 import { StitchWorkspaceSubhead } from '../observation/stitch/ObservationStitchBlocks.jsx'
@@ -9,7 +10,7 @@ import { IepApprovalPanel } from './IepApprovalPanel.jsx'
 
 export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapist' }) {
   const navigate = useNavigate()
-  const basePath = variant === 'admin' ? `/admin/cases/${caseId}` : `/therapist/cases/${caseId}`
+  const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'iep', view, variant })
   const [mode, setMode] = useState('clinical')
   const {
     workspace,
@@ -72,7 +73,7 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
         >
           Parent preview
         </button>
-        <Link to={`${basePath}?tab=reports&section=iep&view=builder`} className="min-h-[44px] px-4 rounded-xl border font-semibold text-sm inline-flex items-center no-underline text-inherit">
+        <Link to={sectionPath('builder')} className="min-h-[44px] px-4 rounded-xl border font-semibold text-sm inline-flex items-center no-underline text-inherit">
           Back to builder
         </Link>
       </div>

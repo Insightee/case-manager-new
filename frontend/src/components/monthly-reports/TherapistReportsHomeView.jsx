@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { isReportsEngineActive } from '../../lib/reportsRevampFlags.js'
+import { apiFetch } from '../../lib/apiClient.js'
 import { useTherapistHome, useTherapistReportsPipeline } from '../../hooks/useTherapistHome.js'
 import { CreateDraftModal } from './CreateDraftModal.jsx'
 import { ReportsSectionHeader } from '../reports-hub/ReportsSectionHeader.jsx'
@@ -296,6 +297,22 @@ export function TherapistReportsHomeView({
     setChangeCaseOpen(false)
   }
 
+  async function handleDeleteDraft(item) {
+    const reportId = item.id
+    if (!reportId || String(reportId).startsWith('missing-')) return
+    const ok = window.confirm(
+      `Remove this draft for ${item.child}${item.month ? ` (${item.month})` : ''}? You can start fresh afterward.`,
+    )
+    if (!ok) return
+    try {
+      await apiFetch(`/api/v1/reports/monthly/${reportId}`, { method: 'DELETE' })
+      showToast('Draft removed — you can start a new one when ready.')
+      await load()
+    } catch (err) {
+      showToast(err.message || 'Could not remove this draft')
+    }
+  }
+
   const displayChild = childName || selectedCase?.child || 'Client'
   const displayCode = caseCode || selectedCase?.caseId || (caseFilterId ? `Case #${caseFilterId}` : '')
 
@@ -488,6 +505,7 @@ export function TherapistReportsHomeView({
                 item={item}
                 caseMeta={caseMetaById.get(item.caseDbId)}
                 onViewReports={openReportItem}
+                onDeleteDraft={handleDeleteDraft}
               />
             ))}
           </div>

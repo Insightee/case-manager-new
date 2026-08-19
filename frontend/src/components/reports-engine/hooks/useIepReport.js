@@ -75,7 +75,14 @@ export function useIepReport(caseId) {
         else if (mode === 'workspace') await loadWorkspace()
         else if (mode === 'preview') await loadPreview('clinical')
       } catch (err) {
-        setError(err.message || 'Could not load IEP report')
+        const msg = err.message || 'Could not load IEP report'
+        if (/not available in this environment/i.test(msg)) {
+          setError(
+            'IEP reports need the clinical reports engine on this API. Use local backend with ENABLE_CLINICAL_REPORTS_ENGINE=true, or deploy the latest backend to staging.',
+          )
+        } else {
+          setError(msg)
+        }
       } finally {
         setLoading(false)
       }

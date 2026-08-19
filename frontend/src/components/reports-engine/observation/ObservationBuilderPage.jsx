@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
+import { clinicalReportNavBase, clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { useObservationReport } from '../hooks/useObservationReport.js'
 import { StudentGoalCreateModal } from '../../clinical/goals-strategy/StudentGoalCreateModal.jsx'
 import { ObservationEvidenceUpload } from './ObservationEvidenceUpload.jsx'
@@ -22,7 +23,8 @@ function sectionByKey(sections, key) {
 
 export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 'therapist' }) {
   const navigate = useNavigate()
-  const basePath = variant === 'admin' ? `/admin/cases/${caseId}` : `/therapist/cases/${caseId}`
+  const caseNavBase = clinicalReportNavBase({ caseId, variant })
+  const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'observation', view, variant })
 
   const {
     workspace,
@@ -197,8 +199,8 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
           <StitchEvidenceInsights
             evidence={evidence}
             readOnly={readOnly}
-            logsPath={`${basePath}?tab=logs`}
-            documentsPath={`${basePath}?tab=documents`}
+            logsPath={`${caseNavBase}?tab=sessions`}
+            documentsPath={`${caseNavBase}?tab=documents`}
             evidenceUpload={(
               <ObservationEvidenceUpload
                 caseId={caseId}
@@ -305,7 +307,7 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
             onSaveDraft={handleSaveDraft}
             savingDraft={saving}
             draftSavedFlash={draftSavedFlash}
-            onPreview={() => navigate(`${basePath}?tab=reports&section=observation&view=preview`)}
+            onPreview={() => navigate(sectionPath('preview'))}
             onClose={() => setAiAssistantOpen(false)}
           />
         ) : null}
@@ -316,10 +318,10 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
         canSubmit={workspace?.can_submit}
         readOnly={readOnly}
         lastSaved={workspace?.updated_at ? formatDisplayDate(workspace.updated_at.slice(0, 10)) : null}
-        onPreview={() => navigate(`${basePath}?tab=reports&section=observation&view=preview`)}
+        onPreview={() => navigate(sectionPath('preview'))}
         onSubmit={async () => {
           await submitReport()
-          navigate(`${basePath}?tab=reports&section=observation`)
+          navigate(sectionPath('landing'))
         }}
       />
     </>

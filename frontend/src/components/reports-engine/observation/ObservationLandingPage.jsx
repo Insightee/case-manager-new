@@ -1,5 +1,6 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
+import { clinicalReportNavBase, clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { useObservationReport } from '../hooks/useObservationReport.js'
 import { StitchIcon, StitchWorkspaceSubhead } from './stitch/ObservationStitchBlocks.jsx'
 
@@ -12,17 +13,19 @@ const STATUS_LABELS = {
   locked: 'APPROVED',
 }
 
-export function ObservationLandingPage({ caseId, caseCode, childName }) {
+export function ObservationLandingPage({ caseId, caseCode, childName, variant = 'therapist' }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const basePath = searchParams.get('portal') === 'admin' ? `/admin/cases/${caseId}` : `/therapist/cases/${caseId}`
+  const portal = searchParams.get('portal')
+  const caseNavBase = clinicalReportNavBase({ caseId, variant, portal })
+  const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'observation', view, variant, portal })
 
   const { summary, loading, error, saving, startReport, refresh } = useObservationReport(caseId)
 
   async function handleStart() {
     try {
       await startReport()
-      navigate(`${basePath}?tab=reports&section=observation&view=builder`)
+      navigate(sectionPath('builder'))
     } catch {
       /* hook surfaces error */
     }
@@ -104,7 +107,7 @@ export function ObservationLandingPage({ caseId, caseCode, childName }) {
               type="button"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-lush-forest text-white font-bold shadow-lg hover:opacity-90 transition-all min-h-[44px] disabled:opacity-50"
               disabled={saving}
-              onClick={hasReport ? () => navigate(`${basePath}?tab=reports&section=observation&view=builder`) : handleStart}
+              onClick={hasReport ? () => navigate(sectionPath('builder')) : handleStart}
             >
               <StitchIcon name={hasReport ? 'edit_note' : 'add'} />
               {saving ? 'Starting…' : hasReport ? 'Continue in builder' : 'Start new observation report'}
@@ -113,7 +116,7 @@ export function ObservationLandingPage({ caseId, caseCode, childName }) {
           {summary?.can_preview ? (
             <Link
               className="inline-flex items-center justify-center px-6 py-3 rounded-xl border-2 border-lush-forest text-lush-forest font-bold hover:bg-lush-mint/10 transition-all min-h-[44px] no-underline"
-              to={`${basePath}?tab=reports&section=observation&view=preview`}
+              to={sectionPath('preview')}
             >
               Preview report
             </Link>

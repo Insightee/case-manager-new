@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
+import { clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { apiFetch } from '../../../lib/apiClient.js'
 import { useObservationReport } from '../hooks/useObservationReport.js'
 import { StitchIcon, StitchWorkspaceSubhead } from './stitch/ObservationStitchBlocks.jsx'
 
 export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 'therapist' }) {
-  const basePath = variant === 'admin' ? `/admin/cases/${caseId}` : `/therapist/cases/${caseId}`
+  const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'observation', view, variant })
   const { preview, loading, error, loadPreview, summary, insights, workspace, loadWorkspace } = useObservationReport(caseId)
   const [reviewMsg, setReviewMsg] = useState('')
   const [reviewBusy, setReviewBusy] = useState(false)
@@ -199,10 +200,10 @@ export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 
           </button>
         ) : null}
         {reviewMsg ? <p className="text-sm text-on-surface-variant m-0 self-center">{reviewMsg}</p> : null}
-        <Link className="inline-flex items-center justify-center px-6 py-3 rounded-xl border-2 border-lush-forest text-lush-forest font-bold hover:bg-lush-mint/10 transition-all min-h-[44px] no-underline" to={`${basePath}?tab=reports&section=observation&view=builder`}>
+        <Link className="inline-flex items-center justify-center px-6 py-3 rounded-xl border-2 border-lush-forest text-lush-forest font-bold hover:bg-lush-mint/10 transition-all min-h-[44px] no-underline" to={sectionPath('builder')}>
           {isReviewer ? 'Open full report workspace' : 'Back to builder'}
         </Link>
-        <Link className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-outline-variant text-on-surface-variant font-semibold min-h-[44px] no-underline hover:border-lush-forest hover:text-lush-forest" to={`${basePath}?tab=reports&section=observation`}>
+        <Link className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-outline-variant text-on-surface-variant font-semibold min-h-[44px] no-underline hover:border-lush-forest hover:text-lush-forest" to={sectionPath('landing')}>
           Back to status
         </Link>
       </div>

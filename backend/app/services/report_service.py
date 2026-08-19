@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import BackgroundTasks
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -12,7 +12,7 @@ from app.core.pagination import paginate_query, paginated_response
 from app.core.permissions import case_scope_check, user_has_permission
 from app.models.case import Case
 from app.models.child import Child
-from app.models.report import MonthlyReport, ObservationReport, ParentReviewStatus, ReportStatus
+from app.models.report import MonthlyReport, ObservationReport, ParentReviewStatus, ReportCategory, ReportStatus
 from app.models.review import Review, ReviewDecision
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
@@ -227,6 +227,76 @@ def _notify_send_for_review(
         entity_type="monthly_report",
         entity_id=report.id,
     )
+
+
+def _normalize_month_label(month: str) -> str:
+    return (month or "").strip()
+
+
+def find_monthly_report_for_period(
+    db: Session,
+    *,
+    case_id: int,
+    month: str,
+    category: str | None = None,
+) -> MonthlyReport | None:
+    month_norm = _normalize_month_label(month)
+    if not month_norm:
+        return None
+    stmt = select(MonthlyReport).where(
+        MonthlyReport.case_id == case_id,
+        func.lower(MonthlyReport.month) == func.lower(month_norm),
+    )
+    cat = category or ReportCategory.CLIENT_MONTHLY.value
+    if cat == ReportCategory.CLIENT_MONTHLY.value:
+        stmt = stmt.where(
+            or_(
+                MonthlyReport.category == ReportCategory.CLIENT_MONTHLY.value,
+                MonthlyReport.category.is_(None),
+            )
+        )
+    else:
+        stmt = stmt.where(MonthlyReport.category == cat)
+    return db.scalar(stmt.order_by(MonthlyReport.updated_at.desc()))
+
+
+def assert_can_create_monthly_report(
+    db: Session,
+    *,
+    case_id: int,
+    month: str,
+    category: str | None,
+) -> None:
+    """Raise ValueError when a non-deletable report already exists for this case/month."""
+    cat = category or ReportCategory.CLIENT_MONTHLY.value
+    if cat != ReportCategory.CLIENT_MONTHLY.value:
+        return
+    existing = find_monthly_report_for_period(db, case_id=case_id, month=month, category=cat)
+    if not existing:
+        return
+    label = _normalize_month_label(month)
+    if existing.status in (ReportStatus.DRAFT, ReportStatus.REJECTED):
+        raise ValueError(
+            f"A draft already exists for {label}. Continue editing it or remove that draft before starting a new one."
+        )
+    if existing.status == ReportStatus.UNDER_REVIEW:
+        raise ValueError(
+            f"A report for {label} is already under review. Open the existing report instead of creating another draft."
+        )
+    raise ValueError(
+        f"A report for {label} already exists for this client. Contact your case manager if you need a new draft."
+    )
+
+
+def delete_monthly_report_draft(db: Session, report: MonthlyReport, user: User) -> None:
+    if report.status not in (ReportStatus.DRAFT, ReportStatus.REJECTED):
+        raise ValueError("Only draft or rejected reports can be removed")
+    if report.therapist_user_id != user.id and not user_has_permission(user, "monthly_report.approve"):
+        raise ValueError("Report not found")
+    case = db.get(Case, report.case_id)
+    if not case or not case_scope_check(db, user, case):
+        raise ValueError("Report not found")
+    db.delete(report)
 
 
 def list_monthly_reports(
