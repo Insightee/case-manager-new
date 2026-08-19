@@ -620,13 +620,18 @@
 }
 
 .reports-dashboard-card__delete {
-  border: none;
-  background: none;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  background: #fef2f2;
   font-size: 0.75rem;
   font-weight: 700;
   color: #b91c1c;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .reports-dashboard-card__delete:hover {

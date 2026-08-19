@@ -82,7 +82,7 @@ export function ReportEditPage() {
   const canRemoveDraft =
     report &&
     !isAdminEditor &&
-    (report.status === 'DRAFT' || report.status === 'REJECTED')
+    ['DRAFT', 'REJECTED', 'draft', 'rejected'].includes(String(report.status || ''))
 
   const editable =
     report &&

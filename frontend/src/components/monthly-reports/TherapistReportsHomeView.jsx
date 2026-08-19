@@ -309,7 +309,11 @@ export function TherapistReportsHomeView({
       showToast('Draft removed — you can start a new one when ready.')
       await load()
     } catch (err) {
-      showToast(err.message || 'Could not remove this draft')
+      const msg =
+        err.status === 404 || err.status === 405
+          ? 'Remove draft is not available on this API yet — deploy the latest backend or use a local server.'
+          : err.message || 'Could not remove this draft'
+      showToast(msg)
     }
   }
 

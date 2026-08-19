@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../../lib/apiClient.js'
+import { normalizeClinicalApiError } from '../shared/ClinicalReportNotice.jsx'
 
 const AUTO_SAVE_MS = 5 * 60 * 1000
 
@@ -62,14 +63,7 @@ export function useObservationReport(caseId) {
       else if (mode === 'workspace') await loadWorkspace()
       else if (mode === 'preview') await loadPreview()
     } catch (err) {
-      const msg = err.message || 'Could not load observation report'
-      if (/not available in this environment/i.test(msg)) {
-        setError(
-          'Observation reports need the clinical reports engine on this API. Use local backend with ENABLE_CLINICAL_REPORTS_ENGINE=true, or deploy the latest backend to staging.',
-        )
-      } else {
-        setError(msg)
-      }
+      setError(normalizeClinicalApiError(err, 'Observation'))
     } finally {
       setLoading(false)
     }

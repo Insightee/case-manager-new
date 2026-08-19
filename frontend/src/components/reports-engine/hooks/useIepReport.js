@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../../lib/apiClient.js'
 import { AI_ENABLED } from '../../../lib/reportsRevampFlags.js'
+import { normalizeClinicalApiError } from '../shared/ClinicalReportNotice.jsx'
 
 export const AUTO_SAVE_MS = 5 * 60 * 1000
 
@@ -44,6 +45,7 @@ export function useIepReport(caseId) {
     } catch (err) {
       if (err.status === 404) {
         setWorkspace(null)
+        setError(normalizeClinicalApiError(err, 'IEP'))
         return null
       }
       throw err
@@ -75,14 +77,7 @@ export function useIepReport(caseId) {
         else if (mode === 'workspace') await loadWorkspace()
         else if (mode === 'preview') await loadPreview('clinical')
       } catch (err) {
-        const msg = err.message || 'Could not load IEP report'
-        if (/not available in this environment/i.test(msg)) {
-          setError(
-            'IEP reports need the clinical reports engine on this API. Use local backend with ENABLE_CLINICAL_REPORTS_ENGINE=true, or deploy the latest backend to staging.',
-          )
-        } else {
-          setError(msg)
-        }
+        setError(normalizeClinicalApiError(err, 'IEP'))
       } finally {
         setLoading(false)
       }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
 import { clinicalReportNavBase, clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { useObservationReport } from '../hooks/useObservationReport.js'
+import { ClinicalReportEmptyState, ClinicalReportNotice } from '../shared/ClinicalReportNotice.jsx'
 import { StudentGoalCreateModal } from '../../clinical/goals-strategy/StudentGoalCreateModal.jsx'
 import { ObservationEvidenceUpload } from './ObservationEvidenceUpload.jsx'
 import {
@@ -125,7 +126,21 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
   }
 
   if (loading && !workspace) {
-    return <p className="text-sm text-on-surface-variant m-0">Loading builder…</p>
+    return <p className="text-sm text-slate-600 m-0">Loading builder…</p>
+  }
+
+  if (!workspace?.report_id) {
+    return (
+      <ClinicalReportEmptyState
+        title="Observation builder could not load"
+        message={
+          error ||
+          'No observation workspace is available for this client yet. The clinical reports API may not be enabled on this server.'
+        }
+        backHref={`/therapist/reports?case_id=${caseId}`}
+        onRetry={() => loadWorkspace()}
+      />
+    )
   }
 
   return (
@@ -138,7 +153,7 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
         completionPct={workspace?.completion_pct ?? 0}
       />
 
-      {error ? <p className="mb-4 px-4 py-3 rounded-lg bg-error-container text-on-error-container text-sm" role="alert">{error}</p> : null}
+      {error ? <ClinicalReportNotice className="mb-4">{error}</ClinicalReportNotice> : null}
       {workspace?.reviewer_comment && workspace?.status === 'returned_for_changes' ? (
         <p className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm"><strong>Case manager note:</strong> {workspace.reviewer_comment}</p>
       ) : null}

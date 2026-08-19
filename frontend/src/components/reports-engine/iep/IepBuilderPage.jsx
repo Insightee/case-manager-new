@@ -5,6 +5,7 @@ import { StudentGoalCreateModal } from '../../clinical/goals-strategy/StudentGoa
 import { StitchWorkspaceSubhead } from '../observation/stitch/ObservationStitchBlocks.jsx'
 import { useIepReport } from '../hooks/useIepReport.js'
 import { ClinicalBuilderShell } from '../shared/ClinicalBuilderShell.jsx'
+import { ClinicalReportEmptyState, ClinicalReportNotice } from '../shared/ClinicalReportNotice.jsx'
 import { IepApprovalPanel } from './IepApprovalPanel.jsx'
 import { IepGoalEditor } from './IepGoalCard.jsx'
 import { IepBuilderSections } from './IepBuilderSections.jsx'
@@ -139,7 +140,21 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
   }, [navigate, caseId, variant])
 
   if (loading && !workspace) {
-    return <p className="text-sm text-on-surface-variant clinical-report-ui">Loading IEP builder…</p>
+    return <p className="text-sm text-slate-600 m-0">Loading IEP builder…</p>
+  }
+
+  if (!workspace?.report_id) {
+    return (
+      <ClinicalReportEmptyState
+        title="IEP builder could not load"
+        message={
+          error ||
+          'No IEP workspace is available for this client yet. The clinical reports API may not be enabled on this server.'
+        }
+        backHref={`/therapist/reports?case_id=${caseId}`}
+        onRetry={() => loadWorkspace()}
+      />
+    )
   }
 
   return (
@@ -169,11 +184,7 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
               setGoalModal(true)
             }}
           >
-            {error ? (
-              <p className="mb-4 px-4 py-3 rounded-lg bg-error-container text-on-error-container text-sm" role="alert">
-                {error}
-              </p>
-            ) : null}
+            {error ? <ClinicalReportNotice className="mb-4">{error}</ClinicalReportNotice> : null}
 
             <IepApprovalPanel
               approval={workspace?.iep_approval}

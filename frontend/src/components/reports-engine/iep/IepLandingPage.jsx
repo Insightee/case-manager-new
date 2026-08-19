@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { useIepReport } from '../hooks/useIepReport.js'
+import { ClinicalReportNotice } from '../shared/ClinicalReportNotice.jsx'
 import { StitchIcon, StitchWorkspaceSubhead } from '../observation/stitch/ObservationStitchBlocks.jsx'
 
 const STATUS_LABELS = {
@@ -42,7 +43,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
     }
   }
 
-  if (loading) return <p className="text-sm text-on-surface-variant m-0">Loading IEP plan…</p>
+  if (loading) return <p className="text-sm text-slate-600 m-0">Loading IEP plan…</p>
 
   const hasReport = summary?.has_report
   const statusLabel = STATUS_LABELS[summary?.status] || summary?.status_label || 'NOT STARTED'
@@ -50,11 +51,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
   return (
     <>
       <StitchWorkspaceSubhead caseCode={caseCode} saving={saving} title="IEP Support Plan" />
-      {error ? (
-        <p className="mb-4 px-4 py-3 rounded-lg bg-error-container text-on-error-container text-sm" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ClinicalReportNotice className="mb-4">{error}</ClinicalReportNotice> : null}
 
       <article className="max-w-2xl mx-auto bg-surface-container-lowest p-8 rounded-xl clinical-shadow border border-outline-variant/30">
         <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">

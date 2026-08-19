@@ -2,6 +2,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
 import { clinicalReportNavBase, clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { useObservationReport } from '../hooks/useObservationReport.js'
+import { ClinicalReportEmptyState, ClinicalReportNotice } from '../shared/ClinicalReportNotice.jsx'
 import { StitchIcon, StitchWorkspaceSubhead } from './stitch/ObservationStitchBlocks.jsx'
 
 const STATUS_LABELS = {
@@ -32,7 +33,7 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
   }
 
   if (loading) {
-    return <p className="text-sm text-on-surface-variant m-0">Loading observation report…</p>
+    return <p className="text-sm text-slate-600 m-0">Loading observation report…</p>
   }
 
   const hasReport = summary?.has_report
@@ -43,7 +44,7 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
     <>
       <StitchWorkspaceSubhead caseCode={caseCode} saving={saving} title="Observation Report" />
 
-      {error ? <p className="mb-4 px-4 py-3 rounded-lg bg-error-container text-on-error-container text-sm" role="alert">{error}</p> : null}
+      {error ? <ClinicalReportNotice className="mb-4">{error}</ClinicalReportNotice> : null}
       {summary?.reviewer_comment ? (
         <p className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm"><strong>Case manager note:</strong> {summary.reviewer_comment}</p>
       ) : null}

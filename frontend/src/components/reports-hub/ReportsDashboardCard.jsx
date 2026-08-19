@@ -58,6 +58,12 @@ function ctaLabel(item) {
   return 'Open'
 }
 
+function isDeletableDraft(item) {
+  if (!item?.id || item.isPlaceholder || String(item.id).startsWith('missing-')) return false
+  const status = String(item.status || item.apiStatus || '').toLowerCase()
+  return status === 'draft' || status === 'rejected' || item.attentionType === 'rejected'
+}
+
 export function ReportsDashboardCard({ item, caseMeta, onViewReports, onDeleteDraft }) {
   const status = statusMeta(item)
   const urgency = urgencyLabel(item)
@@ -66,12 +72,7 @@ export function ReportsDashboardCard({ item, caseMeta, onViewReports, onDeleteDr
   const cmName = caseMeta?.caseManagerName || 'Unassigned'
   const tone = avatarTone(item.child)
   const actionLabel = ctaLabel(item)
-  const canDelete =
-    onDeleteDraft &&
-    item.id &&
-    !String(item.id).startsWith('missing-') &&
-    !item.isPlaceholder &&
-    (item.status === 'draft' || item.status === 'rejected' || item.attentionType === 'rejected')
+  const canDelete = onDeleteDraft && isDeletableDraft(item)
 
   function openReports() {
     onViewReports?.(item)
