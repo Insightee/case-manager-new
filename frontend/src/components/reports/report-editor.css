@@ -372,6 +372,14 @@
   background: #f8fafc;
 }
 
+.report-edit-mobile-menu__item--danger {
+  color: #b91c1c;
+}
+
+.report-edit-mobile-menu__item--danger:hover {
+  background: #fef2f2;
+}
+
 .report-editor__shell--mobile {
   border: none;
   border-radius: 0;
@@ -534,6 +542,20 @@
 
 .report-save-menu__item:hover {
   background: #f1f5f9;
+}
+
+.report-save-menu__divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: #e2e8f0;
+}
+
+.report-save-menu__item--danger {
+  color: #b91c1c;
+}
+
+.report-save-menu__item--danger:hover {
+  background: #fef2f2;
 }
 
 .report-save-menu--mobile {

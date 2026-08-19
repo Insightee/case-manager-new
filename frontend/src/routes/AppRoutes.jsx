@@ -19,6 +19,7 @@ import { MyCasesPage } from '../components/cases/MyCasesPage.jsx'
 import { CaseDetailPage } from '../components/cases/CaseDetailPage.jsx'
 import { DailyLogsPage } from '../components/daily-logs/DailyLogsPage.jsx'
 import { MonthlyReportsPage } from '../components/monthly-reports/MonthlyReportsPage.jsx'
+import { TherapistClinicalReportPage } from '../components/monthly-reports/TherapistClinicalReportPage.jsx'
 import { InvoicesPage } from '../components/invoices/InvoicesPage.jsx'
 import { TherapistProfilePage } from '../components/therapist/TherapistProfilePage.jsx'
 import { TherapistSupportHubPage } from '../components/therapist/TherapistSupportHubPage.jsx'
@@ -246,6 +247,11 @@ export function AppRoutes() {
         <Route path="cases/:caseId" element={<CaseDetailPage />} />
         <Route path="logs" element={<DailyLogsPage />} />
         <Route path="reports" element={<MonthlyReportsPage />} />
+        <Route
+          path="reports/cases/:caseId/observation"
+          element={<TherapistClinicalReportPage reportKind="observation" />}
+        />
+        <Route path="reports/cases/:caseId/iep" element={<TherapistClinicalReportPage reportKind="iep" />} />
         <Route
           path="reports/edit/:reportId"
           element={

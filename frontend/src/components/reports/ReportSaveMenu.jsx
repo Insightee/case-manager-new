@@ -13,6 +13,7 @@ export function ReportSaveMenu({
   generatingFromLogs = false,
   workflowLabel,
   onWorkflow,
+  onRemoveDraft,
   variant = 'desktop',
 }) {
   const [open, setOpen] = useState(false)
@@ -97,6 +98,23 @@ export function ReportSaveMenu({
               >
                 Save on this device
               </button>
+              {onRemoveDraft ? (
+                <>
+                  <div className="report-save-menu__divider" role="separator" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="report-save-menu__item report-save-menu__item--danger"
+                    disabled={saving}
+                    onClick={() => {
+                      setOpen(false)
+                      onRemoveDraft()
+                    }}
+                  >
+                    Remove draft
+                  </button>
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>

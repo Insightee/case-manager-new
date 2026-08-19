@@ -232,6 +232,9 @@ export function PortalShell({ portal }) {
       && (location.pathname.startsWith('/admin/invoices')
         || location.pathname.startsWith('/admin/finance-reports')
         || location.pathname.startsWith('/admin/therapist-payouts'))
+  const isClientPortalDashboard =
+    (portal === 'therapist' && location.pathname === '/therapist')
+    || (portal === 'parent' && location.pathname === '/parent')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem('insightecase.financeSidebarCollapsed') === '1'
@@ -641,7 +644,7 @@ export function PortalShell({ portal }) {
             . Edit actions are disabled for those programmes.
           </div>
         ) : null}
-        {(portal === 'therapist' || portal === 'parent') ? <PortalModuleRolloutNotice /> : null}
+        {isClientPortalDashboard ? <PortalModuleRolloutNotice /> : null}
         <Outlet />
       </main>
       <PortalInstallBanner />

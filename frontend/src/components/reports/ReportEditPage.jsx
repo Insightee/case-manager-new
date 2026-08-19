@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, apiDownload } from '../../lib/apiClient.js'
 import { generateReportFromLogs } from '../../lib/reportGenerateFromLogs.js'
-import { categoryLabel, PROGRESS_SUB_CATEGORIES, REPORT_CATEGORIES } from '../../lib/reportCategories.js'
-import { buildReportMonthOptions } from '../../lib/reportMonthOptions.js'
+import { categoryLabel, PROGRESS_SUB_CATEGORIES } from '../../lib/reportCategories.js'
 import { useIsMobilePortal } from '../../hooks/useMediaQuery.js'
 import { ReportEditor } from './ReportEditor.jsx'
 import { ReportReferenceDocsPanel } from './ReportReferenceDocsPanel.jsx'
@@ -67,17 +66,9 @@ export function ReportEditPage() {
   const lastPersistedHtmlRef = useRef('')
   const bodyHtmlRef = useRef('')
   const planNextMonthRef = useRef('')
-  const categoryRef = useRef('CLIENT_MONTHLY')
-  const subCategoryRef = useRef('')
-  const monthRef = useRef('')
   const isMobile = useIsMobilePortal()
-  const monthOptions = useMemo(() => {
-    const options = buildReportMonthOptions()
-    if (month && !options.includes(month)) {
-      return [month, ...options]
-    }
-    return options
-  }, [month])
+
+  const isUnderReview = report?.status === 'UNDER_REVIEW'
 
   const canRemoveDraft =
     report &&
@@ -144,9 +135,6 @@ export function ReportEditPage() {
     const payload = {
       bodyHtml: bodyHtmlRef.current,
       planNextMonth: planNextMonthRef.current,
-      category: categoryRef.current,
-      subCategory: subCategoryRef.current,
-      month: monthRef.current,
       baseUpdatedAt: report?.updated_at || null,
       savedAt: new Date().toISOString(),
     }
@@ -170,9 +158,6 @@ export function ReportEditPage() {
     if (!localDraft) return
     setBodyHtml(localDraft.bodyHtml || '')
     setPlanNextMonth(localDraft.planNextMonth || '')
-    setCategory(localDraft.category || category)
-    setSubCategory(localDraft.subCategory || '')
-    setMonth(localDraft.month || month)
     setDocumentVersion((v) => v + 1)
     setMessage('Restored local draft.')
   }
@@ -184,9 +169,6 @@ export function ReportEditPage() {
 
   bodyHtmlRef.current = bodyHtml
   planNextMonthRef.current = planNextMonth
-  categoryRef.current = category
-  subCategoryRef.current = subCategory
-  monthRef.current = month
 
   const persist = useCallback(
     async (silent = true) => {
@@ -197,19 +179,16 @@ export function ReportEditPage() {
       setSaveFailed(false)
       if (!silent) setError('')
       try {
-        const cat = categoryRef.current
         const patchUrl = isAdminEditor
           ? `/api/v1/admin/reports/monthly/${report.id}`
           : `/api/v1/reports/monthly/${report.id}`
+        const patchBody = {
+          body_html: html,
+          plan_next_month: planNextMonthRef.current,
+        }
         const updated = await apiFetch(patchUrl, {
           method: 'PATCH',
-          body: JSON.stringify({
-            body_html: html,
-            plan_next_month: planNextMonthRef.current,
-            category: cat,
-            sub_category: cat === 'PROGRESS' ? subCategoryRef.current || null : null,
-            month: monthRef.current,
-          }),
+          body: JSON.stringify(patchBody),
         })
         setReport(updated)
         lastPersistedHtmlRef.current = html
@@ -238,7 +217,7 @@ export function ReportEditPage() {
       if (saveTimer.current) clearTimeout(saveTimer.current)
       if (localDraftTimer.current) clearTimeout(localDraftTimer.current)
     }
-  }, [bodyHtml, planNextMonth, category, subCategory, month, editable, loading, persist])
+  }, [bodyHtml, planNextMonth, editable, loading, persist])
 
   useEffect(() => {
     if (!dirty || !editable) return undefined
@@ -362,55 +341,24 @@ export function ReportEditPage() {
     )
   }
 
+  const progressSubLabel =
+    PROGRESS_SUB_CATEGORIES.find((c) => c.id === subCategory)?.label || subCategory || '—'
+
   const metadataFields = (
     <>
-      <label className="report-edit-field text-sm font-medium text-slate-700">
-        Month
-        <select
-          className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          disabled={!editable}
-        >
-          {monthOptions.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="report-edit-field text-sm font-medium text-slate-700">
-        Category
-        <select
-          className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          disabled={!editable}
-        >
-          {REPORT_CATEGORIES.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="report-edit-field">
+        <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-500">Month</p>
+        <p className="mt-1 mb-0 text-sm font-semibold text-slate-900">{month || '—'}</p>
+      </div>
+      <div className="report-edit-field">
+        <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-500">Category</p>
+        <p className="mt-1 mb-0 text-sm font-semibold text-slate-900">{categoryLabel(category)}</p>
+      </div>
       {category === 'PROGRESS' ? (
-        <label className="report-edit-field text-sm font-medium text-slate-700 sm:col-span-2">
-          Progress type
-          <select
-            className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-            value={subCategory}
-            onChange={(e) => setSubCategory(e.target.value)}
-            disabled={!editable}
-          >
-            <option value="">Select…</option>
-            {PROGRESS_SUB_CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="report-edit-field sm:col-span-2">
+          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-500">Progress type</p>
+          <p className="mt-1 mb-0 text-sm font-semibold text-slate-900">{progressSubLabel}</p>
+        </div>
       ) : null}
     </>
   )
@@ -448,7 +396,7 @@ export function ReportEditPage() {
               {report.case_code} · {categoryLabel(category)} · {report.status}
             </p>
           </div>
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-start justify-end gap-2">
             <ReportSaveMenu
               saving={saving}
               editable={editable}
@@ -459,21 +407,22 @@ export function ReportEditPage() {
               generatingFromLogs={generatingFromLogs}
               workflowLabel={submitLabel}
               onWorkflow={handleSubmit}
+              onRemoveDraft={canRemoveDraft ? handleDeleteDraft : undefined}
               variant="desktop"
             />
-            {canRemoveDraft ? (
-              <button
-                type="button"
-                className="text-sm font-semibold text-red-700 hover:underline"
-                disabled={saving}
-                onClick={handleDeleteDraft}
-              >
-                Remove draft
-              </button>
-            ) : null}
           </div>
         </div>
       )}
+
+      {isUnderReview && !isAdminEditor ? (
+        <div
+          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800"
+          role="status"
+        >
+          This report cannot be edited while it is under review. If your case manager needs changes, they will send
+          it back to you.
+        </div>
+      ) : null}
 
       {report.reviewer_comment ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -619,6 +568,20 @@ export function ReportEditPage() {
                   }}
                 >
                   {generatingFromLogs ? 'Generating…' : 'Generate from session logs'}
+                </button>
+              ) : null}
+              {canRemoveDraft ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="report-edit-mobile-menu__item report-edit-mobile-menu__item--danger"
+                  disabled={saving}
+                  onClick={() => {
+                    setMobileMenuOpen(false)
+                    handleDeleteDraft()
+                  }}
+                >
+                  Remove draft
                 </button>
               ) : null}
               <Link
