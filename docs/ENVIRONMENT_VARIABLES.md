@@ -242,6 +242,8 @@ See [`backend/app/core/production_checks.py`](../backend/app/core/production_che
 | `ZOHO_BOOKS_LIVE_PUSH` | `false` | When true and API key set, push/update client invoices to Zoho Books. |
 | `VITE_ENABLE_FINANCE_DASHBOARD_V1` | unset/false | Stage 1 read-only Finance Control Tower on `/admin/invoices?tab=overview`. Forced off on canonical production via `readClientModuleFlag`. |
 | `ENABLE_STRUCTURED_EVIDENCE` | `false` | Session-log IEP identity registry + evidence taps. Flag off → zero registry writes; evidence payload ignored. |
+| `ENABLE_CLINICAL_REPORTS_ENGINE` | `false` | Observation + IEP clinical report builders (`/api/v1/cases/.../reports/observation|iep`). Requires Alembic revision `c7r8e9p0o1r2`. Enable on testing/staging only until prod cutover. |
+| `VITE_REPORTS_REVAMP` | unset/false | Therapist reports dashboard + observation/IEP builder UI. Set `true` in `frontend/.env.local` or Vercel preview env. |
 
 ### Payout money-OUT (Loop C)
 
