@@ -20,7 +20,7 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
   const portal = searchParams.get('portal')
   const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'observation', view, variant, portal })
 
-  const { summary, loading, error, saving, startReport, refresh } = useObservationReport(caseId)
+  const { summary, loading, error, saving, startReport, refresh, shareWithParent } = useObservationReport(caseId)
 
   async function handleStart() {
     try {
@@ -39,14 +39,30 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
   const statusLabel = STATUS_LABELS[summary?.status] || summary?.status_label || 'NOT STARTED'
   const pct = summary?.completion_pct ?? 0
   const isParent = variant === 'parent'
+  const isAdmin = variant === 'admin'
   const canBuild = !isParent && (!hasReport || summary.can_edit)
   const canStartNewCycle = !isParent && summary?.can_start_new
+  const canShare = isAdmin && summary?.can_share_with_parent
+
+  async function handleShare() {
+    try {
+      await shareWithParent()
+    } catch {
+      /* hook surfaces error */
+    }
+  }
 
   return (
     <>
       <StitchWorkspaceSubhead caseCode={caseCode} saving={saving} title="Observation Report" />
 
-      {error ? <ClinicalReportNotice className="mb-4">{error}</ClinicalReportNotice> : null}
+      {error ? <p className="mb-4 px-4 py-3 rounded-lg bg-error-container text-on-error-container text-sm" role="alert">{error}</p> : null}
+      {!isParent && hasReport && !summary?.shared_with_parent ? (
+        <p className="text-sm text-on-surface-variant mb-4 m-0">The family cannot see this report until a case manager shares it.</p>
+      ) : null}
+      {summary?.shared_with_parent ? (
+        <p className="text-sm font-semibold text-lush-forest mb-4 m-0">Shared with family</p>
+      ) : null}
       {summary?.reviewer_comment ? (
         <p className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm"><strong>Case manager note:</strong> {summary.reviewer_comment}</p>
       ) : null}
@@ -119,6 +135,17 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
             >
               <StitchIcon name={hasReport ? 'edit_note' : 'add'} />
               {saving ? 'Starting…' : hasReport ? 'Continue in builder' : 'Start new observation report'}
+            </button>
+          ) : null}
+          {canShare ? (
+            <button
+              type="button"
+              className="cr-btn cr-btn--primary inline-flex items-center justify-center font-bold min-h-[44px] px-6"
+              style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+              disabled={saving}
+              onClick={handleShare}
+            >
+              Share with family
             </button>
           ) : null}
           {summary?.can_preview ? (

@@ -43,6 +43,7 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
     stakeholderApprove,
     stakeholderRequestReview,
     cmResendForApproval,
+    shareWithParent,
     AUTO_SAVE_MS,
   } = useIepReport(caseId)
 
@@ -204,6 +205,18 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
             }
           }}
         />
+
+        {isAdmin && summary?.can_share_with_parent ? (
+          <button
+            type="button"
+            className="cr-btn cr-btn--primary mb-4 font-bold min-h-[44px] px-6"
+            style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+            disabled={saving}
+            onClick={() => shareWithParent()}
+          >
+            Share with family
+          </button>
+        ) : null}
 
         {isAdmin ? (
           <IepPendingChangesPanel items={pendingChanges} onApprove={approveChanges} onReturn={returnChanges} />

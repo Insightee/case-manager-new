@@ -193,10 +193,12 @@ export function useIepReport(caseId) {
   }
 
   async function submitReport() {
+    const id = workspace?.report_id || summary?.report_id
+    if (!id) return
     setSaving(true)
     try {
-      await apiFetch(`/api/v1/reports/${workspace.report_id}/submit`, { method: 'POST' })
-      await loadWorkspace()
+      await apiFetch(`/api/v1/reports/${id}/submit`, { method: 'POST' })
+      await loadWorkspace().catch(() => null)
       await loadSummary()
     } catch (err) {
       setError(err.message || 'Could not submit for review')
@@ -205,13 +207,31 @@ export function useIepReport(caseId) {
     }
   }
 
-  async function approveReport(shareWithParent = false) {
+  async function approveReport(shareWithParent = true) {
     await apiFetch(`/api/v1/reports/${workspace.report_id}/approve`, {
       method: 'POST',
       body: JSON.stringify({ share_with_parent: shareWithParent }),
     })
     await loadWorkspace()
     await loadSummary()
+  }
+
+  async function shareWithParent() {
+    const id = workspace?.report_id || summary?.report_id
+    if (!id) return null
+    setSaving(true)
+    setError('')
+    try {
+      const ws = await apiFetch(`/api/v1/reports/${id}/share-with-parent`, { method: 'POST' })
+      setWorkspace(ws)
+      await loadSummary()
+      return ws
+    } catch (err) {
+      setError(err.message || 'Could not share this plan with the family')
+      throw err
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function saveDraft() {
@@ -303,6 +323,7 @@ export function useIepReport(caseId) {
     returnChanges,
     submitReport,
     approveReport,
+    shareWithParent,
     saveDraft,
     generateSuggestions,
     sendForStakeholderApproval,

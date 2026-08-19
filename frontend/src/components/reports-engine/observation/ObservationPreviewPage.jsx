@@ -8,7 +8,7 @@ import { StitchIcon, StitchWorkspaceSubhead } from './stitch/ObservationStitchBl
 
 export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 'therapist' }) {
   const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'observation', view, variant })
-  const { preview, loading, error, loadPreview, summary, insights, workspace, loadWorkspace } = useObservationReport(caseId)
+  const { preview, loading, error, loadPreview, summary, insights, workspace, loadWorkspace, shareWithParent } = useObservationReport(caseId)
   const [reviewMsg, setReviewMsg] = useState('')
   const [reviewBusy, setReviewBusy] = useState(false)
   const isReviewer = variant === 'admin'
@@ -29,9 +29,9 @@ export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 
     try {
       await apiFetch(`/api/v1/reports/${workspace.report_id}/approve`, {
         method: 'POST',
-        body: JSON.stringify({ share_with_parent: false }),
+        body: JSON.stringify({ share_with_parent: true }),
       })
-      setReviewMsg('Report approved.')
+      setReviewMsg('Report approved and shared with the family.')
       await loadPreview()
       await loadWorkspace()
     } catch (err) {
@@ -193,6 +193,28 @@ export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 
       </article>
 
       <div className="flex flex-wrap gap-3 mt-8">
+        {isReviewer && summary?.can_share_with_parent ? (
+          <button
+            type="button"
+            className="inline-flex items-center justify-center px-6 py-3 rounded-xl font-bold min-h-[44px] disabled:opacity-50"
+            style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+            disabled={reviewBusy}
+            onClick={async () => {
+              setReviewBusy(true)
+              setReviewMsg('')
+              try {
+                await shareWithParent()
+                setReviewMsg('Shared with the family.')
+              } catch (err) {
+                setReviewMsg(err.message || 'Could not share this report')
+              } finally {
+                setReviewBusy(false)
+              }
+            }}
+          >
+            Share with family
+          </button>
+        ) : null}
         {isReviewer && (workspace?.status === 'submitted_for_review' || workspace?.status === 'submitted') ? (
           <button
             type="button"
@@ -201,7 +223,7 @@ export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 
             disabled={reviewBusy}
             onClick={approveReport}
           >
-            Approve observation report
+            Approve & share with family
           </button>
         ) : null}
         {reviewMsg ? <p className="text-sm text-on-surface-variant m-0 self-center">{reviewMsg}</p> : null}

@@ -42,7 +42,25 @@ def user_is_parent(user: User) -> bool:
 
 
 def parent_may_view_report(report: ClinicalReport | None) -> bool:
-    return bool(report and report.status in PARENT_VISIBLE_STATUSES)
+    return bool(
+        report
+        and report.parent_visible_at
+        and report.status in PARENT_VISIBLE_STATUSES
+    )
+
+
+def parent_share_flags(report: ClinicalReport | None, user: User) -> dict:
+    shared = bool(report and report.parent_visible_at)
+    can_share = bool(
+        report
+        and not user_is_parent(user)
+        and report.status in PARENT_VISIBLE_STATUSES
+        and not shared
+    )
+    return {
+        "shared_with_parent": shared,
+        "can_share_with_parent": can_share,
+    }
 
 
 def _section_visibility(meta: dict) -> str:
@@ -336,12 +354,13 @@ def serialize_report_workspace(db: Session, report: ClinicalReport, case: Case) 
             ClinicalReportStatus.RETURNED_FOR_CHANGES.value,
             ClinicalReportStatus.APPROVED.value,
         ),
-        "can_submit": ready and report.status in (
+        "can_submit": report.status in (
             ClinicalReportStatus.DRAFT.value,
             ClinicalReportStatus.IN_PROGRESS.value,
             ClinicalReportStatus.RETURNED_FOR_CHANGES.value,
         ),
         "type_hooks": REPORT_TYPE_HOOKS,
+        "shared_with_parent": bool(report.parent_visible_at),
     }
     if report.report_type == ClinicalReportType.IEP.value:
         from app.services import iep_approval_service
@@ -385,6 +404,7 @@ def iep_summary(db: Session, case: Case, user: User) -> dict:
             "available_strategy_candidates": len(available.get("case_goals", [])),
             "has_active_approved_iep": False,
             "pending_changes_count": 0,
+            **parent_share_flags(None, user),
         }
 
     sections = list(
@@ -417,7 +437,7 @@ def iep_summary(db: Session, case: Case, user: User) -> dict:
         "status_label": status_labels.get(report.status, report.status),
         "can_start_new": report.status in (ClinicalReportStatus.APPROVED.value, ClinicalReportStatus.LOCKED.value),
         "can_edit": editable and (report.assigned_therapist_id == user.id or is_cm),
-        "can_submit": validation.get("ready") and editable and (report.assigned_therapist_id == user.id or is_cm),
+        "can_submit": editable and (report.assigned_therapist_id == user.id or is_cm),
         "can_preview": True,
         "completion_pct": pct,
         "observation_status": obs.status if obs else None,
@@ -428,6 +448,7 @@ def iep_summary(db: Session, case: Case, user: User) -> dict:
         "pending_changes_count": len(pending),
         "submit_warnings": validation.get("warnings", []),
         "missing_required": validation.get("errors", []),
+        **parent_share_flags(report, user),
     }
     if is_parent:
         payload["can_start_new"] = False
@@ -482,6 +503,7 @@ def observation_summary(db: Session, case: Case, user: User) -> dict:
             "reviewer_comment": None,
             "due_at": None,
             "is_overdue": False,
+            **parent_share_flags(None, user),
         }
 
     sections = list(
@@ -527,6 +549,7 @@ def observation_summary(db: Session, case: Case, user: User) -> dict:
         "due_at": due.isoformat() if due else None,
         "is_overdue": bool(due and due < today and editable),
         "missing_required": missing_required_keys(sections),
+        **parent_share_flags(report, user),
     }
     if user_is_parent(user):
         payload["can_start_new"] = False

@@ -35,6 +35,17 @@ export function ClinicalBuilderShell({
               {saving ? 'Saving…' : 'Save'}
             </button>
           ) : null}
+          {!readOnly && onSubmit ? (
+            <button
+              type="button"
+              className="cr-btn cr-btn--primary"
+              style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+              disabled={saving}
+              onClick={onSubmit}
+            >
+              Submit for review
+            </button>
+          ) : null}
           {!readOnly && onAddGoal ? (
             <button type="button" className="cr-btn cr-btn--forest" onClick={onAddGoal}>
               {addGoalLabel}
@@ -52,9 +63,15 @@ export function ClinicalBuilderShell({
         <button type="button" className="cr-btn" onClick={onPreview}>
           Preview
         </button>
-        {!readOnly && canSubmit ? (
-          <button type="button" className="cr-btn cr-btn--primary" disabled={saving} onClick={onSubmit}>
-            Submit for CM review
+        {!readOnly && onSubmit ? (
+          <button
+            type="button"
+            className="cr-btn cr-btn--primary"
+            style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+            disabled={saving}
+            onClick={onSubmit}
+          >
+            Submit for review
           </button>
         ) : null}
       </footer>

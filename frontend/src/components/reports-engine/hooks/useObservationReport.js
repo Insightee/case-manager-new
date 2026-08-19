@@ -122,6 +122,24 @@ export function useObservationReport(caseId) {
     }
   }
 
+  async function shareWithParent() {
+    const id = workspace?.report_id || summary?.report_id
+    if (!id) return null
+    setSaving(true)
+    setError('')
+    try {
+      const ws = await apiFetch(`/api/v1/reports/${id}/share-with-parent`, { method: 'POST' })
+      setWorkspace(ws)
+      await loadSummary()
+      return ws
+    } catch (err) {
+      setError(err.message || 'Could not share this report with the family')
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function generateInsights() {
     if (!workspace?.report_id) return
     setSaving(true)
@@ -235,6 +253,7 @@ export function useObservationReport(caseId) {
     startReport,
     patchSection,
     submitReport,
+    shareWithParent,
     generateInsights,
     applyInsights,
     reloadEvidence,

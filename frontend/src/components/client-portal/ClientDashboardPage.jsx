@@ -622,7 +622,7 @@ export function ClientDashboardPage({
                           </Link>
                           {pendingIep ? (
                             <Link
-                              to="/parent/reports?type=iep"
+                              to={`/parent/cases/${item.id}?tab=iep`}
                               className="parent-case-card__btn parent-case-card__btn--primary"
                             >
                               Review IEP

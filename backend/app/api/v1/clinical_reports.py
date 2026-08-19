@@ -47,6 +47,16 @@ _CLINICAL_REPORT_WRITE_ROLES = frozenset(
     }
 )
 
+_CLINICAL_REPORT_SHARE_ROLES = frozenset(
+    {
+        RoleName.SUPER_ADMIN.value,
+        RoleName.MODULE_ADMIN.value,
+        RoleName.ADMIN.value,
+        RoleName.CASE_MANAGER.value,
+        RoleName.SUPERVISOR.value,
+    }
+)
+
 
 def _case_for_user_write(db: Session, user: User, case_id: int):
     """Assigned-case write for clinical reports — not staff programme-module grants.
@@ -63,6 +73,18 @@ def _case_for_user_write(db: Session, user: User, case_id: int):
         raise HTTPException(
             status_code=403,
             detail="You can view this case but cannot edit clinical reports.",
+        )
+    return case
+
+
+def _case_for_user_share(db: Session, user: User, case_id: int):
+    case = _case_for_user(db, user, case_id)
+    if is_view_only_user(user):
+        raise HTTPException(status_code=403, detail="View-only access — changes are not allowed")
+    if not _CLINICAL_REPORT_SHARE_ROLES.intersection(user.role_names or []):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the case manager can share this plan with the family.",
         )
     return case
 
@@ -311,9 +333,6 @@ def submit_report(report_id: int, user: User = Depends(get_current_user), db: Se
         if report.report_type == "observation":
             observation_report_service.submit_observation(db, case, user)
         elif report.report_type == "iep":
-            validation = iep_report_service.validate_iep_submit(db, report)
-            if not validation.get("ready"):
-                raise ValueError("Complete required IEP sections before submitting")
             report_status_service.submit_report(db, report, user, readiness_ok=True)
         else:
             from app.models.clinical_report import ClinicalReportSection
@@ -348,6 +367,21 @@ def approve_report(report_id: int, payload: ApproveBody, user: User = Depends(ge
     _case_for_user(db, user, report.case_id)
     try:
         report_status_service.approve_report(db, report, user, share_parent=payload.share_with_parent)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    db.commit()
+    case = case_service.get_case(db, report.case_id)
+    return report_engine_service.serialize_report_workspace(db, report, case)
+
+
+@router.post("/reports/{report_id}/share-with-parent")
+def share_report_with_parent(
+    report_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    report = _report_or_404(db, report_id)
+    _case_for_user_share(db, user, report.case_id)
+    try:
+        report_status_service.share_report_with_parent(db, report, user)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     db.commit()

@@ -112,6 +112,42 @@ def test_parent_cannot_open_draft_iep_workspace():
     assert r.status_code == 404
 
 
+def test_share_with_parent_unlocks_family_view():
+    therapist = _login("therapist@demo.com")
+    admin = _login("superadmin@demo.com")
+    parent = _login("parent@demo.com")
+    th = {"Authorization": f"Bearer {therapist}"}
+    ah = {"Authorization": f"Bearer {admin}"}
+    ph = {"Authorization": f"Bearer {parent}"}
+    case_id = _case_id()
+    report_id = _start_iep(th)
+    _seed_iep_sections(report_id, th)
+    client.post(f"/api/v1/reports/{report_id}/iep/goals", headers=th, json=GOAL_PAYLOAD)
+    draft_share = client.post(f"/api/v1/reports/{report_id}/share-with-parent", headers=ah)
+    assert draft_share.status_code == 400
+    submitted = client.post(f"/api/v1/reports/{report_id}/submit", headers=th)
+    assert submitted.status_code == 200, submitted.text
+    therapist_share = client.post(f"/api/v1/reports/{report_id}/share-with-parent", headers=th)
+    assert therapist_share.status_code == 403
+
+    before = client.get(f"/api/v1/cases/{case_id}/reports/iep/summary", headers=ph)
+    assert before.status_code == 200
+    assert before.json()["can_preview"] is False
+    assert before.json()["has_report"] is False
+
+    shared = client.post(f"/api/v1/reports/{report_id}/share-with-parent", headers=ah)
+    assert shared.status_code == 200, shared.text
+    assert shared.json()["shared_with_parent"] is True
+
+    after = client.get(f"/api/v1/cases/{case_id}/reports/iep/summary", headers=ph)
+    assert after.status_code == 200
+    assert after.json()["can_preview"] is True
+    assert after.json()["has_report"] is True
+    workspace = client.get(f"/api/v1/cases/{case_id}/reports/iep", headers=ph)
+    assert workspace.status_code == 200
+    client.post(f"/api/v1/reports/{report_id}/approve", headers=ah, json={"share_with_parent": True})
+
+
 def test_case_manager_can_load_iep_summary():
     with SessionLocal() as db:
         case = db.scalars(select(Case).where(Case.case_code == "IC-2026-041")).first()

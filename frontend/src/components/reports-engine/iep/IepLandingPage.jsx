@@ -19,7 +19,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
   const portal = searchParams.get('portal')
   const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'iep', view, variant, portal })
 
-  const { summary, loading, error, saving, startReport, generateFromObservation, refresh } = useIepReport(caseId)
+  const { summary, loading, error, saving, startReport, generateFromObservation, refresh, shareWithParent, submitReport } = useIepReport(caseId)
 
   async function handleStart() {
     try {
@@ -48,10 +48,21 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
   const hasReport = summary?.has_report
   const statusLabel = STATUS_LABELS[summary?.status] || summary?.status_label || 'NOT STARTED'
   const isParent = variant === 'parent'
+  const isAdmin = variant === 'admin'
   const canStart = !isParent && !hasReport
   const canImport = !isParent && summary?.observation_approved
   const canContinue = !isParent && hasReport && summary?.can_edit
   const canPreview = hasReport && (isParent ? summary?.can_preview : summary?.has_active_approved_iep || summary?.can_preview)
+  const canShare = isAdmin && summary?.can_share_with_parent
+  const canSubmit = !isParent && hasReport && summary?.can_submit
+
+  async function handleShare() {
+    try {
+      await shareWithParent()
+    } catch {
+      /* hook surfaces error */
+    }
+  }
 
   return (
     <>
@@ -111,6 +122,14 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
                 {summary.pending_changes_count} change(s) awaiting CM review
               </div>
             ) : null}
+            {!isParent && hasReport && !summary.shared_with_parent ? (
+              <div className="col-span-2 text-sm text-on-surface-variant">
+                The family cannot see this plan until a case manager shares it.
+              </div>
+            ) : null}
+            {summary.shared_with_parent ? (
+              <div className="col-span-2 text-sm font-semibold text-lush-forest">Shared with family</div>
+            ) : null}
           </div>
         )}
 
@@ -143,6 +162,28 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
             >
               Continue Draft
             </Link>
+          ) : null}
+          {canSubmit ? (
+            <button
+              type="button"
+              className="cr-btn cr-btn--primary inline-flex items-center justify-center font-bold text-sm"
+              style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+              disabled={saving}
+              onClick={() => submitReport()}
+            >
+              Submit for review
+            </button>
+          ) : null}
+          {canShare ? (
+            <button
+              type="button"
+              className="cr-btn cr-btn--primary inline-flex items-center justify-center font-bold text-sm"
+              style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+              disabled={saving}
+              onClick={handleShare}
+            >
+              Share with family
+            </button>
           ) : null}
           {canPreview ? (
             <Link

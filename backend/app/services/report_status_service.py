@@ -70,11 +70,24 @@ def can_cm_review(report: ClinicalReport) -> bool:
     return report.status == ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value
 
 
+def can_submit_report(report: ClinicalReport, user: User) -> bool:
+    if report.status not in (
+        ClinicalReportStatus.DRAFT.value,
+        ClinicalReportStatus.IN_PROGRESS.value,
+        ClinicalReportStatus.RETURNED_FOR_CHANGES.value,
+    ):
+        return False
+    if can_therapist_edit(report, user):
+        return True
+    roles = {r.name for r in getattr(user, "roles", []) or []}
+    if roles & {"ADMIN", "SUPER_ADMIN", "CASE_MANAGER", "SUPERVISOR"}:
+        return True
+    return report.case_manager_id == user.id
+
+
 def submit_report(db: Session, report: ClinicalReport, user: User, *, readiness_ok: bool) -> ClinicalReport:
-    if not can_therapist_edit(report, user):
+    if not can_submit_report(report, user):
         raise ValueError("Cannot submit this report")
-    if not readiness_ok:
-        raise ValueError("Complete required sections before submitting")
     report.status = ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value
     report.submitted_at = datetime.now(timezone.utc)
     log_review_event(db, report, user, ReviewEventType.SUBMITTED.value)
@@ -112,6 +125,22 @@ def approve_report(db: Session, report: ClinicalReport, reviewer: User, *, share
         from app.services import iep_report_service
 
         iep_report_service.sync_approved_iep_goals_to_active_case_plan(db, report, reviewer)
+    db.flush()
+    return report
+
+
+def share_report_with_parent(db: Session, report: ClinicalReport, actor: User) -> ClinicalReport:
+    if report.status not in (
+        ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value,
+        ClinicalReportStatus.APPROVED.value,
+        ClinicalReportStatus.LOCKED.value,
+    ):
+        raise ValueError("Share this plan after it is submitted for review.")
+    if report.parent_visible_at:
+        return report
+    now = datetime.now(timezone.utc)
+    report.parent_visible_at = now
+    log_review_event(db, report, actor, ReviewEventType.PARENT_SHARED.value)
     db.flush()
     return report
 

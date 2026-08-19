@@ -19,6 +19,8 @@ import { ClientPortalLayout } from './ClientPortalLayout.jsx'
 import { ParentFilterBar, ParentFilterField, ParentFilterSelect, ParentPortalTabs } from './ParentFilterBar.jsx'
 import { ParentComingSoon } from './ParentComingSoon.jsx'
 import { PARENT_REPORTS_COMING_SOON } from '../../lib/parentPortalFeatureFlags.js'
+import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
+import { clinicalReportSectionPath } from '../../lib/clinicalReportPaths.js'
 
 const STATUS_LABELS = {
   pending_review: 'Pending your review',
@@ -101,8 +103,10 @@ async function fetchBlobUrl(downloadPath) {
 function ParentReportsPageFull() {
   const [searchParams, setSearchParams] = useSearchParams()
   const typeParam = searchParams.get('type')
-  const initialTab = typeParam === 'iep' ? 'iep' : typeParam === 'documents' ? 'documents' : 'monthly'
+  const initialTab =
+    typeParam === 'iep' ? 'iep' : typeParam === 'documents' ? 'documents' : typeParam === 'observation' ? 'observation' : 'monthly'
   const [tab, setTab] = useState(initialTab)
+  const clinicalRevamp = isReportsRevampActive('parent')
   const [hub, setHub] = useState({ monthly: [], iep: [] })
   const [parentCases, setParentCases] = useState([])
   const [caseFilter, setCaseFilter] = useState('all')
@@ -149,6 +153,7 @@ function ParentReportsPageFull() {
   useEffect(() => {
     if (tab === 'iep') setSearchParams({ type: 'iep' }, { replace: true })
     else if (tab === 'documents') setSearchParams({ type: 'documents' }, { replace: true })
+    else if (tab === 'observation') setSearchParams({ type: 'observation' }, { replace: true })
     else setSearchParams({}, { replace: true })
   }, [tab, setSearchParams])
 
@@ -167,7 +172,7 @@ function ParentReportsPageFull() {
   }, [detail, detailLoading])
 
   const list =
-    tab === 'iep' ? hub.iep : tab === 'documents' ? parentDocs : hub.monthly
+    tab === 'observation' ? [] : tab === 'iep' ? hub.iep : tab === 'documents' ? parentDocs : hub.monthly
 
   const caseOptions = useMemo(() => {
     const ids = new Map()
@@ -388,31 +393,12 @@ function ParentReportsPageFull() {
         <p className="parent-reports__alert parent-reports__alert--success">{message}</p>
       ) : null}
 
-      {parentCases.length > 0 ? (
-        <section className="parent-reports__cases" aria-label="Your children">
-          <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 12px', color: '#1e293b' }}>Your children</h2>
-          <div className="parent-reports__case-grid">
-            {parentCases.map((c) => (
-              <Link
-                key={c.id}
-                to={`/parent/cases/${c.id}?tab=overview`}
-                className="parent-reports__case-card"
-              >
-                <p className="parent-reports__case-code">{c.caseId}</p>
-                <p className="parent-reports__case-name">{c.childName}</p>
-                <p className="parent-reports__case-meta">{c.serviceType}</p>
-                <span className="parent-reports__case-cta">View profile & reports →</span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       <ParentPortalTabs
         ariaLabel="Report type"
         tabs={[
           { id: 'monthly', label: 'Monthly reports' },
           { id: 'iep', label: 'IEP plans' },
+          ...(clinicalRevamp ? [{ id: 'observation', label: 'Observation' }] : []),
           { id: 'documents', label: 'Documents' },
         ]}
         value={tab}
@@ -421,6 +407,46 @@ function ParentReportsPageFull() {
           closeDetail()
         }}
       />
+
+      {parentCases.length > 0 ? (
+        <section className="parent-reports__cases" aria-label="Your children">
+          <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 12px', color: '#1e293b' }}>
+            {clinicalRevamp && tab === 'iep'
+              ? 'Open an IEP plan'
+              : clinicalRevamp && tab === 'observation'
+                ? 'Open an observation report'
+                : 'Your children'}
+          </h2>
+          <div className="parent-reports__case-grid">
+            {parentCases.map((c) => {
+              const dest =
+                clinicalRevamp && tab === 'iep'
+                  ? clinicalReportSectionPath({ caseId: c.id, section: 'iep', variant: 'parent' })
+                  : clinicalRevamp && tab === 'observation'
+                    ? clinicalReportSectionPath({ caseId: c.id, section: 'observation', variant: 'parent' })
+                    : `/parent/cases/${c.id}?tab=overview`
+              return (
+              <Link
+                key={c.id}
+                to={dest}
+                className="parent-reports__case-card"
+              >
+                <p className="parent-reports__case-code">{c.caseId}</p>
+                <p className="parent-reports__case-name">{c.childName}</p>
+                <p className="parent-reports__case-meta">{c.serviceType}</p>
+                <span className="parent-reports__case-cta">
+                  {clinicalRevamp && tab === 'iep'
+                    ? 'Open IEP plan →'
+                    : clinicalRevamp && tab === 'observation'
+                      ? 'Open observation →'
+                      : 'View profile & reports →'}
+                </span>
+              </Link>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {caseOptions.length > 1 ? (
         <ParentFilterBar ariaLabel="Filter reports" gridClass="">
@@ -437,10 +463,19 @@ function ParentReportsPageFull() {
         </ParentFilterBar>
       ) : null}
 
+      {tab !== 'observation' ? (
       <section className="card">
         <div className="card-head">
           <h3>
-            {tab === 'iep' ? 'IEP plans' : tab === 'documents' ? 'Shared documents' : 'Monthly reports'}
+            {tab === 'iep'
+              ? clinicalRevamp
+                ? 'Uploaded IEP files'
+                : 'IEP plans'
+              : tab === 'observation'
+                ? 'Observation reports'
+                : tab === 'documents'
+                  ? 'Shared documents'
+                  : 'Monthly reports'}
           </h3>
         </div>
         {(tab === 'documents' ? docsLoading : loading) ? (
@@ -448,7 +483,9 @@ function ParentReportsPageFull() {
         ) : filtered.length === 0 ? (
           <p style={{ padding: 16, color: '#9ca3af' }}>
             {tab === 'iep'
-              ? 'No IEP documents shared yet.'
+              ? clinicalRevamp
+                ? 'Open a child above to view the IEP workspace. Uploaded files still appear here when the team has shared a PDF.'
+                : 'No IEP documents shared yet.'
               : tab === 'documents'
                 ? 'No documents shared with your family yet.'
                 : 'No reports shared for your review yet.'}
@@ -477,6 +514,7 @@ function ParentReportsPageFull() {
           </ul>
         )}
       </section>
+      ) : null}
 
       {(detail || detailLoading) && typeof document !== 'undefined'
         ? createPortal(

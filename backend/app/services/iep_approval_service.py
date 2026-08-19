@@ -107,6 +107,7 @@ def send_for_stakeholder_approval(db: Session, report: ClinicalReport, cm_user: 
     _save_meta(db, report, meta)
     report.status = ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value
     report.submitted_at = report.submitted_at or now
+    report_status_service.share_report_with_parent(db, report, cm_user)
     report_status_service.log_review_event(
         db, report, cm_user, "iep_sent_for_stakeholder_approval", metadata={"due_days": AUTO_APPROVE_DAYS}
     )

@@ -19,6 +19,7 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
     loadPreview,
     loadWorkspace,
     approveReport,
+    shareWithParent,
     stakeholderApprove,
     stakeholderRequestReview,
     sendForStakeholderApproval,
@@ -211,15 +212,28 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
         />
       </div>
 
+      {variant === 'admin' && summary?.can_share_with_parent ? (
+        <div className="max-w-3xl mx-auto mt-6 flex flex-wrap gap-3">
+          <button
+            type="button"
+            className="min-h-[44px] px-6 rounded-xl font-bold"
+            style={{ backgroundColor: '#0b1c16', color: '#fff' }}
+            onClick={() => shareWithParent()}
+          >
+            Share with family
+          </button>
+        </div>
+      ) : null}
+
       {variant === 'admin' && (workspace?.status || summary?.status) === 'submitted_for_review' && approval?.ready_for_final_approval ? (
         <div className="max-w-3xl mx-auto mt-6 flex gap-3">
           <button
             type="button"
             className="min-h-[44px] px-6 rounded-xl font-bold"
             style={{ backgroundColor: '#0b1c16', color: '#fff' }}
-            onClick={() => approveReport(false)}
+            onClick={() => approveReport(true)}
           >
-            Approve IEP
+            Approve & share with family
           </button>
         </div>
       ) : null}
