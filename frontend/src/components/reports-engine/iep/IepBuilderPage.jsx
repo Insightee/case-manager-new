@@ -9,7 +9,6 @@ import { ClinicalReportEmptyState, ClinicalReportNotice } from '../shared/Clinic
 import { IepApprovalPanel } from './IepApprovalPanel.jsx'
 import { IepGoalEditor } from './IepGoalCard.jsx'
 import { IepBuilderSections } from './IepBuilderSections.jsx'
-import { IepInsightsRail } from './IepInsightsRail.jsx'
 import { IepPendingChangesPanel } from './IepPendingChangesPanel.jsx'
 
 function sectionData(sections, key) {
@@ -25,7 +24,6 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
     workspace,
     availableGoals,
     summary,
-    suggestions,
     pendingChanges,
     loading,
     error,
@@ -33,7 +31,6 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
     loadWorkspace,
     generateFromObservation,
     patchSection,
-    patchClinicalInsights,
     addGoal,
     patchGoal,
     deleteGoal,
@@ -42,7 +39,6 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
     saveDraft,
     approveChanges,
     returnChanges,
-    generateSuggestions,
     sendForStakeholderApproval,
     stakeholderApprove,
     stakeholderRequestReview,
@@ -53,8 +49,6 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
   const [goalModal, setGoalModal] = useState(false)
   const [strategyGoal, setStrategyGoal] = useState(null)
   const [editGoal, setEditGoal] = useState(null)
-  const [insightsOpen, setInsightsOpen] = useState(false)
-  const [generatingInsights, setGeneratingInsights] = useState(false)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const importedFromObs = useRef(false)
 
@@ -72,7 +66,6 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
   const sections = workspace?.sections || []
   const goalsPlan = sectionData(sections, 'goals_plan').structured_data || {}
   const goals = goalsPlan.goals || []
-  const clinicalInsights = sectionData(sections, 'clinical_insights').structured_data || {}
 
   useEffect(() => {
     if (importedFromObs.current || loading || !workspace?.report_id || readOnly) return
@@ -124,15 +117,6 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
     [workspace?.report_id, addGoal, loadWorkspace],
   )
 
-  const handleGenerateInsights = useCallback(async () => {
-    setGeneratingInsights(true)
-    try {
-      await generateSuggestions()
-    } finally {
-      setGeneratingInsights(false)
-    }
-  }, [generateSuggestions])
-
   const statusLabel = (workspace?.status || 'draft').replace(/_/g, ' ').toUpperCase()
 
   const goPreview = useCallback(() => {
@@ -163,106 +147,89 @@ export function IepBuilderPage({ caseId, caseCode, childName, variant = 'therapi
         caseCode={caseCode}
         saving={saving}
         title="IEP Report Builder"
-        aiAssistantOpen={insightsOpen}
-        onToggleAiAssistant={() => setInsightsOpen((o) => !o)}
-        completionPct={workspace?.completion_pct ?? 0}
       />
 
-      <div className={`flex gap-6 ${insightsOpen ? 'flex-col lg:flex-row lg:items-start' : 'flex-col'}`}>
-        <div className="flex-1 min-w-0">
-          <ClinicalBuilderShell
-            title="IEP Support Plan"
-            statusLabel={statusLabel}
-            saving={saving}
-            readOnly={readOnly}
-            canSubmit={workspace?.can_submit}
-            onSaveDraft={saveDraft}
-            onPreview={goPreview}
-            onSubmit={submitReport}
-            onAddGoal={() => {
-              setStrategyGoal(null)
-              setGoalModal(true)
-            }}
-          >
-            {error ? <ClinicalReportNotice className="mb-4">{error}</ClinicalReportNotice> : null}
+      <ClinicalBuilderShell
+        title="IEP Support Plan"
+        statusLabel={statusLabel}
+        saving={saving}
+        readOnly={readOnly}
+        canSubmit={workspace?.can_submit}
+        onSaveDraft={saveDraft}
+        onPreview={goPreview}
+        onSubmit={submitReport}
+        onAddGoal={() => {
+          setStrategyGoal(null)
+          setGoalModal(true)
+        }}
+      >
+        {error ? <ClinicalReportNotice className="mb-4">{error}</ClinicalReportNotice> : null}
 
-            <IepApprovalPanel
-              approval={workspace?.iep_approval}
-              reviewThread={workspace?.review_thread}
-              variant={variant}
-              readOnly={readOnly}
-              busy={approvalBusy}
-              onSendForStakeholderApproval={async () => {
-                setApprovalBusy(true)
-                try {
-                  await sendForStakeholderApproval()
-                } finally {
-                  setApprovalBusy(false)
-                }
-              }}
-              onStakeholderApprove={async (role) => {
-                setApprovalBusy(true)
-                try {
-                  await stakeholderApprove(role)
-                } finally {
-                  setApprovalBusy(false)
-                }
-              }}
-              onStakeholderRequestReview={async (role, comment) => {
-                setApprovalBusy(true)
-                try {
-                  await stakeholderRequestReview(role, comment)
-                } finally {
-                  setApprovalBusy(false)
-                }
-              }}
-              onCmResend={async (reply) => {
-                setApprovalBusy(true)
-                try {
-                  await cmResendForApproval(reply)
-                } finally {
-                  setApprovalBusy(false)
-                }
-              }}
-            />
-
-            {isAdmin ? (
-              <IepPendingChangesPanel items={pendingChanges} onApprove={approveChanges} onReturn={returnChanges} />
-            ) : null}
-
-            <IepBuilderSections
-              sections={sections}
-              goals={goals}
-              childName={childName}
-              readOnly={readOnly}
-              suggestedGoals={suggestedGoals}
-              onPatchSection={patchSection}
-              onEditGoal={setEditGoal}
-              onRemoveGoal={(g) => deleteGoal(g.iep_goal_id)}
-              onLinkStrategy={(g) => {
-                setStrategyGoal(g)
-                setGoalModal(true)
-              }}
-              onMarkAchieved={(g) => markAchieved(g.iep_goal_id)}
-              onAddGoal={() => {
-                setStrategyGoal(null)
-                setGoalModal(true)
-              }}
-              onImportSuggestedGoal={handleImportSuggestedGoal}
-            />
-          </ClinicalBuilderShell>
-        </div>
-
-        <IepInsightsRail
-          open={insightsOpen}
-          insights={suggestions}
-          clinicalInsights={clinicalInsights}
+        <IepApprovalPanel
+          approval={workspace?.iep_approval}
+          reviewThread={workspace?.review_thread}
+          variant={variant}
           readOnly={readOnly}
-          generating={generatingInsights}
-          onGenerate={handleGenerateInsights}
-          onPatchInsights={patchClinicalInsights}
+          busy={approvalBusy}
+          onSendForStakeholderApproval={async () => {
+            setApprovalBusy(true)
+            try {
+              await sendForStakeholderApproval()
+            } finally {
+              setApprovalBusy(false)
+            }
+          }}
+          onStakeholderApprove={async (role) => {
+            setApprovalBusy(true)
+            try {
+              await stakeholderApprove(role)
+            } finally {
+              setApprovalBusy(false)
+            }
+          }}
+          onStakeholderRequestReview={async (role, comment) => {
+            setApprovalBusy(true)
+            try {
+              await stakeholderRequestReview(role, comment)
+            } finally {
+              setApprovalBusy(false)
+            }
+          }}
+          onCmResend={async (reply) => {
+            setApprovalBusy(true)
+            try {
+              await cmResendForApproval(reply)
+            } finally {
+              setApprovalBusy(false)
+            }
+          }}
         />
-      </div>
+
+        {isAdmin ? (
+          <IepPendingChangesPanel items={pendingChanges} onApprove={approveChanges} onReturn={returnChanges} />
+        ) : null}
+
+        <IepBuilderSections
+          sections={sections}
+          goals={goals}
+          childName={childName}
+          readOnly={readOnly}
+          suggestedGoals={suggestedGoals}
+          onPatchSection={patchSection}
+          onEditGoal={setEditGoal}
+          onRemoveGoal={(g) => deleteGoal(g.iep_goal_id)}
+          onLinkStrategy={(g) => {
+            setStrategyGoal(g)
+            setGoalModal(true)
+          }}
+          onMarkAchieved={(g) => markAchieved(g.iep_goal_id)}
+          onAddGoal={() => {
+            setStrategyGoal(null)
+            setGoalModal(true)
+          }}
+          onImportSuggestedGoal={handleImportSuggestedGoal}
+        />
+      </ClinicalBuilderShell>
 
       {goalModal ? (
         <StudentGoalCreateModal

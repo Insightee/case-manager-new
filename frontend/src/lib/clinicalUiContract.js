@@ -8,7 +8,6 @@ import { IEP_DOMAIN_TABS } from './iepObservationAlign.js'
 export const GOAL_MODAL_TABS = [
   { id: 'templates', label: 'Templates' },
   { id: 'custom', label: 'Custom goal' },
-  { id: 'ai', label: 'AI Assisted' },
 ]
 
 export const GOAL_MODAL_DOMAIN_CHIPS = [

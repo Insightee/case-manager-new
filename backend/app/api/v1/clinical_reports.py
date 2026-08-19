@@ -27,6 +27,10 @@ router = APIRouter(tags=["clinical-reports"])
 
 
 def _case_for_user(db: Session, user: User, case_id: int):
+    if RoleName.PARENT.value in (user.role_names or []):
+        from app.api.v1.parent import _parent_case_or_404
+
+        return _parent_case_or_404(db, user, case_id)
     from app.api.v1.cases import _case_for_user as cases_case_for_user
 
     return cases_case_for_user(db, user, case_id)
@@ -221,11 +225,19 @@ def get_report_by_type(
     db: Session = Depends(get_db),
 ):
     case = _case_for_user(db, user, case_id)
+    parent = report_engine_service.user_is_parent(user)
     if report_type == "observation":
         try:
+            if parent:
+                report = report_engine_service.get_active_observation_report(db, case.id)
+                if not report_engine_service.parent_may_view_report(report):
+                    raise HTTPException(status_code=404, detail="No observation report is available yet")
+                return report_engine_service.serialize_parent_safe_observation(db, report, case)
             report, _ = observation_report_service.ensure_checklist_bridge(db, case, user)
             db.commit()
             return report_engine_service.serialize_report_workspace(db, report, case)
+        except HTTPException:
+            raise
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as exc:
@@ -235,6 +247,10 @@ def get_report_by_type(
         report = report_engine_service.get_active_iep_report(db, case.id)
         if not report:
             raise HTTPException(status_code=404, detail="No active IEP report")
+        if parent:
+            if not report_engine_service.parent_may_view_report(report):
+                raise HTTPException(status_code=404, detail="No IEP plan is available yet")
+            return report_engine_service.serialize_parent_safe_iep(db, report, case)
         return report_engine_service.serialize_report_workspace(db, report, case)
     raise HTTPException(status_code=404, detail="Report type not implemented yet")
 
@@ -243,6 +259,12 @@ def get_report_by_type(
 def get_report(report_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     report = _report_or_404(db, report_id)
     case = _case_for_user(db, user, report.case_id)
+    if report_engine_service.user_is_parent(user):
+        if not report_engine_service.parent_may_view_report(report):
+            raise HTTPException(status_code=404, detail="Report not found")
+        if report.report_type == "iep":
+            return report_engine_service.serialize_parent_safe_iep(db, report, case)
+        return report_engine_service.serialize_parent_safe_observation(db, report, case)
     return report_engine_service.serialize_report_workspace(db, report, case)
 
 
@@ -454,6 +476,12 @@ def preview_report(
 ):
     report = _report_or_404(db, report_id)
     case = _case_for_user(db, user, report.case_id)
+    if report_engine_service.user_is_parent(user):
+        if not report_engine_service.parent_may_view_report(report):
+            raise HTTPException(status_code=404, detail="Report not found")
+        if report.report_type == "iep":
+            return report_engine_service.serialize_parent_safe_iep(db, report, case)
+        return report_engine_service.serialize_parent_safe_observation(db, report, case)
     if report.report_type == "iep":
         if mode == "parent":
             return report_engine_service.serialize_parent_safe_iep(db, report, case)
@@ -648,6 +676,10 @@ def iep_preview(
 ):
     report = _report_or_404(db, report_id)
     case = _case_for_user(db, user, report.case_id)
+    if report_engine_service.user_is_parent(user):
+        if not report_engine_service.parent_may_view_report(report):
+            raise HTTPException(status_code=404, detail="Report not found")
+        return report_engine_service.serialize_parent_safe_iep(db, report, case)
     if mode == "parent":
         return report_engine_service.serialize_parent_safe_iep(db, report, case)
     return report_engine_service.serialize_report_workspace(db, report, case)

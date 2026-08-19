@@ -20,6 +20,9 @@ import { AdminCaseDetailFab } from './AdminCaseDetailFab.jsx'
 import { CaseActivityPanel } from './CaseActivityPanel.jsx'
 import { CaseDocumentsPanel } from '../documents/CaseDocumentsPanel.jsx'
 import { IepBuilderPanel } from './IepBuilderPanel.jsx'
+import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
+import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
+import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
 import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
 import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
@@ -31,7 +34,8 @@ const TABS = [
   { id: 'logs', label: 'Session logs' },
   { id: 'reports', label: 'Reports' },
   { id: 'incidents', label: 'Incidents', perm: 'incident.read_sensitive' },
-  { id: 'iep', label: 'IEP builder', perm: 'iep.read' },
+  { id: 'iep', label: 'IEP', perm: 'iep.read' },
+  { id: 'observation', label: 'Observation' },
   { id: 'documents', label: 'Documents' },
   { id: 'cm-meetings', label: 'Meetings' },
   { id: 'billing', label: 'Billing', perms: ['case.update', 'case.billing.update'] },
@@ -181,8 +185,12 @@ export function AdminCaseDetailPage() {
       !isViewOnly &&
       (canReviewLogs(caseRow.product_module) || isAssignedCaseManager),
   )
+  const clinicalRevamp = isReportsRevampActive('admin')
   const visibleTabs = TABS.filter(
-    (t) => (!t.perm || can(t.perm)) && (!t.perms || t.perms.some((permission) => can(permission))),
+    (t) =>
+      (!t.perm || can(t.perm)) &&
+      (!t.perms || t.perms.some((permission) => can(permission))) &&
+      (t.id !== 'observation' || clinicalRevamp),
   )
   const visibleTabIds = visibleTabs.map((t) => t.id)
 
@@ -322,7 +330,27 @@ export function AdminCaseDetailPage() {
         />
       )}
 
-      {tab === 'iep' && can('iep.read') && <IepBuilderPanel caseId={caseRow?.id || caseId} />}
+      {tab === 'iep' && can('iep.read') && (
+        clinicalRevamp ? (
+          <IepReportRoute
+            caseId={Number(caseRow?.id || caseId)}
+            caseCode={caseRow?.case_code}
+            childName={caseRow?.child_name || caseRow?.child?.full_name}
+            variant="admin"
+          />
+        ) : (
+          <IepBuilderPanel caseId={caseRow?.id || caseId} />
+        )
+      )}
+
+      {tab === 'observation' && clinicalRevamp ? (
+        <ObservationReportRoute
+          caseId={Number(caseRow?.id || caseId)}
+          caseCode={caseRow?.case_code}
+          childName={caseRow?.child_name || caseRow?.child?.full_name}
+          variant="admin"
+        />
+      ) : null}
 
       {tab === 'documents' && (
         <CaseDocumentsPanel caseId={Number(caseRow?.id || caseId)} variant="admin" />

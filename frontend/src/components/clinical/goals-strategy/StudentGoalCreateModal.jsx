@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../../lib/apiClient.js'
 import { GOAL_MODAL_DOMAIN_CHIPS, GOAL_MODAL_TABS } from '../../../lib/clinicalUiContract.js'
-import { AI_ENABLED } from '../../../lib/reportsRevampFlags.js'
 
 const EMPTY_FORM = {
   label: '',
@@ -47,8 +46,6 @@ export function StudentGoalCreateModal({
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [previewStrategies, setPreviewStrategies] = useState([])
-  const [aiDrafts, setAiDrafts] = useState([])
-  const [aiLoading, setAiLoading] = useState(false)
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const wizardIep = reportType === 'iep' && !preSelectedGoal && !standaloneStrategy
@@ -400,39 +397,6 @@ export function StudentGoalCreateModal({
     }
   }
 
-  async function handleGenerateAi() {
-    if (!clinicalReportId) {
-      setMsg('Save the report draft first, then generate AI suggestions.')
-      return
-    }
-    setAiLoading(true)
-    setMsg('')
-    try {
-      const data = await apiFetch(`/api/v1/reports/${clinicalReportId}/clinical/generate-goal-strategy-drafts`, {
-        method: 'POST',
-      })
-      setAiDrafts(data.drafts || [])
-      if (!data.drafts?.length) setMsg('No drafts yet — add observation context or repository goals first.')
-    } catch (err) {
-      setMsg(err.message || 'Could not generate drafts')
-    } finally {
-      setAiLoading(false)
-    }
-  }
-
-  async function handleAddAiDraft(draft) {
-    setBusy(true)
-    try {
-      const result = await addGoalPayload(draft.goal, draft.strategies || [])
-      onCreated?.(result)
-      onClose?.()
-    } catch (err) {
-      setMsg(err.message || 'Could not add AI draft')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   function selectTemplateForCustom(item) {
     setForm({
       ...form,
@@ -534,7 +498,6 @@ export function StudentGoalCreateModal({
             <div className="sg-tabs" role="tablist">
               {GOAL_MODAL_TABS.map((t) => {
                 if (standaloneStrategy && !preSelectedGoal) return null
-                if (t.id === 'ai' && !AI_ENABLED && !clinicalReportId) return null
                 return (
                   <button
                     key={t.id}
@@ -708,30 +671,6 @@ export function StudentGoalCreateModal({
                           : 'Add goal & strategy'}
                 </button>
               </form>
-            ) : null}
-
-            {tab === 'ai' ? (
-              <>
-                <p className="sg-hint">Generate draft goals and linked strategies from observation and repository context.</p>
-                <button type="button" className="cr-btn cr-btn--forest mb-4" disabled={aiLoading || !clinicalReportId} onClick={handleGenerateAi}>
-                  {aiLoading ? 'Generating…' : 'Generate suggestions'}
-                </button>
-                <ul className="sg-template-list">
-                  {aiDrafts.map((draft) => (
-                    <li key={draft.goal.label} className="sg-template-item">
-                      <div>
-                        <p className="sg-template-item__title">{draft.goal.label}</p>
-                        <p className="sg-template-item__desc">{draft.goal.goal_statement}</p>
-                        <p className="sg-template-item__desc">{draft.strategies?.length || 0} linked strategies</p>
-                      </div>
-                      <button type="button" className="cr-btn cr-btn--forest text-xs" disabled={busy} onClick={() => handleAddAiDraft(draft)}>
-                        Add
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {msg ? <p className="sg-error">{msg}</p> : null}
-              </>
             ) : null}
               </>
             )}

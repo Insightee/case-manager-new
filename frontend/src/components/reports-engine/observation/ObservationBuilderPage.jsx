@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
 import { clinicalReportNavBase, clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
@@ -8,7 +8,6 @@ import { StudentGoalCreateModal } from '../../clinical/goals-strategy/StudentGoa
 import { ObservationEvidenceUpload } from './ObservationEvidenceUpload.jsx'
 import {
   StitchBuilderFooter,
-  StitchBuilderRail,
   StitchChildSnapshot,
   StitchChipPanel,
   StitchEnvironmentsSection,
@@ -38,17 +37,12 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
     loadWorkspace,
     patchSection,
     submitReport,
-    generateInsights,
-    applyInsights,
     reloadEvidence,
     addGoalCandidate,
     saveDraft,
     AUTO_SAVE_MS,
   } = useObservationReport(caseId)
 
-  const [aiAssistantOpen, setAiAssistantOpen] = useState(false)
-  const [draftSavedFlash, setDraftSavedFlash] = useState(false)
-  const [generatingInsights, setGeneratingInsights] = useState(false)
   const [goalModalOpen, setGoalModalOpen] = useState(false)
 
   const flushPendingEdits = useCallback(() => {
@@ -58,23 +52,6 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
       active.blur()
     }
   }, [])
-
-  const handleSaveDraft = useCallback(async () => {
-    const result = await saveDraft(flushPendingEdits)
-    if (result) {
-      setDraftSavedFlash(true)
-      window.setTimeout(() => setDraftSavedFlash(false), 3000)
-    }
-  }, [saveDraft, flushPendingEdits])
-
-  const handleGenerateInsights = useCallback(async () => {
-    setGeneratingInsights(true)
-    try {
-      await generateInsights()
-    } finally {
-      setGeneratingInsights(false)
-    }
-  }, [generateInsights])
 
   useEffect(() => {
     loadWorkspace()
@@ -98,24 +75,6 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
   const supportData = supportSec.structured_data || {}
   const envData = envSec.structured_data || { environments: [] }
   const suggestedTiles = insights?.suggested_tiles || {}
-
-  const smartAction = useMemo(() => {
-    const first = insights?.patterns?.[0]
-    if (!first) return null
-    return `"Session logs highlight ${first.label.toLowerCase()}. Consider documenting related supports in strategies or environments."`
-  }, [insights])
-
-  const sectionChecklist = useMemo(() => {
-    const catalog = workspace?.section_catalog || []
-    const byKey = Object.fromEntries((workspace?.sections || []).map((s) => [s.key, s]))
-    return catalog
-      .filter((m) => m.required)
-      .map((m) => ({
-        key: m.key,
-        label: m.label,
-        status: byKey[m.key]?.completion_status || 'not_started',
-      }))
-  }, [workspace])
 
   async function saveChips(sectionKey, data) {
     await patchSection(sectionKey, { structured_data: data })
@@ -145,24 +104,14 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
 
   return (
     <>
-      <StitchWorkspaceSubhead
-        caseCode={caseCode}
-        saving={saving}
-        aiAssistantOpen={aiAssistantOpen}
-        onToggleAiAssistant={() => setAiAssistantOpen((open) => !open)}
-        completionPct={workspace?.completion_pct ?? 0}
-      />
+      <StitchWorkspaceSubhead caseCode={caseCode} saving={saving} />
 
       {error ? <ClinicalReportNotice className="mb-4">{error}</ClinicalReportNotice> : null}
       {workspace?.reviewer_comment && workspace?.status === 'returned_for_changes' ? (
         <p className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm"><strong>Case manager note:</strong> {workspace.reviewer_comment}</p>
       ) : null}
 
-      <div
-        className={`ob-builder-layout flex gap-6 sm:gap-8 pb-24 sm:pb-8 ${
-          aiAssistantOpen ? 'ob-builder-layout--split flex-col lg:flex-row lg:items-start' : 'ob-builder-layout--expanded flex-col'
-        }`}
-      >
+      <div className="ob-builder-layout ob-builder-layout--expanded flex flex-col gap-6 sm:gap-8 pb-24 sm:pb-8">
         <div className="flex-1 space-y-8 min-w-0 w-full">
           <StitchChildSnapshot
             childName={childName}
@@ -306,26 +255,6 @@ export function ObservationBuilderPage({ caseId, caseCode, childName, variant = 
             })}
           </section>
         </div>
-
-        {aiAssistantOpen ? (
-          <StitchBuilderRail
-            completionPct={workspace?.completion_pct ?? 0}
-            updatedAt={workspace?.updated_at}
-            sectionChecklist={sectionChecklist}
-            insights={insights}
-            smartAction={smartAction}
-            readOnly={readOnly}
-            generatingInsights={generatingInsights || saving}
-            onGenerateInsights={handleGenerateInsights}
-            onApplyInsights={applyInsights}
-            applyingInsights={saving}
-            onSaveDraft={handleSaveDraft}
-            savingDraft={saving}
-            draftSavedFlash={draftSavedFlash}
-            onPreview={() => navigate(sectionPath('preview'))}
-            onClose={() => setAiAssistantOpen(false)}
-          />
-        ) : null}
       </div>
 
       <StitchBuilderFooter

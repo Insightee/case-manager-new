@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
 import { clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { IEP_DOMAIN_TABS } from '../../../lib/iepObservationAlign.js'
@@ -9,28 +9,35 @@ import { labelForMeasurement } from '../../../lib/clinicalMeasurementCriteria.js
 import { IepApprovalPanel } from './IepApprovalPanel.jsx'
 
 export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapist' }) {
-  const navigate = useNavigate()
   const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'iep', view, variant })
-  const [mode, setMode] = useState('clinical')
+  const [mode, setMode] = useState(variant === 'parent' ? 'parent' : 'clinical')
   const {
     workspace,
     preview,
+    summary,
     loading,
     loadPreview,
     loadWorkspace,
     approveReport,
     stakeholderApprove,
     stakeholderRequestReview,
+    sendForStakeholderApproval,
+    cmResendForApproval,
     error,
   } = useIepReport(caseId)
 
   useEffect(() => {
+    if (variant === 'parent') {
+      if (summary?.report_id && summary?.can_preview) loadPreview('parent', summary.report_id)
+      return
+    }
     loadWorkspace()
-  }, [loadWorkspace])
+  }, [variant, summary?.report_id, summary?.can_preview, loadPreview, loadWorkspace])
 
   useEffect(() => {
+    if (variant === 'parent') return
     if (workspace?.report_id) loadPreview(mode)
-  }, [workspace?.report_id, mode, loadPreview])
+  }, [variant, workspace?.report_id, mode, loadPreview])
 
   const data = preview || workspace
   const sections = data?.sections || []
@@ -38,7 +45,9 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
   const domains = sections.find((s) => s.key === 'priority_domains')?.structured_data || {}
   const talent = sections.find((s) => s.key === 'talent_development')?.structured_data || {}
   const plan = sections.find((s) => s.key === 'review_parent_plan')?.structured_data || {}
-  const isParent = mode === 'parent'
+  const isParent = variant === 'parent' || mode === 'parent'
+  const approval = workspace?.iep_approval || preview?.iep_approval
+  const reviewThread = workspace?.review_thread || preview?.review_thread || []
 
   function sectionNarrative(sec) {
     const text = sec?.narrative_text || ''
@@ -59,23 +68,33 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
       {error ? <p className="text-sm text-error mb-4">{error}</p> : null}
 
       <div className="flex flex-wrap gap-2 mb-6">
-        <button
-          type="button"
-          className={`min-h-[44px] px-4 rounded-xl font-semibold text-sm${mode === 'clinical' ? ' bg-lush-forest text-white' : ' border'}`}
-          onClick={() => setMode('clinical')}
-        >
-          Clinical
-        </button>
-        <button
-          type="button"
-          className={`min-h-[44px] px-4 rounded-xl font-semibold text-sm${mode === 'parent' ? ' bg-lush-forest text-white' : ' border'}`}
-          onClick={() => setMode('parent')}
-        >
-          Parent preview
-        </button>
-        <Link to={sectionPath('builder')} className="min-h-[44px] px-4 rounded-xl border font-semibold text-sm inline-flex items-center no-underline text-inherit">
-          Back to builder
-        </Link>
+        {variant !== 'parent' ? (
+          <>
+            <button
+              type="button"
+              className={`min-h-[44px] px-4 rounded-xl font-semibold text-sm${mode === 'clinical' ? ' bg-lush-forest text-white' : ' border'}`}
+              style={mode === 'clinical' ? { backgroundColor: '#0b1c16', color: '#fff' } : undefined}
+              onClick={() => setMode('clinical')}
+            >
+              Clinical
+            </button>
+            <button
+              type="button"
+              className={`min-h-[44px] px-4 rounded-xl font-semibold text-sm${mode === 'parent' ? ' bg-lush-forest text-white' : ' border'}`}
+              style={mode === 'parent' ? { backgroundColor: '#0b1c16', color: '#fff' } : undefined}
+              onClick={() => setMode('parent')}
+            >
+              Family preview
+            </button>
+            <Link to={sectionPath('builder')} className="min-h-[44px] px-4 rounded-xl border font-semibold text-sm inline-flex items-center no-underline text-inherit">
+              Back to builder
+            </Link>
+          </>
+        ) : (
+          <Link to={sectionPath('landing')} className="min-h-[44px] px-4 rounded-xl border font-semibold text-sm inline-flex items-center no-underline text-inherit">
+            Back to IEP
+          </Link>
+        )}
       </div>
 
       {loading ? <p className="text-sm">Loading preview…</p> : null}
@@ -182,22 +201,22 @@ export function IepPreviewPage({ caseId, caseCode, childName, variant = 'therapi
 
       <div className="max-w-3xl mx-auto mt-6">
         <IepApprovalPanel
-          approval={workspace?.iep_approval}
-          reviewThread={workspace?.review_thread}
+          approval={approval}
+          reviewThread={reviewThread}
           variant={variant === 'admin' ? 'admin' : isParent ? 'parent' : 'therapist'}
+          onSendForStakeholderApproval={sendForStakeholderApproval}
           onStakeholderApprove={stakeholderApprove}
-          onStakeholderRequestReview={async (role, comment) => {
-            await stakeholderRequestReview(role, comment)
-            setReviewComment('')
-          }}
+          onStakeholderRequestReview={stakeholderRequestReview}
+          onCmResend={cmResendForApproval}
         />
       </div>
 
-      {variant === 'admin' && workspace?.status === 'submitted_for_review' && workspace?.iep_approval?.ready_for_final_approval ? (
+      {variant === 'admin' && (workspace?.status || summary?.status) === 'submitted_for_review' && approval?.ready_for_final_approval ? (
         <div className="max-w-3xl mx-auto mt-6 flex gap-3">
           <button
             type="button"
-            className="min-h-[44px] px-6 rounded-xl bg-lush-forest text-white font-bold"
+            className="min-h-[44px] px-6 rounded-xl font-bold"
+            style={{ backgroundColor: '#0b1c16', color: '#fff' }}
             onClick={() => approveReport(false)}
           >
             Approve IEP

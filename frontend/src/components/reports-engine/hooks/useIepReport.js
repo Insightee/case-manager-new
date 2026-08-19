@@ -241,17 +241,23 @@ export function useIepReport(caseId) {
   }
 
   async function stakeholderApprove(role) {
-    const res = await apiFetch(`/api/v1/reports/${workspace.report_id}/iep/stakeholder-approve?role=${role}`, { method: 'POST' })
-    await loadWorkspace()
+    const id = workspace?.report_id || summary?.report_id
+    if (!id) return null
+    const res = await apiFetch(`/api/v1/reports/${id}/iep/stakeholder-approve?role=${role}`, { method: 'POST' })
+    await loadWorkspace().catch(() => loadPreview('parent', id))
+    await loadSummary()
     return res
   }
 
   async function stakeholderRequestReview(role, comment) {
-    const res = await apiFetch(`/api/v1/reports/${workspace.report_id}/iep/stakeholder-request-review?role=${role}`, {
+    const id = workspace?.report_id || summary?.report_id
+    if (!id) return null
+    const res = await apiFetch(`/api/v1/reports/${id}/iep/stakeholder-request-review?role=${role}`, {
       method: 'POST',
       body: JSON.stringify({ comment }),
     })
-    await loadWorkspace()
+    await loadWorkspace().catch(() => loadPreview('parent', id))
+    await loadSummary()
     return res
   }
 

@@ -15,6 +15,7 @@ const SECONDARY_TABS = [
   { id: 'incidents', label: 'Incidents' },
   { id: 'documents', label: 'Documents' },
   { id: 'iep', label: 'IEP' },
+  { id: 'observation', label: 'Observation' },
   { id: 'billing', label: 'Billing' },
   { id: 'scheduling', label: 'Assign & Schedule' },
   { id: 'cm-meetings', label: 'Meetings' },

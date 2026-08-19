@@ -17,6 +17,7 @@ from app.models.clinical_report import (
     SectionVisibility,
 )
 from app.models.user import User
+from app.core.permissions import RoleName
 from app.report_engine_constants import (
     IEP_REPORT_SECTIONS,
     LEGACY_CHECKLIST_KEY_MAP,
@@ -26,6 +27,22 @@ from app.report_engine_constants import (
     REPORT_TYPE_HOOKS,
 )
 from app.services import report_status_service
+
+PARENT_VISIBLE_STATUSES = frozenset(
+    {
+        ClinicalReportStatus.SUBMITTED_FOR_REVIEW.value,
+        ClinicalReportStatus.APPROVED.value,
+        ClinicalReportStatus.LOCKED.value,
+    }
+)
+
+
+def user_is_parent(user: User) -> bool:
+    return RoleName.PARENT.value in (user.role_names or [])
+
+
+def parent_may_view_report(report: ClinicalReport | None) -> bool:
+    return bool(report and report.status in PARENT_VISIBLE_STATUSES)
 
 
 def _section_visibility(meta: dict) -> str:
@@ -357,7 +374,7 @@ def iep_summary(db: Session, case: Case, user: User) -> dict:
             "report_id": None,
             "status": None,
             "status_label": "Not started",
-            "can_start_new": True,
+            "can_start_new": not user_is_parent(user),
             "can_edit": False,
             "can_submit": False,
             "can_preview": False,
@@ -391,8 +408,9 @@ def iep_summary(db: Session, case: Case, user: User) -> dict:
         ClinicalReportStatus.LOCKED.value: "Approved",
     }
     roles = {r.name for r in getattr(user, "roles", []) or []}
-    is_cm = bool(roles & {"ADMIN", "SUPER_ADMIN", "CASE_MANAGER"}) or report.case_manager_id == user.id
-    return {
+    is_cm = bool(roles & {"ADMIN", "SUPER_ADMIN", "CASE_MANAGER", "SUPERVISOR"}) or report.case_manager_id == user.id
+    is_parent = user_is_parent(user)
+    payload = {
         "has_report": True,
         "report_id": report.id,
         "status": report.status,
@@ -411,6 +429,21 @@ def iep_summary(db: Session, case: Case, user: User) -> dict:
         "submit_warnings": validation.get("warnings", []),
         "missing_required": validation.get("errors", []),
     }
+    if is_parent:
+        payload["can_start_new"] = False
+        payload["can_edit"] = False
+        payload["can_submit"] = False
+        payload["can_preview"] = parent_may_view_report(report)
+        payload["pending_changes_count"] = 0
+        payload["available_goal_candidates"] = 0
+        if not payload["can_preview"]:
+            payload["has_report"] = False
+            payload["report_id"] = None
+            payload["status"] = None
+            payload["status_label"] = "Not started"
+            payload["has_active_approved_iep"] = False
+            payload["completion_pct"] = 0
+    return payload
 
 
 def get_active_observation_report(db: Session, case_id: int) -> ClinicalReport | None:
@@ -439,7 +472,7 @@ def observation_summary(db: Session, case: Case, user: User) -> dict:
             "report_id": None,
             "status": None,
             "status_label": "Not started",
-            "can_start_new": True,
+            "can_start_new": not user_is_parent(user),
             "can_edit": False,
             "can_submit": False,
             "can_preview": False,
@@ -473,7 +506,9 @@ def observation_summary(db: Session, case: Case, user: User) -> dict:
         ClinicalReportStatus.APPROVED.value: "Approved",
         ClinicalReportStatus.LOCKED.value: "Approved",
     }
-    return {
+    roles = {r.name for r in getattr(user, "roles", []) or []}
+    is_cm = bool(roles & {"ADMIN", "SUPER_ADMIN", "CASE_MANAGER", "SUPERVISOR"}) or report.case_manager_id == user.id
+    payload = {
         "has_report": True,
         "report_id": report.id,
         "status": report.status,
@@ -482,7 +517,7 @@ def observation_summary(db: Session, case: Case, user: User) -> dict:
             ClinicalReportStatus.APPROVED.value,
             ClinicalReportStatus.LOCKED.value,
         ),
-        "can_edit": editable and report.assigned_therapist_id == user.id,
+        "can_edit": editable and (report.assigned_therapist_id == user.id or is_cm),
         "can_submit": ready and editable and report.assigned_therapist_id == user.id,
         "can_preview": True,
         "completion_pct": pct,
@@ -493,6 +528,23 @@ def observation_summary(db: Session, case: Case, user: User) -> dict:
         "is_overdue": bool(due and due < today and editable),
         "missing_required": missing_required_keys(sections),
     }
+    if user_is_parent(user):
+        payload["can_start_new"] = False
+        payload["can_edit"] = False
+        payload["can_submit"] = False
+        payload["can_preview"] = parent_may_view_report(report)
+        payload["reviewer_comment"] = None
+        if not payload["can_preview"]:
+            payload["has_report"] = False
+            payload["report_id"] = None
+            payload["status"] = None
+            payload["status_label"] = "Not started"
+            payload["completion_pct"] = 0
+            payload["submitted_at"] = None
+            payload["approved_at"] = None
+            payload["due_at"] = None
+            payload["is_overdue"] = False
+    return payload
 
 
 def serialize_parent_safe_iep(db: Session, report: ClinicalReport, case: Case) -> dict:
@@ -533,7 +585,10 @@ def serialize_parent_safe_iep(db: Session, report: ClinicalReport, case: Case) -
         "completion_pct": ws["completion_pct"],
         "submitted_at": ws["submitted_at"],
         "approved_at": ws["approved_at"],
-        "preview_note": "Parent-safe preview — internal notes and pending changes excluded.",
+        "iep_approval": ws.get("iep_approval"),
+        "review_thread": ws.get("review_thread") or [],
+        "can_edit": False,
+        "preview_note": "Family preview — internal notes and pending changes excluded.",
         "mode": "parent",
     }
 

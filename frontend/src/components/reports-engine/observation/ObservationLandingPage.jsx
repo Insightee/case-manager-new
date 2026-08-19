@@ -1,6 +1,6 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { formatDisplayDate } from '../../../lib/datetime.js'
-import { clinicalReportNavBase, clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
+import { clinicalReportSectionPath } from '../../../lib/clinicalReportPaths.js'
 import { useObservationReport } from '../hooks/useObservationReport.js'
 import { ClinicalReportEmptyState, ClinicalReportNotice } from '../shared/ClinicalReportNotice.jsx'
 import { StitchIcon, StitchWorkspaceSubhead } from './stitch/ObservationStitchBlocks.jsx'
@@ -18,7 +18,6 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const portal = searchParams.get('portal')
-  const caseNavBase = clinicalReportNavBase({ caseId, variant, portal })
   const sectionPath = (view) => clinicalReportSectionPath({ caseId, section: 'observation', view, variant, portal })
 
   const { summary, loading, error, saving, startReport, refresh } = useObservationReport(caseId)
@@ -39,6 +38,9 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
   const hasReport = summary?.has_report
   const statusLabel = STATUS_LABELS[summary?.status] || summary?.status_label || 'NOT STARTED'
   const pct = summary?.completion_pct ?? 0
+  const isParent = variant === 'parent'
+  const canBuild = !isParent && (!hasReport || summary.can_edit)
+  const canStartNewCycle = !isParent && summary?.can_start_new
 
   return (
     <>
@@ -60,7 +62,9 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
               <p className="text-sm text-on-surface-variant mt-1 m-0">
                 {hasReport
                   ? `Current observation cycle for ${childName || 'this client'}.`
-                  : 'No observation report started yet.'}
+                  : isParent
+                    ? 'No observation report has been shared yet.'
+                    : 'No observation report started yet.'}
               </p>
             </div>
           </div>
@@ -98,12 +102,14 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
           </div>
         ) : (
           <p className="text-sm text-on-surface-variant mb-6 m-0">
-            The builder walks you through strengths, environments, emerging goals, strategies, and stakeholder inputs — matching the approved clinical workspace layout.
+            {isParent
+              ? 'When the care team shares an observation report, the family view will appear here.'
+              : 'The builder walks you through strengths, environments, emerging goals, strategies, and stakeholder inputs — matching the approved clinical workspace layout.'}
           </p>
         )}
 
         <div className="flex flex-wrap gap-3">
-          {!hasReport || summary.can_edit ? (
+          {canBuild ? (
             <button
               type="button"
               className="cr-btn cr-btn--primary inline-flex items-center gap-2 font-bold shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
@@ -120,10 +126,10 @@ export function ObservationLandingPage({ caseId, caseCode, childName, variant = 
               className="inline-flex items-center justify-center px-6 py-3 rounded-xl border-2 border-lush-forest text-lush-forest font-bold hover:bg-lush-mint/10 transition-all min-h-[44px] no-underline"
               to={sectionPath('preview')}
             >
-              Preview report
+              {isParent ? 'View report' : 'Preview report'}
             </Link>
           ) : null}
-          {summary?.can_start_new ? (
+          {canStartNewCycle ? (
             <button
               type="button"
               className="inline-flex items-center justify-center px-6 py-3 rounded-xl border-2 border-outline-variant text-outline font-bold hover:border-lush-forest hover:text-lush-forest transition-all min-h-[44px]"

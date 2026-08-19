@@ -97,6 +97,37 @@ def test_parent_cannot_start_iep():
     assert r.status_code in (403, 404)
 
 
+def test_parent_cannot_open_draft_iep_workspace():
+    therapist = _login("therapist@demo.com")
+    parent = _login("parent@demo.com")
+    case_id = _case_id()
+    _start_iep({"Authorization": f"Bearer {therapist}"})
+    ph = {"Authorization": f"Bearer {parent}"}
+    summary = client.get(f"/api/v1/cases/{case_id}/reports/iep/summary", headers=ph)
+    assert summary.status_code == 200
+    assert summary.json()["can_preview"] is False
+    assert summary.json()["can_edit"] is False
+    assert summary.json()["has_report"] is False
+    r = client.get(f"/api/v1/cases/{case_id}/reports/iep", headers=ph)
+    assert r.status_code == 404
+
+
+def test_case_manager_can_load_iep_summary():
+    with SessionLocal() as db:
+        case = db.scalars(select(Case).where(Case.case_code == "IC-2026-041")).first()
+        assert case is not None
+        case_id = case.id
+        from app.models.user import User
+
+        cm = db.get(User, case.case_manager_user_id) if case.case_manager_user_id else None
+        email = cm.email if cm else "superadmin@demo.com"
+    token = _login(email)
+    headers = {"Authorization": f"Bearer {token}"}
+    r = client.get(f"/api/v1/cases/{case_id}/reports/iep/summary", headers=headers)
+    assert r.status_code == 200
+    assert "has_report" in r.json()
+
+
 def test_iep_generate_draft_manual_without_observation_warning():
     token = _login("therapist@demo.com")
     headers = {"Authorization": f"Bearer {token}"}

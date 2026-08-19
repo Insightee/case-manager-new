@@ -7,7 +7,8 @@ import { IepPreviewPage } from './IepPreviewPage.jsx'
 
 export function IepReportRoute({ caseId, caseCode, childName, variant = 'therapist' }) {
   const [searchParams] = useSearchParams()
-  const view = searchParams.get('view') || 'landing'
+  let view = searchParams.get('view') || 'landing'
+  if (variant === 'parent' && view === 'builder') view = 'preview'
 
   let page = null
   if (view === 'builder') {

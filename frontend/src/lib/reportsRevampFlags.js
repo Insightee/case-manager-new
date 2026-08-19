@@ -23,9 +23,9 @@ export const REPORTS_REVAMP_ENABLED = revampOptIn
 
 export const REPORTS_REVAMP_THERAPIST = revampOptIn
 
-export const REPORTS_REVAMP_ADMIN_CASE = false
+export const REPORTS_REVAMP_ADMIN_CASE = revampOptIn
 
-export const REPORTS_REVAMP_PARENT = false
+export const REPORTS_REVAMP_PARENT = revampOptIn
 
 export const STRUCTURED_SESSION_EVIDENCE = revampOptIn
 

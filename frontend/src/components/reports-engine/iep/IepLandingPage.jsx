@@ -47,6 +47,11 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
 
   const hasReport = summary?.has_report
   const statusLabel = STATUS_LABELS[summary?.status] || summary?.status_label || 'NOT STARTED'
+  const isParent = variant === 'parent'
+  const canStart = !isParent && !hasReport
+  const canImport = !isParent && summary?.observation_approved
+  const canContinue = !isParent && hasReport && summary?.can_edit
+  const canPreview = hasReport && (isParent ? summary?.can_preview : summary?.has_active_approved_iep || summary?.can_preview)
 
   return (
     <>
@@ -61,12 +66,20 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
             </div>
             <div>
               <h2 className="text-2xl font-bold text-lush-forest m-0">
-                {hasReport ? 'IEP in progress' : 'No IEP Report active for this case'}
+                {hasReport
+                  ? isParent
+                    ? 'IEP support plan'
+                    : 'IEP in progress'
+                  : isParent
+                    ? 'No IEP has been shared yet'
+                    : 'No IEP Report active for this case'}
               </h2>
               <p className="text-sm text-on-surface-variant mt-1 m-0">
                 {hasReport
                   ? `${childName || 'Client'} — ${summary.status_label}`
-                  : `Ready to establish a structured plan for ${childName || 'this client'}?`}
+                  : isParent
+                    ? `When the care team shares a plan for ${childName || 'this client'}, it will appear here.`
+                    : `Ready to establish a structured plan for ${childName || 'this client'}?`}
               </p>
             </div>
           </div>
@@ -79,7 +92,9 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
 
         {!hasReport ? (
           <p className="text-sm text-on-surface-variant mb-6 m-0">
-            Start from an approved observation report to pre-fill strengths, domains, and goal candidates — or build manually.
+            {isParent
+              ? 'The family view opens after the team shares this plan.'
+              : 'Start from an approved observation report to pre-fill strengths, domains, and goal candidates — or build manually.'}
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
@@ -100,7 +115,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
         )}
 
         <div className="flex flex-wrap gap-3">
-          {!hasReport ? (
+          {canStart ? (
             <button
               type="button"
               className="cr-btn cr-btn--primary inline-flex items-center justify-center font-bold text-sm"
@@ -111,7 +126,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
               Start Building IEP
             </button>
           ) : null}
-          {summary?.observation_approved ? (
+          {canImport ? (
             <button
               type="button"
               className="inline-flex items-center justify-center min-h-[44px] px-6 py-2 rounded-xl border border-outline-variant/50 bg-surface-container font-semibold text-sm"
@@ -121,7 +136,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
               Import from Observation
             </button>
           ) : null}
-          {hasReport && summary?.can_edit ? (
+          {canContinue ? (
             <Link
               to={sectionPath('builder')}
               className="inline-flex items-center justify-center min-h-[44px] px-6 py-2 rounded-xl border border-outline-variant/50 bg-surface-container font-semibold text-sm no-underline text-inherit"
@@ -129,12 +144,12 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
               Continue Draft
             </Link>
           ) : null}
-          {hasReport && summary?.has_active_approved_iep ? (
+          {canPreview ? (
             <Link
               to={sectionPath('preview')}
               className="inline-flex items-center justify-center min-h-[44px] px-6 py-2 rounded-xl border border-outline-variant/50 font-semibold text-sm no-underline text-inherit"
             >
-              Preview Approved IEP
+              {isParent ? 'View support plan' : 'Preview IEP'}
             </Link>
           ) : null}
           <button type="button" className="text-sm text-on-surface-variant underline" onClick={() => refresh('summary')}>

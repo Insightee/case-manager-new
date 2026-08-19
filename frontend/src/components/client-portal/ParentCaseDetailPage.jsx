@@ -9,7 +9,9 @@ import { buildSessionDisputeState, SessionCard } from './SessionCard.jsx'
 import '../cases/my-cases.css'
 import '../documents/case-documents.css'
 import '../reports/report-editor.css'
-import './parent-session-updates.css'
+import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
+import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
+import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
 
 const TABS = [
   { id: 'overview', label: 'Profile', shortLabel: 'Profile' },
@@ -36,6 +38,8 @@ export function ParentCaseDetailPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') || 'overview'
+  const clinicalRevamp = isReportsRevampActive('parent')
+  const numericCaseId = Number(caseId)
   const [caseRow, setCaseRow] = useState(null)
   const [summary, setSummary] = useState(null)
   const [logs, setLogs] = useState([])
@@ -303,6 +307,14 @@ export function ParentCaseDetailPage() {
       )}
 
       {tab === 'observation' && (
+        clinicalRevamp && Number.isFinite(numericCaseId) ? (
+          <ObservationReportRoute
+            caseId={numericCaseId}
+            caseCode={caseRow.caseId || caseRow.case_code}
+            childName={caseRow.childName}
+            variant="parent"
+          />
+        ) : (
         <section className="card" style={{ padding: 16 }}>
           {observations.length === 0 ? (
             <p style={{ color: '#9ca3af' }}>No observation reports shared yet.</p>
@@ -319,9 +331,18 @@ export function ParentCaseDetailPage() {
             </ul>
           )}
         </section>
+        )
       )}
 
       {tab === 'iep' && (
+        clinicalRevamp && Number.isFinite(numericCaseId) ? (
+          <IepReportRoute
+            caseId={numericCaseId}
+            caseCode={caseRow.caseId || caseRow.case_code}
+            childName={caseRow.childName}
+            variant="parent"
+          />
+        ) : (
         <section className="card" style={{ padding: 16 }}>
           {hub.iep.length === 0 ? (
             <p style={{ color: '#9ca3af' }}>No IEP documents shared yet.</p>
@@ -340,6 +361,7 @@ export function ParentCaseDetailPage() {
             </ul>
           )}
         </section>
+        )
       )}
 
       {tab === 'goals' && (

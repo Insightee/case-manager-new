@@ -14,9 +14,13 @@ export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 
   const isReviewer = variant === 'admin'
 
   useEffect(() => {
+    if (variant === 'parent') {
+      if (summary?.can_preview && summary?.report_id) loadPreview(summary.report_id)
+      return
+    }
     loadPreview()
     loadWorkspace()
-  }, [loadPreview, loadWorkspace])
+  }, [variant, summary?.can_preview, summary?.report_id, loadPreview, loadWorkspace])
 
   async function approveReport() {
     if (!workspace?.report_id) return
@@ -69,7 +73,7 @@ export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 
 
       {error ? <p className="mb-4 px-4 py-3 rounded-lg bg-error-container text-on-error-container text-sm" role="alert">{error}</p> : null}
       <p className="text-sm text-on-surface-variant mb-6 m-0">
-        {data.preview_note || 'Parent-safe preview — internal notes excluded.'}
+        {data.preview_note || (variant === 'parent' ? 'Family view of this observation report.' : 'Family-safe preview — internal notes excluded.')}
       </p>
 
       <article className="max-w-5xl mx-auto w-full bg-white shadow-2xl p-8 md:p-16 border border-outline-variant flex flex-col gap-12">
@@ -189,10 +193,11 @@ export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 
       </article>
 
       <div className="flex flex-wrap gap-3 mt-8">
-        {isReviewer && workspace?.status === 'submitted' ? (
+        {isReviewer && (workspace?.status === 'submitted_for_review' || workspace?.status === 'submitted') ? (
           <button
             type="button"
-            className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-lush-forest text-white font-bold min-h-[44px] disabled:opacity-50"
+            className="inline-flex items-center justify-center px-6 py-3 rounded-xl font-bold min-h-[44px] disabled:opacity-50"
+            style={{ backgroundColor: '#0b1c16', color: '#fff' }}
             disabled={reviewBusy}
             onClick={approveReport}
           >
@@ -200,9 +205,11 @@ export function ObservationPreviewPage({ caseId, caseCode, childName, variant = 
           </button>
         ) : null}
         {reviewMsg ? <p className="text-sm text-on-surface-variant m-0 self-center">{reviewMsg}</p> : null}
-        <Link className="inline-flex items-center justify-center px-6 py-3 rounded-xl border-2 border-lush-forest text-lush-forest font-bold hover:bg-lush-mint/10 transition-all min-h-[44px] no-underline" to={sectionPath('builder')}>
-          {isReviewer ? 'Open full report workspace' : 'Back to builder'}
-        </Link>
+        {variant !== 'parent' ? (
+          <Link className="inline-flex items-center justify-center px-6 py-3 rounded-xl border-2 border-lush-forest text-lush-forest font-bold hover:bg-lush-mint/10 transition-all min-h-[44px] no-underline" to={sectionPath('builder')}>
+            {isReviewer ? 'Open full report workspace' : 'Back to builder'}
+          </Link>
+        ) : null}
         <Link className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-outline-variant text-on-surface-variant font-semibold min-h-[44px] no-underline hover:border-lush-forest hover:text-lush-forest" to={sectionPath('landing')}>
           Back to status
         </Link>
