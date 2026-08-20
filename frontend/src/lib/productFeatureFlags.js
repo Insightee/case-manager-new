@@ -29,7 +29,8 @@ export function isRolloutEnvironment() {
 
 /**
  * Canonical production UI (insighte.org or Vercel Production build).
- * Reports + billing stay off here even if VITE_ENABLE_* is set on Production env.
+ * Billing and finance stay off here even if VITE_ENABLE_* is set on Production env.
+ * Reports are live; set VITE_ENABLE_REPORTS=false to hide them.
  */
 export function isCanonicalProductionFrontend() {
   if (import.meta.env.DEV) return false
@@ -59,14 +60,14 @@ function readEnvFlag(key, { rolloutDefault = false } = {}) {
   return rolloutDefault && isRolloutEnvironment()
 }
 
-/** Therapist/parent reports — off on canonical production. */
+/** Billing / finance flags — off on canonical production. */
 function readClientModuleFlag(key, { rolloutDefault = false } = {}) {
   if (isCanonicalProductionFrontend()) return false
   return readEnvFlag(key, { rolloutDefault })
 }
 
-/** Monthly reports hub, parent reports, admin report review UI — on in local/staging unless opted out. */
-export const ENABLE_REPORTS = readClientModuleFlag('VITE_ENABLE_REPORTS', { rolloutDefault: true })
+/** Monthly reports hub, parent reports, admin report review UI — live unless opted out. */
+export const ENABLE_REPORTS = import.meta.env.VITE_ENABLE_REPORTS !== 'false'
 
 /**
  * Client billing visibility (parent Payments + therapist Invoices).

@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Reports are live on production (therapist and parent hubs no longer show Coming Soon). Billing remains gated.
 - Alembic `tr1a2n3s4t5` Postgres deploy: use `postgresql.ENUM(create_type=False)` so `case_therapist_transitions` does not re-create `casetherapisttransitionstatus` after the DO-block.
 
 ### Added
