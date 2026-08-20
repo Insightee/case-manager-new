@@ -85,6 +85,11 @@ class DailyLogRead(BaseModel):
     late_addition: bool = False
     late_reason: Optional[str] = None
     review_note: Optional[str] = None
+    mentor_reviewed: bool = False
+    mentor_reviewed_at: Optional[datetime] = None
+    mentor_reviewed_by_user_id: Optional[int] = None
+    mentor_reviewed_by_name: Optional[str] = None
+    can_mark_mentor_reviewed: bool = False
     resubmitted_at: Optional[datetime] = None
     can_edit: bool = False
     can_resubmit: bool = False

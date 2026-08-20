@@ -223,7 +223,7 @@ function rowCreatedDay(row) {
   return row.created_at.slice(0, 10)
 }
 
-export function filterPipelineRows(rows, filters = {}) {
+export function filterPipelineRows(rows, filters = {}, { viewerUserId } = {}) {
   const f = defaultPipelineFilters(filters)
   let list = rows
 
@@ -236,7 +236,15 @@ export function filterPipelineRows(rows, filters = {}) {
   if (f.caseManagerId === 'unassigned') {
     list = list.filter((r) => !r.case_manager_user_id)
   } else if (f.caseManagerId !== 'all') {
-    list = list.filter((r) => String(r.case_manager_user_id) === f.caseManagerId)
+    // Mentored cases are tagged is_mentor_case for the current viewer; include them when
+    // filtering to that viewer's own case-manager id.
+    list = list.filter(
+      (r) =>
+        String(r.case_manager_user_id) === f.caseManagerId ||
+        (Boolean(r.is_mentor_case) &&
+          viewerUserId != null &&
+          String(viewerUserId) === f.caseManagerId),
+    )
   }
   if (f.therapistId === 'unassigned') {
     list = list.filter((r) => !r.therapist_user_id)
@@ -328,8 +336,8 @@ export function countActivePipelineFilters(filters = {}) {
 }
 
 /** Apply every active filter except the queue tab (for tab badge counts). */
-export function filterPipelineRowsForQueueCounts(rows, filters = {}) {
-  return filterPipelineRows(rows, { ...defaultPipelineFilters(filters), queue: 'all' })
+export function filterPipelineRowsForQueueCounts(rows, filters = {}, opts = {}) {
+  return filterPipelineRows(rows, { ...defaultPipelineFilters(filters), queue: 'all' }, opts)
 }
 
 export function pipelineQueueCounts(rows) {

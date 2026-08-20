@@ -150,7 +150,7 @@ def may_read_support_ticket(db: Session, user: User, ticket) -> bool:
     if is_team_scoped_support_user(user):
         if ticket.case_id:
             case = case_service.get_case(db, ticket.case_id)
-            return bool(case and team_case_in_scope(user, case))
+            return bool(case and team_case_in_scope(user, case, db))
         return False
     return False
 
@@ -176,7 +176,7 @@ def can_read_incident(db: Session, user: User, incident) -> bool:
     if is_team_scoped_support_user(user):
         if incident.case_id:
             case = case_service.get_case(db, incident.case_id)
-            return bool(case and team_case_in_scope(user, case))
+            return bool(case and team_case_in_scope(user, case, db))
         return False
     return False
 

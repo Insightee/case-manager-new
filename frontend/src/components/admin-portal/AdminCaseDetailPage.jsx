@@ -173,6 +173,7 @@ export function AdminCaseDetailPage() {
   const canEditCase = Boolean(
     caseRow &&
       !caseRow.in_transition &&
+      !caseRow.access_as_mentor &&
       can('case.update') &&
       !isViewOnly &&
       !financeDesk &&
@@ -181,6 +182,7 @@ export function AdminCaseDetailPage() {
   const canEditBilling = Boolean(
     caseRow &&
       !caseRow.in_transition &&
+      !caseRow.access_as_mentor &&
       !isViewOnly &&
       !financeDesk &&
       (can('case.billing.update') || canEditCase),
@@ -188,6 +190,7 @@ export function AdminCaseDetailPage() {
   const canManageStatus = Boolean(
     caseRow &&
       !caseRow.in_transition &&
+      !caseRow.access_as_mentor &&
       !isViewOnly &&
       !financeDesk &&
       (can('admin.override') ||
@@ -199,16 +202,22 @@ export function AdminCaseDetailPage() {
       (user?.roles || []).some((r) => ['SUPER_ADMIN', 'MODULE_ADMIN', 'ADMIN', 'HR'].includes(r)),
   )
   const canAssignCase = Boolean(
-    caseRow && can('case.assign') && !financeDesk && canWriteProduct(caseRow.product_module),
+    caseRow &&
+      !caseRow.access_as_mentor &&
+      can('case.assign') &&
+      !financeDesk &&
+      canWriteProduct(caseRow.product_module),
   )
   const isAssignedCaseManager = Boolean(
     caseRow && user?.id && caseRow.case_manager_user_id === user.id,
   )
+  const accessAsMentor = Boolean(caseRow?.access_as_mentor)
   const canReviewCaseLogs = Boolean(
     caseRow &&
       can('daily_log.review') &&
       !isViewOnly &&
       !financeDesk &&
+      !accessAsMentor &&
       (canReviewLogs(caseRow.product_module) || isAssignedCaseManager),
   )
 
@@ -259,9 +268,20 @@ export function AdminCaseDetailPage() {
           {caseRow.service_type} · <span className="admin-chip">{caseRow.product_module}</span>{' '}
           {caseRow.day_type ? <CaseDayTypeBadge dayType={caseRow.day_type} /> : null}
           <StatusBadge status={caseRow.status} />
+          {caseRow.access_as_mentor ? (
+            <span className="admin-badge admin-badge--info" style={{ marginLeft: 8 }}>
+              Mentor view
+            </span>
+          ) : null}
         </p>
       </header>
 
+      {caseRow.access_as_mentor ? (
+        <p className="admin-alert admin-alert--info" role="status">
+          You are viewing this case as a mentor. You can open cases, logs, and reports, and mark logs as
+          reviewed — other changes stay with the assigned case manager.
+        </p>
+      ) : null}
       <AdminCaseDetailQuickStats
         caseId={caseId}
         caseRow={caseRow}

@@ -116,14 +116,18 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
 
   const allRows = useMemo(() => flattenPipelineBoard(board), [board])
   const filterOptions = useMemo(() => derivePipelineFilterOptions(allRows), [allRows])
-  const scopedRows = useMemo(() => filterPipelineRowsForQueueCounts(allRows, filters), [allRows, filters])
+  const filterOpts = useMemo(() => ({ viewerUserId: user?.id }), [user?.id])
+  const scopedRows = useMemo(
+    () => filterPipelineRowsForQueueCounts(allRows, filters, filterOpts),
+    [allRows, filters, filterOpts],
+  )
   const counts = useMemo(() => pipelineQueueCounts(scopedRows), [scopedRows])
   const activeFilterCount = useMemo(() => countActivePipelineFilters(filters), [filters])
 
   const rows = useMemo(() => {
-    const filtered = filterPipelineRows(allRows, filters)
+    const filtered = filterPipelineRows(allRows, filters, filterOpts)
     return sortPipelineRows(filtered, sort)
-  }, [allRows, filters, sort])
+  }, [allRows, filters, filterOpts, sort])
 
   const paginatedRows = useMemo(() => paginateList(rows, casePage), [rows, casePage])
 

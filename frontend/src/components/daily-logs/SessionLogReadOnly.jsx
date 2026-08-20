@@ -12,6 +12,7 @@ import {
 } from '../../lib/sessionTimes.js'
 import { logCommentFieldStyle, logCommentSendButtonStyle } from '../../lib/logCommentComposerStyles.js'
 import { DownloadApprovedLogButton } from '../shared/DownloadApprovedLogButton.jsx'
+import { MentorReviewedBadge } from '../shared/MentorReviewedBadge.jsx'
 import './session-log-detail.css'
 
 export const SESSION_LOG_READONLY_FIELDS = [
@@ -283,6 +284,7 @@ export function SessionLogReadOnly({
               attendanceStatus={log?.attendance_status}
             />
             <TransitionLogBadge log={log} />
+            <MentorReviewedBadge log={log} />
           </div>
           <div className={isAdmin ? 'admin-session-log-detail__head-actions' : 'ic-session-log-readonly__head-actions'}>
             <DownloadApprovedLogButton log={log} variant={isAdmin ? 'admin' : 'therapist'} />

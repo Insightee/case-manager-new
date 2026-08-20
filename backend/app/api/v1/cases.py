@@ -52,8 +52,8 @@ def _apply_case_billing(db: Session, case: Case, billing_data: dict | None, user
         raise HTTPException(status_code=400, detail=str(e))
 
 
-def _case_read(db: Session, case: Case, billing_approval=None) -> CaseRead:
-    result = case_service.case_to_read(case, db)
+def _case_read(db: Session, case: Case, billing_approval=None, *, viewer=None) -> CaseRead:
+    result = case_service.case_to_read(case, db, viewer=viewer)
     return CaseRead(**billing_approval_service.stamp_read(result, billing_approval))
 
 
@@ -182,7 +182,7 @@ def create_case(
         )
     db.commit()
     db.refresh(case)
-    return _case_read(db, case, billing_approval)
+    return _case_read(db, case, billing_approval, viewer=user)
 
 
 @router.get("/{case_id}", response_model=CaseRead)
@@ -192,7 +192,7 @@ def get_case(case_id: int, user: User = Depends(get_current_user), db: Session =
         raise HTTPException(status_code=404, detail="Case not found")
     if not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
-    return CaseRead(**case_service.case_to_read(case, db))
+    return CaseRead(**case_service.case_to_read(case, db, viewer=user))
 
 
 @router.patch("/{case_id}", response_model=CaseRead)
@@ -268,7 +268,7 @@ def update_case(
         )
     db.commit()
     db.refresh(case)
-    return _case_read(db, case, billing_approval)
+    return _case_read(db, case, billing_approval, viewer=user)
 
 
 @router.patch("/{case_id}/billing", response_model=CaseRead)
@@ -316,7 +316,7 @@ def update_case_billing(
     )
     db.commit()
     db.refresh(case)
-    return _case_read(db, case, billing_approval)
+    return _case_read(db, case, billing_approval, viewer=user)
 
 
 @router.patch("/{case_id}/day-type", response_model=CaseRead)

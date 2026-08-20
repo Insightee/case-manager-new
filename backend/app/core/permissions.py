@@ -265,6 +265,10 @@ def case_scope_check(db: Session, user: User, case: Case) -> bool:
     if user_has_permission(user, "case.read.team"):
         if case.case_manager_user_id == user.id:
             return True
+        from app.services.mentor_scope_service import is_mentor_on_case
+
+        if is_mentor_on_case(db, user, case):
+            return True
     if not case_product_module_allowed(user, case.product_module):
         return False
     if user_has_permission(user, "case.read.scoped"):

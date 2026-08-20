@@ -167,6 +167,9 @@ export function AdminTherapistProfilesPage() {
   const { items: staffDirectory } = useStaffDirectory({
     roles: 'CASE_MANAGER,MODULE_ADMIN,SUPERVISOR,SUPER_ADMIN,PROGRAMME_ADMIN',
   })
+  const { items: mentorDirectory } = useStaffDirectory({
+    roles: 'CASE_MANAGER',
+  })
   const [categories, setCategories] = useState([])
   const [summary, setSummary] = useState(null)
   const [statusFilter, setStatusFilter] = useState(urlStatus)
@@ -471,7 +474,7 @@ export function AdminTherapistProfilesPage() {
               label="Mentor (optional)"
               value={form.mentor_user_id}
               onChange={(e) => setForm((f) => ({ ...f, mentor_user_id: e.target.value }))}
-              staff={staffDirectory}
+              staff={mentorDirectory}
               allowEmpty
               emptyLabel="No mentor"
             />
@@ -741,7 +744,7 @@ export function AdminTherapistProfilesPage() {
                       label="Mentor"
                       value={editSupervisor.mentorId}
                       onChange={(e) => setEditSupervisor((s) => ({ ...s, mentorId: e.target.value }))}
-                      staff={staffDirectory}
+                      staff={mentorDirectory}
                       allowEmpty
                       emptyLabel="No mentor"
                     />

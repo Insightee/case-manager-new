@@ -196,6 +196,7 @@ def list_daily_logs(
         ]
         log_service.attach_comment_counts(db, log_dicts + virtual_dicts_for_counts, parent_visible_only=False)
         log_service.attach_structured_evidence(db, log_dicts)
+        log_service.attach_mentor_review_meta(db, log_dicts, viewer=user)
         res = [DailyLogRead(**d) for d in log_dicts]
         combined = res + [DailyLogRead(**v) for v in virtual_dicts_for_counts]
     combined.sort(key=lambda x: x.scheduled_date or datetime.min.date(), reverse=True)
@@ -279,6 +280,7 @@ def get_daily_log(
     read = _log_to_read_for_db(db, log)
     log_service.attach_comment_counts(db, [read], parent_visible_only=False)
     log_service.attach_structured_evidence(db, [read])
+    log_service.attach_mentor_review_meta(db, [read], viewer=user)
     return DailyLogRead(**read)
 
 
@@ -502,6 +504,47 @@ def reject_log(
         pass
     db.commit()
     return {"status": "rejected"}
+
+
+@router.post("/{log_id}/mentor-review", response_model=DailyLogRead)
+def mentor_review_log(
+    log_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """One-way mentor mark-as-reviewed. Does not approve or change approval_status."""
+    log = log_service.get_log(db, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+    _log_case_scope(db, user, log)
+    if log.mentor_reviewed_at:
+        raise HTTPException(status_code=400, detail="This log is already marked as reviewed by a mentor.")
+    therapist_user_id = log.session.therapist_user_id if log.session else None
+    from app.services.mentor_scope_service import is_mentor_of_therapist
+
+    if not is_mentor_of_therapist(db, user.id, therapist_user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the assigned mentor for this therapist can mark the log as reviewed.",
+        )
+    log.mentor_reviewed_at = datetime.now(timezone.utc)
+    log.mentor_reviewed_by_user_id = user.id
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="mentor_review",
+        entity_type="daily_log",
+        entity_id=log.id,
+        **meta,
+    )
+    db.commit()
+    read = _log_to_read_for_db(db, log)
+    log_service.attach_comment_counts(db, [read], parent_visible_only=False)
+    log_service.attach_structured_evidence(db, [read])
+    log_service.attach_mentor_review_meta(db, [read], viewer=user)
+    return DailyLogRead(**read)
 
 
 @router.get("/{log_id}/comments", response_model=list[LogCommentRead])

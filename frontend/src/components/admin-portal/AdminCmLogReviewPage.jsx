@@ -16,6 +16,8 @@ import {
   RejectWithComment,
   StatusBadge,
 } from './ui/index.js'
+import { MentorMarkReviewedButton } from '../shared/MentorMarkReviewedButton.jsx'
+import { MentorReviewedBadge } from '../shared/MentorReviewedBadge.jsx'
 import './admin-cm-log-review.css'
 
 function fmtDate(s) {
@@ -150,7 +152,7 @@ export function AdminCmLogReviewPage() {
   }
 
   async function handleReview(action, comment = null) {
-    if (!activeLog || !canReview) return
+    if (!activeLog || !canReview || selectedCase?.can_approve === false) return
     setActingLogId(activeLog.id)
     try {
       const opts = { method: 'POST' }
@@ -184,8 +186,24 @@ export function AdminCmLogReviewPage() {
     }
   }
 
+  async function handleMentorReview() {
+    if (!activeLog?.can_mark_mentor_reviewed) return
+    setActingLogId(activeLog.id)
+    try {
+      await apiFetch(`/api/v1/daily-logs/${activeLog.id}/mentor-review`, { method: 'POST' })
+      const data = await apiFetch('/api/v1/admin/cm/logs/review-queue')
+      setQueue(data)
+    } catch (err) {
+      setError(err.message || 'Could not mark log as reviewed')
+    } finally {
+      setActingLogId(null)
+    }
+  }
+
   const activeSession = activeLog?.session || null
   const hasTimeEdit = activeSession && activeLog ? sessionHasTimeEdit(activeSession, activeLog) : false
+  const caseCanApprove = Boolean(selectedCase?.can_approve !== false && canReview)
+  const caseIsMentorView = Boolean(selectedCase?.access_as_mentor)
 
   return (
     <div className="admin-page admin-cm-log-review">
@@ -319,6 +337,7 @@ export function AdminCmLogReviewPage() {
                     <div className="admin-cm-log-review__focus-badges">
                       <StatusBadge status={activeLog.approval_status} />
                       <TransitionLogBadge log={activeLog} />
+                      <MentorReviewedBadge log={activeLog} />
                       {hasTimeEdit ? (
                         <span className="admin-badge admin-badge--warning">Times edited</span>
                       ) : null}
@@ -331,6 +350,12 @@ export function AdminCmLogReviewPage() {
                     </p>
                   ) : null}
 
+                  {caseIsMentorView ? (
+                    <p className="admin-cm-log-review__notice" role="status">
+                      You are viewing this as a mentor — you can mark logs as reviewed, but cannot approve or reject.
+                    </p>
+                  ) : null}
+
                   <SessionLogReadOnly
                     log={activeLog}
                     session={activeSession}
@@ -338,7 +363,17 @@ export function AdminCmLogReviewPage() {
                     hideHeader
                   />
 
-                  {canReview ? (
+                  {activeLog.can_mark_mentor_reviewed ? (
+                    <div className="admin-cm-log-review__actions">
+                      <MentorMarkReviewedButton
+                        log={activeLog}
+                        disabled={actingLogId === activeLog.id}
+                        onMarked={() => handleMentorReview()}
+                      />
+                    </div>
+                  ) : null}
+
+                  {caseCanApprove ? (
                     <div className="admin-cm-log-review__actions">
                       <RejectWithComment
                         rejecting={rejecting}
@@ -363,9 +398,9 @@ export function AdminCmLogReviewPage() {
                         placeholder="Why is this log rejected? (required)"
                       />
                     </div>
-                  ) : (
+                  ) : !activeLog.can_mark_mentor_reviewed ? (
                     <p className="admin-muted">View-only — you cannot approve or reject logs.</p>
-                  )}
+                  ) : null}
                 </article>
 
                 {logsBelow.length > 0 ? (

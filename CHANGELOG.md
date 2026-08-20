@@ -14,6 +14,7 @@
 - Alembic `tr1a2n3s4t5` Postgres deploy: use `postgresql.ENUM(create_type=False)` so `case_therapist_transitions` does not re-create `casetherapisttransitionstatus` after the DO-block.
 
 ### Added
+- CM mentor oversight: mentors must be Case Managers; assigned per therapist; mentored therapists’ cases appear on the mentor’s Cases board (read-only except Mark as reviewed on logs). Tag “Reviewed by mentor” visible to CM and therapist. Alembic `m1n2o3p4q5r6`.
 - Case Zoho ID: optional `cases.zoho_id` stored at allotment or later, bulk CSV upload with preview on the Cases board, and a Zoho id column on Export records. Alembic `z1o2h3o4i5d6`. Stored only — not used for Zoho Pay yet.
 - Finance desk: view-only **Cases** (overview, activity, session dates, billing) and **Therapist leave** (approved leave and approved child absence) for payout cross-check, without clinical write access.
 - Case-centric filtered session log Excel export on admin case logs, therapist case history, and parent session updates (when a child is selected); default summary columns with optional full log content, excluding internal notes for parents.

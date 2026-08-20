@@ -532,6 +532,11 @@ export function DailyLogsPage() {
                 attendanceStatus={l.attendance_status}
                 isAbsenceRecord={isAbsenceRecord}
               />
+              {!isVirtual && (l.mentor_reviewed || l.mentor_reviewed_at) ? (
+                <span className="ic-badge ic-badge--neutral" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+                  Reviewed by mentor
+                </span>
+              ) : null}
               {formatLogCommentCount(l.comment_count) ? (
                 <LogCommentCountPill count={l.comment_count} className="log-comment-count-pill--inline" />
               ) : null}

@@ -168,7 +168,9 @@ def apply_profile_fields(profile: TherapistProfile, data: dict, db: Session | No
             sync_case_managers_for_therapist(db, profile.user_id, new_cm)
     if "mentor_user_id" in data:
         if db is not None:
-            _validate_staff_user_id(db, data["mentor_user_id"], field_label="mentor")
+            from app.services.mentor_scope_service import validate_mentor_is_case_manager
+
+            validate_mentor_is_case_manager(db, data["mentor_user_id"])
         profile.mentor_user_id = data["mentor_user_id"]
     if "employment_start_date" in data:
         profile.employment_start_date = data["employment_start_date"]

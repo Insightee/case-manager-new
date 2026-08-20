@@ -515,6 +515,9 @@ def update_therapist_primary_cm(
     old_cm = profile.supervisor_user_id
     profile.supervisor_user_id = payload.primary_case_manager_user_id
     if payload.mentor_user_id is not None:
+        from app.services.mentor_scope_service import validate_mentor_is_case_manager
+
+        validate_mentor_is_case_manager(db, payload.mentor_user_id)
         profile.mentor_user_id = payload.mentor_user_id
     cases_updated = 0
     if payload.update_active_cases:

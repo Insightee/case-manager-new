@@ -1,21 +1,31 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.module_access import get_allowed_case_product_modules
 from app.core.permissions import user_has_permission
 from app.models.case import Case
 from app.models.user import User
+from app.services.mentor_scope_service import mentor_case_access_clause
 
 
 def team_case_access_clause(user: User):
-    """Cases visible to case.read.team users — assigned caseload only."""
-    return Case.case_manager_user_id == user.id
+    """Cases visible to case.read.team — assigned CM caseload or mentored therapists."""
+    return or_(
+        Case.case_manager_user_id == user.id,
+        mentor_case_access_clause(user),
+    )
 
 
-def team_case_in_scope(user: User, case: Case) -> bool:
-    return case.case_manager_user_id == user.id
+def team_case_in_scope(user: User, case: Case, db: Session | None = None) -> bool:
+    if case.case_manager_user_id == user.id:
+        return True
+    if db is None:
+        return False
+    from app.services.mentor_scope_service import is_mentor_on_case
+
+    return is_mentor_on_case(db, user, case)
 
 
 def case_row_scope_clause(user: User):

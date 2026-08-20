@@ -212,7 +212,7 @@ def list_cases_for_user(
     transition_case_ids = _cases_in_transition(db, [c.id for c in rows])
     items = []
     for c in rows:
-        item = case_to_read(c, db, resolve_therapist=False)
+        item = case_to_read(c, db, resolve_therapist=False, viewer=user)
         item["therapist_name"] = therapist_by_case.get(c.id)
         item["in_transition"] = c.id in transition_case_ids
         items.append(item)
@@ -243,14 +243,20 @@ def case_to_read(
     db: Session | None = None,
     *,
     resolve_therapist: bool = True,
+    viewer: User | None = None,
 ) -> dict:
     service_addr = case_service_address_read(case)
     cm_name, cm_email = (None, None)
     therapist_name = None
+    access_as_mentor = False
     if db is not None:
         cm_name, cm_email = case_manager_contact(db, case)
         if resolve_therapist:
             therapist_name = _active_therapist_names(db, [case.id]).get(case.id)
+        if viewer is not None:
+            from app.services.mentor_scope_service import is_mentor_only_on_case
+
+            access_as_mentor = is_mentor_only_on_case(db, viewer, case)
     in_transition = bool(db and case.id in _cases_in_transition(db, [case.id]))
     return {
         "id": case.id,
@@ -271,6 +277,7 @@ def case_to_read(
         "case_manager_user_id": case.case_manager_user_id,
         "case_manager_name": cm_name,
         "case_manager_email": cm_email,
+        "access_as_mentor": access_as_mentor,
         "notes": case.notes,
         "region": case.region,
         "operational_stage": case.operational_stage,

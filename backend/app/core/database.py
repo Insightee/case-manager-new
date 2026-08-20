@@ -373,6 +373,10 @@ def ensure_sqlite_schema_patches() -> None:
                         "ALTER TABLE daily_logs ADD COLUMN visibility_status VARCHAR(32) NOT NULL DEFAULT 'INTERNAL_ONLY'"
                     )
                 )
+            if "mentor_reviewed_at" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN mentor_reviewed_at DATETIME"))
+            if "mentor_reviewed_by_user_id" not in log_cols:
+                conn.execute(text("ALTER TABLE daily_logs ADD COLUMN mentor_reviewed_by_user_id INTEGER"))
 
     if insp.has_table("support_tickets"):
         t_cols = {c["name"] for c in insp.get_columns("support_tickets")}

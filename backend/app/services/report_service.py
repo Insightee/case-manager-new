@@ -92,15 +92,24 @@ def user_can_admin_override_publish(user: User) -> bool:
 def publish_workflow_flags(db: Session, user: User, report: MonthlyReport, case: Case | None) -> dict:
     now = _utc_now()
     scoped = case is not None and case_scope_check(db, user, case)
+    mentor_only = False
+    if case is not None:
+        from app.services.mentor_scope_service import is_mentor_only_on_case
+
+        mentor_only = is_mentor_only_on_case(db, user, case)
     return {
         "submitted_for_review_at": report.submitted_for_review_at,
         "cm_published_at": report.cm_published_at,
         "admin_published_at": report.admin_published_at,
-        "can_cm_publish": scoped and user_can_cm_publish(user) and can_cm_publish(report),
+        "can_cm_publish": scoped
+        and not mentor_only
+        and user_can_cm_publish(user)
+        and can_cm_publish(report),
         "can_admin_override_publish": scoped
         and user_can_admin_override_publish(user)
         and can_admin_override_publish(report, now),
         "days_until_admin_override": days_until_admin_override(report, now),
+        "access_as_mentor": mentor_only,
     }
 
 
@@ -127,6 +136,12 @@ def publish_monthly_to_parent(
     else:
         if not user_can_cm_publish(user):
             raise PermissionError("Case manager publish permission required")
+        case = db.get(Case, report.case_id) if report.case_id else None
+        if case is not None:
+            from app.services.mentor_scope_service import is_mentor_only_on_case
+
+            if is_mentor_only_on_case(db, user, case):
+                raise PermissionError("Mentor access is view-only — publishing is not allowed")
         if not can_cm_publish(report):
             raise ValueError("Report is not ready for case manager publish")
         report.cm_published_at = now

@@ -155,6 +155,11 @@ def ensure_case_write_access(
         return
     if is_view_only_user(user):
         _raise_read_only()
+    if db is not None:
+        from app.services.mentor_scope_service import is_mentor_only_on_case
+
+        if is_mentor_only_on_case(db, user, case):
+            _raise_read_only("Mentor access is view-only — changes are not allowed")
     if not user_can_write_product_module(user, case.product_module, db):
         product = case.product_module or "homecare"
         _raise_read_only(f"No edit access for the {product} programme module")
@@ -208,6 +213,11 @@ def ensure_log_review_write_access(user: User, case: Case, db: Session | None = 
         return
     if is_view_only_user(user):
         _raise_read_only()
+    if db is not None:
+        from app.services.mentor_scope_service import is_mentor_only_on_case
+
+        if is_mentor_only_on_case(db, user, case):
+            _raise_read_only("Mentor access is view-only — use Mark as reviewed instead")
     if _assigned_cm_on_caseload(user, case):
         return
     ensure_case_write_access(user, case, db, allow_during_transition=True)

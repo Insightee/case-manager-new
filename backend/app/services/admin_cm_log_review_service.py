@@ -14,6 +14,7 @@ from app.models.session import Session as TherapySession
 from app.models.user import User
 from app.services import log_service
 from app.services.admin_scope_service import apply_case_scope
+from app.services.mentor_scope_service import is_mentor_only_on_case
 
 
 def _therapist_name_for_case(db: Session, case_id: int) -> str | None:
@@ -107,6 +108,8 @@ def build_cm_log_review_queue(db: Session, user: User) -> dict:
                 "status": case.status.value if hasattr(case.status, "value") else str(case.status),
                 "pending_count": 0,
                 "logs": [],
+                "access_as_mentor": is_mentor_only_on_case(db, user, case),
+                "can_approve": not is_mentor_only_on_case(db, user, case),
             }
             cases_map[case.id] = bucket
         if log.transition:
@@ -121,6 +124,7 @@ def build_cm_log_review_queue(db: Session, user: User) -> dict:
 
     if all_log_dicts:
         log_service.attach_comment_counts(db, all_log_dicts, parent_visible_only=False)
+        log_service.attach_mentor_review_meta(db, all_log_dicts, viewer=user)
         by_id = {d["id"]: d for d in all_log_dicts}
         for bucket in cases_map.values():
             bucket["logs"] = [by_id[lg["id"]] for lg in bucket["logs"]]

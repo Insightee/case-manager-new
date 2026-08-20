@@ -160,6 +160,14 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
             db.execute(select(User.id, User.full_name).where(User.id.in_(cm_ids))).all()
         )
 
+    from app.models.therapist_profile import TherapistProfile
+
+    mentored_therapist_ids = set(
+        db.scalars(
+            select(TherapistProfile.user_id).where(TherapistProfile.mentor_user_id == user.id)
+        ).all()
+    )
+
     report_counts = dict(
         db.execute(
             select(MonthlyReport.case_id, func.count())
@@ -275,6 +283,11 @@ def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
             "pipeline_column": column,
             "case_manager_user_id": cm_user_id,
             "case_manager_name": cm_names.get(cm_user_id) if cm_user_id else None,
+            "is_mentor_case": bool(
+                therapist_user_id
+                and therapist_user_id in mentored_therapist_ids
+                and cm_user_id != user.id
+            ),
             "therapist_user_id": therapist_user_id,
             "therapist_name": therapist_name,
             "assignment_end_date": end_date.isoformat() if end_date else None,

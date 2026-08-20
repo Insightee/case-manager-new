@@ -66,6 +66,7 @@ class CaseRead(CaseBillingFields):
     case_manager_user_id: Optional[int]
     case_manager_name: Optional[str] = None
     case_manager_email: Optional[str] = None
+    access_as_mentor: bool = False
     notes: Optional[str] = None
     region: Optional[str]
     operational_stage: Optional[str]

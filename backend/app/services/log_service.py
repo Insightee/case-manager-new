@@ -448,6 +448,44 @@ def attach_comment_counts(
         item["open_parent_comment_count"] = open_parent
 
 
+def attach_mentor_review_meta(
+    db: Session,
+    reads: list[dict],
+    viewer=None,
+) -> None:
+    """Fill mentor reviewer names and can_mark_mentor_reviewed for the viewer."""
+    from app.models.user import User
+    from app.services.mentor_scope_service import can_mark_log_mentor_reviewed, is_mentor_of_therapist
+
+    reviewer_ids = {
+        item.get("mentor_reviewed_by_user_id")
+        for item in reads
+        if item.get("mentor_reviewed_by_user_id")
+    }
+    names: dict[int, str] = {}
+    if reviewer_ids:
+        names = dict(
+            db.execute(select(User.id, User.full_name).where(User.id.in_(reviewer_ids))).all()
+        )
+
+    for item in reads:
+        rid = item.get("mentor_reviewed_by_user_id")
+        item["mentor_reviewed_by_name"] = names.get(rid) if rid else None
+        item["mentor_reviewed"] = bool(item.get("mentor_reviewed_at"))
+        can_mark = False
+        if viewer is not None and not item.get("mentor_reviewed_at"):
+            therapist_id = item.get("therapist_user_id")
+            if therapist_id and is_mentor_of_therapist(db, viewer.id, therapist_id):
+                can_mark = can_mark_log_mentor_reviewed(
+                    db,
+                    viewer,
+                    case=None,
+                    therapist_user_id=therapist_id,
+                    already_reviewed=False,
+                )
+        item["can_mark_mentor_reviewed"] = can_mark
+
+
 def log_to_read(
     log: DailyLog,
     include_clinical: bool = True,
@@ -473,6 +511,11 @@ def log_to_read(
         "late_addition": bool(log.late_addition),
         "late_reason": log.late_reason,
         "review_note": log.review_note,
+        "mentor_reviewed": bool(getattr(log, "mentor_reviewed_at", None)),
+        "mentor_reviewed_at": ensure_utc_aware(getattr(log, "mentor_reviewed_at", None)),
+        "mentor_reviewed_by_user_id": getattr(log, "mentor_reviewed_by_user_id", None),
+        "mentor_reviewed_by_name": None,
+        "can_mark_mentor_reviewed": False,
         "can_edit": can_therapist_edit_log(log),
         "can_resubmit": is_log_resubmittable(log),
         "resubmitted_at": ensure_utc_aware(log.resubmitted_at),
