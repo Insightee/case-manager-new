@@ -5,6 +5,7 @@
 - Finance workspace: **Client invoices** and **Therapist payouts** are parallel money-in / money-out screens for every admin with billing access (no separate Finance home). Client invoices bill system gross; optional TDS is recorded when the payer withholds it. Therapist payouts show gross → TDS → net, raise-on-behalf, notes, and month records. Finance reports stay in the sidebar.
 
 ### Fixed
+- Therapist payout queue no longer auto-applies 10% TDS or treats pending approval as blocked. Finance enters TDS (0 if none), then approves and marks paid from the same workbench.
 - Production reports match staging/dev: Coming Soon is removed and the reports revamp dashboard is live on insighte.org. Billing remains gated.
 - IEP landing no longer whitescreens: `canSubmit` was referenced but never defined.
 - Alembic `tr1a2n3s4t5` Postgres deploy: use `postgresql.ENUM(create_type=False)` so `case_therapist_transitions` does not re-create `casetherapisttransitionstatus` after the DO-block.

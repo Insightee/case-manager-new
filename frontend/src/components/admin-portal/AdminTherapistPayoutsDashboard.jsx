@@ -38,13 +38,13 @@ export function AdminTherapistPayoutsDashboard() {
       <div className="admin-home-queue__grid">
         <AdminPanel title="In review" padded>
           <p style={{ fontSize: '1.75rem', fontWeight: 700, margin: '0 0 8px' }}>{summary.inReviewCount}</p>
-          <Link to="/admin/therapist-payouts?sub=payouts&status=IN_REVIEW" className="admin-btn admin-btn--primary admin-btn--sm">
+          <Link to="/admin/therapist-payouts?sub=queue" className="admin-btn admin-btn--primary admin-btn--sm">
             Review queue →
           </Link>
         </AdminPanel>
         <AdminPanel title="Approved, unpaid" padded>
           <p style={{ fontSize: '1.75rem', fontWeight: 700, margin: '0 0 8px' }}>{q.payoutsApprovedUnpaid ?? 0}</p>
-          <Link to="/admin/therapist-payouts?sub=payouts&status=APPROVED" className="admin-btn admin-btn--ghost admin-btn--sm">
+          <Link to="/admin/therapist-payouts?sub=records&status=APPROVED" className="admin-btn admin-btn--ghost admin-btn--sm">
             View approved →
           </Link>
         </AdminPanel>

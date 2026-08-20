@@ -64,20 +64,29 @@ def _has_open_statement_dispute(db: Session, invoice: Invoice) -> bool:
 def compute_invoice_settlement(db: Session, invoice: Invoice) -> dict[str, Any]:
     """Settlement ladder for a therapist invoice — single composed net source."""
     gross = _invoice_gross_inr(db, invoice)
-    tds_rate = resolve_tds_rate_percent(db, therapist_user_id=invoice.therapist_user_id)
     deductions = _invoice_deductions(db, invoice)
-    ladder = finance_payout_deduction_service.compute_payout_ladder(
-        gross_inr=gross,
-        tds_rate_percent=tds_rate,
-        deductions=deductions,
-    )
-    blocked = bool(ladder.get("blocked"))
+    tds_pending = invoice.tds_inr is None
+    if tds_pending:
+        ladder = finance_payout_deduction_service.compute_payout_ladder(
+            gross_inr=gross,
+            deductions=deductions,
+        )
+    else:
+        ladder = finance_payout_deduction_service.compute_payout_ladder(
+            gross_inr=gross,
+            tds_inr=float(invoice.tds_inr),
+            deductions=deductions,
+        )
+    problem_blocked = bool(ladder.get("blocked"))
     block_reason = ladder.get("blockReason")
+    export_blocked = problem_blocked
     if invoice.status != InvoiceStatus.APPROVED:
-        blocked = True
-        block_reason = block_reason or "Statement must be APPROVED before export"
+        export_blocked = True
+        if not block_reason:
+            block_reason = "Approve this statement before paying"
     if _has_open_statement_dispute(db, invoice):
-        blocked = True
+        export_blocked = True
+        problem_blocked = True
         block_reason = block_reason or "Open therapist statement dispute — resolve before export"
     return {
         "invoiceId": invoice.id,
@@ -85,16 +94,30 @@ def compute_invoice_settlement(db: Session, invoice: Invoice) -> dict[str, Any]:
         "month": invoice.month,
         "status": invoice.status.value,
         "grossInr": ladder["grossInr"],
-        "tdsRatePercent": ladder["tdsRatePercent"],
-        "tdsInr": ladder["tdsInr"],
+        "tdsPending": tds_pending,
+        "tdsRatePercent": None if tds_pending else ladder["tdsRatePercent"],
+        "tdsInr": None if tds_pending else ladder["tdsInr"],
         "afterTdsInr": ladder["afterTdsInr"],
         "deductionsInr": ladder["deductionsInr"],
         "additionsInr": ladder.get("additionsInr", 0),
         "netInr": ladder["netInr"],
-        "blocked": blocked,
+        "blocked": problem_blocked,
+        "exportBlocked": export_blocked,
         "blockedReason": block_reason,
         "deductions": deductions,
     }
+
+
+def apply_finance_tds(db: Session, *, invoice_id: int, tds_inr: float) -> dict[str, Any]:
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise ValueError("Invoice not found")
+    if tds_inr < 0:
+        raise ValueError("TDS cannot be negative")
+    invoice.tds_inr = round(float(tds_inr), 2)
+    settlement = compute_invoice_settlement(db, invoice)
+    snapshot_settlement_on_invoice(db, invoice, settlement)
+    return settlement
 
 
 def settlement_preview(db: Session, *, invoice_id: int) -> dict[str, Any]:
@@ -106,7 +129,7 @@ def settlement_preview(db: Session, *, invoice_id: int) -> dict[str, Any]:
 
 def assert_exportable(db: Session, invoice: Invoice) -> dict[str, Any]:
     settlement = compute_invoice_settlement(db, invoice)
-    if settlement["blocked"]:
+    if settlement["exportBlocked"] or settlement["blocked"]:
         raise ValueError(settlement.get("blockedReason") or "Payout blocked — needs review")
     if settlement["netInr"] < 0:
         raise ValueError("Net payout cannot be negative")
@@ -114,6 +137,6 @@ def assert_exportable(db: Session, invoice: Invoice) -> dict[str, Any]:
 
 
 def snapshot_settlement_on_invoice(db: Session, invoice: Invoice, settlement: dict[str, Any]) -> None:
-    invoice.tds_inr = settlement["tdsInr"]
+    invoice.tds_inr = settlement["tdsInr"] if settlement.get("tdsInr") is not None else invoice.tds_inr
     invoice.net_payable_inr = settlement["netInr"]
     db.flush()

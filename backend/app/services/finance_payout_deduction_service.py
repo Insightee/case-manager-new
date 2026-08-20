@@ -32,12 +32,25 @@ def compute_payout_ladder(
     *,
     gross_inr: float,
     tds_rate_percent: float | None = None,
+    tds_inr: float | None = None,
     deductions: list[dict[str, Any]] | None = None,
 ) -> dict[str, float]:
-    """August-sheet order: Gross → TDS → deductions → Net."""
-    rate = default_tds_rate_percent() if tds_rate_percent is None else float(tds_rate_percent)
+    """August-sheet order: Gross → TDS → deductions → Net.
+
+    TDS is applied only when finance supplies an amount or an explicit rate.
+    A missing rate is not filled with the org default — that was painting a
+    fake 10% on every queue row.
+    """
     gross = round(float(gross_inr), 2)
-    tds = round(gross * rate / 100.0, 2)
+    if tds_inr is not None:
+        tds = round(max(0.0, float(tds_inr)), 2)
+        rate = round((tds / gross) * 100.0, 4) if gross else 0.0
+    elif tds_rate_percent is not None:
+        rate = float(tds_rate_percent)
+        tds = round(gross * rate / 100.0, 2)
+    else:
+        rate = None
+        tds = 0.0
     after_tds = round(gross - tds, 2)
 
     deduct_total = 0.0

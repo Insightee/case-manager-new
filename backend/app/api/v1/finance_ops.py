@@ -80,6 +80,39 @@ def therapist_payout_settlement_preview(
         raise HTTPException(status_code=404, detail=str(e)) from e
 
 
+class TherapistPayoutTdsBody(BaseModel):
+    tds_inr: float = Field(..., ge=0)
+
+
+@router.post("/therapist-payouts/invoices/{invoice_id}/tds")
+def set_therapist_payout_tds(
+    invoice_id: int,
+    payload: TherapistPayoutTdsBody,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    try:
+        settlement = payout_settlement_service.apply_finance_tds(
+            db, invoice_id=invoice_id, tds_inr=payload.tds_inr
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="set_payout_tds",
+        entity_type="invoice",
+        entity_id=invoice_id,
+        new_value={"tdsInr": payload.tds_inr},
+        **meta,
+    )
+    db.commit()
+    return settlement
+
+
 class ExportPayoutBatchBody(BaseModel):
     invoice_ids: list[int] = Field(min_length=1)
     idempotency_key: str = Field(..., min_length=8, max_length=128)

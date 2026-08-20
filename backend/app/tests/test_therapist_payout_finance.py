@@ -160,12 +160,53 @@ def test_payout_queue_payable_now_split():
         row = next(s for s in body["statements"] if s["invoiceId"] == inv.id)
         assert row["status"] == "QUERIED"
         assert row["contestedInr"] == session_amount
-        # Queue payable-now uses settlement ladder net (gross from case lines), not legacy amount_inr.
-        expected_net = round(float(session_amount) * 0.9, 2)  # 10% default TDS on gross 300
+        # Queue payable-now uses settlement ladder net (gross from case lines). TDS is not auto-applied.
+        expected_net = round(float(session_amount), 2)
         assert row["payableNowInr"] == max(0.0, round(expected_net - session_amount, 2))
+        assert row["tdsPending"] is True
+        assert row["tdsInr"] is None
         assert row["needsReview"] is True  # QUERIED statements are blocked until resolved
     finally:
         db.close()
+
+
+def test_payout_queue_in_review_is_not_blocked_and_tds_pending():
+    seed_run()
+    db = SessionLocal()
+    try:
+        inv, _, session_amount = _invoice_with_session_line(db, session_id=9021)
+        db.commit()
+        invoice_id = inv.id
+    finally:
+        db.close()
+
+    finance_h = _login("finance@demo.com")
+    q = client.get("/api/v1/admin/therapist-payouts/queue?month=2099-06", headers=finance_h)
+    assert q.status_code == 200, q.text
+    row = next(s for s in q.json()["statements"] if s["invoiceId"] == invoice_id)
+    assert row["status"] == "IN_REVIEW"
+    assert row["needsReview"] is False
+    assert row["blocked"] is False
+    assert row["exportBlocked"] is True
+    assert row["tdsPending"] is True
+    assert row["tdsInr"] is None
+    assert row["netInr"] == round(float(session_amount), 2)
+
+    tds = client.post(
+        f"/api/v1/admin/therapist-payouts/invoices/{invoice_id}/tds",
+        headers=finance_h,
+        json={"tds_inr": 0},
+    )
+    assert tds.status_code == 200, tds.text
+    assert tds.json()["tdsPending"] is False
+    assert tds.json()["tdsInr"] == 0
+    assert tds.json()["netInr"] == round(float(session_amount), 2)
+
+    q2 = client.get("/api/v1/admin/therapist-payouts/queue?month=Jun 2099", headers=finance_h)
+    assert q2.status_code == 200, q2.text
+    row2 = next(s for s in q2.json()["statements"] if s["invoiceId"] == invoice_id)
+    assert row2["tdsPending"] is False
+    assert row2["tdsInr"] == 0
 
 
 def test_monthly_payout_flag_is_private_and_clears_when_paid():

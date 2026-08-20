@@ -1,6 +1,7 @@
 """Finance therapist payout queue — composed read, engine SSOT for amounts."""
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from sqlalchemy import select
@@ -16,6 +17,7 @@ from app.services import (
     statement_dispute_service,
     therapist_payout_flag_service,
 )
+from app.services.invoice_billing_service import parse_month
 
 _OPEN_DISPUTE_STATUSES = {"OPEN", "UNDER_REVIEW"}
 _QUEUE_STATUSES = (
@@ -113,9 +115,11 @@ def _statement_row(
     gross = settlement["grossInr"]
     deductions = settlement["deductionsInr"]
     net = settlement["netInr"]
-    tds_inr = settlement["tdsInr"]
-    tds_rate = settlement["tdsRatePercent"]
-    blocked = settlement["blocked"]
+    tds_pending = bool(settlement.get("tdsPending"))
+    tds_inr = settlement.get("tdsInr")
+    tds_rate = settlement.get("tdsRatePercent")
+    problem_blocked = bool(settlement.get("blocked"))
+    export_blocked = bool(settlement.get("exportBlocked"))
     blocked_reason = settlement.get("blockedReason")
 
     held_ids: list[int] = []
@@ -141,9 +145,10 @@ def _statement_row(
         "sessionCount": sessions,
         "grossInr": round(gross, 2),
         "deductionsInr": round(deductions, 2),
-        "tdsInr": round(tds_inr, 2),
-        "tdsRatePercent": tds_rate,
-        "tdsNote": f"TDS {tds_rate}%",
+        "tdsInr": None if tds_pending else (round(tds_inr, 2) if tds_inr is not None else None),
+        "tdsPending": tds_pending,
+        "tdsRatePercent": None if tds_pending else tds_rate,
+        "tdsNote": None if tds_pending else (f"TDS {tds_rate}%" if tds_rate is not None else None),
         "holdbackInr": None,
         "holdbackNote": "Not yet configured",
         "expectedPaymentDate": None,
@@ -152,8 +157,9 @@ def _statement_row(
         "status": invoice.status.value,
         "payableNowInr": balances["payableNowInr"],
         "contestedInr": balances["contestedInr"],
-        "needsReview": balances["needsReview"] or blocked,
-        "blocked": blocked,
+        "needsReview": bool(balances["needsReview"] or dispute_payloads or invoice.status == InvoiceStatus.QUERIED or problem_blocked),
+        "blocked": problem_blocked,
+        "exportBlocked": export_blocked,
         "blockedReason": blocked_reason,
         "exportBatchStatus": xfer.status if xfer else None,
         "exportTransferId": xfer.id if xfer else None,
@@ -164,6 +170,19 @@ def _statement_row(
     }
 
 
+def _month_filter_aliases(month: str) -> set[str]:
+    raw = (month or "").strip()
+    aliases = {raw}
+    try:
+        year, month_num, label = parse_month(raw)
+        aliases.add(label)
+        aliases.add(f"{year:04d}-{month_num:02d}")
+        aliases.add(date(year, month_num, 1).strftime("%B %Y"))
+    except ValueError:
+        pass
+    return {a for a in aliases if a}
+
+
 def admin_payout_queue_summary(
     db: Session,
     *,
@@ -172,14 +191,15 @@ def admin_payout_queue_summary(
     search: Optional[str] = None,
 ) -> dict:
     stmt = select(Invoice).where(Invoice.status.in_(_QUEUE_STATUSES)).order_by(Invoice.created_at.desc())
-    if month:
-        stmt = stmt.where(Invoice.month == month)
     if status and status.upper() != "ALL":
         try:
             stmt = stmt.where(Invoice.status == InvoiceStatus(status.upper()))
         except ValueError:
             pass
     invoices = list(db.scalars(stmt).all())
+    if month:
+        aliases = _month_filter_aliases(month)
+        invoices = [i for i in invoices if (i.month or "").strip() in aliases]
 
     therapist_ids = {i.therapist_user_id for i in invoices}
     therapists: dict[int, User] = {}

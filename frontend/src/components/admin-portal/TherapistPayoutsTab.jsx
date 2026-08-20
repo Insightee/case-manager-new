@@ -475,7 +475,9 @@ export function TherapistPayoutsTab() {
             ) : null}
             {settlement ? (
               <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                Gross {formatCurrency(settlement.grossInr)} · default TDS {formatCurrency(settlement.tdsInr)} ({settlement.tdsRatePercent}%) · net {formatCurrency(settlement.netInr)}
+                {settlement.tdsPending
+                  ? `Gross ${formatCurrency(settlement.grossInr)} · TDS not entered yet · net ${formatCurrency(settlement.netInr)}`
+                  : `Gross ${formatCurrency(settlement.grossInr)} · TDS ${formatCurrency(settlement.tdsInr)}${settlement.tdsRatePercent != null ? ` (${settlement.tdsRatePercent}%)` : ''} · net ${formatCurrency(settlement.netInr)}`}
               </p>
             ) : null}
             <label style={{ display: 'block', marginTop: 12 }}>
