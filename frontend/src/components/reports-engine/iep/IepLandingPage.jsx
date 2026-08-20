@@ -52,6 +52,7 @@ export function IepLandingPage({ caseId, caseCode, childName, variant = 'therapi
   const canStart = !isParent && !hasReport
   const canImport = !isParent && summary?.observation_approved
   const canContinue = !isParent && hasReport && summary?.can_edit
+  const canSubmit = !isParent && Boolean(summary?.can_submit)
   const canPreview = hasReport && (isParent ? summary?.can_preview : summary?.has_active_approved_iep || summary?.can_preview)
   const canShare = isAdmin && summary?.can_share_with_parent
   const canDownload = hasReport && (isParent ? summary?.can_preview : true)
