@@ -9,7 +9,7 @@ from sqlalchemy import extract, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
-from app.models.case import BillingType, Case, CompensationMode
+from app.models.case import BillingType, Case, CaseStatus, CompensationMode
 from app.models.case_therapist_transition import CaseTherapistTransitionDay
 from app.models.daily_log import DailyLog, LogApprovalStatus
 from app.models.session import Session as TherapySession
@@ -140,21 +140,72 @@ def calendar_days_for_segment(
     employment_start: date | None,
     month_start: date,
     month_end: date,
+    segment_end: date | None = None,
 ) -> int:
+    """Inclusive pay-month days for a therapist×case segment.
+
+    - Start→mid / mid→mid with a known end: ``end_day - start_day + 1``
+    - Mid→end (incoming, no end): from first/start through day 30
+    - Full / mid-start ongoing: from segment start through day 30
+    """
     seg_start = segment_start_day(
         assignment_start=assignment_start,
         employment_start=employment_start,
         month_start=month_start,
         month_end=month_end,
     )
+    if is_incoming_replacement and first_log is not None:
+        seg_start = max(seg_start, pay_month_day(first_log))
 
-    if is_outgoing_replacement and last_log is not None:
-        return calendar_days_outgoing(last_log=last_log, segment_start_day=seg_start)
+    bound_end = segment_end
+    if bound_end is None and is_outgoing_replacement:
+        bound_end = last_log
+    if bound_end is not None:
+        return calendar_days_outgoing(last_log=bound_end, segment_start_day=seg_start)
 
     if is_incoming_replacement and first_log is not None:
-        return calendar_days_incoming(first_log=first_log)
+        return calendar_days_from_start_day(seg_start)
 
     return calendar_days_from_start_day(seg_start)
+
+
+def _case_status_end_in_month(case: Case, month_start: date, month_end: date) -> date | None:
+    if case.status not in (
+        CaseStatus.CLOSED,
+        CaseStatus.DEACTIVATED,
+        CaseStatus.SUSPENDED,
+    ):
+        return None
+    effective = case.status_effective_date
+    if effective is None or not (month_start <= effective <= month_end):
+        return None
+    return effective
+
+
+def _resolve_segment_end(
+    *,
+    case: Case,
+    assignment: CaseAssignment | None,
+    is_outgoing_replacement: bool,
+    last_log: date | None,
+    last_approved_ever: date | None,
+    month_start: date,
+    month_end: date,
+) -> date | None:
+    """Official end of a bounded segment (replacement exit, assignment end, or case close)."""
+    if is_outgoing_replacement:
+        return last_approved_ever or last_log
+
+    candidates: list[date] = []
+    if assignment and assignment.end_date is not None:
+        if month_start <= assignment.end_date <= month_end:
+            candidates.append(assignment.end_date)
+    status_end = _case_status_end_in_month(case, month_start, month_end)
+    if status_end is not None:
+        candidates.append(status_end)
+    if not candidates:
+        return None
+    return min(candidates)
 
 
 def predicted_amount_inr(
@@ -667,6 +718,9 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
             month_end=end,
             reference_date=segment.first_log,
         )
+        assignment = _assignment_for_month(
+            db, case.id, segment.therapist_user_id, start, end
+        )
         employment_start = _employment_start(db, segment.therapist_user_id)
         case_start = (
             _first_approved_normal_log_for_therapist(
@@ -677,25 +731,32 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
                 db, case.id, segment.therapist_user_id
             )
         )
-        case_end = (
+        last_approved_ever = (
             _last_approved_log_for_therapist(
                 db, case.id, segment.therapist_user_id
             )
             if segment.is_outgoing_replacement
             else None
         )
-        last_log_for_calendar = segment.last_log
-        if segment.is_outgoing_replacement and case_end is not None:
-            last_log_for_calendar = case_end
+        segment_end = _resolve_segment_end(
+            case=case,
+            assignment=assignment,
+            is_outgoing_replacement=segment.is_outgoing_replacement,
+            last_log=segment.last_log,
+            last_approved_ever=last_approved_ever,
+            month_start=start,
+            month_end=end,
+        )
         calendar_days = calendar_days_for_segment(
             is_incoming_replacement=segment.is_incoming_replacement,
             is_outgoing_replacement=segment.is_outgoing_replacement,
             first_log=segment.first_log,
-            last_log=last_log_for_calendar,
+            last_log=segment.last_log,
             assignment_start=assignment_start,
             employment_start=employment_start,
             month_start=start,
             month_end=end,
+            segment_end=segment_end,
         )
         if transition_days and (
             (segment.is_outgoing_replacement and segment.last_log is None)
@@ -722,7 +783,7 @@ def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]
                 transition_total=transition_total,
                 therapist_start_date=employment_start,
                 case_start_date=case_start,
-                case_end_date=case_end,
+                case_end_date=segment_end,
                 first_log=segment.first_log,
                 last_log=segment.last_log,
                 is_incoming_replacement=segment.is_incoming_replacement,
