@@ -795,7 +795,7 @@ export function AdminPeoplePage() {
                                   </td>
                                   <td>
                                     <Link
-                                      to={`/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : ''}`}
+                                      to={`/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' || prof?.has_pending_changes ? '&status=PENDING' : ''}`}
                                     >
                                       {u.full_name}
                                     </Link>
@@ -804,8 +804,10 @@ export function AdminPeoplePage() {
                                   <td>{u.phone || '—'}</td>
                                   <td>
                                     {prof ? (
-                                      <Link to={`/admin/therapist-profiles?user_id=${u.id}&status=${prof.status}`}>
-                                        <StatusBadge status={prof.status} />
+                                      <Link
+                                        to={`/admin/therapist-profiles?user_id=${u.id}&status=${prof.has_pending_changes ? 'PENDING' : prof.status}`}
+                                      >
+                                        <StatusBadge status={prof.has_pending_changes ? 'PENDING' : prof.status} />
                                       </Link>
                                     ) : (
                                       <Link to={`/admin/therapist-profiles?user_id=${u.id}`} className="admin-muted">
@@ -832,7 +834,15 @@ export function AdminPeoplePage() {
                       <ul className="admin-data-list__cards">
                         {therapists.map((u) => {
                           const prof = profileByUser.get(u.id)
-                          const profileHref = `/admin/therapist-profiles?user_id=${u.id}${prof?.status === 'PENDING' ? '&status=PENDING' : prof?.status ? `&status=${prof.status}` : ''}`
+                          const profileStatus =
+                            prof?.has_pending_changes ? 'PENDING' : prof?.status
+                          const profileHref = `/admin/therapist-profiles?user_id=${u.id}${
+                            profileStatus === 'PENDING'
+                              ? '&status=PENDING'
+                              : profileStatus
+                                ? `&status=${profileStatus}`
+                                : ''
+                          }`
                           return (
                             <li key={u.id}>
                               <AdminTaskCard
@@ -854,7 +864,7 @@ export function AdminPeoplePage() {
                                       {accountStatusLabel(u)}
                                     </StatusBadge>
                                     {prof ? (
-                                      <StatusBadge status={prof.status} />
+                                      <StatusBadge status={profileStatus} />
                                     ) : (
                                       <span className="admin-muted">No profile</span>
                                     )}

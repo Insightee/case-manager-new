@@ -142,6 +142,12 @@ function ProfileChangesSection({ profile, categories }) {
 
 const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'PAUSED', 'DRAFT']
 
+/** Badge/filter status: approved listings with unreviewed edits count as Pending. */
+function profileDisplayStatus(profile) {
+  if (profile?.has_pending_changes) return 'PENDING'
+  return profile?.status || 'DRAFT'
+}
+
 const EMPTY_FORM = {
   user_id: '',
   display_name: '',
@@ -561,7 +567,7 @@ export function AdminTherapistProfilesPage() {
                               <span className="admin-table__meta">Mentor: {p.mentor_name}</span>
                             ) : null}
                           </td>
-                          <td><StatusBadge status={p.status} /></td>
+                          <td><StatusBadge status={profileDisplayStatus(p)} /></td>
                           <td>
                             <button
                               type="button"
@@ -588,7 +594,7 @@ export function AdminTherapistProfilesPage() {
                       <AdminTaskCard
                         title={p.display_name || p.full_name}
                         meta={p.email}
-                        badges={<StatusBadge status={p.status} />}
+                        badges={<StatusBadge status={profileDisplayStatus(p)} />}
                         actions={
                           <button
                             type="button"
@@ -635,7 +641,7 @@ export function AdminTherapistProfilesPage() {
                   </h2>
                   <p className="therapist-profile-drawer__subtitle">{selected.email}</p>
                   <div style={{ marginTop: 8 }}>
-                    <StatusBadge status={selected.status} />
+                    <StatusBadge status={profileDisplayStatus(selected)} />
                   </div>
                 </div>
                 <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={closeDrawer}>

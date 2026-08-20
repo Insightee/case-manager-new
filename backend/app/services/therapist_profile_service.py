@@ -261,11 +261,18 @@ def admin_approve_profile(profile: TherapistProfile, admin_note: str | None = No
 def list_profiles(db: Session, status: TherapistProfileStatus | None = None) -> list[TherapistProfile]:
     stmt = select(TherapistProfile).order_by(TherapistProfile.updated_at.desc())
     if status == TherapistProfileStatus.PENDING:
+        # Review queue: first submissions + approved listings with unreviewed edits.
         stmt = stmt.where(
             or_(
                 TherapistProfile.status == TherapistProfileStatus.PENDING,
                 TherapistProfile.pending_submission.isnot(None),
             )
+        )
+    elif status == TherapistProfileStatus.APPROVED:
+        # Match summary counts: pending edits belong in PENDING, not APPROVED.
+        stmt = stmt.where(
+            TherapistProfile.status == TherapistProfileStatus.APPROVED,
+            TherapistProfile.pending_submission.is_(None),
         )
     elif status:
         stmt = stmt.where(TherapistProfile.status == status)
