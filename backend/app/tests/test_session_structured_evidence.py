@@ -113,7 +113,8 @@ def _seed_iep(db, case_id: int, author_id: int) -> IepPlan:
 def test_alembic_single_head_is_goal_repository_repair():
     cfg = Config(str(_BACKEND / "alembic.ini"))
     heads = ScriptDirectory.from_config(cfg).get_heads()
-    assert heads == ["d8r9e0p1o2r3"]
+    # Empty merge of client-payment TDS + case Zoho ID (both parent d8r9e0p1o2r3).
+    assert heads == ["b95440cc4d91"]
 
 
 def test_structured_evidence_revision_upgrade_and_downgrade(tmp_path):

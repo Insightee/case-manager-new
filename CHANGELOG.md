@@ -6,7 +6,8 @@
 - Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
 
 ### Fixed
-- Alembic dual head after finance TDS + case Zoho ID merge: empty merge revision `b95440cc4d91` joins `fn9tds0cl1nt` and `z1o2h3o4i5d6`.
+- Alembic dual head after finance TDS + case Zoho ID merge: empty merge revision `b95440cc4d91` joins `fn9tds0cl1nt` and `z1o2h3o4i5d6`; registered in Postgres migration proof; single-head test expects the merge tip.
+- Step 5 billing eligibility tests force a homecare per-session case so shadow/B2B calendar-day blocking does not skip SESSION ledger holds.
 - Therapist payout queue no longer auto-applies 10% TDS or treats pending approval as blocked. Finance enters TDS (0 if none), then approves and marks paid from the same workbench.
 - Production reports match staging/dev: Coming Soon is removed and the reports revamp dashboard is live on insighte.org. Billing remains gated.
 - IEP landing no longer whitescreens: `canSubmit` was referenced but never defined.

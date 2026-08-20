@@ -746,6 +746,19 @@ register_head(
 )
 
 
+def _seed_b95440cc4d91(db: Session) -> dict[str, Any]:
+    """Merge-only head — schema ownership stays on parent revisions."""
+    return {"merge_only": True}
+
+
+register_head(
+    "b95440cc4d91",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_b95440cc4d91,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
