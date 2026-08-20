@@ -1,7 +1,8 @@
 ## [Unreleased]
 
 ### Fixed
-- Reports are live on production (therapist and parent hubs no longer show Coming Soon). Billing remains gated.
+- Production reports match staging/dev: Coming Soon is removed and the reports revamp dashboard is live on insighte.org. Billing remains gated.
+- Production API: `ENABLE_CLINICAL_REPORTS_ENGINE=true` so observation and IEP builders are available (was 404 "not available in this environment").
 - Alembic `tr1a2n3s4t5` Postgres deploy: use `postgresql.ENUM(create_type=False)` so `case_therapist_transitions` does not re-create `casetherapisttransitionstatus` after the DO-block.
 
 ### Added
