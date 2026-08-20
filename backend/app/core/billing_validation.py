@@ -144,5 +144,7 @@ def case_billing_dict(case: Case) -> dict:
         ),
         "billing_notes": case.billing_notes,
         "client_billing_mode": case.client_billing_mode.value if case.client_billing_mode else None,
+        "product_module": case.product_module,
+        "service_type": case.service_type,
         "billing_updated_at": case.billing_updated_at.isoformat() if case.billing_updated_at else None,
     }

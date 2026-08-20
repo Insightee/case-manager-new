@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -38,6 +39,7 @@ from app.models.document_comment import DocumentComment, DocumentEntityType
 from app.models.user import User
 
 router = APIRouter(prefix="/daily-logs", tags=["daily-logs"])
+logger = logging.getLogger("insightcase.daily_logs")
 
 
 class LogRejectAction(BaseModel):
@@ -440,7 +442,7 @@ def approve_log(
                 billing_month=log.session.scheduled_date.strftime("%Y-%m"),
             )
     except Exception:
-        pass
+        logger.exception("Ledger write failed while approving daily log %s", log_id)
     db.commit()
     return {"status": "approved"}
 

@@ -103,4 +103,12 @@ def test_blocks_per_session_for_monthly_and_package():
     pkg = _monthly_case(billing_type=BillingType.PACKAGE, package_amount_inr=25000.0)
     assert _blocks_per_session_ledger(pkg, None) is True
     per = _monthly_case(billing_type=BillingType.PER_SESSION, client_rate_per_session_inr=1500.0)
-    assert _blocks_per_session_ledger(per, None) is False
+    assert _blocks_per_session_ledger(per, None) is True
+    homecare = _monthly_case(
+        product_module="homecare",
+        service_type="Homecare",
+        billing_type=BillingType.PER_SESSION,
+        client_rate_per_session_inr=1500.0,
+        client_monthly_rate_inr=None,
+    )
+    assert _blocks_per_session_ledger(homecare, None) is False

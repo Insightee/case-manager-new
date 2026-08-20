@@ -29,6 +29,7 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.user import User
 from app.services import product_billing_rule_service
+from app.services import finance_payout_preview_service as payout_cycle
 from app.core.feature_flags import billing_ledger_writes_enabled
 
 # Days-in-month divisor for monthly proration (product convention: /30).
@@ -116,9 +117,17 @@ def _case_is_package(case: Case, rule: ProductBillingRule | None) -> bool:
     return False
 
 
+def _uses_calendar_day_ledger(case: Case) -> bool:
+    return payout_cycle.uses_calendar_day_pay(case)
+
+
 def _blocks_per_session_ledger(case: Case, rule: ProductBillingRule | None) -> bool:
-    """MONTHLY_FIXED and PACKAGE must never reach session × rate multiplication."""
-    return _case_is_monthly_fixed(case, rule) or _case_is_package(case, rule)
+    """MONTHLY_FIXED, PACKAGE, and shadow/B2B calendar-day cases never use session × rate."""
+    return (
+        _case_is_monthly_fixed(case, rule)
+        or _case_is_package(case, rule)
+        or _uses_calendar_day_ledger(case)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -702,8 +711,6 @@ def _serialize_ledger(row: BillingLedger, *, include_finance: bool) -> dict:
 def reconcile_month(db: Session, *, case_id: int, billing_month: str) -> dict:
     from sqlalchemy import extract, func
 
-    from app.models.invoice_line import InvoiceSessionLine
-
     ledger_rows = db.scalars(
         select(BillingLedger).where(
             BillingLedger.case_id == case_id,
@@ -715,13 +722,12 @@ def reconcile_month(db: Session, *, case_id: int, billing_month: str) -> dict:
         for r in ledger_rows
         if r.billable_status in (BillableStatus.BILLABLE, BillableStatus.INVOICED)
     )
-    session_ids = [r.session_id for r in ledger_rows if r.session_id]
     therapist_payout = 0.0
-    if session_ids:
-        lines = db.scalars(
-            select(InvoiceSessionLine).where(InvoiceSessionLine.session_id.in_(session_ids))
-        ).all()
-        therapist_payout = sum(float(l.payout_amount_inr or l.amount_inr or 0) for l in lines)
+    engine_client = 0.0
+    case = db.get(Case, case_id)
+    if case:
+        therapist_payout = payout_cycle.therapist_case_gross_inr(db, case, billing_month)
+        engine_client = payout_cycle.client_case_gross_inr(db, case, billing_month)
 
     year_s, month_s = billing_month.split("-")[:2]
     session_count = db.scalar(
@@ -737,8 +743,9 @@ def reconcile_month(db: Session, *, case_id: int, billing_month: str) -> dict:
         "billingMonth": billing_month,
         "sessionCount": session_count,
         "ledgerBillableTotalInr": client_billable,
+        "clientEngineTotalInr": engine_client,
         "therapistPayoutTotalInr": therapist_payout,
-        "marginInr": round(client_billable - therapist_payout, 2),
+        "marginInr": round((client_billable or engine_client) - therapist_payout, 2),
         "ledgerRowCount": len(ledger_rows),
         "disputedRows": sum(1 for r in ledger_rows if r.dispute_status == LedgerDisputeStatus.OPEN),
     }
@@ -767,7 +774,9 @@ def ensure_period_charges(db: Session, *, case_id: int, billing_month: str) -> d
         "activeNoSessionsFlag": None,
     }
 
-    if _case_is_monthly_fixed(case, rule):
+    if _case_is_monthly_fixed(case, rule) or (
+        _uses_calendar_day_ledger(case) and not _case_is_package(case, rule)
+    ):
         results["monthlyFee"] = _upsert_monthly_fee_charge(
             db, case=case, rule=rule, billing_month=billing_month, session_count=session_count
         )
@@ -775,6 +784,9 @@ def ensure_period_charges(db: Session, *, case_id: int, billing_month: str) -> d
         results["packageCharge"] = _upsert_package_purchase_charge(
             db, case=case, rule=rule, billing_month=billing_month, session_count=session_count
         )
+
+    if _uses_calendar_day_ledger(case):
+        _retire_uninvoiced_session_ledger(db, case_id=case_id, billing_month=billing_month)
 
     status = case.status if isinstance(case.status, CaseStatus) else CaseStatus(str(case.status))
     if session_count == 0 and status == CaseStatus.ACTIVE:
@@ -787,10 +799,88 @@ def ensure_period_charges(db: Session, *, case_id: int, billing_month: str) -> d
     return results
 
 
+def _retire_uninvoiced_session_ledger(db: Session, *, case_id: int, billing_month: str) -> int:
+    """Calendar-day cases bill one period charge — do not also invoice session × rate rows."""
+    rows = db.scalars(
+        select(BillingLedger).where(
+            BillingLedger.case_id == case_id,
+            BillingLedger.ledger_month == billing_month,
+            BillingLedger.source_type == LedgerSourceType.SESSION,
+            BillingLedger.client_invoice_id.is_(None),
+            BillingLedger.billable_status.in_(
+                (
+                    BillableStatus.BILLABLE,
+                    BillableStatus.PENDING_REVIEW,
+                    BillableStatus.PENDING_FINANCE,
+                )
+            ),
+        )
+    ).all()
+    marker = "Superseded by calendar-day period charge"
+    for row in rows:
+        row.billable_status = BillableStatus.NON_BILLABLE
+        note = (row.admin_note or "").strip()
+        if marker not in note:
+            row.admin_note = f"{note} {marker}".strip()
+    if rows:
+        db.flush()
+    return len(rows)
+
+
+def _backfill_approved_session_ledger(db: Session, *, case_id: int, billing_month: str) -> int:
+    year_s, month_s = billing_month.split("-")[:2]
+    logs = db.scalars(
+        select(DailyLog)
+        .join(TherapySession, DailyLog.session_id == TherapySession.id)
+        .where(
+            TherapySession.case_id == case_id,
+            extract("year", TherapySession.scheduled_date) == int(year_s),
+            extract("month", TherapySession.scheduled_date) == int(month_s),
+            DailyLog.approval_status == LogApprovalStatus.APPROVED.value,
+        )
+        .options(selectinload(DailyLog.session))
+    ).all()
+    synced = 0
+    for log in logs:
+        if upsert_from_daily_log_approved(db, log) is not None:
+            synced += 1
+    return synced
+
+
+def sync_case_month_ledger(db: Session, *, case_id: int, billing_month: str) -> dict:
+    """Create missing period charges and per-session rows so Build from ledger can run."""
+    if not _ledger_writes_allowed():
+        return {"skipped": True, "reason": "BILLING_LEDGER_WRITES_disabled"}
+    period = ensure_period_charges(db, case_id=case_id, billing_month=billing_month)
+    case = db.get(Case, case_id)
+    rule = _resolve_rule(db, case) if case else None
+    session_rows = 0
+    if case and not _blocks_per_session_ledger(case, rule):
+        session_rows = _backfill_approved_session_ledger(
+            db, case_id=case_id, billing_month=billing_month
+        )
+    return {"skipped": False, "period": period, "sessionRowsSynced": session_rows}
+
+
 def _period_billable_status(session_count: int) -> BillableStatus:
     if session_count > 0:
         return BillableStatus.BILLABLE
     return BillableStatus.PENDING_FINANCE
+
+
+def _payout_cycle_client_amount(db: Session, case: Case, billing_month: str) -> tuple[float, str]:
+    amount = payout_cycle.client_case_gross_inr(db, case, billing_month)
+    segs = payout_cycle.build_cycle_segments(db, case, billing_month)
+    if payout_cycle.uses_calendar_day_pay(case):
+        units = sum(max(s.calendar_days - s.unpaid_leaves, 0) for s in segs)
+        kind = "calendar-days"
+    else:
+        units = sum(s.approved_sessions for s in segs)
+        kind = "approved-sessions"
+    note = (
+        f"{len(segs)} therapist segment(s), {units} {kind}, client allotment ₹{amount}"
+    )
+    return amount, note
 
 
 def _upsert_monthly_fee_charge(
@@ -801,29 +891,15 @@ def _upsert_monthly_fee_charge(
     billing_month: str,
     session_count: int,
 ) -> dict:
-    from app.services import billing_step6_service as step6
-
-    month_start, month_end = _month_bounds(billing_month)
-    periods, leave_dates, exceptions = step6.build_step6_monthly_periods(
-        db, case, billing_month=billing_month
-    )
-    step6.persist_calc_exceptions(
-        db, case_id=case.id, billing_month=billing_month, exceptions=exceptions
-    )
-    amount, active_days, breakdown = step6.compute_monthly_fixed_amount_v6(
-        periods,
-        month_start=month_start,
-        month_end=month_end,
-        deductible_leave_dates=leave_dates,
-    )
-    # Display rate: primary monthly rate (not session-derived).
-    rate = float(case.client_monthly_rate_inr or 0)
+    _, month_end = _month_bounds(billing_month)
+    amount, breakdown = _payout_cycle_client_amount(db, case, billing_month)
+    rate = payout_cycle.client_configured_share_inr(case)
+    if rate <= 0:
+        rate = float(case.client_monthly_rate_inr or case.package_amount_inr or 0)
     amount, gst_rate, gst_amount, hsn = _amounts(amount, rule)
     total = round(amount + (gst_amount or 0), 2)
     status = _period_billable_status(session_count)
-    note = (
-        f"MONTHLY_FIXED ({active_days} billed days / {_MONTHLY_PRORATION_DAYS} denom). {breakdown}"
-    )
+    note = f"MONTHLY_FIXED payout-cycle. {breakdown}"
 
     existing = _existing_period_charge(
         db,
@@ -891,14 +967,14 @@ def _upsert_package_purchase_charge(
     billing_month: str,
     session_count: int,
 ) -> dict:
-    """One package charge = package_amount_inr. Consumption rows stay amount_inr=0."""
-    amount = float(case.package_amount_inr or 0)
-    rate = amount
+    """One package charge from the payout-cycle client allotment (not a silent full lump)."""
+    amount, breakdown = _payout_cycle_client_amount(db, case, billing_month)
+    rate = amount if amount else float(case.package_amount_inr or 0)
     amount, gst_rate, gst_amount, hsn = _amounts(amount, rule)
     total = round(amount + (gst_amount or 0), 2)
     status = _period_billable_status(session_count)
     _, month_end = _month_bounds(billing_month)
-    note = "PACKAGE_PURCHASE charge (consumption tracked separately at ₹0)"
+    note = f"PACKAGE_PURCHASE payout-cycle. {breakdown}"
 
     existing = _existing_period_charge(
         db,

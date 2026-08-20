@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Changed
+- Therapist invoices and client period charges use the payout-report cycle engine (gross, no TDS). Homecare bills approved sessions at allotment rates; shadow/B2B bills the same calendar days as therapist pay. Transition pay is therapist-only. Build from ledger posts those period charges when the ledger is empty; finance composer payout matches the therapist invoice.
+
 ### Fixed
 - Production reports match staging/dev: Coming Soon is removed and the reports revamp dashboard is live on insighte.org. Billing remains gated.
 - IEP landing no longer whitescreens: `canSubmit` was referenced but never defined.

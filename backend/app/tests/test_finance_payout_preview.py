@@ -18,9 +18,11 @@ from app.services.finance_payout_preview_service import (
     calendar_days_from_start_day,
     calendar_days_incoming,
     calendar_days_outgoing,
+    client_configured_share_inr,
     client_lumpsum_inr,
     pay_month_day,
     per_session_share_inr,
+    predicted_client_amount_inr,
     predicted_subtotal_inr,
     therapist_share_inr,
 )
@@ -54,6 +56,65 @@ def _case(**kwargs) -> Case:
     if "compensation_mode" in kwargs:
         case.compensation_mode = kwargs["compensation_mode"]
     return case
+
+
+def test_client_configured_share_uses_allotment_not_therapist_pay():
+    shadow = _case(
+        service_type="Shadow Support",
+        product_module="shadow_support",
+        billing_type=BillingType.PACKAGE,
+        package_amount_inr=30000,
+        pay_share_amount_inr=18000,
+    )
+    assert client_configured_share_inr(shadow) == 30000
+    assert predicted_client_amount_inr(
+        shadow, approved_sessions=20, calendar_days=10, unpaid_leaves=0
+    ) == round((30000 / 30) * 10, 2)
+
+    homecare = _case(
+        billing_type=BillingType.PER_SESSION,
+        client_rate_per_session_inr=1200,
+        pay_share_amount_inr=800,
+    )
+    assert client_configured_share_inr(homecare) == 1200
+    assert predicted_client_amount_inr(homecare, approved_sessions=5, calendar_days=30) == 6000
+
+
+def test_homecare_package_client_is_package_over_count_times_sessions():
+    case = _case(
+        billing_type=BillingType.PACKAGE,
+        package_session_count=20,
+        package_amount_inr=25000,
+        pay_share_amount_inr=15000,
+    )
+    assert client_configured_share_inr(case) == 25000
+    assert predicted_client_amount_inr(case, approved_sessions=10) == 12500
+
+
+def test_split_month_client_charge_sums_therapist_calendar_days():
+    """Outgoing 10 days + incoming 10 days → family pays 20/30 of client lump."""
+    case = _case(
+        product_module="shadow_support",
+        billing_type=BillingType.PACKAGE,
+        package_amount_inr=30000,
+        pay_share_amount_inr=18000,
+    )
+    outgoing = predicted_client_amount_inr(case, approved_sessions=0, calendar_days=10, unpaid_leaves=0)
+    incoming = predicted_client_amount_inr(case, approved_sessions=0, calendar_days=10, unpaid_leaves=0)
+    assert round(outgoing + incoming, 2) == round((30000 / 30) * 20, 2)
+    assert predicted_subtotal_inr(case, approved_sessions=0, calendar_days=10, unpaid_leaves=0) == 6000
+
+
+def test_shadow_per_session_client_share_is_rate_times_thirty():
+    case = _case(
+        product_module="shadow_support",
+        billing_type=BillingType.PER_SESSION,
+        client_rate_per_session_inr=1000,
+        pay_share_amount_inr=600,
+    )
+    assert client_configured_share_inr(case) == 30000
+    assert predicted_client_amount_inr(case, approved_sessions=8, calendar_days=10, unpaid_leaves=0) == 10000
+    assert predicted_subtotal_inr(case, approved_sessions=8, calendar_days=10, unpaid_leaves=0) == 200
 
 
 def test_pay_month_day_caps_at_thirty():

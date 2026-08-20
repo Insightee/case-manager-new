@@ -29,6 +29,7 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.user import User
 from app.services import billing_ledger_service, notification_service, product_billing_rule_service
+from app.services import finance_payout_preview_service as payout_cycle
 from app.services.client_billing_service import _invoice_is_overdue, _parents_for_case
 from app.services import zoho_client_sync
 
@@ -193,6 +194,13 @@ def _ledger_ready_count(db: Session, case_id: int, ym: str) -> int:
     )
 
 
+def _therapist_invoice_month_keys(ym: str) -> tuple[str, ...]:
+    """Therapist invoices store 'May 2026'; composer filters use '2026-05'."""
+    y, m = int(ym[:4]), int(ym[5:7])
+    start = date(y, m, 1)
+    return (ym, start.strftime("%b %Y"), start.strftime("%B %Y"))
+
+
 def _therapist_submitted_for_case_month(db: Session, case_id: int, ym: str) -> bool:
     """Therapist invoice in review/approved/paid with case line for this case and month."""
     row = db.scalar(
@@ -200,7 +208,7 @@ def _therapist_submitted_for_case_month(db: Session, case_id: int, ym: str) -> b
         .join(InvoiceCaseLine, InvoiceCaseLine.invoice_id == Invoice.id)
         .where(
             InvoiceCaseLine.case_id == case_id,
-            Invoice.month == ym,
+            Invoice.month.in_(_therapist_invoice_month_keys(ym)),
             Invoice.status.in_(
                 [InvoiceStatus.IN_REVIEW, InvoiceStatus.APPROVED, InvoiceStatus.PAID]
             ),
@@ -447,7 +455,7 @@ def _therapist_submissions_for_case(db: Session, case_id: int, ym: str) -> list[
         .join(InvoiceCaseLine, InvoiceCaseLine.invoice_id == Invoice.id)
         .where(
             InvoiceCaseLine.case_id == case_id,
-            Invoice.month == ym,
+            Invoice.month.in_(_therapist_invoice_month_keys(ym)),
         )
         .options(selectinload(Invoice.case_lines).selectinload(InvoiceCaseLine.session_lines))
     ).all()
@@ -486,6 +494,25 @@ def _therapist_submissions_for_case(db: Session, case_id: int, ym: str) -> list[
                     }
                 )
     return out
+
+
+def _therapist_cycle_for_case(db: Session, case: Case, ym: str) -> list[dict]:
+    rows: list[dict] = []
+    for seg in payout_cycle.build_cycle_segments(db, case, ym):
+        therapist = db.get(User, seg.therapist_user_id)
+        rows.append(
+            {
+                "therapistUserId": seg.therapist_user_id,
+                "therapistName": therapist.full_name if therapist and therapist.full_name else "",
+                "approvedSessions": seg.approved_sessions,
+                "calendarDays": seg.calendar_days,
+                "unpaidLeaves": seg.unpaid_leaves,
+                "grossInr": seg.therapist_gross(case),
+                "clientAmountInr": seg.client_amount(case),
+                "transitionTotalInr": seg.transition_total,
+            }
+        )
+    return rows
 
 
 def _session_overview_counts(db: Session, case_id: int, ym: str) -> dict:
@@ -527,7 +554,7 @@ def _session_overview_counts(db: Session, case_id: int, ym: str) -> dict:
 
 
 def _warnings_for_preview(
-    db: Session, case_id: int, ym: str, suggested: list, ledger_rows: list
+    db: Session, case_id: int, ym: str, suggested: list, ledger_rows: list, *, engine_client: float = 0
 ) -> list[dict]:
     warnings: list[dict] = []
     if _therapist_pending_for_case_month(db, case_id, ym):
@@ -548,13 +575,24 @@ def _warnings_for_preview(
             }
         )
     if not suggested and not ledger_rows:
-        warnings.append(
-            {
-                "code": "NO_BILLABLE_ROWS",
-                "message": "No billable ledger rows for this period.",
-                "action": "manual_invoice",
-            }
-        )
+        if engine_client > 0:
+            warnings.append(
+                {
+                    "code": "LEDGER_NOT_POSTED",
+                    "message": (
+                        "Ledger rows are not posted yet. Build from ledger will create them "
+                        "using the same payout-report counting as therapist pay."
+                    ),
+                }
+            )
+        else:
+            warnings.append(
+                {
+                    "code": "NO_BILLABLE_ROWS",
+                    "message": "No billable ledger rows for this period.",
+                    "action": "manual_invoice",
+                }
+            )
     return warnings
 
 
@@ -674,13 +712,18 @@ def get_composer_preview(db: Session, *, case_id: int, billing_month: str) -> di
     ledger_rows = billing_ledger_service.list_ledger(db, ledger_month=ym, case_id=case_id)
     suggested = _suggested_lines_from_ledger(db, case, ym)
     therapist_submissions = _therapist_submissions_for_case(db, case_id, ym)
+    therapist_cycle = _therapist_cycle_for_case(db, case, ym)
     reconcile = billing_ledger_service.reconcile_month(db, case_id=case_id, billing_month=ym)
     session_counts = _session_overview_counts(db, case_id, ym)
     leaves_total = _leaves_in_month(db, case_id, ym)
 
-    subtotal = sum(float(r.get("amountInr") or 0) for r in suggested)
+    subtotal = sum(float(r.get("taxableAmountInr") or r.get("amountInr") or 0) for r in suggested)
     tax = sum(float(r.get("gstAmountInr") or 0) for r in suggested if r.get("gstAmountInr"))
     total = sum(float(r.get("amountInr") or 0) for r in suggested)
+    ledger_total = float(reconcile.get("ledgerBillableTotalInr") or 0)
+    engine_client = float(reconcile.get("clientEngineTotalInr") or 0)
+    headline = ledger_total if ledger_total else engine_client
+    therapist_payout = float(reconcile.get("therapistPayoutTotalInr") or 0)
 
     start, end = _month_bounds(ym)
     due_suggestion = (end + timedelta(days=10)).isoformat()
@@ -692,7 +735,9 @@ def get_composer_preview(db: Session, *, case_id: int, billing_month: str) -> di
         if rule.billing_model.value == "PREPAID_PACKAGE":
             inv_type = "PREPAID"
 
-    warnings = _warnings_for_preview(db, case_id, ym, suggested, ledger_rows)
+    warnings = _warnings_for_preview(
+        db, case_id, ym, suggested, ledger_rows, engine_client=engine_client
+    )
     blocking = blocking_calc_exceptions_for_case(db, case_id=case_id, billing_month=ym)
     draft_charges = postable_draft_charges_for_case(db, case_id=case_id, billing_month=ym)
     material_missing = (not suggested and not ledger_rows) or bool(blocking)
@@ -736,15 +781,16 @@ def get_composer_preview(db: Session, *, case_id: int, billing_month: str) -> di
             "leavesTotal": leaves_total,
             "paidLeaves": None,
             "unpaidLeaves": leaves_total,
-            "subtotal": round(subtotal, 2),
+            "subtotal": round((headline - tax) if tax else (headline or subtotal), 2),
             "taxAmount": round(tax, 2),
-            "total": round(total, 2),
-            "therapistPayoutTotal": reconcile.get("therapistPayoutTotalInr", 0),
-            "estimatedMargin": reconcile.get("marginInr", 0),
+            "total": round(headline or total, 2),
+            "therapistPayoutTotal": therapist_payout,
+            "estimatedMargin": round((headline or 0) - therapist_payout, 2),
             "confidence": conf["confidence"],
             "confidenceReason": conf["confidenceReason"],
         },
         "ledgerRows": ledger_rows,
+        "therapistCycle": therapist_cycle,
         "therapistSubmissions": therapist_submissions,
         "suggestedLineItems": suggested,
         "warnings": warnings,

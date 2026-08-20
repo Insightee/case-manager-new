@@ -20,6 +20,7 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionMode, SessionStatus
 from app.models.user import User
 from app.core.session_times import effective_session_datetimes
+from app.services import finance_payout_preview_service as payout_cycle
 
 
 def parse_month(month: str) -> tuple[int, int, str]:
@@ -94,30 +95,52 @@ def compute_case_totals(case: Case, session_lines: list[dict]) -> tuple[int, int
     )
     included = sum(1 for s in regular_lines if s.get("included") and s.get("line_type") == SessionLineType.INCLUDED.value)
     additional = sum(1 for s in regular_lines if s.get("included") and s.get("line_type") == SessionLineType.ADDITIONAL.value)
+    approved = sum(1 for s in regular_lines if s.get("included"))
 
-    if case.billing_type == BillingType.PER_SESSION:
-        total = sum(s["amount_inr"] for s in session_lines if s.get("included"))
-        return 0, 0, round(total, 2)
+    if payout_cycle.uses_calendar_day_pay(case):
+        # Calendar-day gross needs first/last log + unpaid leave from the cycle engine.
+        return included, additional, round(transition_total, 2)
 
-    pkg_count = int(case.package_session_count) if case.package_session_count else 0
-    if pkg_count <= 0:
-        raise ValueError("MISSING_PACKAGE_COUNT")
-    if case.compensation_mode == CompensationMode.FIXED_LUMP:
-        fixed = float(case.therapist_fixed_pay_inr or 0)
-        per_unit = fixed / pkg_count
-        if included >= pkg_count:
-            included_amt = fixed
-        else:
-            included_amt = included * per_unit
-        additional_amt = additional * per_unit
-        total = round(included_amt + additional_amt + transition_total, 2)
-        return included, additional, total
+    if case.billing_type == BillingType.PACKAGE:
+        pkg_count = int(case.package_session_count) if case.package_session_count else 0
+        if pkg_count <= 0:
+            raise ValueError("MISSING_PACKAGE_COUNT")
 
-    per_sess = float(case.pay_share_amount_inr or 0) / pkg_count
-    included_amt = included * per_sess
-    additional_amt = additional * per_sess
-    total = round(included_amt + additional_amt + transition_total, 2)
-    return included, additional, total
+    subtotal = payout_cycle.predicted_subtotal_inr(case, approved_sessions=approved)
+    return included, additional, round(subtotal + transition_total, 2)
+
+
+def _transition_total_from_lines(session_lines: list[dict]) -> float:
+    return round(
+        sum(
+            float(line["amount_inr"])
+            for line in session_lines
+            if line.get("included") and (line.get("flags") or {}).get("transition_log")
+        ),
+        2,
+    )
+
+
+def engine_case_gross(
+    case: Case,
+    session_lines: list[dict],
+    *,
+    segment: payout_cycle.CycleSegment | None,
+) -> tuple[int, int, float]:
+    """Payout-report gross for one therapist × case. No TDS."""
+    included, additional, line_total = compute_case_totals(case, session_lines)
+    if payout_cycle.uses_calendar_day_pay(case):
+        if segment is None:
+            return included, additional, line_total
+        return included, additional, segment.therapist_gross(case)
+    trans = _transition_total_from_lines(session_lines)
+    approved = sum(
+        1
+        for line in session_lines
+        if line.get("included") and not (line.get("flags") or {}).get("transition_log")
+    )
+    subtotal = payout_cycle.predicted_subtotal_inr(case, approved_sessions=approved)
+    return included, additional, round(subtotal + trans, 2)
 
 
 
@@ -558,6 +581,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
     total_sessions = 0
     pending_late_inr = 0.0
     pending_late_count = 0
+    ym = f"{year}-{month_num:02d}"
 
     for case_id, bucket in by_case.items():
         case = bucket["case"]
@@ -590,7 +614,10 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
                 pending_late_inr += pending_lines[-1]["amount_inr"]
                 pending_late_count += 1
 
-        included, additional, case_total = compute_case_totals(case, session_lines)
+        segment = payout_cycle.segment_for_therapist(db, case, therapist_user_id, ym)
+        included, additional, case_total = engine_case_gross(
+            case, session_lines, segment=segment
+        )
         subtotal += case_total
         total_sessions += len([s for s in session_lines if s.get("included")])
 
@@ -606,10 +633,13 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
             "pending_late_inr": round(sum(p["amount_inr"] for p in pending_lines), 2),
             "session_lines": session_lines,
             "pending_late_lines": pending_lines,
+            "cycle": {
+                "calendarDays": segment.calendar_days if segment else 0,
+                "unpaidLeaves": segment.unpaid_leaves if segment else 0,
+                "transitionTotal": segment.transition_total if segment else 0,
+                "approvedSessions": segment.approved_sessions if segment else 0,
+            },
         })
-
-    leave_deduction, leave_details = compute_leave_deduction(db, therapist_user_id, year, month_num)
-    net = max(subtotal - leave_deduction, 0)
 
     leave_balance = None
     therapist_user = db.get(User, therapist_user_id)
@@ -619,17 +649,17 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
         leave_balance = policy.get_leave_balance(db, therapist_user, year=year)
 
     return {
-        "month": f"{year}-{month_num:02d}",
+        "month": ym,
         "month_label": label,
         "therapist_user_id": therapist_user_id,
         "total_sessions": total_sessions,
         "subtotal_inr": round(subtotal, 2),
         "pending_late_inr": round(pending_late_inr, 2),
         "pending_late_count": pending_late_count,
-        "leave_deduction_inr": leave_deduction,
-        "leave_details": leave_details,
+        "leave_deduction_inr": 0,
+        "leave_details": [],
         "leave_balance": leave_balance,
-        "net_amount_inr": round(net, 2),
+        "net_amount_inr": round(subtotal, 2),
         "cases": case_groups,
     }
 
@@ -651,7 +681,32 @@ def apply_preview_edits(preview: dict, edits: dict) -> dict:
     pending_late_count = 0
     for case_group in preview["cases"]:
         case = db_case_from_preview(case_group)
-        included, additional, case_total = compute_case_totals(case, case_group.get("session_lines", []))
+        cycle = case_group.get("cycle") or {}
+        segment = None
+        if payout_cycle.uses_calendar_day_pay(case):
+            segment = payout_cycle.CycleSegment(
+                therapist_user_id=int(preview.get("therapist_user_id") or 0),
+                approved_sessions=int(cycle.get("approvedSessions") or 0),
+                approved_absence=0,
+                hours=0.0,
+                calendar_days=int(cycle.get("calendarDays") or 0),
+                unpaid_leaves=int(cycle.get("unpaidLeaves") or 0),
+                paid_leaves=0,
+                leave_credits=0,
+                transition_days=0,
+                transition_day_type="",
+                transition_total=float(cycle.get("transitionTotal") or 0),
+                therapist_start_date=None,
+                case_start_date=None,
+                case_end_date=None,
+                first_log=None,
+                last_log=None,
+                is_incoming_replacement=False,
+                is_outgoing_replacement=False,
+            )
+        included, additional, case_total = engine_case_gross(
+            case, case_group.get("session_lines", []), segment=segment
+        )
         case_group["included_sessions"] = included
         case_group["additional_sessions"] = additional
         case_group["display_included_sessions"] = _count_display_included(case, case_group.get("session_lines", []))
@@ -667,7 +722,8 @@ def apply_preview_edits(preview: dict, edits: dict) -> dict:
     preview["total_sessions"] = total_sessions
     preview["pending_late_inr"] = round(pending_late_inr, 2)
     preview["pending_late_count"] = pending_late_count
-    preview["net_amount_inr"] = round(max(preview["subtotal_inr"] - preview["leave_deduction_inr"], 0), 2)
+    preview["leave_deduction_inr"] = 0
+    preview["net_amount_inr"] = round(subtotal, 2)
     return preview
 
 
@@ -678,8 +734,8 @@ def db_case_from_preview(case_group: dict) -> Case:
         id=case_group["case_id"],
         case_code=case_group["case_code"],
         child_id=0,
-        service_type="",
-        product_module="",
+        service_type=b.get("service_type") or "",
+        product_module=b.get("product_module") or "",
     )
     if b.get("billing_type"):
         case.billing_type = BillingType(b["billing_type"])
@@ -690,6 +746,7 @@ def db_case_from_preview(case_group: dict) -> Case:
     case.package_amount_inr = b.get("package_amount_inr")
     case.pay_share_amount_inr = b.get("pay_share_amount_inr")
     case.therapist_fixed_pay_inr = b.get("therapist_fixed_pay_inr")
+    case.client_monthly_rate_inr = b.get("client_monthly_rate_inr")
     return case
 
 
