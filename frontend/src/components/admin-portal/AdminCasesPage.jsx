@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { isFinanceDeskUser } from '../../lib/financeDesk.js'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
 import { AdminCaseAllotmentWizard } from './AdminCaseAllotmentWizard.jsx'
 import { AdminCasesPipelineTable } from './AdminCasesPipelineTable.jsx'
@@ -29,14 +30,14 @@ async function downloadCaseRecordsExport() {
 export function AdminCasesPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { can, isViewOnly } = useAuth()
+  const { can, isViewOnly, user } = useAuth()
+  const financeDesk = isFinanceDeskUser(user)
+  const canCreateCase = can('case.create') && !isViewOnly && !financeDesk
   const [showCreate, setShowCreate] = useState(false)
   const [wizardKey, setWizardKey] = useState(0)
   const [initialFilters, setInitialFilters] = useState(() => defaultPipelineFilters())
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
-
-  const canCreateCase = can('case.create') && !isViewOnly
 
   useEffect(() => {
     if (searchParams.get('allot') === '1' && canCreateCase) {
@@ -54,9 +55,13 @@ export function AdminCasesPage() {
   return (
     <div className="admin-page">
       <AdminPageHeader
-        eyebrow="Case management"
+        eyebrow={financeDesk ? 'Finance' : 'Case management'}
         title="Cases"
-        subtitle="Full caseload by default — filter by status, case manager, therapist, client, and dates. Use row actions to allot, assign, review, or open the case file."
+        subtitle={
+          financeDesk
+            ? 'View-only caseload for payout and invoice cross-check. Open a case for overview, activity, session dates, and billing.'
+            : 'Full caseload by default — filter by status, case manager, therapist, client, and dates. Use row actions to allot, assign, review, or open the case file.'
+        }
         actions={
           canCreateCase ? (
             <button
@@ -93,6 +98,7 @@ export function AdminCasesPage() {
         className="admin-panel--case-board"
         padded={false}
         actions={
+          financeDesk ? null : (
           <button
             type="button"
             className="admin-btn admin-btn--ghost admin-btn--sm"
@@ -107,6 +113,7 @@ export function AdminCasesPage() {
           >
             {exporting ? 'Exporting…' : 'Export records'}
           </button>
+          )
         }
       >
         {exportError ? (

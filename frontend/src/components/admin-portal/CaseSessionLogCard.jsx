@@ -11,24 +11,28 @@ import {
 import { sessionHasTimeEdit } from '../../lib/sessionTimes.js'
 import { TransitionLogBadge } from '../daily-logs/TransitionLogBadge.jsx'
 
-function SessionLogBadges({ session, log }) {
+function SessionLogBadges({ session, log, attendanceOnly = false }) {
   return (
     <>
       {session ? <StatusBadge status={session.status} /> : null}
       {log ? <StatusBadge status={log.approval_status} /> : null}
-      <TransitionLogBadge log={log} />
-      {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
-      {log?.resubmitted_at ? (
-        <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
-      ) : null}
-      <LogOpenParentCommentBadge log={log} />
-      {sessionHasTimeEdit(session, log) ? (
-        <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
-      ) : null}
-      {session?.duplicate_day_session || log?.duplicate_day_session ? (
-        <span className="admin-badge admin-badge--warning sessions-dash__pill">Same-day duplicate</span>
-      ) : null}
-      <DownloadApprovedLogButton log={log} variant="admin" />
+      {attendanceOnly ? null : (
+        <>
+          <TransitionLogBadge log={log} />
+          {log?.comment_count > 0 ? <LogCommentCountPill count={log.comment_count} /> : null}
+          {log?.resubmitted_at ? (
+            <span className="admin-badge admin-badge--info sessions-dash__pill">Resubmitted</span>
+          ) : null}
+          <LogOpenParentCommentBadge log={log} />
+          {sessionHasTimeEdit(session, log) ? (
+            <span className="admin-badge admin-badge--warning sessions-dash__pill">Times edited</span>
+          ) : null}
+          {session?.duplicate_day_session || log?.duplicate_day_session ? (
+            <span className="admin-badge admin-badge--warning sessions-dash__pill">Same-day duplicate</span>
+          ) : null}
+          <DownloadApprovedLogButton log={log} variant="admin" />
+        </>
+      )}
     </>
   )
 }
@@ -125,6 +129,7 @@ export function CaseSessionLogCard({
   highlight = false,
   highlightRef,
   canReview,
+  attendanceOnly = false,
   onToggleExpand,
   onReviewLog,
   actingLogId,
@@ -135,7 +140,7 @@ export function CaseSessionLogCard({
   onCommentCountChange,
 }) {
   const title = formatCaseSessionLogCardTitle(session, log)
-  const meta = formatCaseSessionLogCardMeta(session, log)
+  const meta = formatCaseSessionLogCardMeta(session, log, { attendanceOnly })
   const tone = caseSessionLogCardTone(session, log)
   const cardClass = [
     'case-session-log-card',
@@ -153,7 +158,7 @@ export function CaseSessionLogCard({
           {meta ? <p className="case-session-log-card__meta">{meta}</p> : null}
         </div>
         <div className="case-session-log-card__badges">
-          <SessionLogBadges session={session} log={log} />
+          <SessionLogBadges session={session} log={log} attendanceOnly={attendanceOnly} />
         </div>
       </header>
 
@@ -162,6 +167,11 @@ export function CaseSessionLogCard({
           {session?.status === 'IN_PROGRESS' || session?.status === 'SCHEDULED'
             ? 'Session in progress — log not submitted yet.'
             : 'No therapist log submitted for this session.'}
+        </p>
+      ) : attendanceOnly ? (
+        <p className="case-session-log-card__pending">
+          Submitted by {log.therapist_name || (log.therapist_user_id ? `Therapist #${log.therapist_user_id}` : 'therapist')}
+          {log.submitted_at ? ` · ${new Date(log.submitted_at).toLocaleString()}` : ''}.
         </p>
       ) : (
         <SessionLogExpandableContent

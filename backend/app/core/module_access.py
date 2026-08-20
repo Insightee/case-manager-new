@@ -66,6 +66,10 @@ def get_allowed_case_product_modules(user: User, db: Session | None = None) -> s
     """None = all case product modules; empty set = no case-scoped data."""
     if module_bypass(user):
         return None
+    from app.core.permissions import is_finance_desk_user, user_has_permission
+
+    if is_finance_desk_user(user) and user_has_permission(user, "case.read.all"):
+        return None
     registry = build_module_registry(db)
     from app.core.service_access import normalize_service_id
 

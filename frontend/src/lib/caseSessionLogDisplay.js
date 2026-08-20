@@ -24,7 +24,7 @@ export function formatCaseSessionLogCardTitle(session, log) {
 }
 
 /** Secondary line: session, therapist, log id, comment count. */
-export function formatCaseSessionLogCardMeta(session, log) {
+export function formatCaseSessionLogCardMeta(session, log, { attendanceOnly = false } = {}) {
   const parts = []
   const sessionId = session?.id ?? log?.session_id
 
@@ -40,8 +40,10 @@ export function formatCaseSessionLogCardMeta(session, log) {
 
   if (log?.id) parts.push(`Log #${log.id}`)
 
-  const commentLabel = formatLogCommentCount(log?.comment_count)
-  if (commentLabel) parts.push(commentLabel)
+  if (!attendanceOnly) {
+    const commentLabel = formatLogCommentCount(log?.comment_count)
+    if (commentLabel) parts.push(commentLabel)
+  }
 
   return parts.join(' · ')
 }

@@ -185,6 +185,12 @@ def user_has_permission(user: User, permission: str) -> bool:
     return permission in user.permission_names
 
 
+def is_finance_desk_user(user: User) -> bool:
+    """Finance role without an admin override — view-only case/leave cross-check."""
+    names = set(user.role_names or [])
+    return RoleName.FINANCE.value in names and RoleName.SUPER_ADMIN.value not in names
+
+
 def require_permission(permission: str):
     from app.api.deps import get_current_user
 

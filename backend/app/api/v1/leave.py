@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_request_meta
 from app.core.audit import log_audit
 from app.core.database import get_db
-from app.core.permissions import RoleName, user_has_permission
+from app.core.permissions import RoleName, is_finance_desk_user, user_has_permission
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.user import User
 from app.schemas.session_absence import SessionAbsenceListResponse
@@ -113,10 +113,17 @@ def list_leave(
     if user_has_permission(user, "leave.manage"):
         if therapist_id:
             stmt = stmt.where(TherapistLeave.therapist_user_id == therapist_id)
+    elif is_finance_desk_user(user) and user_has_permission(user, "invoice.approve"):
+        stmt = stmt.where(TherapistLeave.status == LeaveStatus.APPROVED)
+        if therapist_id:
+            stmt = stmt.where(TherapistLeave.therapist_user_id == therapist_id)
     else:
         stmt = stmt.where(TherapistLeave.therapist_user_id == user.id)
     if leave_status:
-        stmt = stmt.where(TherapistLeave.status == leave_status)
+        if is_finance_desk_user(user) and not user_has_permission(user, "leave.manage"):
+            stmt = stmt.where(TherapistLeave.status == LeaveStatus.APPROVED)
+        else:
+            stmt = stmt.where(TherapistLeave.status == leave_status)
     leaves = db.scalars(stmt).all()
     return [_serialise(l, db) for l in leaves]
 
@@ -130,7 +137,12 @@ def list_child_absence_requests(
 
     if not user_has_permission(user, "leave.manage") and not user_has_permission(user, "case.read.all"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    return {"items": absence_svc.list_child_absence_for_admin(db, user)}
+    payload = {"items": absence_svc.list_child_absence_for_admin(db, user)}
+    if is_finance_desk_user(user) and not user_has_permission(user, "leave.manage"):
+        payload["items"] = [
+            item for item in payload["items"] if str(item.get("leave_status") or item.get("status") or "").upper() == "APPROVED"
+        ]
+    return payload
 
 
 @router.get("/balance/{therapist_user_id}")

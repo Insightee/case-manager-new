@@ -364,7 +364,10 @@ export async function activateCaseAllotment(caseId) {
 /**
  * Primary + secondary actions for a pipeline row (no navigation on row click).
  */
-export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true }) {
+export function buildPipelineActions(row, { canAssign, canUpdate, canCreate, canWrite = true, detailsOnly = false }) {
+  if (detailsOnly) {
+    return [{ id: 'case', label: 'Details', variant: 'ghost', href: `/admin/cases/${row.id}` }]
+  }
   if (row.in_transition) {
     const actions = [
       {

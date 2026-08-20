@@ -1,18 +1,31 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { AdminPanel, formatCurrency } from './ui/index.js'
+import './admin-therapist-picker.css'
 
 function defaultMonth() {
   return new Date().toISOString().slice(0, 7)
 }
 
+function therapistMatches(t, query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const hay = `${t.fullName || ''} ${t.email || ''} ${t.id || ''}`.toLowerCase()
+  return q.split(/\s+/).filter(Boolean).every((tok) => hay.includes(tok))
+}
+
 export function TherapistPayoutRaisePanel() {
   const { canWriteBilling } = useModuleWrite()
+  const wrapRef = useRef(null)
   const [month, setMonth] = useState(defaultMonth())
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [open, setOpen] = useState(false)
   const [therapists, setTherapists] = useState([])
-  const [therapistId, setTherapistId] = useState('')
+  const [listLoading, setListLoading] = useState(false)
+  const [listError, setListError] = useState('')
+  const [selected, setSelected] = useState(null)
   const [preview, setPreview] = useState(null)
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,22 +34,62 @@ export function TherapistPayoutRaisePanel() {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => {
     const q = new URLSearchParams()
-    if (search.trim()) q.set('search', search.trim())
+    if (debouncedSearch) q.set('search', debouncedSearch)
     if (month) q.set('month', month)
+    setListLoading(true)
+    setListError('')
     apiFetch(`/api/v1/invoices/payout-therapists?${q}`)
       .then((rows) => setTherapists(Array.isArray(rows) ? rows : []))
-      .catch(() => setTherapists([]))
-  }, [search, month])
+      .catch(() => {
+        setTherapists([])
+        setListError('Could not load therapists. Refresh and try again.')
+      })
+      .finally(() => setListLoading(false))
+  }, [debouncedSearch, month])
+
+  useEffect(() => {
+    function onDoc(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  const matches = useMemo(
+    () => therapists.filter((t) => therapistMatches(t, search)),
+    [therapists, search],
+  )
+
+  function pickTherapist(t) {
+    setSelected(t)
+    setSearch('')
+    setOpen(false)
+    setPreview(null)
+    setMessage('')
+    setError('')
+  }
+
+  function clearTherapist() {
+    setSelected(null)
+    setPreview(null)
+    setMessage('')
+    setError('')
+  }
 
   async function loadPreview() {
-    if (!therapistId) return
+    if (!selected?.id) return
     setLoading(true)
     setError('')
     setMessage('')
     try {
       const data = await apiFetch(
-        `/api/v1/invoices/preview?month=${encodeURIComponent(month)}&therapist_user_id=${therapistId}`,
+        `/api/v1/invoices/preview?month=${encodeURIComponent(month)}&therapist_user_id=${selected.id}`,
       )
       setPreview(data)
     } catch (err) {
@@ -48,7 +101,7 @@ export function TherapistPayoutRaisePanel() {
   }
 
   async function raiseInvoice() {
-    if (!therapistId) return
+    if (!selected?.id) return
     setActing(true)
     setError('')
     setMessage('')
@@ -56,12 +109,12 @@ export function TherapistPayoutRaisePanel() {
       const inv = await apiFetch('/api/v1/invoices/submit-for-therapist', {
         method: 'POST',
         body: JSON.stringify({
-          therapist_user_id: Number(therapistId),
+          therapist_user_id: Number(selected.id),
           month,
           notes: notes.trim() || 'Raised by finance',
         }),
       })
-      setMessage(`Invoice #${inv.id} is in review for ${inv.therapist_name || 'the therapist'}.`)
+      setMessage(`Invoice #${inv.id} is in review for ${inv.therapist_name || selected.fullName}.`)
       setPreview(null)
       setNotes('')
     } catch (err) {
@@ -70,8 +123,6 @@ export function TherapistPayoutRaisePanel() {
       setActing(false)
     }
   }
-
-  const selected = therapists.find((t) => String(t.id) === String(therapistId))
 
   return (
     <AdminPanel title="Raise a payout invoice" padded style={{ marginBottom: 16 }}>
@@ -89,34 +140,74 @@ export function TherapistPayoutRaisePanel() {
           }}
           aria-label="Billing month"
         />
-        <input
-          className="admin-input"
-          placeholder="Search therapist…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" disabled={!therapistId || loading} onClick={loadPreview}>
+        <div ref={wrapRef} className="admin-therapist-picker" style={{ marginBottom: 0 }}>
+          {selected ? (
+            <div className="admin-therapist-picker__selected">
+              <span className="admin-therapist-picker__selected-text">
+                <strong>{selected.fullName}</strong>
+                <span>{selected.email || `ID #${selected.id}`}</span>
+              </span>
+              <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={clearTherapist}>
+                Change
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                className="admin-input"
+                type="search"
+                placeholder="Search therapist by name or email…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setOpen(true)
+                }}
+                onFocus={() => setOpen(true)}
+                aria-label="Search therapist"
+                autoComplete="off"
+              />
+              {open ? (
+                <div className="admin-therapist-picker__menu" role="listbox">
+                  {listLoading ? <p className="admin-muted" style={{ margin: 8, fontSize: '0.85rem' }}>Loading therapists…</p> : null}
+                  {listError ? <p className="admin-therapist-picker__hint admin-therapist-picker__hint--warn">{listError}</p> : null}
+                  {!listLoading && !listError && matches.length === 0 ? (
+                    <p className="admin-therapist-picker__hint admin-therapist-picker__hint--warn">
+                      No therapists match. Try another name or email.
+                    </p>
+                  ) : null}
+                  {!listLoading
+                    ? matches.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          role="option"
+                          className="admin-therapist-picker__card"
+                          onClick={() => pickTherapist(t)}
+                        >
+                          <span className="admin-therapist-picker__card-body">
+                            <span className="admin-therapist-picker__name">{t.fullName}</span>
+                            <span className="admin-therapist-picker__email">{t.email || `ID #${t.id}`}</span>
+                            {t.hasInvoiceThisMonth ? (
+                              <span className="admin-therapist-picker__already">Already has an invoice this month</span>
+                            ) : null}
+                          </span>
+                        </button>
+                      ))
+                    : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          className="admin-btn admin-btn--ghost admin-btn--sm"
+          disabled={!selected || loading}
+          onClick={loadPreview}
+        >
           {loading ? 'Loading…' : 'Show amount'}
         </button>
       </div>
-      <select
-        className="admin-select"
-        value={therapistId}
-        onChange={(e) => {
-          setTherapistId(e.target.value)
-          setPreview(null)
-          setMessage('')
-        }}
-        style={{ width: '100%', marginBottom: 12 }}
-      >
-        <option value="">Select therapist</option>
-        {therapists.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.fullName}
-            {t.hasInvoiceThisMonth ? ' · already has an invoice' : ''}
-          </option>
-        ))}
-      </select>
       {selected?.hasInvoiceThisMonth ? (
         <p className="admin-alert admin-alert--warning">This therapist already has a payout invoice for {month}.</p>
       ) : null}
@@ -150,7 +241,7 @@ export function TherapistPayoutRaisePanel() {
         <button
           type="button"
           className="admin-btn admin-btn--primary admin-btn--sm"
-          disabled={acting || !therapistId || selected?.hasInvoiceThisMonth}
+          disabled={acting || !selected || selected?.hasInvoiceThisMonth}
           onClick={raiseInvoice}
         >
           {acting ? 'Raising…' : 'Raise invoice'}
