@@ -129,6 +129,8 @@ def create_case(
     db: Session = Depends(get_db),
 ):
     data = payload.model_dump()
+    if "zoho_id" in data:
+        data["zoho_id"] = case_service.normalize_zoho_id(data.get("zoho_id"))
     billing_data = {k: data.pop(k) for k in list(data.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
         "client_monthly_rate_inr",
@@ -210,6 +212,8 @@ def update_case(
     old_status = case.status
     old = {"status": case.status.value, "case_manager_user_id": case.case_manager_user_id}
     updates = payload.model_dump(exclude_unset=True)
+    if "zoho_id" in updates:
+        updates["zoho_id"] = case_service.normalize_zoho_id(updates.get("zoho_id"))
     billing_data = {k: updates.pop(k) for k in list(updates.keys()) if k in (
         "product_billing_rule_id", "client_billing_mode", "billing_type", "client_rate_per_session_inr",
         "client_monthly_rate_inr",

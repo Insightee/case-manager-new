@@ -34,6 +34,7 @@ class CaseCreate(CaseBillingFields, CaseServiceAddressFields):
     region: Optional[str] = None
     operational_stage: Optional[str] = None
     notes: Optional[str] = None
+    zoho_id: Optional[str] = Field(None, max_length=64)
 
 
 class CaseUpdate(CaseBillingFields, CaseServiceAddressFields):
@@ -46,12 +47,14 @@ class CaseUpdate(CaseBillingFields, CaseServiceAddressFields):
     region: Optional[str] = None
     operational_stage: Optional[str] = None
     notes: Optional[str] = None
+    zoho_id: Optional[str] = Field(None, max_length=64)
 
 
 class CaseRead(CaseBillingFields):
     id: int
     case_code: str
     external_case_ref: Optional[str] = None
+    zoho_id: Optional[str] = None
     child_id: int
     child_name: Optional[str] = None
     therapist_name: Optional[str] = None

@@ -6,6 +6,7 @@ import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 
 import { CaseBillingForm } from './CaseBillingForm.jsx'
 import { CaseBillingActionsCard } from './CaseBillingActionsCard.jsx'
+import { CaseZohoIdForm } from './CaseZohoIdForm.jsx'
 import { BillingApprovalPanel } from './BillingApprovalPanel.jsx'
 import { CaseServiceAddressForm } from './CaseServiceAddressForm.jsx'
 import { PortalTabBar, StatusBadge } from './ui/index.js'
@@ -287,6 +288,7 @@ export function AdminCaseDetailPage() {
               ) : null}
             </div>
           ) : null}
+          <CaseZohoIdForm caseItem={caseRow} canEdit={canEditCase} onSaved={setCaseRow} />
           <CaseBillingForm caseItem={caseRow} readOnly />
           {canEditCase ? (
             <>

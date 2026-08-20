@@ -84,6 +84,8 @@ def allot_case(
     payload: dict,
 ) -> dict:
     data = dict(payload)
+    if "zoho_id" in data:
+        data["zoho_id"] = case_service.normalize_zoho_id(data.get("zoho_id"))
     therapist_id = data.pop("therapist_user_id")
     start = data.pop("assignment_start_date", None) or date.today()
     reason = data.pop("reason_for_change", "Initial allotment")

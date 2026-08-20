@@ -59,6 +59,7 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
   const canSubmitAllot = canCreateProductCase(productModule)
   const [caseCode, setCaseCode] = useState('')
   const [caseCodeLoading, setCaseCodeLoading] = useState(false)
+  const [zohoId, setZohoId] = useState('')
   const [serviceType, setServiceType] = useState('')
   const [serviceCategories, setServiceCategories] = useState([])
   const [clinicalCatalog, setClinicalCatalog] = useState([])
@@ -316,6 +317,9 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
       } else if (serviceLocationType === 'online') {
         Object.assign(payload, { service_landmark: 'online' })
       }
+      if (zohoId.trim()) {
+        payload.zoho_id = zohoId.trim()
+      }
       const result = await apiFetch('/api/v1/admin/cases/allot', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -516,6 +520,21 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             />
             <span id="allot-case-ref-hint" className="admin-muted" style={{ fontSize: '0.75rem' }}>
               Auto-generated; cannot be edited.
+            </span>
+          </label>
+          <label htmlFor="allot-zoho-id">
+            Zoho ID
+            <input
+              id="allot-zoho-id"
+              className="admin-input"
+              value={zohoId}
+              onChange={(e) => setZohoId(e.target.value)}
+              placeholder="INS-697"
+              maxLength={64}
+              aria-describedby="allot-zoho-id-hint"
+            />
+            <span id="allot-zoho-id-hint" className="admin-muted" style={{ fontSize: '0.75rem' }}>
+              Optional client billing ID. You can add this later.
             </span>
           </label>
           <label htmlFor="allot-service-type">
@@ -836,6 +855,10 @@ export function AdminCaseAllotmentWizard({ onComplete, onCancel }) {
             <div>
               <dt>Case code</dt>
               <dd>{caseCode || '—'}</dd>
+            </div>
+            <div>
+              <dt>Zoho ID</dt>
+              <dd>{zohoId.trim() || '—'}</dd>
             </div>
             <div>
               <dt>Therapist</dt>

@@ -24,6 +24,7 @@ How to load **real** people and cases into InsighteCase without using `demo_seed
 | `external_employee_id` | `users` | HR / payroll employee number |
 | `external_client_id` | `children` | CRM client or student id |
 | `external_case_ref` | `cases` | Legacy case reference |
+| `zoho_id` | `cases` | Zoho client billing ID (stored only; not unique — one parent may have several cases) |
 
 Login remains **email** only. Import script upserts by external id or email.
 
@@ -91,7 +92,7 @@ Does **not** create cases or therapist assignments.
 
 ### Cases + assignment
 
-No bulk CSV endpoint yet. For each case use **Admin → Case allotment** or:
+No bulk CSV endpoint for creating cases. For each case use **Admin → Case allotment** or:
 
 `POST /api/v1/admin/cases/allot`
 
@@ -103,6 +104,25 @@ Resolve IDs first:
 **Optional `case_code`:** must be unique. Auto format: `IC-{year}-{HC|SS}-{seq}` (`HC` = homecare, `SS` = shadow_support).
 
 Set **billing at allot**: `billing_type` (`PER_SESSION` | `PACKAGE`), rates, `compensation_mode`, `pay_share_pct`, `client_billing_mode`, etc.
+
+**Optional `zoho_id`:** Zoho client billing identifier (e.g. `INS-697`, `CUS-00753`). Stored on the case; not used for payments yet. Can also be set later on case detail or via bulk upload.
+
+### Case Zoho IDs (bulk)
+
+| Item | Detail |
+|------|--------|
+| UI | Admin → Cases → **Upload Zoho IDs** (preview, then confirm) |
+| API | `POST /api/v1/admin/cases/bulk-update-zoho-id` (`apply: false` preview, `apply: true` save) |
+| Columns | `Cases` / `Case Id` / `case_code` and `Zoho Id` |
+| Rules | Only rows with both a case code and a Zoho ID are saved. Match is on `case_code`. Duplicate case codes in one file: same ID skipped, different IDs fail. |
+
+Example:
+
+```csv
+Cases,Zoho Id
+IC-2026-HC-097,INS-697
+IC-2026-SS-159,CUS-00753
+```
 
 ---
 
@@ -150,6 +170,7 @@ Leave `case_code` blank to auto-generate. `product_module`: `homecare` or `shado
 | Lookup families | GET | `/api/v1/admin/families?search=` |
 | Lookup users | GET | `/api/v1/admin/users/directory?roles=THERAPIST,CASE_MANAGER` |
 | Allot case | POST | `/api/v1/admin/cases/allot` |
+| Bulk Zoho IDs | POST | `/api/v1/admin/cases/bulk-update-zoho-id` |
 
 Authenticate as a user with `user.manage` / case permissions (e.g. super admin). Base URL: local `http://127.0.0.1:8000` or production API from [DEPLOY.md](./DEPLOY.md).
 

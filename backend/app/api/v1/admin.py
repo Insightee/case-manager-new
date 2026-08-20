@@ -66,6 +66,11 @@ from app.schemas.admin_case_pipeline import AdminCasePipelineBoard
 from app.schemas.admin_iep import AdminIepDashboard
 from app.schemas.clinical import ObservationChecklistReview
 from app.schemas.iep_plan import IepPlanSave, IepPlanSuggestionCreate
+from app.schemas.case_zoho import (
+    CaseZohoIdBulkRequest,
+    CaseZohoIdBulkResponse,
+    CaseZohoIdBulkRowResult,
+)
 from app.schemas.therapist_onboarding import (
     TherapistBulkOnboardRequest,
     TherapistOnboardCreate,
@@ -87,6 +92,7 @@ from app.schemas.therapist_profile import (
 from app.services import admin_case_pipeline_service as case_pipeline_svc
 from app.services import admin_case_records_export_service as case_records_export_svc
 from app.services import admin_iep_service as admin_iep_svc
+from app.services import case_zoho_id_bulk_service as case_zoho_bulk_svc
 from app.services import therapist_onboarding_service as therapist_onboard_svc
 from app.services import therapist_primary_cm_bulk_service as therapist_cm_bulk_svc
 from app.schemas.therapist_review import (
@@ -2514,6 +2520,39 @@ def admin_cases_records_export(
         content=csv_text,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="case-records-{stamp}.csv"'},
+    )
+
+
+@router.post("/cases/bulk-update-zoho-id", response_model=CaseZohoIdBulkResponse)
+def bulk_update_case_zoho_ids(
+    payload: CaseZohoIdBulkRequest,
+    request: Request,
+    user: User = Depends(require_mutation_permission("case.update")),
+    db: Session = Depends(get_db),
+):
+    rows = [row.model_dump() for row in payload.rows]
+    outcome = case_zoho_bulk_svc.process_bulk_zoho_id_rows(db, rows, actor=user, apply=payload.apply)
+    if payload.apply and outcome["summary"].get("updated", 0) > 0:
+        meta = get_request_meta(request)
+        log_audit(
+            db,
+            actor_user_id=user.id,
+            action="bulk_update_case_zoho_id",
+            entity_type="case",
+            entity_id=None,
+            new_value={
+                "updated": outcome["summary"].get("updated", 0),
+                "unchanged": outcome["summary"].get("unchanged", 0),
+                "skipped": outcome["summary"].get("skipped", 0),
+                "failed": outcome["summary"].get("failed", 0),
+            },
+            **meta,
+        )
+        db.commit()
+    return CaseZohoIdBulkResponse(
+        apply=payload.apply,
+        summary=outcome["summary"],
+        results=[CaseZohoIdBulkRowResult(**row) for row in outcome["results"]],
     )
 
 

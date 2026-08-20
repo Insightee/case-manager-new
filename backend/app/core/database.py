@@ -140,6 +140,9 @@ def ensure_sqlite_schema_patches() -> None:
         if "external_case_ref" not in case_cols_ext:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cases ADD COLUMN external_case_ref VARCHAR(128)"))
+        if "zoho_id" not in case_cols_ext:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE cases ADD COLUMN zoho_id VARCHAR(64)"))
         if "day_type" not in case_cols_ext:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cases ADD COLUMN day_type VARCHAR(16)"))

@@ -29,7 +29,7 @@ import app.models  # noqa: F401
 _REQUIRED_AT_HEAD: dict[str, tuple[str, ...]] = {
     "users": ("external_employee_id",),
     "children": ("external_client_id",),
-    "cases": ("external_case_ref",),
+    "cases": ("external_case_ref", "zoho_id"),
     "daily_logs": (
         "session_notes",
         "goals_addressed",

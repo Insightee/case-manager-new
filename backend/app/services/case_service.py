@@ -21,6 +21,22 @@ from app.models.user import User
 from app.services.admin_scope_service import team_case_access_clause
 from app.services.case_portal_visibility import portal_visible_case_status_filter
 
+_EMPTY_ZOHO_MARKERS = frozenset({"", "-", "—", "–", "n/a", "na", "none", "null"})
+
+
+def normalize_zoho_id(value: str | None) -> str | None:
+    text = (value or "").strip()
+    if not text or text.lower() in _EMPTY_ZOHO_MARKERS:
+        return None
+    return text[:64]
+
+
+def normalize_case_code(value: str | None) -> str | None:
+    text = (value or "").strip().upper()
+    if not text or text.lower() in _EMPTY_ZOHO_MARKERS:
+        return None
+    return text
+
 
 def _apply_module_filter(stmt, user: User):
     allowed = get_allowed_case_product_modules(user)
@@ -240,6 +256,7 @@ def case_to_read(
         "id": case.id,
         "case_code": case.case_code,
         "external_case_ref": case.external_case_ref,
+        "zoho_id": case.zoho_id,
         "child_id": case.child_id,
         "child_name": case.child.full_name if case.child else None,
         "therapist_name": therapist_name,

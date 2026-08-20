@@ -25,6 +25,7 @@ MAX_EXPORT_ROWS = 5000
 
 CASE_RECORDS_HEADERS: list[tuple[str, str]] = [
     ("Case Id", "case_code"),
+    ("Zoho id", "zoho_id"),
     ("Client id", "external_client_id"),
     ("Client name", "client_name"),
     ("Therapist id", "therapist_external_id"),
@@ -165,6 +166,7 @@ def build_case_records_rows(db: Session, user: User) -> list[dict[str, Any]]:
         rows.append(
             {
                 "case_code": case.case_code,
+                "zoho_id": case.zoho_id or "",
                 "external_client_id": (child.external_client_id if child else "") or "",
                 "client_name": child.full_name if child else "",
                 "therapist_external_id": (assign.external_employee_id if assign else "") or "",

@@ -308,6 +308,7 @@ def import_cases(db, rows: list[dict], *, actor: User, dry_run: bool, stats: dic
             "therapist_user_id": therapist.id,
             "case_manager_user_id": cm.id if cm else None,
             "case_code": (row.get("case_code") or "").strip() or None,
+            "zoho_id": (row.get("zoho_id") or "").strip() or None,
             "region": (row.get("region") or "").strip() or None,
             "notes": (row.get("notes") or "").strip() or None,
         }

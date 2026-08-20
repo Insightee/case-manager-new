@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { AdminPageHeader, AdminPanel } from './ui/index.js'
 import { AdminCaseAllotmentWizard } from './AdminCaseAllotmentWizard.jsx'
 import { AdminCasesPipelineTable } from './AdminCasesPipelineTable.jsx'
+import { AdminCaseZohoIdBulkPanel } from './AdminCaseZohoIdBulkPanel.jsx'
 import { caseStateFromLegacyStatus, defaultPipelineFilters } from '../../lib/adminCasePipeline.js'
 
 async function downloadCaseRecordsExport() {
@@ -35,8 +36,10 @@ export function AdminCasesPage() {
   const [initialFilters, setInitialFilters] = useState(() => defaultPipelineFilters())
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
+  const [bulkMessage, setBulkMessage] = useState('')
 
   const canCreateCase = can('case.create') && !isViewOnly
+  const canBulkZoho = can('case.update') && !isViewOnly
 
   useEffect(() => {
     if (searchParams.get('allot') === '1' && canCreateCase) {
@@ -93,25 +96,45 @@ export function AdminCasesPage() {
         className="admin-panel--case-board"
         padded={false}
         actions={
-          <button
-            type="button"
-            className="admin-btn admin-btn--ghost admin-btn--sm"
-            disabled={exporting}
-            onClick={() => {
-              setExportError('')
-              setExporting(true)
-              downloadCaseRecordsExport()
-                .catch((err) => setExportError(err.message || 'Could not export case records.'))
-                .finally(() => setExporting(false))
-            }}
-          >
-            {exporting ? 'Exporting…' : 'Export records'}
-          </button>
+          <div className="admin-btn-group">
+            {canBulkZoho ? (
+              <AdminCaseZohoIdBulkPanel
+                onSuccess={(msg) => {
+                  setExportError('')
+                  setBulkMessage(msg)
+                }}
+                onError={(msg) => {
+                  setBulkMessage('')
+                  setExportError(msg || '')
+                }}
+              />
+            ) : null}
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              disabled={exporting}
+              onClick={() => {
+                setExportError('')
+                setBulkMessage('')
+                setExporting(true)
+                downloadCaseRecordsExport()
+                  .catch((err) => setExportError(err.message || 'Could not export case records.'))
+                  .finally(() => setExporting(false))
+              }}
+            >
+              {exporting ? 'Exporting…' : 'Export records'}
+            </button>
+          </div>
         }
       >
         {exportError ? (
           <p className="admin-alert admin-alert--warning" style={{ margin: '12px 16px 0' }}>
             {exportError}
+          </p>
+        ) : null}
+        {bulkMessage ? (
+          <p className="admin-alert admin-alert--success" style={{ margin: '12px 16px 0' }}>
+            {bulkMessage}
           </p>
         ) : null}
         <div className="admin-panel__body admin-panel__body--case-board">
