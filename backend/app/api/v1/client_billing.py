@@ -1190,6 +1190,7 @@ def admin_record_payment(
             payload.reference,
             payload.notes,
             user.id,
+            tds_inr=payload.tds_inr,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1238,13 +1239,18 @@ def admin_confirm_payment_claim(
         description="Optional cap — confirm up to this amount (max claim, max collectible). "
         "Use when collectible dropped after parent submitted the claim.",
     ),
+    tds_inr: Optional[float] = Query(
+        None,
+        ge=0,
+        description="TDS withheld by the payer (B2B). Applied to the invoice on top of the bank amount.",
+    ),
     user: User = Depends(require_mutation_permission("invoice.approve")),
     db: Session = Depends(get_db),
 ):
     ensure_billing_write_access(user)
     try:
         result = client_billing_service.confirm_payment_claim(
-            db, payment_id, user.id, confirm_amount_inr=amount_inr
+            db, payment_id, user.id, confirm_amount_inr=amount_inr, tds_inr=tds_inr
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

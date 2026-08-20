@@ -40,6 +40,10 @@ def generate_draft_from_ledger(
     if not case:
         raise ValueError("Case not found")
 
+    billing_ledger_service.sync_case_month_ledger(
+        db, case_id=case_id, billing_month=billing_month
+    )
+
     statuses = [BillableStatus.BILLABLE]
     if include_pending:
         statuses.append(BillableStatus.PENDING_REVIEW)

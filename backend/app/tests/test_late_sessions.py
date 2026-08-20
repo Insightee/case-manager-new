@@ -50,7 +50,15 @@ def test_late_session_pending_excluded_from_net_until_approved():
     assert preview.status_code == 200
     body = preview.json()
     net_before = body["net_amount_inr"]
-    case_id = body["cases"][0]["case_id"]
+    homecare = next(
+        (
+            cg
+            for cg in body["cases"]
+            if "homecare" in str((cg.get("billing") or {}).get("product_module") or "").lower()
+        ),
+        None,
+    )
+    case_id = (homecare or body["cases"][0])["case_id"]
 
     create = client.post(
         "/api/v1/invoices/late-sessions",

@@ -108,14 +108,16 @@ class DailyLogFinanceRead(BaseModel):
     transition_day_count: Optional[int] = None
     case_id: Optional[int] = None
     attendance_status: str
-    activities_done: Optional[str] = None
     submitted_at: Optional[datetime]
     approval_status: LogApprovalStatus
     late_addition: bool = False
     absence_reason: Optional[str] = None
     dispute_status: Optional[str] = None
+    scheduled_date: Optional[date] = None
+    therapist_user_id: Optional[int] = None
+    therapist_name: Optional[str] = None
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "extra": "ignore"}
 
 
 class ParentSessionLogRead(BaseModel):

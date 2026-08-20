@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -14,7 +15,7 @@ from app.core.database import get_db
 from app.core.db_errors import commit_or_http
 from app.core.module_access import user_has_feature
 from app.core.module_write import ensure_log_review_write_access
-from app.core.permissions import RoleName, case_scope_check, require_permission, user_has_permission
+from app.core.permissions import RoleName, case_scope_check, is_finance_desk_user, require_permission, user_has_permission
 from app.models.case import ClientBillingMode
 from app.models.daily_log import LogApprovalStatus
 from app.models.user import User
@@ -38,6 +39,7 @@ from app.models.document_comment import DocumentComment, DocumentEntityType
 from app.models.user import User
 
 router = APIRouter(prefix="/daily-logs", tags=["daily-logs"])
+logger = logging.getLogger("insightcase.daily_logs")
 
 
 class LogRejectAction(BaseModel):
@@ -65,6 +67,17 @@ def _log_case_scope(db: Session, user: User, log) -> None:
     case = case_service.get_case(db, log.session.case_id)
     if not case or not case_scope_check(db, user, case):
         raise HTTPException(status_code=403, detail="Case access denied")
+
+
+def _may_access_daily_logs_module(user: User, db: Session) -> bool:
+    if user_has_feature(user, "session_logs", db) or user_has_permission(user, "daily_log.create"):
+        return True
+    return user_has_permission(user, "session.read") and user_has_permission(user, "invoice.approve")
+
+
+def _require_daily_logs_module(user: User, db: Session) -> None:
+    if user_has_permission(user, "session.read") and not _may_access_daily_logs_module(user, db):
+        raise HTTPException(status_code=403, detail="Session logs module access required")
 
 
 def _therapist_lists_own_logs_only(user: User) -> bool:
@@ -109,8 +122,7 @@ def list_daily_logs(
 ):
     if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.review"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    if user_has_permission(user, "session.read") and not user_has_feature(user, "session_logs", db) and not user_has_permission(user, "daily_log.create"):
-        raise HTTPException(status_code=403, detail="Session logs module access required")
+    _require_daily_logs_module(user, db)
     own_logs_only = _therapist_lists_own_logs_only(user)
     if therapist_user_id is None and own_logs_only:
         therapist_user_id = user.id
@@ -130,7 +142,7 @@ def list_daily_logs(
             if case and case_scope_check(db, user, case):
                 scoped.append(log)
         logs = scoped
-    is_finance = RoleName.FINANCE.value in user.role_names and RoleName.SUPER_ADMIN.value not in user.role_names
+    is_finance = is_finance_desk_user(user)
 
     virtual_log_dicts = virtual_logs.collect_virtual_logs(
         db,
@@ -159,7 +171,18 @@ def list_daily_logs(
             virtual_dicts_for_counts.append(vlog_dict)
 
     if is_finance:
-        res = [DailyLogFinanceRead(**log_service.log_to_read(l, include_clinical=False)) for l in logs]
+        therapist_ids = {l.session.therapist_user_id for l in logs if l.session}
+        therapist_names = _therapist_names_by_id(db, therapist_ids)
+        res = [
+            DailyLogFinanceRead(
+                **log_service.log_to_read(
+                    l,
+                    include_clinical=False,
+                    therapist_name=therapist_names.get(l.session.therapist_user_id) if l.session else None,
+                )
+            )
+            for l in logs
+        ]
         combined = res + virtual_logs_out
     else:
         therapist_ids = {l.session.therapist_user_id for l in logs if l.session}
@@ -238,7 +261,7 @@ def get_log_comment_counts(
     }
 
 
-@router.get("/{log_id}", response_model=DailyLogRead)
+@router.get("/{log_id}")
 def get_daily_log(
     log_id: int,
     user: User = Depends(get_current_user),
@@ -246,12 +269,13 @@ def get_daily_log(
 ):
     if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.review"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    if user_has_permission(user, "session.read") and not user_has_feature(user, "session_logs", db) and not user_has_permission(user, "daily_log.create"):
-        raise HTTPException(status_code=403, detail="Session logs module access required")
+    _require_daily_logs_module(user, db)
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     _ensure_daily_log_readable(db, user, log)
+    if is_finance_desk_user(user):
+        return DailyLogFinanceRead(**_log_to_read_for_db(db, log, include_clinical=False))
     read = _log_to_read_for_db(db, log)
     log_service.attach_comment_counts(db, [read], parent_visible_only=False)
     log_service.attach_structured_evidence(db, [read])
@@ -266,8 +290,9 @@ def download_daily_log_pdf(
 ):
     if not user_has_permission(user, "session.read") and not user_has_permission(user, "daily_log.review"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    if user_has_permission(user, "session.read") and not user_has_feature(user, "session_logs", db) and not user_has_permission(user, "daily_log.create"):
-        raise HTTPException(status_code=403, detail="Session logs module access required")
+    _require_daily_logs_module(user, db)
+    if is_finance_desk_user(user):
+        raise HTTPException(status_code=403, detail="Finance can review attendance dates, not download log content.")
     log = log_service.get_log(db, log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
@@ -440,7 +465,7 @@ def approve_log(
                 billing_month=log.session.scheduled_date.strftime("%Y-%m"),
             )
     except Exception:
-        pass
+        logger.exception("Ledger write failed while approving daily log %s", log_id)
     db.commit()
     return {"status": "approved"}
 

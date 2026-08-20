@@ -1,6 +1,7 @@
 from app.models.case import BillingType, Case, CompensationMode
 from app.models.invoice_line import SessionLineType
 from app.services import invoice_billing_service as billing
+from app.services.finance_payout_preview_service import CycleSegment
 
 
 def _case_per_session():
@@ -90,3 +91,52 @@ def test_package_extra_fixed_lump():
     assert included == 20
     assert additional == 1
     assert total == 26250.0
+
+
+def test_engine_case_gross_homecare_uses_approved_sessions_times_share():
+    case = _case_per_session()
+    lines = [
+        {"included": True, "line_type": SessionLineType.PER_SESSION.value, "amount_inr": 600, "flags": {}},
+    ] * 5
+    included, additional, total = billing.engine_case_gross(case, lines, segment=None)
+    assert total == 3000.0
+
+
+def test_engine_case_gross_shadow_uses_cycle_days_plus_transition():
+    case = Case(
+        id=9,
+        case_code="T-SHADOW",
+        child_id=1,
+        service_type="Shadow support",
+        product_module="shadow_support",
+    )
+    case.billing_type = BillingType.PACKAGE
+    case.compensation_mode = CompensationMode.PERCENTAGE
+    case.package_amount_inr = 30000
+    case.pay_share_amount_inr = 18000
+    lines = [
+        {"included": True, "line_type": SessionLineType.INCLUDED.value, "amount_inr": 1000, "flags": {}},
+    ] * 8
+    segment = CycleSegment(
+        therapist_user_id=1,
+        approved_sessions=8,
+        approved_absence=0,
+        hours=0.0,
+        calendar_days=10,
+        unpaid_leaves=0,
+        paid_leaves=0,
+        leave_credits=0,
+        transition_days=1,
+        transition_day_type="HALF_DAY",
+        transition_total=500.0,
+        therapist_start_date=None,
+        case_start_date=None,
+        case_end_date=None,
+        first_log=None,
+        last_log=None,
+        is_incoming_replacement=False,
+        is_outgoing_replacement=True,
+    )
+    included, additional, total = billing.engine_case_gross(case, lines, segment=segment)
+    assert included == 8
+    assert total == round((18000 / 30) * 10 + 500, 2)

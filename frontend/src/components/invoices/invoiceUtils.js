@@ -1,5 +1,11 @@
 import { CONFIDENCE_LEVELS } from '../../lib/financeConfidence.js'
 
+function usesCalendarDayPay(caseGroup) {
+  const mod = String(caseGroup?.billing?.product_module || caseGroup?.billing_snapshot?.product_module || '')
+    .toLowerCase()
+  return mod.includes('shadow') || mod.includes('b2b')
+}
+
 export function isInvoiceAmendable(apiStatus) {
   return apiStatus === 'IN_REVIEW' || apiStatus === 'QUERIED' || apiStatus === 'REJECTED' || apiStatus === 'DRAFT'
 }
@@ -11,6 +17,8 @@ export function applyLocalExcludes(preview, excludeIds) {
   let subtotal = 0
   let totalSessions = 0
   for (const cg of next.cases || []) {
+    const calendarPay = usesCalendarDayPay(cg)
+    const originalGross = cg.therapist_share_inr || 0
     let caseTotal = 0
     let included = 0
     let additional = 0
@@ -25,7 +33,7 @@ export function applyLocalExcludes(preview, excludeIds) {
         else if (line.line_type === 'INCLUDED') included += 1
       }
     }
-    cg.therapist_share_inr = Math.round(caseTotal * 100) / 100
+    cg.therapist_share_inr = calendarPay ? originalGross : Math.round(caseTotal * 100) / 100
     cg.included_sessions = included
     cg.additional_sessions = additional
     if (cg.billing?.billing_type === 'PER_SESSION' || cg.billing_snapshot?.billing_type === 'PER_SESSION') {

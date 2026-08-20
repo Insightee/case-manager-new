@@ -75,6 +75,7 @@ function PaymentClaimReviewCard({
         <div className="client-inv__claim-card-main">
           <p className="client-inv__claim-card-title">
             {formatCurrency(payment.amountInr)}
+            {payment.tdsInr ? ` · TDS ${formatCurrency(payment.tdsInr)}` : ''}
             <span className="client-inv__claim-card-status">{paymentStatusLabel(payment.paymentStatus)}</span>
           </p>
           <p className="client-inv__claim-card-meta">
@@ -174,6 +175,8 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
   const [loading, setLoading] = useState(true)
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [payAmount, setPayAmount] = useState('')
+  const [payTds, setPayTds] = useState('0')
+  const [payNote, setPayNote] = useState('')
   const [payMethod, setPayMethod] = useState('UPI')
   const [payRef, setPayRef] = useState('')
   const [resolveId, setResolveId] = useState(null)
@@ -236,8 +239,10 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
         method: 'POST',
         body: JSON.stringify({
           amount_inr: Number(payAmount),
+          tds_inr: Number(payTds || 0),
           method: payMethod,
           reference: payRef || null,
+          notes: payNote.trim() || null,
         }),
       })
       setPaymentOpen(false)
@@ -507,13 +512,23 @@ export function InvoiceDetailDrawer({ invoiceId, onClose, onRefresh, canWriteBil
         {canWriteBilling && paymentOpen && detail ? (
           <form onSubmit={recordPayment} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
             <h4 style={{ margin: '0 0 10px' }}>Record payment</h4>
+            <p className="admin-muted" style={{ marginTop: 0, fontSize: '0.8rem' }}>
+              Amount received is what hit the bank. TDS is optional (usually B2B). Together they close the invoice.
+            </p>
+            <label className="client-inv__filter-label">Amount received (INR)</label>
             <input type="number" className="client-inv__filter-input" style={{ width: '100%', marginBottom: 8 }} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} required />
+            <label className="client-inv__filter-label">TDS withheld by payer (INR)</label>
+            <input type="number" className="client-inv__filter-input" style={{ width: '100%', marginBottom: 8 }} value={payTds} onChange={(e) => setPayTds(e.target.value)} min="0" />
             <select className="client-inv__filter-input" style={{ width: '100%', marginBottom: 8 }} value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
               {['UPI', 'BANK_TRANSFER', 'CASH', 'CHEQUE', 'GATEWAY'].map((m) => (
                 <option key={m} value={m}>{m.replaceAll('_', ' ')}</option>
               ))}
             </select>
             <input className="client-inv__filter-input" style={{ width: '100%', marginBottom: 8 }} placeholder="Reference" value={payRef} onChange={(e) => setPayRef(e.target.value)} />
+            <textarea className="client-inv__filter-input" style={{ width: '100%', marginBottom: 8, minHeight: 48 }} placeholder="Note (optional)" value={payNote} onChange={(e) => setPayNote(e.target.value)} />
+            <p className="admin-muted" style={{ fontSize: '0.8rem' }}>
+              Applied to invoice: {formatCurrency(Number(payAmount || 0) + Number(payTds || 0))}
+            </p>
             <div className="admin-btn-group">
               <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={acting}>
                 Save payment

@@ -58,21 +58,39 @@ def client_lumpsum_inr(case: Case) -> float | None:
     return None
 
 
-def per_session_share_inr(case: Case) -> float:
-    share = therapist_share_inr(case)
+def per_unit_from_share(case: Case, share: float) -> float:
+    """Per-day (shadow/B2B) or per-session (homecare) unit from a monthly/session lump."""
     if share <= 0:
         return 0.0
-
     if uses_calendar_day_pay(case):
         return round(share / SHADOW_MONTHLY_DAYS, 2)
-
     if case.billing_type == BillingType.PER_SESSION:
         return round(share, 2)
-
     pkg_count = int(case.package_session_count or 0)
     if pkg_count <= 0:
         return 0.0
     return round(share / pkg_count, 2)
+
+
+def per_session_share_inr(case: Case) -> float:
+    return per_unit_from_share(case, therapist_share_inr(case))
+
+
+def client_configured_share_inr(case: Case) -> float:
+    """Client allotment amount: monthly/package lump or per-session rate."""
+    if uses_calendar_day_pay(case):
+        if case.package_amount_inr:
+            return float(case.package_amount_inr)
+        if case.client_monthly_rate_inr:
+            return float(case.client_monthly_rate_inr)
+        if case.client_rate_per_session_inr:
+            return round(float(case.client_rate_per_session_inr) * SHADOW_MONTHLY_DAYS, 2)
+        return 0.0
+    if case.billing_type == BillingType.PER_SESSION:
+        return float(case.client_rate_per_session_inr or 0)
+    if case.billing_type == BillingType.MONTHLY_FIXED:
+        return float(case.client_monthly_rate_inr or case.package_amount_inr or 0)
+    return float(case.package_amount_inr or 0)
 
 
 def pay_month_day(d: date) -> int:
@@ -139,6 +157,28 @@ def calendar_days_for_segment(
     return calendar_days_from_start_day(seg_start)
 
 
+def predicted_amount_inr(
+    case: Case,
+    *,
+    share: float,
+    approved_sessions: int,
+    calendar_days: int = SHADOW_MONTHLY_DAYS,
+    unpaid_leaves: int = 0,
+) -> float:
+    """Payout-report money rule with an injected lump (therapist share or client allotment)."""
+    if share <= 0:
+        return 0.0
+    if uses_calendar_day_pay(case):
+        effective_days = max(int(calendar_days) - int(unpaid_leaves), 0)
+        return round((share / SHADOW_MONTHLY_DAYS) * effective_days, 2)
+    if case.billing_type == BillingType.MONTHLY_FIXED:
+        return round(share, 2) if int(approved_sessions) > 0 else 0.0
+    rate = per_unit_from_share(case, share)
+    if rate <= 0:
+        return 0.0
+    return round(rate * int(approved_sessions), 2)
+
+
 def predicted_subtotal_inr(
     case: Case,
     *,
@@ -146,18 +186,29 @@ def predicted_subtotal_inr(
     calendar_days: int = SHADOW_MONTHLY_DAYS,
     unpaid_leaves: int = 0,
 ) -> float:
-    share = therapist_share_inr(case)
-    if share <= 0:
-        return 0.0
+    return predicted_amount_inr(
+        case,
+        share=therapist_share_inr(case),
+        approved_sessions=approved_sessions,
+        calendar_days=calendar_days,
+        unpaid_leaves=unpaid_leaves,
+    )
 
-    if uses_calendar_day_pay(case):
-        effective_days = max(calendar_days - unpaid_leaves, 0)
-        return round((share / SHADOW_MONTHLY_DAYS) * effective_days, 2)
 
-    rate = per_session_share_inr(case)
-    if rate <= 0:
-        return 0.0
-    return round(rate * approved_sessions, 2)
+def predicted_client_amount_inr(
+    case: Case,
+    *,
+    approved_sessions: int,
+    calendar_days: int = SHADOW_MONTHLY_DAYS,
+    unpaid_leaves: int = 0,
+) -> float:
+    return predicted_amount_inr(
+        case,
+        share=client_configured_share_inr(case),
+        approved_sessions=approved_sessions,
+        calendar_days=calendar_days,
+        unpaid_leaves=unpaid_leaves,
+    )
 
 
 @dataclass
@@ -167,6 +218,49 @@ class TherapistCaseSegment:
     last_log: date | None
     is_incoming_replacement: bool
     is_outgoing_replacement: bool
+
+
+@dataclass
+class CycleSegment:
+    """One therapist's payout-report facts for a case × month."""
+
+    therapist_user_id: int
+    approved_sessions: int
+    approved_absence: int
+    hours: float
+    calendar_days: int
+    unpaid_leaves: int
+    paid_leaves: int
+    leave_credits: int
+    transition_days: int
+    transition_day_type: str
+    transition_total: float
+    therapist_start_date: date | None
+    case_start_date: date | None
+    case_end_date: date | None
+    first_log: date | None
+    last_log: date | None
+    is_incoming_replacement: bool
+    is_outgoing_replacement: bool
+
+    def therapist_subtotal(self, case: Case) -> float:
+        return predicted_subtotal_inr(
+            case,
+            approved_sessions=self.approved_sessions,
+            calendar_days=self.calendar_days,
+            unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
+        )
+
+    def therapist_gross(self, case: Case) -> float:
+        return round(self.therapist_subtotal(case) + self.transition_total, 2)
+
+    def client_amount(self, case: Case) -> float:
+        return predicted_client_amount_inr(
+            case,
+            approved_sessions=self.approved_sessions,
+            calendar_days=self.calendar_days,
+            unpaid_leaves=self.unpaid_leaves if uses_calendar_day_pay(case) else 0,
+        )
 
 
 
@@ -540,6 +634,129 @@ def _leave_for_case_row(db: Session, therapist_id: int, case: Case, ym: str) -> 
     return {"paid": 0, "unpaid": 0, "carry_forward": 0}
 
 
+def build_cycle_segments(db: Session, case: Case, ym: str) -> list[CycleSegment]:
+    """Payout-report segments for one case in a billing month (therapist × case)."""
+    start, end = month_bounds(ym)
+    year = int(ym.split("-")[0])
+    segments: list[CycleSegment] = []
+    for segment in _therapist_segments_for_case(db, case.id, start, end):
+        therapist = db.get(User, segment.therapist_user_id)
+        if not therapist:
+            continue
+        approved = _approved_sessions_for_therapist(
+            db, case.id, segment.therapist_user_id, start, end
+        )
+        approved_absence = _approved_absence_for_therapist(
+            db, case.id, segment.therapist_user_id, start, end
+        )
+        hours = _hours_for_therapist(db, case.id, segment.therapist_user_id, ym)
+        transition_days, transition_day_type, transition_total = _transition_pay_for_therapist(
+            db,
+            case_id=case.id,
+            therapist_user_id=segment.therapist_user_id,
+            start=start,
+            end=end,
+        )
+        if approved == 0 and hours <= 0 and transition_days == 0:
+            continue
+        assignment_start = _assignment_start_for_therapist(
+            db,
+            case.id,
+            segment.therapist_user_id,
+            month_start=start,
+            month_end=end,
+            reference_date=segment.first_log,
+        )
+        employment_start = _employment_start(db, segment.therapist_user_id)
+        case_start = (
+            _first_approved_normal_log_for_therapist(
+                db, case.id, segment.therapist_user_id
+            )
+            if segment.is_incoming_replacement and transition_days
+            else _first_session_ever_for_therapist(
+                db, case.id, segment.therapist_user_id
+            )
+        )
+        case_end = (
+            _last_approved_log_for_therapist(
+                db, case.id, segment.therapist_user_id
+            )
+            if segment.is_outgoing_replacement
+            else None
+        )
+        last_log_for_calendar = segment.last_log
+        if segment.is_outgoing_replacement and case_end is not None:
+            last_log_for_calendar = case_end
+        calendar_days = calendar_days_for_segment(
+            is_incoming_replacement=segment.is_incoming_replacement,
+            is_outgoing_replacement=segment.is_outgoing_replacement,
+            first_log=segment.first_log,
+            last_log=last_log_for_calendar,
+            assignment_start=assignment_start,
+            employment_start=employment_start,
+            month_start=start,
+            month_end=end,
+        )
+        if transition_days and (
+            (segment.is_outgoing_replacement and segment.last_log is None)
+            or (segment.is_incoming_replacement and segment.first_log is None)
+        ):
+            calendar_days = 0
+        leave = _leave_for_case_row(db, therapist.id, case, ym)
+        balance = leave_policy_service.get_leave_balance(db, therapist, year=year, as_of=end)
+        leave_credits = int(
+            balance.get("leave_credit_pending", balance.get("paid_remaining", 0)) or 0
+        )
+        segments.append(
+            CycleSegment(
+                therapist_user_id=segment.therapist_user_id,
+                approved_sessions=approved,
+                approved_absence=approved_absence,
+                hours=hours,
+                calendar_days=calendar_days,
+                unpaid_leaves=int(leave.get("unpaid", 0)),
+                paid_leaves=int(leave.get("paid", 0)),
+                leave_credits=leave_credits,
+                transition_days=transition_days,
+                transition_day_type=transition_day_type,
+                transition_total=transition_total,
+                therapist_start_date=employment_start,
+                case_start_date=case_start,
+                case_end_date=case_end,
+                first_log=segment.first_log,
+                last_log=segment.last_log,
+                is_incoming_replacement=segment.is_incoming_replacement,
+                is_outgoing_replacement=segment.is_outgoing_replacement,
+            )
+        )
+    return segments
+
+
+def segment_for_therapist(
+    db: Session, case: Case, therapist_user_id: int, ym: str
+) -> CycleSegment | None:
+    for segment in build_cycle_segments(db, case, ym):
+        if segment.therapist_user_id == therapist_user_id:
+            return segment
+    return None
+
+
+def therapist_case_gross_inr(db: Session, case: Case, ym: str) -> float:
+    return round(sum(s.therapist_gross(case) for s in build_cycle_segments(db, case, ym)), 2)
+
+
+def client_case_gross_inr(db: Session, case: Case, ym: str) -> float:
+    """Family charge for the case-month: same days/sessions as payout, client allotment rates."""
+    segments = build_cycle_segments(db, case, ym)
+    if not segments:
+        return 0.0
+    if case.billing_type == BillingType.MONTHLY_FIXED and not uses_calendar_day_pay(case):
+        if any(s.approved_sessions > 0 for s in segments):
+            return round(client_configured_share_inr(case), 2)
+        return 0.0
+    return round(sum(s.client_amount(case) for s in segments), 2)
+
+
 def payout_preview_row(
     case: Case,
     *,
@@ -607,110 +824,42 @@ def payout_preview_rows(
     user: User | None = None,
     product_module: str | None = None,
 ) -> list[dict[str, Any]]:
-    start, end = month_bounds(ym)
-    year = int(ym.split("-")[0])
-
     cases = scoped_cases(db, user, product_module=product_module, active_only=True)
     if not cases:
         return []
 
     rows: list[dict[str, Any]] = []
     for case in cases[:MAX_EXPORT_ROWS]:
-        segments = _therapist_segments_for_case(db, case.id, start, end)
-        if not segments:
-            continue
-
-        for segment in segments:
+        for segment in build_cycle_segments(db, case, ym):
             therapist = db.get(User, segment.therapist_user_id)
             if not therapist:
                 continue
-
-            approved = _approved_sessions_for_therapist(
-                db, case.id, segment.therapist_user_id, start, end
+            leave = {
+                "paid": segment.paid_leaves,
+                "unpaid": segment.unpaid_leaves,
+                "carry_forward": 0,
+            }
+            billable = _billable_sessions_for_segment(
+                case, segment.approved_sessions, segment.approved_absence
             )
-            approved_absence = _approved_absence_for_therapist(
-                db, case.id, segment.therapist_user_id, start, end
-            )
-            hours = _hours_for_therapist(db, case.id, segment.therapist_user_id, ym)
-            transition_days, transition_day_type, transition_total = _transition_pay_for_therapist(
-                db,
-                case_id=case.id,
-                therapist_user_id=segment.therapist_user_id,
-                start=start,
-                end=end,
-            )
-
-            if approved == 0 and hours <= 0 and transition_days == 0:
-                continue
-
-            assignment_start = _assignment_start_for_therapist(
-                db,
-                case.id,
-                segment.therapist_user_id,
-                month_start=start,
-                month_end=end,
-                reference_date=segment.first_log,
-            )
-            employment_start = _employment_start(db, segment.therapist_user_id)
-            case_start = (
-                _first_approved_normal_log_for_therapist(
-                    db, case.id, segment.therapist_user_id
-                )
-                if segment.is_incoming_replacement and transition_days
-                else _first_session_ever_for_therapist(
-                    db, case.id, segment.therapist_user_id
-                )
-            )
-            case_end = (
-                _last_approved_log_for_therapist(
-                    db, case.id, segment.therapist_user_id
-                )
-                if segment.is_outgoing_replacement
-                else None
-            )
-            last_log_for_calendar = segment.last_log
-            if segment.is_outgoing_replacement and case_end is not None:
-                last_log_for_calendar = case_end
-            calendar_days = calendar_days_for_segment(
-                is_incoming_replacement=segment.is_incoming_replacement,
-                is_outgoing_replacement=segment.is_outgoing_replacement,
-                first_log=segment.first_log,
-                last_log=last_log_for_calendar,
-                assignment_start=assignment_start,
-                employment_start=employment_start,
-                month_start=start,
-                month_end=end,
-            )
-            if transition_days and (
-                (segment.is_outgoing_replacement and segment.last_log is None)
-                or (segment.is_incoming_replacement and segment.first_log is None)
-            ):
-                calendar_days = 0
-
-            leave = _leave_for_case_row(db, therapist.id, case, ym)
-            balance = leave_policy_service.get_leave_balance(db, therapist, year=year, as_of=end)
-            leave_credits = int(
-                balance.get("leave_credit_pending", balance.get("paid_remaining", 0)) or 0
-            )
-            billable = _billable_sessions_for_segment(case, approved, approved_absence)
             rows.append(
                 payout_preview_row(
                     case,
                     ym=ym,
                     therapist=therapist,
-                    approved_sessions=approved,
-                    approved_absence=approved_absence,
+                    approved_sessions=segment.approved_sessions,
+                    approved_absence=segment.approved_absence,
                     billable_sessions=billable,
-                    hours=hours,
-                    calendar_days=calendar_days,
-                    therapist_start_date=employment_start,
-                    case_start_date=case_start,
-                    case_end_date=case_end,
+                    hours=segment.hours,
+                    calendar_days=segment.calendar_days,
+                    therapist_start_date=segment.therapist_start_date,
+                    case_start_date=segment.case_start_date,
+                    case_end_date=segment.case_end_date,
                     leave=leave,
-                    leave_credits=leave_credits,
-                    transition_days=transition_days,
-                    transition_day_type=transition_day_type,
-                    transition_total=transition_total,
+                    leave_credits=segment.leave_credits,
+                    transition_days=segment.transition_days,
+                    transition_day_type=segment.transition_day_type,
+                    transition_total=segment.transition_total,
                 )
             )
 

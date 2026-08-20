@@ -178,7 +178,7 @@ export function InvoiceComposer() {
       const msg = err?.message || ''
       if (msg.toLowerCase().includes('no billable ledger')) {
         setError(
-          'No billable ledger rows for this month. Approve daily logs first, or use Create invoice manually.'
+          'Looks like we still need billable ledger rows for this month. Approve daily logs first, then try Build from ledger again — it will post the payout-report amount automatically.'
         )
       } else if (msg.toLowerCase().includes('calculation exception')) {
         setError(msg)

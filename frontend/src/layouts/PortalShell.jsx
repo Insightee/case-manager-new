@@ -84,8 +84,10 @@ function adminNav(clinicalModuleIds) {
     { to: '/admin/iep', label: 'IEP', perm: 'iep.read', feature: 'iep', moduleIds: clinicalModuleIds, icon: 'iep', section: 'Operations' },
     { to: '/admin/support', label: 'Support & Incidents', perm: 'ticket.manage', feature: null, icon: 'mail', section: 'Operations' },
     { to: '/admin/meetings', label: 'Meetings', perm: 'case.read.team', feature: null, icon: 'meetings', section: 'Operations' },
-    { to: '/admin/invoices', label: 'Invoices & payments', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices', section: 'Finance' },
+    { to: '/admin/invoices', label: 'Client invoices', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'invoices', section: 'Finance' },
     { to: '/admin/therapist-payouts', label: 'Therapist payouts', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'wallet', section: 'Finance' },
+    { to: '/admin/cases', label: 'Cases', perm: 'invoice.approve', icon: 'cases', section: 'Finance', desk: 'finance' },
+    { to: '/admin/therapist-leave', label: 'Therapist leave', perm: 'invoice.approve', icon: 'leave', section: 'Finance', desk: 'finance' },
     { to: '/admin/finance-reports', label: 'Reports', perm: 'invoice.approve', feature: 'invoices', moduleIds: ['billing'], icon: 'reports', section: 'Finance' },
     { to: '/admin/people', label: 'People', perm: 'user.manage', feature: null, icon: 'people', section: 'People & HR' },
     { to: '/admin/therapist-profiles', label: 'Therapist profiles', perm: 'user.manage', feature: null, icon: 'stethoscope', section: 'People & HR' },
@@ -119,7 +121,7 @@ function NavLinks({ items, className, linkClassName, onNavigate, showIcons }) {
           ) : null
         if (item.section) lastSection = item.section
         return (
-          <span key={item.to} className="app-sidebar__nav-item-wrap">
+          <span key={`${item.section || 'nav'}:${item.to}:${item.label}`} className="app-sidebar__nav-item-wrap">
             {sectionHeader}
             <NavLink
               to={item.to}
@@ -145,6 +147,7 @@ function iconForNavPath(to) {
   if (to.includes('/reports')) return 'reports'
   if (to.includes('/workbench') || to.includes('/logs')) return 'workbench'
   if (to.includes('/therapist-payouts')) return 'wallet'
+  if (to.includes('/therapist-leave') || to.includes('/leave')) return 'leave'
   if (to.includes('/finance-reports')) return 'reports'
   if (to.includes('/invoices')) return 'invoices'
   return 'dashboard'
@@ -192,6 +195,9 @@ function buildMobileTabs(fullNav, portal, { cmFocused = false } = {}) {
 }
 
 function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
+  if (item.desk === 'finance') {
+    return roles.includes('FINANCE') && !roles.includes('SUPER_ADMIN') && can(item.perm || 'invoice.approve')
+  }
   if (item.to === '/admin/cm') {
     return roles.includes('CASE_MANAGER') && can('case.read.team')
   }
@@ -202,6 +208,7 @@ function filterAdminNavItem(item, { roles, navVisible, can, hasFeature }) {
     )
   }
   if (item.to === '/admin/cases') {
+    if (roles.includes('FINANCE') && !roles.includes('SUPER_ADMIN')) return false
     return (
       navVisible(item)
       && (can('case.read.all') || can('case.read.team') || can('case.read.scoped'))
@@ -231,7 +238,9 @@ export function PortalShell({ portal }) {
     portal === 'admin'
       && (location.pathname.startsWith('/admin/invoices')
         || location.pathname.startsWith('/admin/finance-reports')
-        || location.pathname.startsWith('/admin/therapist-payouts'))
+        || location.pathname.startsWith('/admin/therapist-payouts')
+        || location.pathname.startsWith('/admin/therapist-leave')
+        || (location.pathname.startsWith('/admin/cases') && (user?.roles || []).includes('FINANCE') && !(user?.roles || []).includes('SUPER_ADMIN')))
   const isClientPortalDashboard =
     (portal === 'therapist' && location.pathname === '/therapist')
     || (portal === 'parent' && location.pathname === '/parent')

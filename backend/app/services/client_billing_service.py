@@ -40,6 +40,33 @@ logger = logging.getLogger("insightcase.client_billing")
 _OPEN_DISPUTE_STATUSES = frozenset({BillingDisputeStatus.OPEN, BillingDisputeStatus.UNDER_REVIEW})
 
 
+def _payment_tds_inr(payment: ClientPayment) -> float:
+    return round(float(getattr(payment, "tds_inr", None) or 0), 2)
+
+
+def _payment_applied_inr(payment: ClientPayment) -> float:
+    return round(float(payment.amount_inr or 0) + _payment_tds_inr(payment), 2)
+
+
+def _serialize_client_payment(payment: ClientPayment) -> dict:
+    received = float(payment.amount_inr or 0)
+    tds = _payment_tds_inr(payment)
+    return {
+        "id": payment.id,
+        "amountInr": received,
+        "tdsInr": tds,
+        "appliedInr": round(received + tds, 2),
+        "method": payment.method.value if payment.method else None,
+        "reference": payment.reference,
+        "paidAt": payment.paid_at.isoformat() if payment.paid_at else None,
+        "paymentStatus": payment.payment_status.value.lower() if payment.payment_status else None,
+        "proofFileName": payment.proof_file_name,
+        "hasProof": bool(payment.proof_file_path),
+        "rejectionNote": payment.rejection_note,
+        "notes": payment.notes,
+    }
+
+
 def _line_is_unreconciled(line: ClientInvoiceLine) -> bool:
     return (line.approval_status or "").upper() == "NEEDS_REVIEW"
 
@@ -389,21 +416,7 @@ def get_invoice_detail(db: Session, user: User, invoice_id: int) -> dict:
             "adjustmentInr": float(inv.adjustment_inr or 0),
             "notes": inv.notes,
             "lines": [_serialize_parent_line(line, held_line_ids=held_line_ids) for line in lines],
-            "payments": [
-                {
-                    "id": p.id,
-                    "amountInr": float(p.amount_inr),
-                    "method": p.method.value,
-                    "reference": p.reference,
-                    "paidAt": p.paid_at.isoformat() if p.paid_at else None,
-                    "paymentStatus": p.payment_status.value.lower(),
-                    "proofFileName": p.proof_file_name,
-                    "hasProof": bool(p.proof_file_path),
-                    "rejectionNote": p.rejection_note,
-                    "notes": p.notes,
-                }
-                for p in inv.payments
-            ],
+            "payments": [_serialize_client_payment(p) for p in inv.payments],
             "disputes": [
                 {
                     "id": d.id,
@@ -551,6 +564,7 @@ def record_payment(
     reference: Optional[str],
     notes: Optional[str],
     recorded_by_user_id: int,
+    tds_inr: float = 0,
 ) -> ClientInvoice:
     inv = db.scalar(
         select(ClientInvoice)
@@ -562,11 +576,14 @@ def record_payment(
     amounts = _compute_invoice_balances(inv, list(inv.lines or []), list(inv.disputes or []))
     if amount_inr <= 0:
         raise ValueError("Amount must be greater than zero")
-    if amount_inr > float(amounts["balanceInr"]) + 0.01:
-        raise ValueError("Amount exceeds collectible balance")
+    tds = round(max(0.0, float(tds_inr or 0)), 2)
+    applied = round(float(amount_inr) + tds, 2)
+    if applied > float(amounts["balanceInr"]) + 0.01:
+        raise ValueError("Received amount plus TDS exceeds what is still due")
     payment = ClientPayment(
         client_invoice_id=inv.id,
         amount_inr=amount_inr,
+        tds_inr=tds,
         method=PaymentMethod(method),
         reference=reference,
         notes=notes,
@@ -577,7 +594,7 @@ def record_payment(
     )
     db.add(payment)
     db.flush()
-    inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + amount_inr
+    inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + applied
     _refresh_invoice_payment_status(db, inv)
     from app.services.bookkeeping_provider import get_bookkeeping_provider
 
@@ -853,14 +870,7 @@ def admin_list_invoices(
             ) or case
         parent = parents.get(inv.parent_user_id)
         item = _admin_invoice_summary_row(inv, case, parent, lines=list(inv.lines or []), disputes=list(inv.disputes or []))
-        item["payments"] = [
-            {
-                "id": p.id,
-                "amountInr": float(p.amount_inr),
-                "paymentStatus": p.payment_status.value.lower(),
-            }
-            for p in (inv.payments or [])
-        ]
+        item["payments"] = [_serialize_client_payment(p) for p in (inv.payments or [])]
         if claims_pending:
             if not any(p.payment_status == ClientPaymentStatus.PENDING_REVIEW for p in (inv.payments or [])):
                 continue
@@ -940,21 +950,7 @@ def admin_get_invoice_detail(db: Session, invoice_id: int) -> dict:
             "paymentPolicySnapshot": inv.payment_policy_snapshot,
             "gatewayEnabled": bool(getattr(inv, "gateway_enabled", False)),
             "gatewayPaymentUrl": getattr(inv, "gateway_payment_url", None),
-            "payments": [
-                {
-                    "id": p.id,
-                    "amountInr": float(p.amount_inr),
-                    "method": p.method.value,
-                    "reference": p.reference,
-                    "paidAt": p.paid_at.isoformat() if p.paid_at else None,
-                    "paymentStatus": p.payment_status.value.lower(),
-                    "proofFileName": p.proof_file_name,
-                    "hasProof": bool(p.proof_file_path),
-                    "rejectionNote": p.rejection_note,
-                    "notes": p.notes,
-                }
-                for p in inv.payments
-            ],
+            "payments": [_serialize_client_payment(p) for p in inv.payments],
             "disputes": [
                 {
                     "id": d.id,
@@ -1507,6 +1503,7 @@ def confirm_payment_claim(
     admin_user_id: int,
     *,
     confirm_amount_inr: Optional[float] = None,
+    tds_inr: Optional[float] = None,
 ) -> dict:
     payment = db.get(ClientPayment, payment_id)
     if not payment:
@@ -1559,7 +1556,12 @@ def confirm_payment_claim(
             f"Confirmed at ₹{apply_amount:,.2f} (claimed ₹{claim_amount:,.2f}; collectible cap applied)."
         ).strip()
     payment.amount_inr = apply_amount
-    inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + apply_amount
+    tds = round(max(0.0, float(tds_inr if tds_inr is not None else getattr(payment, "tds_inr", 0) or 0)), 2)
+    payment.tds_inr = tds
+    applied = round(apply_amount + tds, 2)
+    if applied > collectible_balance + 0.01:
+        raise ValueError("Received amount plus TDS exceeds what is still due")
+    inv.amount_paid_inr = float(inv.amount_paid_inr or 0) + applied
     _refresh_invoice_payment_status(db, inv)
     _activate_packages_for_invoice(db, inv)
     db.flush()
@@ -1651,19 +1653,11 @@ def list_pending_payment_claims(db: Session, user: User) -> list[dict]:
     for pay, inv, case, child in rows:
         out.append(
             {
-                "id": pay.id,
+                **_serialize_client_payment(pay),
                 "invoiceId": inv.id,
                 "invoiceNumber": inv.invoice_number,
                 "caseId": case.case_code,
                 "childName": child.full_name if child else None,
-                "amountInr": float(pay.amount_inr),
-                "method": pay.method.value,
-                "reference": pay.reference,
-                "paidAt": pay.paid_at.isoformat() if pay.paid_at else None,
-                "paymentStatus": pay.payment_status.value.lower(),
-                "hasProof": bool(pay.proof_file_path),
-                "proofFileName": pay.proof_file_name,
-                "notes": pay.notes,
             }
         )
     return out

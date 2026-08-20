@@ -1,12 +1,19 @@
 ## [Unreleased]
 
+### Changed
+- Therapist invoices and client period charges use the payout-report cycle engine (gross, no TDS). Homecare bills approved sessions at allotment rates; shadow/B2B bills the same calendar days as therapist pay. Transition pay is therapist-only. Build from ledger posts those period charges when the ledger is empty; finance composer payout matches the therapist invoice.
+- Finance workspace: **Client invoices** and **Therapist payouts** are parallel money-in / money-out screens for every admin with billing access (no separate Finance home). Client invoices bill system gross; optional TDS is recorded when the payer withholds it. Therapist payouts show gross → TDS → net, raise-on-behalf, notes, and month records. Finance reports stay in the sidebar.
+- Raise-a-payout therapist picker is a single search combobox (no separate dropdown).
+
 ### Fixed
+- Therapist payout queue no longer auto-applies 10% TDS or treats pending approval as blocked. Finance enters TDS (0 if none), then approves and marks paid from the same workbench.
 - Production reports match staging/dev: Coming Soon is removed and the reports revamp dashboard is live on insighte.org. Billing remains gated.
 - IEP landing no longer whitescreens: `canSubmit` was referenced but never defined.
 - Alembic `tr1a2n3s4t5` Postgres deploy: use `postgresql.ENUM(create_type=False)` so `case_therapist_transitions` does not re-create `casetherapisttransitionstatus` after the DO-block.
 
 ### Added
 - Case Zoho ID: optional `cases.zoho_id` stored at allotment or later, bulk CSV upload with preview on the Cases board, and a Zoho id column on Export records. Alembic `z1o2h3o4i5d6`. Stored only — not used for Zoho Pay yet.
+- Finance desk: view-only **Cases** (overview, activity, session dates, billing) and **Therapist leave** (approved leave and approved child absence) for payout cross-check, without clinical write access.
 - Case-centric filtered session log Excel export on admin case logs, therapist case history, and parent session updates (when a child is selected); default summary columns with optional full log content, excluding internal notes for parents.
 - Approved session logs can be downloaded as a PDF by case managers, therapists, and parents; pending or rejected logs stay view-only.
 - Structured session evidence (flagged off): `iep_goal_items` / `iep_strategy_items` identity registry, `session_goal_entries` / `strategy_use_events` taps on daily-log create/update/resubmit. Alembic `s4e5v6i7d8e9` (parents `ba5p6p7r8v9`). Gate: `ENABLE_STRUCTURED_EVIDENCE` / `VITE_ENABLE_STRUCTURED_EVIDENCE`. Reword-merge debt: `docs/plans/session-structured-evidence-v1-debt.md`.

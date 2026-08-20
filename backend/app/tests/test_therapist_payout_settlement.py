@@ -110,8 +110,9 @@ def test_settlement_preview_ic_wk_011():
     assert preview.status_code == 200, preview.text
     body = preview.json()
     assert body["grossInr"] == 10000.0
-    assert body["tdsInr"] == 1000.0
-    assert body["netInr"] == 9000.0
+    assert body["tdsPending"] is True
+    assert body["tdsInr"] is None
+    assert body["netInr"] == 10000.0
     assert body["blocked"] is False
 
 
@@ -125,8 +126,9 @@ def test_settlement_preview_ic_wk_012_nonround_tds():
     assert preview.status_code == 200, preview.text
     body = preview.json()
     assert body["grossInr"] == 3333.0
-    assert body["tdsInr"] == 333.3
-    assert body["netInr"] == 2999.7
+    assert body["tdsPending"] is True
+    assert body["tdsInr"] is None
+    assert body["netInr"] == 3333.0
 
 
 def test_settlement_preview_ic_wk_013_deduction():
@@ -140,7 +142,8 @@ def test_settlement_preview_ic_wk_013_deduction():
     body = preview.json()
     assert body["grossInr"] == 10000.0
     assert body["deductionsInr"] == 500.0
-    assert body["netInr"] == 8500.0
+    assert body["tdsPending"] is True
+    assert body["netInr"] == 9500.0
 
 
 def test_ic_wk_014_blocks_export_with_zero_transfers():
@@ -510,8 +513,8 @@ def test_transition_case_deductions_therapist_scoped():
     assert preview_b.status_code == 200, preview_b.text
     assert preview_a.json()["deductionsInr"] == 200.0
     assert preview_b.json()["deductionsInr"] == 0.0
-    assert preview_a.json()["netInr"] == 2500.0  # 3000 gross - 300 TDS - 200 deduction
-    assert preview_b.json()["netInr"] == 2700.0  # 3000 - 300 TDS, no cross-therapist leak
+    assert preview_a.json()["netInr"] == 2800.0  # 3000 gross - 200 deduction, no default TDS
+    assert preview_b.json()["netInr"] == 3000.0
 
 
 def test_rbac_export_sync_finance_writable_only():

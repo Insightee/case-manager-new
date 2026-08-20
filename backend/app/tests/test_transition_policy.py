@@ -91,4 +91,5 @@ def test_package_payout_adds_transition_pay_without_counting_regular_sessions() 
 
     assert included == 1
     assert additional == 0
-    assert total == 1_500
+    # Shadow/B2B calendar-day gross comes from the payout cycle engine, not session × rate.
+    assert total == 500

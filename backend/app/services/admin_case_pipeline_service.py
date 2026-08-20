@@ -43,6 +43,10 @@ def _case_filters(user: User) -> list:
     if allowed is None:
         return []
     if not allowed:
+        from app.core.permissions import is_finance_desk_user, user_has_permission
+
+        if is_finance_desk_user(user) and user_has_permission(user, "case.read.all"):
+            return []
         return [Case.id < 0]
     return [Case.product_module.in_(allowed)]
 

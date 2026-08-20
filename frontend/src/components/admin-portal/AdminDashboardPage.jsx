@@ -82,7 +82,7 @@ export function AdminDashboardPage({ dashboardVariant = 'operations', primaryRol
       hr_reports: '/admin/hr-reports',
       observations: '/admin/workbench?section=observations',
       status_requests: '/admin/workbench?section=status_requests',
-      client_claims: '/admin/invoices?tab=client&claims=pending',
+      client_claims: '/admin/invoices?tab=payments',
     }
     return map[w.id] || w.section?.href || '/admin/workbench'
   }

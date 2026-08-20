@@ -29,6 +29,8 @@ class InvoiceRead(BaseModel):
     subtotal_inr: Optional[float] = None
     leave_deduction_inr: Optional[float] = None
     adjustment_inr: Optional[float] = None
+    tds_inr: Optional[float] = None
+    net_payable_inr: Optional[float] = None
     notes: Optional[str] = None
     therapist_employment_status: Optional[str] = None
     therapist_is_active: Optional[bool] = None
@@ -40,3 +42,5 @@ class InvoiceRead(BaseModel):
 class PaymentUpdate(BaseModel):
     paid_amount_inr: float
     status: InvoiceStatus = InvoiceStatus.PAID
+    tds_inr: Optional[float] = None
+    finance_note: Optional[str] = None

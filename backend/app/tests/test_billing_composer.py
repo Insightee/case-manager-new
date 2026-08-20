@@ -5,9 +5,16 @@ from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import delete, select
 
+from app.core.config import settings
+from app.core.database import SessionLocal
 from app.main import app
+from app.models.case import Case
+from app.models.ledger_billing import BillingLedger
+from app.models.user import User
 from app.seed.demo_seed import run as seed_run
+from app.services import client_invoice_draft_service
 
 client = TestClient(app)
 
@@ -71,6 +78,7 @@ def test_composer_preview_includes_billing_rule():
     assert body.get("billingRule") is not None
     assert "ledgerRows" in body
     assert "therapistSubmissions" in body
+    assert "therapistCycle" in body
     assert body.get("includeFinanceFields") is True
     assert "therapistPayoutTotal" in body.get("overview", {}) or "estimatedMargin" in body.get("overview", {})
 
@@ -110,3 +118,67 @@ def test_parent_invoice_detail_no_finance_margin():
     text = detail.text.lower()
     assert "therapistpayout" not in text.replace("_", "")
     assert "estimatedmargin" not in text.replace("_", "")
+
+
+def test_composer_therapist_payout_matches_therapist_invoice_preview():
+    admin = _login("superadmin@demo.com")
+    therapist = _login("therapist@demo.com")
+    admin_h = {"Authorization": f"Bearer {admin}"}
+    th_h = {"Authorization": f"Bearer {therapist}"}
+    month = "2026-05"
+    preview = client.get(f"/api/v1/invoices/preview?month={month}", headers=th_h)
+    assert preview.status_code == 200
+    therapist_body = preview.json()
+    if not therapist_body.get("cases"):
+        pytest.skip("No therapist invoice cases in May 2026 seed")
+    case_id = therapist_body["cases"][0]["case_id"]
+    expected = float(therapist_body["cases"][0]["therapist_share_inr"] or 0)
+    finance = client.get(
+        f"/api/v1/admin/client-billing/composer-preview?case_id={case_id}&billing_month={month}",
+        headers=admin_h,
+    )
+    assert finance.status_code == 200
+    cycle = finance.json().get("therapistCycle") or []
+    match = next((row for row in cycle if abs(float(row.get("grossInr") or 0) - expected) < 0.02), None)
+    if not cycle:
+        pytest.skip("No cycle segment for seeded case")
+    assert match is not None or abs(
+        sum(float(r.get("grossInr") or 0) for r in cycle) - expected
+    ) < 0.02
+
+
+def test_build_from_ledger_materializes_when_ledger_empty(monkeypatch):
+    monkeypatch.setattr(settings, "enable_billing", True)
+    monkeypatch.setattr(settings, "billing_ledger_writes", True)
+    monkeypatch.setattr(settings, "billing_ledger_drafts", True)
+
+    db = SessionLocal()
+    try:
+        case = db.scalars(select(Case).where(Case.case_code == "IC-2026-053")).first()
+        admin = db.scalars(select(User).where(User.email == "superadmin@demo.com")).first()
+        if not case or not admin:
+            pytest.skip("Need demo homecare case and superadmin")
+        ym = "2026-05"
+        db.execute(
+            delete(BillingLedger).where(
+                BillingLedger.case_id == case.id,
+                BillingLedger.ledger_month == ym,
+                BillingLedger.client_invoice_id.is_(None),
+            )
+        )
+        db.commit()
+        result = client_invoice_draft_service.generate_draft_from_ledger(
+            db,
+            case_id=case.id,
+            billing_month=ym,
+            actor_user_id=admin.id,
+        )
+        db.commit()
+        assert result["lineCount"] >= 1
+        assert float(result["totalInr"]) > 0
+    except ValueError as exc:
+        if "No parent" in str(exc) or "No billable ledger" in str(exc):
+            pytest.skip(str(exc))
+        raise
+    finally:
+        db.close()

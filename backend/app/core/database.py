@@ -596,6 +596,7 @@ def ensure_sqlite_schema_patches() -> None:
                 ("confirmed_by_user_id", "INTEGER"),
                 ("confirmed_at", "DATETIME"),
                 ("rejection_note", "TEXT"),
+                ("tds_inr", "NUMERIC(12, 2) DEFAULT 0"),
             ):
                 if col not in pay_cols:
                     conn.execute(text(f"ALTER TABLE client_payments ADD COLUMN {col} {ddl}"))

@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import case_scope_check, user_has_permission
+from app.core.permissions import case_scope_check, is_finance_desk_user, user_has_permission
 from app.models.case import BillingType, Case
 from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, TherapistLeave
 from app.models.session import Session as TherapySession
@@ -145,6 +145,8 @@ def _admin_can_review(user: User) -> bool:
 
 
 def _can_review(db: Session, user: User, row: SessionAbsenceRequest) -> bool:
+    if is_finance_desk_user(user) and not user_has_permission(user, "leave.manage"):
+        return False
     return _admin_can_review(user)
 
 
@@ -588,6 +590,8 @@ def list_child_absence_for_admin(db: Session, user: User) -> list[dict]:
 
 
 def list_pending_for_admin(db: Session, user: User) -> list[dict]:
+    if is_finance_desk_user(user) and not user_has_permission(user, "leave.manage"):
+        raise HTTPException(status_code=403, detail="Access denied")
     if not _admin_can_review(user):
         raise HTTPException(status_code=403, detail="Access denied")
     rows = db.scalars(

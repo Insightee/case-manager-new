@@ -104,7 +104,7 @@ export function buildAdminKpis({ summary, role, canNavigate, can }) {
         'Family-submitted payments',
         'rose',
         '💳',
-        '/admin/invoices?tab=client&claims=pending',
+        '/admin/invoices?tab=payments',
       ),
     )
   }

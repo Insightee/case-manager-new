@@ -327,24 +327,33 @@ export function InvoiceComposerPreviewPanel({
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Date</th>
                 <th>Therapist</th>
-                <th>Amount</th>
-                <th>Status</th>
+                <th>Days / sessions</th>
+                <th>Payout (gross)</th>
               </tr>
             </thead>
             <tbody>
-              {(preview.therapistSubmissions || []).length === 0 ? (
+              {(preview.therapistCycle || []).length > 0 ? (
+                preview.therapistCycle.map((r) => (
+                  <tr key={r.therapistUserId}>
+                    <td>{r.therapistName || '—'}</td>
+                    <td className="finance-stage2-mono">
+                      {r.calendarDays != null ? `${r.calendarDays}d` : '—'}
+                      {r.approvedSessions != null ? ` · ${r.approvedSessions} sess` : ''}
+                    </td>
+                    <td className="finance-stage2-mono">{formatCurrency(r.grossInr)}</td>
+                  </tr>
+                ))
+              ) : (preview.therapistSubmissions || []).length === 0 ? (
                 <tr>
-                  <td colSpan={4}>No therapist submissions</td>
+                  <td colSpan={3}>No therapist payout for this month yet</td>
                 </tr>
               ) : (
                 preview.therapistSubmissions.map((r, i) => (
                   <tr key={`${r.sessionLineId}-${i}`}>
-                    <td className="finance-stage2-mono">{r.sessionDate}</td>
                     <td>{r.therapistName}</td>
+                    <td className="finance-stage2-mono">{r.sessionDate}</td>
                     <td className="finance-stage2-mono">{formatCurrency(r.submittedAmountInr)}</td>
-                    <td>{r.financeStatus}</td>
                   </tr>
                 ))
               )}

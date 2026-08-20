@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
-import { useAdminHome } from '../../hooks/useAdminHome.js'
-import { AdminRoleQueueSection } from './AdminRoleQueueSection.jsx'
 import { AdminMobilePillTabs, AdminPageHeader, PortalTabBar } from './ui/index.js'
 import { AdminClientInvoicesTab } from './AdminClientInvoicesTab.jsx'
 import { AdminClientPaymentsTab } from './AdminClientPaymentsTab.jsx'
@@ -13,91 +11,63 @@ import { AdminDisputesTab } from './AdminDisputesTab.jsx'
 import { AdminReceivablesTab } from './AdminReceivablesTab.jsx'
 import { AdminFinanceOverviewTab } from './AdminFinanceOverviewTab.jsx'
 import { FinanceMondayBrief } from './TherapistPayoutFinance.jsx'
-import { AdminFinanceReportsTab } from './AdminFinanceReportsTab.jsx'
 import './admin-client-invoices.css'
 import '../../styles/billing-readiness-master-sheet.css'
 
 const PRIMARY_TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'client', label: 'Client invoices' },
-  { id: 'payments', label: 'Client payments' },
-  { id: 'receivables', label: 'Receivables' },
-  { id: 'disputes', label: 'Disputes' },
+  { id: 'invoices', label: 'Invoices' },
+  { id: 'payments', label: 'Payments' },
+  { id: 'tools', label: 'Tools' },
 ]
 
-const MOBILE_TAB_LABELS = {
-  overview: 'Overview',
-  client: 'Invoices',
-  payments: 'Payments',
-  receivables: 'Receivables',
-  disputes: 'Disputes',
-}
-
-const FINANCE_PRIMARY_TABS = ['overview', 'client', 'payments', 'receivables', 'disputes']
+const TOOL_SUBS = [
+  { id: 'snapshot', label: 'Snapshot' },
+  { id: 'ledger', label: 'Ledger' },
+  { id: 'rules', label: 'Rules' },
+  { id: 'disputes', label: 'Disputes' },
+  { id: 'receivables', label: 'Receivables' },
+]
 
 const LEGACY_TAB_REDIRECTS = {
-  rules: { tab: 'client', sub: 'rules' },
-  ledger: { tab: 'client', sub: 'ledger' },
-  reports: { tab: 'client', sub: 'reports' },
-}
-
-function billingSubTabs(parentTab) {
-  const mainLabel = parentTab === 'payments' ? 'Client payments' : 'Client invoices'
-  const mainId = parentTab === 'payments' ? 'payments' : 'invoices'
-  return [
-    { id: mainId, label: mainLabel },
-    { id: 'rules', label: 'Rules & packages' },
-    { id: 'ledger', label: 'Session ledger' },
-    { id: 'reports', label: 'Reports' },
-  ]
-}
-
-function defaultBillingSub(parentTab) {
-  return parentTab === 'payments' ? 'payments' : 'invoices'
-}
-
-function financeWidgetFooter(widget) {
-  const map = {
-    billing: '/admin/invoices/compose?queue=not_invoiced_this_month',
-    client_claims: '/admin/invoices?tab=payments',
-  }
-  return map[widget.id] || '/admin/invoices/compose?queue=not_invoiced_this_month'
+  client: { tab: 'invoices' },
+  overview: { tab: 'tools', sub: 'snapshot' },
+  receivables: { tab: 'tools', sub: 'receivables' },
+  disputes: { tab: 'tools', sub: 'disputes' },
+  rules: { tab: 'tools', sub: 'rules' },
+  ledger: { tab: 'tools', sub: 'ledger' },
+  reports: { tab: 'tools', sub: 'snapshot' },
 }
 
 export function AdminInvoicesPage() {
-  const location = useLocation()
   const navigate = useNavigate()
-  const { data: roleHome, isLoading: roleHomeLoading } = useAdminHome()
-  const isFinanceHome = roleHome?.role === 'FINANCE' || roleHome?.dashboard_variant === 'finance'
   const [searchParams, setSearchParams] = useSearchParams()
-  const tabParam = searchParams.get('tab') || (isFinanceHome ? 'overview' : 'client')
+  const tabParam = searchParams.get('tab') || 'invoices'
   const [claimsPending, setClaimsPending] = useState(0)
-  const onComposeRoute = location.pathname.includes('/invoices/compose')
 
   useEffect(() => {
     const legacy = LEGACY_TAB_REDIRECTS[tabParam]
     if (!legacy) return
     const next = new URLSearchParams(searchParams)
     next.set('tab', legacy.tab)
-    next.set('sub', legacy.sub)
+    if (legacy.sub) next.set('sub', legacy.sub)
+    else next.delete('sub')
     setSearchParams(next, { replace: true })
   }, [tabParam, searchParams, setSearchParams])
 
   useEffect(() => {
     if (tabParam !== 'therapist') return
     const next = new URLSearchParams()
-    const sub = searchParams.get('therapist_sub') || 'dashboard'
-    next.set('sub', sub === 'payouts' ? 'payouts' : 'dashboard')
+    const sub = searchParams.get('therapist_sub') || 'queue'
+    next.set('sub', sub === 'payouts' ? 'records' : 'queue')
     const status = searchParams.get('status')
     if (status) next.set('status', status)
     navigate(`/admin/therapist-payouts?${next.toString()}`, { replace: true })
   }, [tabParam, searchParams, navigate])
 
-  const activeTab = PRIMARY_TABS.some((t) => t.id === tabParam) ? tabParam : 'client'
-  const isBillingArea = activeTab === 'client' || activeTab === 'payments'
-  const billingSub = isBillingArea
-    ? searchParams.get('sub') || defaultBillingSub(activeTab)
-    : null
+  const activeTab = PRIMARY_TABS.some((t) => t.id === tabParam) ? tabParam : 'invoices'
+  const toolSub = TOOL_SUBS.some((t) => t.id === searchParams.get('sub'))
+    ? searchParams.get('sub')
+    : 'snapshot'
 
   useEffect(() => {
     apiFetch('/api/v1/admin/dashboard/summary')
@@ -109,24 +79,20 @@ export function AdminInvoicesPage() {
     const next = new URLSearchParams(searchParams)
     next.set('tab', tab)
     next.delete('sub')
-    if (tab !== 'client' && tab !== 'payments') next.delete('invoiceId')
+    next.delete('invoiceId')
+    next.delete('therapist_sub')
     if (tab === 'payments') next.set('claims', 'pending')
     else next.delete('claims')
-    next.delete('therapist_sub')
+    if (tab === 'tools') next.set('sub', 'snapshot')
     setSearchParams(next)
   }
 
-  function setBillingSub(sub) {
+  function setToolSub(sub) {
     const next = new URLSearchParams(searchParams)
+    next.set('tab', 'tools')
     next.set('sub', sub)
-    const mainSub = defaultBillingSub(activeTab)
-    if (sub === mainSub) {
-      next.delete('sub')
-      if (activeTab === 'payments') next.set('claims', 'pending')
-    } else {
-      next.delete('invoiceId')
-      next.delete('claims')
-    }
+    next.delete('invoiceId')
+    next.delete('claims')
     setSearchParams(next)
   }
 
@@ -140,105 +106,90 @@ export function AdminInvoicesPage() {
     <div className="admin-page admin-page--finance">
       <AdminPageHeader
         eyebrow="Finance"
-        title={isFinanceHome ? 'Finance home' : 'Billing & invoices'}
-        subtitle={
-          isFinanceHome
-            ? 'Client billing, payments, and ledger. Finance reports and therapist payouts are in the sidebar.'
-            : 'Ledger-first client billing with finance review before invoices are sent.'
-        }
+        title="Client invoices"
+        subtitle="System amount due → verify → send to the parent → record or confirm payment. Optional TDS is what the payer withheld, not an extra charge."
       />
-
-      {isFinanceHome ? (
-        <AdminRoleQueueSection
-          roleHome={roleHome}
-          loading={roleHomeLoading}
-          widgetFooter={financeWidgetFooter}
-          landingHref={onComposeRoute ? null : '/admin/invoices/compose?queue=not_invoiced_this_month'}
-          landingLabel="Open billing composer"
-        />
-      ) : null}
 
       {claimsPending > 0 && activeTab !== 'payments' ? (
         <div className="admin-alert admin-alert--warning" style={{ marginBottom: 16 }}>
-          <strong>{claimsPending} client payment claim{claimsPending === 1 ? '' : 's'}</strong> awaiting review.{' '}
-          <Link to="/admin/invoices?tab=payments">Review payments →</Link>
+          <strong>{claimsPending} payment claim{claimsPending === 1 ? '' : 's'}</strong> waiting for review.{' '}
+          <Link to="/admin/invoices?tab=payments">Open payments →</Link>
         </div>
       ) : null}
 
       <PortalTabBar
         className="admin-page__tabs-scroll admin-page__tabs--single admin-desktop-only"
-        ariaLabel="Billing sections"
+        ariaLabel="Client invoice sections"
         activeId={activeTab}
         onChange={setTab}
         tabs={PRIMARY_TABS.map((t) => ({
           id: t.id,
           label: t.label,
-          badge:
-            t.id === 'payments' && claimsPending > 0 ? String(claimsPending) : undefined,
+          badge: t.id === 'payments' && claimsPending > 0 ? String(claimsPending) : undefined,
         }))}
       />
 
       <AdminMobilePillTabs
-        ariaLabel="Billing sections"
+        ariaLabel="Client invoice sections"
         activeId={activeTab}
         onChange={setTab}
-        primaryIds={FINANCE_PRIMARY_TABS}
+        primaryIds={PRIMARY_TABS.map((t) => t.id)}
         overflowIds={[]}
         tabs={PRIMARY_TABS.map((t) => ({
           id: t.id,
-          label: MOBILE_TAB_LABELS[t.id] || t.label,
-          badge:
-            t.id === 'payments' && claimsPending > 0 ? String(claimsPending) : undefined,
+          label: t.label,
+          badge: t.id === 'payments' && claimsPending > 0 ? String(claimsPending) : undefined,
         }))}
       />
 
-      {isBillingArea ? (
-        <PortalTabBar
-          className="admin-page__tabs-scroll admin-page__subtabs"
-          ariaLabel="Invoices and payments tools"
-          activeId={billingSub}
-          onChange={setBillingSub}
-          tabs={billingSubTabs(activeTab)}
-        />
-      ) : null}
-
-      {activeTab === 'overview' ? (
-        <>
-          <FinanceMondayBrief />
-          <AdminFinanceOverviewTab />
-        </>
-      ) : null}
-      {activeTab === 'receivables' ? (
-        <AdminReceivablesTab openInvoiceId={searchParams.get('invoiceId')} />
-      ) : null}
-      {activeTab === 'client' && billingSub === 'invoices' ? (
+      {activeTab === 'invoices' ? (
         <AdminClientInvoicesTab openInvoiceId={searchParams.get('invoiceId')} />
       ) : null}
-      {activeTab === 'payments' && billingSub === 'payments' ? (
+      {activeTab === 'payments' ? (
         <AdminClientPaymentsTab openInvoiceId={searchParams.get('invoiceId')} />
       ) : null}
-      {isBillingArea && billingSub === 'ledger' ? <AdminSessionLedgerTab /> : null}
-      {isBillingArea && billingSub === 'rules' ? (
-        <div>
+      {activeTab === 'tools' ? (
+        <>
           <PortalTabBar
-            ariaLabel="Rules subsections"
-            activeId={rulesSubTab}
-            onChange={(id) => {
-              const next = new URLSearchParams(searchParams)
-              next.set('sub', 'rules')
-              next.set('rules', id)
-              setSearchParams(next)
-            }}
-            tabs={[
-              { id: 'products', label: 'Products & rules' },
-              { id: 'packages', label: 'Packages' },
-            ]}
+            className="admin-page__tabs-scroll admin-page__subtabs"
+            ariaLabel="Finance tools"
+            activeId={toolSub}
+            onChange={setToolSub}
+            tabs={TOOL_SUBS}
           />
-          {rulesSubTab === 'packages' ? <AdminPackagesTab /> : <AdminProductRulesTab />}
-        </div>
+          {toolSub === 'snapshot' ? (
+            <>
+              <FinanceMondayBrief />
+              <AdminFinanceOverviewTab />
+            </>
+          ) : null}
+          {toolSub === 'ledger' ? <AdminSessionLedgerTab /> : null}
+          {toolSub === 'rules' ? (
+            <div>
+              <PortalTabBar
+                ariaLabel="Rules subsections"
+                activeId={rulesSubTab}
+                onChange={(id) => {
+                  const next = new URLSearchParams(searchParams)
+                  next.set('tab', 'tools')
+                  next.set('sub', 'rules')
+                  next.set('rules', id)
+                  setSearchParams(next)
+                }}
+                tabs={[
+                  { id: 'products', label: 'Products & rules' },
+                  { id: 'packages', label: 'Packages' },
+                ]}
+              />
+              {rulesSubTab === 'packages' ? <AdminPackagesTab /> : <AdminProductRulesTab />}
+            </div>
+          ) : null}
+          {toolSub === 'disputes' ? <AdminDisputesTab /> : null}
+          {toolSub === 'receivables' ? (
+            <AdminReceivablesTab openInvoiceId={searchParams.get('invoiceId')} />
+          ) : null}
+        </>
       ) : null}
-      {isBillingArea && billingSub === 'reports' ? <AdminFinanceReportsTab /> : null}
-      {activeTab === 'disputes' ? <AdminDisputesTab /> : null}
     </div>
   )
 }

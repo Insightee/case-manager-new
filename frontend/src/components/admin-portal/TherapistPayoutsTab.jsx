@@ -9,7 +9,6 @@ import {
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { useBillingAction } from '../../hooks/useBillingAction.js'
-import { TherapistPayoutQueuePanel } from './TherapistPayoutFinance.jsx'
 import {
   AdminCollapsibleFilters,
   AdminDataList,
@@ -35,7 +34,6 @@ export function TherapistPayoutsTab() {
   const { can } = useAuth()
   const { canWriteBilling } = useModuleWrite()
   const [searchParams, setSearchParams] = useSearchParams()
-  const queueView = (searchParams.get('view') || 'queue') !== 'list'
   const [invoices, setInvoices] = useState([])
   const [filters, setFilters] = useState(() => {
     const parsed = parseTherapistInvoiceFilters(searchParams)
@@ -49,6 +47,9 @@ export function TherapistPayoutsTab() {
   const [breakdownStatus, setBreakdownStatus] = useState(null)
   const [paymentTarget, setPaymentTarget] = useState(null)
   const [paidAmount, setPaidAmount] = useState('')
+  const [tdsAmount, setTdsAmount] = useState('')
+  const [financeNote, setFinanceNote] = useState('')
+  const [settlement, setSettlement] = useState(null)
   const [manualDesc, setManualDesc] = useState('')
   const [manualAmount, setManualAmount] = useState('')
   const [manualShare, setManualShare] = useState('')
@@ -108,7 +109,17 @@ export function TherapistPayoutsTab() {
 
   function openPayment(inv) {
     setPaymentTarget(inv)
-    setPaidAmount(String(inv.amount_inr ?? ''))
+    setFinanceNote('')
+    setSettlement(null)
+    setPaidAmount(String(inv.net_payable_inr ?? inv.amount_inr ?? ''))
+    setTdsAmount(inv.tds_inr != null ? String(inv.tds_inr) : '')
+    apiFetch(`/api/v1/admin/therapist-payouts/settlement-preview?invoice_id=${inv.id}`)
+      .then((s) => {
+        setSettlement(s)
+        if (s?.netInr != null) setPaidAmount(String(s.netInr))
+        if (s?.tdsInr != null) setTdsAmount(String(s.tdsInr))
+      })
+      .catch(() => setSettlement(null))
   }
 
   async function submitPayment() {
@@ -118,9 +129,14 @@ export function TherapistPayoutsTab() {
         () =>
           apiFetch(`/api/v1/invoices/${paymentTarget.id}/payment`, {
             method: 'PATCH',
-            body: JSON.stringify({ paid_amount_inr: Number(paidAmount), status: 'PAID' }),
+            body: JSON.stringify({
+              paid_amount_inr: Number(paidAmount),
+              status: 'PAID',
+              tds_inr: tdsAmount === '' ? null : Number(tdsAmount),
+              finance_note: financeNote.trim() || null,
+            }),
           }),
-        { successMsg: 'Payment recorded' }
+        { successMsg: 'Marked paid' }
       )
       setPaymentTarget(null)
       load()
@@ -156,33 +172,6 @@ export function TherapistPayoutsTab() {
 
   return (
     <>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          className={`admin-btn admin-btn--sm ${queueView ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-          onClick={() => {
-            const next = new URLSearchParams(searchParams)
-            next.set('view', 'queue')
-            setSearchParams(next)
-          }}
-        >
-          Finance queue
-        </button>
-        <button
-          type="button"
-          className={`admin-btn admin-btn--sm ${!queueView ? 'admin-btn--primary' : 'admin-btn--ghost'}`}
-          onClick={() => {
-            const next = new URLSearchParams(searchParams)
-            next.set('view', 'list')
-            setSearchParams(next)
-          }}
-        >
-          Invoice list
-        </button>
-      </div>
-      {queueView ? <TherapistPayoutQueuePanel /> : null}
-      {!queueView ? (
-        <>
       <BillingActionAlert error={error} successMessage={successMessage} onDismiss={clearMessages} />
       <InvoiceBreakdownModal
         invoiceId={breakdownId}
@@ -302,7 +291,7 @@ export function TherapistPayoutsTab() {
           {loading ? (
             <div className="admin-skeleton" />
           ) : invoices.length === 0 ? (
-            <AdminEmptyState title="No invoices" description="Invoices appear when therapists submit billing." />
+            <AdminEmptyState title="No invoices" description="Therapist submissions appear here. You can also raise a payout invoice from This month." />
           ) : (
             <AdminDataList
               desktop={
@@ -313,7 +302,8 @@ export function TherapistPayoutsTab() {
                         <th>Therapist</th>
                         <th>Month</th>
                         <th>Sessions</th>
-                        <th>Amount</th>
+                        <th>Gross</th>
+                        <th>TDS</th>
                         <th>Status</th>
                         <th>Actions</th>
                       </tr>
@@ -338,10 +328,17 @@ export function TherapistPayoutsTab() {
                                   {warn}
                                 </span>
                               ) : null}
+                              {inv.notes ? (
+                                <span className="admin-table__meta">Therapist note: {inv.notes}</span>
+                              ) : null}
+                              {inv.reviewer_comment ? (
+                                <span className="admin-table__meta">Finance: {inv.reviewer_comment}</span>
+                              ) : null}
                             </td>
                             <td>{inv.month}</td>
                             <td>{inv.sessions_count ?? '—'}</td>
                             <td>{formatCurrency(inv.amount_inr)}</td>
+                            <td>{inv.tds_inr != null ? formatCurrency(inv.tds_inr) : '—'}</td>
                             <td>
                               <StatusBadge status={inv.status} />
                             </td>
@@ -458,8 +455,8 @@ export function TherapistPayoutsTab() {
             zIndex: 50,
           }}
         >
-          <div style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 400, width: '100%' }}>
-            <h2 style={{ marginTop: 0 }}>Record payment</h2>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 440, width: '100%' }}>
+            <h2 style={{ marginTop: 0 }}>Mark paid</h2>
             {employmentWarning(paymentTarget) ? (
               <p className="admin-alert admin-alert--warning">{employmentWarning(paymentTarget)}</p>
             ) : null}
@@ -471,8 +468,30 @@ export function TherapistPayoutsTab() {
             <p style={{ fontSize: '0.875rem', color: '#64748b' }}>
               {paymentTarget.therapist_name || `#${paymentTarget.therapist_user_id}`} · {paymentTarget.month}
             </p>
+            {paymentTarget.notes ? (
+              <p style={{ fontSize: '0.85rem', background: '#f8fafc', padding: 10, borderRadius: 8 }}>
+                Therapist note: {paymentTarget.notes}
+              </p>
+            ) : null}
+            {settlement ? (
+              <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                {settlement.tdsPending
+                  ? `Gross ${formatCurrency(settlement.grossInr)} · TDS not entered yet · net ${formatCurrency(settlement.netInr)}`
+                  : `Gross ${formatCurrency(settlement.grossInr)} · TDS ${formatCurrency(settlement.tdsInr)}${settlement.tdsRatePercent != null ? ` (${settlement.tdsRatePercent}%)` : ''} · net ${formatCurrency(settlement.netInr)}`}
+              </p>
+            ) : null}
             <label style={{ display: 'block', marginTop: 12 }}>
-              Paid amount (INR)
+              TDS withheld (INR)
+              <input
+                className="admin-input"
+                type="number"
+                value={tdsAmount}
+                onChange={(e) => setTdsAmount(e.target.value)}
+                style={{ width: '100%', marginTop: 6 }}
+              />
+            </label>
+            <label style={{ display: 'block', marginTop: 12 }}>
+              Amount paid to therapist (INR)
               <input
                 className="admin-input"
                 type="number"
@@ -481,9 +500,19 @@ export function TherapistPayoutsTab() {
                 style={{ width: '100%', marginTop: 6 }}
               />
             </label>
+            <label style={{ display: 'block', marginTop: 12 }}>
+              Finance note (optional)
+              <textarea
+                className="admin-input"
+                rows={2}
+                value={financeNote}
+                onChange={(e) => setFinanceNote(e.target.value)}
+                style={{ width: '100%', marginTop: 6 }}
+              />
+            </label>
             <div className="admin-btn-group" style={{ marginTop: 16 }}>
               <button type="button" className="admin-btn admin-btn--primary" disabled={acting} onClick={submitPayment}>
-                Save
+                Mark paid
               </button>
               <button type="button" className="admin-btn admin-btn--secondary" onClick={() => setPaymentTarget(null)}>
                 Cancel
@@ -491,8 +520,6 @@ export function TherapistPayoutsTab() {
             </div>
           </div>
         </div>
-      ) : null}
-        </>
       ) : null}
     </>
   )

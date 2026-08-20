@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, Fragment } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { useBillingRuntimeConfig } from '../../hooks/useBillingRuntimeConfig.js'
 import { useModuleWrite } from '../../hooks/useModuleWrite.js'
 import { formatInr, normalizeConfidence } from '../../lib/financeConfidence.js'
@@ -153,27 +154,43 @@ export function FinanceMondayBrief() {
   )
 }
 
+function defaultBillingMonth() {
+  return new Date().toISOString().slice(0, 7)
+}
+
 export function TherapistPayoutQueuePanel() {
+  const { can } = useAuth()
   const { canWriteBilling } = useModuleWrite()
   const { config: billingConfig } = useBillingRuntimeConfig()
   const payoutExportEnabled = Boolean(billingConfig?.payoutExportEnabled)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [status, setStatus] = useState('ALL')
+  const [month, setMonth] = useState(defaultBillingMonth)
   const [expandedId, setExpandedId] = useState(null)
   const [resolveId, setResolveId] = useState(null)
   const [resolveNote, setResolveNote] = useState('')
+  const [rejectId, setRejectId] = useState(null)
+  const [rejectNote, setRejectNote] = useState('')
+  const [tdsDraft, setTdsDraft] = useState({})
   const [acting, setActing] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const [exportNote, setExportNote] = useState(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350)
+    return () => clearTimeout(t)
+  }, [search])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
-      if (search.trim()) params.set('search', search.trim())
+      if (debouncedSearch) params.set('search', debouncedSearch)
       if (status && status !== 'ALL') params.set('status', status)
+      if (month) params.set('month', month)
       const qs = params.toString()
       setData(await apiFetch(`/api/v1/admin/therapist-payouts/queue${qs ? `?${qs}` : ''}`))
     } catch {
@@ -181,7 +198,7 @@ export function TherapistPayoutQueuePanel() {
     } finally {
       setLoading(false)
     }
-  }, [search, status])
+  }, [debouncedSearch, status, month])
 
   useEffect(() => {
     load()
@@ -224,9 +241,72 @@ export function TherapistPayoutQueuePanel() {
       selected.has(row.invoiceId) &&
       row.status === 'APPROVED' &&
       !row.hasOpenDispute &&
-      !row.blocked &&
+      !row.exportBlocked &&
       !row.needsReview
   )
+
+  async function review(id, action, comment) {
+    setActing(true)
+    setExportNote(null)
+    try {
+      await apiFetch(`/api/v1/invoices/${id}/${action}`, {
+        method: 'POST',
+        body: JSON.stringify({ comment: comment || null }),
+      })
+      setRejectId(null)
+      setRejectNote('')
+      load()
+    } catch (err) {
+      setExportNote(err?.message || 'Could not update this payout.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function saveTds(invoiceId) {
+    const raw = tdsDraft[invoiceId]
+    if (raw === undefined || raw === '') {
+      setExportNote('Enter TDS (0 if none is withheld).')
+      return
+    }
+    setActing(true)
+    setExportNote(null)
+    try {
+      await apiFetch(`/api/v1/admin/therapist-payouts/invoices/${invoiceId}/tds`, {
+        method: 'POST',
+        body: JSON.stringify({ tds_inr: Number(raw) }),
+      })
+      load()
+    } catch (err) {
+      setExportNote(err?.message || 'Could not save TDS.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function markPaid(row) {
+    if (row.tdsPending) {
+      setExportNote('Save TDS first — use 0 if nothing is withheld.')
+      return
+    }
+    setActing(true)
+    setExportNote(null)
+    try {
+      await apiFetch(`/api/v1/invoices/${row.invoiceId}/payment`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          paid_amount_inr: Number(row.netInr),
+          status: 'PAID',
+          tds_inr: row.tdsInr,
+        }),
+      })
+      load()
+    } catch (err) {
+      setExportNote(err?.message || 'Could not mark this payout as paid.')
+    } finally {
+      setActing(false)
+    }
+  }
 
   async function exportBatch() {
     if (!exportableSelected.length) return
@@ -303,6 +383,23 @@ export function TherapistPayoutQueuePanel() {
         ) : null}
 
         <AdminCollapsibleFilters>
+          <label className="client-inv__filter-field">
+            <span className="client-inv__filter-label">Month</span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="month"
+                className="admin-input"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                aria-label="Payout month"
+              />
+              {month ? (
+                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => setMonth('')}>
+                  All months
+                </button>
+              ) : null}
+            </div>
+          </label>
           <AdminSearchInput value={search} onChange={setSearch} placeholder="Search therapist or month" />
           <select className="admin-input" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="ALL">All statuses</option>
@@ -311,6 +408,9 @@ export function TherapistPayoutQueuePanel() {
             <option value="APPROVED">Approved</option>
           </select>
         </AdminCollapsibleFilters>
+        <p className="admin-muted" style={{ margin: '0 0 12px' }}>
+          TDS is not applied automatically. Enter the withheld amount, or 0 if none, then approve and mark paid.
+        </p>
 
         {loading ? (
           <p>Loading…</p>
@@ -347,7 +447,7 @@ export function TherapistPayoutQueuePanel() {
                             <input
                               type="checkbox"
                               checked={selected.has(row.invoiceId)}
-                              disabled={row.needsReview || row.hasOpenDispute || row.blocked || row.status !== 'APPROVED'}
+                              disabled={row.needsReview || row.hasOpenDispute || row.exportBlocked || row.status !== 'APPROVED'}
                               onChange={() => toggleSelect(row.invoiceId)}
                             />
                           </td>
@@ -364,23 +464,48 @@ export function TherapistPayoutQueuePanel() {
                           <td>{row.sessionCount}</td>
                           <td>{formatCurrency(row.grossInr)}</td>
                           <td>
-                            {row.tdsInr != null ? (
+                            {row.tdsPending ? (
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 140 }}>
+                                <input
+                                  className="admin-input"
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  placeholder="TDS"
+                                  aria-label={`TDS for ${row.therapistName}`}
+                                  value={tdsDraft[row.invoiceId] ?? ''}
+                                  onChange={(e) =>
+                                    setTdsDraft((prev) => ({ ...prev, [row.invoiceId]: e.target.value }))
+                                  }
+                                  style={{ width: 88 }}
+                                  disabled={!canWriteBilling || acting}
+                                />
+                                <button
+                                  type="button"
+                                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                                  disabled={!canWriteBilling || acting}
+                                  onClick={() => saveTds(row.invoiceId)}
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            ) : (
                               <>
                                 {formatCurrency(row.tdsInr)}
-                                <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
-                                  {' '}
-                                  ({row.tdsRatePercent ?? '—'}%)
-                                </span>
+                                {row.tdsRatePercent != null ? (
+                                  <span className="admin-muted" style={{ fontSize: '0.75rem' }}>
+                                    {' '}
+                                    ({row.tdsRatePercent}%)
+                                  </span>
+                                ) : null}
                               </>
-                            ) : (
-                              '—'
                             )}
                           </td>
                           <td>{formatCurrency(row.deductionsInr)}</td>
                           <td>
                             {formatCurrency(row.netInr)}
                             {row.blocked ? (
-                              <span className="admin-chip admin-chip--warn" style={{ marginLeft: 6 }}>
+                              <span className="admin-chip admin-chip--warn" style={{ marginLeft: 6 }} title={row.blockedReason || ''}>
                                 Blocked
                               </span>
                             ) : null}
@@ -417,7 +542,61 @@ export function TherapistPayoutQueuePanel() {
                             <span className={statusPillClass(row.status)}>{row.status}</span>
                           </td>
                           <td>
-                            {row.disputes?.length ? (
+                            <div className="admin-btn-group" style={{ flexWrap: 'wrap' }}>
+                              {canWriteBilling && row.status === 'IN_REVIEW' ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="admin-btn admin-btn--primary admin-btn--sm"
+                                    disabled={acting}
+                                    onClick={() => review(row.invoiceId, 'approve')}
+                                  >
+                                    Approve
+                                  </button>
+                                  {rejectId === row.invoiceId ? (
+                                    <>
+                                      <input
+                                        className="admin-input"
+                                        placeholder="Reason"
+                                        value={rejectNote}
+                                        onChange={(e) => setRejectNote(e.target.value)}
+                                        style={{ width: 120 }}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="admin-btn admin-btn--danger admin-btn--sm"
+                                        disabled={acting || !rejectNote.trim()}
+                                        onClick={() => review(row.invoiceId, 'reject', rejectNote.trim())}
+                                      >
+                                        Send back
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="admin-btn admin-btn--ghost admin-btn--sm"
+                                      disabled={acting}
+                                      onClick={() => {
+                                        setRejectId(row.invoiceId)
+                                        setRejectNote('')
+                                      }}
+                                    >
+                                      Reject
+                                    </button>
+                                  )}
+                                </>
+                              ) : null}
+                              {canWriteBilling && can('payout.override') && row.status === 'APPROVED' ? (
+                                <button
+                                  type="button"
+                                  className="admin-btn admin-btn--primary admin-btn--sm"
+                                  disabled={acting || row.blocked || row.needsReview}
+                                  onClick={() => markPaid(row)}
+                                >
+                                  Mark paid
+                                </button>
+                              ) : null}
+                              {row.disputes?.length ? (
                               <button
                                 type="button"
                                 className="admin-btn admin-btn--ghost admin-btn--sm"
@@ -425,12 +604,13 @@ export function TherapistPayoutQueuePanel() {
                               >
                                 {expandedId === row.invoiceId ? 'Hide' : 'Disputes'}
                               </button>
-                            ) : null}
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                         {expandedId === row.invoiceId && row.disputes?.length ? (
                           <tr key={`${row.invoiceId}-disputes`}>
-                            <td colSpan={13}>
+                            <td colSpan={14}>
                               {row.disputes.map((d) => (
                                 <div key={d.id} style={{ marginBottom: 12, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
                                   <p style={{ margin: '0 0 6px' }}>
@@ -512,15 +692,72 @@ export function TherapistPayoutQueuePanel() {
                   </>
                 }
                 footer={
-                  row.disputes?.length ? (
-                    <button
-                      type="button"
-                      className="admin-btn admin-btn--ghost admin-btn--sm"
-                      onClick={() => setExpandedId(expandedId === row.invoiceId ? null : row.invoiceId)}
-                    >
-                      {row.disputes.length} dispute(s)
-                    </button>
-                  ) : null
+                  <div className="admin-btn-group" style={{ flexWrap: 'wrap' }}>
+                    {canWriteBilling && row.status === 'IN_REVIEW' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn--primary admin-btn--sm"
+                          disabled={acting}
+                          onClick={() => review(row.invoiceId, 'approve')}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn--ghost admin-btn--sm"
+                          disabled={acting}
+                          onClick={() => {
+                            const reason = window.prompt('Reason for sending this back?')
+                            if (reason?.trim()) review(row.invoiceId, 'reject', reason.trim())
+                          }}
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : null}
+                    {canWriteBilling && row.tdsPending ? (
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn--ghost admin-btn--sm"
+                        disabled={acting}
+                        onClick={() => {
+                          const raw = window.prompt('TDS withheld (0 if none)', tdsDraft[row.invoiceId] || '0')
+                          if (raw == null) return
+                          setTdsDraft((prev) => ({ ...prev, [row.invoiceId]: raw }))
+                          setActing(true)
+                          apiFetch(`/api/v1/admin/therapist-payouts/invoices/${row.invoiceId}/tds`, {
+                            method: 'POST',
+                            body: JSON.stringify({ tds_inr: Number(raw) }),
+                          })
+                            .then(() => load())
+                            .catch((err) => setExportNote(err?.message || 'Could not save TDS.'))
+                            .finally(() => setActing(false))
+                        }}
+                      >
+                        Set TDS
+                      </button>
+                    ) : null}
+                    {canWriteBilling && can('payout.override') && row.status === 'APPROVED' ? (
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn--primary admin-btn--sm"
+                        disabled={acting || row.blocked || row.needsReview}
+                        onClick={() => markPaid(row)}
+                      >
+                        Mark paid
+                      </button>
+                    ) : null}
+                    {row.disputes?.length ? (
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn--ghost admin-btn--sm"
+                        onClick={() => setExpandedId(expandedId === row.invoiceId ? null : row.invoiceId)}
+                      >
+                        {row.disputes.length} dispute(s)
+                      </button>
+                    ) : null}
+                  </div>
                 }
               />
             ))}

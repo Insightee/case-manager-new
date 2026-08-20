@@ -116,6 +116,34 @@ def test_admin_record_payment():
     assert r.status_code == 200
 
 
+def test_admin_record_payment_with_tds():
+    parent_h = _login("parent@demo.com")
+    admin_h = _login("superadmin@demo.com")
+    dash = client.get("/api/v1/parent/billing/dashboard", headers=parent_h).json()
+    unpaid = [i for i in dash.get("invoices", []) if i.get("balanceInr", 0) >= 100]
+    if not unpaid:
+        return
+    inv_id = unpaid[0]["id"]
+    r = client.post(
+        f"/api/v1/admin/client-billing/invoices/{inv_id}/payments",
+        headers=admin_h,
+        json={"amount_inr": 80, "tds_inr": 20, "method": "BANK_TRANSFER", "reference": "TDS-PAY-1"},
+    )
+    assert r.status_code == 200, r.text
+    detail = client.get(f"/api/v1/admin/client-billing/invoices/{inv_id}", headers=admin_h).json()
+    payments = detail.get("payments") or []
+    tds_row = next((p for p in payments if p.get("reference") == "TDS-PAY-1"), None)
+    assert tds_row is not None
+    assert tds_row["tdsInr"] == 20
+    assert tds_row["appliedInr"] == 100
+
+
+def test_therapist_cannot_preview_another_therapist():
+    th = _login("therapist@demo.com")
+    r = client.get("/api/v1/invoices/preview?month=2026-05&therapist_user_id=999999", headers=th)
+    assert r.status_code == 403
+
+
 def test_admin_notify_parent_invoice():
     parent_h = _login("parent@demo.com")
     admin_h = _login("superadmin@demo.com")

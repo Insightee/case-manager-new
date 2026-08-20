@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { isFinanceDeskUser } from '../../lib/financeDesk.js'
 import {
   CASE_STATE_OPTIONS,
   OPENED_DATE_PRESETS,
@@ -59,6 +60,10 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const { can, canWriteProduct, isViewOnly, user } = useAuth()
   const { options: programmeOptions } = useClinicalProductModules()
   const navigate = useNavigate()
+  const financeDesk = isFinanceDeskUser(user)
+  const canAssign = can('case.assign') && !isViewOnly && !financeDesk
+  const canUpdate = can('case.update') && !isViewOnly && !financeDesk
+  const canCreate = can('case.create') && !isViewOnly && !financeDesk
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -73,10 +78,6 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const [toast, setToast] = useState('')
   const [actingId, setActingId] = useState(null)
   const [casePage, setCasePage] = useState(1)
-
-  const canAssign = can('case.assign') && !isViewOnly
-  const canUpdate = can('case.update') && !isViewOnly
-  const canCreate = can('case.create') && !isViewOnly
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -506,6 +507,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                   canUpdate,
                   canCreate,
                   canWrite: rowCanWrite,
+                  detailsOnly: financeDesk,
                 })
                 const selectable =
                   canAssign && rowCanWrite && ['needs_therapist', 'reassignment'].includes(row.pipeline_column)
@@ -616,6 +618,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
                   canUpdate,
                   canCreate,
                   canWrite: rowCanWrite,
+                  detailsOnly: financeDesk,
                 })
                 const primary = actions[0]
                 return (

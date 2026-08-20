@@ -24,6 +24,7 @@ import { IepBuilderPanel } from './IepBuilderPanel.jsx'
 import { IepReportRoute } from '../reports-engine/iep/IepReportRoute.jsx'
 import { ObservationReportRoute } from '../reports-engine/observation/ObservationReportRoute.jsx'
 import { isReportsRevampActive } from '../../lib/reportsRevampFlags.js'
+import { isFinanceDeskUser } from '../../lib/financeDesk.js'
 import { CaseSessionsAndLogsPanel } from './CaseSessionsAndLogsPanel.jsx'
 import { CaseClientStatusCard } from './CaseClientStatusCard.jsx'
 import { CaseDayTypeBadge } from './CaseDayTypeBadge.jsx'
@@ -39,9 +40,11 @@ const TABS = [
   { id: 'observation', label: 'Observation' },
   { id: 'documents', label: 'Documents' },
   { id: 'cm-meetings', label: 'Meetings' },
-  { id: 'billing', label: 'Billing', perms: ['case.update', 'case.billing.update'] },
+  { id: 'billing', label: 'Billing', perms: ['case.update', 'case.billing.update', 'invoice.approve'] },
   { id: 'scheduling', label: 'Assign & Schedule', perm: 'slot.book_any' },
 ]
+
+const FINANCE_TAB_IDS = new Set(['overview', 'activity', 'logs', 'billing'])
 
 export function AdminCaseDetailPage() {
   const { caseId } = useParams()
@@ -52,6 +55,16 @@ export function AdminCaseDetailPage() {
   const billingApprovalRequestId = searchParams.get('billing_approval')
   const { can, canWriteProduct, isViewOnly, user } = useAuth()
   const { canReviewLogs } = useModuleWrite()
+  const financeDesk = isFinanceDeskUser(user)
+  const clinicalRevamp = isReportsRevampActive('admin')
+  const visibleTabs = TABS.filter(
+    (t) =>
+      (!financeDesk || FINANCE_TAB_IDS.has(t.id)) &&
+      (!t.perm || can(t.perm)) &&
+      (!t.perms || t.perms.some((permission) => can(permission))) &&
+      (t.id !== 'observation' || clinicalRevamp),
+  )
+  const visibleTabIds = visibleTabs.map((t) => t.id)
   const [caseRow, setCaseRow] = useState(null)
   const [assignments, setAssignments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -112,9 +125,15 @@ export function AdminCaseDetailPage() {
   }, [highlightSessionId, tab, setSearchParams])
 
   useEffect(() => {
+    if (financeDesk) return
     if (!highlightIncidentId || tab === 'incidents' || !can('incident.read_sensitive')) return
     setSearchParams({ tab: 'incidents', incident_id: highlightIncidentId }, { replace: true })
-  }, [highlightIncidentId, tab, setSearchParams])
+  }, [financeDesk, highlightIncidentId, tab, setSearchParams, can])
+
+  useEffect(() => {
+    if (!visibleTabIds.length || visibleTabIds.includes(tab)) return
+    setSearchParams({ tab: visibleTabIds[0] }, { replace: true })
+  }, [tab, visibleTabIds, setSearchParams])
 
   function setTab(id) {
     const next = { tab: id }
@@ -156,18 +175,21 @@ export function AdminCaseDetailPage() {
       !caseRow.in_transition &&
       can('case.update') &&
       !isViewOnly &&
+      !financeDesk &&
       canWriteProduct(caseRow.product_module),
   )
   const canEditBilling = Boolean(
     caseRow &&
       !caseRow.in_transition &&
       !isViewOnly &&
+      !financeDesk &&
       (can('case.billing.update') || canEditCase),
   )
   const canManageStatus = Boolean(
     caseRow &&
       !caseRow.in_transition &&
       !isViewOnly &&
+      !financeDesk &&
       (can('admin.override') ||
         can('case.status_manage') ||
         (can('case.update') && canWriteProduct(caseRow.product_module))),
@@ -176,7 +198,9 @@ export function AdminCaseDetailPage() {
     can('admin.override') ||
       (user?.roles || []).some((r) => ['SUPER_ADMIN', 'MODULE_ADMIN', 'ADMIN', 'HR'].includes(r)),
   )
-  const canAssignCase = Boolean(caseRow && can('case.assign') && canWriteProduct(caseRow.product_module))
+  const canAssignCase = Boolean(
+    caseRow && can('case.assign') && !financeDesk && canWriteProduct(caseRow.product_module),
+  )
   const isAssignedCaseManager = Boolean(
     caseRow && user?.id && caseRow.case_manager_user_id === user.id,
   )
@@ -184,16 +208,9 @@ export function AdminCaseDetailPage() {
     caseRow &&
       can('daily_log.review') &&
       !isViewOnly &&
+      !financeDesk &&
       (canReviewLogs(caseRow.product_module) || isAssignedCaseManager),
   )
-  const clinicalRevamp = isReportsRevampActive('admin')
-  const visibleTabs = TABS.filter(
-    (t) =>
-      (!t.perm || can(t.perm)) &&
-      (!t.perms || t.perms.some((permission) => can(permission))) &&
-      (t.id !== 'observation' || clinicalRevamp),
-  )
-  const visibleTabIds = visibleTabs.map((t) => t.id)
 
   function openScheduleTab() {
     if (visibleTabIds.includes('scheduling')) setTab('scheduling')
@@ -313,6 +330,7 @@ export function AdminCaseDetailPage() {
             caseId={caseId}
             highlightSessionId={highlightSessionId}
             canReview={canReviewCaseLogs}
+            attendanceOnly={financeDesk}
           />
         </section>
       )}
@@ -360,17 +378,20 @@ export function AdminCaseDetailPage() {
 
       {tab === 'cm-meetings' && <AdminCaseCmMeetingsPanel caseId={caseRow?.id || caseId} />}
 
-      {tab === 'billing' && (can('case.update') || can('case.billing.update')) && (
+      {tab === 'billing' &&
+        (can('case.update') || can('case.billing.update') || (financeDesk && can('invoice.approve'))) && (
         <section className="admin-layout admin-layout--stack">
-          {billingApprovalRequestId ? (
+          {billingApprovalRequestId && !financeDesk ? (
             <BillingApprovalPanel requestId={billingApprovalRequestId} onApplied={load} />
           ) : null}
-          {(can('invoice.approve') || can('case.update')) && caseRow?.id ? (
+          {!financeDesk && (can('invoice.approve') || can('case.update')) && caseRow?.id ? (
             <CaseBillingActionsCard caseId={caseRow.id} />
           ) : null}
           {!canEditBilling ? (
             <p className="admin-alert" style={{ color: '#b45309' }}>
-              View-only access — you cannot change billing for this module.
+              {financeDesk
+                ? 'Billing is view-only here — use Client invoices or Therapist payouts to change money records.'
+                : 'View-only access — you cannot change billing for this module.'}
             </p>
           ) : null}
           {billingErr ? <p className="admin-alert" style={{ color: '#b91c1c' }}>{billingErr}</p> : null}
@@ -396,12 +417,14 @@ export function AdminCaseDetailPage() {
         />
       )}
 
-      <AdminCaseDetailFab
-        caseId={caseRow.id}
-        visibleTabIds={visibleTabIds}
-        onSelectTab={setTab}
-        canInvoice={can('invoice.approve') || can('case.update')}
-      />
+      {!financeDesk ? (
+        <AdminCaseDetailFab
+          caseId={caseRow.id}
+          visibleTabIds={visibleTabIds}
+          onSelectTab={setTab}
+          canInvoice={can('invoice.approve') || can('case.update')}
+        />
+      ) : null}
     </div>
   )
 }

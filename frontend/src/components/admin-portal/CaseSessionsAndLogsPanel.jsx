@@ -60,7 +60,7 @@ function SessionLogList({ items, highlightRef, sharedExpandProps }) {
   )
 }
 
-export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview }) {
+export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview, attendanceOnly = false }) {
   const [sessions, setSessions] = useState([])
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -82,11 +82,11 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
     ])
     const nextSessions = unwrapList(sessData)
     const rawLogs = Array.isArray(logData) ? logData : unwrapList(logData)
-    const nextLogs = await enrichLogsWithCommentCounts(rawLogs, apiFetch)
+    const nextLogs = attendanceOnly ? rawLogs : await enrichLogsWithCommentCounts(rawLogs, apiFetch)
     setSessions(nextSessions)
     setLogs(nextLogs)
     return { sessions: nextSessions, logs: nextLogs }
-  }, [caseId])
+  }, [caseId, attendanceOnly])
 
   useEffect(() => {
     let cancelled = false
@@ -168,7 +168,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
   }
 
   useEffect(() => {
-    if (loading) return
+    if (attendanceOnly || loading) return
     const signature = `${caseId}:${highlightSessionId || ''}:${sessions.length}:${logs.length}`
     if (autoExpandDoneRef.current === signature) return
     autoExpandDoneRef.current = signature
@@ -188,7 +188,7 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
       }
       return next
     })
-  }, [loading, caseId, highlightSessionId, sessions, logs.length, logsBySessionId, orphanLogs])
+  }, [attendanceOnly, loading, caseId, highlightSessionId, sessions, logs.length, logsBySessionId, orphanLogs])
 
   useEffect(() => {
     if (!highlightSessionId || loading) return
@@ -249,7 +249,8 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
 
   const sharedExpandProps = {
     caseId,
-    canReview,
+    canReview: attendanceOnly ? false : canReview,
+    attendanceOnly,
     onReviewLog: handleReviewLog,
     actingLogId,
     rejectingLogId,
@@ -303,11 +304,12 @@ export function CaseSessionsAndLogsPanel({ caseId, highlightSessionId, canReview
         onSelectedMonthChange={setSelectedMonth}
         onSelectedDateChange={handleSelectedDateChange}
         onStatusFilterChange={setStatusFilter}
-        exportCaseId={caseId}
+        exportCaseId={attendanceOnly ? null : caseId}
       />
       <p className="case-sessions-logs__intro admin-portal-lead" style={{ margin: '0 0 12px', fontSize: '0.8125rem', color: '#64748b' }}>
-        Sessions appear when scheduled. Daily logs appear after the therapist submits notes. When times were
-        corrected, approving the log also approves the corrected clock for billing.
+        {attendanceOnly
+          ? 'Session dates and who submitted the log, including logs still awaiting review. Full notes, goals, and evidence are not shown.'
+          : 'Sessions appear when scheduled. Daily logs appear after the therapist submits notes. When times were corrected, approving the log also approves the corrected clock for billing.'}
       </p>
       {sessionItems.length === 0 && orphanItems.length === 0 ? (
         <p className="admin-muted" style={{ margin: 0 }}>
