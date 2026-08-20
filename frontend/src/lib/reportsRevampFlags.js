@@ -1,20 +1,15 @@
 /**
  * Feature flags for Reports & Clinical Documentation revamp.
- * Default OFF — enable with VITE_REPORTS_REVAMP=true (staging/local only).
+ * On whenever reports are enabled, including production. Set VITE_REPORTS_REVAMP=false to compare the legacy UI.
  */
 
-import {
-  isCanonicalProductionFrontend,
-  isReportsModuleEnabled,
-  isRolloutEnvironment,
-} from './productFeatureFlags.js'
+import { isReportsModuleEnabled } from './productFeatureFlags.js'
 
 function readReportsRevampFlag() {
-  if (isCanonicalProductionFrontend()) return false
   const raw = import.meta.env.VITE_REPORTS_REVAMP
   if (raw === 'true') return true
   if (raw === 'false') return false
-  return isRolloutEnvironment() && isReportsModuleEnabled()
+  return isReportsModuleEnabled()
 }
 
 const revampOptIn = readReportsRevampFlag()
