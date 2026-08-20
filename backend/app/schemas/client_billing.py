@@ -28,6 +28,7 @@ class ClientPaymentRecord(BaseModel):
     method: Literal["UPI", "BANK_TRANSFER", "CASH", "CHEQUE", "GATEWAY"]
     reference: Optional[str] = None
     notes: Optional[str] = None
+    tds_inr: float = Field(default=0, ge=0)
 
 
 class PaymentClaimReject(BaseModel):

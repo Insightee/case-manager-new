@@ -1,20 +1,22 @@
 import { useSearchParams } from 'react-router-dom'
 import { AdminPageHeader, PortalTabBar } from './ui/index.js'
-import { AdminTherapistPayoutsDashboard } from './AdminTherapistPayoutsDashboard.jsx'
 import { TherapistPayoutsTab } from './TherapistPayoutsTab.jsx'
+import { TherapistPayoutRaisePanel } from './TherapistPayoutRaisePanel.jsx'
+import { TherapistPayoutQueuePanel } from './TherapistPayoutFinance.jsx'
+import { AdminTherapistPayoutsDashboard } from './AdminTherapistPayoutsDashboard.jsx'
 
 const SUB_TABS = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'payouts', label: 'Payout invoices' },
+  { id: 'queue', label: 'This month' },
+  { id: 'records', label: 'All records' },
 ]
 
 export function AdminTherapistPayoutsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const sub =
-    searchParams.get('sub') ||
-    searchParams.get('therapist_sub') ||
-    'dashboard'
-  const activeSub = SUB_TABS.some((t) => t.id === sub) ? sub : 'dashboard'
+  const raw = searchParams.get('sub') || searchParams.get('therapist_sub') || 'queue'
+  let mapped = raw
+  if (raw === 'dashboard') mapped = 'queue'
+  if (raw === 'payouts') mapped = searchParams.get('view') === 'queue' ? 'queue' : 'records'
+  const activeSub = SUB_TABS.some((t) => t.id === mapped) ? mapped : 'queue'
 
   function setSub(id) {
     const next = new URLSearchParams(searchParams)
@@ -28,7 +30,7 @@ export function AdminTherapistPayoutsPage() {
       <AdminPageHeader
         eyebrow="Finance"
         title="Therapist payouts"
-        subtitle="Review submitted therapist invoices, approve payouts, and record payments after leave adjustments."
+        subtitle="System gross → add TDS → pay the net → mark paid. Raise an invoice if the therapist has not submitted one. Notes stay on the record."
       />
 
       <PortalTabBar
@@ -39,7 +41,15 @@ export function AdminTherapistPayoutsPage() {
         tabs={SUB_TABS}
       />
 
-      {activeSub === 'payouts' ? <TherapistPayoutsTab /> : <AdminTherapistPayoutsDashboard />}
+      {activeSub === 'queue' ? (
+        <>
+          <AdminTherapistPayoutsDashboard />
+          <TherapistPayoutRaisePanel />
+          <TherapistPayoutQueuePanel />
+        </>
+      ) : (
+        <TherapistPayoutsTab />
+      )}
     </div>
   )
 }

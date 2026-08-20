@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { AdminPanel } from './ui/index.js'
+import './admin-dashboard.css'
 
 export function AdminTherapistPayoutsDashboard() {
   const [summary, setSummary] = useState(null)
@@ -32,7 +33,7 @@ export function AdminTherapistPayoutsDashboard() {
   return (
     <div className="client-inv-therapist-dash">
       <p className="admin-muted" style={{ marginBottom: 16 }}>
-        Therapist payouts are separate from client invoices. Approve submitted invoices, then record payment when paid.
+        Review submitted invoices, raise missing ones, then record TDS and mark paid. Parent invoices stay on Client invoices.
       </p>
       <div className="admin-home-queue__grid">
         <AdminPanel title="In review" padded>

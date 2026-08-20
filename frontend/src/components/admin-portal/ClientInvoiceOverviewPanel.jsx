@@ -22,7 +22,6 @@ export function ClientInvoiceOverviewPanel({
   if (!detail) return null
 
   const lines = detail.lines || []
-  const preview = detail.billingPreview
 
   return (
     <div className="client-inv-overview">
@@ -36,7 +35,7 @@ export function ClientInvoiceOverviewPanel({
       <section className="client-inv-overview__section">
         <h4 className="client-inv-overview__title">Invoice preview</h4>
         <p className="client-inv-overview__lead">
-          Review line items on the Line items tab, then confirm totals below before sending to the parent.
+          This is the amount the parent or school owes. Confirm the lines, then send the invoice. TDS is recorded when payment comes in — it is not added to this total.
         </p>
         <div className="client-inv-line-editor__table-wrap">
           <table className="admin-table client-inv-line-editor__table">
@@ -93,7 +92,7 @@ export function ClientInvoiceOverviewPanel({
             <strong>{formatCurrency(detail.taxInr)}</strong>
           </div>
           <div>
-            <span className="client-inv-overview__k">Invoice total</span>
+            <span className="client-inv-overview__k">Amount due</span>
             <strong className="client-inv-overview__total">{formatCurrency(detail.totalInr)}</strong>
           </div>
           <div>
@@ -103,34 +102,10 @@ export function ClientInvoiceOverviewPanel({
         </div>
       </section>
 
-      {preview ? (
-        <section className="client-inv-overview__section client-inv-overview__therapist">
-          <h4 className="client-inv-overview__title">Therapist payout (estimate)</h4>
-          <p className="client-inv-overview__lead">
-            Therapist pay is based on their share of completed work for this case, minus approved leave deductions — not the client invoice total.
-          </p>
-          <div className="client-inv-overview__totals-grid">
-            <div>
-              <span className="client-inv-overview__k">Sessions (month)</span>
-              <strong>{preview.sessionsCompleted ?? 0}</strong>
-            </div>
-            <div>
-              <span className="client-inv-overview__k">Billable sessions</span>
-              <strong>{preview.sessionsBillable ?? 0}</strong>
-            </div>
-            <div>
-              <span className="client-inv-overview__k">Leaves</span>
-              <strong>{preview.leavesTotal ?? 0}</strong>
-            </div>
-            <div>
-              <span className="client-inv-overview__k">Est. therapist payout</span>
-              <strong>{formatCurrency(preview.therapistPayoutTotalInr)}</strong>
-            </div>
-            <div>
-              <span className="client-inv-overview__k">Est. margin</span>
-              <strong>{formatCurrency(preview.estimatedMarginInr)}</strong>
-            </div>
-          </div>
+      {detail.notes ? (
+        <section className="client-inv-overview__section">
+          <h4 className="client-inv-overview__title">Finance note</h4>
+          <p style={{ fontSize: '0.85rem', margin: 0 }}>{detail.notes}</p>
         </section>
       ) : null}
 
@@ -143,7 +118,6 @@ export function ClientInvoiceOverviewPanel({
           Due {detail.dueDate || '—'}
           {detail.gatewayEnabled ? ' · Payment gateway enabled' : ''}
         </p>
-        {detail.notes ? <p style={{ fontSize: '0.85rem', marginTop: 8 }}>{detail.notes}</p> : null}
         {detail.zohoExternalId ? (
           <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 8 }}>
             Zoho ref: {detail.zohoExternalId}

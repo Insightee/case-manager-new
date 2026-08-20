@@ -185,6 +185,7 @@ class ClientPayment(Base):
     confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     rejection_note: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    tds_inr: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), default=0)
     gateway_provider: Mapped[Optional[str]] = mapped_column(String(32))
     gateway_payment_id: Mapped[Optional[str]] = mapped_column(String(128))
     provider_ref: Mapped[Optional[str]] = mapped_column(String(128))

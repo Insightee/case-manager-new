@@ -45,7 +45,7 @@ const PORTALS = [
     id: 'admin',
     label: 'Admin',
     cardTitle: 'I am an Insighte Admin',
-    cardSubtitle: 'For Admins, HR , Tech team',
+    cardSubtitle: 'For Admins, HR, and Tech',
     cardSubtitleSmall: true,
     cardAction: 'Open Admin Dashboard',
     iconSrc: '/branding/portal-admin.png',
@@ -71,7 +71,7 @@ const PORTALS = [
       },
       {
         title: 'Finance',
-        accounts: [{ email: 'finance@demo.com', label: 'Finance', hint: 'Invoices & payouts' }],
+        accounts: [{ email: 'finance@demo.com', label: 'Finance', hint: 'Client invoices & therapist payouts' }],
       },
       {
         title: 'People & HR',
@@ -322,7 +322,7 @@ export function LoginPage({ portalType }) {
       <div className="login-page">
         <SkipLink />
         <div className="login-shell">
-          <section className="login-card" style={{ maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '2rem', padding: '3rem' }}>
+          <section className="login-card login-card--gateway">
             <header className="login-header login-header--gateway">
               <InsighteLogo />
               <h1 className="login-title login-title--gateway">Welcome</h1>

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { AdminEmptyState } from './ui/index.js'
+import './admin-dashboard.css'
 
 const WIDGET_META = {
   logs: { icon: '◫', tone: 'indigo', hint: 'Pending therapist logs' },

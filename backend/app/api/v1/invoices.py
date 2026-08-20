@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_request_meta
@@ -16,6 +17,7 @@ from app.core.module_write import ensure_billing_write_access
 from app.core.permissions import require_mutation_permission, require_permission, user_has_permission
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.review import ReviewDecision
+from app.models.role import Role, user_roles
 from app.models.user import User
 from app.schemas.invoice import InvoiceRead, PaymentUpdate
 from app.schemas.billing import InvoiceAmendRequest, InvoiceSubmitRequest, LateSessionCreate
@@ -109,6 +111,8 @@ def _invoice_read(
         subtotal_inr=float(i.subtotal_inr) if i.subtotal_inr else None,
         leave_deduction_inr=float(i.leave_deduction_inr) if i.leave_deduction_inr else None,
         adjustment_inr=float(i.adjustment_inr) if i.adjustment_inr else None,
+        tds_inr=float(i.tds_inr) if i.tds_inr is not None else None,
+        net_payable_inr=float(i.net_payable_inr) if i.net_payable_inr is not None else None,
         notes=i.notes,
         therapist_employment_status=employment_status,
         therapist_is_active=is_active,
@@ -192,13 +196,104 @@ def therapist_ledger(
 @router.get("/preview")
 def preview_invoice(
     month: str = Query(..., description="YYYY-MM or Mon YYYY"),
+    therapist_user_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_permission("invoice.generate")),
     db: Session = Depends(get_db),
 ):
-    preview = invoice_billing_service.build_month_preview(db, user.id, month)
+    target_id = user.id
+    if therapist_user_id is not None:
+        if not user_has_permission(user, "invoice.approve"):
+            raise HTTPException(status_code=403, detail="Access denied")
+        target_id = therapist_user_id
+    preview = invoice_billing_service.build_month_preview(db, target_id, month)
     if _hide_client_pricing(user):
         preview = _redact_preview_client_pricing(preview)
+    preview["therapistUserId"] = target_id
     return preview
+
+
+class AdminTherapistInvoiceSubmit(BaseModel):
+    therapist_user_id: int = Field(..., ge=1)
+    month: str = Field(..., min_length=3, max_length=32)
+    notes: Optional[str] = None
+
+
+@router.get("/payout-therapists")
+def list_payout_therapists(
+    search: Optional[str] = Query(None),
+    month: Optional[str] = Query(None),
+    user: User = Depends(require_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    if not user_has_feature(user, "invoices"):
+        raise HTTPException(status_code=403, detail="Billing module access required")
+    stmt = (
+        select(User)
+        .join(user_roles, user_roles.c.user_id == User.id)
+        .join(Role, Role.id == user_roles.c.role_id)
+        .where(Role.name == "THERAPIST", User.is_active.is_(True))
+        .order_by(User.full_name)
+    )
+    q = (search or "").strip().lower()
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(or_(User.full_name.ilike(pattern), User.email.ilike(pattern)))
+    therapists = list(db.scalars(stmt.limit(80)).unique().all())
+    existing_ids: set[int] = set()
+    if month:
+        existing_ids = set(
+            db.scalars(
+                select(Invoice.therapist_user_id).where(
+                    Invoice.month == month,
+                    Invoice.status != InvoiceStatus.REJECTED,
+                )
+            ).all()
+        )
+    return [
+        {
+            "id": t.id,
+            "fullName": t.full_name,
+            "email": t.email,
+            "hasInvoiceThisMonth": t.id in existing_ids,
+        }
+        for t in therapists
+    ]
+
+
+@router.post("/submit-for-therapist", response_model=InvoiceRead, status_code=status.HTTP_201_CREATED)
+def submit_invoice_for_therapist(
+    payload: AdminTherapistInvoiceSubmit,
+    request: Request,
+    user: User = Depends(require_mutation_permission("invoice.approve")),
+    db: Session = Depends(get_db),
+):
+    ensure_billing_write_access(user)
+    if not user_has_feature(user, "invoices"):
+        raise HTTPException(status_code=403, detail="Billing module access required")
+    therapist = db.get(User, payload.therapist_user_id)
+    if not therapist:
+        raise HTTPException(status_code=404, detail="Therapist not found")
+    preview = invoice_billing_service.build_month_preview(db, payload.therapist_user_id, payload.month)
+    note = (payload.notes or "").strip() or "Raised by finance"
+    try:
+        invoice = invoice_billing_service.submit_invoice_from_preview(
+            db, payload.therapist_user_id, preview, note
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="submit_for_therapist",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        new_value={"therapist_user_id": payload.therapist_user_id, "month": payload.month},
+        **meta,
+    )
+    db.commit()
+    db.refresh(invoice)
+    return _invoice_read(invoice, db)
 
 
 class StatementDisputeCreate(BaseModel):
@@ -454,6 +549,12 @@ def update_payment(
     old = {"paid_amount_inr": float(invoice.paid_amount_inr) if invoice.paid_amount_inr else None}
     invoice.paid_amount_inr = payload.paid_amount_inr
     invoice.status = payload.status
+    if payload.tds_inr is not None:
+        invoice.tds_inr = payload.tds_inr
+        invoice.net_payable_inr = round(float(payload.paid_amount_inr), 2)
+    if payload.finance_note and payload.finance_note.strip():
+        extra = payload.finance_note.strip()
+        invoice.notes = f"{invoice.notes}\n{extra}".strip() if invoice.notes else extra
     if payload.status == InvoiceStatus.PAID:
         therapist_payout_flag_service.clear_flags_for_paid_invoice(db, invoice)
     meta = get_request_meta(request)
