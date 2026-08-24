@@ -4,10 +4,10 @@ import {
 } from '../../lib/productFeatureFlags.js'
 import './portal-module-rollout-notice.css'
 
-export function PortalModuleRolloutNotice() {
-  if (!shouldShowClientPortalRolloutNotice()) return null
+export function PortalModuleRolloutNotice({ portal }) {
+  if (!shouldShowClientPortalRolloutNotice(portal)) return null
 
-  const message = clientPortalModuleRolloutMessage()
+  const message = clientPortalModuleRolloutMessage(portal)
 
   return (
     <div className="portal-module-rollout-notice" role="status" aria-live="polite">

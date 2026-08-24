@@ -110,7 +110,7 @@ export function isReportsModuleEnabled() {
   return ENABLE_REPORTS
 }
 
-/** Visibility for parent/therapist billing UI (coming-soon when false). */
+/** Visibility for parent billing UI (coming-soon when false). Therapist invoices are always shown. */
 export function isBillingModuleEnabled() {
   return ENABLE_CLIENT_BILLING
 }
@@ -139,11 +139,16 @@ export function isStructuredEvidenceEnabled() {
   return ENABLE_STRUCTURED_EVIDENCE
 }
 
-/** Banner copy when therapist/parent reports or billing are deferred. */
-export function clientPortalModuleRolloutMessage() {
+/**
+ * Banner copy when therapist/parent reports or billing are deferred.
+ * Therapist billing is live; only parents still gate Billing via isBillingModuleEnabled().
+ * @param {'therapist' | 'parent' | string} [portal]
+ */
+export function clientPortalModuleRolloutMessage(portal) {
   const deferred = []
   if (!isReportsModuleEnabled()) deferred.push('Reports')
-  if (!isBillingModuleEnabled()) deferred.push('Billing')
+  // Therapist invoices are live; keep Billing deferred only on the parent portal.
+  if (portal !== 'therapist' && !isBillingModuleEnabled()) deferred.push('Billing')
   if (deferred.length === 0) return null
   if (deferred.length === 2) {
     return 'Reports and Billing are being refreshed — coming soon on this portal. Session logs and case updates continue as usual.'
@@ -151,6 +156,6 @@ export function clientPortalModuleRolloutMessage() {
   return `${deferred[0]} is being refreshed — coming soon on this portal. Session logs and case updates continue as usual.`
 }
 
-export function shouldShowClientPortalRolloutNotice() {
-  return Boolean(clientPortalModuleRolloutMessage())
+export function shouldShowClientPortalRolloutNotice(portal) {
+  return Boolean(clientPortalModuleRolloutMessage(portal))
 }

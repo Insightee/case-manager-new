@@ -653,7 +653,7 @@ export function PortalShell({ portal }) {
             . Edit actions are disabled for those programmes.
           </div>
         ) : null}
-        {isClientPortalDashboard ? <PortalModuleRolloutNotice /> : null}
+        {isClientPortalDashboard ? <PortalModuleRolloutNotice portal={portal} /> : null}
         <Outlet />
       </main>
       <PortalInstallBanner />
