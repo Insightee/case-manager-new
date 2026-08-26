@@ -16,7 +16,13 @@ from app.models.report import MonthlyReport, ObservationReport, ReportStatus
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
 from app.services import case_service, log_service, operational_reports_service
-from app.services.reports_export_helpers import export_case_id, export_therapist_id
+from app.services.reports_export_helpers import (
+    active_assignment,
+    assignment_therapist,
+    case_people_export_fields,
+    export_therapist_id,
+    parent_by_child,
+)
 
 LEGACY_REPORT_KEYS = frozenset(
     {
@@ -148,19 +154,26 @@ def _observation_rows(
 ) -> list[dict]:
     stmt = select(ObservationReport).order_by(ObservationReport.id.desc())
     rows = db.scalars(stmt).all()
+    cases_by_id = {
+        r.case_id: case_service.get_case(db, r.case_id)
+        for r in rows
+        if r.case_id
+    }
+    parents = parent_by_child(
+        db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
+    )
     out: list[dict] = []
     for r in rows:
-        case = case_service.get_case(db, r.case_id) if r.case_id else None
+        case = cases_by_id.get(r.case_id) if r.case_id else None
         if product_module and case and case.product_module != product_module:
             continue
         if not _case_allowed(db, user, case):
             continue
         therapist = db.get(User, r.therapist_user_id)
+        parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
         out.append(
             {
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) if case else "",
-                "Therapist ID": export_therapist_id(therapist),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Report Date": r.report_date.isoformat() if r.report_date else "",
                 "Status": getattr(r, "status", None) and getattr(r.status, "value", str(r.status)) or "",
                 "Category": "OBSERVATION",
@@ -180,19 +193,26 @@ def _monthly_rows(
     if month:
         stmt = stmt.where(MonthlyReport.month == month)
     rows = db.scalars(stmt).all()
+    cases_by_id = {
+        r.case_id: case_service.get_case(db, r.case_id)
+        for r in rows
+        if r.case_id
+    }
+    parents = parent_by_child(
+        db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
+    )
     out: list[dict] = []
     for r in rows:
-        case = case_service.get_case(db, r.case_id) if r.case_id else None
+        case = cases_by_id.get(r.case_id) if r.case_id else None
         if product_module and case and case.product_module != product_module:
             continue
         if not _case_allowed(db, user, case):
             continue
         therapist = db.get(User, r.therapist_user_id)
+        parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
         out.append(
             {
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) if case else "",
-                "Therapist ID": export_therapist_id(therapist),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Report Month": r.month,
                 "Status": r.status.value if isinstance(r.status, ReportStatus) else str(r.status),
                 "Category": "CLIENT_MONTHLY",
@@ -215,20 +235,24 @@ def _session_log_rows(
     user: User | None,
 ) -> list[dict]:
     logs = log_service.list_logs(db, month=month, product_module=product_module)
+    case_ids = {log.session.case_id for log in logs if log.session}
+    cases_by_id = {cid: case_service.get_case(db, cid) for cid in case_ids}
+    parents = parent_by_child(
+        db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
+    )
     out: list[dict] = []
     for log in logs:
         if not log.session:
             continue
-        case = case_service.get_case(db, log.session.case_id)
+        case = cases_by_id.get(log.session.case_id)
         if not _case_allowed(db, user, case):
             continue
         s = log.session
         therapist = db.get(User, s.therapist_user_id) if s else None
+        parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
         out.append(
             {
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) if case else "",
-                "Therapist ID": export_therapist_id(therapist),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Session Date": s.scheduled_date.isoformat() if s and s.scheduled_date else "",
                 "Approval Status": (
                     log.approval_status.value
@@ -251,14 +275,16 @@ def _cases_roster_rows(
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
     cases = db.scalars(stmt).all()
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
     out: list[dict] = []
     for case in cases:
         if not _case_allowed(db, user, case):
             continue
+        therapist = assignment_therapist(db, active_assignment(db, case.id))
+        parent_info = parents.get(case.child_id or -1, {})
         out.append(
             {
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Programme": case.product_module,
                 "Status": case.status.value if case.status else "",
                 "Service Type": case.service_type or "",
@@ -306,7 +332,7 @@ def _therapist_status_rows(db: Session) -> list[dict]:
         out.append(
             {
                 "Therapist ID": export_therapist_id(u),
-                "Display Name": p.display_name or (u.full_name if u else ""),
+                "Therapist Name": p.display_name or (u.full_name if u else ""),
                 "Email": u.email if u else "",
                 "Profile Status": p.status.value if p.status else "",
                 "Employment Status": u.employment_status.value if u and u.employment_status else "",

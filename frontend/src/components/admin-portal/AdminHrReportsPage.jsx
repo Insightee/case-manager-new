@@ -19,6 +19,22 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
 
+/** IST calendar date for download filenames (matches backend export stamp). */
+function downloadDateStamp() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date())
+    const get = (type) => parts.find((p) => p.type === type)?.value
+    return `${get('year')}-${get('month')}-${get('day')}`
+  } catch {
+    return todayIso()
+  }
+}
+
 function buildQuery(params) {
   const qs = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
@@ -109,8 +125,9 @@ export function AdminHrReportsPage() {
     async (format) => {
       const qs = buildQuery({ ...filterParams, format })
       const ext = format === 'xlsx' ? 'xlsx' : format
+      const stamp = downloadDateStamp()
       await run(
-        () => apiDownload(`/api/v1/admin/hr-reports/${reportKey}?${qs}`, `${reportKey}.${ext}`),
+        () => apiDownload(`/api/v1/admin/hr-reports/${reportKey}?${qs}`, `${reportKey}-${stamp}.${ext}`),
         { successMsg: `${format.toUpperCase()} download started` },
       )
     },

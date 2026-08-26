@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
+from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import User
 from app.services.admin_scope_service import apply_case_scope
 from app.services import case_service
@@ -48,6 +49,16 @@ def month_long_label(ym: str) -> str:
     return start.strftime("%B %Y")
 
 
+def export_generated_on_stamp() -> str:
+    """IST calendar date for download filenames and document titles (YYYY-MM-DD)."""
+    return datetime.now(IST).strftime("%Y-%m-%d")
+
+
+def export_filename_stem(report_key: str, *, generated_on: str | None = None) -> str:
+    stamp = generated_on or export_generated_on_stamp()
+    return f"{report_key}-{stamp}"
+
+
 def export_case_id(case: Case | None) -> str:
     if not case:
         return ""
@@ -67,6 +78,55 @@ def user_display_name(user: User | None) -> str:
     if not user:
         return ""
     return (user.full_name or user.email or "").strip()
+
+
+def parent_by_child(db: Session, child_ids: set[int]) -> dict[int, dict[str, Any]]:
+    """Map child_id → first linked parent {user_id, parent_name, parent_email}."""
+    if not child_ids:
+        return {}
+
+    rows = db.execute(
+        select(
+            parent_child_link.c.child_id,
+            User.id,
+            User.full_name,
+            User.email,
+        )
+        .join(ParentGuardian, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
+        .join(User, User.id == ParentGuardian.user_id)
+        .where(parent_child_link.c.child_id.in_(child_ids))
+        .order_by(parent_child_link.c.child_id, ParentGuardian.id)
+    ).all()
+    out: dict[int, dict[str, Any]] = {}
+    for child_id, user_id, full_name, email in rows:
+        if child_id in out:
+            continue
+        out[child_id] = {
+            "user_id": user_id,
+            "parent_name": full_name or "",
+            "parent_email": email or "",
+        }
+    return out
+
+
+def case_people_export_fields(
+    case: Case | None,
+    *,
+    therapist: User | None = None,
+    parent_info: dict[str, Any] | None = None,
+    include_therapist: bool = True,
+) -> dict[str, str]:
+    """Standard Case / Child / Parent / Therapist identity columns for HR exports."""
+    parent = parent_info or {}
+    fields: dict[str, str] = {
+        "Case ID": export_case_id(case),
+        "Child Name": case_service.case_child_display_name(case) or "",
+        "Parent Name": str(parent.get("parent_name") or ""),
+    }
+    if include_therapist:
+        fields["Therapist Name"] = user_display_name(therapist)
+        fields["Therapist ID"] = export_therapist_id(therapist)
+    return fields
 
 
 def enum_value(value: Any) -> str:

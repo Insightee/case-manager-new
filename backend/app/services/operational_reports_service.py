@@ -22,7 +22,6 @@ from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.models.audit_event import AuditEvent
-from app.models.parent import ParentGuardian, parent_child_link
 from app.models.support_ticket import SupportTicket
 from app.models.user import User
 from app.services import case_service, leave_policy_service
@@ -35,9 +34,9 @@ from app.services.reports_export_helpers import (
     billing_snapshot_report_columns,
     calendar_days_in_month,
     case_manager,
+    case_people_export_fields,
     days_since,
     enum_value,
-    export_case_id,
     export_therapist_id,
     last_completed_session_date,
     leave_days_in_month,
@@ -48,6 +47,7 @@ from app.services.reports_export_helpers import (
     is_shadow_case,
     monthly_report_submitted,
     normalize_month,
+    parent_by_child,
     parse_iso_date,
     scoped_cases,
     THERAPIST_LOG_COMPLIANCE_MIN_AGE_DAYS,
@@ -237,6 +237,7 @@ def bulk_attendance_rows(
     missing_logs_month = _missing_logs_in_month(db, case_ids, start, end)
     logs_pending_month, logs_rejected_month = _log_approval_gap_by_case(db, case_ids, start, end)
     hours_by_case = _session_hours_by_case(db, case_ids, ym)
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
 
     rows: list[dict[str, Any]] = []
     for case in cases[:MAX_EXPORT_ROWS]:
@@ -251,14 +252,12 @@ def bulk_attendance_rows(
         balance = leave_policy_service.get_leave_balance(db, therapist, year=year, as_of=end)
         cm = case_manager(db, case)
         metrics = billable_metrics.get(case.id, {})
+        parent_info = parents.get(case.child_id or -1, {})
 
         rows.append(
             {
                 "Month": month_label,
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) or "",
-                "Therapist Name": user_display_name(therapist),
-                "Therapist ID": export_therapist_id(therapist),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Service Type": case.service_type or case.product_module or "",
                 "Case Manager": user_display_name(cm),
                 "Total Calendar Days": cal_days,
@@ -319,6 +318,9 @@ def session_log_detail_rows(
     sessions = db.scalars(stmt.limit(MAX_EXPORT_ROWS)).all()
     absence_by_session = _absence_by_session(db, [s.id for s in sessions])
     billable_by_session = _billable_by_session(db, [s.id for s in sessions])
+    parents = parent_by_child(
+        db, {s.case.child_id for s in sessions if s.case and s.case.child_id}
+    )
 
     rows: list[dict[str, Any]] = []
     for s in sessions:
@@ -330,6 +332,7 @@ def session_log_detail_rows(
         mentor = mentor_for_therapist(db, s.therapist_user_id)
         log = s.daily_log
         absence = absence_by_session.get(s.id)
+        parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
 
         duration_mins: int | str = ""
         if s.actual_start_at and s.actual_end_at:
@@ -348,10 +351,7 @@ def session_log_detail_rows(
 
         rows.append(
             {
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) if case else "",
-                "Therapist Name": user_display_name(therapist),
-                "Therapist ID": export_therapist_id(therapist),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Mentor": user_display_name(mentor),
                 "Case Manager": user_display_name(cm),
                 "Service Type": (case.service_type if case else "") or (case.product_module if case else ""),
@@ -397,6 +397,7 @@ def session_monthly_summary_rows(
     billable_metrics = _build_billable_metrics(db, cases, case_ids, start, end)
     missing_logs = _missing_logs_in_month(db, case_ids, start, end)
     hours = _session_hours_by_case(db, case_ids, ym)
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id and c.id in case_ids})
 
     client_rows: list[dict[str, Any]] = []
     therapist_agg: dict[int, dict[str, Any]] = defaultdict(
@@ -426,13 +427,11 @@ def session_monthly_summary_rows(
         scheduled = st.get("scheduled", conducted)
         logs_submitted = max(conducted - missing_logs.get(case.id, 0), 0)
         pending = missing_logs.get(case.id, 0)
+        parent_info = parents.get(case.child_id or -1, {})
 
         client_rows.append(
             {
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) or "",
-                "Therapist Name": user_display_name(therapist),
-                "Therapist ID": export_therapist_id(therapist),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Service Type": case.service_type or case.product_module or "",
                 "Scheduled Sessions": scheduled,
                 "Sessions Conducted": conducted,
@@ -524,10 +523,17 @@ def replacement_history_rows(
 
     ended = db.scalars(stmt.limit(MAX_EXPORT_ROWS)).all()
     replacement_count: dict[int, int] = defaultdict(int)
+    case_cache: dict[int, Case | None] = {}
+    for assign in ended:
+        if assign.case_id not in case_cache:
+            case_cache[assign.case_id] = case_service.get_case(db, assign.case_id)
+    parents = parent_by_child(
+        db, {c.child_id for c in case_cache.values() if c and c.child_id}
+    )
     rows: list[dict[str, Any]] = []
 
     for assign in ended:
-        case = db.get(Case, assign.case_id)
+        case = case_cache.get(assign.case_id)
         if not case or not _case_allowed(db, user, case):
             continue
         prev_therapist = db.get(User, assign.therapist_user_id)
@@ -543,12 +549,16 @@ def replacement_history_rows(
         ).first()
         new_therapist = assignment_therapist(db, new_assign)
         replacement_count[case.id] += 1
+        parent_info = parents.get(case.child_id or -1, {})
+        # Prefer the newly allotted therapist for identity columns; fall back to previous.
+        identity_therapist = new_therapist or prev_therapist
 
         rows.append(
             {
                 "Month": month_label,
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) or "",
+                **case_people_export_fields(
+                    case, therapist=identity_therapist, parent_info=parent_info
+                ),
                 "Service Type": case.service_type or case.product_module or "",
                 "Previous Therapist": user_display_name(prev_therapist),
                 "Previous Therapist ID": export_therapist_id(prev_therapist),
@@ -587,20 +597,37 @@ def support_tickets_parent_rows(
         stmt = stmt.where(SupportTicket.product_module == product_module)
 
     tickets = db.scalars(stmt.limit(MAX_EXPORT_ROWS * 2)).all()
+    case_ids = {t.case_id for t in tickets if t.case_id}
+    cases_by_id = {
+        cid: case_service.get_case(db, cid) for cid in case_ids
+    }
+    parents = parent_by_child(
+        db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
+    )
     rows: list[dict[str, Any]] = []
     for ticket in tickets:
         if not _user_has_role(db, ticket.raised_by_user_id, RoleName.PARENT.value):
             continue
-        case = case_service.get_case(db, ticket.case_id) if ticket.case_id else None
+        case = cases_by_id.get(ticket.case_id) if ticket.case_id else None
         if case and not _case_allowed(db, user, case):
             continue
         assignee = db.get(User, ticket.assigned_to_user_id) if ticket.assigned_to_user_id else None
+        therapist = None
+        if case:
+            therapist = assignment_therapist(db, active_assignment(db, case.id))
+        parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
+        if not parent_info.get("parent_name"):
+            raiser = db.get(User, ticket.raised_by_user_id)
+            if raiser:
+                parent_info = {
+                    **parent_info,
+                    "parent_name": user_display_name(raiser),
+                }
         rows.append(
             {
                 "Month": month_label,
                 "Ticket ID": f"ST-{ticket.id}",
-                "Case ID": export_case_id(case) if case else "",
-                "Client Name": case_service.case_child_display_name(case) if case else "",
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Category": enum_value(ticket.category),
                 "Description": (ticket.body or ticket.subject or "")[:500],
                 "Raised Date": ticket.created_at.date().isoformat() if ticket.created_at else "",
@@ -643,6 +670,11 @@ def incident_reports_rows(
         stmt = stmt.where(Case.case_manager_user_id == case_manager_user_id)
 
     incidents = db.scalars(stmt.limit(MAX_EXPORT_ROWS * 2)).all()
+    case_ids = {i.case_id for i in incidents if i.case_id}
+    cases_by_id = {cid: case_service.get_case(db, cid) for cid in case_ids}
+    parents = parent_by_child(
+        db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
+    )
     rows: list[dict[str, Any]] = []
     for incident in incidents:
         if user and not can_read_incident(db, user, incident):
@@ -652,12 +684,16 @@ def incident_reports_rows(
             or user_has_permission(user, "admin.override")
         ):
             continue
-        case = case_service.get_case(db, incident.case_id) if incident.case_id else None
+        case = cases_by_id.get(incident.case_id) if incident.case_id else None
         if case and user and not _case_allowed(db, user, case):
             continue
         reporter = db.get(User, incident.reported_by_user_id)
         assignee = db.get(User, incident.assigned_to_user_id) if incident.assigned_to_user_id else None
         cm = case_manager(db, case) if case else None
+        therapist = None
+        if case:
+            therapist = assignment_therapist(db, active_assignment(db, case.id))
+        parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
         status = normalize_incident_status(incident.status).value
         primary_category = incident.primary_category or ""
         subcategory = incident.subcategory or ""
@@ -665,8 +701,7 @@ def incident_reports_rows(
             {
                 "Month": month_label,
                 "Incident ID": incident.ticket_code or f"INC-{incident.id}",
-                "Case ID": export_case_id(case) if case else "",
-                "Client Name": case_service.case_child_display_name(case) if case else "",
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Programme": case.product_module if case else "",
                 "Category": category_label(primary_category) if primary_category else "",
                 "Subcategory": subcategory_label(primary_category, subcategory)
@@ -727,6 +762,14 @@ def cm_meetings_rows(
         stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == case_manager_user_id)
 
     meetings = db.scalars(stmt.limit(MAX_EXPORT_ROWS)).all()
+    meeting_cases = {
+        m.case_id: case_service.get_case(db, m.case_id)
+        for m in meetings
+        if m.case_id
+    }
+    parents = parent_by_child(
+        db, {c.child_id for c in meeting_cases.values() if c and c.child_id}
+    )
     detail_rows: list[dict[str, Any]] = []
     summary: dict[int, dict[str, Any]] = defaultdict(
         lambda: {
@@ -741,7 +784,7 @@ def cm_meetings_rows(
     )
 
     for meeting in meetings:
-        case = db.get(Case, meeting.case_id) if meeting.case_id else None
+        case = meeting_cases.get(meeting.case_id) if meeting.case_id else None
         if case and not _case_allowed(db, user, case):
             continue
         cm_user = db.get(User, meeting.case_manager_user_id)
@@ -762,15 +805,13 @@ def cm_meetings_rows(
             elif is_homecare:
                 summary[meeting.case_manager_user_id]["homecare_iep"] += 1
         summary[meeting.case_manager_user_id]["cm_user"] = cm_user
+        parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
 
         detail_rows.append(
             {
                 "Date": meeting.scheduled_date.isoformat(),
                 "Case Manager": user_display_name(cm_user),
-                "Therapist Name": user_display_name(therapist),
-                "Therapist ID": export_therapist_id(therapist),
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) if case else "",
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Service Type": (case.service_type if case else "") or module,
                 "Meeting Agenda": enum_value(mtype),
                 "Important Notes": (meeting.notes_summary or meeting.notes_action or "")[:500],
@@ -816,6 +857,7 @@ def inactive_clients_rows(
         active_only=True,
     )
     rows: list[dict[str, Any]] = []
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
     for case in cases[:MAX_EXPORT_ROWS]:
         if not _case_allowed(db, user, case):
             continue
@@ -831,13 +873,11 @@ def inactive_clients_rows(
         assign = active_assignment(db, case.id)
         therapist = assignment_therapist(db, assign)
         cm = case_manager(db, case)
+        parent_info = parents.get(case.child_id or -1, {})
         rows.append(
             {
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) or "",
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Service Type": case.service_type or case.product_module or "",
-                "Therapist Name": user_display_name(therapist),
-                "Therapist ID": export_therapist_id(therapist),
                 "Last Completed Session": last_session.isoformat() if last_session else "",
                 "Days Inactive": inactive_days if inactive_days is not None else "",
                 "Case Manager": user_display_name(cm),
@@ -848,33 +888,6 @@ def inactive_clients_rows(
         reverse=True,
     )
     return rows
-
-
-def _parent_by_child(db: Session, child_ids: set[int]) -> dict[int, dict[str, Any]]:
-    if not child_ids:
-        return {}
-    rows = db.execute(
-        select(
-            parent_child_link.c.child_id,
-            User.id,
-            User.full_name,
-            User.email,
-        )
-        .join(ParentGuardian, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
-        .join(User, User.id == ParentGuardian.user_id)
-        .where(parent_child_link.c.child_id.in_(child_ids))
-        .order_by(parent_child_link.c.child_id, ParentGuardian.id)
-    ).all()
-    out: dict[int, dict[str, Any]] = {}
-    for child_id, user_id, full_name, email in rows:
-        if child_id in out:
-            continue
-        out[child_id] = {
-            "user_id": user_id,
-            "parent_name": full_name or "",
-            "parent_email": email or "",
-        }
-    return out
 
 
 def _parent_portal_activity(
@@ -923,15 +936,15 @@ def parent_portal_usage_rows(
     )
     allowed_cases = [case for case in cases[:MAX_EXPORT_ROWS] if _case_allowed(db, user, case)]
     child_ids = {case.child_id for case in allowed_cases if case.child_id}
-    parent_by_child = _parent_by_child(db, child_ids)
+    parents = parent_by_child(db, child_ids)
     parent_user_ids = {
-        info["user_id"] for info in parent_by_child.values() if info.get("user_id")
+        info["user_id"] for info in parents.values() if info.get("user_id")
     }
     last_login_by_user, has_portal_session = _parent_portal_activity(db, parent_user_ids)
 
     rows: list[dict[str, Any]] = []
     for case in allowed_cases:
-        parent = parent_by_child.get(case.child_id or -1, {})
+        parent = parents.get(case.child_id or -1, {})
         parent_user_id = parent.get("user_id")
         last_login = last_login_by_user.get(parent_user_id) if parent_user_id else None
         is_active = bool(parent_user_id and parent_user_id in has_portal_session)
@@ -941,11 +954,10 @@ def parent_portal_usage_rows(
             else None
         )
         cm = case_manager(db, case)
+        therapist = assignment_therapist(db, active_assignment(db, case.id))
         rows.append(
             {
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) or "",
-                "Parent Name": parent.get("parent_name", ""),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent),
                 "Login Status": "Active" if is_active else "Inactive",
                 "Last Login": last_login.date().isoformat() if last_login else "",
                 "Days Since Last Activity": days_since_activity
@@ -1046,6 +1058,9 @@ def therapist_log_compliance_rows(
     }
 
     out: list[dict[str, Any]] = []
+    parents = parent_by_child(
+        db, {cases_by_id[cid].child_id for (_, cid) in missing_by_pair if cases_by_id.get(cid) and cases_by_id[cid].child_id}
+    )
     for (therapist_id, case_id), missing_dates in missing_by_pair.items():
         case = cases_by_id.get(case_id)
         if not case:
@@ -1055,14 +1070,12 @@ def therapist_log_compliance_rows(
         newest = max(missing_dates)
         last_at = last_submitted.get((therapist_id, case_id))
         cm = case_manager(db, case)
+        parent_info = parents.get(case.child_id or -1, {})
 
         out.append(
             {
-                "Therapist ID": export_therapist_id(therapist),
-                "Therapist Name": user_display_name(therapist),
+                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
                 "Mentor": user_display_name(mentor_for_therapist(db, therapist_id)),
-                "Case ID": export_case_id(case),
-                "Client Name": case_service.case_child_display_name(case) or "",
                 "Case Manager": user_display_name(cm),
                 "Missing Logs": len(missing_dates),
                 "Not Submitting Since": oldest.isoformat(),

@@ -71,11 +71,33 @@ def test_bulk_attendance_report_json():
     assert "rows" in data
     if data["rows"]:
         assert "Case ID" in data["rows"][0]
+        assert "Child Name" in data["rows"][0]
+        assert "Parent Name" in data["rows"][0]
+        assert "Therapist Name" in data["rows"][0]
         assert "Therapist ID" in data["rows"][0]
+        assert "Client Name" not in data["rows"][0]
         assert "Logs Pending Approval" in data["rows"][0]
         assert "Logs Rejected" in data["rows"][0]
         assert "Parent Cancelled" not in data["rows"][0]
         assert "Monthly Fixed Pay" not in data["rows"][0]
+
+
+def test_session_monthly_summary_people_columns():
+    r = client.get(
+        "/api/v1/admin/hr-reports/session-monthly-summary?month=2026-01",
+        headers=_auth_headers("superadmin@demo.com"),
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "rows" in data
+    if data["rows"]:
+        row = data["rows"][0]
+        assert "Case ID" in row
+        assert "Child Name" in row
+        assert "Parent Name" in row
+        assert "Therapist Name" in row
+        assert "Therapist ID" in row
+        assert "Client Name" not in row
 
 
 def test_session_log_detail_csv():
@@ -85,7 +107,15 @@ def test_session_log_detail_csv():
     )
     assert r.status_code == 200
     assert "text/csv" in r.headers.get("content-type", "")
-    assert "Case ID" in r.text.splitlines()[0]
+    header = r.text.splitlines()[0]
+    assert "Case ID" in header
+    assert "Child Name" in header
+    assert "Parent Name" in header
+    assert "Therapist Name" in header
+    assert "Therapist ID" in header
+    cd = r.headers.get("content-disposition", "")
+    assert "session-log-detail-" in cd
+    assert ".csv" in cd
 
 
 def test_inactive_clients_xlsx():
@@ -97,6 +127,9 @@ def test_inactive_clients_xlsx():
     assert r.headers.get("content-type", "").startswith(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+    cd = r.headers.get("content-disposition", "")
+    assert "inactive-clients-" in cd
+    assert ".xlsx" in cd
 
 
 def test_inactive_clients_json_columns():
@@ -110,6 +143,9 @@ def test_inactive_clients_json_columns():
     if data["rows"]:
         row = data["rows"][0]
         assert "Last Completed Session" in row
+        assert "Child Name" in row
+        assert "Parent Name" in row
+        assert "Therapist Name" in row
         assert "Reason" not in row
 
 
@@ -125,11 +161,16 @@ def test_parent_portal_usage_json():
     if data["rows"]:
         row = data["rows"][0]
         assert "Case ID" in row
+        assert "Child Name" in row
+        assert "Parent Name" in row
+        assert "Therapist Name" in row
+        assert "Therapist ID" in row
         assert "Login Status" in row
         assert "Last Login" in row
         assert "Days Since Last Activity" in row
         assert "Has Logged In" not in row
         assert "Last Seen" not in row
+        assert "Client Name" not in row
 
 
 def test_parent_portal_usage_csv():
@@ -141,6 +182,8 @@ def test_parent_portal_usage_csv():
     assert "text/csv" in r.headers.get("content-type", "")
     header = r.text.splitlines()[0]
     assert "Parent Name" in header
+    assert "Child Name" in header
+    assert "Therapist Name" in header
     assert "Login Status" in header
     assert "Last Login" in header
     assert "Has Logged In" not in header
@@ -160,6 +203,9 @@ def test_incident_reports_json():
         row = data["rows"][0]
         assert "Incident ID" in row
         assert "Case ID" in row
+        assert "Child Name" in row
+        assert "Parent Name" in row
+        assert "Therapist Name" in row
         assert "Category" in row
         assert "Status" in row
         assert "Description" in row
@@ -203,8 +249,11 @@ def test_therapist_log_compliance_catalog_and_json():
     if data["rows"]:
         row = data["rows"][0]
         assert "Therapist ID" in row
+        assert "Therapist Name" in row
         assert "Case ID" in row
-        assert "Client Name" in row
+        assert "Child Name" in row
+        assert "Parent Name" in row
+        assert "Client Name" not in row
         assert "Not Submitting Since" in row
         assert "Missing Logs" in row
         assert "Case IDs" not in row
