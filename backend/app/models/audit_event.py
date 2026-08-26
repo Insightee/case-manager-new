@@ -15,6 +15,9 @@ class AuditEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     actor_user_id: Mapped[Optional[int ]] = mapped_column(ForeignKey("users.id"))
+    integration_client_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("integration_clients.id"), nullable=True, index=True
+    )
     case_id: Mapped[Optional[int]] = mapped_column(ForeignKey("cases.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(128), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -9,8 +9,10 @@ _INSECURE_JWT_SECRETS = frozenset(
     {
         "dev-secret-change-in-production",
         "dev-refresh-secret-change-in-production",
+        "dev-integration-secret-change-in-production",
         "change-me-in-production",
         "change-me-refresh-in-production",
+        "change-me-integration-in-production",
     }
 )
 

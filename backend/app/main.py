@@ -200,16 +200,32 @@ app.add_middleware(RequestIdMiddleware)
 
 app.include_router(api_router)
 
+# Remote MCP (Streamable HTTP) — thin adapter over the integration service layer.
+if settings.mcp_enabled and settings.integration_api_enabled:
+    try:
+        from app.mcp.server import get_mcp_asgi_app
+
+        _mcp_app = get_mcp_asgi_app()
+        if _mcp_app is not None:
+            app.mount("/mcp", _mcp_app)
+    except Exception as exc:  # pragma: no cover - startup resilience
+        import logging
+
+        logging.getLogger("insightcase").error("MCP mount failed: %s", exc)
+
 
 @app.get("/")
 def root():
-    return {
+    payload = {
         "service": "InsighteCase API",
         "health": "/health",
         "api": "/api/v1",
         "docs": "/docs",
         "ui": "Start the React app: cd frontend && npm run dev — then open http://localhost:5173",
     }
+    if settings.mcp_enabled and settings.integration_api_enabled:
+        payload["mcp"] = "/mcp"
+    return payload
 
 
 @app.get("/health")

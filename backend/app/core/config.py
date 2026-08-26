@@ -126,6 +126,18 @@ class Settings(BaseSettings):
     # IANA timezone for Google Calendar links in CM meeting invite emails (ctz=).
     meeting_invite_calendar_timezone: str = "Asia/Kolkata"
 
+    # External integration API + remote MCP (read-only). Off by default in production-like envs
+    # until explicitly enabled; tests/dev set INTEGRATION_API_ENABLED=true.
+    integration_api_enabled: bool = False
+    mcp_enabled: bool = False
+    # Dedicated HS256 secret for integration access tokens (distinct from user JWT).
+    integration_jwt_secret_key: str = "dev-integration-secret-change-in-production"
+    integration_access_token_minutes: int = 15
+    integration_default_rate_limit_per_minute: int = 60
+    integration_max_page_size: int = 50
+    integration_credential_default_ttl_days: int = 365
+
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_database_url(cls, value: object) -> object:

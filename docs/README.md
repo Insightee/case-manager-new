@@ -10,6 +10,7 @@ Central index for all repo documentation. Start here or from [AGENTS.md](../AGEN
 | [../backend/README.md](../backend/README.md) | API, roles, migrations, backend commands |
 | [../frontend/README.md](../frontend/README.md) | Vite app, build, E2E |
 | [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md) | **All env vars** — local, Railway, Vercel, CI |
+| [INTEGRATIONS_MCP.md](./INTEGRATIONS_MCP.md) | External integration API + remote MCP (read-only) |
 | [AGENT_WORKFLOW.md](./AGENT_WORKFLOW.md) | Delivery, RBAC, billing, deploy checklists for agents |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | **Team workflow** — PRs, pre-push, hooks, release |
 | [../CHANGELOG.md](../CHANGELOG.md) | **Change log** — `[Unreleased]` + dated releases |
