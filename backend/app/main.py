@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -18,7 +20,45 @@ from app.core.security import ping_redis_for_health, verify_redis_at_startup, wa
 from app.db.bootstrap import bootstrap_schema
 from app.db.goal_repository_schema_repair import repair_goal_repository_columns
 
-app = FastAPI(title="InsighteCase API", version="0.1.0")
+
+def _run_startup_bootstrap() -> None:
+    validate_production_settings()
+    verify_redis_at_startup()
+    bootstrap_schema()
+    _repair_postgres_schema_drift()
+    _apply_sqlite_patches_if_needed()
+    _maybe_seed_demo_on_empty_db()
+    _verify_sqlite_writable()
+    _log_schema_health()
+    import logging
+
+    logging.getLogger("insightcase").info("Redis startup status: %s", warm_redis_connection())
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """App lifespan: bootstrap + MCP StreamableHTTP session manager task group."""
+    _run_startup_bootstrap()
+    session_manager = None
+    if settings.mcp_enabled and settings.integration_api_enabled:
+        try:
+            from app.mcp.server import remount_mcp
+
+            # Always remount with a fresh session manager — SDK forbids reusing .run().
+            session_manager = remount_mcp(_app)
+        except Exception as exc:  # pragma: no cover
+            import logging
+
+            logging.getLogger("insightcase").error("MCP init failed: %s", exc)
+            session_manager = None
+    if session_manager is not None:
+        async with session_manager.run():
+            yield
+    else:
+        yield
+
+
+app = FastAPI(title="InsighteCase API", version="0.1.0", lifespan=lifespan)
 
 
 @app.exception_handler(DBAPIError)
@@ -159,21 +199,6 @@ def _repair_postgres_schema_drift() -> None:
         log.error("Goal repository schema repair failed: %s", exc)
 
 
-@app.on_event("startup")
-def _on_startup() -> None:
-    validate_production_settings()
-    verify_redis_at_startup()
-    bootstrap_schema()
-    _repair_postgres_schema_drift()
-    _apply_sqlite_patches_if_needed()
-    _maybe_seed_demo_on_empty_db()
-    _verify_sqlite_writable()
-    _log_schema_health()
-    import logging
-
-    logging.getLogger("insightcase").info("Redis startup status: %s", warm_redis_connection())
-
-
 @app.middleware("http")
 async def _sqlite_patches_middleware(request: Request, call_next):
     if settings.is_sqlite and settings.is_development:
@@ -200,16 +225,32 @@ app.add_middleware(RequestIdMiddleware)
 
 app.include_router(api_router)
 
+# Remote MCP (Streamable HTTP) — lifespan starts session_manager; mount the ASGI app here.
+if settings.mcp_enabled and settings.integration_api_enabled:
+    try:
+        from app.mcp.server import init_mcp
+
+        _mcp_server, _mcp_app = init_mcp()
+        if _mcp_app is not None:
+            app.mount("/mcp", _mcp_app)
+    except Exception as exc:  # pragma: no cover - startup resilience
+        import logging
+
+        logging.getLogger("insightcase").error("MCP mount failed: %s", exc)
+
 
 @app.get("/")
 def root():
-    return {
+    payload = {
         "service": "InsighteCase API",
         "health": "/health",
         "api": "/api/v1",
         "docs": "/docs",
         "ui": "Start the React app: cd frontend && npm run dev — then open http://localhost:5173",
     }
+    if settings.mcp_enabled and settings.integration_api_enabled:
+        payload["mcp"] = "/mcp"
+    return payload
 
 
 @app.get("/health")

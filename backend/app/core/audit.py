@@ -65,6 +65,7 @@ def log_audit(
     ip_address: str | None = None,
     user_agent: str | None = None,
     case_id: int | None = None,
+    integration_client_id: int | None = None,
 ) -> AuditEvent:
     resolved_case_id = case_id
     if resolved_case_id is None:
@@ -76,6 +77,7 @@ def log_audit(
         )
     event = AuditEvent(
         actor_user_id=actor_user_id,
+        integration_client_id=integration_client_id,
         case_id=resolved_case_id,
         action=action,
         entity_type=entity_type,

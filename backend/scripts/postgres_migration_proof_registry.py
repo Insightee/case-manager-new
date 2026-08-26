@@ -759,6 +759,78 @@ register_head(
 )
 
 
+def _seed_i0merge1integration(db: Session) -> dict[str, Any]:
+    """Merge-only head — unifies prior divergent Alembic tips."""
+    return {"merge_only": True}
+
+
+register_head(
+    "i0merge1integration",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_i0merge1integration,
+)
+
+
+def _seed_i1integr2api3layer(db: Session) -> dict[str, Any]:
+    from app.core.security import hash_password
+    from app.models.case import Case
+    from app.models.integration import (
+        IntegrationCaseGrant,
+        IntegrationClient,
+        IntegrationClientStatus,
+        IntegrationCredential,
+    )
+    from app.models.user import User
+
+    existing = db.scalar(
+        select(IntegrationClient.id).where(IntegrationClient.name == "migration-proof-client")
+    )
+    if existing:
+        return {"client_id": existing, "skipped": True}
+
+    admin = db.scalar(select(User).where(User.email == "superadmin@demo.com"))
+    case = db.scalar(select(Case).limit(1))
+    if not admin or not case:
+        raise RuntimeError("Need seeded superadmin and cases — run demo_seed first")
+
+    client = IntegrationClient(
+        name="migration-proof-client",
+        status=IntegrationClientStatus.ACTIVE.value,
+        scopes_json=["ops:summary", "cases:read"],
+        rate_limit_per_minute=30,
+        created_by_user_id=admin.id,
+    )
+    db.add(client)
+    db.flush()
+    cred = IntegrationCredential(
+        integration_client_id=client.id,
+        public_client_id="ic_migration_proof_001",
+        secret_hash=hash_password("migration-proof-secret-not-used"),
+    )
+    db.add(cred)
+    grant = IntegrationCaseGrant(integration_client_id=client.id, case_id=case.id)
+    db.add(grant)
+    db.flush()
+    return {
+        "client_id": client.id,
+        "credential_id": cred.id,
+        "grant_id": grant.id,
+    }
+
+
+register_head(
+    "i1integr2api3layer",
+    tables_added=[
+        "integration_clients",
+        "integration_credentials",
+        "integration_case_grants",
+    ],
+    columns_added=[("audit_events", "integration_client_id")],
+    seed=_seed_i1integr2api3layer,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:

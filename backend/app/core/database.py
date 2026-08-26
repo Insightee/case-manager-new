@@ -549,6 +549,56 @@ def ensure_sqlite_schema_patches() -> None:
         if "case_id" not in audit_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE audit_events ADD COLUMN case_id INTEGER"))
+        if "integration_client_id" not in audit_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE audit_events ADD COLUMN integration_client_id INTEGER"))
+
+    if not insp.has_table("integration_clients"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE integration_clients (
+                        id INTEGER PRIMARY KEY,
+                        name VARCHAR(128) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'active',
+                        scopes_json JSON NOT NULL,
+                        rate_limit_per_minute INTEGER NOT NULL DEFAULT 60,
+                        created_by_user_id INTEGER REFERENCES users(id),
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE integration_credentials (
+                        id INTEGER PRIMARY KEY,
+                        integration_client_id INTEGER NOT NULL REFERENCES integration_clients(id) ON DELETE CASCADE,
+                        public_client_id VARCHAR(64) NOT NULL UNIQUE,
+                        secret_hash VARCHAR(255) NOT NULL,
+                        expires_at DATETIME,
+                        revoked_at DATETIME,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE integration_case_grants (
+                        id INTEGER PRIMARY KEY,
+                        integration_client_id INTEGER NOT NULL REFERENCES integration_clients(id) ON DELETE CASCADE,
+                        case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (integration_client_id, case_id)
+                    )
+                    """
+                )
+            )
 
     _sqlite_portal_indexes(conn_ctx=engine)
 

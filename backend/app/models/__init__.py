@@ -96,6 +96,13 @@ from app.models.email_suppression import EmailSuppression
 from app.models.password_reset import PasswordResetToken
 from app.models.service_category import ServiceCategory
 from app.models.service_product import ServiceProduct
+from app.models.integration import (
+    INTEGRATION_SCOPES,
+    IntegrationCaseGrant,
+    IntegrationClient,
+    IntegrationClientStatus,
+    IntegrationCredential,
+)
 from app.models.user import EmploymentStatus, InviteToken, User
 
 __all__ = [
@@ -207,4 +214,9 @@ __all__ = [
     "TherapistProfile",
     "TherapistProfileStatus",
     "TherapistPayoutFlag",
+    "IntegrationClient",
+    "IntegrationClientStatus",
+    "IntegrationCredential",
+    "IntegrationCaseGrant",
+    "INTEGRATION_SCOPES",
 ]

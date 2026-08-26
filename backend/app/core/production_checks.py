@@ -9,8 +9,10 @@ _INSECURE_JWT_SECRETS = frozenset(
     {
         "dev-secret-change-in-production",
         "dev-refresh-secret-change-in-production",
+        "dev-integration-secret-change-in-production",
         "change-me-in-production",
         "change-me-refresh-in-production",
+        "change-me-integration-in-production",
     }
 )
 
@@ -29,6 +31,17 @@ def validate_production_settings() -> None:
         errors.append("JWT_SECRET_KEY must be a strong unique value (not a dev default)")
     if settings.jwt_refresh_secret_key.strip() in _INSECURE_JWT_SECRETS:
         errors.append("JWT_REFRESH_SECRET_KEY must be a strong unique value (not a dev default)")
+
+    if settings.integration_api_enabled or settings.mcp_enabled:
+        if settings.integration_jwt_secret_key.strip() in _INSECURE_JWT_SECRETS:
+            errors.append(
+                "INTEGRATION_JWT_SECRET_KEY must be a strong unique value when integration/MCP is enabled"
+            )
+        if settings.integration_jwt_secret_key.strip() in {
+            settings.jwt_secret_key.strip(),
+            settings.jwt_refresh_secret_key.strip(),
+        }:
+            errors.append("INTEGRATION_JWT_SECRET_KEY must differ from user JWT secrets")
 
     if settings.is_sqlite:
         errors.append("DATABASE_URL must be Postgres in production (SQLite is local dev only)")
