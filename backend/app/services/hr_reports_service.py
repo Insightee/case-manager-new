@@ -17,9 +17,9 @@ from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
 from app.services import case_service, log_service, operational_reports_service
 from app.services.reports_export_helpers import (
-    active_assignment,
-    assignment_therapist,
+    active_therapists_by_case,
     case_people_export_fields,
+    cases_by_ids,
     export_therapist_id,
     parent_by_child,
 )
@@ -154,11 +154,7 @@ def _observation_rows(
 ) -> list[dict]:
     stmt = select(ObservationReport).order_by(ObservationReport.id.desc())
     rows = db.scalars(stmt).all()
-    cases_by_id = {
-        r.case_id: case_service.get_case(db, r.case_id)
-        for r in rows
-        if r.case_id
-    }
+    cases_by_id = cases_by_ids(db, {r.case_id for r in rows if r.case_id})
     parents = parent_by_child(
         db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
     )
@@ -193,11 +189,7 @@ def _monthly_rows(
     if month:
         stmt = stmt.where(MonthlyReport.month == month)
     rows = db.scalars(stmt).all()
-    cases_by_id = {
-        r.case_id: case_service.get_case(db, r.case_id)
-        for r in rows
-        if r.case_id
-    }
+    cases_by_id = cases_by_ids(db, {r.case_id for r in rows if r.case_id})
     parents = parent_by_child(
         db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
     )
@@ -236,7 +228,7 @@ def _session_log_rows(
 ) -> list[dict]:
     logs = log_service.list_logs(db, month=month, product_module=product_module)
     case_ids = {log.session.case_id for log in logs if log.session}
-    cases_by_id = {cid: case_service.get_case(db, cid) for cid in case_ids}
+    cases_by_id = cases_by_ids(db, case_ids)
     parents = parent_by_child(
         db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
     )
@@ -275,13 +267,13 @@ def _cases_roster_rows(
     if product_module:
         stmt = stmt.where(Case.product_module == product_module)
     cases = db.scalars(stmt).all()
-    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
+    allowed = [case for case in cases if _case_allowed(db, user, case)]
+    parents = parent_by_child(db, {c.child_id for c in allowed if c.child_id})
+    therapists = active_therapists_by_case(db, {c.id for c in allowed})
     out: list[dict] = []
-    for case in cases:
-        if not _case_allowed(db, user, case):
-            continue
-        therapist = assignment_therapist(db, active_assignment(db, case.id))
+    for case in allowed:
         parent_info = parents.get(case.child_id or -1, {})
+        therapist = therapists.get(case.id)
         out.append(
             {
                 **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),

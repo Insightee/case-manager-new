@@ -30,11 +30,13 @@ from app.services.reports_export_helpers import (
     INACTIVE_DAYS_THRESHOLD,
     MAX_EXPORT_ROWS,
     active_assignment,
+    active_therapists_by_case,
     assignment_therapist,
     billing_snapshot_report_columns,
     calendar_days_in_month,
     case_manager,
     case_people_export_fields,
+    cases_by_ids,
     days_since,
     enum_value,
     export_therapist_id,
@@ -523,10 +525,7 @@ def replacement_history_rows(
 
     ended = db.scalars(stmt.limit(MAX_EXPORT_ROWS)).all()
     replacement_count: dict[int, int] = defaultdict(int)
-    case_cache: dict[int, Case | None] = {}
-    for assign in ended:
-        if assign.case_id not in case_cache:
-            case_cache[assign.case_id] = case_service.get_case(db, assign.case_id)
+    case_cache = cases_by_ids(db, {assign.case_id for assign in ended})
     parents = parent_by_child(
         db, {c.child_id for c in case_cache.values() if c and c.child_id}
     )
@@ -550,15 +549,11 @@ def replacement_history_rows(
         new_therapist = assignment_therapist(db, new_assign)
         replacement_count[case.id] += 1
         parent_info = parents.get(case.child_id or -1, {})
-        # Prefer the newly allotted therapist for identity columns; fall back to previous.
-        identity_therapist = new_therapist or prev_therapist
 
         rows.append(
             {
                 "Month": month_label,
-                **case_people_export_fields(
-                    case, therapist=identity_therapist, parent_info=parent_info
-                ),
+                **case_people_export_fields(case, parent_info=parent_info, include_therapist=False),
                 "Service Type": case.service_type or case.product_module or "",
                 "Previous Therapist": user_display_name(prev_therapist),
                 "Previous Therapist ID": export_therapist_id(prev_therapist),
@@ -598,12 +593,11 @@ def support_tickets_parent_rows(
 
     tickets = db.scalars(stmt.limit(MAX_EXPORT_ROWS * 2)).all()
     case_ids = {t.case_id for t in tickets if t.case_id}
-    cases_by_id = {
-        cid: case_service.get_case(db, cid) for cid in case_ids
-    }
+    cases_by_id = cases_by_ids(db, case_ids)
     parents = parent_by_child(
         db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
     )
+    therapists = active_therapists_by_case(db, case_ids)
     rows: list[dict[str, Any]] = []
     for ticket in tickets:
         if not _user_has_role(db, ticket.raised_by_user_id, RoleName.PARENT.value):
@@ -612,17 +606,13 @@ def support_tickets_parent_rows(
         if case and not _case_allowed(db, user, case):
             continue
         assignee = db.get(User, ticket.assigned_to_user_id) if ticket.assigned_to_user_id else None
-        therapist = None
-        if case:
-            therapist = assignment_therapist(db, active_assignment(db, case.id))
+        therapist = therapists.get(case.id) if case else None
         parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
         if not parent_info.get("parent_name"):
             raiser = db.get(User, ticket.raised_by_user_id)
-            if raiser:
-                parent_info = {
-                    **parent_info,
-                    "parent_name": user_display_name(raiser),
-                }
+            # Prefer full name only — do not fall back to email in Parent Name.
+            if raiser and (raiser.full_name or "").strip():
+                parent_info = {**parent_info, "parent_name": raiser.full_name.strip()}
         rows.append(
             {
                 "Month": month_label,
@@ -671,10 +661,11 @@ def incident_reports_rows(
 
     incidents = db.scalars(stmt.limit(MAX_EXPORT_ROWS * 2)).all()
     case_ids = {i.case_id for i in incidents if i.case_id}
-    cases_by_id = {cid: case_service.get_case(db, cid) for cid in case_ids}
+    cases_by_id = cases_by_ids(db, case_ids)
     parents = parent_by_child(
         db, {c.child_id for c in cases_by_id.values() if c and c.child_id}
     )
+    therapists = active_therapists_by_case(db, case_ids)
     rows: list[dict[str, Any]] = []
     for incident in incidents:
         if user and not can_read_incident(db, user, incident):
@@ -690,9 +681,7 @@ def incident_reports_rows(
         reporter = db.get(User, incident.reported_by_user_id)
         assignee = db.get(User, incident.assigned_to_user_id) if incident.assigned_to_user_id else None
         cm = case_manager(db, case) if case else None
-        therapist = None
-        if case:
-            therapist = assignment_therapist(db, active_assignment(db, case.id))
+        therapist = therapists.get(case.id) if case else None
         parent_info = parents.get(case.child_id, {}) if case and case.child_id else {}
         status = normalize_incident_status(incident.status).value
         primary_category = incident.primary_category or ""
@@ -762,11 +751,7 @@ def cm_meetings_rows(
         stmt = stmt.where(CaseManagerMeeting.case_manager_user_id == case_manager_user_id)
 
     meetings = db.scalars(stmt.limit(MAX_EXPORT_ROWS)).all()
-    meeting_cases = {
-        m.case_id: case_service.get_case(db, m.case_id)
-        for m in meetings
-        if m.case_id
-    }
+    meeting_cases = cases_by_ids(db, {m.case_id for m in meetings if m.case_id})
     parents = parent_by_child(
         db, {c.child_id for c in meeting_cases.values() if c and c.child_id}
     )
@@ -937,6 +922,7 @@ def parent_portal_usage_rows(
     allowed_cases = [case for case in cases[:MAX_EXPORT_ROWS] if _case_allowed(db, user, case)]
     child_ids = {case.child_id for case in allowed_cases if case.child_id}
     parents = parent_by_child(db, child_ids)
+    therapists = active_therapists_by_case(db, {case.id for case in allowed_cases})
     parent_user_ids = {
         info["user_id"] for info in parents.values() if info.get("user_id")
     }
@@ -954,7 +940,7 @@ def parent_portal_usage_rows(
             else None
         )
         cm = case_manager(db, case)
-        therapist = assignment_therapist(db, active_assignment(db, case.id))
+        therapist = therapists.get(case.id)
         rows.append(
             {
                 **case_people_export_fields(case, therapist=therapist, parent_info=parent),

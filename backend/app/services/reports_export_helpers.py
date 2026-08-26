@@ -175,6 +175,51 @@ def assignment_therapist(db: Session, assignment: CaseAssignment | None) -> User
     return db.get(User, assignment.therapist_user_id)
 
 
+def cases_by_ids(db: Session, case_ids: set[int] | list[int]) -> dict[int, Case]:
+    """Batch-load cases with child for export identity columns."""
+    ids = {int(cid) for cid in case_ids if cid is not None}
+    if not ids:
+        return {}
+    rows = db.scalars(
+        select(Case).options(selectinload(Case.child)).where(Case.id.in_(ids))
+    ).all()
+    return {case.id: case for case in rows}
+
+
+def active_therapists_by_case(
+    db: Session, case_ids: set[int] | list[int]
+) -> dict[int, User]:
+    """Map case_id → active therapist user (latest active assignment wins)."""
+    ids = {int(cid) for cid in case_ids if cid is not None}
+    if not ids:
+        return {}
+    assign_rows = db.execute(
+        select(CaseAssignment.case_id, CaseAssignment.therapist_user_id)
+        .where(
+            CaseAssignment.case_id.in_(ids),
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.id.desc())
+    ).all()
+    therapist_id_by_case: dict[int, int] = {}
+    for case_id, therapist_user_id in assign_rows:
+        if case_id not in therapist_id_by_case:
+            therapist_id_by_case[case_id] = int(therapist_user_id)
+    if not therapist_id_by_case:
+        return {}
+    users = {
+        u.id: u
+        for u in db.scalars(
+            select(User).where(User.id.in_(set(therapist_id_by_case.values())))
+        ).all()
+    }
+    return {
+        case_id: users[tid]
+        for case_id, tid in therapist_id_by_case.items()
+        if tid in users
+    }
+
+
 def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
     """Flatten locked assignment billing snapshot for HR export rows."""
     if not snapshot:
