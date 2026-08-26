@@ -30,7 +30,9 @@ def _enable_integration(monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    # Context manager is required so FastAPI lifespan starts the MCP session manager.
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def _first_case_and_report(db):
@@ -347,6 +349,37 @@ def test_mcp_invalid_inputs_safe_error():
     assert "traceback" not in msg.lower()
     unauth = mcp_public_error(UnauthorizedError())
     assert "unauthorized" in unauth
+
+
+def test_mcp_http_initialize_and_tools(client):
+    """Streamable HTTP MCP must initialize when session manager lifespan is wired."""
+    init = client.post(
+        "/mcp/",
+        headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "pytest", "version": "0"},
+            },
+        },
+    )
+    assert init.status_code == 200, init.text
+    body = init.json()
+    assert body["result"]["serverInfo"]["name"] == "InsighteCase"
+
+    listed = client.post(
+        "/mcp/",
+        headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    )
+    assert listed.status_code == 200, listed.text
+    names = {t["name"] for t in listed.json()["result"]["tools"]}
+    assert "get_case_summary" in names
+    assert "list_authorised_reports" in names
 
 
 def test_human_jwt_cannot_use_integration_routes(client):

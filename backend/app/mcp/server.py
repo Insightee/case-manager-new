@@ -11,6 +11,9 @@ from app.services.integration.errors import IntegrationError
 
 logger = logging.getLogger("insightcase.mcp")
 
+_mcp_server = None
+_mcp_asgi_app = None
+
 
 def mcp_public_error(exc: Exception) -> str:
     """Map exceptions to client-safe MCP error text (no DB / stack details)."""
@@ -24,15 +27,18 @@ def _auth_header_from_ctx(ctx: Any) -> str | None:
     if ctx is None:
         return None
     headers = None
-    if hasattr(ctx, "headers"):
-        try:
-            headers = ctx.headers
-        except Exception:
-            headers = None
+    # Prefer request_context.request.headers — Context.headers raises when no active request.
+    try:
+        req = ctx.request_context.request
+        headers = getattr(req, "headers", None)
+    except Exception:
+        headers = None
     if headers is None:
         try:
-            req = ctx.request_context.request
-            headers = getattr(req, "headers", None)
+            # Only call the property if request_context is already available.
+            rc = getattr(ctx, "_request_context", None)
+            if rc is not None:
+                headers = getattr(getattr(rc, "request", None), "headers", None)
         except Exception:
             headers = None
     if not headers:
@@ -85,9 +91,12 @@ def build_mcp_server():
         except Exception as exc:
             return mcp_public_error(exc)
 
-    # Bind annotations in function __globals__ for MCP signature evaluation.
     _run_list_authorised_reports.__globals__["Context"] = Context
-    server.add_tool(_run_list_authorised_reports, name="list_authorised_reports")
+    server.add_tool(
+        _run_list_authorised_reports,
+        name="list_authorised_reports",
+        description="List reports for cases granted to this integration client.",
+    )
 
     def _get_report(report_id: int, report_type: str = "monthly", ctx: Context | None = None) -> str:
         try:
@@ -176,19 +185,39 @@ def build_mcp_server():
     return server
 
 
-_mcp_asgi_app = None
+def init_mcp() -> tuple[Any, Any] | tuple[None, None]:
+    """Build MCP server + Streamable HTTP ASGI app (idempotent).
+
+    host=0.0.0.0 avoids localhost-only DNS-rebinding locks so remote MCP clients
+    can reach the mounted endpoint on Railway / public URLs.
+    """
+    global _mcp_server, _mcp_asgi_app
+    if not settings.mcp_enabled or not settings.integration_api_enabled:
+        return None, None
+    if _mcp_asgi_app is not None and _mcp_server is not None:
+        return _mcp_server, _mcp_asgi_app
+    _mcp_server = build_mcp_server()
+    _mcp_asgi_app = _mcp_server.streamable_http_app(
+        streamable_http_path="/",
+        stateless_http=True,
+        json_response=True,
+        host="0.0.0.0",
+    )
+    return _mcp_server, _mcp_asgi_app
+
+
+def get_mcp_server():
+    return _mcp_server
 
 
 def get_mcp_asgi_app():
     """Lazy Streamable HTTP ASGI app mounted at /mcp when MCP_ENABLED."""
-    global _mcp_asgi_app
-    if not settings.mcp_enabled or not settings.integration_api_enabled:
-        return None
-    if _mcp_asgi_app is None:
-        server = build_mcp_server()
-        _mcp_asgi_app = server.streamable_http_app(
-            streamable_http_path="/",
-            stateless_http=True,
-            json_response=True,
-        )
-    return _mcp_asgi_app
+    _server, asgi = init_mcp()
+    return asgi
+
+
+def reset_mcp_for_tests() -> None:
+    """Clear cached MCP instances between tests."""
+    global _mcp_server, _mcp_asgi_app
+    _mcp_server = None
+    _mcp_asgi_app = None

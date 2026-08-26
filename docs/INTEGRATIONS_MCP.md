@@ -22,6 +22,8 @@ INTEGRATION_ACCESS_TOKEN_MINUTES=15
 
 Restart the API after migration (`i1integr2api3layer` is applied by the normal production migrate path).
 
+The FastAPI lifespan starts the MCP Streamable HTTP session manager; without `MCP_ENABLED=true` the `/mcp` route is not mounted.
+
 ## Create a client (admin)
 
 As a user with `user.manage` (e.g. SUPER_ADMIN):
