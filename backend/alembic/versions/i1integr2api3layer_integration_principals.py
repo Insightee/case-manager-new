@@ -91,11 +91,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_audit_events_integration_client_id", table_name="audit_events")
-    op.drop_column("audit_events", "integration_client_id")
-    op.drop_index("ix_integration_case_grants_case_id", table_name="integration_case_grants")
-    op.drop_table("integration_case_grants")
-    op.drop_index("ix_integration_credentials_client_id", table_name="integration_credentials")
-    op.drop_table("integration_credentials")
-    op.drop_index("ix_integration_clients_status", table_name="integration_clients")
-    op.drop_table("integration_clients")
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+
+    # Greenfield create_all may name indexes differently than this revision's upgrade().
+    audit_indexes = {ix["name"] for ix in insp.get_indexes("audit_events")} if insp.has_table("audit_events") else set()
+    for name in (
+        "ix_audit_events_integration_client_id",
+    ):
+        if name in audit_indexes:
+            op.drop_index(name, table_name="audit_events")
+    if insp.has_table("audit_events"):
+        cols = {c["name"] for c in insp.get_columns("audit_events")}
+        if "integration_client_id" in cols:
+            op.drop_column("audit_events", "integration_client_id")
+
+    # DROP TABLE removes all indexes on these tables (names may differ after create_all stamp).
+    for table in ("integration_case_grants", "integration_credentials", "integration_clients"):
+        if insp.has_table(table):
+            op.drop_table(table)
