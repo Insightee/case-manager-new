@@ -32,6 +32,17 @@ def validate_production_settings() -> None:
     if settings.jwt_refresh_secret_key.strip() in _INSECURE_JWT_SECRETS:
         errors.append("JWT_REFRESH_SECRET_KEY must be a strong unique value (not a dev default)")
 
+    if settings.integration_api_enabled or settings.mcp_enabled:
+        if settings.integration_jwt_secret_key.strip() in _INSECURE_JWT_SECRETS:
+            errors.append(
+                "INTEGRATION_JWT_SECRET_KEY must be a strong unique value when integration/MCP is enabled"
+            )
+        if settings.integration_jwt_secret_key.strip() in {
+            settings.jwt_secret_key.strip(),
+            settings.jwt_refresh_secret_key.strip(),
+        }:
+            errors.append("INTEGRATION_JWT_SECRET_KEY must differ from user JWT secrets")
+
     if settings.is_sqlite:
         errors.append("DATABASE_URL must be Postgres in production (SQLite is local dev only)")
 
