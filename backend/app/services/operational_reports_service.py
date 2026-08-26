@@ -31,6 +31,7 @@ from app.services.reports_export_helpers import (
     MAX_EXPORT_ROWS,
     active_assignment,
     active_therapists_by_case,
+    assignment_segments_for_month,
     assignment_therapist,
     billing_snapshot_report_columns,
     calendar_days_in_month,
@@ -234,52 +235,104 @@ def bulk_attendance_rows(
     if not case_ids:
         return []
 
-    session_stats = _session_stats_by_case(db, case_ids, ym)
-    billable_metrics = _build_billable_metrics(db, cases, case_ids, start, end)
-    missing_logs_month = _missing_logs_in_month(db, case_ids, start, end)
-    logs_pending_month, logs_rejected_month = _log_approval_gap_by_case(db, case_ids, start, end)
-    hours_by_case = _session_hours_by_case(db, case_ids, ym)
+    segments_by_case = assignment_segments_for_month(db, case_ids, start, end)
+    month_sessions = _load_sessions_in_range(db, case_ids, start, end)
+    absence_by_session = _absence_by_session(db, [s.id for s in month_sessions])
     parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
+    therapist_ids = {
+        seg["therapist_user_id"]
+        for segs in segments_by_case.values()
+        for seg in segs
+    }
+    # Fallback single-active path may still need therapists not in segments.
+    for case in cases:
+        if case.id not in segments_by_case:
+            assign = active_assignment(db, case.id)
+            if assign:
+                therapist_ids.add(assign.therapist_user_id)
+    therapists = {
+        u.id: u
+        for u in db.scalars(select(User).where(User.id.in_(therapist_ids or {-1}))).all()
+    }
 
     rows: list[dict[str, Any]] = []
-    for case in cases[:MAX_EXPORT_ROWS]:
+    for case in cases:
         if not _case_allowed(db, user, case):
             continue
-        assign = active_assignment(db, case.id)
-        therapist = assignment_therapist(db, assign)
-        if not therapist:
-            continue
-        stats = session_stats.get(case.id, {})
-        leave = leave_days_in_month(db, therapist.id, ym)
-        balance = leave_policy_service.get_leave_balance(db, therapist, year=year, as_of=end)
-        cm = case_manager(db, case)
-        metrics = billable_metrics.get(case.id, {})
+        if len(rows) >= MAX_EXPORT_ROWS:
+            break
         parent_info = parents.get(case.child_id or -1, {})
+        cm = case_manager(db, case)
+        segments = segments_by_case.get(case.id) or []
+        if not segments:
+            assign = active_assignment(db, case.id)
+            therapist = assignment_therapist(db, assign)
+            if not therapist:
+                continue
+            segments = [
+                {
+                    "assignment": assign,
+                    "therapist_user_id": therapist.id,
+                    "start": start,
+                    "end": end,
+                }
+            ]
 
-        rows.append(
-            {
-                "Month": month_label,
-                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
-                "Service Type": case.service_type or case.product_module or "",
-                "Case Manager": user_display_name(cm),
-                "Total Calendar Days": cal_days,
-                "Scheduled Sessions": stats.get("scheduled", 0),
-                "Sessions Completed": stats.get("completed", 0),
-                "Approved Sessions": metrics.get("approved_sessions", 0),
-                "Approved Child Absence (Billable)": metrics.get("approved_child_absence", 0),
-                "Child Absence (All)": stats.get("client_absent", 0),
-                "Therapist Leave": stats.get("therapist_leave", 0),
-                "Completed Missing Logs": missing_logs_month.get(case.id, 0),
-                "Logs Pending Approval": logs_pending_month.get(case.id, 0),
-                "Logs Rejected": logs_rejected_month.get(case.id, 0),
-                "Leave Paid Days": leave["paid"],
-                "Leave Unpaid Days": leave["unpaid"],
-                "Leave Credits Remaining": balance.get("leave_credit_pending", balance.get("paid_remaining", 0)),
-                "Total Session Hours": round(hours_by_case.get(case.id, 0), 2),
-                "Billable Sessions": metrics.get("billable_sessions", 0),
-                "Monthly Report Submitted": "Yes" if monthly_report_submitted(db, case.id, ym) else "No",
-            }
-        )
+        for seg in segments:
+            if len(rows) >= MAX_EXPORT_ROWS:
+                break
+            therapist = therapists.get(seg["therapist_user_id"])
+            if not therapist:
+                continue
+            seg_sessions = _sessions_for_segment(
+                month_sessions, case.id, seg["start"], seg["end"]
+            )
+            stats = _stats_from_sessions(seg_sessions)
+            metrics = _billable_metrics_from_sessions(
+                case, seg_sessions, absence_by_session
+            )
+            pending, rejected = _log_gaps_from_sessions(seg_sessions)
+            leave = leave_days_in_month(db, therapist.id, ym)
+            balance = leave_policy_service.get_leave_balance(
+                db, therapist, year=year, as_of=end
+            )
+            hours = _hours_from_sessions(seg_sessions)
+
+            rows.append(
+                {
+                    "Month": month_label,
+                    **case_people_export_fields(
+                        case, therapist=therapist, parent_info=parent_info
+                    ),
+                    "Assignment Start": seg["start"].isoformat(),
+                    "Assignment End": seg["end"].isoformat(),
+                    "Service Type": case.service_type or case.product_module or "",
+                    "Case Manager": user_display_name(cm),
+                    "Total Calendar Days": cal_days,
+                    "Segment Calendar Days": (seg["end"] - seg["start"]).days + 1,
+                    "Scheduled Sessions": stats.get("scheduled", 0),
+                    "Sessions Completed": stats.get("completed", 0),
+                    "Approved Sessions": metrics.get("approved_sessions", 0),
+                    "Approved Child Absence (Billable)": metrics.get(
+                        "approved_child_absence", 0
+                    ),
+                    "Child Absence (All)": stats.get("client_absent", 0),
+                    "Therapist Leave": stats.get("therapist_leave", 0),
+                    "Completed Missing Logs": _missing_logs_from_sessions(seg_sessions),
+                    "Logs Pending Approval": pending,
+                    "Logs Rejected": rejected,
+                    "Leave Paid Days": leave["paid"],
+                    "Leave Unpaid Days": leave["unpaid"],
+                    "Leave Credits Remaining": balance.get(
+                        "leave_credit_pending", balance.get("paid_remaining", 0)
+                    ),
+                    "Total Session Hours": round(hours, 2),
+                    "Billable Sessions": metrics.get("billable_sessions", 0),
+                    "Monthly Report Submitted": (
+                        "Yes" if monthly_report_submitted(db, case.id, ym) else "No"
+                    ),
+                }
+            )
     return rows
 
 
@@ -394,12 +447,26 @@ def session_monthly_summary_rows(
         case_manager_user_id=case_manager_user_id,
     )
     case_ids = [c.id for c in cases if _case_allowed(db, user, c)]
-    stats = _session_stats_by_case(db, case_ids, ym)
     start, end = month_bounds(ym)
-    billable_metrics = _build_billable_metrics(db, cases, case_ids, start, end)
-    missing_logs = _missing_logs_in_month(db, case_ids, start, end)
-    hours = _session_hours_by_case(db, case_ids, ym)
+    segments_by_case = assignment_segments_for_month(db, case_ids, start, end)
+    month_sessions = _load_sessions_in_range(db, case_ids, start, end)
+    absence_by_session = _absence_by_session(db, [s.id for s in month_sessions])
     parents = parent_by_child(db, {c.child_id for c in cases if c.child_id and c.id in case_ids})
+
+    therapist_ids: set[int] = {
+        seg["therapist_user_id"]
+        for segs in segments_by_case.values()
+        for seg in segs
+    }
+    for case in cases:
+        if case.id in case_ids and case.id not in segments_by_case:
+            assign = active_assignment(db, case.id)
+            if assign:
+                therapist_ids.add(assign.therapist_user_id)
+    therapists = {
+        u.id: u
+        for u in db.scalars(select(User).where(User.id.in_(therapist_ids or {-1}))).all()
+    }
 
     client_rows: list[dict[str, Any]] = []
     therapist_agg: dict[int, dict[str, Any]] = defaultdict(
@@ -418,49 +485,97 @@ def session_monthly_summary_rows(
         }
     )
 
-    for case in cases[:MAX_EXPORT_ROWS]:
+    for case in cases:
         if case.id not in case_ids:
             continue
-        assign = active_assignment(db, case.id)
-        therapist = assignment_therapist(db, assign)
-        st = stats.get(case.id, {})
-        metrics = billable_metrics.get(case.id, {})
-        conducted = st.get("completed", 0)
-        scheduled = st.get("scheduled", conducted)
-        logs_submitted = max(conducted - missing_logs.get(case.id, 0), 0)
-        pending = missing_logs.get(case.id, 0)
+        if len(client_rows) >= MAX_EXPORT_ROWS:
+            break
         parent_info = parents.get(case.child_id or -1, {})
+        segments = segments_by_case.get(case.id) or []
+        if not segments:
+            assign = active_assignment(db, case.id)
+            therapist = assignment_therapist(db, assign)
+            if therapist:
+                segments = [
+                    {
+                        "assignment": assign,
+                        "therapist_user_id": therapist.id,
+                        "start": start,
+                        "end": end,
+                    }
+                ]
+            else:
+                # No therapist — still emit one case row with empty therapist fields.
+                segments = [
+                    {
+                        "assignment": None,
+                        "therapist_user_id": None,
+                        "start": start,
+                        "end": end,
+                    }
+                ]
 
-        client_rows.append(
-            {
-                **case_people_export_fields(case, therapist=therapist, parent_info=parent_info),
-                "Service Type": case.service_type or case.product_module or "",
-                "Scheduled Sessions": scheduled,
-                "Sessions Conducted": conducted,
-                "Approved Sessions": metrics.get("approved_sessions", 0),
-                "Approved Child Absence (Billable)": metrics.get("approved_child_absence", 0),
-                "Child Absence / Parent Cancelled": st.get("client_absent", 0) + st.get("cancelled", 0),
-                "Pending Logs For Review": pending,
-                "Monthly Report Submitted": "Yes" if monthly_report_submitted(db, case.id, ym) else "No",
-                "Billable Sessions": metrics.get("billable_sessions", 0),
-            }
-        )
+        for seg in segments:
+            if len(client_rows) >= MAX_EXPORT_ROWS:
+                break
+            therapist = (
+                therapists.get(seg["therapist_user_id"])
+                if seg.get("therapist_user_id")
+                else None
+            )
+            seg_sessions = _sessions_for_segment(
+                month_sessions, case.id, seg["start"], seg["end"]
+            )
+            st = _stats_from_sessions(seg_sessions)
+            metrics = _billable_metrics_from_sessions(
+                case, seg_sessions, absence_by_session
+            )
+            conducted = st.get("completed", 0)
+            scheduled = st.get("scheduled", conducted)
+            missing = _missing_logs_from_sessions(seg_sessions)
+            logs_submitted = max(conducted - missing, 0)
+            pending = missing
+            hours = _hours_from_sessions(seg_sessions)
 
-        if therapist:
-            agg = therapist_agg[therapist.id]
-            agg["therapist"] = therapist
-            agg["mentor"] = mentor_for_therapist(db, therapist.id)
-            agg["scheduled"] += scheduled
-            agg["conducted"] += conducted
-            agg["logs_submitted"] += logs_submitted
-            agg["pending_logs"] += pending
-            agg["child_absence"] += st.get("client_absent", 0)
-            agg["therapist_leave"] += st.get("therapist_leave", 0)
-            agg["cancelled"] += st.get("cancelled", 0)
-            agg["rescheduled"] += st.get("rescheduled", 0)
-            agg["billable"] += metrics.get("billable_sessions", 0)
-            agg["hours"] += hours.get(case.id, 0)
-            agg["active_clients"].add(case.id)
+            client_rows.append(
+                {
+                    **case_people_export_fields(
+                        case, therapist=therapist, parent_info=parent_info
+                    ),
+                    "Assignment Start": seg["start"].isoformat(),
+                    "Assignment End": seg["end"].isoformat(),
+                    "Service Type": case.service_type or case.product_module or "",
+                    "Scheduled Sessions": scheduled,
+                    "Sessions Conducted": conducted,
+                    "Approved Sessions": metrics.get("approved_sessions", 0),
+                    "Approved Child Absence (Billable)": metrics.get(
+                        "approved_child_absence", 0
+                    ),
+                    "Child Absence / Parent Cancelled": st.get("client_absent", 0)
+                    + st.get("cancelled", 0),
+                    "Pending Logs For Review": pending,
+                    "Monthly Report Submitted": (
+                        "Yes" if monthly_report_submitted(db, case.id, ym) else "No"
+                    ),
+                    "Billable Sessions": metrics.get("billable_sessions", 0),
+                }
+            )
+
+            if therapist:
+                agg = therapist_agg[therapist.id]
+                agg["therapist"] = therapist
+                agg["mentor"] = mentor_for_therapist(db, therapist.id)
+                agg["scheduled"] += scheduled
+                agg["conducted"] += conducted
+                agg["logs_submitted"] += logs_submitted
+                agg["pending_logs"] += pending
+                agg["child_absence"] += st.get("client_absent", 0)
+                agg["therapist_leave"] += st.get("therapist_leave", 0)
+                agg["cancelled"] += st.get("cancelled", 0)
+                agg["rescheduled"] += st.get("rescheduled", 0)
+                agg["billable"] += metrics.get("billable_sessions", 0)
+                agg["hours"] += hours
+                agg["active_clients"].add(case.id)
 
     therapist_rows: list[dict[str, Any]] = []
     for _tid, agg in therapist_agg.items():
@@ -1078,6 +1193,124 @@ def therapist_log_compliance_rows(
         reverse=True,
     )
     return out[:MAX_EXPORT_ROWS]
+
+
+def _load_sessions_in_range(
+    db: Session, case_ids: list[int], start: date, end: date
+) -> list[TherapySession]:
+    if not case_ids:
+        return []
+    return list(
+        db.scalars(
+            select(TherapySession)
+            .options(selectinload(TherapySession.daily_log))
+            .where(
+                TherapySession.case_id.in_(case_ids),
+                TherapySession.scheduled_date >= start,
+                TherapySession.scheduled_date <= end,
+            )
+        ).all()
+    )
+
+
+def _sessions_for_segment(
+    sessions: list[TherapySession],
+    case_id: int,
+    seg_start: date,
+    seg_end: date,
+) -> list[TherapySession]:
+    return [
+        s
+        for s in sessions
+        if s.case_id == case_id and seg_start <= s.scheduled_date <= seg_end
+    ]
+
+
+def _stats_from_sessions(sessions: list[TherapySession]) -> dict[str, int]:
+    stats: dict[str, int] = defaultdict(int)
+    status_map = {
+        SessionStatus.COMPLETED: "completed",
+        SessionStatus.CLIENT_ABSENT: "client_absent",
+        SessionStatus.THERAPIST_LEAVE: "therapist_leave",
+        SessionStatus.CANCELLED: "cancelled",
+        SessionStatus.RESCHEDULED: "rescheduled",
+    }
+    for s in sessions:
+        stats["scheduled"] += 1
+        key = status_map.get(s.status)
+        if key:
+            stats[key] += 1
+    return dict(stats)
+
+
+def _missing_logs_from_sessions(sessions: list[TherapySession]) -> int:
+    return sum(
+        1
+        for s in sessions
+        if s.status == SessionStatus.COMPLETED and s.daily_log is None
+    )
+
+
+def _log_gaps_from_sessions(sessions: list[TherapySession]) -> tuple[int, int]:
+    pending = 0
+    rejected = 0
+    for s in sessions:
+        if s.status != SessionStatus.COMPLETED or not s.daily_log:
+            continue
+        status = s.daily_log.approval_status
+        value = status.value if hasattr(status, "value") else status
+        if value == LogApprovalStatus.PENDING.value:
+            pending += 1
+        elif value == LogApprovalStatus.REJECTED.value:
+            rejected += 1
+    return pending, rejected
+
+
+def _hours_from_sessions(sessions: list[TherapySession]) -> float:
+    hours = 0.0
+    for s in sessions:
+        if s.status != SessionStatus.COMPLETED:
+            continue
+        mins = 0
+        if s.actual_start_at and s.actual_end_at:
+            mins = int((s.actual_end_at - s.actual_start_at).total_seconds() / 60)
+        elif s.start_time and s.end_time:
+            start_dt = datetime.combine(s.scheduled_date, s.start_time)
+            end_dt = datetime.combine(s.scheduled_date, s.end_time)
+            mins = int((end_dt - start_dt).total_seconds() / 60)
+        hours += mins / 60.0
+    return hours
+
+
+def _billable_metrics_from_sessions(
+    case: Case,
+    sessions: list[TherapySession],
+    absence_by_session: dict[int, dict[str, str]],
+) -> dict[str, int]:
+    approved = 0
+    approved_child_absence = 0
+    for s in sessions:
+        if s.status == SessionStatus.COMPLETED and s.daily_log:
+            status = s.daily_log.approval_status
+            value = status.value if hasattr(status, "value") else status
+            if value == LogApprovalStatus.APPROVED.value:
+                approved += 1
+        if s.status == SessionStatus.CLIENT_ABSENT:
+            absence = absence_by_session.get(s.id) or {}
+            if (
+                absence.get("status") == SessionAbsenceStatus.APPROVED.value
+                and absence.get("type") == SessionAbsenceType.CLIENT_ABSENT.value
+            ):
+                approved_child_absence += 1
+    if is_homecare_case(case):
+        billable = approved
+    else:
+        billable = approved + approved_child_absence
+    return {
+        "approved_sessions": approved,
+        "approved_child_absence": approved_child_absence,
+        "billable_sessions": billable,
+    }
 
 
 def _session_stats_by_case(db: Session, case_ids: list[int], ym: str) -> dict[int, dict[str, int]]:

@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+from datetime import date, time
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.core.database import SessionLocal
+from app.core.security import hash_password
 from app.main import app
+from app.models.assignment import CaseAssignment, CaseAssignmentStatus
+from app.models.case import Case
+from app.models.session import Session as TherapySession
+from app.models.session import SessionStatus
+from app.models.user import User
 from app.seed.demo_seed import run as seed_run
+from app.services import operational_reports_service
 
 client = TestClient(app)
 
@@ -75,6 +86,8 @@ def test_bulk_attendance_report_json():
         assert "Parent Name" in data["rows"][0]
         assert "Therapist Name" in data["rows"][0]
         assert "Therapist ID" in data["rows"][0]
+        assert "Assignment Start" in data["rows"][0]
+        assert "Assignment End" in data["rows"][0]
         assert "Client Name" not in data["rows"][0]
         assert "Logs Pending Approval" in data["rows"][0]
         assert "Logs Rejected" in data["rows"][0]
@@ -97,8 +110,108 @@ def test_session_monthly_summary_people_columns():
         assert "Parent Name" in row
         assert "Therapist Name" in row
         assert "Therapist ID" in row
+        assert "Assignment Start" in row
+        assert "Assignment End" in row
         assert "Client Name" not in row
 
+
+def test_mid_month_reassignment_splits_bulk_and_monthly_rows():
+    """Outgoing + incoming therapists in the same month → two dated rows per case."""
+    db = SessionLocal()
+    try:
+        case = db.scalars(select(Case).where(Case.case_code == "IC-2026-041")).first()
+        assert case is not None
+        outgoing = db.scalars(
+            select(CaseAssignment).where(
+                CaseAssignment.case_id == case.id,
+                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+            )
+        ).first()
+        assert outgoing is not None
+
+        incoming = db.scalars(select(User).where(User.email == "split.therapist@demo.com")).first()
+        if not incoming:
+            incoming = User(
+                email="split.therapist@demo.com",
+                password_hash=hash_password("demo123"),
+                full_name="Split Therapist",
+                external_employee_id="SPLIT-1",
+            )
+            db.add(incoming)
+            db.flush()
+
+        month_start = date(2026, 1, 1)
+        handoff = date(2026, 1, 15)
+        month_end = date(2026, 1, 31)
+
+        outgoing.start_date = month_start
+        outgoing.end_date = handoff
+        outgoing.status = CaseAssignmentStatus.ENDED
+
+        # Clear any prior leftover from a re-run of this test.
+        for old in db.scalars(
+            select(CaseAssignment).where(
+                CaseAssignment.case_id == case.id,
+                CaseAssignment.therapist_user_id == incoming.id,
+            )
+        ).all():
+            db.delete(old)
+        db.flush()
+
+        db.add(
+            CaseAssignment(
+                case_id=case.id,
+                therapist_user_id=incoming.id,
+                start_date=date(2026, 1, 16),
+                end_date=None,
+                status=CaseAssignmentStatus.ACTIVE,
+            )
+        )
+        db.add(
+            TherapySession(
+                case_id=case.id,
+                therapist_user_id=outgoing.therapist_user_id,
+                scheduled_date=date(2026, 1, 10),
+                start_time=time(10, 0),
+                end_time=time(11, 0),
+                status=SessionStatus.COMPLETED,
+            )
+        )
+        db.add(
+            TherapySession(
+                case_id=case.id,
+                therapist_user_id=incoming.id,
+                scheduled_date=date(2026, 1, 20),
+                start_time=time(10, 0),
+                end_time=time(11, 0),
+                status=SessionStatus.COMPLETED,
+            )
+        )
+        db.commit()
+
+        bulk = operational_reports_service.bulk_attendance_rows(db, "2026-01")
+        case_rows = [r for r in bulk if r.get("Case ID") in (case.external_case_ref, case.case_code)]
+        assert len(case_rows) == 2, case_rows
+        starts = sorted(r["Assignment Start"] for r in case_rows)
+        ends = sorted(r["Assignment End"] for r in case_rows)
+        assert starts == [month_start.isoformat(), date(2026, 1, 16).isoformat()]
+        assert ends == [handoff.isoformat(), month_end.isoformat()]
+        therapists = {r["Therapist Name"] for r in case_rows}
+        assert len(therapists) == 2
+
+        client_rows, _therapist_rows = operational_reports_service.session_monthly_summary_rows(
+            db, "2026-01"
+        )
+        summary_case = [
+            r for r in client_rows if r.get("Case ID") in (case.external_case_ref, case.case_code)
+        ]
+        assert len(summary_case) == 2, summary_case
+        assert {r["Assignment Start"] for r in summary_case} == {
+            month_start.isoformat(),
+            date(2026, 1, 16).isoformat(),
+        }
+    finally:
+        db.close()
 
 def test_session_log_detail_csv():
     r = client.get(

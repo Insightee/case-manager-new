@@ -220,6 +220,73 @@ def active_therapists_by_case(
     }
 
 
+def clip_assignment_to_month(
+    assign_start: date,
+    assign_end: date | None,
+    month_start: date,
+    month_end: date,
+) -> tuple[date, date] | None:
+    """Inclusive clip of an assignment window into a month. None if no overlap."""
+    end = assign_end if assign_end is not None else month_end
+    start = max(assign_start, month_start)
+    end = min(end, month_end)
+    if start > end:
+        return None
+    return start, end
+
+
+def assignment_segments_for_month(
+    db: Session,
+    case_ids: list[int] | set[int],
+    month_start: date,
+    month_end: date,
+) -> dict[int, list[dict[str, Any]]]:
+    """
+    Case → assignment slices overlapping the month (ACTIVE/ENDED/TRANSFERRED).
+
+    Each segment: assignment, therapist_user_id, start, end (clipped inclusive).
+    Cases with no overlapping history get no entry (caller may fall back).
+    """
+    ids = [int(cid) for cid in case_ids if cid is not None]
+    out: dict[int, list[dict[str, Any]]] = {cid: [] for cid in ids}
+    if not ids:
+        return {}
+
+    rows = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id.in_(ids),
+            CaseAssignment.status.in_(
+                [
+                    CaseAssignmentStatus.ACTIVE,
+                    CaseAssignmentStatus.ENDED,
+                    CaseAssignmentStatus.TRANSFERRED,
+                ]
+            ),
+            CaseAssignment.start_date <= month_end,
+        )
+        .order_by(CaseAssignment.case_id, CaseAssignment.start_date, CaseAssignment.id)
+    ).all()
+
+    for assign in rows:
+        if assign.end_date is not None and assign.end_date < month_start:
+            continue
+        clipped = clip_assignment_to_month(
+            assign.start_date, assign.end_date, month_start, month_end
+        )
+        if not clipped:
+            continue
+        out.setdefault(assign.case_id, []).append(
+            {
+                "assignment": assign,
+                "therapist_user_id": assign.therapist_user_id,
+                "start": clipped[0],
+                "end": clipped[1],
+            }
+        )
+    return {cid: segs for cid, segs in out.items() if segs}
+
+
 def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
     """Flatten locked assignment billing snapshot for HR export rows."""
     if not snapshot:

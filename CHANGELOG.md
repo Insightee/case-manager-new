@@ -2,6 +2,7 @@
 
 ### Added
 - HR report exports include **Child Name**, **Parent Name**, **Therapist Name**, and **Therapist ID** (with Case ID) on all case-linked reports so rows are readable without looking up IDs alone. Downloads are date-stamped (`report-key-YYYY-MM-DD`) and XLSX/PDF titles include the generation date.
+- Bulk attendance and monthly session summary split mid-month therapist replacements into separate case×assignment rows with **Assignment Start** / **Assignment End** (session metrics scoped to each window).
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
