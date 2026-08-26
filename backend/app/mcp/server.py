@@ -185,16 +185,19 @@ def build_mcp_server():
     return server
 
 
-def init_mcp() -> tuple[Any, Any] | tuple[None, None]:
-    """Build MCP server + Streamable HTTP ASGI app (idempotent).
+def init_mcp(*, force_new: bool = False) -> tuple[Any, Any] | tuple[None, None]:
+    """Build MCP server + Streamable HTTP ASGI app.
 
     host=0.0.0.0 avoids localhost-only DNS-rebinding locks so remote MCP clients
     can reach the mounted endpoint on Railway / public URLs.
+
+    force_new=True rebuilds the ASGI app so StreamableHTTPSessionManager.run()
+    can be entered again (TestClient / uvicorn --reload re-enter lifespan).
     """
     global _mcp_server, _mcp_asgi_app
     if not settings.mcp_enabled or not settings.integration_api_enabled:
         return None, None
-    if _mcp_asgi_app is not None and _mcp_server is not None:
+    if not force_new and _mcp_asgi_app is not None and _mcp_server is not None:
         return _mcp_server, _mcp_asgi_app
     _mcp_server = build_mcp_server()
     _mcp_asgi_app = _mcp_server.streamable_http_app(
@@ -204,6 +207,24 @@ def init_mcp() -> tuple[Any, Any] | tuple[None, None]:
         host="0.0.0.0",
     )
     return _mcp_server, _mcp_asgi_app
+
+
+def remount_mcp(app: Any) -> Any | None:
+    """Rebuild MCP ASGI app, replace `/mcp` mount, return a fresh session manager."""
+    server, asgi = init_mcp(force_new=True)
+    if server is None or asgi is None:
+        return None
+    router = getattr(app, "router", None)
+    routes = getattr(router, "routes", None)
+    if routes is not None:
+        # Drop prior /mcp mounts so the live ASGI app matches this session manager.
+        router.routes = [
+            route
+            for route in list(routes)
+            if not (getattr(route, "path", None) == "/mcp" and type(route).__name__ == "Mount")
+        ]
+    app.mount("/mcp", asgi)
+    return server.session_manager
 
 
 def get_mcp_server():

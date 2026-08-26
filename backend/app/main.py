@@ -39,29 +39,21 @@ def _run_startup_bootstrap() -> None:
 async def lifespan(_app: FastAPI):
     """App lifespan: bootstrap + MCP StreamableHTTP session manager task group."""
     _run_startup_bootstrap()
-    mcp_server = None
+    session_manager = None
     if settings.mcp_enabled and settings.integration_api_enabled:
         try:
-            from app.mcp.server import get_mcp_server, init_mcp
+            from app.mcp.server import remount_mcp
 
-            mcp_server, _ = init_mcp()
-            if mcp_server is None:
-                mcp_server = get_mcp_server()
+            # Always remount with a fresh session manager — SDK forbids reusing .run().
+            session_manager = remount_mcp(_app)
         except Exception as exc:  # pragma: no cover
             import logging
 
             logging.getLogger("insightcase").error("MCP init failed: %s", exc)
-            mcp_server = None
-    if mcp_server is not None:
-        session_manager = mcp_server.session_manager
-        try:
-            async with session_manager.run():
-                yield
-        finally:
-            # Allow uvicorn --reload / TestClient lifespan re-entry on the same instance.
-            session_manager._has_started = False
-            session_manager._task_group = None
-            session_manager._lifespan_state = None
+            session_manager = None
+    if session_manager is not None:
+        async with session_manager.run():
+            yield
     else:
         yield
 

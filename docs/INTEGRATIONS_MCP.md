@@ -16,7 +16,7 @@ Set on the Railway API service:
 ```bash
 INTEGRATION_API_ENABLED=true
 MCP_ENABLED=true
-INTEGRATION_JWT_SECRET_KEY=<strong-random-secret>
+INTEGRATION_JWT_SECRET_KEY=your-integration-jwt-secret
 INTEGRATION_ACCESS_TOKEN_MINUTES=15
 ```
 
