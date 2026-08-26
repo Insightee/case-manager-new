@@ -10,7 +10,6 @@ from app.core.audit import log_audit
 from app.core.config import settings
 from app.core.pagination import normalize_pagination, paginate_query, paginated_response
 from app.models.case import Case
-from app.models.child import Child
 from app.services.integration.access import (
     IntegrationPrincipal,
     filter_to_granted_cases,
