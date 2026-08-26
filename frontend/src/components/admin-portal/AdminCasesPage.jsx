@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getApiBaseUrl, getTokens } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -9,9 +9,13 @@ import { AdminCasesPipelineTable } from './AdminCasesPipelineTable.jsx'
 import { AdminCaseZohoIdBulkPanel } from './AdminCaseZohoIdBulkPanel.jsx'
 import { caseStateFromLegacyStatus, defaultPipelineFilters } from '../../lib/adminCasePipeline.js'
 
-async function downloadCaseRecordsExport() {
+async function downloadCaseRecordsExport(caseIds) {
+  if (!caseIds?.length) {
+    throw new Error('No cases match the current filters to export.')
+  }
   const { access } = getTokens()
-  const res = await fetch(`${getApiBaseUrl()}/api/v1/admin/cases/export/records.csv`, {
+  const qs = new URLSearchParams({ case_ids: caseIds.join(',') })
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/admin/cases/export/records.csv?${qs}`, {
     headers: access ? { Authorization: `Bearer ${access}` } : {},
   })
   if (!res.ok) {
@@ -41,6 +45,7 @@ export function AdminCasesPage() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const [bulkMessage, setBulkMessage] = useState('')
+  const exportCaseIdsRef = useRef([])
 
   useEffect(() => {
     if (searchParams.get('allot') === '1' && canCreateCase) {
@@ -123,7 +128,7 @@ export function AdminCasesPage() {
                   setExportError('')
                   setBulkMessage('')
                   setExporting(true)
-                  downloadCaseRecordsExport()
+                  downloadCaseRecordsExport(exportCaseIdsRef.current)
                     .catch((err) => setExportError(err.message || 'Could not export case records.'))
                     .finally(() => setExporting(false))
                 }}
@@ -145,7 +150,7 @@ export function AdminCasesPage() {
           </p>
         ) : null}
         <div className="admin-panel__body admin-panel__body--case-board">
-          <AdminCasesPipelineTable initialFilters={initialFilters} />
+          <AdminCasesPipelineTable initialFilters={initialFilters} exportCaseIdsRef={exportCaseIdsRef} />
         </div>
       </AdminPanel>
     </div>

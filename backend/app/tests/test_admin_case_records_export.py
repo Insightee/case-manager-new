@@ -71,3 +71,33 @@ def test_cases_records_export_csv_endpoint(client: TestClient):
     assert "Approved child absence" in headers
     rows = list(reader)
     assert len(rows) >= 1
+
+
+def test_cases_records_export_csv_filtered_by_case_ids(client: TestClient):
+    token = _login()
+    db = next(get_db())
+    case_id = None
+    case_code = None
+    try:
+        case = db.scalars(select(Case).where(Case.status == CaseStatus.ACTIVE).limit(1)).first()
+        assert case is not None
+        case_id = case.id
+        case_code = case.case_code
+        user = db.scalars(select(User).where(User.email == "superadmin@demo.com")).first()
+        all_rows = export_svc.build_case_records_rows(db, user)
+        assert len(all_rows) >= 2, "Need multiple cases to verify filtering"
+        filtered = export_svc.build_case_records_rows(db, user, case_ids=[case_id])
+        assert len(filtered) == 1
+        assert filtered[0]["case_code"] == case_code
+    finally:
+        db.close()
+
+    res = client.get(
+        f"/api/v1/admin/cases/export/records.csv?case_ids={case_id}",
+        headers=_auth(token),
+    )
+    assert res.status_code == 200, res.text
+    reader = csv.DictReader(io.StringIO(res.text))
+    rows = list(reader)
+    assert len(rows) == 1
+    assert rows[0]["Case Id"] == case_code

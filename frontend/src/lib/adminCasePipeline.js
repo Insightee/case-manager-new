@@ -13,16 +13,17 @@ export const PIPELINE_COLUMN_META = {
   closed: { label: 'Closed', tone: 'muted', priority: 7 },
 }
 
-/** Unified case state filter options (replaces separate case status + pipeline stage). */
+/** Unified case state filter options (status + pipeline stage). */
 export const CASE_STATE_OPTIONS = [
   { value: 'all', label: 'All states' },
+  { value: 'status_active', label: 'Status: Active (in service)' },
   { value: 'pending_allotment', label: 'Pending allotment' },
   { value: 'needs_therapist', label: 'Needs therapist' },
   { value: 'reassignment', label: 'Reassignment' },
   { value: 'reports_logs', label: 'Reports & logs' },
   { value: 'iep', label: 'IEP' },
   { value: 'compliance', label: 'Compliance' },
-  { value: 'active', label: 'Active (in service)' },
+  { value: 'pipeline_active', label: 'Active (no pending work)' },
   { value: 'closed', label: 'Closed' },
   { value: 'suspended', label: 'Suspended' },
 ]
@@ -38,9 +39,14 @@ export const OPENED_DATE_PRESETS = [
 /** Map legacy ?status= query params to unified caseState. */
 const LEGACY_STATUS_TO_CASE_STATE = {
   PENDING_ALLOTMENT: 'pending_allotment',
-  ACTIVE: 'active',
+  ACTIVE: 'status_active',
   SUSPENDED: 'suspended',
   CLOSED: 'closed',
+}
+
+/** Back-compat for saved links / bookmarks that used pipeline column value "active". */
+const LEGACY_CASE_STATE_ALIASES = {
+  active: 'pipeline_active',
 }
 
 const ACTIONABLE_COLUMNS = new Set([
@@ -107,13 +113,19 @@ const EMPTY_FILTERS = {
   unassignedTherapistOnly: false,
 }
 
+export function normalizeCaseState(caseState) {
+  if (!caseState || caseState === 'all') return 'all'
+  return LEGACY_CASE_STATE_ALIASES[caseState] || caseState
+}
+
 export function defaultPipelineFilters(overrides = {}) {
   const merged = { ...EMPTY_FILTERS, ...overrides }
+  merged.caseState = normalizeCaseState(merged.caseState)
   if (merged.caseStatus && merged.caseStatus !== 'all' && merged.caseState === 'all') {
     merged.caseState = LEGACY_STATUS_TO_CASE_STATE[merged.caseStatus] || 'all'
   }
   if (merged.pipelineStage && merged.pipelineStage !== 'all' && merged.caseState === 'all') {
-    merged.caseState = merged.pipelineStage
+    merged.caseState = normalizeCaseState(merged.pipelineStage)
   }
   if (merged.month && merged.month !== 'all' && merged.openedPreset === 'all') {
     merged.openedPreset = 'custom'
@@ -152,16 +164,19 @@ export function caseStateFromLegacyStatus(status) {
   return LEGACY_STATUS_TO_CASE_STATE[status] || 'all'
 }
 
-function matchesCaseState(row, caseState) {
-  if (caseState === 'all') return true
-  if (caseState === 'suspended') return row.status === 'SUSPENDED'
-  if (caseState === 'closed') {
+export function matchesCaseState(row, caseState) {
+  const state = normalizeCaseState(caseState)
+  if (state === 'all') return true
+  if (state === 'status_active') return row.status === 'ACTIVE'
+  if (state === 'suspended') return row.status === 'SUSPENDED'
+  if (state === 'closed') {
     return row.pipeline_column === 'closed' || row.status === 'CLOSED'
   }
-  if (caseState === 'pending_allotment') {
+  if (state === 'pending_allotment') {
     return row.pipeline_column === 'pending_allotment' || row.status === 'PENDING_ALLOTMENT'
   }
-  return row.pipeline_column === caseState
+  if (state === 'pipeline_active') return row.pipeline_column === 'active'
+  return row.pipeline_column === state
 }
 
 function isoDay(d) {
@@ -335,8 +350,17 @@ export function countActivePipelineFilters(filters = {}) {
   return n
 }
 
-/** Apply every active filter except the queue tab (for tab badge counts). */
+/** Apply filters for queue tab badge counts (excludes queue + case state so tabs stay meaningful). */
 export function filterPipelineRowsForQueueCounts(rows, filters = {}, opts = {}) {
+  return filterPipelineRows(
+    rows,
+    { ...defaultPipelineFilters(filters), queue: 'all', caseState: 'all' },
+    opts,
+  )
+}
+
+/** Rows matching all filters except the queue tab (for "in scope" counts). */
+export function filterPipelineRowsWithoutQueue(rows, filters = {}, opts = {}) {
   return filterPipelineRows(rows, { ...defaultPipelineFilters(filters), queue: 'all' }, opts)
 }
 

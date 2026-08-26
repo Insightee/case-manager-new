@@ -2510,12 +2510,35 @@ def admin_cases_pipeline_board(
 
 @router.get("/cases/export/records.csv")
 def admin_cases_records_export(
+    case_ids: str | None = Query(
+        None,
+        description="Comma-separated case ids to export (must match the viewer's scoped caseload).",
+    ),
     user: User = Depends(_admin_dashboard_user),
     db: Session = Depends(get_db),
 ):
-    """All-case CSV snapshot for the Cases board (session logs, leaves, absences)."""
+    """CSV snapshot for Cases board rows (session logs, leaves, absences)."""
+    parsed_ids: list[int] | None = None
+    if case_ids:
+        parsed_ids = []
+        for part in case_ids.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                parsed_ids.append(int(part))
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid case_ids query parameter.",
+                ) from exc
+        if not parsed_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid case ids provided.",
+            )
     try:
-        csv_text = case_records_export_svc.export_case_records_csv(db, user)
+        csv_text = case_records_export_svc.export_case_records_csv(db, user, case_ids=parsed_ids)
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")

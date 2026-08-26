@@ -5,7 +5,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.module_access import get_allowed_case_product_modules
+from app.services.admin_scope_service import apply_case_scope
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.attachment import Attachment
 from app.models.case import Case, CaseStatus
@@ -36,19 +36,6 @@ PIPELINE_COLUMNS = [
     ("active", "Active", "success"),
     ("closed", "Closed", "muted"),
 ]
-
-
-def _case_filters(user: User) -> list:
-    allowed = get_allowed_case_product_modules(user)
-    if allowed is None:
-        return []
-    if not allowed:
-        from app.core.permissions import is_finance_desk_user, user_has_permission
-
-        if is_finance_desk_user(user) and user_has_permission(user, "case.read.all"):
-            return []
-        return [Case.id < 0]
-    return [Case.product_module.in_(allowed)]
 
 
 def _classify_pipeline(
@@ -103,10 +90,9 @@ def _next_action(column: str, *, missing_logs: int, reports_under_review: int, h
 
 
 def build_pipeline_board(db: Session, user: User) -> tuple[dict, bool]:
-    filters = _case_filters(user)
-    cases = db.scalars(
-        select(Case).options(selectinload(Case.child)).where(*filters).order_by(Case.case_code)
-    ).all()
+    stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
+    stmt = apply_case_scope(stmt, user)
+    cases = db.scalars(stmt).all()
     if not cases:
         empty = {
             "columns": [{"id": c[0], "title": c[1], "tone": c[2], "count": 0, "cases": []} for c in PIPELINE_COLUMNS],

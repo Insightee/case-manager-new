@@ -120,10 +120,19 @@ def _leave_days_by_case(db: Session, case_ids: set[int]) -> dict[int, int]:
     return dict(counts)
 
 
-def build_case_records_rows(db: Session, user: User) -> list[dict[str, Any]]:
+def build_case_records_rows(
+    db: Session,
+    user: User,
+    *,
+    case_ids: list[int] | None = None,
+) -> list[dict[str, Any]]:
     stmt = select(Case).options(selectinload(Case.child)).order_by(Case.case_code)
     stmt = apply_case_scope(stmt, user)
     cases = list(db.scalars(stmt).all())
+    if case_ids is not None:
+        allowed_ids = {c.id for c in cases}
+        id_set = {i for i in case_ids if i in allowed_ids}
+        cases = [c for c in cases if c.id in id_set]
     if not cases:
         return []
 
@@ -183,8 +192,13 @@ def build_case_records_rows(db: Session, user: User) -> list[dict[str, Any]]:
     return rows
 
 
-def export_case_records_csv(db: Session, user: User) -> str:
-    rows = build_case_records_rows(db, user)
+def export_case_records_csv(
+    db: Session,
+    user: User,
+    *,
+    case_ids: list[int] | None = None,
+) -> str:
+    rows = build_case_records_rows(db, user, case_ids=case_ids)
     if len(rows) > MAX_EXPORT_ROWS:
         raise ValueError(
             f"Export has {len(rows)} rows (max {MAX_EXPORT_ROWS}). Contact support for a bulk extract."

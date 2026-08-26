@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/apiClient.js'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -14,6 +14,7 @@ import {
   derivePipelineFilterOptions,
   filterPipelineRows,
   filterPipelineRowsForQueueCounts,
+  filterPipelineRowsWithoutQueue,
   flattenPipelineBoard,
   pipelineQueueCounts,
   pipelineStatusBadgeVariant,
@@ -56,7 +57,7 @@ const SORT_OPTIONS = [
   { value: 'child', label: 'Child name' },
 ]
 
-export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilters() }) {
+export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilters(), exportCaseIdsRef }) {
   const { can, canWriteProduct, isViewOnly, user } = useAuth()
   const { options: programmeOptions } = useClinicalProductModules()
   const navigate = useNavigate()
@@ -78,6 +79,7 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const [toast, setToast] = useState('')
   const [actingId, setActingId] = useState(null)
   const [casePage, setCasePage] = useState(1)
+  const cmDefaultApplied = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -98,15 +100,21 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   }, [load])
 
   useEffect(() => {
-    if (!user?.roles?.length) return
+    setFilters((prev) => ({
+      ...prev,
+      queue: initialFilters.queue ?? prev.queue,
+      caseState: initialFilters.caseState ?? prev.caseState,
+    }))
+  }, [initialFilters.queue, initialFilters.caseState])
+
+  useEffect(() => {
+    if (!user?.roles?.length || cmDefaultApplied.current) return
     const cmId = defaultCaseManagerFilterId(user)
-    setFilters((prev) => {
-      const next = defaultPipelineFilters(initialFilters)
-      if (prev.search) next.search = prev.search
-      if (cmId && next.caseManagerId === 'all') next.caseManagerId = cmId
-      return next
-    })
-  }, [initialFilters, user?.id, user?.roles])
+    if (cmId) {
+      setFilters((prev) => (prev.caseManagerId === 'all' ? { ...prev, caseManagerId: cmId } : prev))
+    }
+    cmDefaultApplied.current = true
+  }, [user?.id, user?.roles])
 
   useEffect(() => {
     if (!toast) return
@@ -117,17 +125,28 @@ export function AdminCasesPipelineTable({ initialFilters = defaultPipelineFilter
   const allRows = useMemo(() => flattenPipelineBoard(board), [board])
   const filterOptions = useMemo(() => derivePipelineFilterOptions(allRows), [allRows])
   const filterOpts = useMemo(() => ({ viewerUserId: user?.id }), [user?.id])
-  const scopedRows = useMemo(
+  const rowsForTabCounts = useMemo(
     () => filterPipelineRowsForQueueCounts(allRows, filters, filterOpts),
     [allRows, filters, filterOpts],
   )
-  const counts = useMemo(() => pipelineQueueCounts(scopedRows), [scopedRows])
+  const counts = useMemo(() => pipelineQueueCounts(rowsForTabCounts), [rowsForTabCounts])
   const activeFilterCount = useMemo(() => countActivePipelineFilters(filters), [filters])
+
+  const scopedRows = useMemo(
+    () => filterPipelineRowsWithoutQueue(allRows, filters, filterOpts),
+    [allRows, filters, filterOpts],
+  )
 
   const rows = useMemo(() => {
     const filtered = filterPipelineRows(allRows, filters, filterOpts)
     return sortPipelineRows(filtered, sort)
   }, [allRows, filters, filterOpts, sort])
+
+  useEffect(() => {
+    if (exportCaseIdsRef) {
+      exportCaseIdsRef.current = rows.map((r) => r.id)
+    }
+  }, [rows, exportCaseIdsRef])
 
   const paginatedRows = useMemo(() => paginateList(rows, casePage), [rows, casePage])
 
