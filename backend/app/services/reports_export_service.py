@@ -5,8 +5,10 @@ import csv
 import io
 from typing import Any
 
+from app.core.reports_catalog import report_definition
 from app.models.user import User
 from app.services.export_document_service import export_meta, xlsx_footer_rows, xlsx_preamble_rows
+from app.services.reports_export_helpers import export_filename_stem, export_generated_on_stamp
 
 
 def rows_to_csv(rows: list[dict[str, Any]]) -> str:
@@ -121,11 +123,12 @@ def export_payload(
     user: User,
     subtitle: str,
 ) -> tuple[bytes | str, str, str]:
-    """Return content, media_type, filename stem."""
-    from app.core.reports_catalog import report_definition
-
+    """Return content, media_type, filename stem (includes generation date stamp)."""
+    generated_on = export_generated_on_stamp()
+    stem = export_filename_stem(report_key, generated_on=generated_on)
     definition = report_definition(report_key) or {}
-    title = definition.get("label") or report_key.replace("-", " ").title()
+    base_title = definition.get("label") or report_key.replace("-", " ").title()
+    title = f"{base_title} — {generated_on}"
     sheets = payload.get("sheets")
     rows = payload.get("rows") or []
 
@@ -135,7 +138,7 @@ def export_payload(
             content = rows_to_csv(primary)
         else:
             content = rows_to_csv(rows)
-        return content, "text/csv", report_key
+        return content, "text/csv", stem
 
     if fmt == "xlsx":
         content = payload_to_xlsx(
@@ -146,10 +149,10 @@ def export_payload(
             sheets=sheets,
         )
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        return content, media, report_key
+        return content, media, stem
 
     if fmt == "pdf":
         content = payload_to_pdf(title=title, subtitle=subtitle, user=user, rows=rows)
-        return content, "application/pdf", report_key
+        return content, "application/pdf", stem
 
     raise ValueError(f"Unsupported format: {fmt}")
