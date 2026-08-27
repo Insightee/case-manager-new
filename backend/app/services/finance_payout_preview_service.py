@@ -618,6 +618,48 @@ def _approved_sessions_for_therapist(
     )
 
 
+def _pending_sessions_for_therapist(
+    db: Session, case_id: int, therapist_user_id: int, start: date, end: date
+) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(TherapySession)
+            .join(DailyLog, DailyLog.session_id == TherapySession.id)
+            .where(
+                TherapySession.case_id == case_id,
+                TherapySession.therapist_user_id == therapist_user_id,
+                TherapySession.status == SessionStatus.COMPLETED,
+                TherapySession.scheduled_date >= start,
+                TherapySession.scheduled_date <= end,
+                DailyLog.approval_status == LogApprovalStatus.PENDING.value,
+            )
+        )
+        or 0
+    )
+
+
+def _pending_absence_for_therapist(
+    db: Session, case_id: int, therapist_user_id: int, start: date, end: date
+) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(SessionAbsenceRequest)
+            .join(TherapySession, SessionAbsenceRequest.session_id == TherapySession.id)
+            .where(
+                SessionAbsenceRequest.case_id == case_id,
+                SessionAbsenceRequest.therapist_user_id == therapist_user_id,
+                SessionAbsenceRequest.absence_type == SessionAbsenceType.CLIENT_ABSENT,
+                SessionAbsenceRequest.status == SessionAbsenceStatus.PENDING_APPROVAL,
+                TherapySession.scheduled_date >= start,
+                TherapySession.scheduled_date <= end,
+            )
+        )
+        or 0
+    )
+
+
 def _approved_absence_for_therapist(
     db: Session, case_id: int, therapist_user_id: int, start: date, end: date
 ) -> int:
@@ -836,6 +878,9 @@ def payout_preview_row(
     transition_days: int,
     transition_day_type: str,
     transition_total: float,
+    pending_sessions: int = 0,
+    pending_absence: int = 0,
+    leave_taken: int | None = None,
 ) -> dict[str, Any]:
     share = therapist_share_inr(case)
     lumpsum = client_lumpsum_inr(case)
@@ -847,8 +892,17 @@ def payout_preview_row(
         calendar_days=calendar_days,
         unpaid_leaves=unpaid if uses_calendar_day_pay(case) else 0,
     )
+    leave_deduction = 0.0
+    if uses_calendar_day_pay(case) and unpaid > 0:
+        gross_before = predicted_subtotal_inr(
+            case,
+            approved_sessions=approved_sessions,
+            calendar_days=calendar_days,
+            unpaid_leaves=0,
+        )
+        leave_deduction = round(max(gross_before - subtotal, 0), 2)
 
-    return {
+    row: dict[str, Any] = {
         "caseId": case.id,
         "Month": month_long_label(ym),
         "Case ID": export_case_id(case),
@@ -861,9 +915,14 @@ def payout_preview_row(
         "Case End Date": case_end_date.isoformat() if case_end_date else "",
         "Calendar Days": calendar_days,
         "Approved Sessions": approved_sessions,
+        "Pending Sessions": pending_sessions,
         "Approved Absence": approved_absence,
-        "Paid Leaves": int(leave.get("paid", 0)),
-        "Unpaid Leaves": unpaid,
+        "Pending Absence": pending_absence,
+        "Billable Absence": approved_absence,
+        "Paid Leaves": int(leave.get("paid", 0)) if uses_calendar_day_pay(case) else "",
+        "Unpaid Leaves": unpaid if uses_calendar_day_pay(case) else "",
+        "Leave deduction": leave_deduction if uses_calendar_day_pay(case) else "",
+        "Leave taken": leave_taken if not uses_calendar_day_pay(case) and leave_taken is not None else "",
         "Leave Credits": leave_credits,
         "Total Hours": round(hours, 2),
         "Billable Sessions": billable_sessions,
@@ -876,6 +935,7 @@ def payout_preview_row(
         "Transition Days Total Amount": transition_total if transition_total else "",
         "Predicted Total": round(subtotal + transition_total, 2) if subtotal or transition_total else "",
     }
+    return row
 
 
 def payout_preview_rows(
@@ -890,6 +950,7 @@ def payout_preview_rows(
         return []
 
     rows: list[dict[str, Any]] = []
+    start, end = month_bounds(ym)
     for case in cases[:MAX_EXPORT_ROWS]:
         for segment in build_cycle_segments(db, case, ym):
             therapist = db.get(User, segment.therapist_user_id)
@@ -903,6 +964,34 @@ def payout_preview_rows(
             billable = _billable_sessions_for_segment(
                 case, segment.approved_sessions, segment.approved_absence
             )
+            pending_sessions = _pending_sessions_for_therapist(
+                db, case.id, segment.therapist_user_id, start, end
+            )
+            pending_absence = _pending_absence_for_therapist(
+                db, case.id, segment.therapist_user_id, start, end
+            )
+            leave_taken = None
+            if not uses_calendar_day_pay(case):
+                case_leave = leave_days_in_month_for_case(db, therapist.id, case.id, ym)
+                leave_taken = int(case_leave.get("paid", 0) or 0) + int(case_leave.get("unpaid", 0) or 0)
+                if leave_taken == 0:
+                    from app.models.leave import LeaveStatus, TherapistLeave
+
+                    leaves = db.scalars(
+                        select(TherapistLeave).where(
+                            TherapistLeave.therapist_user_id == therapist.id,
+                            TherapistLeave.status == LeaveStatus.APPROVED,
+                            TherapistLeave.start_date <= end,
+                            TherapistLeave.end_date >= start,
+                        )
+                    ).all()
+                    from app.services.reports_export_helpers import leave_applies_to_case
+
+                    leave_taken = sum(
+                        (min(lv.end_date, end) - max(lv.start_date, start)).days + 1
+                        for lv in leaves
+                        if leave_applies_to_case(lv, case.id) or (not lv.case_id and not lv.case_ids)
+                    )
             rows.append(
                 payout_preview_row(
                     case,
@@ -921,6 +1010,9 @@ def payout_preview_rows(
                     transition_days=segment.transition_days,
                     transition_day_type=segment.transition_day_type,
                     transition_total=segment.transition_total,
+                    pending_sessions=pending_sessions,
+                    pending_absence=pending_absence,
+                    leave_taken=leave_taken,
                 )
             )
 

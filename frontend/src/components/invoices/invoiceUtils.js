@@ -10,10 +10,48 @@ export function isInvoiceAmendable(apiStatus) {
   return apiStatus === 'IN_REVIEW' || apiStatus === 'QUERIED' || apiStatus === 'REJECTED' || apiStatus === 'DRAFT'
 }
 
+export function formatModalHeaderSummary(attendanceSummary) {
+  if (!attendanceSummary) return null
+  const parts = []
+  const approved = attendanceSummary.approved_sessions ?? 0
+  const pending = attendanceSummary.pending_sessions ?? 0
+  const billableAbsence = attendanceSummary.billable_absence ?? 0
+  if (approved > 0) parts.push(`${approved} approved`)
+  if (pending > 0) parts.push(`${pending} pending`)
+  if (billableAbsence > 0) parts.push(`${billableAbsence} billable absence`)
+  if (attendanceSummary.leave_taken != null && attendanceSummary.leave_taken > 0) {
+    parts.push(`${attendanceSummary.leave_taken} leave taken`)
+  } else {
+    const paid = attendanceSummary.paid_leaves ?? 0
+    const unpaid = attendanceSummary.unpaid_leaves ?? 0
+    if (paid > 0 || unpaid > 0) {
+      parts.push(`${paid} paid leave${paid === 1 ? '' : 's'} · ${unpaid} unpaid leave${unpaid === 1 ? '' : 's'}`)
+    }
+  }
+  return parts.length ? parts.join(' · ') : null
+}
+
+export function formatCaseAttendanceStrip(attendance, billingProfile) {
+  if (!attendance) return null
+  const parts = []
+  if ((attendance.approved_sessions ?? 0) > 0) parts.push(`Approved: ${attendance.approved_sessions}`)
+  if ((attendance.pending_sessions ?? 0) > 0) parts.push(`Pending: ${attendance.pending_sessions}`)
+  if ((attendance.billable_absence ?? 0) > 0) parts.push(`Billable absence: ${attendance.billable_absence}`)
+  if ((attendance.pending_absence ?? 0) > 0) parts.push(`Pending absence: ${attendance.pending_absence}`)
+  if (billingProfile === 'session_based' && (attendance.leave_taken ?? 0) > 0) {
+    parts.push(`Leave taken: ${attendance.leave_taken}`)
+  } else if (billingProfile === 'calendar_day') {
+    if ((attendance.paid_leaves ?? 0) > 0) parts.push(`Paid leaves: ${attendance.paid_leaves}`)
+    if ((attendance.unpaid_leaves ?? 0) > 0) parts.push(`Unpaid leaves: ${attendance.unpaid_leaves}`)
+  }
+  return parts.length ? parts.join(' · ') : null
+}
+
 export function applyLocalExcludes(preview, excludeIds) {
   if (!preview) return preview
   const exclude = new Set(excludeIds)
   const next = structuredClone(preview)
+  const staticLeave = next.leave_deduction_inr || 0
   let subtotal = 0
   let totalSessions = 0
   for (const cg of next.cases || []) {
@@ -33,6 +71,10 @@ export function applyLocalExcludes(preview, excludeIds) {
         else if (line.line_type === 'INCLUDED') included += 1
       }
     }
+    const absenceTotal = (cg.child_absence_lines || [])
+      .filter((l) => l.included)
+      .reduce((sum, l) => sum + (l.amount_inr || 0), 0)
+    caseTotal += absenceTotal
     cg.therapist_share_inr = calendarPay ? originalGross : Math.round(caseTotal * 100) / 100
     cg.included_sessions = included
     cg.additional_sessions = additional
@@ -43,7 +85,8 @@ export function applyLocalExcludes(preview, excludeIds) {
   }
   next.subtotal_inr = Math.round(subtotal * 100) / 100
   next.total_sessions = totalSessions
-  next.net_amount_inr = Math.max(next.subtotal_inr - (next.leave_deduction_inr || 0), 0)
+  next.leave_deduction_inr = staticLeave
+  next.net_amount_inr = Math.max(next.subtotal_inr - staticLeave, 0)
   next.amount_inr = next.net_amount_inr
   return next
 }
