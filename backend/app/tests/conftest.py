@@ -13,10 +13,11 @@ _TEST_DB = _BACKEND_ROOT / f"test_ci_{os.getpid()}.db"
 # Must run before test modules import app.main (engine binds to DATABASE_URL).
 os.environ.setdefault("STORAGE_PROVIDER", "local")
 os.environ.setdefault("APP_ENV", "test")
-# Production defaults keep billing off; CI/unit suite exercises billing routes and ledger math.
 os.environ["ENABLE_BILLING"] = "true"
 os.environ["BILLING_LEDGER_WRITES"] = "true"
 os.environ["ENABLE_CLINICAL_REPORTS_ENGINE"] = "true"
+os.environ["INTEGRATION_API_ENABLED"] = "true"
+os.environ["MCP_ENABLED"] = "true"
 
 _MIGRATION_PROOF_CI = os.environ.get("MIGRATION_PROOF_REQUIRED", "").lower() in ("1", "true", "yes")
 if not _MIGRATION_PROOF_CI:

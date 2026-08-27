@@ -8,6 +8,7 @@ from app.api.v1 import (
     finance_writable,
     hr_ops,
     admin,
+    admin_integration_clients,
     admin_support,
     assignment_acceptance,
     assignments,
@@ -15,6 +16,7 @@ from app.api.v1 import (
     therapist_transitions,
     attachments,
     auth,
+    integrations,
     notifications,
     cases,
     meetings,
@@ -47,6 +49,8 @@ from app.core.feature_flags import require_billing, require_clinical_reports_eng
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
+api_router.include_router(integrations.router)
+api_router.include_router(admin_integration_clients.router)
 api_router.include_router(notifications.router)
 api_router.include_router(meetings.router)
 api_router.include_router(meetings.compat_router)

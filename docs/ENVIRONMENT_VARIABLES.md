@@ -59,6 +59,13 @@ Loaded from environment via [`backend/app/core/config.py`](../backend/app/core/c
 | `JWT_SECRET_KEY` | yes (prod) | dev placeholder | Access token signing secret. |
 | `JWT_REFRESH_SECRET_KEY` | yes (prod) | dev placeholder | Refresh token signing secret. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | no | `30` | Access token TTL. |
+| `INTEGRATION_API_ENABLED` | no | `false` | Enable machine-client integration API (`/api/v1/integrations/*`). |
+| `MCP_ENABLED` | no | `false` | Mount remote MCP Streamable HTTP at `/mcp` (requires `INTEGRATION_API_ENABLED=true`). |
+| `INTEGRATION_JWT_SECRET_KEY` | yes when integration on (prod) | dev placeholder | HS256 secret for integration access tokens (keep distinct from user JWT secrets). |
+| `INTEGRATION_ACCESS_TOKEN_MINUTES` | no | `15` | Short-lived integration access token TTL. |
+| `INTEGRATION_DEFAULT_RATE_LIMIT_PER_MINUTE` | no | `60` | Default per-client request rate limit. |
+| `INTEGRATION_MAX_PAGE_SIZE` | no | `50` | Hard max page size for integration list endpoints. |
+| `INTEGRATION_CREDENTIAL_DEFAULT_TTL_DAYS` | no | `365` | Default expiry for newly issued client secrets. |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | no | `7` | Refresh token TTL. |
 
 ### CORS & frontend links

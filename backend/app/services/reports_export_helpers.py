@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import Case, CaseStatus
+from app.models.parent import ParentGuardian, parent_child_link
 from app.models.user import User
 from app.services.admin_scope_service import apply_case_scope
 from app.services import case_service
@@ -48,6 +49,16 @@ def month_long_label(ym: str) -> str:
     return start.strftime("%B %Y")
 
 
+def export_generated_on_stamp() -> str:
+    """IST calendar date for download filenames and document titles (YYYY-MM-DD)."""
+    return datetime.now(IST).strftime("%Y-%m-%d")
+
+
+def export_filename_stem(report_key: str, *, generated_on: str | None = None) -> str:
+    stamp = generated_on or export_generated_on_stamp()
+    return f"{report_key}-{stamp}"
+
+
 def export_case_id(case: Case | None) -> str:
     if not case:
         return ""
@@ -67,6 +78,55 @@ def user_display_name(user: User | None) -> str:
     if not user:
         return ""
     return (user.full_name or user.email or "").strip()
+
+
+def parent_by_child(db: Session, child_ids: set[int]) -> dict[int, dict[str, Any]]:
+    """Map child_id → first linked parent {user_id, parent_name, parent_email}."""
+    if not child_ids:
+        return {}
+
+    rows = db.execute(
+        select(
+            parent_child_link.c.child_id,
+            User.id,
+            User.full_name,
+            User.email,
+        )
+        .join(ParentGuardian, ParentGuardian.id == parent_child_link.c.parent_guardian_id)
+        .join(User, User.id == ParentGuardian.user_id)
+        .where(parent_child_link.c.child_id.in_(child_ids))
+        .order_by(parent_child_link.c.child_id, ParentGuardian.id)
+    ).all()
+    out: dict[int, dict[str, Any]] = {}
+    for child_id, user_id, full_name, email in rows:
+        if child_id in out:
+            continue
+        out[child_id] = {
+            "user_id": user_id,
+            "parent_name": full_name or "",
+            "parent_email": email or "",
+        }
+    return out
+
+
+def case_people_export_fields(
+    case: Case | None,
+    *,
+    therapist: User | None = None,
+    parent_info: dict[str, Any] | None = None,
+    include_therapist: bool = True,
+) -> dict[str, str]:
+    """Standard Case / Child / Parent / Therapist identity columns for HR exports."""
+    parent = parent_info or {}
+    fields: dict[str, str] = {
+        "Case ID": export_case_id(case),
+        "Child Name": case_service.case_child_display_name(case) or "",
+        "Parent Name": str(parent.get("parent_name") or ""),
+    }
+    if include_therapist:
+        fields["Therapist Name"] = user_display_name(therapist)
+        fields["Therapist ID"] = export_therapist_id(therapist)
+    return fields
 
 
 def enum_value(value: Any) -> str:
@@ -113,6 +173,118 @@ def assignment_therapist(db: Session, assignment: CaseAssignment | None) -> User
     if not assignment:
         return None
     return db.get(User, assignment.therapist_user_id)
+
+
+def cases_by_ids(db: Session, case_ids: set[int] | list[int]) -> dict[int, Case]:
+    """Batch-load cases with child for export identity columns."""
+    ids = {int(cid) for cid in case_ids if cid is not None}
+    if not ids:
+        return {}
+    rows = db.scalars(
+        select(Case).options(selectinload(Case.child)).where(Case.id.in_(ids))
+    ).all()
+    return {case.id: case for case in rows}
+
+
+def active_therapists_by_case(
+    db: Session, case_ids: set[int] | list[int]
+) -> dict[int, User]:
+    """Map case_id → active therapist user (latest active assignment wins)."""
+    ids = {int(cid) for cid in case_ids if cid is not None}
+    if not ids:
+        return {}
+    assign_rows = db.execute(
+        select(CaseAssignment.case_id, CaseAssignment.therapist_user_id)
+        .where(
+            CaseAssignment.case_id.in_(ids),
+            CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
+        )
+        .order_by(CaseAssignment.id.desc())
+    ).all()
+    therapist_id_by_case: dict[int, int] = {}
+    for case_id, therapist_user_id in assign_rows:
+        if case_id not in therapist_id_by_case:
+            therapist_id_by_case[case_id] = int(therapist_user_id)
+    if not therapist_id_by_case:
+        return {}
+    users = {
+        u.id: u
+        for u in db.scalars(
+            select(User).where(User.id.in_(set(therapist_id_by_case.values())))
+        ).all()
+    }
+    return {
+        case_id: users[tid]
+        for case_id, tid in therapist_id_by_case.items()
+        if tid in users
+    }
+
+
+def clip_assignment_to_month(
+    assign_start: date,
+    assign_end: date | None,
+    month_start: date,
+    month_end: date,
+) -> tuple[date, date] | None:
+    """Inclusive clip of an assignment window into a month. None if no overlap."""
+    end = assign_end if assign_end is not None else month_end
+    start = max(assign_start, month_start)
+    end = min(end, month_end)
+    if start > end:
+        return None
+    return start, end
+
+
+def assignment_segments_for_month(
+    db: Session,
+    case_ids: list[int] | set[int],
+    month_start: date,
+    month_end: date,
+) -> dict[int, list[dict[str, Any]]]:
+    """
+    Case → assignment slices overlapping the month (ACTIVE/ENDED/TRANSFERRED).
+
+    Each segment: assignment, therapist_user_id, start, end (clipped inclusive).
+    Cases with no overlapping history get no entry (caller may fall back).
+    """
+    ids = [int(cid) for cid in case_ids if cid is not None]
+    out: dict[int, list[dict[str, Any]]] = {cid: [] for cid in ids}
+    if not ids:
+        return {}
+
+    rows = db.scalars(
+        select(CaseAssignment)
+        .where(
+            CaseAssignment.case_id.in_(ids),
+            CaseAssignment.status.in_(
+                [
+                    CaseAssignmentStatus.ACTIVE,
+                    CaseAssignmentStatus.ENDED,
+                    CaseAssignmentStatus.TRANSFERRED,
+                ]
+            ),
+            CaseAssignment.start_date <= month_end,
+        )
+        .order_by(CaseAssignment.case_id, CaseAssignment.start_date, CaseAssignment.id)
+    ).all()
+
+    for assign in rows:
+        if assign.end_date is not None and assign.end_date < month_start:
+            continue
+        clipped = clip_assignment_to_month(
+            assign.start_date, assign.end_date, month_start, month_end
+        )
+        if not clipped:
+            continue
+        out.setdefault(assign.case_id, []).append(
+            {
+                "assignment": assign,
+                "therapist_user_id": assign.therapist_user_id,
+                "start": clipped[0],
+                "end": clipped[1],
+            }
+        )
+    return {cid: segs for cid, segs in out.items() if segs}
 
 
 def billing_snapshot_report_columns(snapshot: dict | None) -> dict[str, str]:
