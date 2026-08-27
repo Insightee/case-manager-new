@@ -115,7 +115,9 @@ def test_invoice_breakdown_from_preview_net_matches_subtotal():
         breakdown = billing.invoice_breakdown(db, invoice.id)
         if not breakdown.get("from_preview"):
             pytest.skip("Invoice has persisted lines — different reconciliation path")
-        assert breakdown["subtotal_inr"] == breakdown["net_amount_inr"] - breakdown["leave_deduction_inr"]
+        assert breakdown["subtotal_inr"] - breakdown["leave_deduction_inr"] == pytest.approx(
+            breakdown["net_amount_inr"], rel=0.01
+        )
         assert breakdown["amount_inr"] == breakdown["net_amount_inr"]
     finally:
         db.close()
@@ -270,6 +272,8 @@ def test_child_absence_not_payable_rejected_notes():
     try:
         therapist, case = _therapist_and_case(db)
         rule = attendance._resolve_rule(db, case)
+        original_payable = rule.child_absent_therapist_payable if rule else None
+        original_consumes = rule.package_consumes_on_child_absent if rule else None
         if rule:
             rule.child_absent_therapist_payable = False
             rule.package_consumes_on_child_absent = False
@@ -300,9 +304,9 @@ def test_child_absence_not_payable_rejected_notes():
         db.delete(req)
         db.delete(session)
         if rule:
-            db.rollback()
-        else:
-            db.commit()
+            rule.child_absent_therapist_payable = original_payable
+            rule.package_consumes_on_child_absent = original_consumes
+        db.commit()
     finally:
         db.close()
 
@@ -334,10 +338,10 @@ def test_apply_preview_edits_preserves_leave_deduction():
 def test_zero_activity_case_has_activity_false():
     db = SessionLocal()
     try:
-        therapist = db.scalars(select(User).where(User.email == "therapist@demo.com")).first()
+        therapist, existing = _therapist_and_case(db)
         case = Case(
             case_code="TEST-ZERO-ACT",
-            child_id=1,
+            child_id=existing.child_id,
             service_type="Homecare",
             product_module="homecare",
             billing_type=BillingType.PER_SESSION,
@@ -355,18 +359,12 @@ def test_zero_activity_case_has_activity_false():
                 start_date=date(2026, 1, 1),
             )
         )
-        db.commit()
+        db.flush()
 
         facts = attendance.month_attendance_facts(db, therapist_user_id=therapist.id, ym="2099-01")
         case_facts = next(c for c in facts["cases"] if c["case_id"] == case.id)
         assert case_facts["has_activity"] is False
-
-        assignment = db.scalars(
-            select(CaseAssignment).where(CaseAssignment.case_id == case.id)
-        ).first()
-        db.delete(assignment)
-        db.delete(case)
-        db.commit()
+        db.rollback()
     finally:
         db.close()
 

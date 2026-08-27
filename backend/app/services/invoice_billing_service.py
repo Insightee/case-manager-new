@@ -127,12 +127,25 @@ def engine_case_gross(
     session_lines: list[dict],
     *,
     segment: payout_cycle.CycleSegment | None,
+    before_leave_deduction: bool = False,
 ) -> tuple[int, int, float]:
     """Payout-report gross for one therapist × case. No TDS."""
     included, additional, line_total = compute_case_totals(case, session_lines)
     if payout_cycle.uses_calendar_day_pay(case):
         if segment is None:
             return included, additional, line_total
+        if before_leave_deduction:
+            gross = round(
+                payout_cycle.predicted_subtotal_inr(
+                    case,
+                    approved_sessions=segment.approved_sessions,
+                    calendar_days=segment.calendar_days,
+                    unpaid_leaves=0,
+                )
+                + segment.transition_total,
+                2,
+            )
+            return included, additional, gross
         return included, additional, segment.therapist_gross(case)
     trans = _transition_total_from_lines(session_lines)
     approved = sum(
@@ -524,7 +537,7 @@ def build_month_preview(db: Session, therapist_user_id: int, month: str) -> dict
 
         segment = payout_cycle.segment_for_therapist(db, case, therapist_user_id, ym)
         included, additional, case_total = engine_case_gross(
-            case, session_lines, segment=segment
+            case, session_lines, segment=segment, before_leave_deduction=True
         )
         case_total = round(case_total + absence_total, 2)
         subtotal += case_total
@@ -628,7 +641,7 @@ def apply_preview_edits(preview: dict, edits: dict) -> dict:
                 is_outgoing_replacement=False,
             )
         included, additional, case_total = engine_case_gross(
-            case, case_group.get("session_lines", []), segment=segment
+            case, case_group.get("session_lines", []), segment=segment, before_leave_deduction=True
         )
         absence_total = round(
             sum(

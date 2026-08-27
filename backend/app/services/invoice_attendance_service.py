@@ -518,13 +518,6 @@ def month_attendance_facts(
             if req.status == SessionAbsenceStatus.PENDING_APPROVAL:
                 line = build_child_absence_line(req, session, case_row, rule)
                 child_absence_lines.append(line)
-                pending_approval_lines.append(
-                    {
-                        **line,
-                        "pending_reason": "Awaiting absence approval",
-                        "kind": "child_absence",
-                    }
-                )
                 attendance["pending_absence"] += 1
             elif req.status == SessionAbsenceStatus.REJECTED:
                 rejected_notes.append(

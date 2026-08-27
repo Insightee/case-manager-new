@@ -287,7 +287,7 @@ export function InvoiceBreakdownView({
                     editable={editable}
                     pending
                     onRemove={
-                      onRemoveLateSession
+                      onRemoveLateSession && line.flags?.added_late
                         ? (line) => line.session_id && onRemoveLateSession(line.session_id)
                         : undefined
                     }
