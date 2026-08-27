@@ -14,6 +14,7 @@ from app.models.leave import LeaveBillingCategory, LeaveStatus, LeaveType, Thera
 from app.models.user import User
 from app.services.finance_payout_preview_service import (
     SHADOW_MONTHLY_DAYS,
+    apply_therapist_total_column,
     calendar_days_for_segment,
     calendar_days_from_start_day,
     calendar_days_incoming,
@@ -320,6 +321,19 @@ def _headers(email: str) -> dict:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+def test_apply_therapist_total_column_first_row_only():
+    rows = [
+        {"Therapist Name": "Alice", "Therapist ID": "T1", "Case ID": "C1", "Predicted Total": 5000},
+        {"Therapist Name": "Alice", "Therapist ID": "T1", "Case ID": "C2", "Predicted Total": 4000},
+        {"Therapist Name": "Bob", "Therapist ID": "T2", "Case ID": "C3", "Predicted Total": 8000},
+    ]
+    result = apply_therapist_total_column(rows)
+    assert result[0]["Therapist Total"] == 9000
+    assert result[1]["Therapist Total"] == ""
+    assert result[2]["Therapist Total"] == 8000
+    assert list(result[0].keys())[-1] == "Therapist Total"
+
+
 def test_finance_payout_preview_report_json():
     headers = _headers("finance@demo.com")
     r = client.get(
@@ -346,6 +360,7 @@ def test_finance_payout_preview_report_json():
         assert "Transition Days Total Amount" in row
         assert "Predicted Total" in row
         assert "Per Session Share" in row
+        assert "Therapist Total" in row
 
 
 def test_finance_payout_preview_report_csv():

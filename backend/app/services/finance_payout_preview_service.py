@@ -930,4 +930,43 @@ def payout_preview_rows(
             r.get("Case ID") or "",
         )
     )
-    return rows
+    return apply_therapist_total_column(rows)
+
+
+def _predicted_total_inr(row: dict[str, Any]) -> float:
+    raw = row.get("Predicted Total")
+    if raw in (None, ""):
+        return 0.0
+    return float(raw)
+
+
+def _therapist_group_key(row: dict[str, Any]) -> str:
+    therapist_id = row.get("Therapist ID")
+    if therapist_id not in (None, ""):
+        return str(therapist_id)
+    return (row.get("Therapist Name") or "").lower()
+
+
+def apply_therapist_total_column(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sum Predicted Total per therapist; show the total on the first row only."""
+    if not rows:
+        return rows
+
+    totals: dict[str, float] = {}
+    for row in rows:
+        key = _therapist_group_key(row)
+        totals[key] = round(totals.get(key, 0.0) + _predicted_total_inr(row), 2)
+
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        new_row = {k: v for k, v in row.items() if k != "Therapist Total"}
+        key = _therapist_group_key(row)
+        if key not in seen:
+            seen.add(key)
+            total = totals[key]
+            new_row["Therapist Total"] = total if total else ""
+        else:
+            new_row["Therapist Total"] = ""
+        out.append(new_row)
+    return out
