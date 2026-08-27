@@ -84,8 +84,9 @@ function SessionTable({ lines, editable, onToggle, onRemove, pending }) {
 function AttendanceSummary({ data }) {
   const summary = data.attendance_summary
   const headerGist = formatModalHeaderSummary(summary)
-  const hasCalendarLeave = summary?.paid_leaves != null || summary?.unpaid_leaves != null
-  const hasSessionLeave = summary?.leave_taken != null
+  const hasCalendarLeave =
+    (summary?.paid_leaves ?? 0) > 0 || (summary?.unpaid_leaves ?? 0) > 0
+  const hasSessionLeave = (summary?.leave_taken ?? 0) > 0
 
   return (
     <div className="space-y-2 rounded-xl border border-[#E2E8F0] bg-slate-50/80 p-4">

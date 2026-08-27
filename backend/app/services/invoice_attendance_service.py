@@ -84,8 +84,11 @@ def _merge_attendance(summary: dict[str, int | None], case_att: dict[str, int | 
     for key in ("approved_sessions", "pending_sessions", "billable_absence", "pending_absence", "pending_leaves"):
         summary[key] = int(summary.get(key) or 0) + int(case_att.get(key) or 0)
     if profile == BillingProfile.CALENDAR_DAY:
-        summary["paid_leaves"] = int(summary.get("paid_leaves") or 0) + int(case_att.get("paid_leaves") or 0)
-        summary["unpaid_leaves"] = int(summary.get("unpaid_leaves") or 0) + int(case_att.get("unpaid_leaves") or 0)
+        for key in ("paid_leaves", "unpaid_leaves"):
+            case_val = case_att.get(key)
+            if case_val is None:
+                continue
+            summary[key] = int(summary.get(key) or 0) + int(case_val)
 
 
 def _case_has_activity(attendance: dict[str, int | None], pending_lines: list, rejected_for_case: list) -> bool:
@@ -399,9 +402,6 @@ def month_attendance_facts(
     rejected_notes: list[dict[str, Any]] = []
     case_payloads: list[dict[str, Any]] = []
     summary = _empty_attendance()
-    summary["paid_leaves"] = 0
-    summary["unpaid_leaves"] = 0
-    summary["leave_taken"] = 0
 
     for case_id, case_row in by_case_id.items():
         rule = _resolve_rule(db, case_row)
@@ -421,14 +421,17 @@ def month_attendance_facts(
         attendance = _empty_attendance()
         if profile == BillingProfile.CALENDAR_DAY:
             leave_counts = leave_days_in_month_for_case(db, therapist_user_id, case_id, ym)
-            attendance["paid_leaves"] = int(leave_counts.get("paid", 0))
-            attendance["unpaid_leaves"] = int(leave_counts.get("unpaid", 0))
+            paid = int(leave_counts.get("paid", 0))
+            unpaid = int(leave_counts.get("unpaid", 0))
+            attendance["paid_leaves"] = paid if paid > 0 else None
+            attendance["unpaid_leaves"] = unpaid if unpaid > 0 else None
         else:
-            attendance["leave_taken"] = sum(
+            taken = sum(
                 _leave_days_in_month(lv, start, end)
                 for lv in case_leaves
                 if lv.status == LeaveStatus.APPROVED
             )
+            attendance["leave_taken"] = taken if taken > 0 else None
 
         attendance["pending_leaves"] = sum(
             _leave_days_in_month(lv, start, end)
@@ -594,11 +597,14 @@ def month_attendance_facts(
     if not has_calendar:
         summary["paid_leaves"] = None
         summary["unpaid_leaves"] = None
+    elif not (int(summary.get("paid_leaves") or 0) or int(summary.get("unpaid_leaves") or 0)):
+        summary["paid_leaves"] = None
+        summary["unpaid_leaves"] = None
     if has_session:
         approved_leave_days = sum(
             _leave_days_in_month(lv, start, end) for lv in leaves if lv.status == LeaveStatus.APPROVED
         )
-        summary["leave_taken"] = approved_leave_days
+        summary["leave_taken"] = approved_leave_days if approved_leave_days > 0 else None
     else:
         summary["leave_taken"] = None
 

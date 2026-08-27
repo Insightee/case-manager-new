@@ -3,7 +3,7 @@ import { apiFetch } from '../../lib/apiClient.js'
 import { InvoiceBreakdownView } from './InvoiceBreakdownView.jsx'
 import { StatementSummary } from './StatementSummary.jsx'
 import { StatementDisputePanel } from './StatementDisputePanel.jsx'
-import { applyLocalExcludes, formatInr } from './invoiceUtils.js'
+import { applyLocalExcludes, formatInr, formatModalHeaderSummary } from './invoiceUtils.js'
 
 export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onClose, onSubmitted }) {
   const [serverPreview, setServerPreview] = useState(initialPreview)
@@ -45,7 +45,8 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
 
   if (!open || !preview) return null
 
-  const pendingCount = preview.pending_late_count ?? 0
+  const attendanceGist = formatModalHeaderSummary(preview.attendance_summary)
+  const pendingCount = preview.pending_approval_count ?? preview.pending_late_count ?? 0
 
   function handleToggle(_caseId, line) {
     if (!line.session_id) return
@@ -99,7 +100,11 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Invoice preview — {preview.month_label || month}</h2>
             <p className="text-sm text-slate-500">
-              {preview.total_sessions} approved sessions · {formatInr(preview.net_amount_inr)}
+              {formatInr(preview.net_amount_inr)}
+              {attendanceGist ? ` · ${attendanceGist}` : ` · ${preview.total_sessions ?? 0} approved`}
+              {pendingCount > 0
+                ? ` · ${pendingCount} pending (${formatInr(preview.pending_approval_inr ?? preview.pending_late_inr)})`
+                : null}
               {refreshing ? ' · Updating…' : null}
             </p>
           </div>
@@ -110,12 +115,6 @@ export function InvoicePreviewDrawer({ open, month, preview: initialPreview, onC
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
-          {pendingCount > 0 ? (
-            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              {pendingCount} late-added session{pendingCount === 1 ? '' : 's'} ({formatInr(preview.pending_late_inr)}) are
-              excluded from payout until an admin approves the daily logs.
-            </p>
-          ) : null}
           <StatementSummary data={preview} cutover={false} />
           <div className="mt-6">
             <InvoiceBreakdownView

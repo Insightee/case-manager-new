@@ -7,6 +7,8 @@ from datetime import date, datetime, time, timezone
 import pytest
 from sqlalchemy import select
 
+from sqlalchemy import select
+
 from app.core.database import SessionLocal
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import BillingType, Case, CompensationMode
@@ -80,10 +82,41 @@ def test_session_based_leave_taken_no_deduction():
         preview = billing.build_month_preview(db, therapist.id, ym)
         assert preview["leave_deduction_inr"] == 0
         assert preview["attendance_summary"]["leave_taken"] == 3
-        assert preview["attendance_summary"].get("paid_leaves") is None or preview["attendance_summary"]["paid_leaves"] == 0
+        assert preview["attendance_summary"].get("paid_leaves") is None
 
         db.delete(leave)
         db.commit()
+    finally:
+        db.close()
+
+
+def test_zero_leave_taken_omitted_from_summary():
+    db = SessionLocal()
+    try:
+        therapist, _case = _therapist_and_case(db)
+        facts = attendance.month_attendance_facts(db, therapist_user_id=therapist.id, ym="2026-07")
+        assert facts["attendance_summary"].get("leave_taken") is None
+        assert facts["attendance_summary"].get("paid_leaves") is None
+        assert facts["attendance_summary"].get("unpaid_leaves") is None
+    finally:
+        db.close()
+
+
+def test_invoice_breakdown_from_preview_net_matches_subtotal():
+    db = SessionLocal()
+    try:
+        from app.models.invoice import Invoice, InvoiceStatus
+
+        invoice = db.scalars(
+            select(Invoice).where(Invoice.status == InvoiceStatus.IN_REVIEW)
+        ).first()
+        if not invoice:
+            pytest.skip("No in-review invoice in seed")
+        breakdown = billing.invoice_breakdown(db, invoice.id)
+        if not breakdown.get("from_preview"):
+            pytest.skip("Invoice has persisted lines — different reconciliation path")
+        assert breakdown["subtotal_inr"] == breakdown["net_amount_inr"] - breakdown["leave_deduction_inr"]
+        assert breakdown["amount_inr"] == breakdown["net_amount_inr"]
     finally:
         db.close()
 
