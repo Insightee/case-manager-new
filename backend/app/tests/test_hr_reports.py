@@ -10,7 +10,7 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.main import app
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
-from app.models.case import Case
+from app.models.case import Case, CaseStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.user import User
@@ -121,13 +121,7 @@ def test_mid_month_reassignment_splits_bulk_and_monthly_rows():
     try:
         case = db.scalars(select(Case).where(Case.case_code == "IC-2026-041")).first()
         assert case is not None
-        outgoing = db.scalars(
-            select(CaseAssignment).where(
-                CaseAssignment.case_id == case.id,
-                CaseAssignment.status == CaseAssignmentStatus.ACTIVE,
-            )
-        ).first()
-        assert outgoing is not None
+        case.status = CaseStatus.ACTIVE
 
         incoming = db.scalars(select(User).where(User.email == "split.therapist@demo.com")).first()
         if not incoming:
@@ -140,27 +134,44 @@ def test_mid_month_reassignment_splits_bulk_and_monthly_rows():
             db.add(incoming)
             db.flush()
 
+        seed_assign = db.scalars(
+            select(CaseAssignment).where(CaseAssignment.case_id == case.id).limit(1)
+        ).first()
+        assert seed_assign is not None
+        outgoing_therapist_id = seed_assign.therapist_user_id
+        case_service_id = seed_assign.case_service_id
+
         month_start = date(2026, 1, 1)
         handoff = date(2026, 1, 15)
         month_end = date(2026, 1, 31)
 
-        outgoing.start_date = month_start
-        outgoing.end_date = handoff
-        outgoing.status = CaseAssignmentStatus.ENDED
-
-        # Clear any prior leftover from a re-run of this test.
-        for old in db.scalars(
-            select(CaseAssignment).where(
-                CaseAssignment.case_id == case.id,
-                CaseAssignment.therapist_user_id == incoming.id,
+        # Reset assignment history so earlier suites cannot add extra January segments.
+        for old in db.scalars(select(CaseAssignment).where(CaseAssignment.case_id == case.id)).all():
+            db.delete(old)
+        for old_session in db.scalars(
+            select(TherapySession).where(
+                TherapySession.case_id == case.id,
+                TherapySession.scheduled_date >= month_start,
+                TherapySession.scheduled_date <= month_end,
             )
         ).all():
-            db.delete(old)
+            db.delete(old_session)
         db.flush()
 
         db.add(
             CaseAssignment(
                 case_id=case.id,
+                case_service_id=case_service_id,
+                therapist_user_id=outgoing_therapist_id,
+                start_date=month_start,
+                end_date=handoff,
+                status=CaseAssignmentStatus.ENDED,
+            )
+        )
+        db.add(
+            CaseAssignment(
+                case_id=case.id,
+                case_service_id=case_service_id,
                 therapist_user_id=incoming.id,
                 start_date=date(2026, 1, 16),
                 end_date=None,
@@ -170,7 +181,7 @@ def test_mid_month_reassignment_splits_bulk_and_monthly_rows():
         db.add(
             TherapySession(
                 case_id=case.id,
-                therapist_user_id=outgoing.therapist_user_id,
+                therapist_user_id=outgoing_therapist_id,
                 scheduled_date=date(2026, 1, 10),
                 start_time=time(10, 0),
                 end_time=time(11, 0),
