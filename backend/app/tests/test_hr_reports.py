@@ -88,7 +88,7 @@ def test_bulk_attendance_report_json():
         assert "Therapist ID" in data["rows"][0]
         assert "Assignment Start" in data["rows"][0]
         assert "Assignment End" in data["rows"][0]
-        assert "Client Name" not in data["rows"][0]
+        assert "Client Name" in data["rows"][0]
         assert "Logs Pending Approval" in data["rows"][0]
         assert "Logs Rejected" in data["rows"][0]
         assert "Parent Cancelled" not in data["rows"][0]
@@ -112,7 +112,7 @@ def test_session_monthly_summary_people_columns():
         assert "Therapist ID" in row
         assert "Assignment Start" in row
         assert "Assignment End" in row
-        assert "Client Name" not in row
+        assert "Client Name" in row
 
 
 def test_mid_month_reassignment_splits_bulk_and_monthly_rows():
@@ -294,7 +294,7 @@ def test_parent_portal_usage_json():
         assert "Days Since Last Activity" in row
         assert "Has Logged In" not in row
         assert "Last Seen" not in row
-        assert "Client Name" not in row
+        assert "Client Name" in row
 
 
 def test_parent_portal_usage_csv():
@@ -377,7 +377,7 @@ def test_therapist_log_compliance_catalog_and_json():
         assert "Case ID" in row
         assert "Child Name" in row
         assert "Parent Name" in row
-        assert "Client Name" not in row
+        assert "Client Name" in row
         assert "Not Submitting Since" in row
         assert "Missing Logs" in row
         assert "Case IDs" not in row

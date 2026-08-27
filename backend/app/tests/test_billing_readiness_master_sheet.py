@@ -82,6 +82,7 @@ def test_master_sheet_api_no_legacy_invoices_source():
     assert body["readOnly"] is True
     if body["items"]:
         item = body["items"][0]
+        assert "parentName" in item
         assert item["reconciliation"]["raisedInvoiceSource"] == "client_invoices"
         assert item["reconciliation"]["activitySource"] == "billing_ledger_and_sessions"
 

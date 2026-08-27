@@ -16,6 +16,7 @@ const WIDE_COLUMNS = [
   { key: 'caseCode', label: 'Client ID', sticky: true },
   { key: 'zohoId', label: 'Zoho id' },
   { key: 'clientName', label: 'Client name', sticky: true },
+  { key: 'parentName', label: 'Parent name', sticky: true },
   { key: 'childName', label: 'Child' },
   { key: 'therapistName', label: 'Therapist' },
   { key: 'serviceType', label: 'Service type' },

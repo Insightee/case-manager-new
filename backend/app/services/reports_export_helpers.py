@@ -109,6 +109,48 @@ def parent_by_child(db: Session, child_ids: set[int]) -> dict[int, dict[str, Any
     return out
 
 
+def case_client_parent_fields(
+    case: Case | None,
+    *,
+    parent_info: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Case / client (child) / parent identity columns for exports."""
+    parent = parent_info or {}
+    client = case_service.case_child_display_name(case) or ""
+    return {
+        "Case ID": export_case_id(case),
+        "Client Name": client,
+        "Child Name": client,
+        "Parent Name": str(parent.get("parent_name") or ""),
+    }
+
+
+def enrich_rows_with_case_identity(
+    db: Session,
+    rows: list[dict[str, Any]],
+    *,
+    case_id_key: str = "caseId",
+) -> list[dict[str, Any]]:
+    """Prepend Case ID, Client Name, Child Name, and Parent Name using batched lookups."""
+    if not rows:
+        return rows
+    case_ids = {int(r[case_id_key]) for r in rows if r.get(case_id_key) is not None}
+    if not case_ids:
+        return rows
+    cases = cases_by_ids(db, case_ids)
+    parents = parent_by_child(
+        db, {c.child_id for c in cases.values() if c and c.child_id}
+    )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        case = cases.get(int(row[case_id_key])) if row.get(case_id_key) is not None else None
+        parent_info = (
+            parents.get(case.child_id, {}) if case and case.child_id else {}
+        )
+        out.append({**case_client_parent_fields(case, parent_info=parent_info), **row})
+    return out
+
+
 def case_people_export_fields(
     case: Case | None,
     *,
@@ -117,12 +159,7 @@ def case_people_export_fields(
     include_therapist: bool = True,
 ) -> dict[str, str]:
     """Standard Case / Child / Parent / Therapist identity columns for HR exports."""
-    parent = parent_info or {}
-    fields: dict[str, str] = {
-        "Case ID": export_case_id(case),
-        "Child Name": case_service.case_child_display_name(case) or "",
-        "Parent Name": str(parent.get("parent_name") or ""),
-    }
+    fields = case_client_parent_fields(case, parent_info=parent_info)
     if include_therapist:
         fields["Therapist Name"] = user_display_name(therapist)
         fields["Therapist ID"] = export_therapist_id(therapist)

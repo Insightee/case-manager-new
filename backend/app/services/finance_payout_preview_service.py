@@ -17,14 +17,16 @@ from app.models.session import SessionStatus
 from app.models.session_absence import SessionAbsenceRequest, SessionAbsenceStatus, SessionAbsenceType
 from app.models.therapist_profile import TherapistProfile
 from app.models.user import User
-from app.services import case_service, leave_policy_service
+from app.services import leave_policy_service
 from app.services.reports_export_helpers import (
     MAX_EXPORT_ROWS,
+    case_client_parent_fields,
     is_homecare_case,
     is_shadow_case,
     leave_days_in_month_for_case,
     month_bounds,
     month_long_label,
+    parent_by_child,
     scoped_cases,
     user_display_name,
 )
@@ -823,6 +825,7 @@ def payout_preview_row(
     *,
     ym: str,
     therapist: User,
+    parent_info: dict[str, Any] | None = None,
     approved_sessions: int,
     approved_absence: int,
     billable_sessions: int,
@@ -851,8 +854,7 @@ def payout_preview_row(
     return {
         "caseId": case.id,
         "Month": month_long_label(ym),
-        "Case ID": export_case_id(case),
-        "Client Name": case_service.case_child_display_name(case) or "",
+        **case_client_parent_fields(case, parent_info=parent_info),
         "Therapist Name": user_display_name(therapist),
         "Therapist ID": export_therapist_id(therapist),
         "Service Type": case.service_type or case.product_module or "",
@@ -889,8 +891,10 @@ def payout_preview_rows(
     if not cases:
         return []
 
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
     rows: list[dict[str, Any]] = []
     for case in cases[:MAX_EXPORT_ROWS]:
+        parent_info = parents.get(case.child_id, {}) if case.child_id else {}
         for segment in build_cycle_segments(db, case, ym):
             therapist = db.get(User, segment.therapist_user_id)
             if not therapist:
@@ -908,6 +912,7 @@ def payout_preview_rows(
                     case,
                     ym=ym,
                     therapist=therapist,
+                    parent_info=parent_info,
                     approved_sessions=segment.approved_sessions,
                     approved_absence=segment.approved_absence,
                     billable_sessions=billable,

@@ -20,6 +20,7 @@ from app.models.ledger_billing import BillableStatus, BillingLedger, LedgerDispu
 from app.models.report import MonthlyReport, ReportStatus
 from app.models.user import User
 from app.services import billing_composer_service, case_finance_note_service
+from app.services.reports_export_helpers import parent_by_child
 
 NOT_CONFIGURED = "Not yet configured"
 NOT_AVAILABLE = "Not yet available"
@@ -355,7 +356,13 @@ def _client_billing_rate(case: Case) -> str | float:
     return NOT_CONFIGURED
 
 
-def compose_master_sheet_row(db: Session, *, case: Case, billing_month: str) -> dict[str, Any]:
+def compose_master_sheet_row(
+    db: Session,
+    *,
+    case: Case,
+    billing_month: str,
+    parent_name: str | None = None,
+) -> dict[str, Any]:
     ym = billing_composer_service.normalize_billing_month(billing_month)
     therapist_id, therapist_name = _active_therapist(db, case.id)
     cm_name = "—"
@@ -421,6 +428,7 @@ def compose_master_sheet_row(db: Session, *, case: Case, billing_month: str) -> 
         "zohoId": _zoho_id(db, inv.id if inv else None),
         "clientName": case.child.full_name if case.child else "—",
         "childName": case.child.full_name if case.child else "—",
+        "parentName": (parent_name or "").strip() or "—",
         "therapistId": therapist_id,
         "therapistName": therapist_name,
         "serviceType": case.service_type,
@@ -505,9 +513,16 @@ def list_billing_readiness_master_sheet(
         )
 
     cases = list(db.scalars(stmt.limit(limit * 3)).all())
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
     items: list[dict[str, Any]] = []
     for case in cases:
-        row = compose_master_sheet_row(db, case=case, billing_month=ym)
+        parent_info = parents.get(case.child_id, {}) if case.child_id else {}
+        row = compose_master_sheet_row(
+            db,
+            case=case,
+            billing_month=ym,
+            parent_name=str(parent_info.get("parent_name") or ""),
+        )
         if client_type:
             ct = (client_type or "").strip().lower()
             if ct and ct not in (row.get("clientType") or "").lower():

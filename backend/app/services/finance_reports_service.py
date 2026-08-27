@@ -20,6 +20,7 @@ from app.models.invoice_manual_line import InvoiceManualLine
 from app.models.ledger_billing import BillableStatus, BillingLedger
 from app.models.user import User
 from app.services import billing_composer_service, client_billing_service, finance_payout_preview_service
+from app.services.reports_export_helpers import enrich_rows_with_case_identity
 
 
 REPORT_LABELS: dict[str, str] = {
@@ -54,7 +55,7 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
             .where(ClientInvoice.billing_month == ym)
             .order_by(ClientInvoice.id.desc())
         ).all()
-        return [
+        raw = [
             {
                 "invoiceId": r.id,
                 "invoiceNumber": r.invoice_number,
@@ -66,6 +67,7 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
             }
             for r in rows
         ]
+        return enrich_rows_with_case_identity(db, raw)
 
     if report_key == "outstanding":
         rows = db.scalars(
@@ -80,7 +82,7 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
                 )
             )
         ).all()
-        return [
+        raw = [
             {
                 "invoiceId": r.id,
                 "invoiceNumber": r.invoice_number,
@@ -92,19 +94,31 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
             }
             for r in rows
         ]
+        return enrich_rows_with_case_identity(db, raw)
 
     if report_key == "collections":
         rows = db.scalars(select(ClientPayment).order_by(ClientPayment.id.desc()).limit(500)).all()
-        return [
-            {
-                "paymentId": r.id,
-                "invoiceId": r.client_invoice_id,
-                "amountInr": float(r.amount_inr or 0),
-                "status": r.status.value if r.status else "",
-                "paidAt": r.paid_at.isoformat() if r.paid_at else "",
-            }
-            for r in rows
-        ]
+        invoice_ids = {r.client_invoice_id for r in rows if r.client_invoice_id}
+        invoices_by_id = {}
+        if invoice_ids:
+            invoices = db.scalars(
+                select(ClientInvoice).where(ClientInvoice.id.in_(invoice_ids))
+            ).all()
+            invoices_by_id = {inv.id: inv for inv in invoices}
+        raw = []
+        for r in rows:
+            inv = invoices_by_id.get(r.client_invoice_id)
+            raw.append(
+                {
+                    "paymentId": r.id,
+                    "invoiceId": r.client_invoice_id,
+                    "caseId": inv.case_id if inv else None,
+                    "amountInr": float(r.amount_inr or 0),
+                    "status": r.status.value if r.status else "",
+                    "paidAt": r.paid_at.isoformat() if r.paid_at else "",
+                }
+            )
+        return enrich_rows_with_case_identity(db, raw)
 
     if report_key == "therapist-payouts":
         rows = db.scalars(select(Invoice).order_by(Invoice.id.desc()).limit(500)).all()
@@ -145,19 +159,18 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         cases = billing_composer_service.list_composer_cases(
             db, billing_month=ym, queue="not_invoiced_this_month", limit=200
         )
-        out = []
+        raw = []
         for c in cases:
             if (c.get("ledgerReadyCount") or 0) == 0 and (c.get("sessionsCompletedThisMonth") or 0) > 0:
-                out.append(
+                raw.append(
                     {
                         "caseId": c["caseId"],
                         "caseCode": c.get("caseCode"),
-                        "childName": c.get("childName"),
                         "sessionsCompleted": c.get("sessionsCompletedThisMonth"),
                         "billingMonth": ym,
                     }
                 )
-        return out
+        return enrich_rows_with_case_identity(db, raw)
 
     if report_key == "manual-adjustments":
         client_lines = db.scalars(
@@ -166,19 +179,28 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
             ).limit(300)
         ).all()
         therapist_lines = db.scalars(select(InvoiceManualLine).limit(300)).all()
-        rows = []
+        client_invoice_ids = {ln.client_invoice_id for ln in client_lines if ln.client_invoice_id}
+        invoices_by_id = {}
+        if client_invoice_ids:
+            invoices = db.scalars(
+                select(ClientInvoice).where(ClientInvoice.id.in_(client_invoice_ids))
+            ).all()
+            invoices_by_id = {inv.id: inv for inv in invoices}
+        raw = []
         for ln in client_lines:
-            rows.append(
+            inv = invoices_by_id.get(ln.client_invoice_id)
+            raw.append(
                 {
                     "source": "client",
                     "lineId": ln.id,
                     "invoiceId": ln.client_invoice_id,
+                    "caseId": inv.case_id if inv else None,
                     "amountInr": float(ln.amount_inr or 0),
                     "type": ln.line_item_type or "",
                 }
             )
         for ln in therapist_lines:
-            rows.append(
+            raw.append(
                 {
                     "source": "therapist",
                     "lineId": ln.id,
@@ -187,7 +209,7 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
                     "type": "manual_line",
                 }
             )
-        return rows
+        return enrich_rows_with_case_identity(db, raw)
 
     if report_key == "revenue-by-service":
         rows = db.execute(
@@ -213,7 +235,7 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
 
         frozen = billing_period_snapshot_service.margin_rows_from_case_snapshots(db, ym)
         if frozen is not None:
-            return frozen
+            return enrich_rows_with_case_identity(db, frozen)
 
         from app.models.case import CaseStatus
         from app.services import billing_ledger_service
@@ -221,10 +243,10 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
         case_ids = db.scalars(
             select(Case.id).where(Case.status == CaseStatus.ACTIVE).limit(100)
         ).all()
-        out = []
+        raw = []
         for cid in case_ids:
             rec = billing_ledger_service.reconcile_month(db, case_id=cid, billing_month=ym)
-            out.append(
+            raw.append(
                 {
                     "caseId": rec["caseId"],
                     "clientTotalInr": rec["ledgerBillableTotalInr"],
@@ -233,7 +255,7 @@ def report_rows(db: Session, report_key: str, *, billing_month: str | None = Non
                     "sessionCount": rec["sessionCount"],
                 }
             )
-        return out
+        return enrich_rows_with_case_identity(db, raw)
 
     return []
 

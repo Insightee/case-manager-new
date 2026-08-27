@@ -24,7 +24,25 @@ def test_finance_report_monthly_billing_json():
     headers = _headers("finance@demo.com")
     r = client.get("/api/v1/admin/finance-reports/monthly-billing", headers=headers)
     assert r.status_code == 200
-    assert "rows" in r.json()
+    body = r.json()
+    assert "rows" in body
+    if body["rows"]:
+        row = body["rows"][0]
+        assert "Client Name" in row
+        assert "Parent Name" in row
+        assert "Case ID" in row
+
+
+def test_finance_report_ledger_missing_identity():
+    headers = _headers("finance@demo.com")
+    r = client.get(
+        "/api/v1/admin/finance-reports/ledger-missing?billing_month=2026-01",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    for row in r.json().get("rows") or []:
+        assert "Client Name" in row
+        assert "Parent Name" in row
 
 
 def test_finance_report_csv():
