@@ -25,7 +25,7 @@ from app.models.report import MonthlyReport, ObservationReport, ReportStatus
 from app.models.session import Session as TherapySession
 from app.models.session import SessionStatus
 from app.models.support_ticket import SupportTicket, TicketStatus
-from app.models.therapist_profile import TherapistProfile
+from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
 from app.models.user import User
 from app.models.visibility import VisibilityStatus
 from app.services.admin_iep_service import _derive_iep_status
@@ -546,6 +546,7 @@ def build_therapist_rows(
             db.scalars(
                 select(TherapistProfile)
                 .options(selectinload(TherapistProfile.user))
+                .where(TherapistProfile.status != TherapistProfileStatus.DELETED)
                 .order_by(TherapistProfile.id)
             ).all()
         )

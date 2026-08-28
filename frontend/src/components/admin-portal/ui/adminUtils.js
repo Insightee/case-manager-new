@@ -10,6 +10,9 @@ const STATUS_LABELS = {
   APPROVED: 'Approved',
   REJECTED: 'Rejected',
   DRAFT: 'Draft',
+  PAUSED: 'Paused',
+  DELETED: 'Deleted',
+  NEEDS_LISTING: 'Needs listing',
   PAID: 'Paid',
 }
 
@@ -23,7 +26,7 @@ export function statusTone(status) {
   const key = String(status || '').toUpperCase()
   if (['ACTIVE', 'APPROVED', 'PAID', 'RESOLVED', 'CLOSED'].includes(key)) return 'success'
   if (['PENDING_ALLOTMENT', 'UNDER_REVIEW', 'IN_REVIEW', 'OPEN', 'IN_PROGRESS', 'DRAFT'].includes(key)) return 'warning'
-  if (['SUSPENDED', 'REJECTED', 'QUERIED'].includes(key)) return 'danger'
+  if (['SUSPENDED', 'REJECTED', 'QUERIED', 'DELETED'].includes(key)) return 'danger'
   return 'neutral'
 }
 

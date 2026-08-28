@@ -811,7 +811,7 @@ export function AdminPeoplePage() {
                                       </Link>
                                     ) : (
                                       <Link to={`/admin/therapist-profiles?user_id=${u.id}`} className="admin-muted">
-                                        No profile
+                                        Needs listing
                                       </Link>
                                     )}
                                   </td>
@@ -866,7 +866,7 @@ export function AdminPeoplePage() {
                                     {prof ? (
                                       <StatusBadge status={profileStatus} />
                                     ) : (
-                                      <span className="admin-muted">No profile</span>
+                                      <span className="admin-muted">Needs listing</span>
                                     )}
                                   </>
                                 }

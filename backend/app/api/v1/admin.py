@@ -112,6 +112,7 @@ from app.core.rbac_access import (
     sync_user_access_fields,
 )
 from app.services import auth_service, case_service, log_service, therapist_profile_service as profile_svc
+from app.services.therapist_profile_backfill_service import backfill_deleted_profiles_from_audit
 from app.services import therapist_profile_export_service as therapist_profile_export_svc
 from app.services.admin_scope_service import apply_case_scope, case_row_scope_clause
 from app.services import therapist_review_service as review_svc
@@ -2271,32 +2272,34 @@ def therapist_profiles_summary(
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
-    from app.models.role import Role
-
-    profiles = profile_svc.list_profiles(db, None)
-    therapists = db.scalars(
-        select(User).join(User.roles).where(Role.name == RoleName.THERAPIST.value)
-    ).all()
-    therapist_ids = {t.id for t in therapists}
-    profile_user_ids = {p.user_id for p in profiles}
-    counts = profile_svc.profile_summary_counts(profiles)
-    no_profile = len(therapist_ids - profile_user_ids)
-    return {**counts, "no_profile": no_profile, "total": len(profiles)}
+    backfill_deleted_profiles_from_audit(db)
+    db.commit()
+    counts = profile_svc.profile_summary_counts(db)
+    counts["no_profile"] = counts.get("needs_listing", 0)
+    return counts
 
 
 @router.get("/therapist-profiles", response_model=list[TherapistProfileRead])
 def list_therapist_profiles(
     status: Optional[str] = None,
+    activity: Optional[str] = Query(None, description="Activity filter, e.g. no_sessions_15d"),
     user: User = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
+    from app.services.therapist_profile_service import NEEDS_LISTING_STATUS
+
+    if status == NEEDS_LISTING_STATUS:
+        users = profile_svc.list_needs_listing_users(db)
+        items = [profile_svc.needs_listing_to_dict(u) for u in users]
+        return [TherapistProfileRead(**row) for row in profile_svc.enrich_profile_dicts(db, items)]
+
     st = TherapistProfileStatus(status) if status else None
-    profiles = profile_svc.list_profiles(db, st)
-    result = []
+    profiles = profile_svc.list_profiles(db, st, activity=activity)
+    items = []
     for p in profiles:
         u = db.get(User, p.user_id)
-        result.append(TherapistProfileRead(**profile_svc.profile_to_dict(p, u)))
-    return result
+        items.append(profile_svc.profile_to_dict(p, u))
+    return [TherapistProfileRead(**row) for row in profile_svc.enrich_profile_dicts(db, items)]
 
 
 @router.get("/therapist-profiles/export.csv")
@@ -2332,15 +2335,16 @@ def admin_create_therapist_profile(
     if RoleName.THERAPIST.value not in target.role_names:
         raise HTTPException(status_code=400, detail="User is not a therapist")
     existing = db.scalars(select(TherapistProfile).where(TherapistProfile.user_id == payload.user_id)).first()
-    if existing:
+    if existing and existing.status != TherapistProfileStatus.DELETED:
         raise HTTPException(status_code=400, detail="Profile already exists for this therapist")
-    profile = TherapistProfile(user_id=payload.user_id)
+    profile = existing if existing and existing.status == TherapistProfileStatus.DELETED else TherapistProfile(user_id=payload.user_id)
     profile_svc.apply_profile_fields(profile, payload.model_dump(exclude={"user_id", "status"}), db)
     try:
         st = TherapistProfileStatus(payload.status or "APPROVED")
     except ValueError:
         st = TherapistProfileStatus.APPROVED
     profile.status = st
+    profile.deleted_at = None
     profile.reviewed_by_user_id = user.id
     profile.reviewed_at = datetime.now(timezone.utc)
     if st == TherapistProfileStatus.APPROVED:
@@ -2472,13 +2476,54 @@ def admin_delete_therapist_profile(
     user: User = Depends(require_mutation_permission("user.manage")),
     db: Session = Depends(get_db),
 ):
+    from app.services.therapist_profile_backfill_service import audit_delete_snapshot
+
     profile = db.get(TherapistProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+    if profile.status == TherapistProfileStatus.DELETED:
+        return None
     meta = get_request_meta(request)
-    log_audit(db, actor_user_id=user.id, action="delete", entity_type="therapist_profile", entity_id=profile_id, **meta)
-    db.delete(profile)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="delete",
+        entity_type="therapist_profile",
+        entity_id=profile_id,
+        old_value=audit_delete_snapshot(profile),
+        **meta,
+    )
+    profile_svc.soft_delete_profile(profile)
     db.commit()
+
+
+@router.post("/therapist-profiles/{profile_id}/restore", response_model=TherapistProfileRead)
+def admin_restore_therapist_profile(
+    profile_id: int,
+    request: Request,
+    user: User = Depends(require_mutation_permission("user.manage")),
+    db: Session = Depends(get_db),
+):
+    profile = db.get(TherapistProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if profile.status != TherapistProfileStatus.DELETED:
+        raise HTTPException(status_code=400, detail="Profile is not deleted")
+    profile_svc.restore_profile(profile)
+    profile.reviewed_by_user_id = user.id
+    profile.reviewed_at = datetime.now(timezone.utc)
+    meta = get_request_meta(request)
+    log_audit(
+        db,
+        actor_user_id=user.id,
+        action="restore_profile",
+        entity_type="therapist_profile",
+        entity_id=profile_id,
+        **meta,
+    )
+    db.commit()
+    db.refresh(profile)
+    return TherapistProfileRead(**profile_svc.profile_to_dict(profile, db.get(User, profile.user_id)))
 
 
 # --- Case allotment & families ---

@@ -1231,6 +1231,7 @@ def test_therapist_profiles_summary():
     assert summary.status_code == 200
     body = summary.json()
     assert "PENDING" in body
+    assert "needs_listing" in body
     assert "no_profile" in body
 
 
