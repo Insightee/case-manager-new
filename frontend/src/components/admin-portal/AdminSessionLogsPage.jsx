@@ -580,7 +580,33 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                       className="sessions-dash__session-card"
                       highlight={isHighlight}
                       title={titleParts.join(' · ')}
-                      meta={[s.case_code, s.child_name, s.therapist_name].filter(Boolean).join(' · ') || '—'}
+                      meta={
+                        <>
+                          <span className="sessions-dash__card-meta-line">
+                            {[s.case_code, s.child_name, s.therapist_name].filter(Boolean).join(' · ') || '—'}
+                          </span>
+                          <span className="sessions-dash__card-facts">
+                            <span className="sessions-dash__card-fact">
+                              <span className="sessions-dash__card-fact-label">Programme</span>
+                              {row.productLabel ? (
+                                <span className="admin-chip admin-chip--sm">{row.productLabel}</span>
+                              ) : (
+                                <span>—</span>
+                              )}
+                            </span>
+                            <span className="sessions-dash__card-fact">
+                              <span className="sessions-dash__card-fact-label">Location</span>
+                              <span>{row.modeLabel || '—'}</span>
+                            </span>
+                            {row.durationLabel ? (
+                              <span className="sessions-dash__card-fact">
+                                <span className="sessions-dash__card-fact-label">Duration</span>
+                                <span>{row.durationLabel}</span>
+                              </span>
+                            ) : null}
+                          </span>
+                        </>
+                      }
                       badges={
                         <>
                           <StatusBadge status={s.status} />
@@ -623,28 +649,7 @@ function SessionsTab({ sessions, filters, highlightSessionId, onRefresh }) {
                           </>
                         ) : null
                       }
-                    >
-                      <div className="sessions-dash__card-facts">
-                        <div className="sessions-dash__card-fact">
-                          <span className="sessions-dash__card-fact-label">Programme</span>
-                          {row.productLabel ? (
-                            <span className="admin-chip admin-chip--sm">{row.productLabel}</span>
-                          ) : (
-                            <span>—</span>
-                          )}
-                        </div>
-                        <div className="sessions-dash__card-fact">
-                          <span className="sessions-dash__card-fact-label">Location</span>
-                          <span>{row.modeLabel || '—'}</span>
-                        </div>
-                        {row.durationLabel ? (
-                          <div className="sessions-dash__card-fact">
-                            <span className="sessions-dash__card-fact-label">Duration</span>
-                            <span>{row.durationLabel}</span>
-                          </div>
-                        ) : null}
-                      </div>
-                    </AdminTaskCard>
+                    />
                   </li>
                 )
               })}

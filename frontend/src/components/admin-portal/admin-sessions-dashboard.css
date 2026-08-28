@@ -173,6 +173,14 @@
   font-size: 0.75rem;
   color: #64748b;
   line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.sessions-dash__card-meta-line {
+  color: #64748b;
 }
 
 .sessions-dash__session-card .admin-task-card__badges {
@@ -182,20 +190,6 @@
   flex-shrink: 0;
   justify-content: flex-end;
   max-width: 52%;
-}
-
-.sessions-dash__session-card .admin-task-card__details {
-  display: block;
-  order: 2;
-}
-
-.sessions-dash__session-card .admin-task-card__details > summary {
-  display: none;
-}
-
-.sessions-dash__session-card .admin-task-card__details > .admin-task-card__body {
-  display: block !important;
-  margin-top: 0;
 }
 
 .sessions-dash__card-facts {
