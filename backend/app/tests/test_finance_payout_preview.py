@@ -350,6 +350,10 @@ def test_finance_payout_preview_report_json():
     if body["rows"]:
         row = body["rows"][0]
         assert "Case ID" in row
+        assert "Client Name" in row
+        assert "Parent Name" in row
+        keys = list(row.keys())
+        assert keys.index("Parent Name") == keys.index("Client Name") + 1
         assert "Therapist Start Date" in row
         assert "Case Start Date" in row
         assert "Case End Date" in row

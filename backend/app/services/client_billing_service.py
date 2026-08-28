@@ -1847,6 +1847,10 @@ def create_draft_from_case_defaults(
     if case.package_amount_inr and float(case.package_amount_inr) > 0:
         amount = float(case.package_amount_inr)
         line_type = "PACKAGE_CHARGE"
+    elif case.client_monthly_rate_inr and float(case.client_monthly_rate_inr) > 0:
+        amount = float(case.client_monthly_rate_inr)
+        line_type = "MONTHLY_CHARGE"
+        invoice_type = "MONTHLY_FIXED"
     elif case.client_rate_per_session_inr and float(case.client_rate_per_session_inr) > 0:
         amount = float(case.client_rate_per_session_inr)
         line_type = "SESSION_CHARGE"

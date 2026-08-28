@@ -150,17 +150,24 @@ export function lineTypeLabel(type) {
 // therapist only ever sees their own share — never client-side money.
 export function billingSummary(b) {
   if (!b?.billing_type) return 'Billing not configured'
-  const share = b.pay_share_amount_inr || 0
+  const lump =
+    (b.therapist_fixed_pay_inr != null && Number(b.therapist_fixed_pay_inr) > 0
+      ? Number(b.therapist_fixed_pay_inr)
+      : null) ??
+    (b.pay_share_amount_inr != null ? Number(b.pay_share_amount_inr) : 0) ??
+    0
   if (b.billing_type === 'PER_SESSION') {
     const clientPart =
       b.client_rate_per_session_inr != null ? `₹${b.client_rate_per_session_inr}/session · ` : ''
-    return `${clientPart}₹${share} therapist share`
+    return `${clientPart}₹${lump} therapist pay`
   }
-  if (b.compensation_mode === 'FIXED_LUMP') {
-    return `Package ${b.package_session_count} sessions · ₹${b.therapist_fixed_pay_inr} fixed pay`
+  if (b.billing_type === 'MONTHLY_FIXED') {
+    const clientPart =
+      b.client_monthly_rate_inr != null ? `₹${b.client_monthly_rate_inr}/month · ` : ''
+    return `${clientPart}₹${lump} therapist pay`
   }
   const clientPart = b.package_amount_inr != null ? `₹${b.package_amount_inr} · ` : ''
-  return `Package ${b.package_session_count} sessions · ${clientPart}₹${share} therapist share`
+  return `Package ${b.package_session_count || '—'} sessions · ${clientPart}₹${lump} therapist pay`
 }
 
 // Deduction lines we intend to show but for which no rule is configured yet.

@@ -6,7 +6,12 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.billing_validation import apply_billing_payload, case_billing_dict
+from app.core.billing_validation import (
+    apply_billing_payload,
+    case_billing_dict,
+    needs_low_share_review,
+    resolve_therapist_pay,
+)
 from app.core.config import settings
 from app.models.billing_approval_request import BillingApprovalRequest, BillingApprovalStatus
 from app.models.case import BillingType, Case, CompensationMode
@@ -35,13 +40,7 @@ def projected_profit_inr(billing: dict) -> Decimal:
     else:
         return Decimal("0")
 
-    compensation_mode = billing.get("compensation_mode")
-    if hasattr(compensation_mode, "value"):
-        compensation_mode = compensation_mode.value
-    if compensation_mode == CompensationMode.FIXED_LUMP.value:
-        therapist_amount = _money(billing.get("therapist_fixed_pay_inr"))
-    else:
-        therapist_amount = _money(billing.get("pay_share_amount_inr"))
+    therapist_amount = _money(resolve_therapist_pay(billing))
     return (client_amount - therapist_amount).quantize(Decimal("0.01"))
 
 
@@ -80,7 +79,10 @@ def is_designated_approver(db: Session, user: User) -> bool:
 
 
 def requires_approval(billing: dict) -> bool:
-    return projected_profit_inr(billing) < Decimal(str(settings.billing_minimum_profit_inr))
+    if projected_profit_inr(billing) < Decimal(str(settings.billing_minimum_profit_inr)):
+        return True
+    # Homecare therapist share under 20% of client amount → review queue.
+    return needs_low_share_review(billing)
 
 
 def stamp_read(payload: dict, row: BillingApprovalRequest | None) -> dict:

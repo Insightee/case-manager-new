@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import extract, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.billing_validation import resolve_therapist_pay
 from app.models.assignment import CaseAssignment, CaseAssignmentStatus
 from app.models.case import BillingType, Case, CaseStatus, CompensationMode
 from app.models.case_therapist_transition import CaseTherapistTransitionDay
@@ -20,11 +21,13 @@ from app.models.user import User
 from app.services import case_service, leave_policy_service
 from app.services.reports_export_helpers import (
     MAX_EXPORT_ROWS,
+    case_people_export_fields,
     is_homecare_case,
     is_shadow_case,
     leave_days_in_month_for_case,
     month_bounds,
     month_long_label,
+    parent_by_child,
     scoped_cases,
     user_display_name,
 )
@@ -43,10 +46,8 @@ def uses_calendar_day_pay(case: Case) -> bool:
 
 
 def therapist_share_inr(case: Case) -> float:
-    """Monthly or per-session therapist share configured on the case."""
-    if case.compensation_mode == CompensationMode.FIXED_LUMP:
-        return float(case.therapist_fixed_pay_inr or 0)
-    return float(case.pay_share_amount_inr or 0)
+    """Monthly or per-session therapist share configured on the case (INR lumpsum)."""
+    return resolve_therapist_pay(case)
 
 
 def client_lumpsum_inr(case: Case) -> float | None:
@@ -881,6 +882,7 @@ def payout_preview_row(
     pending_sessions: int = 0,
     pending_absence: int = 0,
     leave_taken: int | None = None,
+    parent_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     share = therapist_share_inr(case)
     lumpsum = client_lumpsum_inr(case)
@@ -907,6 +909,9 @@ def payout_preview_row(
         "Month": month_long_label(ym),
         "Case ID": export_case_id(case),
         "Client Name": case_service.case_child_display_name(case) or "",
+        "Parent Name": case_people_export_fields(
+            case, parent_info=parent_info, include_therapist=False
+        )["Parent Name"],
         "Therapist Name": user_display_name(therapist),
         "Therapist ID": export_therapist_id(therapist),
         "Service Type": case.service_type or case.product_module or "",
@@ -949,6 +954,7 @@ def payout_preview_rows(
     if not cases:
         return []
 
+    parents = parent_by_child(db, {c.child_id for c in cases if c.child_id})
     rows: list[dict[str, Any]] = []
     start, end = month_bounds(ym)
     for case in cases[:MAX_EXPORT_ROWS]:
@@ -1013,6 +1019,7 @@ def payout_preview_rows(
                     pending_sessions=pending_sessions,
                     pending_absence=pending_absence,
                     leave_taken=leave_taken,
+                    parent_info=parents.get(case.child_id) if case.child_id else None,
                 )
             )
 

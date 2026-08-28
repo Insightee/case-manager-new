@@ -277,12 +277,14 @@ def run(*, force: bool = False) -> dict:
             case.client_rate_per_session_inr = rate
             case.package_amount_inr = package_amount
             case.package_session_count = package_sessions
-            case.compensation_mode = CompensationMode.PERCENTAGE
+            case.compensation_mode = CompensationMode.FIXED_LUMP
             if no_ratio:
                 case.pay_share_amount_inr = None
                 case.therapist_fixed_pay_inr = None
             else:
-                case.pay_share_amount_inr = pay_share or (rate * 0.6 if rate else 6000)
+                lump = pay_share if pay_share is not None else (rate * 0.6 if rate else 6000)
+                case.therapist_fixed_pay_inr = lump
+                case.pay_share_amount_inr = lump
             db.flush()
             ensure_active_case_assignment(
                 db,

@@ -13,6 +13,7 @@ from app.schemas.billing import CaseBillingFields
 
 
 class CaseServiceAddressFields(BaseModel):
+    service_location_type: Optional[str] = None
     service_address_line1: Optional[str] = None
     service_address_line2: Optional[str] = None
     service_city: Optional[str] = None

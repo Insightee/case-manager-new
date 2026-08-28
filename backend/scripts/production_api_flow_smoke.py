@@ -80,10 +80,11 @@ def main() -> None:
                 "service_type": "Homecare",
                 "product_module": "homecare",
                 "billing_type": "PER_SESSION",
-                "compensation_mode": "PERCENTAGE",
+                "compensation_mode": "FIXED_LUMP",
                 "client_billing_mode": "POSTPAID",
                 "client_rate_per_session_inr": 1200,
-                "pay_share_pct": 60,
+                "therapist_fixed_pay_inr": 720,
+                "pay_share_amount_inr": 720,
                 "therapist_user_id": therapist_id,
             },
         )

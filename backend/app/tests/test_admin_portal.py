@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 
+import openpyxl
 import pytest
 from fastapi.testclient import TestClient
 
@@ -568,6 +570,16 @@ def test_admin_reports_case_filter_and_exports():
     xlsx = client.get("/api/v1/admin/reports/export/xlsx?queue_only=true", headers=headers)
     assert xlsx.status_code == 200
     assert "spreadsheetml" in xlsx.headers.get("content-type", "")
+    wb = openpyxl.load_workbook(BytesIO(xlsx.content), read_only=True, data_only=True)
+    header = None
+    for row in wb.active.iter_rows(values_only=True):
+        values = [str(c) if c is not None else "" for c in row]
+        if "Child" in values and "Case" in values:
+            header = values
+            break
+    assert header is not None
+    assert "Parent" in header
+    assert header.index("Parent") == header.index("Child") + 1
 
     pdf = client.get("/api/v1/admin/reports/export/pdf", headers=headers)
     assert pdf.status_code == 200

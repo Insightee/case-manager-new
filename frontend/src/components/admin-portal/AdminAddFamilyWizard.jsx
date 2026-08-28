@@ -18,11 +18,10 @@ const EMPTY_BILLING = {
   billing_type: 'PER_SESSION',
   client_billing_mode: 'POSTPAID',
   client_rate_per_session_inr: '1000',
-  pay_share_pct: '60',
+  therapist_fixed_pay_inr: '600',
   package_session_count: '12',
   package_amount_inr: '12000',
-  compensation_mode: 'PERCENTAGE',
-  therapist_fixed_pay_inr: '',
+  compensation_mode: 'FIXED_LUMP',
 }
 
 const EMPTY_CHILD = { first_name: '', last_name: '', date_of_birth: '' }
@@ -208,8 +207,9 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
       product_module: productModule,
       billing_type: billing.billing_type,
       client_billing_mode: billing.client_billing_mode,
-      compensation_mode: billing.compensation_mode,
-      pay_share_pct: Number(billing.pay_share_pct),
+      compensation_mode: 'FIXED_LUMP',
+      therapist_fixed_pay_inr: Number(billing.therapist_fixed_pay_inr),
+      pay_share_amount_inr: Number(billing.therapist_fixed_pay_inr),
       therapist_user_id: Number(therapistId),
     }
     if (productRequiresDayType(productModule)) {
@@ -655,16 +655,15 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
                 />
               </label>
               <label>
-                Therapist share %
+                Therapist pay (lumpsum, INR)
                 <input
                   type="number"
-                  min="50"
-                  max="100"
+                  min="0"
                   step="0.01"
                   inputMode="decimal"
                   className="admin-input"
-                  value={billing.pay_share_pct}
-                  onChange={(e) => setBill('pay_share_pct', e.target.value)}
+                  value={billing.therapist_fixed_pay_inr}
+                  onChange={(e) => setBill('therapist_fixed_pay_inr', e.target.value)}
                 />
               </label>
             </>
@@ -686,6 +685,18 @@ export function AdminAddFamilyWizard({ onComplete, onCancel }) {
                   className="admin-input"
                   value={billing.package_amount_inr}
                   onChange={(e) => setBill('package_amount_inr', e.target.value)}
+                />
+              </label>
+              <label>
+                Therapist pay (lumpsum, INR)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  className="admin-input"
+                  value={billing.therapist_fixed_pay_inr}
+                  onChange={(e) => setBill('therapist_fixed_pay_inr', e.target.value)}
                 />
               </label>
             </>

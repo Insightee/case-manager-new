@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { AddressFormFields, addressToPayload, emptyAddress } from '../shared/AddressFormFields.jsx'
-import { TherapistCompensationFields, buildTherapistCompensationPayload } from './TherapistCompensationFields.jsx'
 
 const EMPTY = {
   case_code: '',
@@ -9,11 +8,10 @@ const EMPTY = {
   product_module: 'homecare',
   billing_type: 'PER_SESSION',
   client_rate_per_session_inr: '1000',
-  pay_share_amount_inr: '600',
+  therapist_fixed_pay_inr: '600',
   package_session_count: '',
   package_amount_inr: '',
-  compensation_mode: 'PERCENTAGE',
-  therapist_fixed_pay_inr: '',
+  compensation_mode: 'FIXED_LUMP',
 }
 
 function servicePayload(addr) {
@@ -53,14 +51,16 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
     setSaving(true)
     setError('')
     try {
+      const lump = Number(form.therapist_fixed_pay_inr)
       const payload = {
         case_code: form.case_code.trim(),
         child_id: Number(form.child_id),
         service_type: form.service_type.trim(),
         product_module: form.product_module,
         billing_type: form.billing_type,
-        compensation_mode: form.compensation_mode,
-        pay_share_amount_inr: Number(form.pay_share_amount_inr),
+        compensation_mode: 'FIXED_LUMP',
+        therapist_fixed_pay_inr: lump,
+        pay_share_amount_inr: lump,
       }
       if (form.billing_type === 'PER_SESSION') {
         payload.client_rate_per_session_inr = Number(form.client_rate_per_session_inr)
@@ -75,7 +75,7 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
       setForm(EMPTY)
       setServiceAddr(emptyAddress())
     } catch (err) {
-      setError(err.message || 'Could not create case')
+      setError(err.message || 'Looks like we still need a few details before we can save this.')
     } finally {
       setSaving(false)
     }
@@ -125,16 +125,10 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
         </div>
       ) : null}
       {form.billing_type === 'PER_SESSION' ? (
-        <>
-          <label>
-            Rate / session (INR)
-            <input type="number" required value={form.client_rate_per_session_inr} onChange={(e) => setField('client_rate_per_session_inr', e.target.value)} />
-          </label>
-          <label>
-            Therapist share (INR)
-            <input type="number" min="0" step="0.01" inputMode="decimal" required value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
-          </label>
-        </>
+        <label>
+          Rate / session (INR)
+          <input type="number" required value={form.client_rate_per_session_inr} onChange={(e) => setField('client_rate_per_session_inr', e.target.value)} />
+        </label>
       ) : (
         <>
           <label>
@@ -145,26 +139,20 @@ export function AdminCreateCaseForm({ cases, onCreated, onCancel }) {
             Package amount (INR)
             <input type="number" required value={form.package_amount_inr} onChange={(e) => setField('package_amount_inr', e.target.value)} />
           </label>
-          <label>
-            Compensation
-            <select value={form.compensation_mode} onChange={(e) => setField('compensation_mode', e.target.value)}>
-              <option value="PERCENTAGE">Percentage</option>
-              <option value="FIXED_LUMP">Fixed lump</option>
-            </select>
-          </label>
-          {form.compensation_mode === 'PERCENTAGE' ? (
-            <label>
-              Therapist share (INR)
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={form.pay_share_amount_inr} onChange={(e) => setField('pay_share_amount_inr', e.target.value)} />
-            </label>
-          ) : (
-            <label>
-              Therapist fixed pay (INR)
-              <input type="number" value={form.therapist_fixed_pay_inr} onChange={(e) => setField('therapist_fixed_pay_inr', e.target.value)} />
-            </label>
-          )}
         </>
       )}
+      <label>
+        Therapist pay (lumpsum, INR)
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          required
+          value={form.therapist_fixed_pay_inr}
+          onChange={(e) => setField('therapist_fixed_pay_inr', e.target.value)}
+        />
+      </label>
       <div style={{ display: 'flex', gap: 8, gridColumn: '1 / -1' }}>
         <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={saving}>
           {saving ? 'Creating…' : 'Create case'}

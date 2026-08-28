@@ -412,6 +412,8 @@ def download_monthly_report_pdf(
         child_name,
         generated_by=meta["generated_by"],
         generated_at=meta["generated_at"],
+        db=db,
+        child_id=case.child_id,
     )
     safe = (report.month or "report").replace(" ", "_")[:40]
     return Response(
@@ -721,6 +723,8 @@ def download_observation_report_pdf(
         child_name,
         generated_by=meta["generated_by"],
         generated_at=meta["generated_at"],
+        db=db,
+        child_id=case.child_id,
     )
     safe = (report.title or "report").replace(" ", "_")[:40]
     return Response(
