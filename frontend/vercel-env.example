@@ -1,6 +1,10 @@
 # Vercel project: insightes-projects / frontend
 # Production: VITE_API_URL only — billing gated in code on insighte.org (reports + revamp are live)
 # Preview/Staging: add VITE_APP_ENV=staging, VITE_ENABLE_CLIENT_BILLING=true
+# Finance Control Tower + snapshot: defaults ON in non-prod when VITE_ENABLE_FINANCE_DASHBOARD_V1 is unset.
+# Canonical production stays off unless both are set (deliberate cutover):
+#   VITE_ENABLE_FINANCE_DASHBOARD_V1=true
+#   VITE_FINANCE_DASHBOARD_ALLOW_PROD=true
 # Hide reports / use legacy reports UI: VITE_ENABLE_REPORTS=false or VITE_REPORTS_REVAMP=false
 # (legacy VITE_ENABLE_BILLING still accepted for one release)
 # Structured session evidence: VITE_ENABLE_STRUCTURED_EVIDENCE=true (also set backend ENABLE_STRUCTURED_EVIDENCE)
