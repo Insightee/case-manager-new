@@ -177,7 +177,7 @@ def enqueue_email_event(
                 prep.status,
                 prep.reason,
             )
-            return prep.email_log_id
+            return None
         background_tasks.add_task(_deliver_email_log, prep.email_log_id)
         return prep.email_log_id
 

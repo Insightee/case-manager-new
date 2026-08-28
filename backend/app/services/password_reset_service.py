@@ -191,10 +191,11 @@ def request_password_reset(
     ).first()
     if not user:
         return None
-    record_rate_limit_hit(email_l)
-    plain, token_id = get_or_create_reset_token(db, user)
+    # Explicit forgot-password requests always mint a fresh token and bypass template dedupe
+    # so repeat clicks deliver a new email instead of silently reusing a prior send.
+    plain, token_id = get_or_create_reset_token(db, user, force_new=True)
     reset_url = f"{settings.frontend_url.rstrip('/')}/reset-password/{plain}"
-    return enqueue_password_reset_email(
+    log_id = enqueue_password_reset_email(
         background_tasks,
         db,
         to=user.email,
@@ -202,7 +203,11 @@ def request_password_reset(
         reset_url=reset_url,
         expires_hours=settings.password_reset_expire_hours,
         entity_id=token_id,
+        force_resend=True,
     )
+    if log_id is not None:
+        record_rate_limit_hit(email_l)
+    return log_id
 
 
 def reset_password(db: Session, plain_token: str, new_password: str) -> User:
