@@ -88,8 +88,27 @@ export const ENABLE_BILLING = readClientBillingVisibilityFlag()
 /** Parent + therapist billing surfaces (visibility only; liveness from runtime-config). */
 export const ENABLE_CLIENT_BILLING = ENABLE_BILLING
 
-/** Stage 1 read-only Finance Control Tower (admin overview). Off on canonical production. */
-export const ENABLE_FINANCE_DASHBOARD_V1 = readClientModuleFlag('VITE_ENABLE_FINANCE_DASHBOARD_V1')
+/**
+ * Stage 1 read-only Finance Control Tower (admin overview / snapshot).
+ * Non-production: on by default when unset (rolloutDefault), or when
+ * VITE_ENABLE_FINANCE_DASHBOARD_V1=true. Explicit false always wins.
+ * Canonical production: stays off unless both
+ * VITE_ENABLE_FINANCE_DASHBOARD_V1=true and VITE_FINANCE_DASHBOARD_ALLOW_PROD=true.
+ */
+function readFinanceDashboardV1Flag() {
+  const enableRaw = import.meta.env.VITE_ENABLE_FINANCE_DASHBOARD_V1
+  if (enableRaw === 'false') return false
+
+  if (isCanonicalProductionFrontend()) {
+    const allowProd = import.meta.env.VITE_FINANCE_DASHBOARD_ALLOW_PROD === 'true'
+    return allowProd && enableRaw === 'true'
+  }
+
+  return readEnvFlag('VITE_ENABLE_FINANCE_DASHBOARD_V1', { rolloutDefault: true })
+}
+
+/** Stage 1 read-only Finance Control Tower (admin overview). */
+export const ENABLE_FINANCE_DASHBOARD_V1 = readFinanceDashboardV1Flag()
 
 /** Goal bank, strategy pool, review queue, clinical AI assist */
 export const ENABLE_CLINICAL_BRAIN = readEnvFlag('VITE_ENABLE_CLINICAL_BRAIN')

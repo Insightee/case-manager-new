@@ -1,16 +1,14 @@
 ## [Unreleased]
 
 ### Added
-<<<<<<< HEAD
 - Admin Service profiles: soft-delete therapist listings (`DELETED` + restore), **Needs listing** / **Deleted** / **No logs 15d** filters and KPIs, audit backfill for historically hard-deleted profiles. Alembic `a8b9c0d1e2f3` → `j0merge2therapist`.
-=======
 - Cloud Agent dev environment config (`.cursor/environment.json` + `scripts/cloud-agent-install.sh`): reproducible SQLite-based local stack (no Docker/Postgres/Redis needed) that installs backend + frontend deps, seeds the demo database on first run, and starts the FastAPI API (`:8000`) and Vite dev server (`:5173`).
->>>>>>> origin/main
 - HR report exports include **Child Name**, **Parent Name**, **Therapist Name**, and **Therapist ID** (with Case ID) on all case-linked reports so rows are readable without looking up IDs alone. Downloads are date-stamped (`report-key-YYYY-MM-DD`) and XLSX/PDF titles include the generation date.
 - Bulk attendance and monthly session summary split mid-month therapist replacements into separate case×assignment rows with **Assignment Start** / **Assignment End** (session metrics scoped to each window).
 - Secure external integration layer (read-only): machine principals (`integration_clients` / credentials / case grants), short-lived scoped JWTs, masked `/api/v1/integrations/v1/*` APIs, admin client management, audit with `integration_client_id`, and remote MCP Streamable HTTP at `/mcp`. Alembic `i0merge1integration` → `i1integr2api3layer`.
 
 ### Changed
+- Finance snapshot + Control Tower: non-production builds default the Stage 1 dashboard on when `VITE_ENABLE_FINANCE_DASHBOARD_V1` is unset; canonical production stays gated unless both that flag and `VITE_FINANCE_DASHBOARD_ALLOW_PROD` are true. Empty-state copy clarifies this is an environment gate, not a broken invoices screen.
 - HR report column label **Client Name** renamed to **Child Name** on case-linked operational and legacy exports for clearer identification (CSV/JSON column order also places Child/Parent/Therapist identity columns together near Case ID).
 - Therapist invoices and client period charges use the payout-report cycle engine (gross, no TDS). Homecare bills approved sessions at allotment rates; shadow/B2B bills the same calendar days as therapist pay. Transition pay is therapist-only. Build from ledger posts those period charges when the ledger is empty; finance composer payout matches the therapist invoice.
 - Finance workspace: **Client invoices** and **Therapist payouts** are parallel money-in / money-out screens for every admin with billing access (no separate Finance home). Client invoices bill system gross; optional TDS is recorded when the payer withholds it. Therapist payouts show gross → TDS → net, raise-on-behalf, notes, and month records. Finance reports stay in the sidebar.
