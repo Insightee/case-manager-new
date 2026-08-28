@@ -15,8 +15,8 @@ export async function loadStaffTicketDetail(ticketId) {
 
 const STATUS_META = {
   OPEN: { label: 'Open', bg: '#fef3c7', color: '#b45309' },
-  IN_PROGRESS: { label: 'In review', bg: '#dbeafe', color: '#1d4ed8' },
-  RESOLVED: { label: 'Resolved', bg: '#d1fae5', color: '#047857' },
+  IN_PROGRESS: { label: 'In progress', bg: '#dbeafe', color: '#1d4ed8' },
+  RESOLVED: { label: 'Closed', bg: '#d1fae5', color: '#047857' },
   CLOSED: { label: 'Closed', bg: '#f1f5f9', color: '#64748b' },
 }
 
@@ -268,8 +268,7 @@ export function TicketDetailPanel({ ticket, onUpdated, showResolve = false, apiB
 
   const statusMenuItems = [
     { key: 'OPEN', label: 'Open', onClick: () => handleStatusPick('OPEN') },
-    { key: 'IN_PROGRESS', label: 'In review', onClick: () => handleStatusPick('IN_PROGRESS') },
-    { key: 'RESOLVED', label: 'Resolved', onClick: () => handleStatusPick('RESOLVED') },
+    { key: 'IN_PROGRESS', label: 'In progress', onClick: () => handleStatusPick('IN_PROGRESS') },
     { key: 'CLOSED', label: 'Closed', onClick: () => handleStatusPick('CLOSED') },
   ]
 

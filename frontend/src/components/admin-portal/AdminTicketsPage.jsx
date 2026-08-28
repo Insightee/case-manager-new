@@ -180,7 +180,7 @@ export function AdminTicketsPage({ embedded = false }) {
         <option value="ALL">All</option>
         <option value="OPEN">Open</option>
         <option value="IN_PROGRESS">In progress</option>
-        <option value="RESOLVED">Resolved</option>
+        <option value="CLOSED">Closed</option>
       </select>
       <ServiceFilterSelect
         className="admin-search__input"
