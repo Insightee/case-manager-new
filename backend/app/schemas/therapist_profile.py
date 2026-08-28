@@ -25,12 +25,13 @@ class TherapistProfileUpdate(TherapistProfileBase):
 
 
 class TherapistProfileRead(TherapistProfileBase):
-    id: int
+    id: Optional[int] = None
     user_id: int
     status: str
     admin_note: Optional[str] = None
     submitted_at: Optional[datetime] = None
     reviewed_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
     supervisor_user_id: Optional[int] = None
@@ -45,6 +46,8 @@ class TherapistProfileRead(TherapistProfileBase):
     approved_snapshot: Optional[dict] = None
     pending_submission: Optional[dict] = None
     has_pending_changes: bool = False
+    last_session_log_at: Optional[datetime] = None
+    days_since_last_session_log: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

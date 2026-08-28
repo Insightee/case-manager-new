@@ -831,6 +831,41 @@ register_head(
 )
 
 
+def _seed_a8b9c0d1e2f3(db: Session) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.models.therapist_profile import TherapistProfile, TherapistProfileStatus
+
+    profile = db.scalar(select(TherapistProfile).limit(1))
+    if not profile:
+        raise RuntimeError("Need seeded therapist profile — run demo_seed first")
+    profile.status = TherapistProfileStatus.DELETED
+    profile.deleted_at = datetime.now(timezone.utc)
+    db.flush()
+    return {"profile_id": profile.id}
+
+
+register_head(
+    "a8b9c0d1e2f3",
+    tables_added=[],
+    columns_added=[("therapist_profiles", "deleted_at")],
+    seed=_seed_a8b9c0d1e2f3,
+)
+
+
+def _seed_j0merge2therapist(db: Session) -> dict[str, Any]:
+    """Merge-only head — therapist soft-delete branch + integration API head."""
+    return {"merge_only": True}
+
+
+register_head(
+    "j0merge2therapist",
+    tables_added=[],
+    columns_added=[],
+    seed=_seed_j0merge2therapist,
+)
+
+
 def assert_head_absent(engine, revision: str) -> None:
     cfg = head_config(revision)
     if not cfg:
